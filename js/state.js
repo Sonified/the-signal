@@ -87,11 +87,11 @@ export const S = {
   // ---------- audio ----------
   carrierHz: 40, amRate: 7.5, volume: 0.50, amLinked: true, lastAmSet: 0,
   toneOn: true, clickOn: true,
-  toneVol: 0.3, clickVol: 0.35,
+  toneVol: 0.3, clickVol: 0.33,
   harmOn: true, harmVol: 0.4, harmCount: 9, harmBright: 0.45,
   harmSpread: 0.7, harmPanRate: 0.45, harmReverb: 0.35,
   shimDepth: 0.57, shimRate: 0.12,
-  clickModDepth: 0.7, clickModPeriod: 26,
+  clickModDepth: 0.55, clickModPeriod: 26,
   biDepth: 0, biPeriod: 1.0, biHardSwitch: true,
   clickReverb: 0.61, clickRevTime: 0.5,
   pipMs: 8,
