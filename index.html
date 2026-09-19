@@ -25,6 +25,23 @@
   <span class="bars"><i></i><i></i><i></i></span>
 </button>
 
+<!-- Transport and volume sit outside the idle fade, following the solar
+     meditation page: the ways back to sound and stillness stay visible. -->
+<div id="transport">
+  <button id="tpPlay" aria-label="start / stop" title="start / stop (space)"></button>
+  <div id="tpVol" aria-label="volume">
+    <button class="vmute" aria-label="mute / unmute" title="mute / unmute">
+      <svg viewBox="0 0 24 16" width="34" height="23" aria-hidden="true">
+        <path class="vsp" d="M1 5v6h4l5 4.5V0.5L5 5H1z"/>
+        <path class="vw1" d="M13.5 4.5a5 5 0 0 1 0 7"/>
+        <path class="vw2" d="M16.5 2a9.5 9.5 0 0 1 0 12"/>
+        <path class="vx"  d="M14 5l6 6M20 5l-6 6"/>
+      </svg>
+    </button>
+    <div class="vbody"><div class="vtrack"><div class="vfill"></div></div></div>
+  </div>
+</div>
+
 <div id="colorQuick" role="group" aria-label="Colour mode">
   <button id="cqSingle" class="on" title="One hue across everything">single</button>
   <button id="cqMulti" title="Every ring, particle and corner walks its own hue">multi</button>

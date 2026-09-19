@@ -63,6 +63,10 @@ export function resize() {
 }
 
 // ---------- primary actions ----------
+// Assigned when the UI is wired. Declared out here so toggle(), which the
+// keyboard handler calls directly, can keep the play glyph in step.
+let syncTransport = () => {};
+
 export function toggle() {
   // One press starts everything. The device wake still happens on this
   // gesture, so audio is held back briefly afterwards rather than fading in
@@ -75,6 +79,7 @@ export function toggle() {
     hint.classList.add('hide');
   } else hint.classList.remove('hide');
   applyAudioGain();
+  syncTransport();
 }
 
 export function toggleFullscreen() {
@@ -483,6 +488,51 @@ export function initUI() {
   document.addEventListener('visibilitychange', () => {
     S.lastT = null;
   });
+
+  // ---- transport cluster, upper right -------------------------------------
+  // Three surfaces onto settings that already exist: the play ring drives the
+  // same toggle as the spacebar, the speaker drives the Audio layer checkbox,
+  // and the track drives the Volume slider. Everything routes through the
+  // existing controls so the drawer and the corner can never disagree.
+  const tpVol  = $('tpVol');
+  const vbody  = tpVol.querySelector('.vbody');
+  const volIn  = $('vol');
+
+  syncTransport = function () {
+    $('tpPlay').textContent = S.running ? '\u275A\u275A' : '\u25B6';
+    $('tpPlay').classList.toggle('showplay', !S.running);
+    const muted = !$('lAudio').checked;
+    tpVol.classList.toggle('muted', muted);
+    tpVol.style.setProperty('--v', (+volIn.value / 100).toFixed(3));
+  };
+
+  $('tpPlay').onclick = e => { toggle(); syncTransport(); e.currentTarget.blur(); };
+
+  tpVol.querySelector('.vmute').onclick = e => {
+    $('lAudio').click();                 // the layer toggle owns audio on/off
+    syncTransport();
+    e.currentTarget.blur();
+  };
+
+  function dragVol(e) {
+    const r = vbody.querySelector('.vtrack').getBoundingClientRect();
+    const v = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    volIn.value = Math.round(v * 100);
+    volIn.dispatchEvent(new Event('input', { bubbles: true }));
+    syncTransport();
+  }
+  vbody.addEventListener('pointerdown', e => {
+    vbody.setPointerCapture(e.pointerId);
+    dragVol(e);
+  });
+  vbody.addEventListener('pointermove', e => {
+    if (vbody.hasPointerCapture(e.pointerId)) dragVol(e);
+  });
+  vbody.addEventListener('pointerup', e => vbody.releasePointerCapture(e.pointerId));
+
+  volIn.addEventListener('input', syncTransport);
+  $('lAudio').addEventListener('change', syncTransport);
+  syncTransport();
 
   window.addEventListener('beforeunload', audioOff);
 

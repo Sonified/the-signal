@@ -67,6 +67,51 @@
     color:#08101c; font-weight:600;
   }
 
+  /* Transport cluster, upper right. Deliberately outside body.idle so it never
+     fades: the way back to sound and stillness should always be reachable. */
+  #transport {
+    position:fixed; top:16px; right:16px; z-index:21;
+    display:flex; align-items:center; gap:14px;
+    opacity:.85;
+  }
+  #tpPlay {
+    flex:0 0 auto; width:30px; height:30px; padding:0;
+    border:1px solid rgba(110,168,254,.45); border-radius:50%;
+    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    color:rgba(150,190,255,.9); font-size:12px; line-height:1; cursor:pointer;
+    transition:border-color .2s, color .2s;
+  }
+  #tpPlay:hover { border-color:var(--ui-accent); color:#cfe2ff; }
+  #tpPlay.showplay { text-indent:2px; }   /* the play glyph's ink leans left */
+
+  #tpVol { --v:0.5; display:flex; align-items:center; gap:10px; }
+  #tpVol .vmute {
+    flex:0 0 auto; border:none; background:none; padding:3px;
+    color:rgba(150,190,255,.85); cursor:pointer; line-height:0;
+    transition:color .2s;
+  }
+  #tpVol:hover .vmute { color:#cfe2ff; }
+  #tpVol .vsp { fill:currentColor; }
+  #tpVol .vw1, #tpVol .vw2 { fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; }
+  #tpVol .vx { display:none; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; }
+  #tpVol.muted .vw1, #tpVol.muted .vw2 { display:none; }
+  #tpVol.muted .vx { display:block; }
+  #tpVol.muted .vfill { opacity:.25; }
+
+  #tpVol .vbody { padding:10px 0; cursor:pointer; touch-action:none; }
+  #tpVol .vtrack {
+    position:relative; width:120px; height:8px; border-radius:2px;
+    background:rgba(255,255,255,.15);
+  }
+  /* pinned to the track and revealed by the fill, so each level keeps its tint */
+  #tpVol .vfill {
+    position:absolute; inset:0; border-radius:2px;
+    background:linear-gradient(90deg,#2b5fa8,#6ea8fe);
+    clip-path:inset(0 calc((1 - var(--v)) * 100%) 0 0 round 2px);
+    filter:drop-shadow(0 0 8px rgba(110,168,254,.45));
+    transition:clip-path .06s linear;
+  }
+
   #fsBtn {
     position:fixed; bottom:16px; right:16px; z-index:20;
     width:38px; height:38px; padding:0; flex:none;
