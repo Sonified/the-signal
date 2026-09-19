@@ -475,28 +475,12 @@ export function initUI() {
   });
 
   // rAF throttles in background tabs, so stop rather than drift
-  // Hiding the tab used to stop the visuals without touching the audio, and
-  // nothing ever started them again, so coming back left sound playing over a
-  // dead screen. Both sides now pause together and resume together, and only if
-  // the session was actually running when the tab went away.
-  let pausedByHide = false;
-
+  // Audio keeps running when the tab is hidden, deliberately. The visuals stop
+  // on their own because the browser freezes requestAnimationFrame, and resume
+  // on their own when it unfreezes, so nothing here should touch `running`.
+  // The only thing needed is discarding the elapsed time, or the first frame
+  // back arrives carrying the entire absence as one enormous delta.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (S.running) {
-        pausedByHide = true;
-        S.running = false;
-        applyAudioGain();
-        hint.classList.remove('hide');
-      }
-    } else if (pausedByHide) {
-      pausedByHide = false;
-      S.running = true;
-      applyAudioGain();
-      hint.classList.add('hide');
-    }
-    // rAF is frozen while hidden, so the first frame back would otherwise carry
-    // the whole absence as one enormous delta
     S.lastT = null;
   });
 
