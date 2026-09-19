@@ -43,7 +43,7 @@
 </div>
 
 <button id="colorQuick" aria-label="Colour mode"
-        title="single: one hue across everything. multi: every ring, particle and corner walks its own hue">color: single</button>
+        title="single: one held hue &#183; rotating: that hue walks the wheel &#183; magenta: back to the signature colour">color: single</button>
 
 <button id="fsBtn" aria-label="Full screen" title="Full screen (F)">
   <svg class="ico-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -136,8 +136,8 @@
     <input id="color" type="color" value="#d400ff">
   </div>
   <div class="ctl">
-    <label>Color walk <b><span id="walkVal">100%</span></b></label>
-    <input id="colorWalk" type="range" min="0" max="100" step="1" value="100">
+    <label>Color walk <b><span id="walkVal">off</span></b></label>
+    <input id="colorWalk" type="range" min="0" max="100" step="1" value="0">
   </div>
   <div class="ctl">
     <label>Walk speed <b><span id="walkPerVal">60</span>s / lap</b></label>

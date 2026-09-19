@@ -56,6 +56,9 @@
   #colorQuick {
     position:fixed; bottom:16px; right:62px; z-index:20;
     height:38px; padding:0 13px;
+    /* sized for the longest label so the button never resizes as it cycles,
+       which would shove the full-screen icon sideways */
+    min-width:118px; text-align:center;
     font-size:11.5px; letter-spacing:.04em; font-variant-numeric:tabular-nums;
     background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
     border:1px solid var(--ui-line); border-radius:8px;

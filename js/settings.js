@@ -14,7 +14,7 @@ export function saveSettings() {
       edgeSize: S.edgeSize, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
       edgeDir: S.edgeDir, layers,
       depthVar: S.depthVar, varPeriod: S.varPeriod, panelOpen: S.panelOpen,
-      freqDrift: S.freqDrift, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor,
+      freqDrift: S.freqDrift, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
       frameLock: S.frameLock, walkPeriod: S.walkPeriod, brightVar: S.brightVar,
       brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
       ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod,
@@ -66,8 +66,12 @@ export function applySettings() {
     S.perElementColor = s.perElementColor;
     ['cwTogether','cwEach'].forEach(id => $(id).classList.remove('on'));
     $(S.perElementColor ? 'cwEach' : 'cwTogether').classList.add('on');
-    // the corner toggle shows the same setting, so it restores with it
-    $('colorQuick').textContent = S.perElementColor ? 'color: multi' : 'color: single';
+  }
+  if (typeof s.colorMode === 'string') {
+    // the corner toggle is a shorthand for other settings, so it only needs its
+    // own label restored; the settings it drives restore on their own
+    S.colorMode = s.colorMode;
+    $('colorQuick').textContent = 'color: ' + S.colorMode;
   }
   if (typeof s.ringBrightVar === 'number')    { S.ringBrightVar = s.ringBrightVar; $('ringBrightVar').value = Math.round(S.ringBrightVar*100); }
   if (typeof s.ringBrightPeriod === 'number') { S.ringBrightPeriod = s.ringBrightPeriod; $('ringBrightPeriod').value = S.ringBrightPeriod; }

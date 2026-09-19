@@ -57,6 +57,7 @@ export const PRESETS = {
     buttons:['wSq','sFull','aLink','cwTogether','lkOn','biHard'],
     sources:{ tone:true, click:true },
     harmonics:true,
+    colorMode:'rotating',
     layers:{ lField:true, lRings:true, lCorners:true, lEdge:true, lAudio:true }
   },
   // identical, but the hue is held rather than walking
@@ -81,6 +82,7 @@ export const PRESETS = {
     buttons:['wSq','sFull','aLink','cwTogether','lkOn','biHard'],
     sources:{ tone:true, click:true },
     harmonics:true,
+    colorMode:'magenta',
     layers:{ lField:true, lRings:true, lCorners:true, lEdge:true, lAudio:true }
   }
 };
@@ -111,6 +113,10 @@ export function applyPreset(name) {
   // the harmonics switch is a toggle button, not an input, so it only gets
   // clicked when it is not already where the preset wants it
   if (typeof P.harmonics === 'boolean' && S.harmOn !== P.harmonics) $('harmToggle').click();
+  if (P.colorMode) {
+    S.colorMode = P.colorMode;
+    $('colorQuick').textContent = 'color: ' + P.colorMode;
+  }
   if (P.sources) {
     if (S.toneOn  !== P.sources.tone)  $('aTone').click();
     if (S.clickOn !== P.sources.click) $('aClick').click();

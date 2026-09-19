@@ -67,7 +67,8 @@ export const S = {
   // ---------- colour ----------
   // Hue wanders via a damped random walk on its velocity rather than on the hue
   // itself, which gives an organic drift instead of a jitter.
-  colorWalk: 1, hue: 0, hueSat: 0.6, hueLight: 0.75, hueVel: 0,
+  colorWalk: 0,
+  colorMode: 'single', hue: 0, hueSat: 0.6, hueLight: 0.75, hueVel: 0,
   perElementColor: false,
   cornerHue: [0, 0.25, 0.5, 0.75], cornerHv: [0, 0, 0, 0],
   walkPeriod: 60,

@@ -66,6 +66,7 @@ export function resize() {
 // Assigned when the UI is wired. Declared out here so toggle(), which the
 // keyboard handler calls directly, can keep the play glyph in step.
 let syncTransport = () => {};
+let setColorMode  = () => {};
 
 export function toggle() {
   // One press starts everything. The device wake still happens on this
@@ -168,7 +169,34 @@ export function initUI() {
   }
   $('cwTogether').onclick = e => { setWalkMode(false); e.currentTarget.blur(); };
   $('cwEach').onclick     = e => { setWalkMode(true);  e.currentTarget.blur(); };
-  $('colorQuick').onclick = e => { setWalkMode(!S.perElementColor); e.currentTarget.blur(); };
+  // Three colour modes, cycled by one button. They are shorthand for settings
+  // that already exist in the drawer, so nothing here is new state.
+  //   single   one held hue, whatever the picker says
+  //   rotating that same hue walks the wheel
+  //   magenta  back to the signature colour, held
+  const COLOR_MODES = ['single', 'rotating', 'magenta'];
+
+  setColorMode = function (mode) {
+    S.colorMode = mode;
+    $('colorQuick').textContent = 'color: ' + mode;
+
+    const walkIn = $('colorWalk');
+    walkIn.value = mode === 'rotating' ? 100 : 0;
+    walkIn.dispatchEvent(new Event('input', { bubbles: true }));
+
+    if (mode === 'magenta') {
+      const col = $('color');
+      col.value = '#d400ff';
+      col.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    saveSettings();
+  };
+
+  $('colorQuick').onclick = e => {
+    const i = COLOR_MODES.indexOf(S.colorMode);
+    setColorMode(COLOR_MODES[(i + 1) % COLOR_MODES.length]);
+    e.currentTarget.blur();
+  };
 
   $('walkPeriod').addEventListener('input', e => {
     S.walkPeriod = +e.target.value; $('walkPerVal').textContent = S.walkPeriod; saveSettings();
