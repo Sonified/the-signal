@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free-fusion 3D · proof of concept</title>
+<style>
+  :root {
+    --ui-bg:#0a0c0f; --ui-panel:#11161c; --ui-line:#222a33;
+    --ui-text:#e8edf2; --ui-dim:#8b97a3; --ui-accent:#6ea8fe;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; overflow:hidden; background:#000; }
+  body { color:var(--ui-text);
+         font:14px/1.5 ui-sans-serif,-apple-system,system-ui,"Segoe UI",sans-serif; }
+  canvas { display:block; position:fixed; inset:0; width:100vw; height:100vh; }
+
+  /* Vertical separation slider, parked on the right so it can be nudged while
+     you are mid-fusion without looking away from the dots. Rotated rather than
+     writing-mode so the behaviour is the same in every browser. */
+  #sepSide {
+    position:fixed; right:14px; top:50%; transform:translateY(-50%); z-index:9;
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+    opacity:.5; transition:opacity .25s;
+  }
+  #sepSide:hover { opacity:1; }
+  #sepSide.hide { opacity:0; pointer-events:none; }
+  #sepSide .cap { color:var(--ui-dim); font-size:10px; letter-spacing:.09em;
+                  text-transform:uppercase; }
+  #sepSide b { color:var(--ui-text); font-size:12px; font-variant-numeric:tabular-nums; }
+  #sepSide input[type=range] {
+    width:230px; height:20px; margin:105px 0;   /* margins reserve the rotated footprint */
+    transform:rotate(-90deg);
+  }
+
+  #hint {
+    position:fixed; bottom:20px; left:0; right:0; text-align:center;
+    color:#4d5661; font-size:12px; letter-spacing:.04em; pointer-events:none;
+    transition:opacity .4s; z-index:5;
+  }
+  #hint.hide { opacity:0; }
+
+  #panel {
+    position:fixed; left:0; right:0; bottom:0; z-index:10;
+    background:rgba(17,21,26,.96); border-top:1px solid var(--ui-line);
+    padding:12px 18px 14px;
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+    gap:11px 20px; align-items:end;
+    transition:transform .3s cubic-bezier(.4,0,.2,1);
+  }
+  #panel.hidden { transform:translateY(100%); }
+  .ctl label {
+    display:flex; justify-content:space-between; align-items:baseline;
+    color:var(--ui-dim); font-size:10.5px; text-transform:uppercase;
+    letter-spacing:.09em; margin-bottom:5px;
+  }
+  .ctl label b { color:var(--ui-text); font-size:13px; letter-spacing:0;
+                 text-transform:none; font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; accent-color:var(--ui-accent); }
+  .row { display:flex; gap:6px; }
+  button {
+    flex:1 1 auto; background:#1a2027; color:var(--ui-text);
+    border:1px solid var(--ui-line); border-radius:6px; padding:7px 9px;
+    font:inherit; font-size:12.5px; cursor:pointer;
+  }
+  button:hover { border-color:#3a4551; }
+  button.on { background:var(--ui-accent); border-color:var(--ui-accent);
+              color:#08101c; font-weight:600; }
+  #note { grid-column:1/-1; color:var(--ui-dim); font-size:11.5px;
+          border-top:1px solid var(--ui-line); padding-top:9px; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="sepSide">
+  <span class="cap">wide</span>
+  <input id="sepV" type="range" min="140" max="460" step="2" value="240">
+  <span class="cap">near</span>
+  <b id="sepVLabel">240</b>
+</div>
+<div id="hint">relax until the two dots become three &nbsp;·&nbsp; H hides the controls</div>
+
+<div id="panel">
+  <div class="ctl">
+    <label>Viewing</label>
+    <div class="row">
+      <button id="mPar" class="on">Parallel</button>
+      <button id="mCross">Cross-eye</button>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>Separation <b><span id="sepVal">240</span> px</b></label>
+    <input id="sep" type="range" min="140" max="460" step="2" value="240">
+  </div>
+  <div class="ctl">
+    <label>Depth <b><span id="depVal">16</span> px max</b></label>
+    <input id="depth" type="range" min="0" max="40" step="1" value="16">
+  </div>
+  <div class="ctl">
+    <label>Size <b><span id="sizeVal">100</span>%</b></label>
+    <input id="size" type="range" min="30" max="200" step="5" value="100">
+  </div>
+  <div class="ctl">
+    <label>Speed <b><span id="spdVal">1.0</span>&times;</b></label>
+    <input id="spd" type="range" min="0" max="3" step="0.05" value="1">
+  </div>
+  <div class="ctl">
+    <label>Element</label>
+    <div class="row">
+      <button id="eRings" class="on">Rings</button>
+      <button id="eField">Starfield</button>
+      <button id="eBoth">Both</button>
+    </div>
+  </div>
+  <div id="note">
+    The two dots are the whole apparatus. Fuse them into three and the ring
+    systems behind them fuse too, into one set that comes at you.
+    Separation should match your pupil spacing, roughly 2.5 inches, which is
+    about 240 px. <b>Parallel</b> is looking through the screen into the
+    distance; <b>cross-eye</b> is crossing in front of it. One will click.
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const cv = $('c'), ctx = cv.getContext('2d');
+
+  let sep = 240, maxDisp = 16, sizeMul = 1, speed = 1, cross = false, element = 'rings';
+  let W = 0, H = 0, DPR = 1;
+  const t0 = performance.now();
+
+  const rings = [];
+  const stars = [];
+  function seed() {
+    rings.length = 0;
+    for (let i = 0; i < 11; i++) rings.push({ p: i/11 });
+    stars.length = 0;
+    for (let i = 0; i < 120; i++) {
+      stars.push({
+        a: Math.random()*Math.PI*2,      // fixed bearing from the centre
+        p0: Math.random(),               // where in its approach it starts
+        s: 0.55 + Math.random()*0.9,     // personal speed
+        j: 0.75 + Math.random()*0.5      // radial spread so they do not ring up
+      });
+    }
+  }
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+
+  // Positive depth means toward the viewer. The left view shifts right and the
+  // right view shifts left, which is crossed disparity.
+  function shift(depth, eye) { return -eye * depth * maxDisp * 0.5; }
+
+  // Soft black wells behind the fusion dots. Gradients bake in their centre, so
+  // these are cached and only rebuilt when the dots actually move.
+  const SHADOW_R = 52;
+  let shadowCache = { key:'', x:[0,0], g:[null,null] };
+  function ensureShadows(xL, xR, cy) {
+    const key = `${xL}|${xR}|${cy}`;
+    if (shadowCache.key === key) return;
+    const g = [xL, xR].map(x => {
+      const grad = ctx.createRadialGradient(x, cy, 0, x, cy, SHADOW_R);
+      grad.addColorStop(0,    'rgba(0,0,0,1)');
+      grad.addColorStop(0.42, 'rgba(0,0,0,1)');
+      grad.addColorStop(1,    'rgba(0,0,0,0)');
+      return grad;
+    });
+    shadowCache = { key, x:[xL, xR], g };
+  }
+
+  // One copy of the scene, centred wherever its fusion dot is.
+  function drawCopy(cx, cy, eye, tSec) {
+    const maxR = Math.min(W, H) * 0.46 * sizeMul;
+
+    if (element === 'rings' || element === 'both') {
+      for (const ring of rings) {
+        const p = (ring.p + tSec*0.11*speed) % 1;
+        const rad = 10 + p*p*maxR;             // accelerates as it nears, like real approach
+        const a = Math.min(1, p*3.5) * (1 - p) * 1.7;
+        if (a <= 0.012) continue;
+        ctx.strokeStyle = `rgba(150,190,255,${a})`;
+        ctx.lineWidth = 1.2 + p*4;
+        ctx.beginPath();
+        ctx.arc(cx + shift(p, eye), cy, rad, 0, Math.PI*2);
+        ctx.stroke();
+      }
+    }
+
+    if (element === 'field' || element === 'both') {
+      for (const st of stars) {
+        // p is how far through its approach the star is: 0 at the vanishing
+        // point, 1 as it sweeps past. Squared so it accelerates toward you, and
+        // its disparity grows with it, so it really does arrive.
+        const p = (st.p0 + tSec*0.085*speed*st.s) % 1;
+        const rad = p*p * maxR * 1.15 * st.j;
+        const a = Math.min(1, p*4) * (1 - p*p) * 1.25;
+        if (a <= 0.012) continue;
+        const x = cx + Math.cos(st.a)*rad + shift(p, eye);
+        const y = cy + Math.sin(st.a)*rad;
+        ctx.fillStyle = `rgba(200,222,255,${a})`;
+        ctx.beginPath(); ctx.arc(x, y, 0.8 + p*3.6, 0, Math.PI*2); ctx.fill();
+      }
+    }
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const tSec = (now - t0)/1000;
+    const cx = W/2, cy = H/2;
+    const xL = cx - sep/2, xR = cx + sep/2;
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Crossing the eyes swaps which copy each eye receives, so the two views
+    // simply trade places and the depth stays correct.
+    drawCopy(xL, cy, cross ? +1 : -1, tSec);
+    drawCopy(xR, cy, cross ? -1 : +1, tSec);
+
+    // The dots sit at the ring centres, which is also the point the rings
+    // converge on, so fusing the dots is the same act as fusing the artwork.
+    // Each gets a soft black well around it so nothing crowds the fusion target;
+    // rings then appear to rise out of the dark rather than crossing the dot.
+    ctx.globalCompositeOperation = 'source-over';
+    ensureShadows(xL, xR, cy);
+    for (let i = 0; i < 2; i++) {
+      ctx.fillStyle = shadowCache.g[i];
+      ctx.fillRect(shadowCache.x[i] - SHADOW_R, cy - SHADOW_R, SHADOW_R*2, SHADOW_R*2);
+    }
+    ctx.fillStyle = '#fff';
+    for (const x of [xL, xR]) {
+      ctx.beginPath(); ctx.arc(x, cy, 5.5, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  function pick(ids, chosen, set) {
+    ids.forEach(id => $(id).classList.remove('on'));
+    $(chosen).classList.add('on'); $(chosen).blur(); set();
+  }
+  $('mPar').onclick   = () => pick(['mPar','mCross'],'mPar',   () => cross = false);
+  $('mCross').onclick = () => pick(['mPar','mCross'],'mCross', () => cross = true);
+  $('eRings').onclick = () => pick(['eRings','eField','eBoth'],'eRings',() => element='rings');
+  $('eField').onclick = () => pick(['eRings','eField','eBoth'],'eField',() => element='field');
+  $('eBoth').onclick  = () => pick(['eRings','eField','eBoth'],'eBoth', () => element='both');
+
+  function setSep(v) {
+    sep = v;
+    $('sepVal').textContent = v;
+    $('sepVLabel').textContent = v;
+    if (+$('sep').value  !== v) $('sep').value  = v;
+    if (+$('sepV').value !== v) $('sepV').value = v;
+  }
+  $('sep').addEventListener('input',  e => setSep(+e.target.value));
+  $('sepV').addEventListener('input', e => setSep(+e.target.value));
+  $('depth').addEventListener('input', e => { maxDisp = +e.target.value; $('depVal').textContent = maxDisp; });
+  $('size').addEventListener('input',  e => { sizeMul = +e.target.value/100; $('sizeVal').textContent = e.target.value; });
+  $('spd').addEventListener('input',   e => { speed = +e.target.value; $('spdVal').textContent = speed.toFixed(1); });
+
+  window.addEventListener('keydown', e => {
+    if (e.key.toLowerCase() === 'h') {
+      $('panel').classList.toggle('hidden');
+      $('hint').classList.toggle('hide');
+      $('sepSide').classList.toggle('hide');
+      saveSettings();
+    }
+  });
+
+  // ---------- persistence ----------
+  const STORE = 'stereo3d.v1';
+  function saveSettings() {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({
+        sep, maxDisp, sizeMul, speed, cross, element,
+        panelHidden: $('panel').classList.contains('hidden')
+      }));
+    } catch (e) { console.warn('save failed:', e); }
+  }
+  function loadSettings() {
+    let v; try { v = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) { return; }
+    if (!v || !Object.keys(v).length) return;
+
+    if (typeof v.sep === 'number')     setSep(v.sep);
+    if (typeof v.maxDisp === 'number') { maxDisp = v.maxDisp; $('depth').value = maxDisp; $('depVal').textContent = maxDisp; }
+    if (typeof v.sizeMul === 'number') { sizeMul = v.sizeMul; $('size').value = Math.round(sizeMul*100); $('sizeVal').textContent = Math.round(sizeMul*100); }
+    if (typeof v.speed === 'number')   { speed = v.speed; $('spd').value = speed; $('spdVal').textContent = speed.toFixed(1); }
+
+    cross = !!v.cross;
+    ['mPar','mCross'].forEach(id => $(id).classList.remove('on'));
+    $(cross ? 'mCross' : 'mPar').classList.add('on');
+
+    if (v.element) {
+      element = v.element;
+      const map = { rings:'eRings', field:'eField', both:'eBoth' };
+      ['eRings','eField','eBoth'].forEach(id => $(id).classList.toggle('on', id === map[element]));
+    }
+    if (v.panelHidden) {
+      $('panel').classList.add('hidden');
+      $('hint').classList.add('hide');
+      $('sepSide').classList.add('hide');
+    }
+  }
+  document.addEventListener('input', saveSettings);
+  document.addEventListener('click', e => { if (e.target.tagName === 'BUTTON') saveSettings(); });
+
+  seed(); resize();
+  loadSettings();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

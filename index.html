@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Signal</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128302;</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="gate">
+  <div class="card">
+    <h1>Before you start</h1>
+    <p>This page modulates screen brightness rhythmically. If you have photosensitive epilepsy, a seizure history, or you are prone to migraine with visual aura, do not continue.</p>
+    <p>Start at low intensity and stop if you feel any discomfort.</p>
+    <label class="skip"><input type="checkbox" id="gateSkip"> Don't show this again</label>
+    <button id="gateBtn">I understand, continue</button>
+  </div>
+</div>
+
+<canvas id="c"></canvas>
+
+<button id="burger" aria-label="Settings">
+  <span class="bars"><i></i><i></i><i></i></span>
+</button>
+
+<button id="fsBtn" aria-label="Full screen" title="Full screen (F)">
+  <svg class="ico-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/>
+    <path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+  </svg>
+  <svg class="ico-contract" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
+    <path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
+  </svg>
+</button>
+
+<div id="hint">space to start &nbsp;&middot;&nbsp; ` for settings &nbsp;&middot;&nbsp; enter for full screen</div>
+
+<div id="panel" class="hidden">
+  <div class="presets">
+    <select id="presetSel">
+      <option value="">Load a preset&hellip;</option>
+      <option value="colorwalk">Colour walk</option>
+      <option value="magenta">Magenta world</option>
+      <option value="genus">Gamma 40 (GENUS)</option>
+      <option value="theta">Alpha-theta 7.5</option>
+      <option value="breath">Resonance breath</option>
+    </select>
+  </div>
+
+  <div class="layers">
+    <label class="lay on"><input type="checkbox" id="lField" checked> Field</label>
+    <label class="lay on"><input type="checkbox" id="lRings" checked> Rings</label>
+    <label class="lay on"><input type="checkbox" id="lCorners" checked> Corners</label>
+    <label class="lay on"><input type="checkbox" id="lEdge" checked> Edge</label>
+    <label class="lay on"><input type="checkbox" id="lAudio" checked> Audio</label>
+  </div>
+
+  <details class="grp" open>
+    <summary>Strobe</summary>
+    <div class="wrap"><div class="body">
+  <div class="ctl">
+    <label>Frequency <b><span id="freqVal">7.5</span> Hz</b></label>
+    <input id="freq" type="range" min="0.5" max="45" step="0.5" value="7.5">
+  </div>
+  <div class="ctl">
+    <label>Frame lock <b><span id="lockVal">on</span></b></label>
+    <div class="row">
+      <button id="lkOff">Free</button>
+      <button id="lkOn" class="on">Lock to display</button>
+    </div>
+  </div>
+
+  <div class="ctl">
+    <label>Frequency drift <b>&plusmn;<span id="driftVal">1.0</span> Hz</b></label>
+    <input id="freqDrift" type="range" min="0" max="15" step="0.5" value="1">
+  </div>
+  <div class="ctl">
+    <label>Drift rate <b><span id="driftRateVal">60</span>s / cycle</b></label>
+    <input id="driftRate" type="range" min="1" max="60" step="1" value="60">
+  </div>
+
+  <div class="ctl">
+    <label>Depth <b><span id="depthVal">80</span>%</b></label>
+    <input id="depth" type="range" min="0" max="100" step="1" value="80">
+  </div>
+  <div class="ctl">
+    <label>Depth variance <b><span id="depthVarVal">80</span>%</b></label>
+    <input id="depthVar" type="range" min="0" max="100" step="1" value="80">
+  </div>
+  <div class="ctl">
+    <label>Variance rate <b><span id="varRateVal">10</span>s / cycle</b></label>
+    <input id="varPeriod" type="range" min="1" max="60" step="1" value="10">
+  </div>
+  <div class="ctl">
+    <label>Brightness <b><span id="brightVal">100</span>%</b></label>
+    <input id="bright" type="range" min="0" max="100" step="1" value="100">
+  </div>
+  <div class="ctl">
+    <label>Brightness variance <b><span id="brightVarVal">85</span>%</b></label>
+    <input id="brightVar" type="range" min="0" max="100" step="1" value="85">
+  </div>
+  <div class="ctl">
+    <label>Brightness var rate <b><span id="brightVarRateVal">22</span>s / cycle</b></label>
+    <input id="brightVarPeriod" type="range" min="1" max="60" step="1" value="22">
+  </div>
+  <div class="ctl">
+    <label>Color</label>
+    <input id="color" type="color" value="#d400ff">
+  </div>
+  <div class="ctl">
+    <label>Color walk <b><span id="walkVal">100%</span></b></label>
+    <input id="colorWalk" type="range" min="0" max="100" step="1" value="100">
+  </div>
+  <div class="ctl">
+    <label>Walk speed <b><span id="walkPerVal">60</span>s / lap</b></label>
+    <input id="walkPeriod" type="range" min="1" max="60" step="1" value="60">
+  </div>
+  <div class="ctl">
+    <label>Walk mode</label>
+    <div class="row">
+      <button id="cwTogether" class="on">Together</button>
+      <button id="cwEach">Per element</button>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>Waveform</label>
+    <div class="row">
+      <button id="wSine">Sine</button>
+      <button id="wTri">Tri</button>
+      <button id="wSq" class="on">Square</button>
+    </div>
+
+  </div>
+  <div class="ctl">
+    <label>Field shape</label>
+    <div class="row">
+      <button id="sCircle">Circle</button>
+      <button id="sPanel">Panel</button>
+      <button id="sFull" class="on">Full</button>
+    </div>
+  </div>
+    </div></div>
+  </details>
+
+  <details class="grp">
+    <summary>Tunnel</summary>
+    <div class="wrap"><div class="body">
+  <div class="ctl">
+    <label>Ring spread <b><span id="ringVal">0.5</span>&times;</b></label>
+    <input id="ringSpeed" type="range" min="0.2" max="3" step="0.05" value="0.5">
+  </div>
+  <div class="ctl">
+    <label>Ring fade in <b><span id="ringFadeVal">55</span>%</b></label>
+    <input id="ringFade" type="range" min="0" max="100" step="1" value="55">
+  </div>
+  <div class="ctl">
+    <label>Ring brightness var <b><span id="ringBrightVarVal">55</span>%</b></label>
+    <input id="ringBrightVar" type="range" min="0" max="100" step="1" value="55">
+  </div>
+  <div class="ctl">
+    <label>Ring bright var rate <b><span id="ringBrightRateVal">10</span>s / cycle</b></label>
+    <input id="ringBrightPeriod" type="range" min="1" max="60" step="1" value="10">
+  </div>
+    </div></div>
+  </details>
+
+  <details class="grp">
+    <summary>Edge</summary>
+    <div class="wrap"><div class="body">
+  <div class="ctl">
+    <label>Edge density <b><span id="edgeVal">60</span></b></label>
+    <input id="edgeCount" type="range" min="2" max="60" step="1" value="60">
+  </div>
+  <div class="ctl">
+    <label>Edge size <b><span id="edgeSizeVal">6.0</span>&times;</b></label>
+    <input id="edgeSize" type="range" min="0.2" max="6" step="0.1" value="6">
+  </div>
+  <div class="ctl">
+    <label>Edge size variance <b><span id="edgeSizeVarVal">50</span>%</b></label>
+    <input id="edgeSizeVar" type="range" min="0" max="100" step="1" value="50">
+  </div>
+  <div class="ctl">
+    <label>Edge size var rate <b><span id="edgeSizeVarRateVal">18</span>s / cycle</b></label>
+    <input id="edgeSizeVarPeriod" type="range" min="1" max="60" step="1" value="18">
+  </div>
+  <div class="ctl">
+    <label>Trail length <b><span id="trailVal">1.0</span>&times;</b></label>
+    <input id="trailLen" type="range" min="0.2" max="6" step="0.1" value="1">
+  </div>
+  <div class="ctl">
+    <label>Edge speed <b><span id="edgeSpeedVal">4.0</span>&times;</b></label>
+    <input id="edgeSpeed" type="range" min="0" max="6" step="0.1" value="4">
+  </div>
+  <div class="ctl">
+    <label>Edge speed variance <b><span id="edgeSpeedVarVal">50</span>%</b></label>
+    <input id="edgeSpeedVar" type="range" min="0" max="100" step="1" value="50">
+  </div>
+  <div class="ctl">
+    <label>Edge speed var rate <b><span id="edgeSpeedVarRateVal">22</span>s / cycle</b></label>
+    <input id="edgeSpeedVarPeriod" type="range" min="1" max="60" step="1" value="22">
+  </div>
+  <div class="ctl">
+    <label>Edge rotation</label>
+    <select id="edgeDir">
+      <option value="cw">Clockwise</option>
+      <option value="ccw">Counter clockwise</option>
+      <option value="both" selected>Both</option>
+    </select>
+  </div>
+    </div></div>
+  </details>
+
+  <details class="grp">
+    <summary>Audio</summary>
+    <div class="wrap"><div class="body">
+  <div class="ctl">
+    <label>Carrier <b><span id="carrVal">40</span> Hz</b></label>
+    <input id="carrier" type="range" min="20" max="10000" step="10" value="40">
+  </div>
+  <div class="ctl">
+    <label>Pulse rate <b><span id="amVal">7.5</span> Hz</b></label>
+    <input id="amRate" type="range" min="0.5" max="60" step="0.5" value="7.5">
+  </div>
+  <div class="ctl">
+    <label>Volume <b><span id="volVal">50</span>%</b></label>
+    <input id="vol" type="range" min="0" max="100" step="1" value="50">
+  </div>
+  <div class="ctl">
+    <label>Audio sources</label>
+    <div class="row">
+      <button id="aTone" class="on">Sine tone</button>
+      <button id="aClick" class="on">Click train</button>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>Tone level <b><span id="toneVolVal">30</span>%</b></label>
+    <input id="toneVol" type="range" min="0" max="100" step="1" value="30">
+  </div>
+  <div class="ctl">
+    <label>Click level <b><span id="clickVolVal">35</span>%</b></label>
+    <input id="clickVol" type="range" min="0" max="100" step="1" value="35">
+  </div>
+  <div class="ctl">
+    <label>Click loudness variance <b><span id="clickModVal">70</span>%</b></label>
+    <input id="clickModDepth" type="range" min="0" max="100" step="1" value="70">
+  </div>
+  <div class="ctl">
+    <label>Click loudness var rate <b><span id="clickModRateVal">26</span>s / cycle</b></label>
+    <input id="clickModRate" type="range" min="1" max="60" step="1" value="26">
+  </div>
+  <div class="ctl">
+    <label>Bilateral depth <b><span id="biDepthVal">0</span>%</b></label>
+    <input id="biDepth" type="range" min="0" max="100" step="1" value="0">
+  </div>
+  <div class="ctl">
+    <label>Bilateral rate <b><span id="biRateVal">1.0</span>s / pass</b></label>
+    <input id="biRate" type="range" min="0.4" max="10" step="0.1" value="1">
+  </div>
+  <div class="ctl">
+    <label>Bilateral shape</label>
+    <div class="row">
+      <button id="biHard" class="on">Switch</button>
+      <button id="biSoft">Sweep</button>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>Click reverb <b><span id="clickRevVal">61</span>%</b></label>
+    <input id="clickReverb" type="range" min="0" max="100" step="1" value="61">
+  </div>
+  <div class="ctl">
+    <label>Click reverb time <b><span id="clickRevTimeVal">0.5</span>s</b></label>
+    <input id="clickRevTime" type="range" min="0.2" max="8" step="0.1" value="0.5">
+  </div>
+  <div class="ctl">
+    <label>Pip width <b><span id="pipVal">8.0</span> ms</b></label>
+    <input id="pipMs" type="range" min="0.5" max="25" step="0.5" value="8">
+  </div>
+
+  <div class="subhead">
+    <span>Harmonics</span>
+    <button id="harmToggle" class="on">On</button>
+  </div>
+  <div class="ctl">
+    <label>Harmonic level <b><span id="harmVolVal">40</span>%</b></label>
+    <input id="harmVol" type="range" min="0" max="100" step="1" value="40">
+  </div>
+  <div class="ctl">
+    <label>How many <b><span id="harmCountVal">9</span></b></label>
+    <input id="harmCount" type="range" min="1" max="16" step="1" value="9">
+  </div>
+  <div class="ctl">
+    <label>Brightness <b><span id="harmBrightVal">45</span>%</b></label>
+    <input id="harmBright" type="range" min="0" max="100" step="1" value="45">
+  </div>
+  <div class="ctl">
+    <label>Stereo spread <b><span id="harmSpreadVal">70</span>%</b></label>
+    <input id="harmSpread" type="range" min="0" max="100" step="1" value="70">
+  </div>
+  <div class="ctl">
+    <label>Pan speed <b><span id="harmPanVal">0.45</span> Hz</b></label>
+    <input id="harmPanRate" type="range" min="0" max="4" step="0.05" value="0.45">
+  </div>
+  <div class="ctl">
+    <label>Shimmer depth <b><span id="shimDepthVal">57</span>%</b></label>
+    <input id="shimDepth" type="range" min="0" max="100" step="1" value="57">
+  </div>
+  <div class="ctl">
+    <label>Shimmer rate <b><span id="shimRateVal">0.12</span> Hz</b></label>
+    <input id="shimRate" type="range" min="0.01" max="6" step="0.01" value="0.12">
+  </div>
+  <div class="ctl">
+    <label>Reverb <b><span id="harmRevVal">35</span>%</b></label>
+    <input id="harmReverb" type="range" min="0" max="100" step="1" value="35">
+  </div>
+  <div class="ctl">
+    <label>Audio mode</label>
+    <div class="row">
+      <button id="aFree">Free</button>
+      <button id="aLink" class="on">Link to visual</button>
+    </div>
+
+  </div>
+    </div></div>
+  </details>
+
+  <details class="grp">
+    <summary>Render</summary>
+    <div class="wrap"><div class="body">
+  <div class="ctl">
+    <label>Renderer</label>
+    <div class="row">
+      <button id="rAuto" class="on">Auto</button>
+      <button id="rGPU">WebGPU</button>
+      <button id="rGL">WebGL2</button>
+      <button id="r2D">Canvas2D</button>
+    </div>
+  </div>
+    </div></div>
+  </details>
+
+
+  <div id="meta">
+    <span>Renderer: <b id="rendName">starting&hellip;</b></span>
+    <span>Band: <b id="band">Alpha</b></span>
+    <span>Display: <b id="hz">measuring...</b></span>
+    <span>Samples/cycle: <b id="spc">&ndash;</b></span>
+    <span>Frame med / worst: <b id="jitter">&ndash;</b></span>
+    <span>Dropped: <b id="drops">0</b></span>
+    <span id="warn"></span>
+    <div class="sep"></div>
+    <button id="copyParams" title="Copy the current settings to the clipboard">Copy parameters</button>
+    <button id="copyDiag" title="Copy frame timing diagnostics to the clipboard">Copy diagnostics</button>
+    <button id="resetWarn" title="Clear saved settings and show the warning again">Reset settings</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
