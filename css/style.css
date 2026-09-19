@@ -35,7 +35,7 @@
   }
   /* both chrome buttons fade out once the pointer settles, so a running session
      is uninterrupted; any movement brings them straight back */
-  body.idle #burger, body.idle #fsBtn, body.idle #colorQuick { opacity:0; pointer-events:none; }
+  body.idle #burger, body.idle #fsBtn, body.idle #colorQuick, body.idle #transport { opacity:0; pointer-events:none; }
   #burger:hover { border-color:#3a4551; background:rgba(22,28,35,.9); }
   #burger .bars { position:relative; width:18px; height:13px; }
   #burger .bars i {
@@ -75,7 +75,7 @@
      and the prompt fade up together over a beat, so the page arrives rather
      than snapping into place. */
   #burger, #fsBtn, #colorQuick, #transport, #hint {
-    animation:chrome-in 1.1s ease both;
+    animation:chrome-in 1.1s ease backwards;
   }
   @keyframes chrome-in { from { opacity:0; } }
   @media (prefers-reduced-motion:reduce) {
@@ -85,8 +85,9 @@
   #transport {
     position:fixed; top:16px; right:16px; z-index:21;
     display:flex; align-items:center; gap:14px;
-    opacity:.85;
+    opacity:.85; transition:opacity .55s ease;
   }
+  #transport:hover { opacity:1; }
   #tpPlay {
     flex:0 0 auto; width:30px; height:30px; padding:0;
     border:1px solid rgba(110,168,254,.45); border-radius:50%;
