@@ -149,16 +149,21 @@ export function initUI() {
   $('lkOff').onclick = e => setFrameLock(false, e.currentTarget);
   $('lkOn').onclick  = e => setFrameLock(true,  e.currentTarget);
 
-  function setWalkMode(each, btn) {
+  // Two surfaces control one setting: the drawer pair and the quick toggle in
+  // the corner. Both route through here so they can never disagree.
+  function setWalkMode(each) {
     S.perElementColor = each;
     ['cwTogether','cwEach'].forEach(id => $(id).classList.remove('on'));
-    btn.classList.add('on');
-    btn.blur();
+    $(each ? 'cwEach' : 'cwTogether').classList.add('on');
+    $('cqSingle').classList.toggle('on', !each);
+    $('cqMulti').classList.toggle('on', each);
     invalidateGradients();             // corners swap colour source, so rebuild
     saveSettings();
   }
-  $('cwTogether').onclick = e => setWalkMode(false, e.target);
-  $('cwEach').onclick     = e => setWalkMode(true,  e.target);
+  $('cwTogether').onclick = e => { setWalkMode(false); e.currentTarget.blur(); };
+  $('cwEach').onclick     = e => { setWalkMode(true);  e.currentTarget.blur(); };
+  $('cqSingle').onclick   = e => { setWalkMode(false); e.currentTarget.blur(); };
+  $('cqMulti').onclick    = e => { setWalkMode(true);  e.currentTarget.blur(); };
 
   $('walkPeriod').addEventListener('input', e => {
     S.walkPeriod = +e.target.value; $('walkPerVal').textContent = S.walkPeriod; saveSettings();

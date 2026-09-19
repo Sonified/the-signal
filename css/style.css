@@ -28,7 +28,7 @@
   }
   /* both chrome buttons fade out once the pointer settles, so a running session
      is uninterrupted; any movement brings them straight back */
-  body.idle #burger, body.idle #fsBtn { opacity:0; pointer-events:none; }
+  body.idle #burger, body.idle #fsBtn, body.idle #colorQuick { opacity:0; pointer-events:none; }
   #burger:hover { border-color:#3a4551; background:rgba(22,28,35,.9); }
   #burger .bars { position:relative; width:18px; height:13px; }
   #burger .bars i {
@@ -44,6 +44,29 @@
   #burger.open .bars i:nth-child(3) { transform:translateY(-5.6px) rotate(-45deg); }
 
   /* ---- fullscreen toggle ---- */
+  /* Sits immediately left of the full-screen button and mirrors its resting
+     opacity, so the two read as one cluster rather than competing. */
+  #colorQuick {
+    position:fixed; bottom:16px; right:62px; z-index:20;
+    display:flex; gap:0; opacity:.55;
+    transition:opacity .55s ease;
+  }
+  #colorQuick:hover { opacity:1; }
+  #colorQuick button {
+    flex:0 0 auto; height:38px; padding:0 11px;
+    font-size:11.5px; letter-spacing:.04em;
+    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    border:1px solid var(--ui-line); color:var(--ui-dim);
+    cursor:pointer; transition:color .2s, border-color .2s, background .2s;
+  }
+  #colorQuick button:first-child { border-radius:8px 0 0 8px; }
+  #colorQuick button:last-child  { border-radius:0 8px 8px 0; border-left:none; }
+  #colorQuick button:hover { color:var(--ui-text); border-color:#3a4551; }
+  #colorQuick button.on {
+    background:var(--ui-accent); border-color:var(--ui-accent);
+    color:#08101c; font-weight:600;
+  }
+
   #fsBtn {
     position:fixed; bottom:16px; right:16px; z-index:20;
     width:38px; height:38px; padding:0; flex:none;
