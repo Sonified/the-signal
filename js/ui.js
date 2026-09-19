@@ -156,19 +156,19 @@ export function initUI() {
 
   // Two surfaces control one setting: the drawer pair and the quick toggle in
   // the corner. Both route through here so they can never disagree.
+  // Two surfaces control one setting: the drawer pair and the corner toggle.
+  // Both route through here so they can never disagree.
   function setWalkMode(each) {
     S.perElementColor = each;
     ['cwTogether','cwEach'].forEach(id => $(id).classList.remove('on'));
     $(each ? 'cwEach' : 'cwTogether').classList.add('on');
-    $('cqSingle').classList.toggle('on', !each);
-    $('cqMulti').classList.toggle('on', each);
+    $('colorQuick').textContent = each ? 'color: multi' : 'color: single';
     invalidateGradients();             // corners swap colour source, so rebuild
     saveSettings();
   }
   $('cwTogether').onclick = e => { setWalkMode(false); e.currentTarget.blur(); };
   $('cwEach').onclick     = e => { setWalkMode(true);  e.currentTarget.blur(); };
-  $('cqSingle').onclick   = e => { setWalkMode(false); e.currentTarget.blur(); };
-  $('cqMulti').onclick    = e => { setWalkMode(true);  e.currentTarget.blur(); };
+  $('colorQuick').onclick = e => { setWalkMode(!S.perElementColor); e.currentTarget.blur(); };
 
   $('walkPeriod').addEventListener('input', e => {
     S.walkPeriod = +e.target.value; $('walkPerVal').textContent = S.walkPeriod; saveSettings();

@@ -66,9 +66,8 @@ export function applySettings() {
     S.perElementColor = s.perElementColor;
     ['cwTogether','cwEach'].forEach(id => $(id).classList.remove('on'));
     $(S.perElementColor ? 'cwEach' : 'cwTogether').classList.add('on');
-    // the corner quick-toggle shows the same setting, so it restores with it
-    $('cqSingle').classList.toggle('on', !S.perElementColor);
-    $('cqMulti').classList.toggle('on', S.perElementColor);
+    // the corner toggle shows the same setting, so it restores with it
+    $('colorQuick').textContent = S.perElementColor ? 'color: multi' : 'color: single';
   }
   if (typeof s.ringBrightVar === 'number')    { S.ringBrightVar = s.ringBrightVar; $('ringBrightVar').value = Math.round(S.ringBrightVar*100); }
   if (typeof s.ringBrightPeriod === 'number') { S.ringBrightPeriod = s.ringBrightPeriod; $('ringBrightPeriod').value = S.ringBrightPeriod; }

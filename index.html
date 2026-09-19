@@ -42,10 +42,8 @@
   </div>
 </div>
 
-<div id="colorQuick" role="group" aria-label="Colour mode">
-  <button id="cqSingle" class="on" title="One hue across everything">single</button>
-  <button id="cqMulti" title="Every ring, particle and corner walks its own hue">multi</button>
-</div>
+<button id="colorQuick" aria-label="Colour mode"
+        title="single: one hue across everything. multi: every ring, particle and corner walks its own hue">color: single</button>
 
 <button id="fsBtn" aria-label="Full screen" title="Full screen (F)">
   <svg class="ico-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -60,7 +58,10 @@
   </svg>
 </button>
 
-<div id="hint">space to start &nbsp;&middot;&nbsp; ` for settings &nbsp;&middot;&nbsp; enter for full screen</div>
+<div id="hint">
+  <div class="hmain">Press the space bar to begin</div>
+  <div class="hsub">` for settings &nbsp;&middot;&nbsp; enter for full screen</div>
+</div>
 
 <div id="panel" class="hidden">
   <div class="presets">
