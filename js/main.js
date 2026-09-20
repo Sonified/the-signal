@@ -1,6 +1,6 @@
 // Entry point: the requestAnimationFrame loop and the boot sequence.
 import { S, WALK_STEP, WALK_DAMP, WALK_SWING, SKIP_KEY } from './state.js';
-import { $, panel } from './dom.js';
+import { $, hint, panel } from './dom.js';
 import { shape, hslToRgb } from './util.js';
 import { setColorFromPicker } from './color.js';
 import { seedParticles, updateRings, updateParticles } from './sim.js';
@@ -8,6 +8,9 @@ import { initRenderer } from './renderer.js';
 import { applySettings } from './settings.js';
 import { initUI, updateReadouts, resize } from './ui.js';
 import { ensureAudioGraph, warmDevice, audioOn, setAmRate, hasNode } from './audio.js';
+import { initText, updateText } from './text.js';
+
+let lastInset = -1;
 
 // ---------- main loop ----------
 function tick(t) {
@@ -55,6 +58,18 @@ function tick(t) {
     S.edgeInset = Math.max(0, Math.min(S.W, panel.getBoundingClientRect().right));
   } else {
     S.edgeInset = S.edgeInsetTarget;
+  }
+
+  // The drawer pushes the whole composition right, and anything centred in the
+  // field has to move with it rather than with the window. The word layer and
+  // the opening line are both DOM above the canvas, so neither gets the
+  // renderer's recentring for free. Done here, where the inset is computed, so
+  // there is one owner rather than each layer tracking it separately.
+  if (S.edgeInset !== lastInset) {
+    lastInset = S.edgeInset;
+    const off = S.edgeInset + 'px';
+    hint.style.left = off;
+    $('word').style.left = off;
   }
 
   S.lastPhase = S.phase;
@@ -134,12 +149,17 @@ function tick(t) {
   updateRings(dt, ts);
   updateParticles(dt);
 
+  updateText(t, dt);
+
   if (S.renderer) S.renderer.draw(lum);
 }
 
 // ---------- boot ----------
 initUI();
 applySettings();
+// after applySettings, so the restored theme selection is what the first pool
+// build sees, and after initUI, so the chip builder is already listening
+initText($('word'));
 
 if (localStorage.getItem(SKIP_KEY) === '1') {
   $('gate').remove();
@@ -159,6 +179,7 @@ function resumeAudioOnce() {
   warmDevice();
   if ($('lAudio').checked && !S.audioEnabled) audioOn();
   window.removeEventListener('pointerdown', resumeAudioOnce);
+  window.removeEventListener('keydown', resumeAudioOnce);
 }
 window.addEventListener('pointerdown', resumeAudioOnce);
 window.addEventListener('keydown', resumeAudioOnce);

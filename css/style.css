@@ -8,7 +8,17 @@
     background:#000; color:var(--ui-text);
     font:14px/1.5 ui-sans-serif,-apple-system,system-ui,"Segoe UI",sans-serif;
   }
-  canvas { display:block; position:fixed; inset:0; width:100vw; height:100vh; cursor:pointer; }
+  /* The field opens on nothing but the line of text. The canvas is already
+     running underneath, so the first press fades in a tunnel that is already
+     in motion rather than one that starts from an empty frame. Once it is up
+     the inline opacity is cleared, so the strobe is not composited through a
+     fractional layer for the rest of the session. */
+  canvas {
+    display:block; position:fixed; inset:0; width:100vw; height:100vh; cursor:pointer;
+    opacity:0; transition:opacity 2s ease;
+  }
+  canvas.lit { opacity:1; }
+  @media (prefers-reduced-motion: reduce) { canvas { transition:none; } }
 
   #hint {
     position:fixed; inset:0; display:flex; z-index:5;
@@ -24,6 +34,40 @@
     color:#5b6672; font-size:12px; letter-spacing:.05em;
   }
 
+  /* One word at a time, dead centre. Pinned rather than laid out so it can
+     never shift the page, and non-interactive so a click still starts and
+     stops the session through the canvas underneath. */
+  #word {
+    position:fixed; inset:0; z-index:6;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:none; opacity:0;
+    color:#f2f6fb; font-weight:300; letter-spacing:.07em;
+    font-size:35px; line-height:1;
+    text-shadow:0 0 30px rgba(0,0,0,.65);   /* readable over a lit field */
+  }
+
+  /* A tooltip of our own rather than a title attribute. Native tooltips appear
+     on a delay at wherever the cursor has drifted to by then, which is how one
+     of these ended up floating in the middle of the field over a button that had
+     already slid off screen. This one shows on enter and leaves on leave. */
+  #tip {
+    position:fixed; z-index:60; pointer-events:none;
+    padding:6px 9px; border-radius:6px;
+    background:rgba(12,16,21,.96); backdrop-filter:blur(8px);
+    border:1px solid var(--ui-line); color:var(--ui-text);
+    font-size:11.5px; letter-spacing:.02em; white-space:nowrap;
+    opacity:0; transition:opacity .09s ease;
+  }
+  #tip.show { opacity:1; }
+
+  /* A disabled control should read as unavailable, not as broken */
+  #panel input[type=range]:disabled { opacity:.35; cursor:not-allowed; }
+  #panel .ctl.locked label { opacity:.55; }
+  /* A section whose source is switched off reads as unavailable rather than as
+     broken: still legible, clearly not in play. */
+  #panel .ctl.locked, #panel .subhead.locked { opacity:.45; }
+  #panel .ctl.locked input, #panel .subhead.locked button { pointer-events:none; }
+
   /* ---- hamburger ---- */
   #burger {
     position:fixed; top:14px; left:14px; z-index:20;
@@ -35,7 +79,7 @@
   }
   /* both chrome buttons fade out once the pointer settles, so a running session
      is uninterrupted; any movement brings them straight back */
-  body.idle #burger, body.idle #fsBtn, body.idle #colorQuick, body.idle #transport { opacity:0; pointer-events:none; }
+  body.idle #burger, body.idle #fsBtn, body.idle #colorQuick, body.idle #textQuick, body.idle #clickQuick, body.idle #toneQuick, body.idle #visualQuick, body.idle #musicQuick, body.idle #ambQuick, body.idle #transport { opacity:0; pointer-events:none; }
   #burger:hover { border-color:#3a4551; background:rgba(22,28,35,.9); }
   #burger .bars { position:relative; width:18px; height:13px; }
   #burger .bars i {
@@ -53,6 +97,84 @@
   /* ---- fullscreen toggle ---- */
   /* Sits immediately left of the full-screen button and mirrors its resting
      opacity, so the two read as one cluster rather than competing. */
+  /* The corner row, right to left: full screen at 16, color at 62, text at 188,
+     click at 282, tone at 402. Each has a fixed width so changing one never
+     shoves the rest sideways as its label grows. */
+  #clickQuick {
+    position:fixed; bottom:16px; right:282px; z-index:20;
+    height:38px; padding:0 13px; min-width:112px; text-align:center;
+    font-size:11.5px; letter-spacing:.04em;
+    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    border:1px solid var(--ui-line); border-radius:8px;
+    color:var(--ui-dim); cursor:pointer; opacity:.55;
+    transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
+  }
+  #clickQuick:hover, #toneQuick:hover {
+    opacity:1; color:var(--ui-text); border-color:#3a4551; background:rgba(22,28,35,.9);
+  }
+  #ambQuick {
+    position:fixed; bottom:16px; right:738px; z-index:20;
+    height:38px; padding:0 13px; min-width:112px; text-align:center;
+    font-size:11.5px; letter-spacing:.04em;
+    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    border:1px solid var(--ui-line); border-radius:8px;
+    color:var(--ui-dim); cursor:pointer; opacity:.55;
+    transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
+  }
+  #ambQuick:hover {
+    opacity:1; color:var(--ui-text); border-color:#3a4551; background:rgba(22,28,35,.85);
+  }
+
+  #musicQuick {
+    position:fixed; bottom:16px; right:636px; z-index:20;
+    height:38px; padding:0 13px; min-width:94px; text-align:center;
+    font-size:11.5px; letter-spacing:.04em;
+    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    border:1px solid var(--ui-line); border-radius:8px;
+    color:var(--ui-dim); cursor:pointer; opacity:.55;
+    transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
+  }
+  #musicQuick:hover {
+    opacity:1; color:var(--ui-text); border-color:#3a4551; background:rgba(22,28,35,.85);
+  }
+
+  /* second from the left, and the widest, since its labels are phrases */
+  #visualQuick {
+    position:fixed; bottom:16px; right:496px; z-index:20;
+    height:38px; padding:0 13px; min-width:132px; text-align:center;
+    font-size:11.5px; letter-spacing:.04em;
+    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    border:1px solid var(--ui-line); border-radius:8px;
+    color:var(--ui-dim); cursor:pointer; opacity:.55;
+    transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
+  }
+  #visualQuick:hover {
+    opacity:1; color:var(--ui-text); border-color:#3a4551; background:rgba(22,28,35,.85);
+  }
+
+  #toneQuick {
+    position:fixed; bottom:16px; right:402px; z-index:20;
+    height:38px; padding:0 13px; min-width:86px; text-align:center;
+    font-size:11.5px; letter-spacing:.04em;
+    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    border:1px solid var(--ui-line); border-radius:8px;
+    color:var(--ui-dim); cursor:pointer; opacity:.55;
+    transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
+  }
+
+  #textQuick {
+    position:fixed; bottom:16px; right:188px; z-index:20;
+    height:38px; padding:0 13px; min-width:86px; text-align:center;
+    font-size:11.5px; letter-spacing:.04em;
+    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    border:1px solid var(--ui-line); border-radius:8px;
+    color:var(--ui-dim); cursor:pointer; opacity:.55;
+    transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
+  }
+  #textQuick:hover {
+    opacity:1; color:var(--ui-text); border-color:#3a4551; background:rgba(22,28,35,.9);
+  }
+
   #colorQuick {
     position:fixed; bottom:16px; right:62px; z-index:20;
     height:38px; padding:0 13px;
@@ -74,12 +196,12 @@
   /* Nothing appears at full strength the instant the gate clears. The chrome
      and the prompt fade up together over a beat, so the page arrives rather
      than snapping into place. */
-  #burger, #fsBtn, #colorQuick, #transport, #hint {
+  #burger, #fsBtn, #colorQuick, #textQuick, #clickQuick, #toneQuick, #visualQuick, #musicQuick, #ambQuick, #transport, #hint {
     animation:chrome-in 1.1s ease backwards;
   }
   @keyframes chrome-in { from { opacity:0; } }
   @media (prefers-reduced-motion:reduce) {
-    #burger, #fsBtn, #colorQuick, #transport, #hint { animation:none; }
+    #burger, #fsBtn, #colorQuick, #textQuick, #clickQuick, #toneQuick, #visualQuick, #musicQuick, #ambQuick, #transport, #hint { animation:none; }
   }
 
   #transport {
@@ -114,15 +236,17 @@
 
   #tpVol .vbody { padding:10px 0; cursor:pointer; touch-action:none; }
   #tpVol .vtrack {
-    position:relative; width:120px; height:8px; border-radius:2px;
+    position:relative; width:120px; height:7px; border-radius:2px;
     background:rgba(255,255,255,.15);
   }
-  /* pinned to the track and revealed by the fill, so each level keeps its tint */
+  /* pinned to the track and revealed by the fill, so each level keeps its tint.
+     the ramp tops out at a grey, never full white, so a loud setting still sits
+     back in the dark rather than glaring */
   #tpVol .vfill {
     position:absolute; inset:0; border-radius:2px;
-    background:linear-gradient(90deg,#2b5fa8,#6ea8fe);
+    background:linear-gradient(90deg,#d6d6d6,#f2f2f2);
     clip-path:inset(0 calc((1 - var(--v)) * 100%) 0 0 round 2px);
-    filter:drop-shadow(0 0 8px rgba(110,168,254,.45));
+    filter:drop-shadow(0 0 7px rgba(255,255,255,.25));
     transition:clip-path .06s linear;
   }
 
@@ -240,6 +364,15 @@
     height:34px; font-size:12.5px;
   }
   .presets select:hover { border-color:var(--ui-accent); color:var(--ui-text); }
+
+  /* Theme chips wrap to as many rows as they need, and stay small enough that
+     twenty of them do not turn the drawer into a wall. */
+  .row.themes { gap:5px; margin-bottom:7px; }
+  .row.themes button {
+    flex:0 1 auto; padding:5px 9px; font-size:11.5px;
+    background:#151b22; color:var(--ui-dim); letter-spacing:.02em;
+  }
+  .row.themes button.on { background:var(--ui-accent); color:#08101c; }
 
   .layers { display:flex; flex-wrap:wrap; gap:7px; }
   .layers .lay {

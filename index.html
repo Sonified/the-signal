@@ -42,8 +42,20 @@
   </div>
 </div>
 
-<button id="colorQuick" aria-label="Colour mode"
-        title="single: one held hue &#183; rotating: that hue walks the wheel &#183; magenta: back to the signature colour">color: single</button>
+<button id="ambQuick" aria-label="Ambience on or off">ambience: on</button>
+
+<button id="musicQuick" aria-label="Music on or off">music: on</button>
+
+<button id="visualQuick" aria-label="Visual layers">visual: full</button>
+
+<button id="toneQuick" aria-label="Sine tone on or off">tone: on</button>
+
+<button id="clickQuick" aria-label="Click loudness">click: normal</button>
+
+<button id="textQuick" aria-label="Words on or off">text: on</button>
+
+<button id="colorQuick" aria-label="Color mode"
+        title="rotating: the whole field shares one hue, walking the wheel &#183; multi: every element walks on its own &#183; magenta: the signature hue, held">color: rotating</button>
 
 <button id="fsBtn" aria-label="Full screen" title="Full screen (F)">
   <svg class="ico-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -60,14 +72,20 @@
 
 <div id="hint">
   <div class="hmain">Press the space bar to begin</div>
-  <div class="hsub">` for settings &nbsp;&middot;&nbsp; enter for full screen</div>
+  <div class="hsub">press the &ldquo;~&rdquo; key for settings &nbsp;&middot;&nbsp; press ENTER for full screen<br>T for words &nbsp;&middot;&nbsp; C for color</div>
 </div>
+
+<!-- One word at a time, centre screen. Outside the canvas so the renderer's
+     hot loop never touches text. -->
+<div id="word" aria-hidden="true"></div>
+
+<div id="tip" role="tooltip" aria-hidden="true"></div>
 
 <div id="panel" class="hidden">
   <div class="presets">
     <select id="presetSel">
       <option value="">Load a preset&hellip;</option>
-      <option value="colorwalk">Colour walk</option>
+      <option value="colorwalk">Color walk</option>
       <option value="magenta">Magenta world</option>
       <option value="genus">Gamma 40 (GENUS)</option>
       <option value="theta">Alpha-theta 7.5</option>
@@ -80,10 +98,11 @@
     <label class="lay on"><input type="checkbox" id="lRings" checked> Rings</label>
     <label class="lay on"><input type="checkbox" id="lCorners" checked> Corners</label>
     <label class="lay on"><input type="checkbox" id="lEdge" checked> Edge</label>
+    <label class="lay on"><input type="checkbox" id="lText" checked> Text</label>
     <label class="lay on"><input type="checkbox" id="lAudio" checked> Audio</label>
   </div>
 
-  <details class="grp" open>
+  <details class="grp">
     <summary>Strobe</summary>
     <div class="wrap"><div class="body">
   <div class="ctl">
@@ -136,8 +155,8 @@
     <input id="color" type="color" value="#d400ff">
   </div>
   <div class="ctl">
-    <label>Color walk <b><span id="walkVal">off</span></b></label>
-    <input id="colorWalk" type="range" min="0" max="100" step="1" value="0">
+    <label>Color walk <b><span id="walkVal">100%</span></b></label>
+    <input id="colorWalk" type="range" min="0" max="100" step="1" value="100">
   </div>
   <div class="ctl">
     <label>Walk speed <b><span id="walkPerVal">60</span>s / lap</b></label>
@@ -180,6 +199,14 @@
   <div class="ctl">
     <label>Ring fade in <b><span id="ringFadeVal">55</span>%</b></label>
     <input id="ringFade" type="range" min="0" max="100" step="1" value="55">
+  </div>
+  <div class="ctl">
+    <label>Line thickness <b><span id="ringThickVal">3.0</span>&times;</b></label>
+    <input id="ringThick" type="range" min="0.2" max="5" step="0.1" value="3">
+  </div>
+  <div class="ctl">
+    <label>Line thickness variance <b><span id="ringThickVarVal">100</span>%</b></label>
+    <input id="ringThickVar" type="range" min="0" max="100" step="1" value="100">
   </div>
   <div class="ctl">
     <label>Ring brightness var <b><span id="ringBrightVarVal">55</span>%</b></label>
@@ -239,114 +266,317 @@
   </details>
 
   <details class="grp">
+    <summary>Text</summary>
+    <div class="wrap"><div class="body">
+  <div class="ctl">
+    <label>Words <b><span id="textOnVal">on</span></b></label>
+    <div class="row">
+      <button id="txOn" class="on">On</button>
+      <button id="txOff">Off</button>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>Blink source <b><span id="textLinkVal">strobe</span></b></label>
+    <div class="row">
+      <button id="txLink" class="on">Match the strobe</button>
+      <button id="txFree">Own rate</button>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>Own blink rate <b><span id="textRateVal">2.0</span> Hz</b></label>
+    <input id="textRate" type="range" min="0.1" max="10" step="0.1" value="2">
+  </div>
+  <div class="ctl">
+    <label>Appearance <b><span id="textFreqVal">50</span>%</b></label>
+    <input id="textFreq" type="range" min="0" max="100" step="1" value="50">
+  </div>
+  <div class="ctl">
+    <label>Appearance variance <b><span id="textRandVal">100</span>%</b></label>
+    <input id="textRandom" type="range" min="0" max="100" step="1" value="100">
+  </div>
+  <div class="ctl">
+    <label>Rest frequency <b><span id="textRestFreqVal">4</span>%</b></label>
+    <input id="textRestFreq" type="range" min="0" max="100" step="1" value="4">
+  </div>
+  <div class="ctl">
+    <label>Rest duration <b><span id="textRestSecVal">10</span>s</b></label>
+    <input id="textRestSec" type="range" min="1" max="60" step="1" value="10">
+  </div>
+  <div class="ctl">
+    <label>Rest variance <b><span id="textRestVarVal">70</span>%</b></label>
+    <input id="textRestVar" type="range" min="0" max="100" step="1" value="70">
+  </div>
+  <div class="ctl">
+    <label>Time on screen <b><span id="textDwellVal">80</span> ms</b></label>
+    <input id="textDwell" type="range" min="0" max="4000" step="10" value="80">
+  </div>
+  <div class="ctl">
+    <label>Fade in <b><span id="textFadeInVal">0</span> ms</b></label>
+    <input id="textFadeIn" type="range" min="0" max="3000" step="10" value="0">
+  </div>
+  <div class="ctl">
+    <label>Fade out <b><span id="textFadeOutVal">0</span> ms</b></label>
+    <input id="textFadeOut" type="range" min="0" max="3000" step="10" value="0">
+  </div>
+  <div class="ctl">
+    <label>Word color <b><span id="textColorVal">match the strobe</span></b></label>
+    <div class="row">
+      <button id="txWhite">White</button>
+      <button id="txSystem" class="on">Match the strobe</button>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>Opacity <b><span id="textOpacityVal">95</span>%</b></label>
+    <input id="textOpacity" type="range" min="0" max="100" step="1" value="95">
+  </div>
+  <div class="ctl">
+    <label>Opacity variance <b><span id="textOpacityVarVal">10</span>%</b></label>
+    <input id="textOpacityVar" type="range" min="0" max="100" step="1" value="10">
+  </div>
+  <div class="ctl">
+    <label>Opacity var rate <b><span id="textOpacityVarRateVal">20</span>s / cycle</b></label>
+    <input id="textOpacityVarPeriod" type="range" min="1" max="60" step="1" value="20">
+  </div>
+  <div class="ctl">
+    <label>Word size <b><span id="textSizeVal">35</span> px</b></label>
+    <input id="textSize" type="range" min="16" max="160" step="1" value="35">
+  </div>
+  <div class="ctl">
+    <label>Themes <b><span id="textPoolVal">&mdash;</span></b></label>
+    <div class="row themes" id="textThemes"></div>
+    <div class="row">
+      <button id="txAllOn">All</button>
+      <button id="txAllOff">None</button>
+    </div>
+  </div>
+    </div></div>
+  </details>
+
+  <details class="grp">
     <summary>Audio</summary>
     <div class="wrap"><div class="body">
   <div class="ctl">
-    <label>Carrier <b><span id="carrVal">40</span> Hz</b></label>
-    <input id="carrier" type="range" min="20" max="10000" step="10" value="40">
+    <label>Master volume <b><span id="volVal">50</span>%</b></label>
+    <input id="vol" type="range" min="0" max="100" step="1" value="50">
   </div>
   <div class="ctl">
     <label>Pulse rate <b><span id="amVal">7.5</span> Hz</b></label>
     <input id="amRate" type="range" min="0.5" max="60" step="0.5" value="7.5">
   </div>
-  <div class="ctl">
-    <label>Volume <b><span id="volVal">50</span>%</b></label>
-    <input id="vol" type="range" min="0" max="100" step="1" value="50">
+  <div class="subhead">
+    <span>Sine tone</span>
+    <button id="aTone" class="on">On</button>
   </div>
-  <div class="ctl">
-    <label>Audio sources</label>
+  <div class="ctl tone-ctl">
+    <label>Carrier <b><span id="carrVal">40</span> Hz</b></label>
+    <input id="carrier" type="range" min="20" max="10000" step="10" value="40">
+  </div>
+  <div class="ctl tone-ctl">
+    <label>Level <b><span id="toneVolVal">-10.5</span> dB</b></label>
+    <input id="toneVol" type="range" min="0" max="100" step="1" value="83">
+  </div>
+
+  <div class="subhead">
+    <span>Click train</span>
+    <button id="aClick" class="on">On</button>
+  </div>
+  <div class="ctl pip-ctl">
+    <label>Mode <b><span id="clickModeVal">chirp</span></b></label>
     <div class="row">
-      <button id="aTone" class="on">Sine tone</button>
-      <button id="aClick" class="on">Click train</button>
+      <button id="cmClick">Click</button>
+      <button id="cmChirp" class="on">Chirp</button>
     </div>
   </div>
-  <div class="ctl">
-    <label>Tone level <b><span id="toneVolVal">30</span>%</b></label>
-    <input id="toneVol" type="range" min="0" max="100" step="1" value="30">
+  <div class="ctl pip-ctl click-only">
+    <label>Pip width <b><span id="pipVal">8.0</span> ms</b></label>
+    <input id="pipMs" type="range" min="0.5" max="25" step="0.5" value="8">
   </div>
-  <div class="ctl">
-    <label>Click level <b><span id="clickVolVal">33</span>%</b></label>
-    <input id="clickVol" type="range" min="0" max="100" step="1" value="33">
+  <div class="ctl pip-ctl chirp-only">
+    <label>Chirp low <b><span id="chirpLowVal">150</span> Hz</b></label>
+    <input id="chirpLow" type="range" min="40" max="2000" step="10" value="150">
   </div>
-  <div class="ctl">
-    <label>Click loudness variance <b><span id="clickModVal">55</span>%</b></label>
-    <input id="clickModDepth" type="range" min="0" max="100" step="1" value="55">
+  <div class="ctl pip-ctl chirp-only">
+    <label>Chirp high <b><span id="chirpHighVal">6000</span> Hz</b></label>
+    <input id="chirpHigh" type="range" min="1000" max="12000" step="100" value="6000">
   </div>
-  <div class="ctl">
-    <label>Click loudness var rate <b><span id="clickModRateVal">26</span>s / cycle</b></label>
+  <div class="ctl pip-ctl chirp-only">
+    <label>Delay compensation <b><span id="chirpCompVal">100</span>%</b></label>
+    <input id="chirpComp" type="range" min="0" max="100" step="1" value="100">
+  </div>
+  <div class="ctl pip-ctl chirp-only">
+    <label>Spectral tilt <b><span id="chirpTiltVal">warm</span></b></label>
+    <input id="chirpTilt" type="range" min="0" max="150" step="5" value="130">
+  </div>
+  <div class="ctl pip-ctl chirp-only">
+    <label>Chirp length <b><span id="chirpLenVal">8.3</span> ms</b></label>
+    <div class="row"><small id="chirpNote">set by the frequency range and the cochlear model</small></div>
+  </div>
+  <div class="ctl pip-ctl">
+    <label>Level <b><span id="clickVolVal">-inf</span> dB</b></label>
+    <input id="clickVol" type="range" min="0" max="100" step="1" value="0">
+  </div>
+  <div class="ctl pip-ctl">
+    <label><span class="pipword">Click</span> reverb <b><span id="clickRevVal">37</span>%</b></label>
+    <input id="clickReverb" type="range" min="0" max="100" step="1" value="37">
+  </div>
+  <div class="ctl pip-ctl">
+    <label><span class="pipword">Click</span> reverb time <b><span id="clickRevTimeVal">0.5</span>s</b></label>
+    <input id="clickRevTime" type="range" min="0.2" max="8" step="0.1" value="0.5">
+  </div>
+  <div class="ctl pip-ctl">
+    <label><span class="pipword">Click</span> loudness variance <b><span id="clickModVal">0</span>%</b></label>
+    <input id="clickModDepth" type="range" min="0" max="100" step="1" value="0">
+  </div>
+  <div class="ctl pip-ctl">
+    <label><span class="pipword">Click</span> loudness var rate <b><span id="clickModRateVal">26</span>s / cycle</b></label>
     <input id="clickModRate" type="range" min="1" max="60" step="1" value="26">
   </div>
-  <div class="ctl">
-    <label>Bilateral depth <b><span id="biDepthVal">0</span>%</b></label>
-    <input id="biDepth" type="range" min="0" max="100" step="1" value="0">
+
+  <div class="subhead">
+    <span>Bilateral</span>
+    <button id="biToggle">Off</button>
   </div>
-  <div class="ctl">
+  <div class="ctl bi-only" hidden>
+    <label>Bilateral depth <b><span id="biDepthVal">60</span>%</b></label>
+    <input id="biDepth" type="range" min="0" max="100" step="1" value="60">
+  </div>
+  <div class="ctl bi-only" hidden>
     <label>Bilateral rate <b><span id="biRateVal">1.0</span>s / pass</b></label>
     <input id="biRate" type="range" min="0.4" max="10" step="0.1" value="1">
   </div>
-  <div class="ctl">
+  <div class="ctl bi-only" hidden>
     <label>Bilateral shape</label>
     <div class="row">
       <button id="biHard" class="on">Switch</button>
       <button id="biSoft">Sweep</button>
     </div>
   </div>
-  <div class="ctl">
-    <label>Click reverb <b><span id="clickRevVal">61</span>%</b></label>
-    <input id="clickReverb" type="range" min="0" max="100" step="1" value="61">
-  </div>
-  <div class="ctl">
-    <label>Click reverb time <b><span id="clickRevTimeVal">0.5</span>s</b></label>
-    <input id="clickRevTime" type="range" min="0.2" max="8" step="0.1" value="0.5">
-  </div>
-  <div class="ctl">
-    <label>Pip width <b><span id="pipVal">8.0</span> ms</b></label>
-    <input id="pipMs" type="range" min="0.5" max="25" step="0.5" value="8">
-  </div>
 
   <div class="subhead">
     <span>Harmonics</span>
     <button id="harmToggle" class="on">On</button>
   </div>
-  <div class="ctl">
-    <label>Harmonic level <b><span id="harmVolVal">40</span>%</b></label>
-    <input id="harmVol" type="range" min="0" max="100" step="1" value="40">
+  <div class="ctl harm-ctl">
+    <label>Level <b><span id="harmVolVal">-8.0</span> dB</b></label>
+    <input id="harmVol" type="range" min="0" max="100" step="1" value="87">
   </div>
-  <div class="ctl">
+  <div class="ctl harm-ctl">
     <label>How many <b><span id="harmCountVal">9</span></b></label>
     <input id="harmCount" type="range" min="1" max="16" step="1" value="9">
   </div>
-  <div class="ctl">
+  <div class="ctl harm-ctl">
     <label>Brightness <b><span id="harmBrightVal">45</span>%</b></label>
     <input id="harmBright" type="range" min="0" max="100" step="1" value="45">
   </div>
-  <div class="ctl">
+  <div class="ctl harm-ctl">
     <label>Stereo spread <b><span id="harmSpreadVal">70</span>%</b></label>
     <input id="harmSpread" type="range" min="0" max="100" step="1" value="70">
   </div>
-  <div class="ctl">
+  <div class="ctl harm-ctl">
     <label>Pan speed <b><span id="harmPanVal">0.45</span> Hz</b></label>
     <input id="harmPanRate" type="range" min="0" max="4" step="0.05" value="0.45">
   </div>
-  <div class="ctl">
+  <div class="ctl harm-ctl">
     <label>Shimmer depth <b><span id="shimDepthVal">57</span>%</b></label>
     <input id="shimDepth" type="range" min="0" max="100" step="1" value="57">
   </div>
-  <div class="ctl">
+  <div class="ctl harm-ctl">
     <label>Shimmer rate <b><span id="shimRateVal">0.12</span> Hz</b></label>
     <input id="shimRate" type="range" min="0.01" max="6" step="0.01" value="0.12">
   </div>
-  <div class="ctl">
+  <div class="ctl harm-ctl">
     <label>Reverb <b><span id="harmRevVal">35</span>%</b></label>
     <input id="harmReverb" type="range" min="0" max="100" step="1" value="35">
   </div>
-  <div class="ctl">
+  <div class="ctl harm-ctl">
     <label>Audio mode</label>
     <div class="row">
       <button id="aFree">Free</button>
       <button id="aLink" class="on">Link to visual</button>
     </div>
 
+  </div>
+    </div></div>
+  </details>
+
+  <details class="grp">
+    <summary>Music</summary>
+    <div class="wrap"><div class="body">
+  <div class="ctl">
+    <label>Piano <b><span id="musicOnVal">on</span></b></label>
+    <div class="row">
+      <button id="muOn" class="on">On</button>
+      <button id="muOff">Off</button>
+    </div>
+  </div>
+  <div class="ctl music-ctl">
+    <label>Piano level <b><span id="pianoVolVal">90</span>%</b></label>
+    <input id="pianoVol" type="range" min="0" max="100" step="1" value="90">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Ocean bed <b><span id="bedVolVal">55</span>%</b></label>
+    <input id="bedVol" type="range" min="0" max="100" step="1" value="55">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Reverb <b><span id="pianoRevVal">100</span>%</b></label>
+    <input id="pianoReverb" type="range" min="0" max="200" step="1" value="100">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Reverb decay <b><span id="pianoRevTimeVal">4.5</span>s</b></label>
+    <input id="pianoRevTime" type="range" min="1" max="15" step="0.5" value="4.5">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Density <b><span id="pianoDensityVal">100</span>%</b></label>
+    <input id="pianoDensity" type="range" min="20" max="250" step="5" value="100">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Register centre <b><span id="pianoCentreVal">C6</span></b></label>
+    <input id="pianoCentre" type="range" min="48" max="84" step="1" value="72">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Register drift <b><span id="pianoSpreadVal">55</span>%</b></label>
+    <input id="pianoSpread" type="range" min="0" max="100" step="1" value="55">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Hold length <b><span id="pianoHoldVal">100</span>%</b></label>
+    <input id="pianoHold" type="range" min="30" max="250" step="5" value="100">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Low anchor <b><span id="pianoBassVal">10</span>%</b></label>
+    <input id="pianoBass" type="range" min="0" max="60" step="1" value="10">
+  </div>
+    </div></div>
+  </details>
+
+  <details class="grp">
+    <summary>Ambience</summary>
+    <div class="wrap"><div class="body">
+  <div class="ctl">
+    <label>Ambience <b><span id="ambOnVal">on</span></b></label>
+    <div class="row">
+      <button id="amOn" class="on">On</button>
+      <button id="amOff">Off</button>
+    </div>
+  </div>
+  <div class="ctl amb-ctl">
+    <label>Level <b><span id="ambVolVal">50</span>%</b></label>
+    <input id="ambVol" type="range" min="0" max="100" step="1" value="50">
+  </div>
+  <div class="ctl amb-ctl">
+    <label>Time in one place <b><span id="ambDwellVal">4</span> min</b></label>
+    <input id="ambDwell" type="range" min="1" max="20" step="1" value="4">
+  </div>
+  <div class="ctl amb-ctl">
+    <label>Crossfade <b><span id="ambXfadeVal">14</span>s</b></label>
+    <input id="ambXfade" type="range" min="2" max="40" step="1" value="14">
+  </div>
+  <div class="ctl amb-ctl">
+    <label>Children <b><span id="ambKidsVal">50</span>%</b></label>
+    <input id="ambKids" type="range" min="0" max="100" step="1" value="50">
+  </div>
+  <div class="ctl amb-ctl">
+    <label>Children level <b><span id="ambKidLevelVal">22</span>%</b></label>
+    <input id="ambKidLevel" type="range" min="0" max="60" step="1" value="22">
   </div>
     </div></div>
   </details>
@@ -376,9 +606,14 @@
     <span>Dropped: <b id="drops">0</b></span>
     <span id="warn"></span>
     <div class="sep"></div>
-    <button id="copyParams" title="Copy the current settings to the clipboard">Copy parameters</button>
-    <button id="copyDiag" title="Copy frame timing diagnostics to the clipboard">Copy diagnostics</button>
-    <button id="resetWarn" title="Clear saved settings and show the warning again">Reset settings</button>
+    <!-- No title attributes in here. A native tooltip fires on a delay at
+         wherever the cursor happens to be when the delay elapses, so hovering
+         one of these and then closing the drawer pops the tooltip up in the
+         middle of the field, over a button that is no longer on screen. The
+         labels already say what these do. -->
+    <button id="copyParams">Copy parameters</button>
+    <button id="copyDiag">Copy diagnostics</button>
+    <button id="resetWarn">Reset settings</button>
   </div>
 </div>
 

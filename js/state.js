@@ -19,7 +19,7 @@ export const S = {
 
   // ---------- strobe ----------
   freq: 7.5, depth: 0.80, bright: 1.0, wave: 'square', duty: 0.5,
-  rgb: [127, 178, 255],
+  rgb: [212, 0, 255],
   fieldShape: 'full',
   running: false,
 
@@ -54,7 +54,7 @@ export const S = {
   ringBrightVar: 0.55, ringBrightPeriod: 10, ringBrightPhase: 0.5, effRingBright: 0.70,
 
   // ---------- tunnel and edge ----------
-  ringSpeedMul: 0.5, edgeCount: 60, edgeSize: 6, trailMul: 1, ringFade: 0.55,
+  ringSpeedMul: 0.5, edgeCount: 60, edgeSize: 6, trailMul: 1, ringFade: 0.55, ringThick: 3, ringThickVar: 1,
   edgeSpeedMul: 4, edgeDir: 'both',
   // Edge speed and size get the same dip-from-the-top variance the strobe uses,
   // each on its own accumulator and started at a different phase so the two
@@ -64,11 +64,11 @@ export const S = {
 
   rings: [], particles: [], lastRingEmit: -1,
 
-  // ---------- colour ----------
+  // ---------- color ----------
   // Hue wanders via a damped random walk on its velocity rather than on the hue
   // itself, which gives an organic drift instead of a jitter.
-  colorWalk: 0,
-  colorMode: 'single', hue: 0, hueSat: 0.6, hueLight: 0.75, hueVel: 0,
+  colorWalk: 1,
+  colorMode: 'rotating', hue: 0, hueSat: 0.6, hueLight: 0.75, hueVel: 0,
   perElementColor: false,
   cornerHue: [0, 0.25, 0.5, 0.75], cornerHv: [0, 0, 0, 0],
   walkPeriod: 60,
@@ -92,13 +92,62 @@ export const S = {
   harmSpread: 0.7, harmPanRate: 0.45, harmReverb: 0.35,
   shimDepth: 0.57, shimRate: 0.12,
   clickModDepth: 0.55, clickModPeriod: 26,
-  biDepth: 0, biPeriod: 1.0, biHardSwitch: true,
-  clickReverb: 0.61, clickRevTime: 0.5,
+  // Bilateral alternation is off by default. It is a strong effect and a
+  // deliberate choice, not something a first visit should arrive already doing.
+  biOn: false, biDepth: 0.6, biPeriod: 1.0, biHardSwitch: true,
+  clickReverb: 0.53, clickRevTime: 0.5,
   pipMs: 8,
+  // The pip train has two shapes. 'click' is the damped sine that has always
+  // been here; 'chirp' is the delay-compensated sweep, which trades a longer
+  // transient for every cochlear region firing at the same instant.
+  clickMode: 'chirp',
+  // The corner button trims the pip in decibels rather than writing the level
+  // fader, so 'normal' always means whatever the fader says and the user's own
+  // setting survives a trip through loud and back.
+  pipTrimDb: 0,
+  chirpLowHz: 150, chirpHighHz: 6000, chirpComp: 1, chirpTilt: 1.3,
+  // The chirp keeps its own level and its own room. A sweep and a damped sine
+  // need different amounts of both, and dialling one should never reach into
+  // the other's settings.
+  chirpVol: 0, chirpReverb: 0.37, chirpRevTime: 0.5,
+  chirpModDepth: 0, chirpModPeriod: 26,
   audioEnabled: false, workletReady: false,
 
+  // ---------- words ----------
+  // Ticks come from the strobe by default so a word lands on the pulse instead
+  // of beside it. Frequency is the share of ticks that get a word, randomness
+  // is how much that share is a coin flip rather than a fixed slot, and dwell
+  // is the whole time a word is on screen with the fades happening inside it.
+  textLinked: true, textRateHz: 2,
+  textFreq: 0.5, textRandom: 1,
+  textDwellMs: 80, textFadeInMs: 0, textFadeOutMs: 0, textSize: 35,
+  textOpacity: 0.95, textOpacityVar: 0.1, textOpacityVarPeriod: 20, textOpacityPhase: 0,
+  textColorMode: 'system',    // white | system, where system follows the strobe hue
+  // Rest: after a word has been and gone, roll for whether to stop showing them
+  // for a while. Frequency is how often that roll says yes, duration is the base
+  // length of the pause, and variance widens the range the actual length is drawn
+  // from rather than making every pause longer.
+  textRestFreq: 0.04, textRestSec: 10, textRestVar: 0.7,
+  textThemes: {},             // empty means every theme is in play
+
+  // ---------- music ----------
+  // A generative felt piano whose root sits two octaves under the 40 Hz carrier,
+  // over a looping ocean cavern bed. Every default here is a measurement from
+  // four takes played by hand rather than a guess.
+  musicOn: true,
+  pianoVol: 0.9, pianoReverb: 1.0, pianoRevTime: 4.5,
+  pianoDensity: 1.0, pianoCentre: 72, pianoSpread: 0.55, pianoHold: 1.0,
+  pianoDyad: 46, pianoBloom: 18, pianoSingle: 26, pianoBass: 10,
+  pianoLifts: true,
+  bedVol: 0.55,
+
+  // ---------- ambience ----------
+  // One place at a time, a few minutes each, joined by long crossfades.
+  ambOn: true, ambVol: 0.5, ambDwell: 4, ambXfade: 14,
+  ambKids: 0.5, ambKidLevel: 0.22,
+
   // ---------- layers ----------
-  layers: { field: true, rings: true, corners: true, edge: true }
+  layers: { field: true, rings: true, corners: true, edge: true, text: true }
 };
 
 // convenience alias: the layer set is read in several hot paths
