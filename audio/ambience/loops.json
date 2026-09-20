@@ -1,0 +1,44 @@
+{
+  "loops": [
+    {
+      "name": "ocean-waves",
+      "seconds": 75.0
+    },
+    {
+      "name": "ocean-cliff",
+      "seconds": 60.0
+    },
+    {
+      "name": "ocean-surf",
+      "seconds": 75.0
+    },
+    {
+      "name": "forest-birds",
+      "seconds": 60.0
+    },
+    {
+      "name": "forest-wind",
+      "seconds": 60.0
+    },
+    {
+      "name": "forest-morning",
+      "seconds": 75.0
+    },
+    {
+      "name": "night-crickets",
+      "seconds": 55.0
+    },
+    {
+      "name": "creek",
+      "seconds": 60.0
+    },
+    {
+      "name": "kids-beach",
+      "seconds": 60.0
+    },
+    {
+      "name": "kids-playground",
+      "seconds": 60.0
+    }
+  ]
+}
