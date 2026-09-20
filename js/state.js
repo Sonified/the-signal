@@ -139,7 +139,7 @@ export const S = {
   pianoDensity: 1.0, pianoCentre: 72, pianoSpread: 0.55, pianoHold: 1.0,
   pianoDyad: 46, pianoBloom: 18, pianoSingle: 26, pianoBass: 10,
   pianoLifts: true,
-  bedVol: 0.55,
+  bedVol: 0.30,
 
   // ---------- ambience ----------
   // One place at a time, a few minutes each, joined by long crossfades.
