@@ -173,9 +173,59 @@ export function toggle() {
   syncTransport();
 }
 
+// Full screen answers to three different vocabularies. Chrome, Firefox and
+// desktop Safari take the standard names; iPadOS Safari only answers to the
+// webkit-prefixed ones; iPhone Safari has no element full-screen API at all.
+// The old call was a single optional-chained `requestFullscreen?.()`, so on
+// every one of those phones the button quietly did nothing and read as broken
+// rather than as unavailable.
+const FS_REQUEST = ['requestFullscreen', 'webkitRequestFullscreen', 'webkitRequestFullScreen'];
+const FS_EXIT    = ['exitFullscreen', 'webkitExitFullscreen', 'webkitCancelFullScreen'];
+
+export function fsElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+export function fullscreenAvailable() {
+  const el = document.documentElement;
+  if (!FS_REQUEST.some(m => typeof el[m] === 'function')) return false;
+  // `false` here is a real refusal (a sandboxed frame, a permissions policy);
+  // undefined just means the browser never shipped the standard flag.
+  const flag = document.fullscreenEnabled ?? document.webkitFullscreenEnabled;
+  return flag !== false;
+}
+
+// A home-screen launch already runs without browser chrome, so the field is
+// full screen before the button is ever pressed and there is nothing to toggle.
+export function isStandalone() {
+  return navigator.standalone === true ||
+         !!window.matchMedia?.('(display-mode: standalone)').matches ||
+         !!window.matchMedia?.('(display-mode: fullscreen)').matches;
+}
+
+export const isIOS =
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  // iPadOS reports itself as a Mac; the touch points give it away.
+  (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+// Returns false when the browser has no way to do this, so the caller can say
+// so instead of leaving a dead control.
 export function toggleFullscreen() {
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-  else document.exitFullscreen?.();
+  if (!fullscreenAvailable()) return false;
+  const el = document.documentElement;
+  try {
+    if (!fsElement()) {
+      const m = FS_REQUEST.find(n => typeof el[n] === 'function');
+      // The standard call returns a promise that rejects when the gesture has
+      // expired; the prefixed one returns nothing and takes no options.
+      const r = m === 'requestFullscreen' ? el[m]({ navigationUI: 'hide' }) : el[m]();
+      Promise.resolve(r).catch(() => {});
+    } else {
+      const m = FS_EXIT.find(n => typeof document[n] === 'function');
+      if (m) Promise.resolve(document[m]()).catch(() => {});
+    }
+  } catch { return false; }
+  return true;
 }
 
 export function togglePanel(force) {
@@ -893,13 +943,36 @@ export function initUI() {
 
   cv.addEventListener('click', toggle);
 
-  $('fsBtn').onclick = e => { e.stopPropagation(); toggleFullscreen(); $('fsBtn').blur(); };
-  document.addEventListener('fullscreenchange', () => {
-    const on = !!document.fullscreenElement;
+  const fsBtn = $('fsBtn');
+
+  // A home-screen launch is already chromeless, so the control has no job left
+  // and is taken out of the corner row rather than sitting there inert.
+  if (isStandalone()) fsBtn.hidden = true;
+  else if (!fullscreenAvailable()) {
+    // Kept clickable on purpose. A button that explains why it cannot do the
+    // thing is better than one that is hidden (where did it go) or one that is
+    // pressed and answers with nothing, which is what this was doing.
+    fsBtn.classList.add('unavailable');
+    fsBtn.title = isIOS
+      ? 'Full screen is not available in iPhone Safari \u2014 add to Home Screen instead'
+      : 'Full screen is not available in this browser';
+  }
+
+  fsBtn.onclick = e => {
+    e.stopPropagation();
+    if (!toggleFullscreen()) showFsHint(fsBtn);
+    fsBtn.blur();
+  };
+
+  function syncFsBtn() {
+    const on = !!fsElement();
     document.body.classList.toggle('fs', on);
-    $('fsBtn').title = on ? 'Exit full screen (F)' : 'Full screen (F)';
+    fsBtn.title = on ? 'Exit full screen (F)' : 'Full screen (F)';
     setTimeout(resize, 60);
-  });
+  }
+  // iPadOS Safari fires only the prefixed event, so both are listened for.
+  document.addEventListener('fullscreenchange', syncFsBtn);
+  document.addEventListener('webkitfullscreenchange', syncFsBtn);
 
   const burger = $('burger');
 
@@ -1005,8 +1078,27 @@ export function initUI() {
     tip.style.left = Math.round(r.left) + 'px';
     tip.style.top  = Math.round(r.top - tip.offsetHeight - 8) + 'px';
   }
-  function hideTip() { tipFor = null; tip.classList.remove('show'); }
+  function hideTip() { tipFor = null; tip.classList.remove('show'); tip.classList.remove('wide'); }
   window.addEventListener('scroll', hideTip, true);
+
+  // The one tooltip that has to survive a tap rather than a hover, and the one
+  // long enough to need wrapping, so it is clamped into the viewport instead of
+  // running off the right edge from a button that sits in the corner.
+  let fsHintTimer = null;
+  function showFsHint(el) {
+    tipFor = el;
+    tip.textContent = isIOS
+      ? 'iPhone Safari has no full-screen mode. Tap Share, then \u201cAdd to Home Screen\u201d \u2014 opening it from there runs it full screen.'
+      : 'This browser does not offer full screen.';
+    tip.classList.add('show', 'wide');
+    const r = el.getBoundingClientRect();
+    const w = tip.offsetWidth;
+    const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+    tip.style.left = Math.round(left) + 'px';
+    tip.style.top  = Math.round(Math.max(8, r.top - tip.offsetHeight - 8)) + 'px';
+    clearTimeout(fsHintTimer);
+    fsHintTimer = setTimeout(hideTip, 6000);
+  }
 
   const amRow = $('amRate').closest('.ctl');
   amRow.addEventListener('pointerenter', () => {

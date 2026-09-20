@@ -59,6 +59,12 @@
     opacity:0; transition:opacity .09s ease;
   }
   #tip.show { opacity:1; }
+  /* The full-screen explanation is a sentence, not a label, so it wraps and is
+     clamped in JS to stay inside a phone screen. */
+  #tip.wide {
+    white-space:normal; max-width:min(78vw, 320px);
+    line-height:1.45; padding:9px 11px;
+  }
 
   /* A disabled control should read as unavailable, not as broken */
   #panel input[type=range]:disabled { opacity:.35; cursor:not-allowed; }
@@ -263,6 +269,11 @@
   #fsBtn:hover { opacity:1; color:var(--ui-text); border-color:#3a4551; background:rgba(22,28,35,.85); }
   #fsBtn svg { width:17px; height:17px; display:block; }
   #fsBtn .ico-contract { display:none; }
+  /* iPhone Safari ships no element full-screen API. The button stays so it can
+     explain itself when tapped, but reads as unavailable rather than as live. */
+  #fsBtn.unavailable { opacity:.32; }
+  #fsBtn.unavailable:hover { opacity:.5; }
+
   body.fs #fsBtn .ico-expand { display:none; }
   body.fs #fsBtn .ico-contract { display:block; }
 
