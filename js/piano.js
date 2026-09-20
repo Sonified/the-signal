@@ -20,7 +20,8 @@ const DEG_W = { 0: 22, 2: 7, 4: 10, 7: 11, 11: 10 };
 
 const notes = new Map();
 const lifts = [];
-let bed = null, bedSrc = null, bedGain = null, bedMeta = null;
+let bed = null, bedGain = null, bedMeta = null;
+let bedTakes = [], bedNextAt = 0, bedTimer = null, bedRunning = false;
 let ready = false, loading = null;
 let dry = null, verb = null, wet = null;
 let running = false, clock = 0, elapsed = 0, drift = 0, lastDyad = 0, timer = null;
@@ -200,30 +201,103 @@ function step() {
   timer = setTimeout(step, 250);
 }
 
-// The bed plays its fade-in once and then loops the stable middle for as long
-// as the music is on. Web Audio's loop is a hard splice with no crossfade, so
-// the crossfade was baked INSIDE the looped region: the splice lands on
-// material that already matches itself.
+// The bed plays its intro once and then loops the stable middle for as long as
+// the music is on.
+//
+// It used to do that with AudioBufferSourceNode.loop, whose splice is exactly
+// one sample wide: the last sample before loopEnd is followed immediately by
+// the sample at loopStart with nothing in between. Measured on this bed through
+// the same decoder the page uses, that step is 0.24 full scale on the right
+// channel, and a 50 ms window either side of the splice correlates at -0.04.
+// Uncorrelated material, spliced instantly, at roughly double the level going
+// in as coming out. That is the click, and an earlier comment here claiming the
+// crossfade had been baked into the looped region was simply not true of the
+// file that shipped.
+//
+// The tail cannot be made to match the head without re-cutting the master, so
+// the crossfade happens at playback instead. Each pass through the body is its
+// own source, and consecutive passes overlap by BED_XFADE seconds.
+const BED_XFADE = 3.0;
+// A hidden tab throttles timers hard, so the scheduler runs far enough ahead
+// that even a minute between wake-ups still lands the next pass on time.
+const BED_LOOKAHEAD = 90;
+
+// Equal power, not linear. The two sides of this splice are uncorrelated, so
+// their amplitudes do not sum -- their powers do, and linear ramps would leave
+// an audible trough in the middle of every crossfade.
+const XF_N = 256;
+const xfIn  = new Float32Array(XF_N);
+const xfOut = new Float32Array(XF_N);
+for (let i = 0; i < XF_N; i++) {
+  const t = i / (XF_N - 1);
+  xfIn[i]  = Math.sin(t * Math.PI / 2);
+  xfOut[i] = Math.cos(t * Math.PI / 2);
+}
+
+// One pass over the buffer, fading out into whatever is scheduled after it.
+// Returns the time the next pass should start, which is one crossfade early so
+// the two overlap.
+function bedTake(startAt, offset, playLen, xf, fadeIn) {
+  const ctx = getContext();
+  const s = ctx.createBufferSource();
+  s.buffer = bed;
+  const g = ctx.createGain();
+  g.gain.value = fadeIn ? 0 : 1;
+  if (fadeIn) g.gain.setValueCurveAtTime(xfIn, startAt, xf);
+  g.gain.setValueCurveAtTime(xfOut, startAt + playLen - xf, xf);
+  s.connect(g); g.connect(bedGain);
+  s.start(startAt, offset, playLen);
+  s.stop(startAt + playLen);
+  s.onended = () => {
+    try { g.disconnect(); } catch (e) {}
+    bedTakes = bedTakes.filter(t => t !== s);
+  };
+  bedTakes.push(s);
+  return startAt + playLen - xf;
+}
+
+function bedPump() {
+  const ctx = getContext();
+  if (!bedRunning || !ctx) return;
+  const loopLen = bedMeta.loopEnd - bedMeta.loopStart;
+  // A crossfade longer than half the loop would overlap its own two ends and
+  // leave setValueCurveAtTime with two curves fighting over the same range.
+  const xf = Math.min(BED_XFADE, loopLen / 2 - 0.01);
+  while (bedNextAt < ctx.currentTime + BED_LOOKAHEAD) {
+    bedNextAt = bedTake(bedNextAt, bedMeta.loopStart, loopLen, xf, true);
+  }
+}
+
 function bedOn() {
   const ctx = getContext();
-  if (!bed || !bedMeta || bedSrc) return;
+  if (!bed || !bedMeta || bedRunning) return;
+  bedRunning = true;
   bedGain = ctx.createGain();
   bedGain.gain.value = 0;
-  bedSrc = ctx.createBufferSource();
-  bedSrc.buffer = bed;
-  bedSrc.loop = true;
-  bedSrc.loopStart = bedMeta.loopStart;
-  bedSrc.loopEnd   = bedMeta.loopEnd;
-  bedSrc.connect(bedGain); bedGain.connect(dry); bedGain.connect(verb);
-  bedSrc.start();
+  bedGain.connect(dry); bedGain.connect(verb);
+
+  const loopLen = bedMeta.loopEnd - bedMeta.loopStart;
+  const xf = Math.min(BED_XFADE, loopLen / 2 - 0.01);
+  // The intro is played once, whole, from the top; it needs no fade in of its
+  // own because the master gain below is already opening.
+  bedNextAt = bedTake(ctx.currentTime + 0.05, 0, bedMeta.loopEnd, xf, false);
+  bedPump();
+  bedTimer = setInterval(bedPump, 10000);
+
   bedGain.gain.setTargetAtTime(S.bedVol, ctx.currentTime, 1.2);
 }
+
 function bedOff() {
-  if (!bedSrc) return;
-  const ctx = getContext(), g = bedGain, s = bedSrc;
-  bedSrc = null; bedGain = null;
+  if (!bedRunning) return;
+  const ctx = getContext(), g = bedGain, takes = bedTakes;
+  bedRunning = false;
+  clearInterval(bedTimer); bedTimer = null;
+  bedTakes = []; bedGain = null; bedNextAt = 0;
   g.gain.setTargetAtTime(0, ctx.currentTime, 0.6);
-  setTimeout(() => { try { s.stop(); } catch (e) {} }, 2600);
+  setTimeout(() => {
+    for (const s of takes) { try { s.onended = null; s.stop(); } catch (e) {} }
+    try { g.disconnect(); } catch (e) {}
+  }, 2600);
 }
 export function applyBedVol() {
   if (bedGain) bedGain.gain.setTargetAtTime(S.bedVol, getContext().currentTime, 0.2);
