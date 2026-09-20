@@ -143,7 +143,7 @@ export const S = {
 
   // ---------- ambience ----------
   // One place at a time, a few minutes each, joined by long crossfades.
-  ambOn: true, ambVol: 0.5, ambDwell: 4, ambXfade: 14,
+  ambOn: true, ambVol: 0.18, ambDwell: 4, ambXfade: 14,
   ambKids: 0.5, ambKidLevel: 0.22,
 
   // ---------- layers ----------
