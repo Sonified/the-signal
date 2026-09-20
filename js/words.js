@@ -295,7 +295,6 @@ export const WORDS = [
   ['cedar', 'nature'],
   ['maple', 'nature'],
   ['aspen', 'nature'],
-  ['redwood', 'nature'],
   ['evergreen', 'nature', 'time'],
   ['branch', 'nature'],
   ['branches', 'nature'],
