@@ -3,6 +3,7 @@
 // from a single sample-accurate phase accumulator (see worklet.js).
 import { S } from './state.js';
 import { $ } from './dom.js';
+import { buildChirp } from './chirp.js';
 
 let audioCtx = null, volGain = null, node = null;
 let harmDry = null, harmWet = null, convolver = null, clickWet = null;
@@ -18,6 +19,9 @@ window.__WORKLET_URL = WORKLET_URL;   // exposed so tests can render it offline
 export const isDeviceWarm = () => deviceWarm;
 export const hasNode = () => !!node;
 export const getContext = () => audioCtx;
+// The piano hangs off the same master gain the rest of the audio uses, so the
+// volume slider and the transport mute reach it without any extra wiring.
+export const getMaster = () => volGain;
 
 // A decaying noise burst is a perfectly serviceable reverb impulse, and it
 // costs nothing to generate compared with shipping an audio file.
@@ -36,11 +40,21 @@ function makeImpulse(seconds, decay) {
 // Rebuilding an impulse means filling up to 8 seconds of stereo noise, so the
 // slider is debounced. Swapping the buffer mid-tail truncates whatever is
 // still ringing, which is unavoidable and brief.
+// The active pip shape owns its own level and room. Everything downstream reads
+// through these three, so switching mode swaps the whole set at once and no
+// chirp control can write into a click value or the reverse.
+const trimGain = () => Math.pow(10, S.pipTrimDb / 20);
+export const pipVol     = () => Math.min(1, (S.clickMode === 'chirp' ? S.chirpVol : S.clickVol) * trimGain());
+export const pipReverb  = () => S.clickMode === 'chirp' ? S.chirpReverb  : S.clickReverb;
+export const pipRevTime = () => S.clickMode === 'chirp' ? S.chirpRevTime : S.clickRevTime;
+export const pipModDepth  = () => S.clickMode === 'chirp' ? S.chirpModDepth  : S.clickModDepth;
+export const pipModPeriod = () => S.clickMode === 'chirp' ? S.chirpModPeriod : S.clickModPeriod;
+
 export function rebuildClickIR() {
   if (!clickConv) return;
   clearTimeout(irTimer);
   irTimer = setTimeout(() => {
-    if (clickConv) clickConv.buffer = makeImpulse(S.clickRevTime, 2.5);
+    if (clickConv) clickConv.buffer = makeImpulse(pipRevTime(), 2.5);
   }, 140);
 }
 
@@ -50,7 +64,7 @@ export function applyReverbMix() {
   // equal-power crossfade so the total stays level as reverb comes up
   harmDry.gain.setTargetAtTime(Math.cos(S.harmReverb * Math.PI / 2), t, 0.05);
   harmWet.gain.setTargetAtTime(Math.sin(S.harmReverb * Math.PI / 2) * 0.9, t, 0.05);
-  if (clickWet) clickWet.gain.setTargetAtTime(S.clickReverb * 0.9, t, 0.05);
+  if (clickWet) clickWet.gain.setTargetAtTime(pipReverb() * 0.9, t, 0.05);
 }
 
 // Deliberately does not touch harmLevel. That param is owned by rampLevel,
@@ -61,9 +75,9 @@ export function applyHarmonics() {
   setParam('harmBright', 3.2 - S.harmBright * 3.0, 0.02);   // slider is brightness; the worklet wants rolloff
   setParam('harmSpread', S.harmSpread,  0.05);
   setParam('harmPanRate',S.harmPanRate, 0.05);
-  setParam('clickModDepth', S.clickModDepth, 0.05);
-  setParam('clickModRate',  1 / S.clickModPeriod, 0.05);   // control is seconds per cycle
-  setParam('biDepth', S.biDepth, 0.05);
+  setParam('clickModDepth', pipModDepth(), 0.05);
+  setParam('clickModRate',  1 / pipModPeriod(), 0.05);   // control is seconds per cycle
+  setParam('biDepth', S.biOn ? S.biDepth : 0, 0.05);
   setParam('biRate',  1 / S.biPeriod, 0.05);               // one full left-right pass
   setParam('biHard',  S.biHardSwitch ? 1 : 0, 0.001);
   setParam('shimDepth',  S.shimDepth,   0.05);
@@ -84,6 +98,20 @@ function rampVol(target, dur, startAt) {
   g.setValueAtTime(g.value, now);
   if (t > now) g.setValueAtTime(g.value, t);
   g.linearRampToValueAtTime(target, t + dur);
+}
+
+// Rebuilt whenever a chirp control moves, then shipped to the worklet. Cheap:
+// a few hundred samples of trig on a control change, never in the audio thread.
+export function refreshChirp() {
+  if (!node || !audioCtx) return;
+  const buf = buildChirp({
+    sampleRate: audioCtx.sampleRate,
+    lowHz:  S.chirpLowHz,
+    highHz: S.chirpHighHz,
+    comp:   S.chirpComp,
+    tilt:   S.chirpTilt
+  });
+  node.port.postMessage({ chirp: buf }, [buf.buffer]);
 }
 
 export function setParam(name, value, glide = 0.02) {
@@ -110,15 +138,48 @@ function rampLevel(name, target, dur = 0.25, lead = 0) {
 
 const levelTargets = {
   toneLevel:  () => S.audioEnabled && S.toneOn  ? S.toneVol  : 0,
-  clickLevel: () => S.audioEnabled && S.clickOn ? S.clickVol : 0,
-  harmLevel:  () => S.audioEnabled && S.harmOn  ? S.harmVol  : 0,
-  clickSend:  () => S.audioEnabled && S.clickOn ? S.clickVol * S.clickReverb : 0
+  clickLevel: () => S.audioEnabled && S.clickOn ? pipVol() : 0,
+  // Harmonics are the tone's own overtones, not a source of their own. With the
+  // sine tone off they have nothing to be harmonics of, so they follow it down.
+  // The harmonics switch keeps its own state and comes back with the tone.
+  harmLevel:  () => S.audioEnabled && S.harmOn && S.toneOn ? S.harmVol : 0,
+  clickSend:  () => S.audioEnabled && S.clickOn ? pipVol() * pipReverb() : 0
 };
 
 // Ramps one level only. Touching a slider used to re-ramp every level at once,
 // which made the whole mix lurch whenever any one of them moved.
 export function applyLevel(name, dur = 0.12, lead = 0) {
   rampLevel(name, levelTargets[name](), dur, lead);
+}
+
+// Switching the pip shape has to pass through silence.
+//
+// chirpOn is a step and the level is a ramp, so flipping the shape first left
+// the first chirp sounding at the CLICK's level, which is around 20 dB louder.
+// One very loud chirp, then the ramp caught up. At 7.5 Hz a cycle is 133 ms and
+// the level ramp is 120 ms, so the overshoot lands square on the first transient
+// every time.
+//
+// Dropping to silence, swapping at the bottom and coming back up cannot
+// overshoot in either direction. It costs about 100 ms, inside which nothing
+// was going to sound anyway.
+export function setPipShape(mode, onSwapped) {
+  const swap = () => {
+    S.clickMode = mode;
+    setParam('chirpOn', mode === 'chirp' ? 1 : 0, 0.001);
+    if (mode === 'chirp') refreshChirp();
+    applyReverbMix();
+    if (clickConv) clickConv.buffer = makeImpulse(pipRevTime(), 2.5);
+    setParam('clickModDepth', pipModDepth(), 0.05);
+    setParam('clickModRate',  1 / pipModPeriod(), 0.05);
+    if (onSwapped) onSwapped();
+    applyLevel('clickLevel', 0.07);
+    applyLevel('clickSend',  0.07);
+  };
+  if (!node || !audioCtx) { S.clickMode = mode; if (onSwapped) onSwapped(); return; }
+  rampLevel('clickLevel', 0, 0.04);
+  rampLevel('clickSend',  0, 0.04);
+  setTimeout(swap, 55);
 }
 
 export function applyAudioShape(lead = 0) {
@@ -180,7 +241,7 @@ export function ensureAudioGraph() {
     // pips get their own send into the same room, so the dry pip stays sharp
     clickWet = audioCtx.createGain();
     clickConv = audioCtx.createConvolver();
-    clickConv.buffer = makeImpulse(S.clickRevTime, 2.5);
+    clickConv.buffer = makeImpulse(pipRevTime(), 2.5);
     node.connect(clickConv, 2);
     clickConv.connect(clickWet);
     clickWet.connect(volGain);
@@ -195,6 +256,8 @@ export function ensureAudioGraph() {
     setParam('pipMs',   S.pipMs,     0.001);
 
     S.workletReady = true;
+    setParam('chirpOn', S.clickMode === 'chirp' ? 1 : 0, 0.001);
+    refreshChirp();
   })().catch(e => {
     console.warn('audio graph failed:', e);
     graphPromise = null;
@@ -208,23 +271,49 @@ export function ensureAudioGraph() {
 export async function warmDevice() {
   // nothing to wake for if audio is not in play
   if (!$('lAudio').checked && !S.audioEnabled) return;
-  await ensureAudioGraph();
-  if (!audioCtx || deviceWarm) return;
-  deviceWarm = true;
-  if (audioCtx.state === 'suspended') {
-    try { await audioCtx.resume(); } catch (e) { deviceWarm = false; }
+  if (deviceWarm) return;
+
+  // Resume FIRST, synchronously, while the gesture that called us is still the
+  // browser's current user activation. Awaiting the graph before resuming spends
+  // that activation: on a cold cache the worklet module takes long enough to
+  // fetch and compile that the resume lands outside the gesture, Chrome leaves
+  // the context suspended without throwing, and the page is silent for good.
+  // That is why this only ever showed up in a fresh profile.
+  if (audioCtx && audioCtx.state === 'suspended') {
+    try { await audioCtx.resume(); } catch (e) {}
   }
+  await ensureAudioGraph();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') {
+    try { await audioCtx.resume(); } catch (e) {}
+  }
+  // Truth, not intent. A resume that quietly failed has to leave this false so
+  // the next gesture tries again instead of assuming the device is awake.
+  deviceWarm = audioCtx.state === 'running';
 }
 
-export async function audioOn() {
+// Several gestures can race to start audio: the gate click, the first key, and
+// the start toggle itself. Without this they each schedule their own ramp and
+// the shortest one wins, which is how a two second fade turned into a third of
+// a second on a cold load. One start at a time; the rest await the same result.
+let startPromise = null;
+export function audioOn() {
+  if (!startPromise) startPromise = startAudio().finally(() => { startPromise = null; });
+  return startPromise;
+}
+
+async function startAudio() {
   S.audioEnabled = true;
   await warmDevice();
+  await ensureAudioGraph();          // warmDevice can bail before the graph exists
   if (!S.workletReady) return;
   const firstStart = !audioHasPlayed;
   audioHasPlayed = true;
   const lead = firstStart ? 0.9 : 0;
   applyAudioShape(lead);
-  rampVol(S.running ? S.volume : 0, firstStart ? 0.8 : 0.35, audioCtx.currentTime + lead);
+  // The first fade matches the visual one: the field and the sound arrive
+  // together over two seconds rather than the sound landing first.
+  rampVol(S.running ? S.volume : 0, firstStart ? 2.0 : 0.35, audioCtx.currentTime + lead);
 }
 
 // Deliberately keeps the context and the worklet alive. Closing and rebuilding
@@ -238,7 +327,19 @@ export function audioOff() {
 }
 
 // spacebar pauses the whole experience, sound included
+let hasRisen = false;
 export function applyAudioGain() {
-  if (!audioHasPlayed) return;    // first start is scheduled by audioOn, with its lead-in
-  rampVol(S.running ? S.volume : 0, 0.12);
+  // If audio has somehow never started, start it here rather than going quiet.
+  // This is the only place that knows the session is actually running, so it is
+  // the right place to be self-healing about it.
+  if (!audioHasPlayed) {
+    if (S.running && $('lAudio').checked) audioOn();
+    return;
+  }
+  // The very first time the volume actually comes up it takes the same two
+  // seconds the field does. After that the space bar is an instant stop and
+  // start, which is what a pause should feel like.
+  const dur = (S.running && !hasRisen) ? 2.0 : 0.12;
+  if (S.running) hasRisen = true;
+  rampVol(S.running ? S.volume : 0, dur);
 }

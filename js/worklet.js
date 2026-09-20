@@ -18,6 +18,7 @@ class GenusProcessor extends AudioWorkletProcessor {
       { name:'rate',       defaultValue:40,  minValue:0.05, maxValue:200,   automationRate:'k-rate' },
       { name:'carrier',    defaultValue:200, minValue:20,   maxValue:20000, automationRate:'k-rate' },
       { name:'pipMs',      defaultValue:5,   minValue:0.1,  maxValue:100,   automationRate:'k-rate' },
+      { name:'chirpOn',    defaultValue:0,   minValue:0,    maxValue:1,     automationRate:'k-rate' },
       { name:'toneLevel',  defaultValue:0,   minValue:0,    maxValue:1,     automationRate:'a-rate' },
       { name:'clickLevel', defaultValue:0,   minValue:0,    maxValue:1,     automationRate:'a-rate' },
       { name:'clickSend',  defaultValue:0,   minValue:0,    maxValue:1,     automationRate:'a-rate' },
@@ -38,6 +39,14 @@ class GenusProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.phase = 0; this.cphase = 0; this.cmodPhase = 0; this.biPhase = 0;
+    // The chirp is a fixed waveform for a given set of controls, so it is built
+    // once on the main thread and shipped over rather than being recomputed
+    // per sample here. Playing it is then a table read, which is cheaper than
+    // the damped sine the pip does and immune to drift.
+    this.chirp = null;
+    this.port.onmessage = e => {
+      if (e.data && e.data.chirp) this.chirp = e.data.chirp;
+    };
     // Every harmonic gets its own pan phase and its own slightly different pan
     // rate, so they never settle into a single synchronised sweep.
     this.MAXH = 16;
@@ -81,6 +90,9 @@ class GenusProcessor extends AudioWorkletProcessor {
     const biDepth = p.biDepth[0];
     const biInc   = p.biRate[0] / sampleRate;
     const biHard  = p.biHard[0] > 0.5;
+    const chirp = this.chirp;
+    const useChirp = p.chirpOn[0] > 0.5 && chirp && chirp.length > 0;
+    const chirpLen = chirp ? chirp.length : 0;
     const cmodDepth = p.clickModDepth[0];
     const cmodInc   = p.clickModRate[0] / sampleRate;
     const shimDepth = p.shimDepth[0];
@@ -113,7 +125,10 @@ class GenusProcessor extends AudioWorkletProcessor {
       let pip = 0;
       if (cl > 0 || (cOut && (csN ? CS[i] : CS[0]) > 0)) {
         const n = this.phase / inc;                             // samples into the cycle
-        if (n < pipSamples) {
+        if (useChirp) {
+          const k = n | 0;
+          if (k < chirpLen) pip = chirp[k];
+        } else if (n < pipSamples) {
           const t = n / sampleRate;
           pip = Math.sin(TAU * carrier * t) * Math.exp(-t * decay);
         }

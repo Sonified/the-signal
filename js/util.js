@@ -47,3 +47,18 @@ export function shape(p) {
     default:         return .5 * (1 - Math.cos(2*Math.PI*p));
   }
 }
+
+// ---------- level taper ----------
+// Source levels are faders, not percentages. A linear 0-100 control spends most
+// of its travel in the top 6 dB and runs out of resolution exactly where these
+// stimuli want to live: a click at 3% has only two steps left beneath it, and
+// they are 3.5 and 9.5 dB apart. A decibel taper gives the whole range even
+// resolution, 0.6 dB per step across 60 dB, so quiet is a place you can actually
+// land on rather than fall off.
+export const LEVEL_RANGE_DB = 60;
+const K = LEVEL_RANGE_DB / 100 / 20;
+
+export const posToAmp = pos => pos <= 0 ? 0 : Math.pow(10, (pos - 100) * K);
+export const ampToPos = a => a <= 0 ? 0
+  : Math.max(0, Math.min(100, Math.round(100 + Math.log10(a) / K)));
+export const ampToDb = a => a <= 0 ? '-inf' : (20 * Math.log10(a)).toFixed(1);
