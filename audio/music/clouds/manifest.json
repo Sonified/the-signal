@@ -1,0 +1,46 @@
+{
+  "crossfadeSeconds": 3.0,
+  "note": "scale degrees of the mode as sustained pads; the layer plays one at a time and crossfades",
+  "clouds": [
+    {
+      "name": "1",
+      "file": "clouds-1",
+      "seconds": 20.0
+    },
+    {
+      "name": "2",
+      "file": "clouds-2",
+      "seconds": 20.0
+    },
+    {
+      "name": "3",
+      "file": "clouds-3",
+      "seconds": 20.0
+    },
+    {
+      "name": "5",
+      "file": "clouds-5",
+      "seconds": 20.0
+    },
+    {
+      "name": "5below",
+      "file": "clouds-5below",
+      "seconds": 20.0
+    },
+    {
+      "name": "7",
+      "file": "clouds-7",
+      "seconds": 20.0
+    },
+    {
+      "name": "8",
+      "file": "clouds-8",
+      "seconds": 20.0
+    },
+    {
+      "name": "octbelow",
+      "file": "clouds-octbelow",
+      "seconds": 20.0
+    }
+  ]
+}

@@ -1,0 +1,324 @@
+{
+  "source": "The_Signal_Lekko_Tuned.wav",
+  "centsApplied": -30.0,
+  "gainApplied": 3.879,
+  "rootSoundingHz": 79.5,
+  "scaleDegrees": "1 2 3 5 7 8 (major 7)",
+  "notes": [
+    {
+      "file": "lekko-00.mp3",
+      "semitones": 0,
+      "sounding": "E2",
+      "written": "C2",
+      "inScale": true,
+      "seconds": 11.522,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-02.mp3",
+      "semitones": 2,
+      "sounding": "F#2",
+      "written": "D2",
+      "inScale": true,
+      "seconds": 13.484,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-04.mp3",
+      "semitones": 4,
+      "sounding": "G#2",
+      "written": "E2",
+      "inScale": true,
+      "seconds": 11.402,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-05.mp3",
+      "semitones": 5,
+      "sounding": "A2",
+      "written": "F2",
+      "inScale": false,
+      "seconds": 14.057,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-07.mp3",
+      "semitones": 7,
+      "sounding": "B2",
+      "written": "G2",
+      "inScale": true,
+      "seconds": 14.768,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-09.mp3",
+      "semitones": 9,
+      "sounding": "C#3",
+      "written": "A2",
+      "inScale": false,
+      "seconds": 12.935,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-11.mp3",
+      "semitones": 11,
+      "sounding": "D#3",
+      "written": "B2",
+      "inScale": true,
+      "seconds": 9.743,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-12.mp3",
+      "semitones": 12,
+      "sounding": "E3",
+      "written": "C3",
+      "inScale": true,
+      "seconds": 8.362,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-14.mp3",
+      "semitones": 14,
+      "sounding": "F#3",
+      "written": "D3",
+      "inScale": true,
+      "seconds": 4.012,
+      "levelTrim": 124
+    },
+    {
+      "file": "lekko-16.mp3",
+      "semitones": 16,
+      "sounding": "G#3",
+      "written": "E3",
+      "inScale": true,
+      "seconds": 5.875,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-17.mp3",
+      "semitones": 17,
+      "sounding": "A3",
+      "written": "F3",
+      "inScale": false,
+      "seconds": 5.58,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-19.mp3",
+      "semitones": 19,
+      "sounding": "B3",
+      "written": "G3",
+      "inScale": true,
+      "seconds": 9.321,
+      "levelTrim": 93
+    },
+    {
+      "file": "lekko-21.mp3",
+      "semitones": 21,
+      "sounding": "C#4",
+      "written": "A3",
+      "inScale": false,
+      "seconds": 9.266,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-23.mp3",
+      "semitones": 23,
+      "sounding": "D#4",
+      "written": "B3",
+      "inScale": true,
+      "seconds": 7.743,
+      "levelTrim": 74
+    },
+    {
+      "file": "lekko-24.mp3",
+      "semitones": 24,
+      "sounding": "E4",
+      "written": "C4",
+      "inScale": true,
+      "seconds": 7.037,
+      "levelTrim": 83
+    },
+    {
+      "file": "lekko-26.mp3",
+      "semitones": 26,
+      "sounding": "F#4",
+      "written": "D4",
+      "inScale": true,
+      "seconds": 7.403,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-28.mp3",
+      "semitones": 28,
+      "sounding": "G#4",
+      "written": "E4",
+      "inScale": true,
+      "seconds": 11.255,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-29.mp3",
+      "semitones": 29,
+      "sounding": "A4",
+      "written": "F4",
+      "inScale": false,
+      "seconds": 8.073,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-31.mp3",
+      "semitones": 31,
+      "sounding": "B4",
+      "written": "G4",
+      "inScale": true,
+      "seconds": 2.905,
+      "levelTrim": 131
+    },
+    {
+      "file": "lekko-33.mp3",
+      "semitones": 33,
+      "sounding": "C#5",
+      "written": "A4",
+      "inScale": false,
+      "seconds": 4.022,
+      "levelTrim": 100
+    },
+    {
+      "file": "lekko-35.mp3",
+      "semitones": 35,
+      "sounding": "D#5",
+      "written": "B4",
+      "inScale": true,
+      "seconds": 6.159,
+      "levelTrim": 39
+    },
+    {
+      "file": "lekko-36.mp3",
+      "semitones": 36,
+      "sounding": "E5",
+      "written": "C5",
+      "inScale": true,
+      "seconds": 3.205,
+      "levelTrim": 74
+    },
+    {
+      "file": "lekko-38.mp3",
+      "semitones": 38,
+      "sounding": "F#5",
+      "written": "D5",
+      "inScale": true,
+      "seconds": 1.987,
+      "levelTrim": 70
+    },
+    {
+      "file": "lekko-40.mp3",
+      "semitones": 40,
+      "sounding": "G#5",
+      "written": "E5",
+      "inScale": true,
+      "seconds": 3.454,
+      "levelTrim": 47
+    }
+  ],
+  "releases": [
+    {
+      "file": "releases/release-00.mp3",
+      "seconds": 0.827
+    },
+    {
+      "file": "releases/release-01.mp3",
+      "seconds": 0.904
+    },
+    {
+      "file": "releases/release-02.mp3",
+      "seconds": 0.604
+    },
+    {
+      "file": "releases/release-03.mp3",
+      "seconds": 1.0
+    },
+    {
+      "file": "releases/release-04.mp3",
+      "seconds": 0.873
+    },
+    {
+      "file": "releases/release-05.mp3",
+      "seconds": 0.563
+    },
+    {
+      "file": "releases/release-06.mp3",
+      "seconds": 0.609
+    },
+    {
+      "file": "releases/release-07.mp3",
+      "seconds": 0.772
+    },
+    {
+      "file": "releases/release-08.mp3",
+      "seconds": 0.797
+    },
+    {
+      "file": "releases/release-09.mp3",
+      "seconds": 0.746
+    },
+    {
+      "file": "releases/release-10.mp3",
+      "seconds": 0.706
+    },
+    {
+      "file": "releases/release-11.mp3",
+      "seconds": 0.772
+    },
+    {
+      "file": "releases/release-12.mp3",
+      "seconds": 0.711
+    },
+    {
+      "file": "releases/release-13.mp3",
+      "seconds": 0.609
+    },
+    {
+      "file": "releases/release-14.mp3",
+      "seconds": 0.761
+    },
+    {
+      "file": "releases/release-15.mp3",
+      "seconds": 0.914
+    },
+    {
+      "file": "releases/release-16.mp3",
+      "seconds": 0.624
+    },
+    {
+      "file": "releases/release-17.mp3",
+      "seconds": 0.878
+    }
+  ],
+  "encodings": {
+    "opus": {
+      "dir": "opus",
+      "ext": ".opus",
+      "bitrate": "160k VBR",
+      "sampleRate": 48000
+    },
+    "mp3": {
+      "dir": ".",
+      "ext": ".mp3",
+      "bitrate": "192k CBR",
+      "sampleRate": 44100
+    }
+  },
+  "levelTrimsBaked": {
+    "14": 124,
+    "19": 93,
+    "23": 74,
+    "24": 83,
+    "31": 131,
+    "35": 39,
+    "36": 74,
+    "38": 70,
+    "40": 47
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "file": "ocean-cavern",
+  "source": "Ocean_Cavern.wav",
+  "loopStart": 2.0,
+  "loopEnd": 28.5,
+  "gainApplied": 20.56,
+  "encodings": {
+    "opus": "96k VBR, 48 kHz",
+    "mp3": "128k CBR, 44.1 kHz"
+  },
+  "note": "plays the intro once, then loops between loopStart and loopEnd"
+}
