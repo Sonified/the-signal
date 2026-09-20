@@ -1,2 +1,14 @@
 .DS_Store
 node_modules/
+
+# Source audio. These are licensed Splice masters, 96 kHz and hundreds of
+# megabytes, and this repo is public on two counts that both matter: the licence
+# does not permit redistributing the raw samples, and git keeps every version of
+# a binary forever. Only the encoded, trimmed derivatives are committed.
+audio/source/
+*.wav
+*.aif
+*.aiff
+
+# the Ocean Cavern master lives with the other sources, ignored with them
+audio/source/Ocean_Cavern.wav

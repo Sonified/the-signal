@@ -38,7 +38,7 @@ This tool tries to make that posture easier to fall into, through the arrangemen
 
 **The corner glows pass the pulse around.** Each of the four corners runs a quarter-cycle behind the last, so the beat travels around the periphery rather than blinking everywhere at once. Attention follows that circuit without being asked to.
 
-**Nothing holds still.** Almost every parameter has a slow variance control of its own — depth, brightness, ring brightness, edge speed, edge size, colour, and the frequency itself all breathe over cycles measured in seconds, each on an independent clock. This is deliberate. A perfectly constant stimulus habituates: the response attenuates and the mind starts to wander from something that has stopped changing. Slow, uncorrelated modulation keeps the field alive enough to remain interesting without becoming demanding. The intent is to sustain attention without capturing it, since capture is the opposite of what open focus is for.
+**Nothing holds still.** Almost every parameter has a slow variance control of its own — depth, brightness, ring brightness, edge speed, edge size, color, and the frequency itself all breathe over cycles measured in seconds, each on an independent clock. This is deliberate. A perfectly constant stimulus habituates: the response attenuates and the mind starts to wander from something that has stopped changing. Slow, uncorrelated modulation keeps the field alive enough to remain interesting without becoming demanding. The intent is to sustain attention without capturing it, since capture is the opposite of what open focus is for.
 
 ---
 
