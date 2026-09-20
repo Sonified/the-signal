@@ -19,6 +19,63 @@ export const PRESETS = {
     harmonics:false,          // a pad would light the dark frames and kill the contrast
     layers:{ lField:true, lRings:false, lCorners:false, lEdge:false, lAudio:true }
   },
+  // Focused and alert, but grounded. The only preset meant to be used before
+  // work rather than instead of it, so it is built on two timescales doing two
+  // different jobs.
+  //
+  // The fast one is 12 Hz: the top of alpha, the bottom of SMR, and
+  // deliberately clear of the 7.5 crossover the other presets sit on. 7.5 is
+  // the drowsy boundary -- excellent for going inward, wrong for coming back
+  // out, and four of the five presets already live there. Drift is kept to
+  // half a hertz so the band never wanders somewhere alerting into somewhere
+  // soft.
+  //
+  // The slow one is 0.1 Hz. Every variance period here -- depth, brightness,
+  // ring brightness, edge, and the pip loudness -- is set to ten seconds, the
+  // cardiac resonance frequency, six breaths a minute. That is the one claim
+  // in this whole project the README calls well supported rather than
+  // suggestive, and when the problem is overwhelm it is the part most likely
+  // to be doing real work. So the field breathes at resonance underneath a
+  // flicker that keeps you awake.
+  //
+  // Everything else follows from being used repeatedly, mid-day, by someone
+  // who then has to go and think. Depth and brightness sit lower than the
+  // meditative presets: less visual fatigue, and less photosensitive risk on a
+  // preset people will reach for often. Sine rather than square, for the same
+  // reason -- square buys sharper entrainment at a cost this one should not
+  // pay. The hue is held rather than walking, because a walking hue is
+  // something to watch and watching is not the point, and it is cool because
+  // blue-enriched light is the evidence-backed alerting one. The carrier sits
+  // at 160 Hz: an octave above the piano root so it stays consonant with the
+  // music layer, and far clear of the 40 Hz reproduction floor the README
+  // warns about.
+  focus: {
+    inputs:{ freq:12, freqDrift:0.5, driftRate:30,
+             depth:55, depthVar:45, varPeriod:10,
+             bright:65, brightVar:40, brightVarPeriod:10,
+             color:'#2ad4ff', colorWalk:0,
+             ringSpeed:0.8, ringFade:45, ringThick:2, ringThickVar:40,
+             ringBrightVar:40, ringBrightPeriod:10,
+             edgeCount:40, edgeSize:4, trailLen:1, edgeSpeed:3,
+             edgeSpeedVar:30, edgeSpeedVarPeriod:10,
+             edgeSizeVar:25, edgeSizeVarPeriod:10,
+             carrier:160, amRate:12, vol:40,
+             toneVol:72, clickVol:58, pipMs:5,
+             clickReverb:35, clickRevTime:0.4,
+             clickModDepth:45, clickModRate:10,
+             biDepth:0, biRate:1,
+             harmVol:52, harmCount:6, harmBright:35, harmSpread:55,
+             harmPanRate:0.2, harmReverb:28, shimDepth:30, shimRate:0.1 },
+    selects:{ edgeDir:'both' },
+    // hbFull is named rather than assumed: Sleep confines the hue to a warm
+    // arc, and a preset that inherits whichever band ran before it is not a
+    // preset. This one holds a single cool hue, so it wants the whole wheel
+    // available underneath it.
+    buttons:['wSine','sFull','aLink','lkOn','cwTogether','hbFull'],
+    sources:{ tone:true, click:true },
+    harmonics:true,
+    layers:{ lField:true, lRings:true, lCorners:true, lEdge:true, lAudio:true }
+  },
   theta: {
     inputs:{ freq:7.5, freqDrift:1, driftRate:20, depth:60, bright:70,
              depthVar:0, brightVar:0, carrier:200, amRate:7.5, vol:35 },
