@@ -44,7 +44,12 @@ export function emitRing(z) {
   // squared distribution biases hard toward slow, so the field keeps
   // depth layers instead of everything moving as one sheet
   const s = Math.random() * Math.random();
-  S.rings.push({ z: z !== undefined ? z : Z_FAR, v: 0.10 + s * 0.62, hue: Math.random(), hv: 0 });
+  // Each ring keeps its own thickness factor for life. Variance widens the
+  // range it is drawn from, so turning it up does not thicken everything, it
+  // spreads the population between the thinnest and thickest possible line.
+  const tw = 1 + (Math.random() * 2 - 1) * S.ringThickVar;
+  S.rings.push({ z: z !== undefined ? z : Z_FAR, v: 0.10 + s * 0.62,
+                 hue: Math.random(), hv: 0, tw: Math.max(0.05, tw) });
 }
 
 export function seedTunnel(n) {

@@ -16,7 +16,7 @@ export function invalidateGradients() { gradCache.key = ''; }
 
 function ensureGradients() {
   const ctx = S.ctx, W = S.W, H = S.H, rgb = S.rgb;
-  // Colour is quantised to 16 levels per channel for cache purposes. A walking
+  // Color is quantised to 16 levels per channel for cache purposes. A walking
   // hue would otherwise rebuild five gradients every single frame, which is the
   // exact allocation churn that caused GC stalls before.
   const key = `${W}x${H}|${S.edgeInset>>3}|${rgb[0]>>4},${rgb[1]>>4},${rgb[2]>>4}`;
@@ -92,7 +92,7 @@ function drawRings() {
     if (a <= 0.003) continue;
     if (S.perElementColor) ctx.strokeStyle = hueStr(ring.hue);
     ctx.globalAlpha = a;
-    ctx.lineWidth = 0.7 + k * 3.4;            // nearer reads thicker
+    ctx.lineWidth = (0.7 + k * 3.4) * S.ringThick * ring.tw;   // nearer reads thicker
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -107,7 +107,7 @@ function drawCorners() {
     if (a <= 0.003) continue;
     const c = gradCache.corners[i];
 
-    // A corner glow is a gradient, so its colour is baked in and cannot ride
+    // A corner glow is a gradient, so its color is baked in and cannot ride
     // globalAlpha the way a flat fill can. Its hue is quantised and the
     // gradient rebuilt only when it crosses a step, which at walking speed is
     // a handful of times a second rather than every frame.

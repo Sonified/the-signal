@@ -10,7 +10,7 @@
 //  The GPU port collapses three of the four layers into ONE full-screen
 //  fragment shader. Field, rings and corners are all pure functions of the
 //  pixel's position, so there is no geometry to rasterise at all -- and
-//  because every layer shares a single colour, additive compositing is just
+//  because every layer shares a single color, additive compositing is just
 //  a scalar sum inside the shader, which costs nothing.
 //
 //  Rings deserve a note. They are concentric circles about the screen

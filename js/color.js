@@ -1,7 +1,7 @@
 import { S, HUE_STEPS, WALK_STEP, WALK_DAMP, WALK_SWING } from './state.js';
 import { hexToRgb, rgbToHsl, hslToRgb } from './util.js';
 
-// Per-element walking would build a colour string per ring, per particle, per
+// Per-element walking would build a color string per ring, per particle, per
 // frame. Instead hues are quantised into a prebuilt palette of ready-made
 // strings, so the draw loop only ever indexes an array.
 export function ensurePalette() {
