@@ -23,11 +23,21 @@ export const PRESETS = {
   // work rather than instead of it, so it is built on two timescales doing two
   // different jobs.
   //
-  // The fast one is 12 Hz: the top of alpha, the bottom of SMR, and
-  // deliberately clear of the 7.5 crossover the other presets sit on. 7.5 is
-  // the drowsy boundary -- excellent for going inward, wrong for coming back
-  // out, and four of the five presets already live there. Drift is kept to
-  // half a hertz so the band never wanders somewhere alerting into somewhere
+  // The fast one is 10 Hz, the alpha peak, and the choice is made by the
+  // display as much as by the brain. Frame lock advances the phase by exactly
+  // one Nth of a cycle per frame, so the waveform only reaches full depth when
+  // N is even: an odd frame count never samples phase 0.5, which is where the
+  // sine peaks. On a 60 Hz panel the even counts land on 30, 15, 10, 7.5, 6,
+  // 5 -- and between 7.5 and 15 there is nothing but 10. This started at 12,
+  // which is 5 frames at 60 Hz, odd, and reaches 90.5% of the depth it claims.
+  // It looked fine at 120 Hz and wrong on every ordinary desktop.
+  //
+  // 15 Hz is the other even option and is more alerting, but it opens the
+  // 15-25 Hz band this app already warns about on screen, which is the wrong
+  // trade for the preset people will reach for most often. So 10 it is: still
+  // clearly awake, a full octave above the 7.5 drowsy crossover the other
+  // presets sit on, and clean on 60, 120 and 240 Hz alike. Drift is kept to
+  // half a hertz so the band cannot wander somewhere alerting into somewhere
   // soft.
   //
   // The slow one is 0.1 Hz. Every variance period here -- depth, brightness,
@@ -50,7 +60,7 @@ export const PRESETS = {
   // music layer, and far clear of the 40 Hz reproduction floor the README
   // warns about.
   focus: {
-    inputs:{ freq:12, freqDrift:0.5, driftRate:30,
+    inputs:{ freq:10, freqDrift:0.5, driftRate:30,
              depth:55, depthVar:45, varPeriod:10,
              bright:65, brightVar:40, brightVarPeriod:10,
              color:'#2ad4ff', colorWalk:0,
@@ -59,7 +69,7 @@ export const PRESETS = {
              edgeCount:40, edgeSize:4, trailLen:1, edgeSpeed:3,
              edgeSpeedVar:30, edgeSpeedVarPeriod:10,
              edgeSizeVar:25, edgeSizeVarPeriod:10,
-             carrier:160, amRate:12, vol:40,
+             carrier:160, amRate:10, vol:40,
              toneVol:72, clickVol:58, pipMs:5,
              clickReverb:35, clickRevTime:0.4,
              clickModDepth:45, clickModRate:10,

@@ -47,9 +47,17 @@ export function updateReadouts() {
   if (S.refreshHz) {
     const spc = S.refreshHz/S.freq;
     $('spc').textContent = spc.toFixed(1);
+    // An odd frame count never samples phase 0.5, which is where the waveform
+    // peaks, so the flicker quietly falls short of the depth the slider claims
+    // -- 5 frames reaches 90.5%, 3 frames only 75%. Nothing else on screen says
+    // so: the achieved frequency is exactly right, which is what makes it easy
+    // to miss. On a 60 Hz panel this is every rate between 7.5 and 15 except 10.
+    const oddFrames = S.frameLock && S.framesPerCycle > 2 && S.framesPerCycle % 2;
     $('warn').textContent =
       spc < 4 ? 'few samples per cycle, waveform is getting steppy'
-    : (S.freq >= 15 && S.freq <= 25) ? 'higher seizure-risk band' : '';
+    : (S.freq >= 15 && S.freq <= 25) ? 'higher seizure-risk band'
+    : oddFrames ? S.framesPerCycle + ' frames per cycle is odd, so the flicker never reaches full depth'
+    : '';
   }
 }
 
