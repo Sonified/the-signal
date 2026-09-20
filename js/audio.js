@@ -102,7 +102,34 @@ function rampVol(target, dur, startAt) {
 
 // Rebuilt whenever a chirp control moves, then shipped to the worklet. Cheap:
 // a few hundred samples of trig on a control change, never in the audio thread.
-export function refreshChirp() {
+//
+// Delivery is acknowledged rather than assumed, and this is why.
+//
+// The graph is deliberately built at page load, with no user gesture, so the
+// worklet is compiled long before anyone presses anything. On iOS that means
+// the context is still SUSPENDED when this first runs, and a table posted to a
+// worklet port on a context whose rendering thread has never run is not
+// reliably delivered. The processor keeps `this.chirp = null`, `useChirp` goes
+// false, and the pip quietly falls back to the plain damped sine. Nothing
+// throws and nothing logs; the chirp simply never sounds.
+//
+// Restoring a saved setting made it permanent. settings.js assigns
+// S.clickMode = 'chirp' directly instead of going through setPipShape, so on a
+// phone that had chirp selected the lost table was never re-sent and the only
+// way back was to toggle the mode by hand.
+//
+// The processor now acknowledges the table it actually holds. Anything
+// unacknowledged is sent again once the context is genuinely running.
+let chirpSig = null, chirpLive = null, chirpRetry = null, chirpTries = 0;
+
+// The sample rate is part of the identity: iOS can hand back a different rate
+// once the real output device wakes, and a table built for the old one is the
+// wrong length and the wrong sweep.
+function chirpSignature() {
+  return [audioCtx.sampleRate, S.chirpLowHz, S.chirpHighHz, S.chirpComp, S.chirpTilt].join(':');
+}
+
+function sendChirp() {
   if (!node || !audioCtx) return;
   const buf = buildChirp({
     sampleRate: audioCtx.sampleRate,
@@ -111,7 +138,33 @@ export function refreshChirp() {
     comp:   S.chirpComp,
     tilt:   S.chirpTilt
   });
-  node.port.postMessage({ chirp: buf }, [buf.buffer]);
+  node.port.postMessage({ chirp: buf, sig: chirpSig }, [buf.buffer]);
+  chirpTries++;
+  clearTimeout(chirpRetry);
+  // Only worth retrying while the context is rendering, since a suspended one
+  // is the state the message gets lost in to begin with. A resume re-arms this
+  // through the statechange handler below.
+  if (chirpTries < 5) {
+    chirpRetry = setTimeout(() => {
+      chirpRetry = null;
+      if (chirpLive !== chirpSig && audioCtx && audioCtx.state === 'running') sendChirp();
+    }, 300);
+  } else {
+    chirpRetry = null;
+  }
+}
+
+export function refreshChirp() {
+  if (!node || !audioCtx) return;
+  const sig = chirpSignature();
+  // Already in hand, or a send of this exact table is still in flight with its
+  // retries armed. Several paths converge here on the same gesture -- the
+  // statechange, the device wake, the mode swap -- and without this they each
+  // post their own copy of an identical table.
+  if (sig === chirpSig && (chirpLive === sig || chirpRetry !== null)) return;
+  chirpSig = sig;
+  chirpTries = 0;
+  sendChirp();
 }
 
 export function setParam(name, value, glide = 0.02) {
@@ -225,6 +278,21 @@ export function ensureAudioGraph() {
     });
     node.connect(volGain, 0);
 
+    // The processor reports which chirp table it is actually holding, so a lost
+    // post can be told apart from a delivered one.
+    node.port.onmessage = e => {
+      if (e.data && e.data.chirpAck === undefined) return;
+      chirpLive = e.data.chirpAck;
+      // Confirmed: stop the retries and let the in-flight check above clear.
+      if (chirpLive === chirpSig) { clearTimeout(chirpRetry); chirpRetry = null; }
+    };
+    // A context that was suspended when the table was posted gets it again the
+    // moment it starts rendering, at whatever sample rate it actually came up
+    // with. This is the path that fixes iOS.
+    audioCtx.addEventListener('statechange', () => {
+      if (audioCtx.state === 'running' && chirpLive !== chirpSignature()) refreshChirp();
+    });
+
     // Harmonics get their own dry/wet pair so reverb applies to them alone.
     // The pulse itself must stay dry or the reverb tail fills in the gaps that
     // carry the entrainment.
@@ -290,6 +358,9 @@ export async function warmDevice() {
   // Truth, not intent. A resume that quietly failed has to leave this false so
   // the next gesture tries again instead of assuming the device is awake.
   deviceWarm = audioCtx.state === 'running';
+  // Not every engine fires statechange on every resume, and this is the one
+  // path guaranteed to run on the gesture that wakes the device.
+  if (deviceWarm) refreshChirp();
 }
 
 // Several gestures can race to start audio: the gate click, the first key, and

@@ -45,7 +45,13 @@ class GenusProcessor extends AudioWorkletProcessor {
     // the damped sine the pip does and immune to drift.
     this.chirp = null;
     this.port.onmessage = e => {
-      if (e.data && e.data.chirp) this.chirp = e.data.chirp;
+      if (e.data && e.data.chirp) {
+        this.chirp = e.data.chirp;
+        // Say which table is in hand. A post made while the context was still
+        // suspended can be lost before it ever reaches here, and without an
+        // acknowledgement the main thread cannot tell that from a delivery.
+        this.port.postMessage({ chirpAck: e.data.sig === undefined ? true : e.data.sig });
+      }
     };
     // Every harmonic gets its own pan phase and its own slightly different pan
     // rate, so they never settle into a single synchronised sweep.

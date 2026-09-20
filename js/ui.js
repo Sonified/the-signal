@@ -941,7 +941,25 @@ export function initUI() {
   $('rGL').onclick   = e => pickRenderer('webgl2',   e.target);
   $('r2D').onclick   = e => pickRenderer('canvas2d', e.target);
 
-  cv.addEventListener('click', toggle);
+  // With the drawer open, a tap on the field puts the drawer away rather than
+  // starting or stopping. On a phone the drawer covers most of the screen and
+  // there is no Escape key, so the tap that plainly means "put this away" was
+  // landing on the transport instead and stopping the session.
+  //
+  // Hung off pointerdown, not click: iOS synthesises a click only on elements
+  // it considers interactive, and a bare canvas is not one, so a dismissal
+  // waiting on click would be exactly the tap that never arrives. The flag is
+  // set fresh on every pointerdown, so a click that never comes cannot leave it
+  // armed and swallow a later one.
+  let swallowFieldClick = false;
+  cv.addEventListener('pointerdown', () => {
+    swallowFieldClick = S.panelOpen;
+    if (S.panelOpen) togglePanel(false);
+  });
+  cv.addEventListener('click', () => {
+    if (swallowFieldClick) { swallowFieldClick = false; return; }
+    toggle();
+  });
 
   const fsBtn = $('fsBtn');
 
