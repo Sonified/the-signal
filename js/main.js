@@ -2,7 +2,7 @@
 import { S, WALK_STEP, WALK_DAMP, WALK_SWING, SKIP_KEY } from './state.js';
 import { $, hint, panel } from './dom.js';
 import { shape, hslToRgb } from './util.js';
-import { setColorFromPicker } from './color.js';
+import { setColorFromPicker, bandHue } from './color.js';
 import { seedParticles, updateRings, updateParticles } from './sim.js';
 import { initRenderer } from './renderer.js';
 import { applySettings } from './settings.js';
@@ -140,7 +140,7 @@ function tick(t) {
     if (S.hueVel < -1) S.hueVel = -1;
     S.hue += (1 + S.hueVel * WALK_SWING) * S.colorWalk * dt / S.walkPeriod;
     S.hue -= Math.floor(S.hue);
-    S.rgb = hslToRgb(S.hue, S.hueSat, S.hueLight);      // lightness held, so apparent brightness is steady
+    S.rgb = hslToRgb(bandHue(S.hue), S.hueSat, S.hueLight);   // lightness held, so apparent brightness is steady
   }
   const lum = S.running ? shape(S.phase) : 0;
   if (S.running) { S.litLog.push(lum > 0.5 ? 1 : 0); if (S.litLog.length > 120) S.litLog.shift(); }

@@ -100,6 +100,7 @@
       <option value="genus">Gamma 40 (GENUS)</option>
       <option value="theta">Alpha-theta 7.5</option>
       <option value="breath">Resonance breath</option>
+      <option value="sleep">Sleep</option>
     </select>
   </div>
 
@@ -165,12 +166,20 @@
     <input id="color" type="color" value="#d400ff">
   </div>
   <div class="ctl">
+    <label>Hue range <b><span id="hueBandVal">full wheel</span></b></label>
+    <div class="row">
+      <button id="hbFull" class="on">Full</button>
+      <button id="hbWarm">Warm</button>
+      <button id="hbCool">Cool</button>
+    </div>
+  </div>
+  <div class="ctl">
     <label>Color walk <b><span id="walkVal">100%</span></b></label>
     <input id="colorWalk" type="range" min="0" max="100" step="1" value="100">
   </div>
   <div class="ctl">
     <label>Walk speed <b><span id="walkPerVal">60</span>s / lap</b></label>
-    <input id="walkPeriod" type="range" min="1" max="60" step="1" value="60">
+    <input id="walkPeriod" type="range" min="1" max="300" step="1" value="60">
   </div>
   <div class="ctl">
     <label>Walk mode</label>

@@ -44,6 +44,7 @@ export function saveSettings() {
       freqDrift: S.freqDrift, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
       frameLock: S.frameLock, walkPeriod: S.walkPeriod, brightVar: S.brightVar,
       brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
+      hueLo: S.hueLo, hueSpan: S.hueSpan,
       ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod,
       edgeSpeedVar: S.edgeSpeedVar, edgeSpeedVarPeriod: S.edgeSpeedVarPeriod,
       edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
@@ -91,6 +92,18 @@ export function applySettings() {
   if (typeof s.brightVar === 'number')    { S.brightVar = s.brightVar; $('brightVar').value = Math.round(S.brightVar*100); }
   if (typeof s.brightVarPeriod === 'number') { S.brightVarPeriod = s.brightVarPeriod; $('brightVarPeriod').value = S.brightVarPeriod; }
   if (typeof s.colorWalk === 'number')    { S.colorWalk = s.colorWalk; $('colorWalk').value = Math.round(S.colorWalk*100); }
+  if (typeof s.hueLo === 'number')   S.hueLo = s.hueLo;
+  if (typeof s.hueSpan === 'number') S.hueSpan = s.hueSpan;
+  {
+    const name = S.hueSpan >= 1 ? 'full' : (S.hueLo > 0.9 || S.hueLo < 0.2 ? 'warm' : 'cool');
+    const lbl = { full:'full wheel', warm:'warm', cool:'cool' }[name];
+    if ($('hueBandVal')) {
+      $('hueBandVal').textContent = lbl;
+      ['hbFull','hbWarm','hbCool'].forEach(id => $(id) && $(id).classList.remove('on'));
+      const b = $({ full:'hbFull', warm:'hbWarm', cool:'hbCool' }[name]);
+      if (b) b.classList.add('on');
+    }
+  }
   if (typeof s.walkPeriod === 'number')   { S.walkPeriod = s.walkPeriod; $('walkPeriod').value = S.walkPeriod; $('walkPerVal').textContent = S.walkPeriod; }
   if (typeof s.perElementColor === 'boolean') {
     S.perElementColor = s.perElementColor;

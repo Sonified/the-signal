@@ -2,7 +2,7 @@
 import { S, layers, HUE_STEPS, Z_NEAR } from '../state.js';
 import { cv } from '../dom.js';
 import { shape, smoothstep, hslToRgb } from '../util.js';
-import { ensurePalette, hueStr } from '../color.js';
+import { ensurePalette, hueStr, bandHue } from '../color.js';
 import { visW, visCx, perimeterPoint, px, py } from '../geometry.js';
 
 // Gradients are expensive to build, so they are cached at full opacity and
@@ -112,7 +112,7 @@ function drawCorners() {
     // gradient rebuilt only when it crosses a step, which at walking speed is
     // a handful of times a second rather than every frame.
     if (S.perElementColor) {
-      const idx = (S.cornerHue[i] * HUE_STEPS | 0) % HUE_STEPS;
+      const idx = (bandHue(S.cornerHue[i]) * HUE_STEPS | 0) % HUE_STEPS;
       if (c.hueIdx !== idx) {
         const col = hslToRgb(idx/HUE_STEPS, S.hueSat, S.hueLight);
         const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.R);

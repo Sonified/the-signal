@@ -371,6 +371,23 @@ export function initUI() {
     e.currentTarget.blur();
   };
 
+  // Three named arcs. Warm runs from magenta-red round through amber and stops
+  // short of green, so nothing in it is anywhere near the blue that suppresses
+  // melatonin. Cool is the mirror of it, for contrast rather than for sleep.
+  const HUE_BANDS = { full: [0, 1, 'full wheel'], warm: [0.93, 0.19, 'warm'], cool: [0.45, 0.25, 'cool'] };
+  function setHueBand(name) {
+    const b = HUE_BANDS[name] || HUE_BANDS.full;
+    S.hueLo = b[0]; S.hueSpan = b[1];
+    $('hueBandVal').textContent = b[2];
+    ['hbFull','hbWarm','hbCool'].forEach(id => $(id).classList.remove('on'));
+    $({ full:'hbFull', warm:'hbWarm', cool:'hbCool' }[name] || 'hbFull').classList.add('on');
+    invalidateGradients();
+    saveSettings();
+  }
+  $('hbFull').onclick = e => { setHueBand('full'); e.currentTarget.blur(); };
+  $('hbWarm').onclick = e => { setHueBand('warm'); e.currentTarget.blur(); };
+  $('hbCool').onclick = e => { setHueBand('cool'); e.currentTarget.blur(); };
+
   $('walkPeriod').addEventListener('input', e => {
     S.walkPeriod = +e.target.value; $('walkPerVal').textContent = S.walkPeriod; saveSettings();
   });
@@ -1231,6 +1248,7 @@ export function initUI() {
       colorWalk: +S.colorWalk.toFixed(2),
       colorWalkPerElement: S.perElementColor,
       colorWalkSecondsPerLap: S.walkPeriod,
+      hueRange: S.hueSpan >= 1 ? 'full' : (S.hueLo > 0.9 || S.hueLo < 0.2 ? 'warm' : 'cool'),
       varianceSecondsPerCycle: S.varPeriod,
       frameLock: S.frameLock,
       brightness: +S.bright.toFixed(2),

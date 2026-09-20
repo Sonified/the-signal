@@ -15,7 +15,20 @@ export function ensurePalette() {
   }
 }
 
-export const hueStr = h => S.huePalette[(h * HUE_STEPS | 0) % HUE_STEPS];
+// Fold a full turn of the wheel into a narrower band.
+//
+// The walk accumulator still runs 0 to 1 and still moves in one direction, so
+// nothing about the pacing changes. What changes is where it lands: a triangle
+// maps the turn onto the band and back again, so the colour drifts to the far
+// end of the range and returns rather than jumping when the accumulator wraps.
+// Clamping the hue directly would have parked it at an edge instead.
+export function bandHue(h) {
+  if (S.hueSpan >= 1) return h;
+  const tri = 1 - Math.abs(2 * h - 1);
+  return (S.hueLo + S.hueSpan * tri + 1) % 1;
+}
+
+export const hueStr = h => S.huePalette[(bandHue(h) * HUE_STEPS | 0) % HUE_STEPS];
 
 // shared damped random walk, applied in place so nothing allocates
 export function walkHue(o, dt) {

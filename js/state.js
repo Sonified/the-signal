@@ -71,6 +71,10 @@ export const S = {
   colorMode: 'rotating', hue: 0, hueSat: 0.6, hueLight: 0.75, hueVel: 0,
   perElementColor: false,
   cornerHue: [0, 0.25, 0.5, 0.75], cornerHv: [0, 0, 0, 0],
+  // The walk can be confined to an arc of the wheel. Full turn by default;
+  // warm is roughly magenta-red through amber, which is the half of the
+  // spectrum that does not suppress melatonin.
+  hueLo: 0, hueSpan: 1,
   walkPeriod: 60,
   huePalette: [], paletteKey: '',
 
