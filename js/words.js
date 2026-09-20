@@ -184,7 +184,6 @@ export const WORDS = [
   ['amble', 'movement'],
   ['saunter', 'movement'],
   ['meander', 'movement'],
-  ['ramble', 'movement'],
   ['wander', 'movement', 'open'],
   ['wandering', 'movement', 'open'],
   ['roam', 'movement', 'open'],
