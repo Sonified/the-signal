@@ -438,7 +438,7 @@ export function initUI() {
     $('amOn').classList.toggle('on', on);
     $('amOff').classList.toggle('on', !on);
     $('ambOnVal').textContent = on ? 'on' : 'off';
-    $('ambQuick').textContent = 'ambience: ' + (on ? 'on' : 'off');
+    $('ambQuick').textContent = 'atmosphere: ' + (on ? 'on' : 'off');
     document.querySelectorAll('.amb-ctl').forEach(el => { el.hidden = !on; });
   }
   function setAmb(on) {

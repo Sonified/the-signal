@@ -1,0 +1,23 @@
+{
+  "name": "BEAUTIFUL THEME",
+  "seconds": 22.34,
+  "noteCount": 12,
+  "rootWritten": 48,
+  "rootSoundingHz": 79.5,
+  "scale": "1 2 3 5 7 8 (major 7)",
+  "format": "t = ms from first note, note = written MIDI, dur = ms, vel = 0..1",
+  "events": [
+    { "t": 0,     "note": 60, "dur": 10463, "vel": 0.85 },
+    { "t": 13,    "note": 64, "dur": 10458, "vel": 0.85 },
+    { "t": 22,    "note": 67, "dur": 10441, "vel": 0.85 },
+    { "t": 2852,  "note": 72, "dur": 7619,  "vel": 0.85 },
+    { "t": 2873,  "note": 76, "dur": 7598,  "vel": 0.85 },
+    { "t": 5322,  "note": 74, "dur": 5166,  "vel": 0.85 },
+    { "t": 11260, "note": 60, "dur": 11078, "vel": 0.85 },
+    { "t": 11381, "note": 64, "dur": 10957, "vel": 0.85 },
+    { "t": 11397, "note": 67, "dur": 10924, "vel": 0.85 },
+    { "t": 14630, "note": 79, "dur": 7633,  "vel": 0.85 },
+    { "t": 14655, "note": 72, "dur": 7616,  "vel": 0.85 },
+    { "t": 17366, "note": 74, "dur": 4897,  "vel": 0.85 }
+  ]
+}

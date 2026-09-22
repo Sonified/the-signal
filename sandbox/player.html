@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lekko</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#127929;</text></svg>">
+<style>
+  :root { --bg:#0b0f14; --ink:#e6edf5; --dim:#7c8796; --line:#212932; --hit:#d400ff; --vol:#4a9eff; --pit:#b455ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); min-height:100vh;
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+         display:flex; flex-direction:column; align-items:center; gap:16px; padding:24px 18px 40px; }
+  h1 { margin:0; font-size:14px; font-weight:500; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); }
+  #status { color:var(--dim); font-size:12px; min-height:18px; font-variant-numeric:tabular-nums; }
+  .row { display:flex; gap:20px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  label { font-size:12px; color:var(--dim); display:flex; align-items:center; gap:8px; }
+  input[type=range] { width:120px; accent-color:var(--hit); }
+  b { color:var(--ink); font-variant-numeric:tabular-nums; font-weight:500; min-width:30px; }
+  button { background:#151b23; color:var(--ink); border:1px solid var(--line); border-radius:7px;
+           padding:7px 12px; font:inherit; font-size:12.5px; cursor:pointer; }
+  button:hover { border-color:#3a4551; }
+  button.on { background:var(--hit); border-color:var(--hit); color:#0b0f14; font-weight:600; }
+
+  #kb { position:relative; display:flex; height:170px; user-select:none; margin-top:4px;
+        filter:drop-shadow(0 10px 26px rgba(0,0,0,.55)); }
+  .w { position:relative; width:32px; height:100%; background:#eef1f5; border:1px solid #c8d0d9;
+       border-radius:0 0 5px 5px; margin-right:-1px; cursor:pointer;
+       display:flex; align-items:flex-end; justify-content:center; padding-bottom:7px; }
+  .b { position:absolute; top:0; width:20px; height:62%; background:#161b22; border:1px solid #000;
+       border-radius:0 0 4px 4px; z-index:2; cursor:pointer;
+       display:flex; align-items:flex-end; justify-content:center; padding-bottom:6px; }
+  .w span, .b span { font-size:8px; letter-spacing:.02em; pointer-events:none; }
+  .w span { color:#9aa5b3; } .b span { color:#5c6875; }
+  .w.real span { color:#39434f; font-weight:700; } .b.real span { color:#aeb8c6; font-weight:700; }
+  /* Every C is the root, every G the fifth. Tinting them means you can find your
+     place on a four octave keyboard without counting up from the left. */
+  .w.root  { background:#e2d7f0; border-color:#bfb0d4; }
+  .w.fifth { background:#d6e2f2; border-color:#aebfd6; }
+  .w.root span  { color:#5b4a75; }
+  .w.fifth span { color:#3f5674; }
+  .w.off, .b.off { opacity:.26; cursor:default; }
+  .w.down { background:var(--hit); } .b.down { background:var(--hit); border-color:var(--hit); }
+  .w.down span, .b.down span { color:#0b0f14; }
+
+  /* Each sample's pair of sliders sits directly under the key it belongs to,
+     positioned from that key's own offsetLeft rather than laid out evenly, so a
+     column is always under its note whether that note is a white key or a black
+     one. Stacked vertically: level on top, cents beneath. */
+  /* The strip must be the same width as the keyboard AND centred the same way,
+     or the two have different left edges and every column is offset by half the
+     difference. So the buttons are taken out of the flow entirely and hung off
+     the right edge, where they cannot influence the centring. */
+  #trimWrap { position:relative; }
+  #trims { position:relative; width:100%; height:232px; }
+  #trimSide { position:absolute; left:100%; top:2px; margin-left:20px;
+              display:flex; flex-direction:column; gap:6px; }
+  #trimSide button { font-size:11px; padding:6px 10px; }
+  .tc { position:absolute; top:0; display:flex; flex-direction:column; align-items:center;
+        gap:1px; padding:4px 0 3px; border-radius:5px;
+        background:#11161d; border:1px solid var(--line);
+        transition:background .08s, border-color .08s, box-shadow .12s; }
+  .tc.edited { border-color:#3a4551; background:#151a22; }
+  /* lit while a voice is sounding from this sample, so a resampled key shows
+     you which file it is actually reaching for */
+  .tc.lit { border-color:#8ab4ff; background:#141c28; box-shadow:0 0 12px rgba(120,170,255,.28); }
+  .tc .nm { font-size:8px; color:var(--dim); letter-spacing:.01em; }
+  .tc.lit .nm { color:#cfe0ff; }
+  .tc .rd { font-size:7.5px; color:#5f6a78; font-variant-numeric:tabular-nums; line-height:1.1; }
+  .tc input[type=range] {
+    writing-mode:vertical-lr; direction:rtl;
+    width:14px; height:88px; margin:0; cursor:pointer;
+  }
+  .tc input.tv { accent-color:var(--vol); }
+  .tc input.tt { accent-color:var(--pit); }
+  .tc .rv { color:#6e8fb8; }
+  .tc .rt { color:#8a6eb8; }
+
+  #takeWrap { width:min(980px, 100%); display:flex; flex-direction:column; gap:8px; }
+  #recInfo { color:var(--dim); font-size:11.5px; font-variant-numeric:tabular-nums; }
+  #rec.armed { background:#c0392b; border-color:#c0392b; color:#fff; font-weight:600; }
+  #takes { display:flex; flex-direction:column; gap:5px; }
+  .take { display:flex; align-items:center; gap:10px; padding:7px 10px;
+          background:#11161d; border:1px solid var(--line); border-radius:7px; font-size:12px; }
+  .take.playing { border-color:var(--vol); background:#131c27; }
+  .take input.nm {
+    color:var(--ink); background:#0d1218; border:1px solid var(--line);
+    border-radius:5px; padding:4px 8px; width:190px; font:inherit; font-size:12px;
+  }
+  .take input.nm:focus { outline:none; border-color:var(--vol); background:#111922; }
+  .take .meta { color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; flex:1; }
+  .take button { padding:4px 9px; font-size:11px; }
+  .takeRow { display:flex; flex-direction:column; gap:0; }
+  /* A strip of the actual notes, time across and pitch up, so a gesture you
+     liked is something you can see and point at rather than hunt for. */
+  .tl { position:relative; height:52px; margin:5px 0 2px; border-radius:6px;
+        background:#0d1218; border:1px solid var(--line); cursor:pointer; overflow:hidden; }
+  .tl canvas { display:block; width:100%; height:100%; }
+  .tl .ph { position:absolute; top:0; bottom:0; width:1px; background:#fff;
+            box-shadow:0 0 6px rgba(255,255,255,.7); left:0; display:none; pointer-events:none; }
+  .tl.live .ph { display:block; }
+  .tl .tm { position:absolute; right:6px; top:4px; font-size:9.5px; color:var(--dim);
+            font-variant-numeric:tabular-nums; pointer-events:none; }
+
+  #hint { color:var(--dim); font-size:11.5px; text-align:center; max-width:640px; line-height:1.8; }
+  kbd { background:#151b23; border:1px solid var(--line); border-radius:4px; padding:1px 5px;
+        font:inherit; font-size:10.5px; color:var(--ink); }
+</style>
+</head>
+<body>
+
+<h1>Lekko &nbsp;&middot;&nbsp; The Signal</h1>
+<div id="status">loading&hellip;</div>
+
+<div class="row">
+  <label>volume <input id="vol" type="range" min="0" max="100" value="70"><b id="volV">70</b></label>
+  <label>reverb <input id="rev" type="range" min="0" max="100" value="26"><b id="revV">26</b></label>
+  <label>octave <button id="oDn">&minus;</button><b id="octV">3</b><button id="oUp">+</button></label>
+  <button id="sus" class="on">sustain</button>
+  <button id="scale" class="on">scale: 1 2 3 5 7 8</button>
+  <button id="lift" class="on">key lift</button>
+  <button id="fmt">format: &mdash;</button>
+</div>
+
+<div id="kb"></div>
+
+<div id="trimWrap">
+  <div id="trims"></div>
+  <div id="trimSide">
+    <button id="copyTrim">copy</button>
+    <button id="trimReset">reset</button>
+  </div>
+</div>
+
+<div id="takeWrap">
+  <div class="row" style="justify-content:flex-start">
+    <button id="rec">&#9679; record</button>
+    <span id="recInfo"></span>
+    <span style="flex:1"></span>
+    <button id="copyAll">copy all takes</button>
+  </div>
+  <div id="takes"></div>
+</div>
+
+<div id="hint">
+  <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd><kbd>'</kbd>
+  walk the scale &nbsp;&middot;&nbsp; <kbd>Z</kbd><kbd>X</kbd> octave &nbsp;&middot;&nbsp; in chromatic mode the
+  <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> row gives the black keys<br>
+  bold labels are real samples &nbsp;&middot;&nbsp; everything else is resampled from its nearest neighbour
+  &nbsp;&middot;&nbsp; written C sounds the root
+</div>
+
+<script type="module">
+// Every note is named by its distance in semitones from the root, so the file
+// name IS the mapping and nothing has to be configured. The root is the lowest
+// sample and it sounds at about 79.5 Hz, two octaves under the 40 Hz carrier
+// the rest of The Signal runs on.
+const SEMIS = [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40];
+const DEGREES = [0,2,4,7,11];            // 1 2 3 5 7, the 8 is the next octave's 1
+const RELEASES = 18;
+
+const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const ROOT_WRITTEN = 48;                 // the root is written as C3
+const nameOf = m => NAMES[((m%12)+12)%12] + (Math.floor(m/12)-1);
+const LO = ROOT_WRITTEN, HI = ROOT_WRITTEN + SEMIS[SEMIS.length-1];
+const REAL = new Set(SEMIS.map(s => ROOT_WRITTEN + s));
+const inScale = m => DEGREES.includes((((m - ROOT_WRITTEN) % 12) + 12) % 12);
+
+// ---- format: Opus where the browser will take it, mp3 where it will not ----
+const probe = new Audio();
+const canOpus = probe.canPlayType('audio/ogg; codecs=opus') !== ''
+             || probe.canPlayType('audio/webm; codecs=opus') !== '';
+let savedFmt = null;
+try { savedFmt = (JSON.parse(localStorage.getItem('lekko.player.v1')) || {}).fmt; } catch (e) {}
+let FMT = (savedFmt === 'mp3' || (savedFmt === 'opus' && canOpus)) ? savedFmt
+        : (canOpus ? 'opus' : 'mp3');
+// The samples are the ones the site itself ships, one directory up. Only the
+// Opus encodes were committed, so mp3 will 404 here until they are added.
+const PIANO = '../audio/piano';
+const url = (kind, n) => FMT === 'opus'
+  ? (kind === 'note' ? `${PIANO}/lekko-${n}.opus` : `${PIANO}/releases/release-${n}.opus`)
+  : (kind === 'note' ? `${PIANO}/lekko-${n}.mp3`  : `${PIANO}/releases/release-${n}.mp3`);
+
+// ---- audio graph -----------------------------------------------------------
+let ctx, master, verb, wet;
+const notes = new Map();                 // semitone offset -> AudioBuffer
+const lifts = [];
+const held  = new Map();
+
+function impulse(sec, decay) {
+  const n = Math.floor(ctx.sampleRate * sec);
+  const b = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, decay);
+  }
+  return b;
+}
+
+async function load() {
+  ctx = new AudioContext();
+  master = ctx.createGain();
+  master.gain.value = Math.pow((+document.getElementById('vol').value)/100, 2);
+  master.connect(ctx.destination);
+  verb = ctx.createConvolver(); verb.buffer = impulse(3.6, 2.2);
+  wet = ctx.createGain(); wet.gain.value = (+document.getElementById('rev').value)/100;
+  verb.connect(wet).connect(ctx.destination);
+
+  const st = document.getElementById('status');
+  let done = 0, total = SEMIS.length + RELEASES;
+  const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
+
+  await Promise.all([
+    ...SEMIS.map(async s => {
+      notes.set(s, await get(url('note', String(s).padStart(2,'0'))));
+      st.textContent = `loading ${++done}/${total}`;
+    }),
+    ...Array.from({length: RELEASES}, async (_, i) => {
+      lifts[i] = await get(url('lift', String(i).padStart(2,'0')));
+      st.textContent = `loading ${++done}/${total}`;
+    })
+  ]);
+  st.textContent = `${SEMIS.length} notes · ${RELEASES} key lifts · ${FMT} · press a key`;
+  document.getElementById('fmt').textContent = 'format: ' + FMT;
+}
+
+// nearest sampled note, then resample the remaining semitones
+function nearest(semi) {
+  let best = SEMIS[0], d = 1e9;
+  for (const s of SEMIS) { const v = Math.abs(s - semi); if (v < d) { d = v; best = s; } }
+  return best;
+}
+
+// Sustained piano notes ring for ten seconds or more, so with the pedal down a
+// long passage can pile up a hundred voices. The cap fades the oldest out over
+// 300 ms rather than cutting it, which is inaudible against everything else
+// still sounding.
+const MAX_VOICES = 32;
+const ringing = [];
+
+function trimVoices() {
+  while (ringing.length > MAX_VOICES) {
+    const v = ringing.shift();
+    if (!v || v.stopped) continue;
+    v.stopped = true;
+    const t = ctx.currentTime;
+    v.g.gain.cancelScheduledValues(t);
+    v.g.gain.setValueAtTime(v.g.gain.value, t);
+    v.g.gain.linearRampToValueAtTime(0, t + 0.3);
+    try { v.s.stop(t + 0.35); } catch (e) {}
+  }
+}
+
+function play(written, vel = 0.85, capture = true) {
+  if (capture) recNoteOn(written, vel);
+  if (!ctx) return;
+  // Retrigger rather than refuse. A key that is somehow still marked held must
+  // never be able to lock itself out, which is exactly what returning early did.
+  if (held.has(written)) {
+    const prev = held.get(written);
+    stopVoice(prev, 0.06);
+    litSample(prev.src, false);
+    held.delete(written);
+  }
+  const semi = written - ROOT_WRITTEN;
+  const src = nearest(semi);
+  const buf = notes.get(src);
+  if (!buf) return;
+  const s = ctx.createBufferSource();
+  s.buffer = buf;
+  const tr = trim[src] || { vol: 100, cents: 0 };
+  // the transposition and the per sample tuning are one multiply, so a trimmed
+  // sample is not resampled twice
+  s.playbackRate.value = Math.pow(2, (semi - src) / 12 + tr.cents / 1200);
+  const g = ctx.createGain();
+  g.gain.value = vel * vel * (tr.vol / 100);   // velocity squared reads as linear loudness
+  s.connect(g); g.connect(master); g.connect(verb);
+  s.start();
+  const v = { s, g, stopped: false, src };
+  held.set(written, v);
+  litSample(src, true);
+  ringing.push(v);
+  trimVoices();
+  paint(written, true);
+}
+
+function stopVoice(v, dur) {
+  if (!v || v.stopped) return;
+  v.stopped = true;
+  const t = ctx.currentTime;
+  v.g.gain.cancelScheduledValues(t);
+  v.g.gain.setValueAtTime(v.g.gain.value, t);
+  v.g.gain.linearRampToValueAtTime(0, t + dur);
+  try { v.s.stop(t + dur + 0.05); } catch (e) {}
+}
+
+function release(written) {
+  recNoteOff(written);
+  const v = held.get(written);
+  if (!v) return;
+  held.delete(written);
+  paint(written, false);
+  litSample(v.src, false);
+  if (liftOn && lifts.length) {
+    // a real finger lift from the recording, picked at random. The action noise
+    // is essentially pitch free, so any lift sits over any note, and eighteen of
+    // them means the same one never lands on the same note twice.
+    const s = ctx.createBufferSource();
+    s.buffer = lifts[(Math.random()*lifts.length)|0];
+    const g = ctx.createGain(); g.gain.value = 0.5;
+    s.connect(g); g.connect(master); g.connect(verb);
+    s.start();
+  }
+  if (!sustain) stopVoice(v, 0.4);
+}
+
+// ---- keyboard --------------------------------------------------------------
+const kb = document.getElementById('kb'), keyEls = new Map();
+const BLACK = new Set([1,3,6,8,10]);
+
+function build() {
+  kb.textContent = ''; keyEls.clear();
+  const whites = [];
+  for (let m = LO; m <= HI; m++) if (!BLACK.has(((m%12)+12)%12)) whites.push(m);
+  for (const m of whites) {
+    const el = document.createElement('div');
+    const pc = ((m % 12) + 12) % 12;
+    el.className = 'w' + (REAL.has(m) ? ' real' : '') + (scaleOn && !inScale(m) ? ' off' : '')
+                 + (pc === 0 ? ' root' : pc === 7 ? ' fifth' : '');
+    el.innerHTML = `<span>${nameOf(m)}</span>`;
+    bind(el, m); kb.appendChild(el); keyEls.set(m, el);
+  }
+  requestAnimationFrame(() => {
+    for (let m = LO; m <= HI; m++) {
+      if (!BLACK.has(((m%12)+12)%12)) continue;
+      const prev = keyEls.get(m - 1); if (!prev) continue;
+      const el = document.createElement('div');
+      el.className = 'b' + (REAL.has(m) ? ' real' : '') + (scaleOn && !inScale(m) ? ' off' : '');
+      el.innerHTML = `<span>${nameOf(m)}</span>`;
+      el.style.left = (prev.offsetLeft + prev.offsetWidth - 10) + 'px';
+      bind(el, m); kb.appendChild(el); keyEls.set(m, el);
+    }
+  });
+}
+function bind(el, m) {
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (scaleOn && !inScale(m)) return;
+    resume(); play(m);
+  });
+  el.addEventListener('pointerup',    () => release(m));
+  el.addEventListener('pointerleave', () => { if (held.has(m)) release(m); });
+}
+const paint = (m, on) => { const el = keyEls.get(m); if (el) el.classList.toggle('down', on); };
+
+// Which sample each sounding note draws from, counted rather than flagged:
+// several keys can resample the same file, so the column stays lit until the
+// last of them lets go.
+const litCount = new Map();
+function litSample(sm, on) {
+  litCount.set(sm, Math.max(0, (litCount.get(sm) || 0) + (on ? 1 : -1)));
+  const c = document.querySelector(`.tc[data-semi="${sm}"]`);
+  if (c) c.classList.toggle('lit', litCount.get(sm) > 0);
+}
+
+// ---- controls --------------------------------------------------------------
+// ---- saved settings --------------------------------------------------------
+const STORE = 'lekko.player.v1';
+const saved = (() => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; }
+                       catch (e) { return {}; } })();
+function save() {
+  try {
+    localStorage.setItem(STORE, JSON.stringify({
+      octave, sustain, scaleOn, liftOn, fmt: FMT, trim, trimGen: TRIM_GEN,
+      vol: +document.getElementById('vol').value,
+      rev: +document.getElementById('rev').value
+    }));
+  } catch (e) {}
+}
+
+// Per sample level and tuning. Keyed by semitone offset so the numbers survive
+// any renaming, and applied at voice creation rather than baked into the files,
+// so dialling it in costs nothing and is reversible.
+// Bumped whenever a round of trims is baked into the audio files. Saved trims
+// from an earlier round would otherwise apply a second time on top of files that
+// already contain them, which is silent and doubles everything you dialled.
+const TRIM_GEN = 2;
+const trim = {};
+const freshTrims = saved.trimGen !== TRIM_GEN;
+for (const sm of SEMIS) {
+  const t = freshTrims ? {} : ((saved.trim || {})[sm] || {});
+  trim[sm] = { vol: typeof t.vol === 'number' ? t.vol : 100,
+               cents: typeof t.cents === 'number' ? t.cents : 0 };
+}
+
+let octave  = typeof saved.octave  === 'number'  ? saved.octave  : 4;
+let sustain = typeof saved.sustain === 'boolean' ? saved.sustain : true;
+let scaleOn = typeof saved.scaleOn === 'boolean' ? saved.scaleOn : true;
+let liftOn  = typeof saved.liftOn  === 'boolean' ? saved.liftOn  : true;
+const CHROM = { a:0, w:1, s:2, e:3, d:4, f:5, t:6, g:7, y:8, h:9, u:10, j:11, k:12, o:13, l:14, p:15,
+                ';':16, "'":17 };
+// eleven scale steps, which is two full octaves of the mode plus the root on top
+const ROW = ['a','s','d','f','g','h','j','k','l',';',"'"];
+
+function keyToNote(k) {
+  const base = (octave + 1) * 12;
+  if (scaleOn) {
+    const i = ROW.indexOf(k);
+    if (i < 0) return null;
+    const oct = Math.floor(i / DEGREES.length), deg = DEGREES[i % DEGREES.length];
+    return base + oct * 12 + deg + (ROOT_WRITTEN % 12);
+  }
+  return k in CHROM ? base + CHROM[k] : null;
+}
+const resume = () => { if (ctx && ctx.state === 'suspended') ctx.resume(); };
+
+// What a physical key triggered, remembered by the key itself. Resolving the
+// note again on key-up was a bug: shift the octave or flip the scale while a key
+// is down and key-up computes a DIFFERENT note, so the real one is never
+// released. It stays in `held` forever and can never sound again, which feels
+// exactly like running out of polyphony.
+const downKeys = new Map();
+
+const typing = e => e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
+
+addEventListener('keydown', e => {
+  if (e.repeat || typing(e)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z') return setOct(octave - 1);
+  if (k === 'x') return setOct(octave + 1);
+  const m = keyToNote(k); if (m === null) return;
+  e.preventDefault(); resume();
+  if (downKeys.has(k)) release(downKeys.get(k));
+  downKeys.set(k, m);
+  play(m);
+});
+addEventListener('keyup', e => {
+  if (typing(e)) return;
+  const k = e.key.toLowerCase();
+  if (!downKeys.has(k)) return;
+  release(downKeys.get(k));
+  downKeys.delete(k);
+});
+// Losing focus loses the key-up events with it, so let go of everything.
+addEventListener('blur', () => {
+  for (const m of downKeys.values()) release(m);
+  downKeys.clear();
+});
+
+function setOct(v) { octave = Math.max(1, Math.min(5, v)); document.getElementById('octV').textContent = octave; save(); }
+document.getElementById('oDn').onclick = () => setOct(octave - 1);
+document.getElementById('oUp').onclick = () => setOct(octave + 1);
+document.getElementById('sus').onclick = e => { sustain = !sustain; e.target.classList.toggle('on', sustain); e.target.blur(); save(); };
+document.getElementById('lift').onclick = e => { liftOn = !liftOn; e.target.classList.toggle('on', liftOn); e.target.blur(); save(); };
+document.getElementById('scale').onclick = e => {
+  scaleOn = !scaleOn;
+  e.target.textContent = 'scale: ' + (scaleOn ? '1 2 3 5 7 8' : 'chromatic');
+  e.target.classList.toggle('on', scaleOn); e.target.blur(); build(); save();
+  requestAnimationFrame(() => requestAnimationFrame(placeTrims));
+};
+document.getElementById('fmt').onclick = async e => {
+  FMT = FMT === 'opus' ? 'mp3' : 'opus';
+  e.target.textContent = 'format: loading…'; e.target.blur();
+  notes.clear(); lifts.length = 0;
+  const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
+  await Promise.all([
+    ...SEMIS.map(async s => notes.set(s, await get(url('note', String(s).padStart(2,'0'))))),
+    ...Array.from({length: RELEASES}, async (_, i) => { lifts[i] = await get(url('lift', String(i).padStart(2,'0'))); })
+  ]);
+  e.target.textContent = 'format: ' + FMT;
+  save();
+};
+document.getElementById('vol').addEventListener('input', e => {
+  document.getElementById('volV').textContent = e.target.value;
+  if (master) master.gain.value = Math.pow(e.target.value/100, 2);
+  save();
+});
+document.getElementById('rev').addEventListener('input', e => {
+  document.getElementById('revV').textContent = e.target.value;
+  if (wet) wet.gain.value = e.target.value/100;
+  save();
+});
+
+// ---- recorder ---------------------------------------------------------------
+// Notes are captured as {t, note, dur, vel} in milliseconds from the first key
+// of the take, not from when record was pressed. Nobody plays on the downbeat,
+// and a take that starts with four seconds of silence is four seconds of
+// silence in every playback.
+const TAKES_KEY = 'lekko.player.takes.v1';
+let takes = (() => { try { return JSON.parse(localStorage.getItem(TAKES_KEY)) || []; }
+                     catch (e) { return []; } })();
+
+// Seed takes live on disk under takes/, not in localStorage. Anything worth
+// keeping should survive a cleared browser, a different machine, and me.
+// They load alongside the recorded ones and cannot be deleted from the UI.
+async function loadSeeds() {
+  try {
+    const list = await (await fetch('takes/index.json')).json();
+    for (const f of list) {
+      const t = await (await fetch('takes/' + f)).json();
+      const id = 'seed:' + f;
+      if (takes.some(x => x.id === id)) continue;
+      const ms = Math.max(...t.events.map(e => e.t + e.dur));
+      takes.push({ id, name: t.name, created: null, ms, events: t.events, seed: true });
+    }
+    takes.sort((a, b) => (a.seed === b.seed) ? 0 : (a.seed ? 1 : -1));
+    renderTakes();
+    requestAnimationFrame(() => { for (const t of takes) if (t._tl) drawTimeline(t, t._tl); });
+  } catch (e) {}
+}
+const saveTakes = () => {
+  try {
+    localStorage.setItem(TAKES_KEY, JSON.stringify(
+      takes.filter(t => !t.seed).map(({ _tl, ...rest }) => rest)));
+  } catch (e) {}
+};
+
+let rec = null;                       // { t0, events, open:Map }
+let recTimer = null;
+
+function recNoteOn(note, vel) {
+  if (!rec) return;
+  const now = performance.now();
+  if (rec.t0 === null) rec.t0 = now;
+  rec.open.set(note, { t: now - rec.t0, vel: +vel.toFixed(3) });
+}
+function recNoteOff(note) {
+  if (!rec || !rec.open.has(note)) return;
+  const o = rec.open.get(note);
+  rec.open.delete(note);
+  rec.events.push({ t: Math.round(o.t), note, dur: Math.round(performance.now() - rec.t0 - o.t), vel: o.vel });
+}
+
+function setRec(on) {
+  const btn = document.getElementById('rec');
+  if (on) {
+    rec = { t0: null, events: [], open: new Map() };
+    btn.classList.add('armed');
+    btn.innerHTML = '&#9632; stop';
+    recTimer = setInterval(() => {
+      const el = document.getElementById('recInfo');
+      const secs = rec && rec.t0 !== null ? (performance.now() - rec.t0) / 1000 : 0;
+      el.textContent = rec.t0 === null ? 'waiting for the first note'
+        : `${secs.toFixed(1)}s · ${rec.events.length + rec.open.size} notes`;
+    }, 100);
+  } else {
+    clearInterval(recTimer);
+    btn.classList.remove('armed');
+    btn.innerHTML = '&#9679; record';
+    if (rec) {
+      for (const n of [...rec.open.keys()]) recNoteOff(n);
+      rec.events.sort((a, b) => a.t - b.t);
+      if (rec.events.length) {
+        const ms = Math.max(...rec.events.map(e => e.t + e.dur));
+        takes.unshift({
+          id: Date.now(),
+          name: 'take ' + (takes.length + 1),
+          created: new Date().toISOString(),
+          ms, events: rec.events
+        });
+        saveTakes(); renderTakes();
+      }
+    }
+    rec = null;
+    document.getElementById('recInfo').textContent = '';
+  }
+}
+document.getElementById('rec').onclick = e => { resume(); setRec(!rec); e.target.blur(); };
+
+// ---- playback ---------------------------------------------------------------
+let playing = null;                   // { id, timers:[] }
+function stopTake() {
+  if (!playing) return;
+  playing.timers.forEach(clearTimeout);
+  cancelAnimationFrame(playing.raf);
+  for (const m of [...held.keys()]) release(m);
+  document.querySelectorAll('.tl').forEach(el => el.classList.remove('live'));
+  document.querySelectorAll('.take').forEach(el => el.classList.remove('playing'));
+  playing = null;
+  renderTakes();
+}
+function playTake(t, fromMs = 0) {
+  const wasScrub = playing && playing.id === t.id;
+  if (playing) { playing.timers.forEach(clearTimeout); cancelAnimationFrame(playing.raf);
+                 for (const m of [...held.keys()]) release(m); playing = null; }
+  resume();
+  const timers = [];
+  for (const e of t.events) {
+    if (e.t < fromMs) continue;
+    const at = e.t - fromMs;
+    timers.push(setTimeout(() => play(e.note, e.vel, false), at));
+    timers.push(setTimeout(() => release(e.note), at + Math.max(40, e.dur)));
+  }
+  timers.push(setTimeout(stopTake, (t.ms - fromMs) + 600));
+  playing = { id: t.id, timers, t0: performance.now(), from: fromMs, take: t, raf: 0 };
+  const tl = t._tl;
+  if (tl) tl.classList.add('live');
+  const tick = () => {
+    if (!playing) return;
+    const now = playing.from + (performance.now() - playing.t0);
+    const el = playing.take._tl;
+    if (el) {
+      el.querySelector('.ph').style.left = (Math.min(1, now / playing.take.ms) * 100) + '%';
+      el.querySelector('.tm').textContent =
+        `${(now/1000).toFixed(1)} / ${(playing.take.ms/1000).toFixed(1)}s`;
+    }
+    playing.raf = requestAnimationFrame(tick);
+  };
+  tick();
+  if (!wasScrub) renderTakes();
+  else { document.querySelectorAll('.take').forEach(el => el.classList.remove('playing'));
+         tl && tl.previousElementSibling.classList.add('playing'); }
+}
+
+function renderTakes() {
+  const wrap = document.getElementById('takes');
+  wrap.textContent = '';
+  for (const t of takes) {
+    const outer = document.createElement('div');
+    outer.className = 'takeRow';
+    const row = document.createElement('div');
+    row.className = 'take' + (playing && playing.id === t.id ? ' playing' : '');
+    row.innerHTML =
+      `<input class="nm" type="text" spellcheck="false">
+       <span class="meta">${(t.ms/1000).toFixed(1)}s &middot; ${t.events.length} notes</span>
+       <button class="pl">${playing && playing.id === t.id ? 'stop' : 'play'}</button>
+       <button class="cp">copy</button>
+       ${t.seed ? '<span class="meta" style="flex:0">saved</span>' : '<button class="dl">delete</button>'}`;
+    const nm = row.querySelector('.nm');
+    nm.value = t.name;
+    // A text field in a page that listens for letter keys will play notes while
+    // you type, so the key handlers skip anything typed into an input.
+    nm.addEventListener('input', () => { t.name = nm.value; saveTakes(); });
+    nm.addEventListener('keydown', ev => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') nm.blur();
+    });
+    row.querySelector('.pl').onclick = ev => {
+      ev.target.blur();
+      (playing && playing.id === t.id) ? stopTake() : playTake(t);
+    };
+    row.querySelector('.cp').onclick = async ev => {
+      await copyText(JSON.stringify(takeJSON(t), null, 2));
+      flash(ev.target, 'copied');
+    };
+    const dl = row.querySelector('.dl');
+    if (dl) dl.onclick = ev => {
+      if (playing && playing.id === t.id) stopTake();
+      takes = takes.filter(x => x.id !== t.id);
+      saveTakes(); renderTakes(); ev.target.blur();
+    };
+    outer.appendChild(row);
+
+    const tl = document.createElement('div');
+    tl.className = 'tl' + (playing && playing.id === t.id ? ' live' : '');
+    tl.innerHTML = '<canvas></canvas><div class="ph"></div><div class="tm"></div>';
+    outer.appendChild(tl);
+    wrap.appendChild(outer);
+
+    t._tl = tl;
+    drawTimeline(t, tl);
+    // Seeking is a press anywhere on the strip. Dragging keeps seeking, which is
+    // how you find a gesture: scrub until you hear the shape you meant.
+    const seek = ev => {
+      const b = tl.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (ev.clientX - b.left) / b.width));
+      playTake(t, pct * t.ms);
+    };
+    tl.addEventListener('pointerdown', ev => {
+      ev.preventDefault(); tl.setPointerCapture(ev.pointerId); seek(ev);
+      const mv = e2 => seek(e2);
+      const up = () => { tl.removeEventListener('pointermove', mv);
+                         tl.removeEventListener('pointerup', up); };
+      tl.addEventListener('pointermove', mv);
+      tl.addEventListener('pointerup', up);
+    });
+  }
+}
+
+function drawTimeline(t, tl) {
+  const cv = tl.querySelector('canvas');
+  const w = tl.clientWidth || 800, h = tl.clientHeight || 52;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = w * dpr; cv.height = h * dpr;
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+  const ns = t.events.map(e => e.note);
+  const lo = Math.min(...ns), hi = Math.max(...ns);
+  const span = Math.max(1, hi - lo);
+  for (const e of t.events) {
+    const x = (e.t / t.ms) * (w - 2);
+    const y = 4 + (1 - (e.note - lo) / span) * (h - 11);
+    const pc = ((e.note % 12) + 12) % 12;
+    c.fillStyle = pc === 0 ? '#b455ff' : pc === 7 ? '#4a9eff' : '#7d8899';
+    c.fillRect(x, y, 3, 4);
+  }
+}
+
+// Exported with the root and the scale alongside the notes, because a list of
+// MIDI numbers means nothing without knowing what the root was.
+const takeJSON = t => ({
+  name: t.name, seconds: +(t.ms/1000).toFixed(2), noteCount: t.events.length,
+  rootWritten: ROOT_WRITTEN, rootSoundingHz: 79.5,
+  scale: '1 2 3 5 7 8 (major 7)',
+  format: 't = ms from first note, note = written MIDI, dur = ms, vel = 0..1',
+  events: t.events
+});
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+  }
+}
+function flash(btn, msg) {
+  const old = btn.textContent; btn.textContent = msg; btn.blur();
+  setTimeout(() => { btn.textContent = old; }, 1200);
+}
+document.getElementById('copyAll').onclick = async e => {
+  await copyText(JSON.stringify({ takes: takes.map(takeJSON) }, null, 2));
+  flash(e.target, `copied ${takes.length}`);
+};
+
+renderTakes();
+loadSeeds();
+requestAnimationFrame(() => { for (const t of takes) if (t._tl) drawTimeline(t, t._tl); });
+addEventListener('resize', () => { for (const t of takes) if (t._tl) drawTimeline(t, t._tl); });
+
+// ---- MIDI ------------------------------------------------------------------
+// A laptop keyboard physically cannot report more than a few simultaneous keys;
+// its matrix has no diodes, so most combinations beyond three or four either
+// drop or ghost. That is hardware and no amount of code fixes it. A MIDI
+// keyboard has none of that limit and brings real velocity with it.
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess().then(midi => {
+    const attach = () => {
+      let n = 0;
+      for (const input of midi.inputs.values()) { input.onmidimessage = onMidi; n++; }
+      if (n) document.getElementById('status').textContent += ` · ${n} MIDI input${n>1?'s':''}`;
+    };
+    attach();
+    midi.onstatechange = attach;
+  }).catch(() => {});
+}
+function onMidi(e) {
+  const [st, note, vel] = e.data;
+  const cmd = st & 0xf0;
+  resume();
+  if (cmd === 0x90 && vel > 0) play(note, Math.max(0.08, vel / 127));
+  else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) release(note);
+  else if (cmd === 0xb0 && note === 123) { for (const m of [...held.keys()]) release(m); }
+}
+
+// Paint every control from the restored state. Doing it here, once, rather than
+// in the markup means there is one source of truth and nothing to keep in step.
+(function paintSaved() {
+  const vol = typeof saved.vol === 'number' ? saved.vol : 70;
+  const rev = typeof saved.rev === 'number' ? saved.rev : 26;
+  document.getElementById('vol').value = vol;  document.getElementById('volV').textContent = vol;
+  document.getElementById('rev').value = rev;  document.getElementById('revV').textContent = rev;
+  document.getElementById('octV').textContent = octave;
+  document.getElementById('sus').classList.toggle('on', sustain);
+  document.getElementById('lift').classList.toggle('on', liftOn);
+  const sc = document.getElementById('scale');
+  sc.textContent = 'scale: ' + (scaleOn ? '1 2 3 5 7 8' : 'chromatic');
+  sc.classList.toggle('on', scaleOn);
+})();
+
+// ---- per sample strip ------------------------------------------------------
+const NOTE_NAME = sm => nameOf(ROOT_WRITTEN + sm);
+function buildTrims() {
+  const wrap = document.getElementById('trims');
+  wrap.textContent = '';
+  for (const sm of SEMIS) {
+    const c = document.createElement('div');
+    c.className = 'tc';
+    c.innerHTML =
+      `<div class="nm">${NOTE_NAME(sm)}</div>
+       <input type="range" class="tv" min="0" max="200" step="1" value="${trim[sm].vol}">
+       <div class="rd rv">${trim[sm].vol}</div>
+       <input type="range" class="tt" min="-50" max="50" step="1" value="${trim[sm].cents}">
+       <div class="rd rt">${trim[sm].cents>0?'+':''}${trim[sm].cents}</div>`;
+    const mark = () => c.classList.toggle('edited', trim[sm].vol !== 100 || trim[sm].cents !== 0);
+    const v = c.querySelector('.tv'), t = c.querySelector('.tt');
+    v.addEventListener('input', e => {
+      trim[sm].vol = +e.target.value;
+      c.querySelector('.rv').textContent = trim[sm].vol;
+      mark(); save(); preview(sm);
+    });
+    t.addEventListener('input', e => {
+      trim[sm].cents = +e.target.value;
+      c.querySelector('.rt').textContent = (trim[sm].cents > 0 ? '+' : '') + trim[sm].cents;
+      mark(); save(); preview(sm);
+    });
+    // A click that lands on the current value fires no input event, so the
+    // pointer itself triggers the audition. Tuning you cannot hear is guesswork.
+    for (const el of [v, t]) el.addEventListener('pointerdown', () => preview(sm, true));
+    mark();
+    c.dataset.semi = sm;
+    wrap.appendChild(c);
+  }
+  placeTrims();
+}
+
+// Read the real geometry off the keyboard rather than recomputing it. The keys
+// already know where they are, and matching their measured positions is exact
+// by construction at any width.
+function placeTrims() {
+  const wrap = document.getElementById('trims');
+  document.getElementById('trimWrap').style.width = kb.offsetWidth + 'px';
+  // Measure against the strip's OWN box, not the keyboard's. The two are not at
+  // the same x: the strip shares a flex row with the buttons, so centring the
+  // row pushes the strip left of the keyboard by half the buttons' width. Using
+  // the keyboard's origin made every column wrong by that same amount.
+  const base = wrap.getBoundingClientRect();
+  for (const c of wrap.children) {
+    const key = keyEls.get(ROOT_WRITTEN + (+c.dataset.semi));
+    if (!key) { c.style.display = 'none'; continue; }
+    c.style.display = '';
+    const k = key.getBoundingClientRect();
+    const w = Math.max(20, Math.round(k.width));
+    c.style.width = w + 'px';
+    c.style.left = Math.round(k.left - base.left + (k.width - w) / 2) + 'px';
+  }
+}
+addEventListener('resize', placeTrims);
+// Moving a slider sounds the note it belongs to, throttled, because tuning by
+// eye is not a thing anyone can do.
+let previewAt = 0;
+function preview(sm, force = false) {
+  const now = performance.now();
+  if (!force && now - previewAt < 220) return;
+  previewAt = now;
+  resume();
+  const w = ROOT_WRITTEN + sm;
+  play(w, 0.8, false);
+  setTimeout(() => release(w), 160);
+}
+
+document.getElementById('copyTrim').onclick = async e => {
+  const out = SEMIS.filter(sm => trim[sm].vol !== 100 || trim[sm].cents !== 0)
+    .map(sm => ({ semitones: sm, note: NOTE_NAME(sm), vol: trim[sm].vol, cents: trim[sm].cents }));
+  const text = JSON.stringify({ adjustments: out, unchanged: SEMIS.length - out.length }, null, 2);
+  try { await navigator.clipboard.writeText(text); } catch (err) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+  }
+  const b = e.target, old = b.textContent;
+  b.textContent = `${out.length} \u2713`;
+  setTimeout(() => { b.textContent = old; }, 1400);
+  b.blur();
+};
+document.getElementById('trimReset').onclick = e => {
+  for (const sm of SEMIS) { trim[sm].vol = 100; trim[sm].cents = 0; }
+  buildTrims(); save(); e.target.blur();
+};
+
+build();
+buildTrims();
+requestAnimationFrame(() => requestAnimationFrame(placeTrims));
+load().catch(err => { document.getElementById('status').textContent = 'could not load: ' + err.message; });
+</script>
+</body>
+</html>
