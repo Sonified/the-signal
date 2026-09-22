@@ -149,6 +149,8 @@ export const S = {
   // One place at a time, a few minutes each, joined by long crossfades.
   ambOn: true, ambVol: 0.18, ambDwell: 4, ambXfade: 14,
   ambKids: 0.5, ambKidLevel: 0.22,
+  // Dry by default: these are real places, recorded in the room they were in.
+  ambReverb: 0, ambRevTime: 4.5,
 
   // ---------- layers ----------
   layers: { field: true, rings: true, corners: true, edge: true, text: true }

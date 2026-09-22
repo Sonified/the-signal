@@ -35,6 +35,7 @@ export function saveSettings() {
       pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
       ambOn: S.ambOn, ambVol: S.ambVol, ambDwell: S.ambDwell, ambXfade: S.ambXfade,
       ambKids: S.ambKids, ambKidLevel: S.ambKidLevel,
+      ambReverb: S.ambReverb, ambRevTime: S.ambRevTime,
       pipTrimDb: S.pipTrimDb, biOn: S.biOn, chirpVol: S.chirpVol, chirpReverb: S.chirpReverb, chirpRevTime: S.chirpRevTime,
       chirpModDepth: S.chirpModDepth, chirpModPeriod: S.chirpModPeriod,
       clickMode: S.clickMode, chirpLowHz: S.chirpLowHz, chirpHighHz: S.chirpHighHz,
@@ -214,7 +215,7 @@ export function applySettings() {
   if (typeof s.ambOn   === 'boolean') S.ambOn   = s.ambOn;
   ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoDensity','pianoCentre',
    'pianoSpread','pianoHold','pianoBass','ambVol','ambDwell','ambXfade',
-   'ambKids','ambKidLevel'].forEach(k => num(k));
+   'ambKids','ambKidLevel','ambReverb','ambRevTime'].forEach(k => num(k));
   {
     const pc = (id, v) => { const e = $(id); if (e) e.value = v; };
     const tx = (id, v) => { const e = $(id); if (e) e.textContent = v; };
@@ -233,6 +234,8 @@ export function applySettings() {
     pc('ambXfade', S.ambXfade);                       tx('ambXfadeVal', S.ambXfade);
     pc('ambKids', Math.round(S.ambKids*100));         tx('ambKidsVal', Math.round(S.ambKids*100));
     pc('ambKidLevel', Math.round(S.ambKidLevel*100)); tx('ambKidLevelVal', Math.round(S.ambKidLevel*100));
+    pc('ambReverb', Math.round(S.ambReverb*100));     tx('ambRevVal', Math.round(S.ambReverb*100));
+    pc('ambRevTime', S.ambRevTime);                   tx('ambRevTimeVal', S.ambRevTime.toFixed(1));
   }
 
   // migrate the older exclusive setting if it is still on disk

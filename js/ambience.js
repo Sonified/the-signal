@@ -35,7 +35,8 @@ const urlFor = w => (w.dir || 'audio/ambience/') + w.bed + EXT;
 const kidUrl = k => 'audio/ambience/' + k + EXT;
 
 const cache = new Map();
-let out = null, running = false, current = null, kidVoice = null;
+let out = null, verb = null, wet = null;
+let running = false, current = null, kidVoice = null;
 let dwellTimer = null, kidTimer = null;
 
 async function buf(url) {
@@ -46,6 +47,17 @@ async function buf(url) {
   return b;
 }
 
+// A decaying noise burst, the same serviceable room the piano uses.
+function impulse(ctx, sec, decay) {
+  const n = Math.floor(ctx.sampleRate * sec);
+  const b = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, decay);
+  }
+  return b;
+}
+
 function ensureOut() {
   if (out) return out;
   const ctx = getContext(), master = getMaster();
@@ -53,10 +65,40 @@ function ensureOut() {
   out = ctx.createGain();
   out.gain.value = S.ambVol;
   out.connect(master);
+  // A parallel send rather than an insert. The field recording stays whole and
+  // the room is added behind it, so turning this up moves the place further
+  // off rather than washing it out -- the ocean heard from inside a cavern,
+  // not an ocean with the detail smeared out of it.
+  verb = ctx.createConvolver();
+  verb.buffer = impulse(ctx, S.ambRevTime, 2.0);
+  wet = ctx.createGain();
+  wet.gain.value = S.ambReverb;
+  out.connect(verb).connect(wet).connect(master);
   return out;
 }
 export function applyAmbVol() {
   if (out) out.gain.setTargetAtTime(S.ambVol, getContext().currentTime, 0.2);
+}
+export function applyAmbReverb() {
+  if (wet) wet.gain.setTargetAtTime(S.ambReverb, getContext().currentTime, 0.12);
+}
+
+// Unlike the piano, the bed is always sounding, so there is never a quiet
+// moment to swap an impulse in. Changing the buffer under a signal that is
+// mid-tail steps the output. So duck the send first, swap in the gap, and
+// bring it back: the room changes shape without a click.
+let irTimer = null;
+export function rebuildAmbIR() {
+  if (!verb || !wet) return;
+  clearTimeout(irTimer);
+  const ctx = getContext();
+  wet.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+  irTimer = setTimeout(() => {
+    const c = getContext();
+    if (!verb || !wet || !c) return;
+    verb.buffer = impulse(c, S.ambRevTime, 2.0);
+    wet.gain.setTargetAtTime(S.ambReverb, c.currentTime, 0.25);
+  }, 320);
 }
 
 // A voice is a looping source with its own gain, so two can overlap during a

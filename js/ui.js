@@ -8,7 +8,7 @@ import { invalidateGradients } from './renderers/canvas2d.js';
 import { saveSettings } from './settings.js';
 import { applyPreset } from './presets.js';
 import { pianoOn, pianoOff, applyPianoReverb, rebuildPianoIR, applyBedVol, pianoAvailable } from './piano.js';
-import { ambienceOn, ambienceOff, applyAmbVol } from './ambience.js';
+import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR } from './ambience.js';
 import { rebuildPool, poolSize, recentreWord, THEMES as WORD_THEMES } from './text.js';
 import { chirpDurationMs } from './chirp.js';
 import {
@@ -464,6 +464,14 @@ export function initUI() {
   bind('ambXfade',  'ambXfade',  v => v);
   bind('ambKids',   'ambKids',   v => v/100);
   bind('ambKidLevel','ambKidLevel', v => v/100);
+  $('ambReverb').addEventListener('input', e => {
+    S.ambReverb = +e.target.value/100; $('ambRevVal').textContent = e.target.value;
+    applyAmbReverb(); saveSettings();
+  });
+  $('ambRevTime').addEventListener('input', e => {
+    S.ambRevTime = +e.target.value; $('ambRevTimeVal').textContent = S.ambRevTime.toFixed(1);
+    rebuildAmbIR(); saveSettings();
+  });
   bind('pianoDensity','pianoDensity', v => v/100);
   bind('pianoSpread','pianoSpread', v => v/100);
   bind('pianoHold', 'pianoHold', v => v/100);
