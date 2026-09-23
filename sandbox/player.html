@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lekko</title>
+<title>Live Player</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#127929;</text></svg>">
 <style>
-  :root { --bg:#0b0f14; --ink:#e6edf5; --dim:#7c8796; --line:#212932; --hit:#d400ff; --vol:#4a9eff; --pit:#b455ff; }
+  :root { --bg:#0b0f14; --ink:#e6edf5; --dim:#7c8796; --line:#212932; --hit:#d400ff; --vol:#4a9eff; --pit:#b455ff; --env:#4ad9a0; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); min-height:100vh;
          font:14px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;
@@ -20,6 +20,8 @@
   button { background:#151b23; color:var(--ink); border:1px solid var(--line); border-radius:7px;
            padding:7px 12px; font:inherit; font-size:12.5px; cursor:pointer; }
   button:hover { border-color:#3a4551; }
+  button:disabled { opacity:.35; cursor:default; }
+  button:disabled:hover { border-color:var(--line); }
   button.on { background:var(--hit); border-color:var(--hit); color:#0b0f14; font-weight:600; }
 
   #kb { position:relative; display:flex; height:170px; user-select:none; margin-top:4px;
@@ -66,6 +68,14 @@
   .tc.lit { border-color:#8ab4ff; background:#141c28; box-shadow:0 0 12px rgba(120,170,255,.28); }
   .tc .nm { font-size:8px; color:var(--dim); letter-spacing:.01em; }
   .tc.lit .nm { color:#cfe0ff; }
+  /* a real sample among a strip of resampled neighbours, bolded the same way
+     the keyboard already marks it */
+  .tc.real .nm { color:#aeb8c6; font-weight:700; }
+  .tc.lit.real .nm { color:#cfe0ff; }
+  /* the manifest value, so the repo number and the live slider sit together */
+  .tc .mf { font-size:7.5px; line-height:1.1; min-height:9px; color:#6d5a8a;
+            font-variant-numeric:tabular-nums; }
+  .tc.matches .mf { color:#4ad9a0; }
   .tc .rd { font-size:7.5px; color:#5f6a78; font-variant-numeric:tabular-nums; line-height:1.1; }
   .tc input[type=range] {
     writing-mode:vertical-lr; direction:rtl;
@@ -91,6 +101,67 @@
   .take .meta { color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; flex:1; }
   .take button { padding:4px 9px; font-size:11px; }
   .takeRow { display:flex; flex-direction:column; gap:0; }
+
+  /* The envelopes. Two columns because they are two independent shapes that you
+     read against each other: a filter that opens after the volume has already
+     arrived sounds like a different instrument than one that opens with it. The
+     curve above each column draws what the numbers add up to, so the shape is
+     something you see rather than something you infer from four sliders. */
+  /* A floating plugin window. It is fixed rather than in the flow because the
+     whole point is being able to keep it open over the keyboard while playing,
+     put it where it does not cover the keys, and close it when it is in the way. */
+  #envWrap { position:fixed; z-index:40; display:none; flex-direction:column;
+             width:min(560px, calc(100vw - 28px)); min-width:300px; min-height:240px;
+             max-height:calc(100vh - 28px);
+             background:#0f141b; border:1px solid #2c3742; border-radius:10px;
+             box-shadow:0 22px 60px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.04);
+             overflow:hidden; resize:both; }
+  #envWrap.show { display:flex; }
+  .winbar { display:flex; align-items:center; gap:9px; flex:none;
+            padding:7px 7px 7px 12px; background:linear-gradient(#1b222b, #141a22);
+            border-bottom:1px solid #212932; cursor:grab; user-select:none;
+            touch-action:none; }
+  .winbar.drag { cursor:grabbing; }
+  .wintitle { font-size:10.5px; letter-spacing:.15em; text-transform:uppercase;
+              color:#8d99a8; font-weight:600; }
+  .windot { width:7px; height:7px; border-radius:50%; background:var(--env);
+            box-shadow:0 0 7px var(--env); flex:none; }
+  .winbar button { padding:3px 9px; font-size:10.5px; }
+  .winbar .winx { margin-left:2px; padding:3px 8px; font-size:13px; line-height:1;
+                  color:var(--dim); }
+  .winbar .winx:hover { color:#ff8a8a; border-color:#5a3a3a; }
+  .winbody { padding:11px 12px 14px; overflow:auto; display:flex;
+             flex-direction:column; gap:9px; }
+  /* the grip the browser draws for resize:both needs somewhere to sit */
+  #envWrap::after { content:''; position:absolute; right:2px; bottom:2px;
+                    width:11px; height:11px; pointer-events:none;
+                    background:linear-gradient(135deg, transparent 50%, #3a4551 50%,
+                               #3a4551 62%, transparent 62%, transparent 74%,
+                               #3a4551 74%, #3a4551 86%, transparent 86%); }
+  /* One column. Always one column, at any window width -- a vertical stack
+     rather than a wrapping row, so narrowing the window never rearranges it. */
+  #envCols { display:flex; flex-direction:column; gap:14px; align-items:stretch; }
+  /* Volume, note length and ADSR share the amplitude column. */
+  .ecol { min-width:0; display:flex; flex-direction:column; gap:14px; }
+  .ecol > .eg { flex:0 0 auto; }
+  .eg { background:#11161d; border:1px solid var(--line);
+        border-radius:8px; padding:10px 12px 12px; display:flex; flex-direction:column; gap:7px; }
+  .eg > h2 { margin:0; font-size:11px; font-weight:600; letter-spacing:.12em;
+             text-transform:uppercase; color:var(--dim); display:flex; align-items:center; gap:9px; }
+  .eg > h2 button { padding:2px 8px; font-size:10px; margin-left:auto; }
+  /* The curve is now the control, so it needs room for the dots to move in and
+     it has to keep the browser's own touch gestures off it while they do. */
+  .ev { width:100%; height:78px; display:block; border-radius:5px;
+        background:#0d1218; border:1px solid var(--line);
+        touch-action:none; cursor:default; }
+  .ev.over { cursor:grab; }
+  .ev.grabbing { cursor:grabbing; }
+  .es { display:flex; align-items:center; gap:9px; font-size:11px; color:var(--dim); }
+  .es .lb { width:66px; flex:none; }
+  .es input[type=range] { flex:1; width:auto; accent-color:var(--env); }
+  .es .vl { width:50px; flex:none; text-align:right; color:#9fb0c2;
+            font-variant-numeric:tabular-nums; font-size:10.5px; }
+  .eg.off .es input, .eg.off .ev { opacity:.32; }
   /* A strip of the actual notes, time across and pitch up, so a gesture you
      liked is something you can see and point at rather than hunt for. */
   .tl { position:relative; height:52px; margin:5px 0 2px; border-radius:6px;
@@ -101,7 +172,6 @@
   .tl.live .ph { display:block; }
   .tl .tm { position:absolute; right:6px; top:4px; font-size:9.5px; color:var(--dim);
             font-variant-numeric:tabular-nums; pointer-events:none; }
-
   #hint { color:var(--dim); font-size:11.5px; text-align:center; max-width:640px; line-height:1.8; }
   kbd { background:#151b23; border:1px solid var(--line); border-radius:4px; padding:1px 5px;
         font:inherit; font-size:10.5px; color:var(--ink); }
@@ -109,8 +179,10 @@
 </head>
 <body>
 
-<h1>Lekko &nbsp;&middot;&nbsp; The Signal</h1>
+<h1>The Signal &nbsp;&middot;&nbsp; <span id="title">Lekko</span></h1>
 <div id="status">loading&hellip;</div>
+
+<div class="row" id="instRow"></div>
 
 <div class="row">
   <label>volume <input id="vol" type="range" min="0" max="100" value="70"><b id="volV">70</b></label>
@@ -119,6 +191,7 @@
   <button id="sus" class="on">sustain</button>
   <button id="scale" class="on">scale: 1 2 3 5 7 8</button>
   <button id="lift" class="on">key lift</button>
+  <button id="envBtn">envelopes</button>
   <button id="fmt">format: &mdash;</button>
 </div>
 
@@ -127,8 +200,23 @@
 <div id="trimWrap">
   <div id="trims"></div>
   <div id="trimSide">
+    <button id="trimLoad">default</button>
     <button id="copyTrim">copy</button>
     <button id="trimReset">reset</button>
+  </div>
+</div>
+
+<div id="envWrap">
+  <div class="winbar" id="envBar">
+    <span class="windot"></span>
+        <span class="wintitle">Clouds</span>
+    <span style="flex:1"></span>
+    <button id="envCopy">copy</button>
+    <button id="envReset">reset</button>
+    <button class="winx" id="envClose" title="close">&times;</button>
+  </div>
+  <div class="winbody">
+    <div id="envCols"></div>
   </div>
 </div>
 
@@ -144,42 +232,239 @@
 
 <div id="hint">
   <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd><kbd>'</kbd>
-  walk the scale &nbsp;&middot;&nbsp; <kbd>Z</kbd><kbd>X</kbd> octave &nbsp;&middot;&nbsp; in chromatic mode the
+  walk the scale &nbsp;&middot;&nbsp; <kbd>Z</kbd><kbd>X</kbd> octave &nbsp;&middot;&nbsp; <kbd>space</kbd> kills every sounding note &nbsp;&middot;&nbsp; in chromatic mode the
   <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> row gives the black keys<br>
   bold labels are real samples &nbsp;&middot;&nbsp; everything else is resampled from its nearest neighbour
   &nbsp;&middot;&nbsp; written C sounds the root
 </div>
 
 <script type="module">
-// Every note is named by its distance in semitones from the root, so the file
-// name IS the mapping and nothing has to be configured. The root is the lowest
-// sample and it sounds at about 79.5 Hz, two octaves under the 40 Hz carrier
-// the rest of The Signal runs on.
-const SEMIS = [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40];
-const DEGREES = [0,2,4,7,11];            // 1 2 3 5 7, the 8 is the next octave's 1
-const RELEASES = 18;
-
+// ---- the instruments -------------------------------------------------------
+// Both sample sets are the ones the site itself ships, one directory up, and
+// both are indexed the same way: by distance in semitones from the root. That
+// is the whole mapping. The root is written as C3 and sounds at about 79.5 Hz,
+// two octaves under the 40 Hz carrier the rest of The Signal runs on, so the
+// two instruments are in tune with each other and with the tone by construction.
+//
+// Where they differ is what a key means. A piano note is struck and decays, so
+// its samples are chromatic-ish and dense and a lifted finger is a damper. A
+// cloud is a sustained pad held at a scale degree, so there are only eight of
+// them, they are spread much further apart, and letting go has to be a long
+// fade or the pad ends with a click instead of a breath.
 const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const ROOT_WRITTEN = 48;                 // the root is written as C3
 const nameOf = m => NAMES[((m%12)+12)%12] + (Math.floor(m/12)-1);
-const LO = ROOT_WRITTEN, HI = ROOT_WRITTEN + SEMIS[SEMIS.length-1];
-const REAL = new Set(SEMIS.map(s => ROOT_WRITTEN + s));
+const BLACK = new Set([1,3,6,8,10]);
+const isWhite = m => !BLACK.has(((m % 12) + 12) % 12);
+const DEGREES = [0,2,4,7,11];            // 1 2 3 5 7, the 8 is the next octave's 1
 const inScale = m => DEGREES.includes((((m - ROOT_WRITTEN) % 12) + 12) % 12);
+
+// The clouds are named by scale degree rather than by semitone, so this is the
+// one place the two naming schemes have to meet.
+const CLOUD = { '-12':'octbelow', '-5':'5below', '0':'1', '2':'2',
+                '4':'3', '7':'5', '11':'7', '12':'8' };
+
+const INSTRUMENTS = {
+  piano: {
+    label: 'piano',
+    dir: '../audio/piano',
+    semis: [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40],
+    note: sm => `lekko-${String(sm).padStart(2,'0')}`,
+    // 18 recorded finger lifts, laid over any note
+    lifts: 18,
+    lift: i => `releases/release-${String(i).padStart(2,'0')}`,
+    // keyboard span, in semitones either side of the root
+    lo: 0, hi: 40,
+    fade: 0.4,                           // a damper
+    // Trim is per sample: 24 real recordings are dense enough that every key
+    // is at most a couple of semitones from one, so correcting the sample
+    // corrects every key that reaches for it.
+    perKey: false,
+    // only the Opus encodes of the piano were ever committed
+    formats: ['opus'],
+    // The levels Robert dialled in live in the repo, not in a browser.
+    manifest: 'manifest.json',
+    levels: m => m.levelTrimsBaked
+      || Object.fromEntries((m.notes||[]).filter(n => n.levelTrim !== 100)
+                                        .map(n => [n.semitones, n.levelTrim]))
+  },
+  clouds: {
+    label: 'clouds',
+    dir: '../audio/music/clouds',
+    semis: [-12,-5,0,2,4,7,11,12],
+    note: sm => `clouds-${CLOUD[sm]}`,
+    lifts: 0,
+    lift: null,
+    // An octave below the lowest pad up to two above the highest. Past that a
+    // 15 second pad is resampled down too far and stops sounding like weather.
+    lo: -12, hi: 24,
+    fade: 2.4,                           // a breath
+    // Trim is per KEY, not per sample: eight pads stretched across 37
+    // playable keys means most keys are resampled, and a resampled neighbour
+    // has no reason to share a level with the pad it borrowed from. Every
+    // playable key gets its own slider.
+    perKey: true,
+    formats: ['opus','mp3'],
+    manifest: 'manifest.json',
+    levels: () => ({})          // the pads came out even; nothing was ever trimmed
+  }
+};
 
 // ---- format: Opus where the browser will take it, mp3 where it will not ----
 const probe = new Audio();
 const canOpus = probe.canPlayType('audio/ogg; codecs=opus') !== ''
              || probe.canPlayType('audio/webm; codecs=opus') !== '';
-let savedFmt = null;
-try { savedFmt = (JSON.parse(localStorage.getItem('lekko.player.v1')) || {}).fmt; } catch (e) {}
-let FMT = (savedFmt === 'mp3' || (savedFmt === 'opus' && canOpus)) ? savedFmt
+const preload = (() => { try { return JSON.parse(localStorage.getItem('lekko.player.v1')) || {}; }
+                         catch (e) { return {}; } })();
+let INST = INSTRUMENTS[preload.inst] ? preload.inst : 'piano';
+let FMT = (preload.fmt === 'mp3' || (preload.fmt === 'opus' && canOpus)) ? preload.fmt
         : (canOpus ? 'opus' : 'mp3');
-// The samples are the ones the site itself ships, one directory up. Only the
-// Opus encodes were committed, so mp3 will 404 here until they are added.
-const PIANO = '../audio/piano';
-const url = (kind, n) => FMT === 'opus'
-  ? (kind === 'note' ? `${PIANO}/lekko-${n}.opus` : `${PIANO}/releases/release-${n}.opus`)
-  : (kind === 'note' ? `${PIANO}/lekko-${n}.mp3`  : `${PIANO}/releases/release-${n}.mp3`);
+
+// The live instrument, unpacked into the names the rest of the file already
+// uses. Everything here is rebuilt by setInstrument rather than being constant,
+// because the keyboard's range and its real keys both change with the samples.
+let I, SEMIS, RELEASES, LO, HI, REAL, TRIM_RANGE;
+function unpack() {
+  I = INSTRUMENTS[INST];
+  SEMIS = I.semis;
+  RELEASES = I.lifts;
+  LO = ROOT_WRITTEN + I.lo;
+  HI = ROOT_WRITTEN + I.hi;
+  REAL = new Set(SEMIS.map(s => ROOT_WRITTEN + s));
+  // What the trim strip is a strip OF. White keys, and only white keys.
+  //
+  // The piano gets this right for free: its 24 samples ARE the white keys
+  // (0 2 4 5 7 9 11 is C D E F G A B), so one column per sample lands one wide
+  // column under each white key. Giving the clouds a column per SEMITONE put
+  // narrow columns at the black keys' positions, wedged between and overlapping
+  // the white ones — that is the pile-up, not the number of sliders in a column.
+  TRIM_RANGE = I.perKey
+    ? Array.from({ length: I.hi - I.lo + 1 }, (_, i) => I.lo + i)
+        .filter(sm => isWhite(ROOT_WRITTEN + sm))
+    : SEMIS;
+  // an instrument that was never encoded as mp3 cannot be played as one
+  if (!I.formats.includes(FMT)) FMT = I.formats[0];
+}
+unpack();
+
+// What the manifest says was done to these samples, read fresh on every load.
+// localStorage is per origin, so the moment this page moved into the repo every
+// slider it had ever been given went out of reach. The repo is the record.
+let manifestLevels = {};
+
+const url = (kind, n) => `${I.dir}/${kind === 'note' ? I.note(n) : I.lift(n)}.${FMT}`;
+
+// ---- envelopes -------------------------------------------------------------
+// Two envelopes per voice, plus a static high-pass filter.
+// They are worth having separately because on a pad the interesting movement is
+// the filter arriving after the volume has, which is the difference between a
+// chord appearing and a chord opening.
+//
+// A sampled pad already has an envelope baked into it: the recording fades in
+// and out on its own. These shape what is left, they do not replace it, so a
+// zero attack means "as the sample was recorded", not "instant".
+const ENV_SPEC = {
+  amp: { title: 'volume envelope', rows: [
+    ['vol', 'volume', 0, 100, 1, '%'],
+    // Zero holds the note until key-up; otherwise it ends after this duration.
+    ['len', 'length', 0, 20, 0.1, 's'],
+    ['aA', 'attack',   0, 8,   0.01, 's'],
+    ['aD', 'decay',    0, 8,   0.01, 's'],
+    ['aS', 'sustain',  0, 100, 1,    '%'],
+    ['aR', 'release',  0, 14,  0.01, 's'],
+  ]},
+  filt: { title: 'filter envelope', toggle: 'fOn', rows: [
+    // Cutoff is logarithmic because pitch is: a hundred Hz is most of the
+    // bottom of the instrument and nothing at all at the top.
+    ['cut',  'cutoff',    40, 18000, 0, 'Hz', true],
+    ['q',    'resonance', 0.1, 14,   0.1, ''],
+    ['fAmt', 'env amount', -5, 5,    0.1, 'oct'],
+    ['fA',   'attack',    0, 8,      0.01, 's'],
+    ['fD',   'decay',     0, 8,      0.01, 's'],
+    ['fS',   'sustain',   0, 100,    1,    '%'],
+    ['fR',   'release',   0, 14,     0.01, 's'],
+  ]},
+  filters: { title: 'filters', toggle: 'hpOn', rows: [
+    ['hp', 'high pass', 20, 16000, 0, 'Hz', true],
+  ]}
+};
+
+const ENV_DEFAULTS = {
+  // The piano is left alone: struck strings already have the envelope that
+  // matters, and the filter is off, so this is the sound it always had.
+  piano: { on: false, aA: 0.002, aD: 0, aS: 100, aR: 0.4,
+           fOn: false, cut: 18000, q: 0.7, fAmt: 0, fA: 0.01, fD: 0.5, fS: 50, fR: 0.5,
+           hpOn: false, hp: 20,
+           len: 0 },
+  // The clouds open slowly and let go slowly, and the filter trails the volume
+  // by about a second, which is what makes a held key sound like it is arriving
+  // rather than being switched on.
+  clouds: { on: true, aA: 1.8, aD: 2.5, aS: 82, aR: 4.0,
+            fOn: true, cut: 420, q: 0.8, fAmt: 3.2, fA: 3.0, fD: 4.0, fS: 55, fR: 3.5,
+            hpOn: false, hp: 20,
+            len: 0 }
+};
+
+const allEnv = (() => {
+  const src = preload.env || {};
+  const out = {};
+  for (const k of Object.keys(ENV_DEFAULTS)) out[k] = { ...ENV_DEFAULTS[k], ...(src[k] || {}) };
+  return out;
+})();
+let env = allEnv[INST];
+
+// A slider is always an integer 0..1000; the parameter it drives may be linear
+// or logarithmic. Keeping that conversion in one pair of functions is what lets
+// the cutoff share a row builder with the sustain percentage.
+const TICKS = 1000;
+function toSlider(r, v) {
+  const [, , min, max, , , log] = r;
+  const f = log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
+  return Math.round(Math.max(0, Math.min(1, f)) * TICKS);
+}
+function fromSlider(r, t) {
+  const [, , min, max, step, , log] = r;
+  const f = t / TICKS;
+  const v = log ? min * Math.pow(max / min, f) : min + f * (max - min);
+  if (log) return v < 1000 ? Math.round(v) : Math.round(v / 10) * 10;
+  return step ? Math.round(v / step) * step : v;
+}
+const envFmt = (r, v) => {
+  const unit = r[5];
+  if (unit === 'Hz') return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : Math.round(v) + '';
+  if (unit === '%')  return Math.round(v) + '%';
+  if (unit === 'oct') return (v > 0 ? '+' : '') + v.toFixed(1);
+  // zero length is the only zero that means something other than "none"
+  if (unit === 's')  return (r[0] === 'len' && v === 0) ? 'held' : v.toFixed(2) + 's';
+  return v.toFixed(1);
+};
+
+// Every parameter reachable by its id, so the curve handles can write to the
+// same numbers the sliders do without either one owning the value.
+const ENV_ROW = {};
+for (const g of Object.values(ENV_SPEC)) for (const r of g.rows) ENV_ROW[r[0]] = r;
+// Which four numbers each curve is drawing. The dots are named by what they do,
+// not by which envelope they belong to, so one set of drag maths serves both.
+const ENV_HANDLES = { amp:  { A:'aA', D:'aD', S:'aS', R:'aR' },
+                      filt: { A:'fA', D:'fD', S:'fS', R:'fR' } };
+const FILTER_KEYS = ['fOn', 'cut', 'q', 'fAmt', 'fA', 'fD', 'fS', 'fR', 'hpOn', 'hp'];
+
+// Clamped to the parameter's own range and quantised to its own step, so a dot
+// cannot reach anywhere its slider could not, and the two always agree.
+function envSet(id, v) {
+  const r = ENV_ROW[id];
+  if (!r) return;
+  const [, , min, max, step] = r;
+  v = Math.max(min, Math.min(max, v));
+  if (step) v = Math.round(v / step) * step;
+  env[id] = v;
+  if (FILTER_KEYS.includes(id)) updateLiveFilters(id);
+  const row = document.querySelector(`#envCols .es[data-id="${id}"]`);
+  if (row) {
+    row.querySelector('input').value = toSlider(r, v);
+    row.querySelector('.vl').textContent = envFmt(r, v);
+  }
+}
 
 // ---- audio graph -----------------------------------------------------------
 let ctx, master, verb, wet;
@@ -197,6 +482,41 @@ function impulse(sec, decay) {
   return b;
 }
 
+// Fetching and decoding whatever the current instrument and format point at.
+// Shared by the first load, the format toggle and the instrument switch, so
+// there is one loader and it cannot drift between them.
+async function loadSamples() {
+  const st = document.getElementById('status');
+  notes.clear(); lifts.length = 0;
+  let done = 0, total = SEMIS.length + RELEASES;
+  const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
+  await Promise.all([
+    ...SEMIS.map(async s => {
+      notes.set(s, await get(url('note', s)));
+      st.textContent = `loading ${I.label} ${++done}/${total}`;
+    }),
+    ...Array.from({length: RELEASES}, async (_, i) => {
+      lifts[i] = await get(url('lift', i));
+      st.textContent = `loading ${I.label} ${++done}/${total}`;
+    })
+  ]);
+  // The manifest is read alongside the audio it describes, so the numbers and
+  // the files can never be out of step with each other.
+  manifestLevels = {};
+  try {
+    const m = await (await fetch(`${I.dir}/${I.manifest}`)).json();
+    manifestLevels = I.levels(m) || {};
+  } catch (err) { /* a set without a manifest simply has nothing to say */ }
+  buildTrims();
+
+  const n = Object.keys(manifestLevels).length;
+  st.textContent = `${I.label} · ${SEMIS.length} samples`
+                 + (RELEASES ? ` · ${RELEASES} key lifts` : '')
+                 + (n ? ` · ${n} default levels` : '')
+                 + ` · ${FMT} · press a key`;
+  document.getElementById('fmt').textContent = 'format: ' + FMT;
+}
+
 async function load() {
   ctx = new AudioContext();
   master = ctx.createGain();
@@ -205,23 +525,7 @@ async function load() {
   verb = ctx.createConvolver(); verb.buffer = impulse(3.6, 2.2);
   wet = ctx.createGain(); wet.gain.value = (+document.getElementById('rev').value)/100;
   verb.connect(wet).connect(ctx.destination);
-
-  const st = document.getElementById('status');
-  let done = 0, total = SEMIS.length + RELEASES;
-  const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
-
-  await Promise.all([
-    ...SEMIS.map(async s => {
-      notes.set(s, await get(url('note', String(s).padStart(2,'0'))));
-      st.textContent = `loading ${++done}/${total}`;
-    }),
-    ...Array.from({length: RELEASES}, async (_, i) => {
-      lifts[i] = await get(url('lift', String(i).padStart(2,'0')));
-      st.textContent = `loading ${++done}/${total}`;
-    })
-  ]);
-  st.textContent = `${SEMIS.length} notes · ${RELEASES} key lifts · ${FMT} · press a key`;
-  document.getElementById('fmt').textContent = 'format: ' + FMT;
+  await loadSamples();
 }
 
 // nearest sampled note, then resample the remaining semitones
@@ -241,13 +545,55 @@ const ringing = [];
 function trimVoices() {
   while (ringing.length > MAX_VOICES) {
     const v = ringing.shift();
-    if (!v || v.stopped) continue;
-    v.stopped = true;
-    const t = ctx.currentTime;
-    v.g.gain.cancelScheduledValues(t);
-    v.g.gain.setValueAtTime(v.g.gain.value, t);
-    v.g.gain.linearRampToValueAtTime(0, t + 0.3);
-    try { v.s.stop(t + 0.35); } catch (e) {}
+    // stopVoice rather than an inline fade, so a stolen voice also cancels the
+    // note-length timer that would otherwise fire on a voice already gone
+    if (v && !v.stopped) stopVoice(v, 0.3);
+  }
+}
+
+const clampFilterHz = value => Math.max(20, Math.min(20000, value));
+const liveLowpassHz = settings => clampFilterHz(
+  settings.cut * Math.pow(2, settings.fAmt * settings.fS / 100));
+
+// Filter nodes stay in every voice for their entire lifetime. Rewiring a graph
+// only when a control changes would strand notes that are already sounding;
+// moving their AudioParams keeps the chain continuous and click-free instead.
+function smoothAudioParam(param, value, exponential = false) {
+  const now = ctx.currentTime;
+  const current = param.value;
+  param.cancelScheduledValues(now);
+  param.setValueAtTime(exponential ? Math.max(0.0001, current) : current, now);
+  if (exponential) param.exponentialRampToValueAtTime(Math.max(0.0001, value), now + 0.025);
+  else param.linearRampToValueAtTime(value, now + 0.025);
+}
+
+function setFilterBypass(dry, wet, on, smooth = true) {
+  if (smooth) {
+    smoothAudioParam(dry.gain, on ? 0 : 1);
+    smoothAudioParam(wet.gain, on ? 1 : 0);
+  } else {
+    dry.gain.value = on ? 0 : 1;
+    wet.gain.value = on ? 1 : 0;
+  }
+}
+
+function updateLiveFilters(changed) {
+  if (!ctx || !FILTER_KEYS.includes(changed)) return;
+  for (const v of ringing) {
+    if (!v || v.ended || !v.filt || !v.hp) continue;
+    for (const key of FILTER_KEYS) v.env[key] = env[key];
+
+    if (changed === 'hp' || changed === 'hpOn') {
+      smoothAudioParam(v.hp.frequency, clampFilterHz(env.hp), true);
+      if (changed === 'hpOn') setFilterBypass(v.hpDry, v.hpWet, env.hpOn);
+    }
+    if (changed === 'q') {
+      smoothAudioParam(v.filt.Q, env.q);
+    } else if (changed !== 'hp' && changed !== 'hpOn') {
+      smoothAudioParam(v.filt.Q, env.q);
+      smoothAudioParam(v.filt.frequency, liveLowpassHz(env), true);
+      if (changed === 'fOn') setFilterBypass(v.lpDry, v.lpWet, env.on && env.fOn);
+    }
   }
 }
 
@@ -259,7 +605,7 @@ function play(written, vel = 0.85, capture = true) {
   if (held.has(written)) {
     const prev = held.get(written);
     stopVoice(prev, 0.06);
-    litSample(prev.src, false);
+    litSample(prev.trimKey, false);
     held.delete(written);
   }
   const semi = written - ROOT_WRITTEN;
@@ -268,30 +614,165 @@ function play(written, vel = 0.85, capture = true) {
   if (!buf) return;
   const s = ctx.createBufferSource();
   s.buffer = buf;
-  const tr = trim[src] || { vol: 100, cents: 0 };
+  // Piano is trimmed per SAMPLE (several keys share one recording and its
+  // correction); clouds is trimmed per KEY (every key is its own slider, since
+  // most of them are resampled neighbours with no reason to match). Same
+  // lookup either way, just a different key into it.
+  // A key with its own column uses it. A black key has no column of its own —
+  // on either instrument — so it falls back to the sample it is resampled from,
+  // and lights that sample's column while it sounds.
+  const trimKey = (I.perKey && trim[semi]) ? semi : src;
+  const tr = trim[trimKey] || { vol: 100, cents: 0 };
   // the transposition and the per sample tuning are one multiply, so a trimmed
   // sample is not resampled twice
   s.playbackRate.value = Math.pow(2, (semi - src) / 12 + tr.cents / 1200);
+
+  const t0 = ctx.currentTime;
+  const e = { ...env };
+  const peak = vel * vel * (tr.vol / 100);     // velocity squared reads as linear loudness
   const g = ctx.createGain();
-  g.gain.value = vel * vel * (tr.vol / 100);   // velocity squared reads as linear loudness
-  s.connect(g); g.connect(master); g.connect(verb);
+
+  // ---- the filter, and its envelope in octaves above the cutoff -------------
+  // The amount is in octaves rather than Hz so that one setting sounds the same
+  // wherever the cutoff is put, which is not true of a fixed number of Hz.
+  // A fixed note length is the whole note, release included. Starting the
+  // release AT the length and letting it run on past it is what turns a 0.8
+  // second note into a five second one. When the attack and release together do
+  // not fit inside the length they are scaled down until they do, so a short
+  // note is a small version of the same shape rather than a truncated one.
+  const LEN = e.on && e.len > 0 ? e.len : 0;
+  const squeeze = (a, r) => (LEN && a + r > LEN) ? LEN / (a + r) : 1;
+  const kA = squeeze(Math.max(0.002, e.aA), Math.max(0.005, e.aR));
+
+  const filt = ctx.createBiquadFilter();
+  filt.type = 'lowpass';
+  if (e.on && e.fOn) {
+    filt.Q.value = e.q;
+    const base = clampFilterHz(e.cut);
+    const top  = clampFilterHz(e.cut * Math.pow(2, e.fAmt));
+    const sus  = liveLowpassHz(e);
+    const kF = squeeze(Math.max(0.002, e.fA), Math.max(0.005, e.fR));
+    // The decay floor is 20 ms and it is applied after the squeeze, not before.
+    // A cutoff that falls two octaves in two milliseconds is a step, and a
+    // resonant filter rings on a step: that is the tick at the top of a sweep.
+    const fA = Math.max(0.002, e.fA) * kF, fD = Math.max(0.02, e.fD * kF);
+    filt.frequency.setValueAtTime(base, t0);
+    filt.frequency.exponentialRampToValueAtTime(top, t0 + fA);
+    filt.frequency.exponentialRampToValueAtTime(sus, t0 + Math.min(LEN || Infinity, fA + fD));
+    // inside a fixed length the filter closes on its own, with no key-up to wait for
+    if (LEN) filt.frequency.exponentialRampToValueAtTime(base, t0 + LEN);
+  } else {
+    filt.Q.value = e.q;
+    filt.frequency.value = liveLowpassHz(e);
+  }
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.Q.value = 0.707;
+  hp.frequency.value = clampFilterHz(e.hp);
+
+  // Each filter has a real bypass lane. "Off" means the dry lane is the only
+  // audible one; the filter remains warm on its wet lane so it can crossfade in
+  // while a note is held without rebuilding or interrupting the voice graph.
+  const lpDry = ctx.createGain(), lpWet = ctx.createGain(), lpOut = ctx.createGain();
+  const hpDry = ctx.createGain(), hpWet = ctx.createGain();
+  setFilterBypass(lpDry, lpWet, e.on && e.fOn, false);
+  setFilterBypass(hpDry, hpWet, e.hpOn, false);
+  s.connect(lpDry); lpDry.connect(lpOut);
+  s.connect(filt); filt.connect(lpWet); lpWet.connect(lpOut);
+  lpOut.connect(hpDry); hpDry.connect(g);
+  lpOut.connect(hp); hp.connect(hpWet); hpWet.connect(g);
+
+  // ---- the amplitude envelope ----------------------------------------------
+  if (e.on) {
+    // Attack can be as good as instant because the sample starts from silence,
+    // but decay cannot: it is a step down from full level in the middle of a
+    // sounding note, and a step is a click. 20 ms is the shortest fall that is
+    // still a fall rather than an edge. Floored after the squeeze so a short
+    // note cannot scale it back under audibility.
+    const A = Math.max(0.002, e.aA) * kA, D = Math.max(0.02, e.aD * kA);
+    const S = peak * (e.aS / 100);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + A);
+    if (LEN) {
+      const R = Math.max(0.005, e.aR) * kA;
+      const tR = Math.max(A, LEN - R);          // the release never precedes the peak
+      if (tR > A) {
+        const dEnd = Math.min(tR, A + D);
+        g.gain.linearRampToValueAtTime(S, t0 + dEnd);
+        if (tR > dEnd) g.gain.setValueAtTime(S, t0 + tR);
+      }
+      g.gain.linearRampToValueAtTime(0, t0 + LEN);
+    } else {
+      g.gain.linearRampToValueAtTime(S, t0 + A + D);
+    }
+  } else {
+    g.gain.value = peak;
+  }
+
+  g.connect(master); g.connect(verb);
+  const v = { s, g, filt, hp, lpDry, lpWet, hpDry, hpWet,
+              env: e, stopped: false, ended: false, src, trimKey, timer: null, t0, len: LEN };
+  s.onended = () => {
+    v.ended = true;
+    cursors.delete(v);
+    const i = ringing.indexOf(v);
+    if (i >= 0) ringing.splice(i, 1);
+  };
   s.start();
-  const v = { s, g, stopped: false, src };
+  // The whole envelope is on the audio clock, so the length is exact rather than
+  // however close a setTimeout happened to land.
+  if (LEN) { try { s.stop(t0 + LEN + 0.02); } catch (err) {} }
   held.set(written, v);
-  litSample(src, true);
+  litSample(trimKey, true);
   ringing.push(v);
   trimVoices();
   paint(written, true);
+  // The audio clock already ends the note; this only retires the bookkeeping, so
+  // a finished voice stops counting against the polyphony cap.
+  if (LEN) v.timer = setTimeout(() => { v.stopped = true; v.timer = null; }, (LEN + 0.03) * 1000);
+  // Each voice keeps its own playhead, including overlapping release tails.
+  if (e.on) {
+    cursors.set(v, { t0, len: LEN, relAt: null, relDur: 0 });
+    startCursor();
+  }
 }
 
+// `dur` overrides the envelope, for the cases that are not a musical release:
+// stealing a voice, retriggering a key, switching instrument.
 function stopVoice(v, dur) {
   if (!v || v.stopped) return;
   v.stopped = true;
+  if (v.timer) { clearTimeout(v.timer); v.timer = null; }
   const t = ctx.currentTime;
+  const e = v.env;
+  const aR = dur != null ? dur : (e && e.on ? Math.max(0.005, e.aR) : I.fade);
+  // Only this voice's playhead enters release; the others keep moving.
+  const cursor = cursors.get(v);
+  if (cursor && cursor.relAt == null) {
+    cursor.relAt = t;
+    cursor.relDur = aR;
+    startCursor();
+  }
+  // Read the level BEFORE cancelling. cancelScheduledValues wipes the ramp that
+  // is currently running, and the parameter then reads back as whatever the last
+  // surviving event set it to, which here is the 0.0001 the attack started from.
+  // Reading after the cancel therefore ramps down from silence, which sounds
+  // like the note being cut rather than released.
+  const cur = Math.max(0.0001, v.g.gain.value);
   v.g.gain.cancelScheduledValues(t);
-  v.g.gain.setValueAtTime(v.g.gain.value, t);
-  v.g.gain.linearRampToValueAtTime(0, t + dur);
-  try { v.s.stop(t + dur + 0.05); } catch (e) {}
+  v.g.gain.setValueAtTime(cur, t);
+  v.g.gain.linearRampToValueAtTime(0, t + aR);
+  // The filter closes back to its cutoff on its own clock. A filter release
+  // longer than the amplitude one is inaudible, so it never extends the voice.
+  if (dur == null && v.filt && e && e.on && e.fOn) {
+    const fR = Math.max(0.005, e.fR);
+    const base = Math.max(20, Math.min(20000, e.cut));
+    const fCur = Math.max(20, v.filt.frequency.value);
+    v.filt.frequency.cancelScheduledValues(t);
+    v.filt.frequency.setValueAtTime(fCur, t);
+    v.filt.frequency.exponentialRampToValueAtTime(base, t + fR);
+  }
+  try { v.s.stop(t + aR + 0.05); } catch (err) {}
 }
 
 function release(written) {
@@ -300,7 +781,7 @@ function release(written) {
   if (!v) return;
   held.delete(written);
   paint(written, false);
-  litSample(v.src, false);
+  litSample(v.trimKey, false);
   if (liftOn && lifts.length) {
     // a real finger lift from the recording, picked at random. The action noise
     // is essentially pitch free, so any lift sits over any note, and eighteen of
@@ -311,12 +792,26 @@ function release(written) {
     s.connect(g); g.connect(master); g.connect(verb);
     s.start();
   }
-  if (!sustain) stopVoice(v, 0.4);
+  // The envelope's own release when there is one, otherwise a damper on the
+  // piano and a long breath on the clouds.
+  if (!sustain) stopVoice(v);
 }
+
+// A window onto the live state. This is a sandbox instrument, and being able to
+// ask it from the console what it thinks its envelope is, or how many voices
+// are actually still running, is the difference between hearing that something
+// is wrong and knowing what.
+window.sig = {
+  get env()   { return env; },
+  get inst()  { return INST; },
+  get ctx()   { return ctx; },
+  get master(){ return master; },
+  get held()  { return held; },
+  get live()  { return ringing.filter(v => !v.stopped).length; },
+};
 
 // ---- keyboard --------------------------------------------------------------
 const kb = document.getElementById('kb'), keyEls = new Map();
-const BLACK = new Set([1,3,6,8,10]);
 
 function build() {
   kb.textContent = ''; keyEls.clear();
@@ -371,9 +866,10 @@ const saved = (() => { try { return JSON.parse(localStorage.getItem(STORE)) || {
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
-      octave, sustain, scaleOn, liftOn, fmt: FMT, trim, trimGen: TRIM_GEN,
+      octave, sustain, scaleOn, liftOn, fmt: FMT, inst: INST,
+      trims: allTrim, trimGen: TRIM_GEN, env: allEnv, envWin,
       vol: +document.getElementById('vol').value,
-      rev: +document.getElementById('rev').value
+      rev: +document.getElementById('rev').value,
     }));
   } catch (e) {}
 }
@@ -385,13 +881,26 @@ function save() {
 // from an earlier round would otherwise apply a second time on top of files that
 // already contain them, which is silent and doubles everything you dialled.
 const TRIM_GEN = 2;
-const trim = {};
-const freshTrims = saved.trimGen !== TRIM_GEN;
-for (const sm of SEMIS) {
-  const t = freshTrims ? {} : ((saved.trim || {})[sm] || {});
-  trim[sm] = { vol: typeof t.vol === 'number' ? t.vol : 100,
-               cents: typeof t.cents === 'number' ? t.cents : 0 };
+// One set per instrument. A cents offset that lines up a piano sample means
+// nothing on a cloud pad, so keying them together would quietly carry one
+// instrument's tuning onto the other's files.
+const allTrim = (() => {
+  if (saved.trimGen !== TRIM_GEN) return {};
+  if (saved.trims) return saved.trims;
+  return saved.trim ? { piano: saved.trim } : {};   // from before there were two
+})();
+let trim = {};
+function loadTrims() {
+  const from = allTrim[INST] || {};
+  trim = {};
+  for (const sm of TRIM_RANGE) {
+    const t = from[sm] || {};
+    trim[sm] = { vol: typeof t.vol === 'number' ? t.vol : 100,
+                 cents: typeof t.cents === 'number' ? t.cents : 0 };
+  }
+  allTrim[INST] = trim;
 }
+loadTrims();
 
 let octave  = typeof saved.octave  === 'number'  ? saved.octave  : 4;
 let sustain = typeof saved.sustain === 'boolean' ? saved.sustain : true;
@@ -421,10 +930,26 @@ const resume = () => { if (ctx && ctx.state === 'suspended') ctx.resume(); };
 // exactly like running out of polyphony.
 const downKeys = new Map();
 
-const typing = e => e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
+// A range slider is not "typing" into anything, and there is no reason for
+// dragging the volume to leave the keyboard deaf until something is clicked
+// to steal focus back. Only an actual text field — a take's rename box — is
+// worth protecting from the performance keys landing in it.
+const typing = e => e.target && (e.target.tagName === 'TEXTAREA'
+  || (e.target.tagName === 'INPUT' && e.target.type !== 'range'));
 
 addEventListener('keydown', e => {
-  if (e.repeat || typing(e)) return;
+  if (typing(e)) return;
+  // Space is the panic key. preventDefault first and unconditionally, including
+  // on the auto-repeat that holding it down produces: the browser's default is
+  // to scroll the page, and on a page this tall that is the whole layout
+  // jumping out from under you mid-performance. It also stops space activating
+  // whichever button happens to have focus.
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    if (!e.repeat) allNotesOff();
+    return;
+  }
+  if (e.repeat) return;
   const k = e.key.toLowerCase();
   if (k === 'z') return setOct(octave - 1);
   if (k === 'x') return setOct(octave + 1);
@@ -459,20 +984,558 @@ document.getElementById('scale').onclick = e => {
   requestAnimationFrame(() => requestAnimationFrame(placeTrims));
 };
 document.getElementById('fmt').onclick = async e => {
+  // Only offer what this instrument was actually encoded as. The piano is Opus
+  // only, so the button says so instead of loading a wall of 404s.
+  if (I.formats.length < 2) return flash(e.target, `${I.label} is ${FMT} only`);
   FMT = FMT === 'opus' ? 'mp3' : 'opus';
   e.target.textContent = 'format: loading…'; e.target.blur();
-  notes.clear(); lifts.length = 0;
-  const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
-  await Promise.all([
-    ...SEMIS.map(async s => notes.set(s, await get(url('note', String(s).padStart(2,'0'))))),
-    ...Array.from({length: RELEASES}, async (_, i) => { lifts[i] = await get(url('lift', String(i).padStart(2,'0'))); })
-  ]);
-  e.target.textContent = 'format: ' + FMT;
+  allNotesOff();
+  await loadSamples();
   save();
 };
+
+// ---- instruments -----------------------------------------------------------
+// Switching is a reload, not a crossfade: the two sample sets do not share a
+// range, a sample count or a release, so everything sounding has to be let go
+// of first or a piano voice outlives the piano.
+// Everything off, including what is no longer held. With the pedal down a
+// released key is already out of `held` but still sounding, and on the clouds
+// that is most of the wash — sweeping `held` alone left the whole thing ringing.
+// `ringing` is copied first because stopping a voice splices it out of that
+// array from its own onended.
+function allNotesOff(fade = 0.12) {
+  for (const m of held.keys()) paint(m, false);
+  for (const v of ringing.slice()) stopVoice(v, fade);
+  for (const v of held.values()) stopVoice(v, fade);
+  held.clear(); downKeys.clear(); litCount.clear();
+  for (const c of document.querySelectorAll('.tc.lit')) c.classList.remove('lit');
+  cursors.clear();
+}
+
+let switching = false;
+async function setInstrument(name) {
+  if (switching || name === INST || !INSTRUMENTS[name]) return;
+  switching = true;
+  allNotesOff();
+  INST = name;
+  unpack();
+  loadTrims();
+  env = allEnv[INST];
+  showEnv();
+  document.getElementById('title').textContent = I.label === 'piano' ? 'Lekko' : 'Clouds';
+  // key lifts are a piano's action noise; the clouds have none to offer
+  document.getElementById('lift').style.display = RELEASES ? '' : 'none';
+  paintInstRow();
+  build();
+  buildTrims();
+  requestAnimationFrame(() => requestAnimationFrame(placeTrims));
+  try { if (ctx) await loadSamples(); }
+  catch (err) { document.getElementById('status').textContent = 'could not load ' + I.label + ': ' + err.message; }
+  switching = false;
+  save();
+}
+
+function paintInstRow() {
+  const row = document.getElementById('instRow');
+  row.textContent = '';
+  for (const [key, inst] of Object.entries(INSTRUMENTS)) {
+    const b = document.createElement('button');
+    b.textContent = inst.label;
+    b.className = key === INST ? 'on' : '';
+    b.onclick = () => { b.blur(); setInstrument(key); };
+    row.appendChild(b);
+  }
+}
+
+// ---- envelope panel --------------------------------------------------------
+// Built from ENV_SPEC rather than written out, so a parameter is added in one
+// place and the slider, the readout, the persistence and the reset all follow.
+const envCanvas = {};
+
+function buildEnv() {
+  const cols = document.getElementById('envCols');
+  cols.textContent = '';
+  const stacks = new Map();
+  for (const keys of [['amp'], ['filt', 'filters']]) {
+    const stack = document.createElement('div');
+    stack.className = 'ecol';
+    cols.appendChild(stack);
+    keys.forEach(key => stacks.set(key, stack));
+  }
+  for (const [key, grp] of Object.entries(ENV_SPEC)) {
+    const box = document.createElement('div');
+    box.className = 'eg';
+    const h = document.createElement('h2');
+    h.textContent = grp.title;
+    box.appendChild(h);
+
+    if (grp.toggle) {
+      const toggleKey = grp.toggle;
+      const t = document.createElement('button');
+      const paintT = () => {
+        t.textContent = env[toggleKey] ? 'on' : 'off';
+        t.classList.toggle('on', env[toggleKey]);
+        box.classList.toggle('off', !env[toggleKey]);
+      };
+      t.onclick = () => {
+        env[toggleKey] = !env[toggleKey];
+        updateLiveFilters(toggleKey);
+        paintT(); drawEnv(); saveEnv(); t.blur();
+      };
+      paintT();
+      h.appendChild(t);
+    }
+
+    if (ENV_HANDLES[key]) {
+      const cv = document.createElement('canvas');
+      cv.className = 'ev';
+      box.appendChild(cv);
+      envCanvas[key] = cv;
+      wireEnvCanvas(key, cv);
+    }
+
+    for (const r of grp.rows) {
+      const [id, name] = r;
+      const row = document.createElement('div');
+      row.className = 'es';
+      row.innerHTML = `<span class="lb">${name}</span>`;
+      const sl = document.createElement('input');
+      sl.type = 'range'; sl.min = 0; sl.max = TICKS; sl.step = id === 'vol' ? TICKS / 100 : 1;
+      sl.setAttribute('aria-label', id === 'vol' ? name : `${grp.title} ${name}`);
+      sl.addEventListener('pointerup', () => sl.blur());
+      sl.addEventListener('pointercancel', () => sl.blur());
+      const value = id === 'vol' ? +document.getElementById('vol').value : env[id];
+      sl.value = toSlider(r, value);
+      const out = document.createElement('span');
+      out.className = 'vl';
+      out.textContent = envFmt(r, value);
+      sl.addEventListener('input', () => {
+        if (id === 'vol') {
+          const volume = document.getElementById('vol');
+          volume.value = fromSlider(r, +sl.value);
+          volume.dispatchEvent(new Event('input'));
+          return;
+        }
+        env[id] = fromSlider(r, +sl.value);
+        if (FILTER_KEYS.includes(id)) updateLiveFilters(id);
+        out.textContent = envFmt(r, env[id]);
+        drawEnv(); saveEnv();
+      });
+      row.append(sl, out);
+      box.appendChild(row);
+      row.dataset.id = id;
+    }
+    (stacks.get(key) || cols).appendChild(box);
+  }
+  drawEnv();
+}
+
+// The curve is drawn on the same time axis for both envelopes, scaled to
+// whichever of them is longer, because the whole point is reading one against
+// the other. Two separately scaled curves would be a lie about the timing.
+// One playhead per voice, all following the audio clock independently.
+const cursors = new Map();
+let cursorRAF = 0;
+// Where each curve's dots ended up on screen, written by the drawing and read
+// by the pointer. Measuring rather than recomputing means the hit test can
+// never disagree with the picture, however the shape got squeezed to fit.
+const envGeom = {};
+let envDrag = null, envHover = null;
+
+function startCursor() {
+  if (cursorRAF || INST !== 'clouds') return;
+  const step = () => { drawEnv(); cursorRAF = cursors.size ? requestAnimationFrame(step) : 0; };
+  cursorRAF = requestAnimationFrame(step);
+}
+
+function drawEnv() {
+  // The curve has to draw what play() will actually schedule, squeeze and all,
+  // or a length setting quietly makes the picture a lie.
+  const LEN = env.len > 0 ? env.len : 0;
+  // One key-up time and one axis for both curves. Reading the filter against the
+  // volume is the point, and two separately placed key-ups would break that.
+  const maxR  = Math.max(env.aR, env.fOn ? env.fR : 0);
+  const maxAD = Math.max(env.aA + env.aD, env.fOn ? env.fA + env.fD : 0);
+  const hold  = Math.max(0.6, (maxAD + maxR) * 0.18);
+  let tOff = LEN || (maxAD + hold);               // where the note lets go
+  let span = LEN ? LEN * 1.12 : Math.max(1, tOff + maxR) * 1.06;
+  // Both of those are computed FROM the numbers a dot is dragging, so while one
+  // is held the axis is frozen at what it was when the drag began. Letting it
+  // float would rescale the picture under the pointer and the dot would crawl
+  // away from the finger holding it.
+  if (envDrag) { tOff = envDrag.tOff; span = envDrag.span; }
+
+  // ---- how far into the note we are ----------------------------------------
+  // Held notes park on the sustain plateau however long the key is down, then
+  // pick up again at the release, which is the shape the drawing already shows.
+  const positions = [];
+  if (ctx) {
+    const now = ctx.currentTime;
+    for (const [voice, cursor] of cursors) {
+      const age = now - cursor.t0;
+      const released = cursor.relAt !== null;
+      const releaseAge = released ? now - cursor.relAt : 0;
+      if ((released && releaseAge > cursor.relDur)
+          || (!released && cursor.len && age > cursor.len)) {
+        cursors.delete(voice);
+        continue;
+      }
+      positions.push(cursor.len ? Math.min(age, cursor.len)
+        : released ? tOff + releaseAge : Math.min(age, tOff));
+    }
+  }
+
+  const shape = (key, canvas, A, D, S, R, colour, live) => {
+    if (!canvas) return;
+    const dpr = devicePixelRatio || 1;
+    const w = canvas.clientWidth || 300, h = canvas.clientHeight || 62;
+    // resized only when it actually changed: this runs every frame while a note
+    // is sounding, and assigning width reallocates the backing store
+    const cw = Math.round(w * dpr), ch = Math.round(h * dpr);
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    const c = canvas.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    // The padding is what stops a dot sitting at zero, at full scale, or at the
+    // far right of the axis from being sliced in half by the edge of the box.
+    const pad = 9, x = t => pad + (Math.min(t, span) / span) * (w - pad * 2);
+    const y = u => h - pad - u * (h - pad * 2);
+    // Everything from here is clipped to the box. A release dragged long enough
+    // to run past the axis stops at the edge instead of drawing over the column
+    // beside it.
+    c.save();
+    c.beginPath(); c.rect(0, 0, w, h); c.clip();
+
+    // The same arithmetic play() does: scale attack and release to fit inside a
+    // fixed length, then place the release so the note ends exactly on it.
+    let a = A, d = D, r = R, pts;
+    if (LEN) {
+      const k = (a + r > LEN) ? LEN / (a + r) : 1;
+      a *= k; d *= k; r *= k;
+      const tR = Math.max(a, LEN - r), dEnd = Math.min(tR, a + d);
+      pts = [[0, 0], [a, 1]];
+      if (tR > a) { pts.push([dEnd, S]); if (tR > dEnd) pts.push([tR, S]); }
+      pts.push([LEN, 0]);
+    } else {
+      pts = [[0, 0], [a, 1], [a + d, S], [tOff, S], [Math.min(span, tOff + r), 0]];
+    }
+
+    // The level the drawn line is at, at any time along it. The dots are placed
+    // through this rather than from the parameters, so one can never float off
+    // the curve when a fixed note length squeezes the shape.
+    const levelAt = t => {
+      for (let i = 1; i < pts.length; i++) {
+        const [t0p, u0] = pts[i - 1], [t1p, u1] = pts[i];
+        if (t <= t1p) return t1p === t0p ? u1 : u0 + (u1 - u0) * ((t - t0p) / (t1p - t0p));
+      }
+      return pts[pts.length - 1][1];
+    };
+
+    c.beginPath();
+    c.moveTo(x(pts[0][0]), y(pts[0][1]));
+    for (const [t, u] of pts.slice(1)) c.lineTo(x(t), y(u));
+    c.strokeStyle = live ? colour : '#39434f';
+    c.lineWidth = 1.6;
+    c.lineJoin = 'round';
+    c.stroke();
+    c.lineTo(x(0), y(0));
+    c.closePath();
+    c.fillStyle = live ? colour + '22' : '#39434f18';
+    c.fill();
+
+    // where the note lets go: the key coming up, or the length running out
+    c.beginPath();
+    c.setLineDash([2, 3]);
+    c.moveTo(x(tOff), y(0)); c.lineTo(x(tOff), y(1));
+    c.strokeStyle = LEN ? '#7d6a4a' : '#4a5562'; c.lineWidth = 1; c.stroke();
+    c.setLineDash([]);
+
+    // ---- the playheads -----------------------------------------------------
+    // Drawn with the level it is passing through, so the dot rides the curve and
+    // the line tells you where on it you are.
+    for (const cur of positions) {
+      const px = x(cur);
+      c.beginPath();
+      c.moveTo(px, y(0)); c.lineTo(px, y(1));
+      c.strokeStyle = live ? '#ffffff' : '#66707d';
+      c.lineWidth = 1.2;
+      c.shadowColor = live ? colour : 'transparent';
+      c.shadowBlur = live ? 8 : 0;
+      c.stroke();
+      c.shadowBlur = 0;
+      // level at `cur`, read off the same points the curve was drawn from
+      let lv = 0;
+      for (let i = 1; i < pts.length; i++) {
+        const [t0p, u0] = pts[i - 1], [t1p, u1] = pts[i];
+        if (cur <= t1p) {
+          lv = t1p === t0p ? u1 : u0 + (u1 - u0) * ((cur - t0p) / (t1p - t0p));
+          break;
+        }
+      }
+      c.beginPath();
+      c.arc(px, y(Math.max(0, Math.min(1, lv))), 2.6, 0, Math.PI * 2);
+      c.fillStyle = live ? '#fff' : '#66707d';
+      c.fill();
+    }
+
+    // ---- the handles -------------------------------------------------------
+    // Three dots carry all four numbers: the peak IS the attack, the corner is
+    // the decay and the sustain at once, and the tail is the release. A fourth
+    // dot for sustain alone would have nowhere of its own to be.
+    //
+    // Under a fixed note length the whole shape is squeezed by k, so the times
+    // here are screen times. Turning one back into a parameter divides it out.
+    const kSq = (LEN && A + R > LEN) ? LEN / (A + R) : 1;
+    const dots = LEN
+      ? [['A', a],
+         ['D', Math.min(Math.max(a, LEN - r), a + d)],
+         ['R', Math.max(a, LEN - r)]]
+      : [['A', a], ['D', a + d], ['R', tOff + r]];
+    const geom = { key, canvas, live, pad, w, h, span, tOff, LEN, k: kSq,
+                   dots: dots.map(([id, t]) => ({ id, t, px: x(t), py: y(levelAt(t)) })) };
+    envGeom[key] = geom;
+
+    if (live) for (const dt of geom.dots) {
+      const held = envDrag && envDrag.key === key && envDrag.id === dt.id;
+      const over = envHover && envHover.key === key && envHover.id === dt.id;
+      const rad = held ? 6 : over ? 5.4 : 4.2;
+      // A ring in the background colour first, so a dot landing on the line or
+      // on another dot still reads as a separate thing you can take hold of.
+      c.beginPath();
+      c.arc(dt.px, dt.py, rad + 1.8, 0, Math.PI * 2);
+      c.fillStyle = '#0d1218';
+      c.fill();
+      c.beginPath();
+      c.arc(dt.px, dt.py, rad, 0, Math.PI * 2);
+      c.fillStyle = held || over ? colour : '#0d1218';
+      c.strokeStyle = colour;
+      c.lineWidth = 1.7;
+      c.fill();
+      c.stroke();
+    }
+
+    c.restore();
+  };
+
+  shape('amp',  envCanvas.amp,  env.aA, env.aD, env.aS / 100, env.aR, '#4ad9a0', true);
+  shape('filt', envCanvas.filt, env.fA, env.fD, env.fS / 100, env.fR, '#b455ff', env.fOn);
+
+}
+
+// ---- dragging the curve ----------------------------------------------------
+// Pointer events and a capture, so a drag that wanders out of the box keeps
+// going. Dropping a release time because the pointer crossed into the column
+// beside it would put the long values out of reach.
+const ENV_HIT = 13;
+
+function envHandleAt(geom, ev) {
+  if (!geom || !geom.live) return null;
+  const r = geom.canvas.getBoundingClientRect();
+  const px = ev.clientX - r.left, py = ev.clientY - r.top;
+  let best = null, bd = ENV_HIT * ENV_HIT;
+  // Ties go to the later dot, so a decay corner parked exactly on the attack
+  // peak is still the one that comes up, and the two can be pulled apart again.
+  for (const dt of geom.dots) {
+    const dx = dt.px - px, dy = dt.py - py, d = dx * dx + dy * dy;
+    if (d <= bd) { bd = d; best = dt; }
+  }
+  return best;
+}
+
+// Each dot writes only what it is standing on, and each is stopped where its
+// neighbour begins: the decay corner cannot walk left through the attack peak,
+// the release cannot walk left through the key-up. Two parts of the envelope
+// are allowed to meet, never to cross and swap places. The rest of the clamping
+// is the parameter's own range, which envSet already enforces.
+function envApply(ev) {
+  const g = envGeom[envDrag.key];
+  if (!g) return;
+  const H = ENV_HANDLES[envDrag.key];
+  const r = g.canvas.getBoundingClientRect();
+  const t = Math.max(0, ((ev.clientX - r.left - g.pad) / Math.max(1, g.w - g.pad * 2)) * envDrag.span);
+  const u = Math.max(0, Math.min(1, (g.h - g.pad - (ev.clientY - r.top)) / Math.max(1, g.h - g.pad * 2)));
+  const k = envDrag.k || 1;                       // undo the fixed-length squeeze
+  if (envDrag.id === 'A') {
+    envSet(H.A, t / k);
+  } else if (envDrag.id === 'D') {
+    envSet(H.D, Math.max(0, t / k - env[H.A]));   // the corner stops at the peak
+    envSet(H.S, u * 100);                         // and carries the sustain with it
+  } else if (envDrag.id === 'R') {
+    envSet(H.R, g.LEN ? Math.max(0, (g.LEN - t) / k)
+                      : Math.max(0, t - envDrag.tOff));
+  }
+  drawEnv();
+}
+
+function wireEnvCanvas(key, cv) {
+  const at = ev => envHandleAt(envGeom[key], ev);
+
+  cv.addEventListener('pointerdown', ev => {
+    const dt = at(ev);
+    if (!dt) return;
+    const g = envGeom[key];
+    envDrag = { key, id: dt.id, span: g.span, tOff: g.tOff, k: g.k };
+    envHover = { key, id: dt.id };
+    cv.classList.add('grabbing');
+    cv.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+    drawEnv();
+  });
+
+  cv.addEventListener('pointermove', ev => {
+    if (envDrag) { if (envDrag.key === key) envApply(ev); return; }
+    const dt = at(ev);
+    const want = dt ? key + ':' + dt.id : null;
+    const have = envHover ? envHover.key + ':' + envHover.id : null;
+    cv.classList.toggle('over', !!dt);
+    if (want !== have && (want || (have && have.slice(0, key.length + 1) === key + ':'))) {
+      envHover = dt ? { key, id: dt.id } : null;
+      drawEnv();
+    }
+  });
+
+  const end = ev => {
+    if (!envDrag || envDrag.key !== key) return;
+    envDrag = null;
+    cv.classList.remove('grabbing');
+    try { cv.releasePointerCapture(ev.pointerId); } catch (e) {}
+    saveEnv();      // one write per gesture, not one per frame
+    drawEnv();      // and now the axis is free to rescale around the new shape
+  };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+  cv.addEventListener('pointerleave', () => {
+    if (envDrag) return;
+    cv.classList.remove('over');
+    if (envHover && envHover.key === key) { envHover = null; drawEnv(); }
+  });
+}
+
+const saveEnv = () => { allEnv[INST] = env; save(); };
+
+// ---- the window ------------------------------------------------------------
+// Position and size are remembered, but always clamped back inside the viewport
+// on open. A window saved off the edge of a big monitor is a window you cannot
+// find again on a laptop, and there is no menu here to reset it from.
+const winEl = document.getElementById('envWrap');
+// Bumped whenever the window's default size changes in the CSS. A saved width
+// from an earlier round is restored over the stylesheet, so without this the
+// new default is invisible to anyone who has ever opened the window before.
+// Only the size resets; where you put it is yours and stays put.
+const WIN_GEN = 2;
+let envWin = Object.assign({ open: true, x: null, y: null, w: 0, h: 0 }, preload.envWin || {});
+if (envWin.gen !== WIN_GEN) { envWin.w = 0; envWin.h = 0; envWin.gen = WIN_GEN; }
+
+function clampWin() {
+  const r = winEl.getBoundingClientRect();
+  const maxX = Math.max(8, innerWidth - r.width - 8);
+  const maxY = Math.max(8, innerHeight - r.height - 8);
+  envWin.x = Math.min(Math.max(8, envWin.x), maxX);
+  envWin.y = Math.min(Math.max(8, envWin.y), maxY);
+  winEl.style.left = envWin.x + 'px';
+  winEl.style.top  = envWin.y + 'px';
+}
+
+function placeWin() {
+  if (envWin.w) winEl.style.width  = envWin.w + 'px';
+  if (envWin.h) winEl.style.height = envWin.h + 'px';
+  if (envWin.x == null || envWin.y == null) {
+    // first open: bottom right, out of the keyboard's way
+    const r = winEl.getBoundingClientRect();
+    envWin.x = Math.max(8, innerWidth - r.width - 24);
+    envWin.y = Math.max(8, innerHeight - r.height - 24);
+  }
+  clampWin();
+}
+
+// Dragging by the title bar, pointer events so a trackpad, a mouse and a touch
+// screen are all the same code path. The pointer is captured, so a fast drag
+// that outruns the window does not drop it.
+(() => {
+  const bar = document.getElementById('envBar');
+  let from = null;
+  bar.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    from = { px: e.clientX, py: e.clientY, x: envWin.x, y: envWin.y };
+    bar.classList.add('drag');
+    bar.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  bar.addEventListener('pointermove', e => {
+    if (!from) return;
+    envWin.x = from.x + (e.clientX - from.px);
+    envWin.y = from.y + (e.clientY - from.py);
+    clampWin();
+  });
+  const end = e => {
+    if (!from) return;
+    from = null;
+    bar.classList.remove('drag');
+    try { bar.releasePointerCapture(e.pointerId); } catch (err) {}
+    save();
+  };
+  bar.addEventListener('pointerup', end);
+  bar.addEventListener('pointercancel', end);
+})();
+
+// The curves are sized from the window, so they have to be redrawn when it is
+// resized as well as when the page is.
+if (window.ResizeObserver) {
+  let t = 0;
+  new ResizeObserver(() => {
+    if (!winEl.classList.contains('show')) return;
+    envWin.w = Math.round(winEl.getBoundingClientRect().width);
+    envWin.h = Math.round(winEl.getBoundingClientRect().height);
+    drawEnv();
+    clearTimeout(t); t = setTimeout(save, 400);   // one write per gesture, not per frame
+  }).observe(winEl);
+}
+
+function setEnvOpen(open) {
+  envWin.open = open;
+  document.getElementById('envBtn').classList.toggle('on', open && INST === 'clouds');
+  showEnv();
+  save();
+}
+
+function showEnv() {
+  // The piano's sound is its samples; the envelope window belongs to the pads.
+  const isClouds = INST === 'clouds';
+  const on = isClouds && envWin.open;
+  document.getElementById('envBtn').style.display = isClouds ? '' : 'none';
+  document.getElementById('envBtn').classList.toggle('on', on);
+  winEl.classList.toggle('show', on);
+  if (!on) return;
+  buildEnv();
+  placeWin();
+  // a second pass once the window has actually been laid out, or the curves are
+  // measured against a canvas that is still zero wide
+  requestAnimationFrame(drawEnv);
+}
+
+document.getElementById('envBtn').onclick = e => { e.target.blur(); setEnvOpen(!envWin.open); };
+document.getElementById('envClose').onclick = e => { e.target.blur(); setEnvOpen(false); };
+document.getElementById('envReset').onclick = e => {
+  env = allEnv[INST] = { ...ENV_DEFAULTS[INST] };
+  buildEnv(); save(); e.target.blur();
+};
+document.getElementById('envCopy').onclick = async e => {
+  await copyText(JSON.stringify({ instrument: INST, envelope: env }, null, 2));
+  flash(e.target, 'copied');
+};
+addEventListener('resize', () => { if (winEl.classList.contains('show')) { clampWin(); drawEnv(); } });
+// escape closes it, the way a plugin window does
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && winEl.classList.contains('show')) setEnvOpen(false);
+});
 document.getElementById('vol').addEventListener('input', e => {
   document.getElementById('volV').textContent = e.target.value;
   if (master) master.gain.value = Math.pow(e.target.value/100, 2);
+  const row = document.querySelector('#envCols .es[data-id="vol"]');
+  if (row) {
+    row.querySelector('input').value = toSlider(ENV_ROW.vol, +e.target.value);
+    row.querySelector('.vl').textContent = envFmt(ENV_ROW.vol, +e.target.value);
+  }
   save();
 });
 document.getElementById('rev').addEventListener('input', e => {
@@ -480,6 +1543,11 @@ document.getElementById('rev').addEventListener('input', e => {
   if (wet) wet.gain.value = e.target.value/100;
   save();
 });
+for (const id of ['vol', 'rev']) {
+  const slider = document.getElementById(id);
+  slider.addEventListener('pointerup', () => slider.blur());
+  slider.addEventListener('pointercancel', () => slider.blur());
+}
 
 // ---- recorder ---------------------------------------------------------------
 // Notes are captured as {t, note, dur, vel} in milliseconds from the first key
@@ -701,6 +1769,7 @@ function drawTimeline(t, tl) {
 // MIDI numbers means nothing without knowing what the root was.
 const takeJSON = t => ({
   name: t.name, seconds: +(t.ms/1000).toFixed(2), noteCount: t.events.length,
+  instrument: INST,
   rootWritten: ROOT_WRITTEN, rootSoundingHz: 79.5,
   scale: '1 2 3 5 7 8 (major 7)',
   format: 't = ms from first note, note = written MIDI, dur = ms, vel = 0..1',
@@ -769,35 +1838,57 @@ function onMidi(e) {
   sc.classList.toggle('on', scaleOn);
 })();
 
-// ---- per sample strip ------------------------------------------------------
-const NOTE_NAME = sm => nameOf(ROOT_WRITTEN + sm);
+// ---- the trim strip ---------------------------------------------------------
+// One column per entry in TRIM_RANGE: a real sample for the piano, every
+// playable key for the clouds. The clouds are filed under their scale degree
+// when a column IS one, so that is what it says; anything resampled gets the
+// ordinary written name, same as the piano.
+const NOTE_NAME = sm => (INST === 'clouds' && CLOUD[sm] != null) ? CLOUD[sm] : nameOf(ROOT_WRITTEN + sm);
 function buildTrims() {
   const wrap = document.getElementById('trims');
   wrap.textContent = '';
-  for (const sm of SEMIS) {
+  for (const sm of TRIM_RANGE) {
     const c = document.createElement('div');
-    c.className = 'tc';
+    const real = REAL.has(ROOT_WRITTEN + sm);
+    c.className = 'tc' + (real ? ' real' : '');
+    // What the repo says was done to this sample, shown whether or not the
+    // slider currently matches it. A number you can see is a number you can
+    // check; one that only lives in a browser is one you lose. Manifest levels
+    // are only ever recorded against a real sample, so a resampled column has
+    // nothing here — its own slider is the only record of what it should be.
+    const mf = manifestLevels[sm];
+    // One slider per column on an instrument trimmed per key: every clouds
+    // column is volume only, uniformly, none of them getting a second slider
+    // the others do not have. The piano is trimmed per sample instead, and
+    // keeps the cents slider it always had on every one of its columns.
+    const showCents = !I.perKey;
     c.innerHTML =
       `<div class="nm">${NOTE_NAME(sm)}</div>
+       <div class="mf">${mf != null ? mf : ''}</div>
        <input type="range" class="tv" min="0" max="200" step="1" value="${trim[sm].vol}">
-       <div class="rd rv">${trim[sm].vol}</div>
-       <input type="range" class="tt" min="-50" max="50" step="1" value="${trim[sm].cents}">
-       <div class="rd rt">${trim[sm].cents>0?'+':''}${trim[sm].cents}</div>`;
-    const mark = () => c.classList.toggle('edited', trim[sm].vol !== 100 || trim[sm].cents !== 0);
+       <div class="rd rv">${trim[sm].vol}</div>`
+      + (showCents ? `<input type="range" class="tt" min="-50" max="50" step="1" value="${trim[sm].cents}">
+       <div class="rd rt">${trim[sm].cents>0?'+':''}${trim[sm].cents}</div>` : '');
+    const mark = () => {
+      c.classList.toggle('edited', trim[sm].vol !== 100 || trim[sm].cents !== 0);
+      // green when the slider agrees with the repo, so a whole strip that is
+      // loaded correctly reads as green at a glance
+      c.classList.toggle('matches', mf != null && trim[sm].vol === mf);
+    };
     const v = c.querySelector('.tv'), t = c.querySelector('.tt');
     v.addEventListener('input', e => {
       trim[sm].vol = +e.target.value;
       c.querySelector('.rv').textContent = trim[sm].vol;
       mark(); save(); preview(sm);
     });
-    t.addEventListener('input', e => {
+    if (t) t.addEventListener('input', e => {
       trim[sm].cents = +e.target.value;
       c.querySelector('.rt').textContent = (trim[sm].cents > 0 ? '+' : '') + trim[sm].cents;
       mark(); save(); preview(sm);
     });
     // A click that lands on the current value fires no input event, so the
     // pointer itself triggers the audition. Tuning you cannot hear is guesswork.
-    for (const el of [v, t]) el.addEventListener('pointerdown', () => preview(sm, true));
+    for (const el of [v, t]) if (el) el.addEventListener('pointerdown', () => preview(sm, true));
     mark();
     c.dataset.semi = sm;
     wrap.appendChild(c);
@@ -817,8 +1908,14 @@ function placeTrims() {
   // the keyboard's origin made every column wrong by that same amount.
   const base = wrap.getBoundingClientRect();
   for (const c of wrap.children) {
-    const key = keyEls.get(ROOT_WRITTEN + (+c.dataset.semi));
-    if (!key) { c.style.display = 'none'; continue; }
+    const sm = +c.dataset.semi;
+    const key = keyEls.get(ROOT_WRITTEN + sm);
+    // A column whose key the current scale cannot play is not dimmed, it is
+    // gone. In scale mode those keys are inert, so a slider sitting under one
+    // is a control that does nothing. Re-evaluated here rather than at build
+    // time so toggling the scale updates the strip without rebuilding it.
+    const playable = key && !(scaleOn && !inScale(ROOT_WRITTEN + sm));
+    if (!playable) { c.style.display = 'none'; continue; }
     c.style.display = '';
     const k = key.getBoundingClientRect();
     const w = Math.max(20, Math.round(k.width));
@@ -841,9 +1938,9 @@ function preview(sm, force = false) {
 }
 
 document.getElementById('copyTrim').onclick = async e => {
-  const out = SEMIS.filter(sm => trim[sm].vol !== 100 || trim[sm].cents !== 0)
+  const out = TRIM_RANGE.filter(sm => trim[sm].vol !== 100 || trim[sm].cents !== 0)
     .map(sm => ({ semitones: sm, note: NOTE_NAME(sm), vol: trim[sm].vol, cents: trim[sm].cents }));
-  const text = JSON.stringify({ adjustments: out, unchanged: SEMIS.length - out.length }, null, 2);
+  const text = JSON.stringify({ adjustments: out, unchanged: TRIM_RANGE.length - out.length }, null, 2);
   try { await navigator.clipboard.writeText(text); } catch (err) {
     const ta = document.createElement('textarea');
     ta.value = text; document.body.appendChild(ta); ta.select();
@@ -855,10 +1952,24 @@ document.getElementById('copyTrim').onclick = async e => {
   b.blur();
 };
 document.getElementById('trimReset').onclick = e => {
-  for (const sm of SEMIS) { trim[sm].vol = 100; trim[sm].cents = 0; }
+  for (const sm of TRIM_RANGE) { trim[sm].vol = 100; trim[sm].cents = 0; }
   buildTrims(); save(); e.target.blur();
 };
+// Pull the repo's levels into the live sliders. Whether they belong there is a
+// question only the ear settles: if they were already baked into the audio this
+// applies them a second time, and reset puts it back.
+document.getElementById('trimLoad').onclick = e => {
+  const n = Object.keys(manifestLevels).length;
+  if (!n) return flash(e.target, 'no defaults');
+  for (const sm of TRIM_RANGE) if (manifestLevels[sm] != null) trim[sm].vol = manifestLevels[sm];
+  buildTrims(); save(); e.target.blur();
+  flash(e.target, `${n} loaded`);
+};
 
+paintInstRow();
+showEnv();
+document.getElementById('title').textContent = I.label === 'piano' ? 'Lekko' : 'Clouds';
+document.getElementById('lift').style.display = RELEASES ? '' : 'none';
 build();
 buildTrims();
 requestAnimationFrame(() => requestAnimationFrame(placeTrims));
