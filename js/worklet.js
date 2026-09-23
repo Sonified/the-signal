@@ -53,6 +53,11 @@ class GenusProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ chirpAck: e.data.sig === undefined ? true : e.data.sig });
       }
     };
+    // Meter taps. Tone, pips and harmonics leave here folded into two outputs,
+    // so no analyser downstream can tell them apart. Each one's peak is taken
+    // at the point it is still its own signal and posted to the mixer, which is
+    // cheaper than three extra outputs and exact.
+    this.pkTone = 0; this.pkPip = 0; this.pkHarm = 0; this.pkFrames = 0;
     // Every harmonic gets its own pan phase and its own slightly different pan
     // rate, so they never settle into a single synchronised sweep.
     this.MAXH = 16;
@@ -66,6 +71,17 @@ class GenusProcessor extends AudioWorkletProcessor {
       this.shimPhase[i] = Math.random();
       this.shimMul[i]   = 0.55 + Math.random() * 0.9;
     }
+  }
+  // Posted on its own clock rather than per block: 128 frames is under three
+  // milliseconds, which is far faster than any meter can be read, and each
+  // window reports the loudest sample in it so a pip transient is never
+  // missed between reads.
+  reportPeaks(frames) {
+    this.pkFrames += frames;
+    if (this.pkFrames < sampleRate / 50) return;          // ~20 ms
+    this.pkFrames = 0;
+    this.port.postMessage({ peaks: [this.pkTone, this.pkPip, this.pkHarm] });
+    this.pkTone = 0; this.pkPip = 0; this.pkHarm = 0;
   }
   process(inputs, outputs, p) {
     const out = outputs[0][0];
@@ -118,8 +134,10 @@ class GenusProcessor extends AudioWorkletProcessor {
       this.cphase = (this.cphase + cinc * out.length) % 1;
       this.cmodPhase = (this.cmodPhase + cmodInc * out.length) % 1;
       this.biPhase   = (this.biPhase   + biInc   * out.length) % 1;
+      this.reportPeaks(out.length);
       return true;
     }
+    let pkT = this.pkTone, pkP = this.pkPip, pkH = this.pkHarm;
     for (let i = 0; i < out.length; i++) {
       const tl = tlN ? TL[i] : TL[0];
       const cl = clN ? CL[i] : CL[0];
@@ -162,6 +180,8 @@ class GenusProcessor extends AudioWorkletProcessor {
       if (this.biPhase >= 1) this.biPhase -= 1;
 
       const pipOut = cl * pip * cmod;
+      const av = v < 0 ? -v : v;                  if (av > pkT) pkT = av;
+      const ap = pipOut < 0 ? -pipOut : pipOut;   if (ap > pkP) pkP = ap;
       if (cOut) cOut[i] = pip * cmod * (csN ? CS[i] : CS[0]);
       out[i]  = v + pipOut * bl;
       outR[i] = v + pipOut * br;
@@ -193,11 +213,15 @@ class GenusProcessor extends AudioWorkletProcessor {
         const g = hl * hNorm * env;
         hL[i] = l * g;
         hR[i] = r * g;
+        const ahl = hL[i] < 0 ? -hL[i] : hL[i];   if (ahl > pkH) pkH = ahl;
+        const ahr = hR[i] < 0 ? -hR[i] : hR[i];   if (ahr > pkH) pkH = ahr;
       } else if (hL && hR) { hL[i] = 0; hR[i] = 0; }
 
       this.phase  += inc;   if (this.phase  >= 1) this.phase  -= 1;
       this.cphase += cinc;  if (this.cphase >= 1) this.cphase -= 1;
     }
+    this.pkTone = pkT; this.pkPip = pkP; this.pkHarm = pkH;
+    this.reportPeaks(out.length);
     return true;
   }
 }

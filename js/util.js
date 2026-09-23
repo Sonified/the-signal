@@ -62,3 +62,20 @@ export const posToAmp = pos => pos <= 0 ? 0 : Math.pow(10, (pos - 100) * K);
 export const ampToPos = a => a <= 0 ? 0
   : Math.max(0, Math.min(100, Math.round(100 + Math.log10(a) / K)));
 export const ampToDb = a => a <= 0 ? '-inf' : (20 * Math.log10(a)).toFixed(1);
+
+// A meter tap: an analyser spliced into a channel's path so the mixer can show
+// that channel's own level rather than the sum of everything sharing its bus.
+// It passes its input through untouched, so inserting one is inaudible.
+export function meterTap(ctx, ...into) {
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  for (const node of into) analyser.connect(node);
+  return { analyser, samples: new Float32Array(analyser.fftSize) };
+}
+export function tapPeak(tap) {
+  if (!tap) return 0;
+  tap.analyser.getFloatTimeDomainData(tap.samples);
+  let peak = 0;
+  for (const sample of tap.samples) peak = Math.max(peak, Math.abs(sample));
+  return peak;
+}

@@ -10,6 +10,17 @@ let harmDry = null, harmWet = null, convolver = null, clickWet = null;
 let clickConv = null, irTimer = null;
 let graphPromise = null, deviceWarm = false, audioHasPlayed = false;
 
+// The mixer's tone, harmonics and pulse meters. The worklet posts the loudest
+// sample of each channel every 20 ms or so; nothing here polls, and a report
+// that stops arriving reads as silence rather than as a frozen meter.
+const enginePk = { tone: 0, pulse: 0, harm: 0, at: 0 };
+export function enginePeaks() {
+  if (!S.running || !S.audioEnabled || !audioCtx || audioCtx.state !== 'running'
+      || performance.now() - enginePk.at > 200) return SILENT_PEAKS;
+  return enginePk;
+}
+const SILENT_PEAKS = { tone: 0, pulse: 0, harm: 0 };
+
 // The worklet used to be a template literal turned into a Blob URL. As a real
 // file it can be handed straight to addModule(). The URL is resolved against
 // this module rather than the document so it keeps working from a subpath.
@@ -281,6 +292,11 @@ export function ensureAudioGraph() {
     // The processor reports which chirp table it is actually holding, so a lost
     // post can be told apart from a delivered one.
     node.port.onmessage = e => {
+      if (e.data && e.data.peaks) {
+        [enginePk.tone, enginePk.pulse, enginePk.harm] = e.data.peaks;
+        enginePk.at = performance.now();
+        return;
+      }
       if (e.data && e.data.chirpAck === undefined) return;
       chirpLive = e.data.chirpAck;
       // Confirmed: stop the retries and let the in-flight check above clear.

@@ -1,13 +1,4 @@
-// The ambience layer.
-//
-// One place at a time. It settles somewhere, stays a few minutes, then drifts
-// to somewhere else over a long crossfade, because a sudden cut from a forest
-// to an ocean is an edit and the whole point is that nothing here edits.
-//
-// Children are a separate element rather than part of a bed, and which
-// recording is used depends on where you are: the beach crowd belongs on a
-// shore, the playground belongs inland. They arrive quietly and in the
-// background, the way you hear them in life before you notice them.
+// Each atmosphere recording has a fixed mixer channel on the main page.
 import { S } from './state.js';
 import { getContext, getMaster } from './audio.js';
 
@@ -25,26 +16,51 @@ export const WORLDS = [
   { id: 'eaves',    bed: 'rain/night',     kids: null, dir: 'audio/' }
 ];
 
+const names = ['Ocean waves', 'Ocean cliff', 'Ocean surf', 'Forest birds', 'Forest wind',
+  'Forest morning', 'Creek', 'Night crickets', 'Gentle rain', 'Steady rain', 'Rain on eaves'];
+export const AMBIENCE_SOURCES = [
+  ...WORLDS.map((w, i) => ({ id: w.id, name: names[i], path: (w.dir || 'audio/ambience/') + w.bed })),
+  { id: 'kids-beach', name: 'Children · beach', path: 'audio/ambience/kids-beach' },
+  { id: 'kids-playground', name: 'Children · playground', path: 'audio/ambience/kids-playground' }
+];
+export function normalizeAmbLayers(layers) {
+  // Always expose the entire library, preserving saved levels where available.
+  return AMBIENCE_SOURCES.map(source => {
+    const saved = layers.find(l => l && l.source === source.id);
+    return { source: source.id, level: Number.isFinite(saved?.level)
+      ? Math.max(0, Math.min(1, saved.level)) : 0,
+      muted: saved?.muted === true, solo: saved?.solo === true };
+  });
+}
+
 const canOpus = (() => {
   const a = new Audio();
   return a.canPlayType('audio/ogg; codecs=opus') !== ''
       || a.canPlayType('audio/webm; codecs=opus') !== '';
 })();
 const EXT = canOpus ? '.opus' : '.mp3';
-const urlFor = w => (w.dir || 'audio/ambience/') + w.bed + EXT;
-const kidUrl = k => 'audio/ambience/' + k + EXT;
 
 const cache = new Map();
 let out = null, verb = null, wet = null;
-let running = false, current = null, kidVoice = null;
-let dwellTimer = null, kidTimer = null;
+let running = false;
+const mixVoices = new Map();
+const notifyMixer = () => window.dispatchEvent(new Event('atmospherechange'));
+
+function layerGain(layer) {
+  const soloing = S.ambLayers.some(l => l.solo);
+  return layer.muted || (soloing && !layer.solo) ? 0 : layer.level;
+}
 
 async function buf(url) {
   if (cache.has(url)) return cache.get(url);
   const ctx = getContext();
-  const b = await ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
-  cache.set(url, b);
-  return b;
+  const job = fetch(url).then(r => {
+    if (!r.ok) throw new Error(`Audio request failed: ${r.status}`);
+    return r.arrayBuffer();
+  }).then(data => ctx.decodeAudioData(data));
+  cache.set(url, job);
+  job.catch(() => cache.delete(url));
+  return job;
 }
 
 // A decaying noise burst, the same serviceable room the piano uses.
@@ -109,10 +125,12 @@ function voice(buffer, level, fade) {
   g.gain.value = 0;
   const s = ctx.createBufferSource();
   s.buffer = buffer; s.loop = true;
-  s.connect(g); g.connect(ensureOut());
+  const meter = ctx.createAnalyser();
+  meter.fftSize = 1024;
+  s.connect(g); g.connect(meter); meter.connect(ensureOut());
   s.start(ctx.currentTime, Math.random() * buffer.duration);   // never the same entry twice
   g.gain.setTargetAtTime(level, ctx.currentTime, fade / 3);
-  return { s, g };
+  return { s, g, meter, samples: new Float32Array(meter.fftSize) };
 }
 function fadeOut(v, fade) {
   if (!v) return;
@@ -121,62 +139,80 @@ function fadeOut(v, fade) {
   setTimeout(() => { try { v.s.stop(); } catch (e) {} }, (fade + 2) * 1000);
 }
 
-async function goTo(world) {
-  if (!running) return;
-  const b = await buf(urlFor(world)).catch(() => null);
-  if (!b || !running) return;
-  const fade = S.ambXfade;
-  const prev = current;
-  current = { world, v: voice(b, 1, fade) };
-  if (prev) fadeOut(prev.v, fade);
-  scheduleKids();
+// Manual layers share the atmosphere bus, reverb and main transport. Each
+// channel owns its pending load so stale requests cannot resurrect removed audio.
+export function syncAmbLayers() {
+  if (!running) { notifyMixer(); return; }
+  for (const [layer, slot] of mixVoices) {
+    if (S.ambLayers.includes(layer)) continue;
+    slot.request++;
+    if (slot.v) fadeOut(slot.v, 0.35);
+    mixVoices.delete(layer);
+  }
+  for (const layer of S.ambLayers) {
+    const level = layerGain(layer);
+    let slot = mixVoices.get(layer);
+    if (!slot) { slot = { request: 0, v: null, source: null, pending: null, error: '' }; mixVoices.set(layer, slot); }
+    if (slot.v) slot.v.g.gain.setTargetAtTime(level, getContext().currentTime, 0.12);
+    if (slot.source === layer.source && slot.v) {
+      if (slot.pending) { slot.request++; slot.pending = null; }
+      slot.error = '';
+      continue;
+    }
+    if (level === 0) {
+      slot.request++; slot.pending = null; slot.error = '';
+      if (slot.v) { fadeOut(slot.v, 0.35); slot.v = null; slot.source = null; }
+      continue;
+    }
+    if (slot.pending === layer.source) continue;
+    const source = AMBIENCE_SOURCES.find(s => s.id === layer.source);
+    if (!source) continue;
+    const request = ++slot.request;
+    slot.pending = source.id; slot.error = '';
+    buf(source.path + EXT).then(b => {
+      if (!running || mixVoices.get(layer) !== slot || slot.request !== request) return;
+      const old = slot.v;
+      slot.v = voice(b, layerGain(layer), 0.6);
+      slot.source = source.id; slot.pending = null;
+      if (old) fadeOut(old, 0.6);
+      notifyMixer();
+    }).catch(() => {
+      if (mixVoices.get(layer) !== slot || slot.request !== request) return;
+      slot.pending = null;
+      slot.error = slot.v ? 'Could not load; previous recording still playing.' : 'Could not load. Move this slider to retry.';
+      notifyMixer();
+    });
+  }
+  notifyMixer();
 }
 
-// Children come and go on their own clock, always well under the bed.
-function scheduleKids() {
-  clearTimeout(kidTimer);
-  if (kidVoice) { fadeOut(kidVoice, 14); kidVoice = null; }
-  const w = current && current.world;
-  if (!w || !w.kids || S.ambKids <= 0) return;
-  const wait = (40 + Math.random() * 120) / Math.max(0.05, S.ambKids);
-  kidTimer = setTimeout(async () => {
-    if (!running || !current || current.world !== w) return;
-    const b = await buf(kidUrl(w.kids)).catch(() => null);
-    if (!b || !running) return;
-    kidVoice = voice(b, S.ambKidLevel, 18);
-    // they wander off again after a while, and the next arrival is re-rolled
-    setTimeout(() => {
-      if (kidVoice) { fadeOut(kidVoice, 20); kidVoice = null; }
-      scheduleKids();
-    }, (60 + Math.random() * 120) * 1000);
-  }, wait * 1000);
+export function ambLayerStatus(layer) {
+  const slot = mixVoices.get(layer);
+  return slot?.error || (slot?.pending ? 'Loading…' : slot?.v && layerGain(layer) > 0 ? 'Playing' : '');
 }
 
-function scheduleDrift() {
-  clearTimeout(dwellTimer);
-  const mins = S.ambDwell * (0.7 + Math.random() * 0.6);
-  dwellTimer = setTimeout(() => {
-    if (!running) return;
-    const pool = WORLDS.filter(w => !current || w.id !== current.world.id);
-    goTo(pool[(Math.random() * pool.length) | 0]);
-    scheduleDrift();
-  }, mins * 60 * 1000);
+// Post-fader signal, before the shared atmosphere/master gain.
+export function ambLayerPeak(layer) {
+  const v = mixVoices.get(layer)?.v;
+  if (!running || !v || !S.running || !S.audioEnabled || getContext()?.state !== 'running') return 0;
+  v.meter.getFloatTimeDomainData(v.samples);
+  let peak = 0;
+  for (const sample of v.samples) peak = Math.max(peak, Math.abs(sample));
+  return peak;
 }
 
 export async function ambienceOn() {
-  const ctx = getContext();
-  if (!ctx || running) return false;
+  if (!getContext() || running || !ensureOut()) return false;
   running = true;
-  if (!ensureOut()) { running = false; return false; }
-  const start = WORLDS[(Math.random() * WORLDS.length) | 0];
-  await goTo(start);
-  scheduleDrift();
+  syncAmbLayers();
   return true;
 }
 export function ambienceOff() {
   running = false;
-  clearTimeout(dwellTimer); clearTimeout(kidTimer);
-  if (current) { fadeOut(current.v, 4); current = null; }
-  if (kidVoice) { fadeOut(kidVoice, 4); kidVoice = null; }
+  for (const slot of mixVoices.values()) {
+    slot.request++;
+    if (slot.v) fadeOut(slot.v, 0.35);
+  }
+  mixVoices.clear();
+  notifyMixer();
 }
-export const ambienceWhere = () => current ? current.world.id : null;
