@@ -1190,7 +1190,6 @@ export const WORDS = [
   ['crinkle', 'texture'],
   ['ruffle', 'texture'],
   ['folds', 'texture'],
-  ['nubby', 'texture'],
   ['brushed', 'texture'],
   ['featherlight', 'texture'],
   ['buoyancy', 'open', 'water'],
