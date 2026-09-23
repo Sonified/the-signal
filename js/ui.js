@@ -6,8 +6,10 @@ import { setColorFromPicker } from './color.js';
 import { seedParticles, applyEdgeDir, seedTunnel } from './sim.js';
 import { invalidateGradients } from './renderers/canvas2d.js';
 import { saveSettings } from './settings.js';
+import { strobeInWorker, syncWorker, WORKER_FLAG } from './strobe-bridge.js';
 import { applyPreset } from './presets.js';
-import { pianoOn, pianoOff, applyPianoReverb, rebuildPianoIR, applyBedVol, pianoAvailable } from './piano.js';
+import { pianoOn, pianoOff, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, pianoAvailable } from './piano.js';
+import { cloudsOn, cloudsOff, applyCloudReverb } from './clouds.js';
 import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR } from './ambience.js';
 import { rebuildPool, poolSize, recentreWord, THEMES as WORD_THEMES } from './text.js';
 import { chirpDurationMs } from './chirp.js';
@@ -44,6 +46,7 @@ export function updateReadouts() {
   $('lockVal').textContent = S.frameLock
     ? (S.framesPerCycle ? S.achievedFreq.toFixed(2) + ' Hz · ' + S.framesPerCycle + ' fr' : 'on')
     : 'off';
+  $('spareVal').textContent = S.spareMode;
   if (S.refreshHz) {
     const spc = S.refreshHz/S.freq;
     $('spc').textContent = spc.toFixed(1);
@@ -65,12 +68,27 @@ export function updateReadouts() {
 export function resize() {
   S.DPR = Math.min(window.devicePixelRatio || 1, 2);
   S.W = window.innerWidth; S.H = window.innerHeight;
-  const wd = Math.max(1, Math.round(S.W * S.DPR)), hd = Math.max(1, Math.round(S.H * S.DPR));
-  if (cv.width !== wd || cv.height !== hd) { cv.width = wd; cv.height = hd; }
-  if (S.ctx) S.ctx.setTransform(S.DPR,0,0,S.DPR,0,0);
-  if (S.renderer && S.renderer.resize) S.renderer.resize();
+  // A canvas handed to the strobe worker refuses to be resized from here, and
+  // writing its width throws. The worker sizes it on its own side from the
+  // same three numbers, which the sync below carries across.
+  if (!strobeInWorker()) {
+    const wd = Math.max(1, Math.round(S.W * S.DPR)), hd = Math.max(1, Math.round(S.H * S.DPR));
+    if (cv.width !== wd || cv.height !== hd) { cv.width = wd; cv.height = hd; }
+    if (S.ctx) S.ctx.setTransform(S.DPR,0,0,S.DPR,0,0);
+    if (S.renderer && S.renderer.resize) S.renderer.resize();
+  }
   document.documentElement.style.setProperty('--panelH', panel.offsetHeight + 'px');
   S.edgeInsetTarget = S.panelOpen ? panel.offsetWidth : 0;
+  syncWorker();
+}
+
+export function syncAmbControls() {
+  const on = S.ambOn;
+  $('amOn').classList.toggle('on', on);
+  $('amOff').classList.toggle('on', !on);
+  $('ambOnVal').textContent = on ? 'on' : 'off';
+  $('ambQuick').textContent = 'atmosphere: ' + (on ? 'on' : 'off');
+  document.querySelectorAll('.amb-ctl').forEach(el => { el.hidden = !on; });
 }
 
 // ---------- primary actions ----------
@@ -165,18 +183,26 @@ export function toggle() {
   const cold = !isDeviceWarm();
   if (cold) warmDevice().then(() => { if ($('lAudio').checked) audioOn(); });
   S.running = !S.running;
+  // Drops the chrome's backdrop blurs for the duration of the run. Blurring a
+  // backdrop that changes every frame re-reads and re-blurs the canvas 120
+  // times a second, which is what was stealing presents out of the strobe.
+  document.body.classList.toggle('running', S.running);
   if (S.running) {
     if (!S.rings.length) seedTunnel(16);
     hint.classList.add('hide');
     revealField();
     // Megabytes of samples are fetched on the first press, never at page load,
     // so someone who reads the notice and leaves downloads nothing.
-    if (S.musicOn) pianoOn();
+    if (S.musicOn) { pianoOn(); if (S.cloudsOn) cloudsOn(); }
     if (S.ambOn)   ambienceOn();
   } else {
     hint.classList.remove('hide');
-    pianoOff(); ambienceOff();
+    pianoOff(); cloudsOff(); ambienceOff();
   }
+  // Start and stop is the one strobe input that never passes through
+  // saveSettings, so it tells the worker itself. The worker seeds its own
+  // tunnel on the transition, the same way the line above does for this side.
+  syncWorker();
   applyAudioGain();
   syncTransport();
 }
@@ -252,6 +278,41 @@ export function togglePanel(force) {
   saveSettings();
 }
 
+// ---------- main-thread stalls ----------
+// Everything else in the diagnostics describes intent: what phase the loop
+// meant to show and when its callback happened to run. Those numbers looked
+// perfect while the screen was visibly dropping frames, because a present lost
+// in the compositor never shows up as a late callback. A long task is a
+// different and more honest signal: the main thread was busy for 50 ms or more
+// and nothing else on it could run. With the strobe in its worker these no
+// longer touch the frames, but they still say what the UI is costing.
+//
+// The ground truth for presented versus dropped frames is outside the page:
+// Chrome DevTools > Performance, record, and read the Frames track, where a
+// dropped or partially presented frame is marked as such. chrome://gpu shows
+// whether the canvas was promoted to an overlay plane (look for overlay and
+// low-latency canvas lines), which is what desynchronized:true is asking for.
+const LONG_TASK_WINDOW = 5000;
+const longTasks = [];               // [startTime, duration], oldest first
+try {
+  new PerformanceObserver(list => {
+    for (const entry of list.getEntries()) longTasks.push([entry.startTime, entry.duration]);
+    const cutoff = performance.now() - LONG_TASK_WINDOW;
+    while (longTasks.length && longTasks[0][0] < cutoff) longTasks.shift();
+  }).observe({ type: 'longtask', buffered: true });
+} catch (e) { /* no longtask support; the line reads as unavailable */ }
+const longTaskSupported = typeof PerformanceObserver === 'function' &&
+  (PerformanceObserver.supportedEntryTypes || []).includes('longtask');
+
+function longTaskSummary() {
+  if (!longTaskSupported) return 'unavailable in this browser';
+  const cutoff = performance.now() - LONG_TASK_WINDOW;
+  while (longTasks.length && longTasks[0][0] < cutoff) longTasks.shift();
+  let worst = 0;
+  for (const [, dur] of longTasks) if (dur > worst) worst = dur;
+  return `${longTasks.length}, worst ${Math.round(worst)} ms`;
+}
+
 // ---------- clipboard ----------
 function fallbackCopy(text, cb) {
   const ta = document.createElement('textarea');
@@ -313,6 +374,17 @@ export function initUI() {
   }
   $('lkOff').onclick = e => setFrameLock(false, e.currentTarget);
   $('lkOn').onclick  = e => setFrameLock(true,  e.currentTarget);
+
+  // Which way the odd frame goes. Takes effect on the next cycle; no reload,
+  // since it is just a different duty for the same lock.
+  function setSpare(mode, btn) {
+    S.spareMode = mode;
+    ['spLit','spDark'].forEach(id => $(id).classList.remove('on'));
+    btn.classList.add('on'); btn.blur();
+    updateReadouts(); saveSettings();
+  }
+  $('spLit').onclick  = e => setSpare('lit',  e.currentTarget);
+  $('spDark').onclick = e => setSpare('dark', e.currentTarget);
 
   // Two surfaces control one setting: the drawer pair and the quick toggle in
   // the corner. Both route through here so they can never disagree.
@@ -426,30 +498,27 @@ export function initUI() {
   function setMusic(on) {
     S.musicOn = on;
     paintMusic();
-    if (on) pianoOn(); else pianoOff();
+    if (on) { pianoOn(); if (S.cloudsOn) cloudsOn(); } else { pianoOff(); cloudsOff(); }
     saveSettings();
   }
   $('muOn').onclick  = e => { setMusic(true);  e.currentTarget.blur(); };
   $('muOff').onclick = e => { setMusic(false); e.currentTarget.blur(); };
   $('musicQuick').onclick = e => { e.stopPropagation(); setMusic(!S.musicOn); e.currentTarget.blur(); };
 
-  function paintAmb() {
-    const on = S.ambOn;
-    $('amOn').classList.toggle('on', on);
-    $('amOff').classList.toggle('on', !on);
-    $('ambOnVal').textContent = on ? 'on' : 'off';
-    $('ambQuick').textContent = 'atmosphere: ' + (on ? 'on' : 'off');
-    document.querySelectorAll('.amb-ctl').forEach(el => { el.hidden = !on; });
-  }
   function setAmb(on) {
     S.ambOn = on;
-    paintAmb();
-    if (on) ambienceOn(); else ambienceOff();
+    syncAmbControls();
+    if (on && S.running) ambienceOn(); else ambienceOff();
     saveSettings();
   }
   $('amOn').onclick  = e => { setAmb(true);  e.currentTarget.blur(); };
   $('amOff').onclick = e => { setAmb(false); e.currentTarget.blur(); };
-  $('ambQuick').onclick = e => { e.stopPropagation(); setAmb(!S.ambOn); e.currentTarget.blur(); };
+  $('ambQuick').onclick = e => {
+    e.stopPropagation();
+    togglePanel(false);
+    window.dispatchEvent(new Event('openatmospheremixer'));
+    e.currentTarget.blur();
+  };
 
   const bind = (id, key, fmt, after) => $(id).addEventListener('input', e => {
     S[key] = fmt(+e.target.value);
@@ -460,10 +529,6 @@ export function initUI() {
   bind('pianoVol',  'pianoVol',  v => v/100);
   bind('bedVol',    'bedVol',    v => v/100, applyBedVol);
   bind('ambVol',    'ambVol',    v => v/100, applyAmbVol);
-  bind('ambDwell',  'ambDwell',  v => v);
-  bind('ambXfade',  'ambXfade',  v => v);
-  bind('ambKids',   'ambKids',   v => v/100);
-  bind('ambKidLevel','ambKidLevel', v => v/100);
   $('ambReverb').addEventListener('input', e => {
     S.ambReverb = +e.target.value/100; $('ambRevVal').textContent = e.target.value;
     applyAmbReverb(); saveSettings();
@@ -480,6 +545,11 @@ export function initUI() {
     S.pianoReverb = +e.target.value/100; $('pianoRevVal').textContent = e.target.value;
     applyPianoReverb(); saveSettings();
   });
+  $('pianoHP').addEventListener('input', e => {
+    S.pianoHP = +e.target.value;
+    $('pianoHPVal').textContent = S.pianoHP <= 20 ? 'off' : S.pianoHP + ' Hz';
+    applyPianoHP(); saveSettings();
+  });
   $('pianoRevTime').addEventListener('input', e => {
     S.pianoRevTime = +e.target.value; $('pianoRevTimeVal').textContent = S.pianoRevTime.toFixed(1);
     rebuildPianoIR(); saveSettings();
@@ -490,6 +560,32 @@ export function initUI() {
     $('pianoCentreVal').textContent = N[S.pianoCentre%12] + (Math.floor(S.pianoCentre/12)-1);
     saveSettings();
   });
+
+  // ---- clouds ------------------------------------------------------------
+  bind('cloudVol',     'cloudVol',     v => v/100);
+  bind('cloudDensity', 'cloudDensity', v => v/100);
+  bind('cloudPhrase',  'cloudPhrase',  v => v/100);
+  $('cloudReverb').addEventListener('input', e => {
+    S.cloudReverb = +e.target.value/100; $('cloudRevVal').textContent = e.target.value;
+    applyCloudReverb(); saveSettings();
+  });
+  function paintClouds() {
+    const on = S.cloudsOn;
+    $('clOn').classList.toggle('on', on);
+    $('clOff').classList.toggle('on', !on);
+    $('cloudsOnVal').textContent = on ? 'on' : 'off';
+    document.querySelectorAll('.cloud-ctl').forEach(el => { el.hidden = !on; });
+  }
+  function setClouds(on) {
+    S.cloudsOn = on;
+    paintClouds();
+    // only actually sounds while the music layer as a whole is running
+    if (on && S.musicOn && S.running) cloudsOn(); else cloudsOff();
+    saveSettings();
+  }
+  $('clOn').onclick  = e => { setClouds(true);  e.currentTarget.blur(); };
+  $('clOff').onclick = e => { setClouds(false); e.currentTarget.blur(); };
+  paintClouds();
 
   // ---- words -------------------------------------------------------------
   function setTextSource(linked) {
@@ -626,7 +722,7 @@ export function initUI() {
     }
     syncVisualQuick();
   paintMusic();
-  paintAmb();
+  syncAmbControls();
     saveSettings();
   };
   $('visualQuick').onclick = e => {
@@ -974,6 +1070,24 @@ export function initUI() {
   $('rGL').onclick   = e => pickRenderer('webgl2',   e.target);
   $('r2D').onclick   = e => pickRenderer('canvas2d', e.target);
 
+  // Strobe thread. Lives in localStorage rather than the settings blob because
+  // the bridge has to read it before anything else loads, and a canvas can be
+  // handed to a worker only once, so like the renderer it means starting over.
+  // The lit button shows the choice; the renderer readout says what is live.
+  const THREAD_BTNS = ['thMain', 'thWorker'];
+  const workerWanted = () => localStorage.getItem(WORKER_FLAG) === '1';
+  THREAD_BTNS.forEach(id => $(id).classList.toggle('on', id === (workerWanted() ? 'thWorker' : 'thMain')));
+  function pickThread(worker, btn) {
+    if (worker === workerWanted()) { btn.blur(); return; }
+    if (worker) localStorage.setItem(WORKER_FLAG, '1'); else localStorage.removeItem(WORKER_FLAG);
+    THREAD_BTNS.forEach(id => $(id).classList.remove('on'));
+    btn.classList.add('on');
+    btn.blur();
+    location.reload();
+  }
+  $('thMain').onclick   = e => pickThread(false, e.target);
+  $('thWorker').onclick = e => pickThread(true,  e.target);
+
   // With the drawer open, a tap on the field puts the drawer away rather than
   // starting or stopping. On a phone the drawer covers most of the screen and
   // there is no Escape key, so the tap that plainly means "put this away" was
@@ -1079,13 +1193,24 @@ export function initUI() {
 
   // Idle fade for the two chrome buttons. Never while the drawer is open, since
   // the burger is also the way back out of it.
+  // Everything that fades, so the pointer resting on one can be told from the
+  // pointer resting on the canvas: aiming at a control is not idleness, and
+  // fading out from under a cursor that is about to click is maddening.
+  const CHROME = ['#burger', '#fsBtn', '#colorQuick', '#textQuick', '#clickQuick',
+    '#toneQuick', '#visualQuick', '#musicQuick', '#ambQuick', '#transport'];
+  const HOVERED = CHROME.map(sel => `${sel}:hover`).join(',');
+  const IDLE_MS = 1000;
   let idleTimer = null;
+  function sleep() {
+    if (S.panelOpen) return;
+    // Still under the pointer: look again in a moment instead of hiding it.
+    if (document.querySelector(HOVERED)) { idleTimer = setTimeout(sleep, IDLE_MS); return; }
+    document.body.classList.add('idle');
+  }
   function wake() {
     document.body.classList.remove('idle');
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      if (!S.panelOpen) document.body.classList.add('idle');
-    }, 2200);
+    idleTimer = setTimeout(sleep, IDLE_MS);
   }
   window.addEventListener('pointermove', wake, { passive: true });
   window.addEventListener('pointerdown', wake, { passive: true });
@@ -1170,6 +1295,8 @@ export function initUI() {
       if (e.key === 'Enter' && IS_LOCAL) { e.preventDefault(); $('gateBtn').click(); }
       return;
     }
+    // Let recording selectors handle their native keyboard navigation.
+    if (e.target.tagName === 'SELECT') return;
     // space always starts and stops, whatever happens to be focused
     if (e.code === 'Space') { e.preventDefault(); toggle(); return; }
     // Enter is a primary action too, so it works regardless of what has focus
@@ -1267,6 +1394,7 @@ export function initUI() {
       hueRange: S.hueSpan >= 1 ? 'full' : (S.hueLo > 0.9 || S.hueLo < 0.2 ? 'warm' : 'cool'),
       varianceSecondsPerCycle: S.varPeriod,
       frameLock: S.frameLock,
+      spareFrame: S.spareMode,
       brightness: +S.bright.toFixed(2),
       color: $('color').value,
       waveform: S.wave,
@@ -1368,13 +1496,18 @@ export function initUI() {
       `Open Focus frame diagnostics`,
       `time            ${new Date().toISOString()}`,
       `userAgent       ${navigator.userAgent}`,
-      `renderer        ${S.renderer ? S.renderer.name : 'none'}  (preference: ${S.rendererPref})`,
+      `renderer        ${S.renderer ? S.renderer.name : strobeInWorker() ? 'Canvas2D' : 'none'}  (preference: ${S.rendererPref})`,
       `viewport        ${S.W} x ${S.H} css px @ DPR ${S.DPR}`,
       `screen          ${screen.width} x ${screen.height}`,
+      // Which thread's requestAnimationFrame the intervals below came from. In
+      // the worker they are the strobe's own cadence; on main they are the
+      // cadence of a thread that is also running every piece of the UI.
+      `frame source    ${strobeInWorker() ? 'worker' : 'main'}`,
       ``,
       `requested freq  ${S.freq.toFixed(1)} Hz  (${bandName(S.freq)})`,
       `frame pattern   ${S.litLog.join('') || '(not running)'}`,
-      `frame lock      ${S.frameLock ? 'ON, achieving ' + S.achievedFreq.toFixed(2) + ' Hz at ' + S.framesPerCycle + ' frames/cycle' : 'off'}`,
+      `frame lock      ${S.frameLock ? 'ON, achieving ' + S.achievedFreq.toFixed(2) + ' Hz at ' + S.framesPerCycle + ' frames/cycle'
+                        + (S.framesPerCycle % 2 ? ', spare frame ' + S.spareMode : '') : 'off'}`,
       `measured refresh${S.refreshHz ? ' ' + S.refreshHz.toFixed(2) + ' Hz' : ' -'}`,
       `frames/cycle    ${fpc ? fpc.toFixed(3) : '-'}  ${fpc && Number.isInteger(+fpc.toFixed(3)) ? '(divides evenly)' : '(does not divide evenly)'}`,
       ``,
@@ -1386,6 +1519,7 @@ export function initUI() {
       `  best          ${(d[0]||0).toFixed(2)} ms`,
       `  spread        ${((d[d.length-1]||0) - (d[0]||0)).toFixed(2)} ms`,
       `  dropped       ${S.dropCount}  (interval > 1.5x median)`,
+      `main-thread long tasks (5s)  ${longTaskSummary()}`,
       ``,
       `active layers   ${Object.entries(layers).filter(([,v])=>v).map(([k])=>k).join(', ') || 'none'}`,
       `audio           ${$('lAudio').checked ? S.carrierHz + ' Hz carrier' : 'off'}`,

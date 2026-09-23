@@ -6,6 +6,8 @@ import { setColorFromPicker } from './color.js';
 import { applyEdgeDir } from './sim.js';
 import { chirpDurationMs } from './chirp.js';
 import { ampToPos, ampToDb } from './util.js';
+import { normalizeAmbLayers } from './ambience.js';
+import { syncWorker } from './strobe-bridge.js';
 
 // Drawer open state, applied in one place so every path agrees.
 function setDrawer(open) {
@@ -30,12 +32,14 @@ export function saveSettings() {
       textOpacityVarPeriod: S.textOpacityVarPeriod,
       textColorMode: S.textColorMode,
       musicOn: S.musicOn, pianoVol: S.pianoVol, bedVol: S.bedVol,
-      pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime,
+      pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP,
       pianoDensity: S.pianoDensity, pianoCentre: S.pianoCentre,
       pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
-      ambOn: S.ambOn, ambVol: S.ambVol, ambDwell: S.ambDwell, ambXfade: S.ambXfade,
-      ambKids: S.ambKids, ambKidLevel: S.ambKidLevel,
+      cloudsOn: S.cloudsOn, cloudVol: S.cloudVol, cloudDensity: S.cloudDensity,
+      cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb, cloudRevTime: S.cloudRevTime,
+      ambOn: S.ambOn, ambVol: S.ambVol, ambDrift: S.ambDrift,
       ambReverb: S.ambReverb, ambRevTime: S.ambRevTime,
+      ambLayers: S.ambLayers,
       pipTrimDb: S.pipTrimDb, biOn: S.biOn, chirpVol: S.chirpVol, chirpReverb: S.chirpReverb, chirpRevTime: S.chirpRevTime,
       chirpModDepth: S.chirpModDepth, chirpModPeriod: S.chirpModPeriod,
       clickMode: S.clickMode, chirpLowHz: S.chirpLowHz, chirpHighHz: S.chirpHighHz,
@@ -43,7 +47,7 @@ export function saveSettings() {
       textRestFreq: S.textRestFreq, textRestSec: S.textRestSec, textRestVar: S.textRestVar,
       depthVar: S.depthVar, varPeriod: S.varPeriod, panelOpen: S.panelOpen,
       freqDrift: S.freqDrift, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
-      frameLock: S.frameLock, walkPeriod: S.walkPeriod, brightVar: S.brightVar,
+      frameLock: S.frameLock, spareMode: S.spareMode, walkPeriod: S.walkPeriod, brightVar: S.brightVar,
       brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
       hueLo: S.hueLo, hueSpan: S.hueSpan,
       ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod,
@@ -61,6 +65,10 @@ export function saveSettings() {
       skipWarning: localStorage.getItem(SKIP_KEY) === '1'
     }));
   } catch (e) { console.warn('settings save failed:', e); }
+  // Every control that changes the strobe already ends by saving, so this is
+  // the one place that is guaranteed to see all of them, presets included.
+  // A no-op unless the strobe is running in its worker.
+  syncWorker();
 }
 
 export function applySettings() {
@@ -85,6 +93,12 @@ export function applySettings() {
     S.frameLock = s.frameLock;
     ['lkOff','lkOn'].forEach(id => $(id).classList.remove('on'));
     $(S.frameLock ? 'lkOn' : 'lkOff').classList.add('on');
+  }
+  // Anything else saved here (an old 'alt') falls through to the default.
+  if (s.spareMode === 'lit' || s.spareMode === 'dark') {
+    S.spareMode = s.spareMode;
+    ['spLit','spDark'].forEach(id => $(id).classList.remove('on'));
+    $(S.spareMode === 'dark' ? 'spDark' : 'spLit').classList.add('on');
   }
   if (typeof s.freqDrift === 'number')    { S.freqDrift = s.freqDrift; $('freqDrift').value = S.freqDrift; }
   if (typeof s.driftPeriod === 'number')  { S.driftPeriod = s.driftPeriod; $('driftRate').value = S.driftPeriod; }
@@ -145,11 +159,12 @@ export function applySettings() {
     const map = { circle:'sCircle', panel:'sPanel', full:'sFull' };
     ['sCircle','sPanel','sFull'].forEach(id => $(id).classList.toggle('on', id === map[S.fieldShape]));
   }
-  // Deliberately ignoring any stored renderer choice. The GPU backends are
-  // unfinished (their edge layer draws one rounded capsule per segment, which
-  // reads as beads on a string) and a stale preference silently put people
-  // back on them. Canvas2D is the only verified path.
-  if (false && s.rendererPref && RENDER_MAP[s.rendererPref]) {
+  // The stored renderer choice is honoured again, so the GPU backends can be
+  // A/B'd by eye against Canvas2D. They are still experimental: their edge
+  // layer draws one rounded capsule per segment, which reads as beads on a
+  // string, and the drawer label says so. Canvas2D stays the default, so a
+  // first visit never lands on them.
+  if (s.rendererPref && RENDER_MAP[s.rendererPref]) {
     S.rendererPref = s.rendererPref;
     RENDER_BTNS.forEach(id => $(id).classList.toggle('on', id === RENDER_MAP[S.rendererPref]));
   }
@@ -212,10 +227,13 @@ export function applySettings() {
   // music and ambience
   const num = (k, f) => { if (typeof s[k] === 'number') S[k] = s[k]; if (f) f(); };
   if (typeof s.musicOn === 'boolean') S.musicOn = s.musicOn;
+  if (typeof s.cloudsOn === 'boolean') S.cloudsOn = s.cloudsOn;
   if (typeof s.ambOn   === 'boolean') S.ambOn   = s.ambOn;
-  ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoDensity','pianoCentre',
-   'pianoSpread','pianoHold','pianoBass','ambVol','ambDwell','ambXfade',
-   'ambKids','ambKidLevel','ambReverb','ambRevTime'].forEach(k => num(k));
+  if (typeof s.ambDrift === 'boolean') S.ambDrift = s.ambDrift;
+  if (Array.isArray(s.ambLayers)) S.ambLayers = normalizeAmbLayers(s.ambLayers);
+  ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','pianoDensity','pianoCentre',
+   'pianoSpread','pianoHold','pianoBass','ambVol','ambReverb','ambRevTime',
+   'cloudVol','cloudDensity','cloudPhrase','cloudReverb','cloudRevTime'].forEach(k => num(k));
   {
     const pc = (id, v) => { const e = $(id); if (e) e.value = v; };
     const tx = (id, v) => { const e = $(id); if (e) e.textContent = v; };
@@ -223,6 +241,7 @@ export function applySettings() {
     pc('bedVol', Math.round(S.bedVol*100));           tx('bedVolVal', Math.round(S.bedVol*100));
     pc('pianoReverb', Math.round(S.pianoReverb*100)); tx('pianoRevVal', Math.round(S.pianoReverb*100));
     pc('pianoRevTime', S.pianoRevTime);               tx('pianoRevTimeVal', S.pianoRevTime.toFixed(1));
+    pc('pianoHP', S.pianoHP);                         tx('pianoHPVal', S.pianoHP <= 20 ? 'off' : S.pianoHP + ' Hz');
     pc('pianoDensity', Math.round(S.pianoDensity*100)); tx('pianoDensityVal', Math.round(S.pianoDensity*100));
     const N=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     pc('pianoCentre', S.pianoCentre);                 tx('pianoCentreVal', N[S.pianoCentre%12]+(Math.floor(S.pianoCentre/12)-1));
@@ -230,12 +249,12 @@ export function applySettings() {
     pc('pianoHold', Math.round(S.pianoHold*100));     tx('pianoHoldVal', Math.round(S.pianoHold*100));
     pc('pianoBass', S.pianoBass);                     tx('pianoBassVal', S.pianoBass);
     pc('ambVol', Math.round(S.ambVol*100));           tx('ambVolVal', Math.round(S.ambVol*100));
-    pc('ambDwell', S.ambDwell);                       tx('ambDwellVal', S.ambDwell);
-    pc('ambXfade', S.ambXfade);                       tx('ambXfadeVal', S.ambXfade);
-    pc('ambKids', Math.round(S.ambKids*100));         tx('ambKidsVal', Math.round(S.ambKids*100));
-    pc('ambKidLevel', Math.round(S.ambKidLevel*100)); tx('ambKidLevelVal', Math.round(S.ambKidLevel*100));
     pc('ambReverb', Math.round(S.ambReverb*100));     tx('ambRevVal', Math.round(S.ambReverb*100));
     pc('ambRevTime', S.ambRevTime);                   tx('ambRevTimeVal', S.ambRevTime.toFixed(1));
+    pc('cloudVol', Math.round(S.cloudVol*100));       tx('cloudVolVal', Math.round(S.cloudVol*100));
+    pc('cloudDensity', Math.round(S.cloudDensity*100)); tx('cloudDensityVal', Math.round(S.cloudDensity*100));
+    pc('cloudPhrase', Math.round(S.cloudPhrase*100)); tx('cloudPhraseVal', Math.round(S.cloudPhrase*100));
+    pc('cloudReverb', Math.round(S.cloudReverb*100)); tx('cloudRevVal', Math.round(S.cloudReverb*100));
   }
 
   // migrate the older exclusive setting if it is still on disk

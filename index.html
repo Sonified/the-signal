@@ -52,7 +52,97 @@
   </div>
 </div>
 
-<button id="ambQuick" aria-label="Atmosphere on or off">atmosphere: on</button>
+<button id="ambQuick" aria-label="Open mixer" aria-controls="ambMixerWindow" aria-expanded="false" title="Open mixer">atmosphere: on</button>
+
+<section id="ambMixerWindow" role="dialog" aria-labelledby="ambMixerTitle" hidden>
+  <header id="ambMixerBar">
+    <span class="amb-power-light" aria-hidden="true"></span>
+    <h2 id="ambMixerTitle">Mixer</h2>
+    <button id="ambMixerDrift" type="button" aria-pressed="false" aria-label="Drift between atmosphere locations" title="Drift: slowly crossfade from place to place on its own">drift</button>
+    <span class="amb-copy-wrap">
+      <button id="ambMixerCopy" type="button" aria-label="Copy mixer settings"><span class="amb-copy-label">copy settings</span></button>
+      <span id="ambMixerToast" role="status" aria-live="polite"></span>
+    </span>
+    <button id="ambMixerPower" type="button" aria-label="Toggle atmosphere" aria-pressed="true">on</button>
+    <button id="ambMixerClose" type="button" aria-label="Close mixer" title="Close">×</button>
+  </header>
+  <div class="amb-mixer-body">
+    <div class="amb-section-label">Tone</div>
+    <div class="amb-master-row amb-chan-row">
+      <label for="mixFund">Fundamental</label>
+      <input id="mixFund" type="range" min="0" max="100" step="1" aria-label="Fundamental tone level">
+      <output id="mixFundVal" for="mixFund"></output>
+      <span class="amb-chan-signal">
+        <span class="amb-meter" id="mixFundMeter" aria-hidden="true" title="Post-fader signal · -60 to 0 dBFS"></span>
+        <span class="amb-master-unit">dB</span>
+      </span>
+    </div>
+    <div class="amb-master-row amb-chan-row">
+      <label for="mixHarm">Harmonics</label>
+      <input id="mixHarm" type="range" min="0" max="100" step="1" aria-label="Harmonics level">
+      <output id="mixHarmVal" for="mixHarm"></output>
+      <span class="amb-chan-signal">
+        <span class="amb-meter" id="mixHarmMeter" aria-hidden="true" title="Post-fader signal · -60 to 0 dBFS"></span>
+        <span class="amb-master-unit">dB</span>
+      </span>
+    </div>
+    <div class="amb-master-row amb-chan-row">
+      <label for="mixPulse">Pulse train</label>
+      <input id="mixPulse" type="range" min="0" max="100" step="1" aria-label="Pulse train level">
+      <output id="mixPulseVal" for="mixPulse"></output>
+      <span class="amb-chan-signal">
+        <span class="amb-meter" id="mixPulseMeter" aria-hidden="true" title="Post-fader signal · -60 to 0 dBFS"></span>
+        <span class="amb-master-unit">dB</span>
+      </span>
+    </div>
+
+    <div class="amb-section-label">Music</div>
+    <div class="amb-master-row amb-chan-row">
+      <label for="mixPiano">Piano</label>
+      <input id="mixPiano" type="range" min="0" max="100" step="1" aria-label="Piano level">
+      <output id="mixPianoVal" for="mixPiano"></output>
+      <span class="amb-chan-signal">
+        <span class="amb-meter" id="mixPianoMeter" aria-hidden="true" title="Post-fader signal · -60 to 0 dBFS"></span>
+        <span class="amb-master-unit">%</span>
+      </span>
+    </div>
+    <div class="amb-master-row amb-chan-row">
+      <label for="mixClouds">Clouds</label>
+      <input id="mixClouds" type="range" min="0" max="100" step="1" aria-label="Clouds level">
+      <output id="mixCloudsVal" for="mixClouds"></output>
+      <span class="amb-chan-signal">
+        <span class="amb-meter" id="mixCloudsMeter" aria-hidden="true" title="Post-fader signal · -60 to 0 dBFS"></span>
+        <span class="amb-master-unit">%</span>
+      </span>
+    </div>
+    <div class="amb-master-row amb-chan-row">
+      <label for="mixDrone">Ocean drone</label>
+      <input id="mixDrone" type="range" min="0" max="100" step="1" aria-label="Ocean drone level">
+      <output id="mixDroneVal" for="mixDrone"></output>
+      <span class="amb-chan-signal">
+        <span class="amb-meter" id="mixDroneMeter" aria-hidden="true" title="Post-fader signal · -60 to 0 dBFS"></span>
+        <span class="amb-master-unit">%</span>
+      </span>
+    </div>
+
+    <div class="amb-section-label">Atmosphere</div>
+    <div class="amb-mixer-columns" aria-hidden="true"><span>Source</span><span></span><span></span><span>Level</span><span>%</span><span>Signal</span></div>
+    <div id="ambLayers"></div>
+    <div class="amb-master-row">
+      <label for="ambMixerMaster">Atmosphere</label>
+      <input id="ambMixerMaster" type="range" min="0" max="100" step="1" aria-label="Atmosphere master volume">
+      <output id="ambMixerMasterValue" for="ambMixerMaster"></output>
+      <span class="amb-master-unit">MASTER</span>
+    </div>
+    <div class="amb-master-row amb-reverb-row">
+      <label for="ambMixerReverb">Reverb</label>
+      <input id="ambMixerReverb" type="range" min="0" max="150" step="1" aria-label="Atmosphere reverb level">
+      <output id="ambMixerReverbValue" for="ambMixerReverb"></output>
+      <span class="amb-master-unit">SEND</span>
+    </div>
+    <p id="ambMixerStatus" role="status"></p>
+  </div>
+</section>
 
 <button id="musicQuick" aria-label="Music on or off">music: on</button>
 
@@ -97,7 +187,7 @@
       <option value="">Load a preset&hellip;</option>
       <option value="colorwalk">Color walk</option>
       <option value="magenta">Magenta world</option>
-      <option value="genus">Gamma 40 (GENUS)</option>
+      <option value="genus">Gamma 40</option>
       <option value="theta">Alpha-theta 7.5</option>
       <option value="breath">Resonance breath</option>
       <option value="sleep">Sleep</option>
@@ -534,7 +624,11 @@
     <input id="pianoVol" type="range" min="0" max="100" step="1" value="90">
   </div>
   <div class="ctl music-ctl">
-    <label>Ocean bed <b><span id="bedVolVal">30</span>%</b></label>
+    <label>High-pass <b><span id="pianoHPVal">off</span></b></label>
+    <input id="pianoHP" type="range" min="20" max="600" step="5" value="20">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Ocean drone <b><span id="bedVolVal">30</span>%</b></label>
     <input id="bedVol" type="range" min="0" max="100" step="1" value="30">
   </div>
   <div class="ctl music-ctl">
@@ -565,10 +659,33 @@
     <label>Low anchor <b><span id="pianoBassVal">10</span>%</b></label>
     <input id="pianoBass" type="range" min="0" max="60" step="1" value="10">
   </div>
+  <div class="ctl music-ctl">
+    <label>Clouds <b><span id="cloudsOnVal">on</span></b></label>
+    <div class="row">
+      <button id="clOn" class="on">On</button>
+      <button id="clOff">Off</button>
+    </div>
+  </div>
+  <div class="ctl music-ctl cloud-ctl">
+    <label>Clouds level <b><span id="cloudVolVal">60</span>%</b></label>
+    <input id="cloudVol" type="range" min="0" max="100" step="1" value="60">
+  </div>
+  <div class="ctl music-ctl cloud-ctl">
+    <label>Clouds density <b><span id="cloudDensityVal">100</span>%</b></label>
+    <input id="cloudDensity" type="range" min="20" max="250" step="5" value="100">
+  </div>
+  <div class="ctl music-ctl cloud-ctl">
+    <label>Falling figure <b><span id="cloudPhraseVal">35</span>%</b></label>
+    <input id="cloudPhrase" type="range" min="0" max="100" step="1" value="35">
+  </div>
+  <div class="ctl music-ctl cloud-ctl">
+    <label>Clouds reverb <b><span id="cloudRevVal">100</span>%</b></label>
+    <input id="cloudReverb" type="range" min="0" max="150" step="1" value="100">
+  </div>
     </div></div>
   </details>
 
-  <details class="grp">
+  <details class="grp" id="atmosphereGroup">
     <summary>Atmosphere</summary>
     <div class="wrap"><div class="body">
   <div class="ctl">
@@ -579,9 +696,10 @@
     </div>
   </div>
   <div class="ctl amb-ctl">
-    <label>Level <b><span id="ambVolVal">18</span>%</b></label>
+    <label for="ambVol">Atmosphere level <b><span id="ambVolVal">18</span>%</b></label>
     <input id="ambVol" type="range" min="0" max="100" step="1" value="18">
   </div>
+  <button id="ambMixerOpen" type="button">Open atmosphere mixer</button>
   <div class="ctl amb-ctl">
     <label>Reverb <b><span id="ambRevVal">0</span>%</b></label>
     <input id="ambReverb" type="range" min="0" max="150" step="1" value="0">
@@ -590,22 +708,6 @@
     <label>Reverb decay <b><span id="ambRevTimeVal">4.5</span>s</b></label>
     <input id="ambRevTime" type="range" min="1" max="15" step="0.5" value="4.5">
   </div>
-  <div class="ctl amb-ctl">
-    <label>Time in one place <b><span id="ambDwellVal">4</span> min</b></label>
-    <input id="ambDwell" type="range" min="1" max="20" step="1" value="4">
-  </div>
-  <div class="ctl amb-ctl">
-    <label>Crossfade <b><span id="ambXfadeVal">14</span>s</b></label>
-    <input id="ambXfade" type="range" min="2" max="40" step="1" value="14">
-  </div>
-  <div class="ctl amb-ctl">
-    <label>Children <b><span id="ambKidsVal">50</span>%</b></label>
-    <input id="ambKids" type="range" min="0" max="100" step="1" value="50">
-  </div>
-  <div class="ctl amb-ctl">
-    <label>Children level <b><span id="ambKidLevelVal">22</span>%</b></label>
-    <input id="ambKidLevel" type="range" min="0" max="60" step="1" value="22">
-  </div>
     </div></div>
   </details>
 
@@ -613,12 +715,37 @@
     <summary>Render</summary>
     <div class="wrap"><div class="body">
   <div class="ctl">
-    <label>Renderer</label>
+    <!-- Canvas2D is lit in the markup because it is the default in state.js;
+         Auto was lit here before while the app actually ran Canvas2D. -->
+    <label>Renderer <b>GPU modes experimental</b></label>
     <div class="row">
-      <button id="rAuto" class="on">Auto</button>
+      <button id="rAuto">Auto</button>
       <button id="rGPU">WebGPU</button>
       <button id="rGL">WebGL2</button>
-      <button id="r2D">Canvas2D</button>
+      <button id="r2D" class="on">Canvas2D</button>
+    </div>
+  </div>
+  <!-- Which thread draws the strobe. Worker moves phase, frame lock, the sim
+       and the draw onto an OffscreenCanvas in a worker, so a mixer drag or a
+       style recalc on this thread cannot delay a frame. Falls back to Main if
+       the browser cannot do it; the readout below says which one is live. -->
+  <div class="ctl">
+    <label>Strobe thread</label>
+    <div class="row">
+      <button id="thMain" class="on">Main</button>
+      <button id="thWorker">Worker</button>
+    </div>
+  </div>
+  <!-- Only matters when the frame lock lands on an odd frame count, which on
+       a 120 Hz panel is every rate from 34.3 to 48 Hz. Three frames cannot be
+       half lit: Lit keeps two of them on, Dark keeps one. There was briefly an
+       Alternate that took turns; it puts a subharmonic at half the rate,
+       which at 40 Hz is a 20 Hz line in the seizure band, so it is gone. -->
+  <div class="ctl">
+    <label>Spare frame <b><span id="spareVal">lit</span></b></label>
+    <div class="row">
+      <button id="spLit" class="on">Lit</button>
+      <button id="spDark">Dark</button>
     </div>
   </div>
     </div></div>

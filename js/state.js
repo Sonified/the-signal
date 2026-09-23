@@ -37,6 +37,11 @@ export const S = {
   // that the achieved frequency snaps to refresh/N, which at 120 Hz and 40 Hz is
   // 39.98 rather than 40.00.
   frameLock: true, achievedFreq: 10, framesPerCycle: 0, frameIdx: 0,
+  // Which way the odd frame goes when the lock lands on an odd count. 'lit'
+  // keeps the extra frame on (2-lit-1-dark at 3), 'dark' keeps it off
+  // (1-lit-2-dark). Never alternate them: taking turns puts a line at half
+  // the rate, and half of 40 is squarely in the photosensitive band.
+  spareMode: 'lit',
 
   // Slow drift applied to depth. Its own accumulator so it is independent of the
   // strobe rate. It only ever subtracts: effDepth swings from the set depth down
@@ -136,19 +141,36 @@ export const S = {
 
   // ---------- music ----------
   // A generative felt piano whose root sits two octaves under the 40 Hz carrier,
-  // over a looping ocean cavern bed. Every default here is a measurement from
+  // over a looping ocean cavern drone. Every default here is a measurement from
   // four takes played by hand rather than a guess.
   musicOn: true,
   pianoVol: 0.9, pianoReverb: 1.0, pianoRevTime: 4.5,
+  pianoHP: 20,                // high-pass on the notes, Hz; 20 is the floor and reads as off
   pianoDensity: 1.0, pianoCentre: 72, pianoSpread: 0.55, pianoHold: 1.0,
   pianoDyad: 46, pianoBloom: 18, pianoSingle: 26, pianoBass: 10,
   pianoLifts: true,
   bedVol: 0.30,
 
+  // The clouds: eight sustained pads at the degrees of the same mode, played as
+  // a wandering line. cloudPhrase is how often that line falls into the
+  // descending figure from the second take rather than meandering, and it is
+  // the control that decides whether the music drifts or says something.
+  // cloudDensity sits at 1.0 = the rate of the take as played; the slider's
+  // range runs well below that, which is the direction it wants to move.
+  cloudsOn: true, cloudVol: 0.60, cloudDensity: 1.0, cloudPhrase: 0.35,
+  cloudReverb: 1.0, cloudRevTime: 5.0,
+
   // ---------- ambience ----------
-  // One place at a time, a few minutes each, joined by long crossfades.
-  ambOn: true, ambVol: 0.18, ambDwell: 4, ambXfade: 14,
-  ambKids: 0.5, ambKidLevel: 0.22,
+  // Fixed recording levels for balancing the atmosphere in the browser.
+  ambOn: true, ambVol: 0.18,
+  ambLayers: [
+    { source: 'ocean', level: 0.55 },
+    { source: 'forest', level: 0 },
+    { source: 'rain', level: 0 }
+  ],
+  // Drift: an unattended hand on the mixer, slowly crossfading from one
+  // recorded place to another instead of holding a fixed blend.
+  ambDrift: false,
   // Dry by default: these are real places, recorded in the room they were in.
   ambReverb: 0, ambRevTime: 4.5,
 

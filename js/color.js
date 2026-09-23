@@ -4,10 +4,16 @@ import { hexToRgb, rgbToHsl, hslToRgb } from './util.js';
 // Per-element walking would build a color string per ring, per particle, per
 // frame. Instead hues are quantised into a prebuilt palette of ready-made
 // strings, so the draw loop only ever indexes an array.
+// The guard compares the two numbers it depends on rather than a string built
+// from them. This runs on every frame and the answer is almost always "no,
+// nothing changed"; formatting two floats and concatenating them to find that
+// out allocated three strings per frame to throw all three away.
+let satSeen = NaN, lightSeen = NaN;
+
 export function ensurePalette() {
-  const key = S.hueSat.toFixed(3) + '|' + S.hueLight.toFixed(3);
-  if (key === S.paletteKey) return;
-  S.paletteKey = key;
+  if (S.hueSat === satSeen && S.hueLight === lightSeen && S.huePalette.length) return;
+  satSeen = S.hueSat; lightSeen = S.hueLight;
+  S.paletteKey = S.hueSat.toFixed(3) + '|' + S.hueLight.toFixed(3);
   S.huePalette.length = 0;
   for (let i = 0; i < HUE_STEPS; i++) {
     const c = hslToRgb(i/HUE_STEPS, S.hueSat, S.hueLight);

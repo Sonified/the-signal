@@ -7,6 +7,7 @@
 // number rather than merely compatible.
 import { S } from './state.js';
 import { getContext, getMaster } from './audio.js';
+import { meterTap, tapPeak } from './util.js';
 
 const SEMIS = [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40];
 const RELEASES = 18;
@@ -23,7 +24,8 @@ const lifts = [];
 let bed = null, bedGain = null, bedMeta = null;
 let bedTakes = [], bedNextAt = 0, bedTimer = null, bedRunning = false;
 let ready = false, loading = null;
-let dry = null, verb = null, wet = null;
+let dry = null, verb = null, wet = null, hp = null;
+let noteTap = null, bedTap = null;
 let running = false, clock = 0, elapsed = 0, drift = 0, lastDyad = 0, timer = null;
 
 const canOpus = (() => {
@@ -58,7 +60,7 @@ export function loadPiano() {
       })
     ]);
     buildGraph();
-    // the ocean bed, loaded alongside; its loop points come from the manifest
+    // the ocean drone, loaded alongside; its loop points come from the manifest
     try {
       bedMeta = await (await fetch('audio/music/manifest.json')).json();
       bed = await get('audio/music/ocean-cavern.opus');
@@ -77,10 +79,35 @@ function buildGraph() {
   wet  = ctx.createGain(); wet.gain.value = S.pianoReverb;
   dry.connect(master);
   verb.connect(wet).connect(master);
+  // A high-pass on the notes only, ahead of the room so the reverb is fed the
+  // same thinned signal the dry path gets; filtering after the convolver would
+  // leave a low bloom in the tail that the dry note no longer has. The drone
+  // bypasses it: it is its own voice with its own level. 12 dB an octave at
+  // Butterworth Q, gentle enough to take mud out without hollowing the tone.
+  // 20 Hz is the floor and is effectively off.
+  hp = ctx.createBiquadFilter();
+  hp.type = 'highpass'; hp.Q.value = Math.SQRT1_2;
+  hp.frequency.value = S.pianoHP;
+  hp.connect(dry); hp.connect(verb);
+  // The notes and the drone share this room, so each gets its own tap on the
+  // way in. Post-fader and pre-reverb, the same point the atmosphere meters
+  // read, so the mixer's columns mean one thing throughout.
+  noteTap = meterTap(ctx, hp);
 }
+
+// Gated on the transport rather than on the graph: a suspended context keeps
+// handing back the last block it rendered, which would leave a meter lit while
+// everything is silent.
+const audible = () => S.running && S.audioEnabled && getContext()?.state === 'running';
+export const pianoPeak = () => audible() ? tapPeak(noteTap) : 0;
+export const bedPeak   = () => audible() ? tapPeak(bedTap)  : 0;
 
 export function applyPianoReverb() {
   if (wet) wet.gain.setTargetAtTime(S.pianoReverb, getContext().currentTime, 0.08);
+}
+// Glided rather than set, so dragging the slider sweeps instead of zippering.
+export function applyPianoHP() {
+  if (hp) hp.frequency.setTargetAtTime(S.pianoHP, getContext().currentTime, 0.05);
 }
 let irTimer = null;
 export function rebuildPianoIR() {
@@ -107,7 +134,7 @@ function strike(written, vel, at) {
   s.playbackRate.value = Math.pow(2, ((written - ROOT) - src) / 12);
   const g = ctx.createGain();
   g.gain.value = vel * vel * S.pianoVol;
-  s.connect(g); g.connect(dry); g.connect(verb);
+  s.connect(g); g.connect(noteTap.analyser);
   s.start(at);
 }
 function keyLift(at) {
@@ -116,7 +143,7 @@ function keyLift(at) {
   const s = ctx.createBufferSource();
   s.buffer = pick(lifts);
   const g = ctx.createGain(); g.gain.value = 0.35 * S.pianoVol;
-  s.connect(g); g.connect(dry); g.connect(verb);
+  s.connect(g); g.connect(noteTap.analyser);
   s.start(at);
 }
 
@@ -274,7 +301,8 @@ function bedOn() {
   bedRunning = true;
   bedGain = ctx.createGain();
   bedGain.gain.value = 0;
-  bedGain.connect(dry); bedGain.connect(verb);
+  bedTap = meterTap(ctx, dry, verb);
+  bedGain.connect(bedTap.analyser);
 
   const loopLen = bedMeta.loopEnd - bedMeta.loopStart;
   const xf = Math.min(BED_XFADE, loopLen / 2 - 0.01);
@@ -289,14 +317,17 @@ function bedOn() {
 
 function bedOff() {
   if (!bedRunning) return;
-  const ctx = getContext(), g = bedGain, takes = bedTakes;
+  const ctx = getContext(), g = bedGain, takes = bedTakes, tap = bedTap;
   bedRunning = false;
   clearInterval(bedTimer); bedTimer = null;
-  bedTakes = []; bedGain = null; bedNextAt = 0;
+  bedTakes = []; bedGain = null; bedNextAt = 0; bedTap = null;
   g.gain.setTargetAtTime(0, ctx.currentTime, 0.6);
   setTimeout(() => {
     for (const s of takes) { try { s.onended = null; s.stop(); } catch (e) {} }
     try { g.disconnect(); } catch (e) {}
+    // The drone's tap is built with it, so it is torn down with it rather than
+    // left hanging off the room for every on and off in the session.
+    if (tap) { try { tap.analyser.disconnect(); } catch (e) {} }
   }, 2600);
 }
 export function applyBedVol() {

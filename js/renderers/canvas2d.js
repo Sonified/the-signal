@@ -1,26 +1,53 @@
 // ---------- canvas2d (original path, kept as the last resort) ----------
+// No import from dom.js here on purpose. Everything else this module touches
+// is arithmetic and a 2d context, so with the canvas handed in rather than
+// looked up, the whole file runs unchanged inside a worker against an
+// OffscreenCanvas. One reference to document would have made that impossible.
 import { S, layers, HUE_STEPS, Z_NEAR } from '../state.js';
-import { cv } from '../dom.js';
 import { shape, smoothstep, hslToRgb } from '../util.js';
 import { ensurePalette, hueStr, bandHue } from '../color.js';
 import { visW, visCx, perimeterPoint, px, py } from '../geometry.js';
+
+// The flat fill colour, as a string, cached. Three of the four layers set a
+// fillStyle or strokeStyle from S.rgb, and each of them was building that
+// string from scratch on every frame -- three allocations a frame, 360 a
+// second, for a value that changes when the hue walk crosses a whole unit of
+// one channel. Keyed on the packed triple so the comparison is one integer.
+let rgbKey = -1, rgbStr = 'rgb(212,0,255)';
+function solidRgb() {
+  const rgb = S.rgb;
+  const key = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+  if (key !== rgbKey) { rgbKey = key; rgbStr = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`; }
+  return rgbStr;
+}
 
 // Gradients are expensive to build, so they are cached at full opacity and
 // scaled with globalAlpha instead of being rebuilt every frame. Rebuilding
 // five of these per frame was enough to blow the frame budget and drop frames,
 // which is what made the strobe look uneven.
-let gradCache = { key:'', disc:null, corners:null };
+let gradCache = { valid:false, w:0, h:0, inset:0, col:-1, disc:null, corners:null };
 
 // Forces the shared gradients to rebuild on the next frame.
-export function invalidateGradients() { gradCache.key = ''; }
+export function invalidateGradients() { gradCache.valid = false; }
 
 function ensureGradients() {
+  // Nothing consumes these unless the field is a disc or the corner glows are
+  // lit, and in the default arrangement neither is true. The cheapest version
+  // of this work is not doing it: at fieldShape 'full' with corners off the
+  // function used to build a cache key, compare it, and only then discover it
+  // had nothing to contribute.
+  const needDisc = layers.field && S.fieldShape !== 'full' && S.fieldShape !== 'panel';
+  if (!needDisc && !layers.corners) return;
+
   const ctx = S.ctx, W = S.W, H = S.H, rgb = S.rgb;
   // Color is quantised to 16 levels per channel for cache purposes. A walking
   // hue would otherwise rebuild five gradients every single frame, which is the
-  // exact allocation churn that caused GC stalls before.
-  const key = `${W}x${H}|${S.edgeInset>>3}|${rgb[0]>>4},${rgb[1]>>4},${rgb[2]>>4}`;
-  if (gradCache.key === key) return;
+  // exact allocation churn that caused GC stalls before. Compared as numbers
+  // rather than through a formatted key, for the same reason as the palette.
+  const col = ((rgb[0] >> 4) << 8) | ((rgb[1] >> 4) << 4) | (rgb[2] >> 4);
+  const inset = S.edgeInset >> 3;
+  if (gradCache.valid && gradCache.w === W && gradCache.h === H &&
+      gradCache.inset === inset && gradCache.col === col) return;
   const cx = visCx(), cy = H/2, size = Math.min(visW(),H)*0.62;
   const solid = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
   const clear = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`;
@@ -38,17 +65,17 @@ function ensureGradients() {
     return { g, x, y, R };
   });
 
-  gradCache = { key, disc, corners };
+  gradCache = { valid:true, w:W, h:H, inset, col, disc, corners };
 }
 
 function drawField(lum) {
-  const ctx = S.ctx, H = S.H, rgb = S.rgb;
+  const ctx = S.ctx, H = S.H;
   const level = S.effBright * (1 - S.effDepth + S.effDepth*lum);
   if (level <= 0.002) return;
   const cx = visCx(), cy = H/2, size = Math.min(visW(),H)*0.62;
 
   ctx.globalAlpha = level;
-  ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+  ctx.fillStyle = solidRgb();
 
   if (S.fieldShape === 'full') {
     ctx.fillRect(S.edgeInset,0,visW(),H);
@@ -69,14 +96,14 @@ function drawField(lum) {
 }
 
 function drawRings() {
-  const ctx = S.ctx, H = S.H, rgb = S.rgb, rings = S.rings;
+  const ctx = S.ctx, H = S.H, rings = S.rings;
   const cx = visCx(), cy = H/2;
   const maxR = Math.hypot(visW(),H) * 0.62;
   const FOCAL = maxR * Z_NEAR;
 
   // sorted in place: slice() here allocated a fresh array every frame
   rings.sort((a,b) => b.z - a.z);
-  if (!S.perElementColor) ctx.strokeStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+  if (!S.perElementColor) ctx.strokeStyle = solidRgb();
 
   for (const ring of rings) {
     const r = FOCAL / ring.z;
@@ -122,7 +149,7 @@ function drawCorners() {
       }
     } else if (c.hueIdx !== undefined) {
       c.hueIdx = undefined;
-      gradCache.key = '';            // force the shared gradients to rebuild
+      gradCache.valid = false;       // force the shared gradients to rebuild
     }
 
     ctx.globalAlpha = a;
@@ -137,9 +164,9 @@ const _lx = new Float32Array(32), _ly = new Float32Array(32);
 const _rx = new Float32Array(32), _ry = new Float32Array(32);
 
 function drawEdge() {
-  const ctx = S.ctx, rgb = S.rgb;
+  const ctx = S.ctx;
   ctx.lineJoin = 'round';
-  if (!S.perElementColor) ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+  if (!S.perElementColor) ctx.fillStyle = solidRgb();
 
   for (const p of S.particles) {
     if (S.perElementColor) ctx.fillStyle = hueStr(p.hue);
@@ -185,8 +212,10 @@ function drawEdge() {
   ctx.globalAlpha = 1;
 }
 
-export function initCanvas2D() {
-  const ctx = cv.getContext('2d', { alpha: false, desynchronized: true });
+// `target` is a <canvas> on the main thread and an OffscreenCanvas in the
+// worker. Neither path needs to know which it got.
+export function initCanvas2D(target) {
+  const ctx = target.getContext('2d', { alpha: false, desynchronized: true });
   if (!ctx) return null;
   S.ctx = ctx;
   ctx.setTransform(S.DPR, 0, 0, S.DPR, 0, 0);

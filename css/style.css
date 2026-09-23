@@ -1,6 +1,30 @@
   :root {
     --ui-bg:#0a0c0f; --ui-panel:#11151a; --ui-line:#222a33;
     --ui-text:#e8edf2; --ui-dim:#8b97a3; --ui-accent:#6ea8fe;
+    --chrome-blur:blur(10px); --tip-blur:blur(8px);
+  }
+
+  /* backdrop-filter is the most expensive thing the compositor does: for each
+     element it snapshots what is behind, blurs that snapshot, then composites.
+     That is cheap when the backdrop holds still. Here the backdrop is a full
+     screen strobe that changes on every frame, so the snapshot is invalid 120
+     times a second and eleven separate regions get re-read and re-blurred each
+     time. Blowing that budget drops a canvas present, and a dropped present in
+     a three frame on-on-off cycle holds one lit frame for twice its length.
+     At low brightness the 40 Hz carrier is below the flicker threshold but
+     that doubled pulse is not, so it reads as a flash on a steady field.
+
+     It also makes the canvas's desynchronized:true pointless. That flag asks
+     for a low-latency overlay plane, and blurring the canvas requires reading
+     it back as a texture, which is exactly what promotion to an overlay rules
+     out. So the frost is dropped for the duration of a run and the
+     backgrounds go opaque to carry the contrast it was providing. */
+  body.running { --chrome-blur:none; --tip-blur:none; }
+  body.running #burger,
+  body.running #clickQuick, body.running #ambQuick, body.running #musicQuick,
+  body.running #visualQuick, body.running #toneQuick, body.running #textQuick,
+  body.running #colorQuick, body.running #fsBtn, body.running #tpPlay {
+    background:rgba(17,21,26,.93);
   }
   * { box-sizing:border-box; }
   html,body { height:100%; margin:0; overflow:hidden; }
@@ -20,13 +44,31 @@
   canvas.lit { opacity:1; }
   @media (prefers-reduced-motion: reduce) { canvas { transition:none; } }
 
+  /* Both of these were full-viewport boxes pinned over the canvas, inset:0,
+     purely so that one line of text could sit in the middle of them. An
+     element at opacity 0 is still a layer the compositor has to reckon with on
+     every present, and these two covered the entire strobe. So each is now
+     only as wide as the words it holds and is centred by its own translate.
+     --edge-inset carries the drawer's rendered width; half of it moves the
+     centre into the middle of whatever is still visible beside an open panel,
+     which is the same recentring the renderer does for the field. */
   #hint {
-    position:fixed; inset:0; display:flex; z-index:5;
-    flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    position:fixed; z-index:5;
+    left:calc(50% + var(--edge-inset, 0px) / 2); top:50%;
+    transform:translate(-50%, -50%);
+    width:min(94vw, 720px);
+    display:flex; flex-direction:column; align-items:center; gap:14px;
     text-align:center; pointer-events:none;
     transition:opacity .6s ease;
   }
-  #hint.hide { opacity:0; }
+  /* Taken out of the compositor once it has faded rather than left as a
+     transparent layer over a surface that changes 120 times a second. The
+     delay holds it visible until the fade has finished, and drops to zero on
+     the way back in so it reappears instantly. */
+  #hint.hide {
+    opacity:0; visibility:hidden;
+    transition:opacity .6s ease, visibility 0s .6s;
+  }
   #hint .hmain {
     color:#b9c6d4; font-size:19px; font-weight:300; letter-spacing:.06em;
   }
@@ -36,10 +78,16 @@
 
   /* One word at a time, dead centre. Pinned rather than laid out so it can
      never shift the page, and non-interactive so a click still starts and
-     stops the session through the canvas underneath. */
+     stops the session through the canvas underneath.
+     Two separate things want this element's transform: the centring, and the
+     per-word ink nudge that text.js measures. Rather than have the script own
+     the whole property and have to know about the centring, the nudge arrives
+     as --ink and the two are composed here, so each has one owner. */
   #word {
-    position:fixed; inset:0; z-index:6;
-    display:flex; align-items:center; justify-content:center;
+    position:fixed; z-index:6;
+    left:calc(50% + var(--edge-inset, 0px) / 2); top:50%;
+    transform:translate(calc(-50% + var(--ink, 0px)), -50%);
+    white-space:nowrap;
     pointer-events:none; opacity:0;
     color:#f2f6fb; font-weight:300; letter-spacing:.07em;
     font-size:35px; line-height:1;
@@ -53,7 +101,7 @@
   #tip {
     position:fixed; z-index:60; pointer-events:none;
     padding:6px 9px; border-radius:6px;
-    background:rgba(12,16,21,.96); backdrop-filter:blur(8px);
+    background:rgba(12,16,21,.96); backdrop-filter:var(--tip-blur);
     border:1px solid var(--ui-line); color:var(--ui-text);
     font-size:11.5px; letter-spacing:.02em; white-space:nowrap;
     opacity:0; transition:opacity .09s ease;
@@ -79,13 +127,20 @@
     position:fixed; top:14px; left:14px; z-index:20;
     width:42px; height:42px; padding:0; flex:none;
     display:grid; place-items:center; gap:0;
-    background:rgba(17,21,26,.72); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.72); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:9px; cursor:pointer;
     transition:background .2s, border-color .2s, opacity .55s ease;
   }
   /* both chrome buttons fade out once the pointer settles, so a running session
-     is uninterrupted; any movement brings them straight back */
-  body.idle #burger, body.idle #fsBtn, body.idle #colorQuick, body.idle #textQuick, body.idle #clickQuick, body.idle #toneQuick, body.idle #visualQuick, body.idle #musicQuick, body.idle #ambQuick, body.idle #transport { opacity:0; pointer-events:none; }
+     is uninterrupted; any movement brings them straight back.
+     visibility, not opacity alone: an element at opacity 0 is still a live
+     compositing layer over the canvas, and the whole point of the fade is to
+     get these off the canvas's back. It is held until the fade has finished so
+     the transition still reads, and it reverts the instant .idle comes off. */
+  body.idle #burger, body.idle #fsBtn, body.idle #colorQuick, body.idle #textQuick, body.idle #clickQuick, body.idle #toneQuick, body.idle #visualQuick, body.idle #musicQuick, body.idle #ambQuick, body.idle #transport {
+    opacity:0; pointer-events:none; visibility:hidden;
+    transition:opacity .55s ease, visibility 0s .55s;
+  }
   #burger:hover { border-color:#3a4551; background:rgba(22,28,35,.9); }
   #burger .bars { position:relative; width:18px; height:13px; }
   #burger .bars i {
@@ -110,7 +165,7 @@
     position:fixed; bottom:16px; right:282px; z-index:20;
     height:38px; padding:0 13px; min-width:112px; text-align:center;
     font-size:11.5px; letter-spacing:.04em;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:8px;
     color:var(--ui-dim); cursor:pointer; opacity:.55;
     transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
@@ -122,7 +177,7 @@
     position:fixed; bottom:16px; right:738px; z-index:20;
     height:38px; padding:0 13px; min-width:112px; text-align:center;
     font-size:11.5px; letter-spacing:.04em;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:8px;
     color:var(--ui-dim); cursor:pointer; opacity:.55;
     transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
@@ -135,7 +190,7 @@
     position:fixed; bottom:16px; right:636px; z-index:20;
     height:38px; padding:0 13px; min-width:94px; text-align:center;
     font-size:11.5px; letter-spacing:.04em;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:8px;
     color:var(--ui-dim); cursor:pointer; opacity:.55;
     transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
@@ -149,7 +204,7 @@
     position:fixed; bottom:16px; right:496px; z-index:20;
     height:38px; padding:0 13px; min-width:132px; text-align:center;
     font-size:11.5px; letter-spacing:.04em;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:8px;
     color:var(--ui-dim); cursor:pointer; opacity:.55;
     transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
@@ -162,7 +217,7 @@
     position:fixed; bottom:16px; right:402px; z-index:20;
     height:38px; padding:0 13px; min-width:86px; text-align:center;
     font-size:11.5px; letter-spacing:.04em;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:8px;
     color:var(--ui-dim); cursor:pointer; opacity:.55;
     transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
@@ -172,7 +227,7 @@
     position:fixed; bottom:16px; right:188px; z-index:20;
     height:38px; padding:0 13px; min-width:86px; text-align:center;
     font-size:11.5px; letter-spacing:.04em;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:8px;
     color:var(--ui-dim); cursor:pointer; opacity:.55;
     transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
@@ -188,7 +243,7 @@
        which would shove the full-screen icon sideways */
     min-width:118px; text-align:center;
     font-size:11.5px; letter-spacing:.04em; font-variant-numeric:tabular-nums;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:8px;
     color:var(--ui-dim); cursor:pointer; opacity:.55;
     transition:opacity .55s ease, color .2s, border-color .2s, background .2s;
@@ -219,7 +274,7 @@
   #tpPlay {
     flex:0 0 auto; width:30px; height:30px; padding:0;
     border:1px solid rgba(110,168,254,.45); border-radius:50%;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     color:rgba(150,190,255,.9); font-size:12px; line-height:1; cursor:pointer;
     transition:border-color .2s, color .2s;
   }
@@ -227,12 +282,14 @@
   #tpPlay.showplay { text-indent:2px; }   /* the play glyph's ink leans left */
 
   #tpVol { --v:0.5; display:flex; align-items:center; gap:10px; }
+  /* The same white as the fill beside it, so the speaker and the bar read as
+     one control rather than a blue glyph next to a white one. */
   #tpVol .vmute {
     flex:0 0 auto; border:none; background:none; padding:3px;
-    color:rgba(150,190,255,.85); cursor:pointer; line-height:0;
+    color:#f2f2f2; cursor:pointer; line-height:0;
     transition:color .2s;
   }
-  #tpVol:hover .vmute { color:#cfe2ff; }
+  #tpVol:hover .vmute { color:#fff; }
   #tpVol .vsp { fill:currentColor; }
   #tpVol .vw1, #tpVol .vw2 { fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; }
   #tpVol .vx { display:none; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; }
@@ -260,7 +317,7 @@
     position:fixed; bottom:16px; right:16px; z-index:20;
     width:38px; height:38px; padding:0; flex:none;
     display:grid; place-items:center;
-    background:rgba(17,21,26,.6); backdrop-filter:blur(10px);
+    background:rgba(17,21,26,.6); backdrop-filter:var(--chrome-blur);
     border:1px solid var(--ui-line); border-radius:8px;
     color:var(--ui-dim); cursor:pointer;
     transition:color .2s, border-color .2s, background .2s, opacity .55s ease;
@@ -281,7 +338,7 @@
      the bottom of the window with no indication anything was down there. */
   details.grp {
     border:1px solid var(--ui-line); border-radius:8px;
-    background:#11161c; overflow:hidden;
+    background:#171e26; overflow:hidden;
     flex:0 0 auto;      /* never shrink: the panel is a flex column and squashed
                            children clip their own labels away */
   }
@@ -292,6 +349,7 @@
     padding:9px 12px; font-size:11px; letter-spacing:.09em;
     text-transform:uppercase; color:var(--ui-dim);
     display:flex; align-items:center; justify-content:space-between;
+    background:#171e26;
   }
   details.grp > summary::-webkit-details-marker { display:none; }
   details.grp > summary::after {
@@ -314,6 +372,7 @@
   details.grp .body {
     padding:0 12px; min-height:0; overflow:hidden;
     display:flex; flex-direction:column; gap:13px;
+    background:#212b36;
     opacity:0; transition:opacity .22s ease, padding .34s cubic-bezier(.4,0,.2,1);
   }
   details.grp.expanded .body { padding:12px; opacity:1; transition-delay:.06s, 0s; }
@@ -327,6 +386,12 @@
     display:flex; flex-direction:column; gap:15px;
     transition:transform .32s cubic-bezier(.4,0,.2,1);
     overflow-y:auto; overscroll-behavior:contain;
+    /* A slider label rewriting its number, or a section opening its grid row,
+       is the drawer's own business. Without this the browser has to satisfy
+       itself that none of that churn moved anything outside, and it checks
+       while the strobe is asking for the next frame. Layout and paint only:
+       size containment would collapse a panel that has no declared height. */
+    contain:layout paint;
   }
   #panel.hidden { transform:translateX(-100%); }
 
@@ -375,6 +440,145 @@
     height:34px; font-size:12.5px;
   }
   .presets select:hover { border-color:var(--ui-accent); color:var(--ui-text); }
+
+  /* Floating mixer: the same compact window chrome as the Clouds instrument. */
+  #ambMixerWindow {
+    position:fixed; z-index:40; top:80px; right:24px;
+    width:min(500px, calc(100vw - 24px)); min-width:min(440px, calc(100vw - 24px));
+    max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px);
+    display:flex; flex-direction:column; resize:horizontal; overflow:hidden;
+    color:#bac5d1; background:#1a222c; border:1px solid #2c3742; border-radius:9px;
+    box-shadow:0 22px 60px #000a, inset 0 1px 0 #ffffff0a;
+    /* Twelve meters repaint in here several times a second. Containment keeps
+       that inside the window instead of letting it ask the page to re-check
+       its layout, which it shares with a canvas that is mid-frame. */
+    contain:layout paint;
+  }
+  /* Dragging is a transform, so the window becomes its own compositor layer
+     for the duration and the move costs nothing but a matrix. will-change is
+     added only while the pointer is down, because a permanent promotion keeps
+     a full-size texture alive for a window that spends most of its life still.
+     The resting shadow is a 60px blur over a 500px box; it has to be painted
+     into that new layer before the first move can happen, so it is cut down
+     to something the promotion can afford. */
+  #ambMixerWindow.dragging {
+    will-change:transform;
+    box-shadow:0 8px 20px #0007, inset 0 1px 0 #ffffff0a;
+  }
+  #ambMixerWindow[hidden] { display:none; }
+  #ambMixerBar {
+    display:flex; align-items:center; gap:9px; flex:none; padding:5px 8px 5px 13px;
+    border-bottom:1px solid #29313b; background:linear-gradient(#1b222b,#141a22);
+    cursor:grab; touch-action:none; user-select:none;
+  }
+  #ambMixerBar.dragging { cursor:grabbing; }
+  #ambMixerTitle { flex:1; margin:0; font-size:11px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; }
+  #ambMixerTitle span { color:#788594; font-weight:400; }
+  .amb-power-light { width:6px; height:6px; border-radius:50%; background:#35443d; }
+  #ambMixerWindow.enabled .amb-power-light { background:#62d7aa; box-shadow:0 0 7px #4ad9a077; }
+  #ambMixerBar button { flex:0 0 auto; font-size:10px; padding:2px 9px; color:#8e9aaa; background:#121820; }
+  #ambMixerPower[aria-pressed="true"] { color:#64d8ad; border-color:#365e50; }
+  /* Drift says it is on by lighting up rather than by growing a word: the
+     label is fixed, so the button never changes size under the pointer. */
+  #ambMixerDrift[aria-pressed="true"] {
+    color:#eef4ff; border-color:#7fb4ff;
+    background:linear-gradient(#3d7ef5,#2a5cd0);
+    box-shadow:0 0 9px #4f8cff5c, inset 0 1px 0 #ffffff33;
+  }
+  /* The copy confirmation is a check laid over the label rather than a shorter
+     one swapped in for it, so the button keeps the width it had. */
+  .amb-copy-wrap { position:relative; display:inline-flex; flex:0 0 auto; }
+  #ambMixerCopy { position:relative; }
+  #ambMixerCopy.copied { color:#5adca1; border-color:#3f8f68; background:#122318; }
+  #ambMixerCopy.copied .amb-copy-label { visibility:hidden; }
+  #ambMixerCopy.copied::after {
+    content:'\2713'; position:absolute; inset:0;
+    display:grid; place-items:center; font-size:13px; line-height:1; color:#5adca1;
+  }
+  #ambMixerToast {
+    position:absolute; top:calc(100% + 6px); left:50%; z-index:2;
+    transform:translate(-50%,-3px); padding:3px 8px;
+    border:1px solid #3f8f68; border-radius:4px; background:#10211a; color:#7fe6b4;
+    font:9px ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase;
+    white-space:nowrap; pointer-events:none; box-shadow:0 6px 16px #0008;
+    opacity:0; visibility:hidden;
+    transition:opacity .16s ease, transform .16s ease, visibility .16s;
+  }
+  #ambMixerToast.show { opacity:1; visibility:visible; transform:translate(-50%,0); }
+  #ambMixerBar #ambMixerClose { padding:1px 7px; font-size:18px; line-height:18px; }
+  #ambMixerClose:hover { color:#ff8a8a; border-color:#5a3a3a; }
+  .amb-mixer-body { padding:5px 12px 7px; overflow:auto; min-height:0; }
+  .amb-mixer-columns, .amb-layer, .amb-master-row {
+    display:grid; grid-template-columns:105px 23px 23px minmax(60px,120px) 30px minmax(60px,125px);
+    align-items:center; column-gap:6px;
+  }
+  .amb-mixer-columns { padding:2px 8px 5px; color:#596574; text-transform:uppercase; font-size:8px; letter-spacing:.16em; }
+  .amb-section-label {
+    margin:10px 8px 2px; padding-top:9px; border-top:1px solid #ffffff08;
+    color:#5f6c7c; text-transform:uppercase; font-size:9px; letter-spacing:.16em; font-weight:600;
+  }
+  .amb-section-label:first-child { margin-top:2px; padding-top:0; border-top:none; }
+  .amb-mixer-columns span:nth-child(5) { text-align:right; }
+  .amb-layer { min-height:28px; padding:0 8px; border-top:1px solid #ffffff04; }
+  .amb-layer:nth-child(odd) { background:#ffffff02; }
+  .amb-layer:hover { background:#ffffff05; }
+  .amb-layer label, .amb-master-row label { margin:0; font-size:11px; letter-spacing:.01em; color:#98a5b5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .amb-layer.active label { color:#d6e0e8; }
+  .amb-layer.silenced label, .amb-layer.silenced output { opacity:.45; }
+  .amb-layer button {
+    width:23px; height:19px; padding:0; border-radius:3px; border:1px solid #303a45;
+    background:linear-gradient(#202933,#161d25); color:#758494;
+    font:600 10px ui-monospace,monospace; box-shadow:0 1px 2px #0007;
+  }
+  .amb-layer .amb-muted[aria-pressed="true"] { background:#9b3339; border-color:#dc626a; color:#ffe7e7; box-shadow:0 0 6px #c4444933; }
+  .amb-layer .amb-solo[aria-pressed="true"] { background:#256846; border-color:#58c98b; color:#d4ffe4; box-shadow:0 0 6px #4ad98d33; }
+  .amb-layer output, .amb-master-row output { text-align:right; font:11px ui-monospace,SFMono-Regular,monospace; color:#8d9eaf; }
+  #ambMixerWindow input[type=range] {
+    appearance:none; -webkit-appearance:none; height:20px; width:100%; min-width:0; margin:0;
+    background:transparent; cursor:pointer; --fader-fill:#657b87;
+  }
+  #ambMixerWindow input[type=range]::-webkit-slider-runnable-track {
+    height:5px; border-radius:2px; border:1px solid #070a0e;
+    background:linear-gradient(to right,var(--fader-fill) var(--position,0%),#070b10 var(--position,0%));
+    box-shadow:0 1px 0 #ffffff0c,inset 0 1px 2px #000;
+  }
+  #ambMixerWindow input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance:none; width:11px; height:15px; margin-top:-6px; border-radius:2px;
+    border:1px solid #090d12; background:linear-gradient(#8b99a8 0%,#667380 42%,#c4d1dd 46%,#303a45 53%,#596573 59%,#394552 100%);
+    box-shadow:0 1px 3px #000c;
+  }
+  #ambMixerWindow input[type=range]::-moz-range-track { height:4px; background:#070b10; border:1px solid #25303b; border-radius:2px; }
+  #ambMixerWindow input[type=range]::-moz-range-progress { height:4px; background:var(--fader-fill); }
+  #ambMixerWindow input[type=range]::-moz-range-thumb { width:10px; height:14px; border:1px solid #090d12; border-radius:2px; background:linear-gradient(#8997a5,#3d4956); }
+  #ambMixerWindow input:focus-visible { outline:1px solid #62d7aa; outline-offset:2px; border-radius:3px; }
+  .amb-meter { display:flex; gap:3px; height:11px; padding:2px; border:1px solid #070b0e; border-radius:2px; background:#090d12; }
+  .amb-led { flex:1; min-width:0; background:#17372c; border-radius:1px; }
+  .amb-led:nth-child(n+10) { background:#39341b; }
+  .amb-led:nth-child(n+12) { background:#3b2023; }
+  .amb-led.lit { background:#5adca1; box-shadow:0 0 4px #51d89644; }
+  .amb-led.lit:nth-child(n+10) { background:#eccd63; box-shadow:0 0 4px #eccd6344; }
+  .amb-led.lit:nth-child(n+12) { background:#ef7773; box-shadow:0 0 4px #ef777344; }
+  .amb-layer.error label { color:#ef9993; }
+  .amb-layer.loading label { color:#ccbb82; }
+  .amb-master-row { margin-top:5px; padding:7px 8px 4px; border-top:1px solid #303a45; }
+  .amb-master-row + .amb-master-row { margin-top:0; padding-top:4px; border-top-color:#ffffff08; }
+  .amb-master-row label { grid-column:1 / 4; }
+  .amb-master-row label { color:#bac7d5; text-transform:uppercase; font-size:10px; letter-spacing:.11em; }
+  .amb-master-unit { font:8px ui-monospace,monospace; letter-spacing:.18em; text-align:center; color:#526272; }
+  /* A channel row's signal column carries the meter and the unit its fader is
+     read in, so tone and atmosphere line up on the same six columns. */
+  .amb-chan-signal { display:flex; align-items:center; gap:5px; min-width:0; }
+  .amb-chan-signal .amb-meter { flex:1 1 auto; min-width:0; }
+  .amb-chan-signal .amb-master-unit { flex:0 0 auto; }
+  #ambMixerStatus { margin:3px 8px 0; color:#657384; font:9px ui-monospace,monospace; }
+  @media(max-width:520px) {
+    .amb-mixer-body { padding-left:7px; padding-right:7px; }
+    .amb-mixer-columns, .amb-layer, .amb-master-row { grid-template-columns:78px 20px 20px minmax(35px,75px) 23px minmax(30px,105px); column-gap:4px; }
+    .amb-layer button { width:20px; }
+    .amb-chan-signal { gap:3px; }
+    .amb-layer label { font-size:10px; }
+    .amb-meter { gap:2px; }
+  }
 
   /* Theme chips wrap to as many rows as they need, and stay small enough that
      twenty of them do not turn the drawer into a wall. */

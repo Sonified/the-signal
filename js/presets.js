@@ -7,17 +7,45 @@ import { saveSettings } from './settings.js';
 // controls had been touched by hand.
 export const PRESETS = {
   genus: {
-    // A clean stimulus. Every variance is zeroed and the decorative layers are
-    // switched off, because anything still lit during the dark frames fills in
-    // the very gaps that make the flicker. Contrast is the whole mechanism.
-    inputs:{ freq:40, freqDrift:0, depth:100, bright:100,
-             depthVar:0, brightVar:0, ringBrightVar:0,
-             edgeSpeedVar:0, edgeSizeVar:0, colorWalk:0,
-             carrier:10000, pipMs:1, amRate:40, vol:35, clickVol:95 },
-    buttons:['wSq','sFull','aLink','lkOn','cwTogether','hbFull'],
-    sources:{ tone:false, click:true },
-    harmonics:false,          // a pad would light the dark frames and kill the contrast
-    layers:{ lField:true, lRings:false, lCorners:false, lEdge:false, lAudio:true }
+    // Gamma 40: full-field square pulse, frame locked, held cyan with no walk
+    // and no depth or brightness variance, so every cycle is the same full
+    // swing. Tuned after the compositing fix, when a clean 40 finally rendered
+    // as one. The motion lives in the rings, edge and words instead.
+    inputs:{ freq:40, freqDrift:0, driftRate:60, depth:100, bright:100,
+             depthVar:0, varPeriod:10, brightVar:0, brightVarPeriod:22,
+             color:'#00ccff', colorWalk:0, walkPeriod:60,
+             ringSpeed:0.5, ringFade:55, ringThick:3, ringThickVar:100,
+             ringBrightVar:55, ringBrightPeriod:10,
+             edgeCount:60, edgeSize:6, trailLen:1, edgeSpeed:4,
+             edgeSpeedVar:50, edgeSpeedVarPeriod:22,
+             edgeSizeVar:50, edgeSizeVarPeriod:18,
+             textRate:2, textFreq:50, textRandom:100,
+             textRestFreq:20, textRestSec:10, textRestVar:70,
+             textDwell:1000, textFadeIn:410, textFadeOut:670,
+             textOpacity:95, textOpacityVar:10, textOpacityVarPeriod:20, textSize:35,
+             carrier:40, amRate:40, vol:100, toneVol:83,
+             // The five shared pip controls address whichever voice is live,
+             // and clickMode below selects chirp before these are applied, so
+             // these are the chirp's values: -40 dB, a whisper under the tone.
+             pipMs:4, clickVol:33, clickReverb:37, clickRevTime:0.5,
+             clickModDepth:0, clickModRate:26,
+             biDepth:60, biRate:1,
+             harmVol:100, harmCount:9, harmBright:45, harmSpread:70,
+             harmPanRate:0.45, harmReverb:35, shimDepth:57, shimRate:0.12 },
+    selects:{ edgeDir:'both' },
+    buttons:['wSq','sFull','aLink','lkOn','spLit','cwEach','hbFull','txLink','txSystem','biHard'],
+    clickMode:'chirp',
+    bilateral:false,
+    sources:{ tone:true, click:true },
+    harmonics:true,
+    colorMode:'rotating',
+    layers:{ lField:true, lRings:true, lCorners:true, lEdge:true, lText:true, lAudio:true },
+    // The click's own values are kept alongside, so switching the voice back
+    // to click lands on the full-level train rather than on the chirp's.
+    state:{ duty:0.5,
+            chirpLowHz:150, chirpHighHz:6000, chirpComp:1, chirpTilt:1.3,
+            clickVol:1, clickReverb:0.53, clickRevTime:0.5,
+            clickModDepth:0.18, clickModPeriod:26 }
   },
   // Focused and alert, but grounded. The only preset meant to be used before
   // work rather than instead of it, so it is built on two timescales doing two
@@ -187,6 +215,12 @@ export function applyPreset(name) {
   const P = PRESETS[name];
   if (!P) return;
 
+  // The click and chirp share five controls. Select the requested voice before
+  // applying its values so a Gamma click level cannot land in the chirp slot.
+  if (P.clickMode && P.clickMode !== S.clickMode) {
+    $(P.clickMode === 'click' ? 'cmClick' : 'cmChirp').click();
+  }
+
   for (const [id, val] of Object.entries(P.inputs || {})) {
     const el = $(id);
     if (!el) continue;
@@ -206,6 +240,7 @@ export function applyPreset(name) {
     if (el && el.checked !== want) el.click();
   }
   (P.buttons || []).forEach(id => { const el = $(id); if (el) el.click(); });
+  if (typeof P.bilateral === 'boolean' && S.biOn !== P.bilateral) $('biToggle').click();
   // the harmonics switch is a toggle button, not an input, so it only gets
   // clicked when it is not already where the preset wants it
   if (typeof P.harmonics === 'boolean' && S.harmOn !== P.harmonics) $('harmToggle').click();
@@ -217,5 +252,6 @@ export function applyPreset(name) {
     if (S.toneOn  !== P.sources.tone)  $('aTone').click();
     if (S.clickOn !== P.sources.click) $('aClick').click();
   }
+  if (P.state) Object.assign(S, P.state);
   saveSettings();
 }

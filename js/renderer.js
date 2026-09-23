@@ -1,5 +1,6 @@
 import { S } from './state.js';
-import { $ } from './dom.js';
+import { $, cv } from './dom.js';
+import { strobeNote } from './strobe-bridge.js';
 import { initCanvas2D } from './renderers/canvas2d.js';
 import { initWebGL2 } from './renderers/webgl2.js';
 import { initWebGPU } from './renderers/webgpu.js';
@@ -14,11 +15,11 @@ export async function initRenderer() {
     try {
       r = kind === 'webgpu' ? await initWebGPU()
         : kind === 'webgl2' ? initWebGL2()
-        : initCanvas2D();
+        : initCanvas2D(cv);
     } catch (e) { console.warn(kind + ' init failed:', e); r = null; }
     if (r) {
       S.renderer = r;
-      $('rendName').textContent = r.name + (S.rendererPref === 'auto' ? '' : ' (forced)');
+      $('rendName').textContent = r.name + (S.rendererPref === 'auto' ? '' : ' (forced)') + strobeNote();
       return;
     }
     // a failed getContext() poisons the canvas for other kinds, so a forced

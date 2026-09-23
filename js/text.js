@@ -118,10 +118,13 @@ export function poolSize() { return pool.length; }
 
 // Called when the word size changes: the ink offset scales with the font, so
 // the word on screen needs re-measuring at the new size.
+// The nudge is published as --ink rather than written straight to `transform`,
+// because the stylesheet now also uses that property to centre the element and
+// two owners of one property means whoever writes last wins.
 export function recentreWord() {
   if (!el || !current) return;
   lastShift = -inkOffset(current, S.textSize);
-  el.style.transform = lastShift ? `translateX(${lastShift.toFixed(2)}px)` : '';
+  el.style.setProperty('--ink', lastShift.toFixed(2) + 'px');
 }
 
 function pick() {
@@ -204,7 +207,7 @@ export function updateText(t, dt) {
         const shift = -inkOffset(w, S.textSize);
         if (shift !== lastShift) {
           lastShift = shift;
-          el.style.transform = shift ? `translateX(${shift.toFixed(2)}px)` : '';
+          el.style.setProperty('--ink', shift.toFixed(2) + 'px');
         }
       }
     }
