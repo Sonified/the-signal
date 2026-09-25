@@ -13,7 +13,7 @@
 import { S } from '../../../js/state.js';
 import { CONTROLS, SECTIONS, byId } from '../../core/schema.js';
 import {
-  presetsVersion, presetCount, presetLabel, presetHasOverride,
+  presetsVersion, presetCount, presetLabel, presetHasOverride, presetIsActive,
   applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset
 } from '../../core/presets.js';
 import { ICON } from '../drawlist.js';
@@ -471,12 +471,14 @@ function presetChip(ui, k, px, py, w, t) {
   if (lifted) ui.dl.pushAlpha(0.3);
   const saved = k === savedIdx && t < savedUntil;
   const hv = ui.spring(id, hover ? 1 : 0, MOTION.hover);
-  const fl = ui.spring(ui.idx('drawer.presetSaved', k), saved ? 1 : 0, MOTION.fade);
+  // lit while it is the preset last clicked, and briefly on a save
+  const act = presetIsActive(k);
+  const fl = ui.spring(ui.idx('drawer.presetSaved', k), saved || act ? 1 : 0, MOTION.fade);
   mix4(ui.scratch0, hv > 0.5 ? COLOR.wellHi : COLOR.well, COLOR.accentSoft, fl);
   ui.dl.rect(px, py, w, PRESET_H, RADIUS.pill, ui.scratch0, 1, fl > 0.5 ? COLOR.accent : COLOR.lineSoft, 0, 0);
   const tw = presetEditing ? w - EDIT_PAD : w;
   ui.text.draw(ui.dl, saved ? 'Saved' : presetLabel(k), px + tw / 2, py + PRESET_H / 2 + 4, TYPE.xs, W.regular,
-               saved ? COLOR.accent : hv > 0.5 ? COLOR.ink : COLOR.inkDim, 1, TRACK.ui, 1);
+               saved || act ? COLOR.accent : hv > 0.5 ? COLOR.ink : COLOR.inkDim, 1, TRACK.ui, 1);
   // a built-in the viewer has saved over wears a small dot in its right pad
   if (presetHasOverride(k) && !presetEditing) ui.dl.rect(px + w - 7.5, py + PRESET_H / 2 - 1.5, 3, 3, 1.5, COLOR.accent, 0, null, 0, 0);
   if (presetEditing && !lifted) {
@@ -503,10 +505,21 @@ function addChip(ui, px, py) {
   ui.dl.rect(cx - 0.75, cy - 4.5, 1.5, 9, 0.75, col, 0, null, 0, 0);
 }
 
+// The drawer's slide, stepped once per frame before anything reads it, so
+// the drawer, the burger riding its edge and S.edgeInset all move on this
+// frame's value: the same spring, the same maths, no frame of lag.
+let slideO = 0, slideDx = -(W_DRAWER + BLEED);
+export function stepDrawer(ui) {
+  slideO = ui.spring('drawer.open', S.panelOpen ? 1 : 0, MOTION.panel);
+  slideDx = -(W_DRAWER + BLEED) * (1 - slideO);
+  S.edgeInset = Math.max(0, Math.min(W_DRAWER, slideDx + W_DRAWER));
+}
+// The pane's right edge this frame, css px (negative while it is tucked
+// away past the screen's left).
+export function drawerEdge() { return slideDx + W_DRAWER; }
+
 export function drawDrawer(ui, app) {
-  const o = ui.spring('drawer.open', S.panelOpen ? 1 : 0, MOTION.panel);
-  const dx = -(W_DRAWER + BLEED) * (1 - o);
-  S.edgeInset = Math.max(0, Math.min(W_DRAWER, dx + W_DRAWER));
+  const o = slideO, dx = slideDx;
   if (o < 0.002) return;
   if (openGroups === null) installGroupMemory(ui);
 

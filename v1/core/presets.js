@@ -238,7 +238,7 @@ let row = [];
 
 function ensureLoaded() {
   if (data) return;
-  data = { overrides: {}, user: [], order: null, hidden: [] };
+  data = { overrides: {}, user: [], order: null, hidden: [], active: null };
   let raw = null;
   try { raw = JSON.parse(readKey(PRESETS_KEY) || 'null'); } catch (e) { raw = null; }
   if (raw && typeof raw === 'object') readRecord(raw);
@@ -248,6 +248,7 @@ function ensureLoaded() {
 function readRecord(raw) {
   if (Array.isArray(raw.order)) data.order = raw.order.filter(k => typeof k === 'string');
   if (Array.isArray(raw.hidden)) data.hidden = raw.hidden.filter(k => typeof k === 'string');
+  if (typeof raw.active === 'string') data.active = raw.active;
   if (raw.overrides && typeof raw.overrides === 'object') {
     for (const p of PRESET_LIST) {
       const snap = raw.overrides[p.name];
@@ -284,9 +285,12 @@ function rebuildRow() {
   row = next;
 }
 
+// A row entry's lasting name, the same form the saved order uses.
+function entryKey(e) { return e.u ? 'u:' + e.u.name : 'b:' + PRESET_LIST[e.b].name; }
+
 function persist() {
   version++;
-  data.order = row.map(e => e.u ? 'u:' + e.u.name : 'b:' + PRESET_LIST[e.b].name);
+  data.order = row.map(entryKey);
   saveKey(PRESETS_KEY, data);
 }
 
@@ -334,6 +338,21 @@ export function presetLabel(i) {
   const e = row[i];
   return !e ? '' : e.u ? e.u.name : PRESET_LIST[e.b].label;
 }
+// The preset last clicked (or saved over, or just made): the drawer lights
+// it. It stays lit until another one takes over, and is kept with the row,
+// so a reload, which restores the same settings, still shows it.
+export function presetIsActive(i) {
+  ensureLoaded();
+  const e = row[i];
+  return !!e && data.active !== null && entryKey(e) === data.active;
+}
+function setActive(e) {
+  const k = e ? entryKey(e) : null;
+  if (k === data.active) return;
+  data.active = k;
+  persist();
+}
+
 // True for a built-in the viewer has saved over.
 export function presetHasOverride(i) {
   ensureLoaded();
@@ -347,6 +366,7 @@ export function applyPresetAt(i) {
   if (!e) return;
   if (e.u) applySnapshotLive(e.u.snapshot);
   else applyPreset(PRESET_LIST[e.b].name);
+  setActive(e);
 }
 
 export function savePresetOverAt(i) {
@@ -354,6 +374,7 @@ export function savePresetOverAt(i) {
   const e = row[i];
   if (!e) return;
   savePresetOver(e.u ? data.user.indexOf(e.u) : PRESET_LIST[e.b].name);
+  setActive(e);
 }
 
 // Edit mode's ×: a preset of the viewer's is removed outright; a built-in is
@@ -362,6 +383,7 @@ export function deletePresetAt(i) {
   ensureLoaded();
   const e = row[i];
   if (!e) return;
+  if (entryKey(e) === data.active) data.active = null;
   if (e.u) {
     const j = data.user.indexOf(e.u);
     if (j >= 0) data.user.splice(j, 1);
@@ -408,6 +430,7 @@ export function addUserPreset(name) {
   const u = { name: clean, snapshot: snapshot() };
   data.user.push(u);
   row.push({ b: -1, u });
+  data.active = 'u:' + u.name;        // it holds the settings on screen now
   persist();
   return row.length - 1;
 }
@@ -420,6 +443,7 @@ export function renameUserPreset(userIndex, name) {
   if (!u) return false;
   const clean = uniqueName(name, userIndex);
   if (!clean) return false;
+  if (data.active === 'u:' + u.name) data.active = 'u:' + clean;
   u.name = clean;
   persist();
   return true;

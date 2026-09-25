@@ -90,7 +90,7 @@ export const MOTION = {
 // Layout constants that mirror v0's so muscle memory carries over.
 export const LAYOUT = {
   drawerW: 340,              // v0 #panel width
-  drawerPadTop: 70,
+  drawerPadTop: 20,         // the side padding; the burger rides outside the drawer now, so no room is kept for it
   drawerPadX: 20,
   chromeInset: 16,           // distance of corner chrome from the edges
   // How far a child row (a control whose schema `parent` is the toggle or

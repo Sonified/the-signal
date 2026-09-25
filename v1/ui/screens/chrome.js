@@ -26,6 +26,7 @@
 import { S } from '../../../js/state.js';
 import { guard } from '../../../js/panel-guard.js';
 import { byId } from '../../core/schema.js';
+import { drawerEdge } from './drawer.js';
 import { runAction, actionLabel } from '../widgets.js';
 import { ICON } from '../drawlist.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, GLASS } from '../theme.js';
@@ -133,11 +134,15 @@ function drawVolume(ui, spkX, trackX, cy) {
   dl.popAlpha();
 }
 
-// The burger lives on the top layer so it stays above the open drawer.
+// The burger lives on the top layer so it stays above the open drawer. It
+// holds the top left corner of the VIEW, not the screen: locked to the
+// drawer's own edge (this frame's, see stepDrawer) once that edge is on
+// screen, and at the corner while it is still tucked away.
 export function drawBurger(ui, app, alpha, frost) {
   if (alpha < 0.01) return;
   ui.dl.pushAlpha(alpha);
-  if (glassIcon(ui, 'chrome.burger', S.panelOpen ? ICON.CLOSE : ICON.BURGER, 14, 14, LAYOUT.burger, false, frost)) app.toggleDrawer();
+  const bx = Math.max(0, drawerEdge()) + 14;
+  if (glassIcon(ui, 'chrome.burger', S.panelOpen ? ICON.CLOSE : ICON.BURGER, bx, 14, LAYOUT.burger, false, frost)) app.toggleDrawer();
   ui.dl.popAlpha();
 }
 

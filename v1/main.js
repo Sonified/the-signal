@@ -64,7 +64,7 @@ import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION } from './ui/theme.js';
 import { drawOverlay, overlayState } from './ui/screens/overlay.js';
 import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice } from './ui/screens/chrome.js';
-import { drawDrawer, drawProfileBadge } from './ui/screens/drawer.js';
+import { drawDrawer, stepDrawer, drawProfileBadge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
 
@@ -397,6 +397,7 @@ async function boot() {
       // the chrome chips frost only while a window that needs the capture is up
       const frost = ui.spring('chrome.frost', S.panelOpen || mixer.open ? 1 : 0, MOTION.fade);
       lastChromeA = chromeA;
+      stepDrawer(ui);   // the slide everything below reads this frame
 
       drawGuardNotice(ui, app);
       // The two floating windows stack by last touch: a press inside one (or
@@ -429,7 +430,9 @@ async function boot() {
 
       const res = ui.end();
       uiUnsettled = res.wantsFrames;
-      if (res.cursor !== lastCursor) { lastCursor = res.cursor; platform.setCursor(res.cursor); }
+      // the pointer goes with the chrome's idle fade and returns on any move
+      const cursor = awake ? res.cursor : 'none';
+      if (cursor !== lastCursor) { lastCursor = cursor; platform.setCursor(cursor); }
     }
 
     drawOverlay(overlayList, text, t, width, height);
