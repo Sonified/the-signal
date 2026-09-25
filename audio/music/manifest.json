@@ -1,12 +1,16 @@
 {
-  "file": "ocean-cavern",
-  "source": "Ocean_Cavern.wav",
+  "versions": [
+    { "id": 152, "file": "ocean-cavern-detune_152", "source": "Ocean_Cavern_HD_Detune_152.wav" },
+    { "id": 188, "file": "ocean-cavern-detune_188", "source": "Ocean_Cavern_HD_Detune_188.wav" },
+    { "id": 204, "file": "ocean-cavern-detune_204", "source": "Ocean_Cavern_HD_Detune_204.wav" },
+    { "id": 220, "file": "ocean-cavern-detune_220", "source": "Ocean_Cavern_HD_Detune_220.wav" }
+  ],
   "loopStart": 2.0,
-  "loopEnd": 28.5,
-  "gainApplied": 20.56,
+  "loopEnd": 32.0,
+  "gainApplied": -1.0,
   "encodings": {
     "opus": "96k VBR, 48 kHz",
     "mp3": "128k CBR, 44.1 kHz"
   },
-  "note": "plays the intro once, then loops between loopStart and loopEnd"
+  "note": "the same drone at four detune amounts, all cut to the same length and loop points; plays the intro once, then loops between loopStart and loopEnd"
 }
