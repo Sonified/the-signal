@@ -1,6 +1,9 @@
 // Each atmosphere recording has a fixed mixer channel on the main page.
 import { S } from './state.js';
-import { getContext, getMaster } from './audio.js';
+import {
+  getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, continueGlide, holdParam
+} from './audio.js';
+import { layerGate, layerSoloChanged, onLayerGates } from './mixgate.js';
 
 export const WORLDS = [
   { id: 'ocean',    bed: 'ocean-waves',    kids: 'kids-beach' },
@@ -18,20 +21,44 @@ export const WORLDS = [
 
 const names = ['Ocean waves', 'Ocean cliff', 'Ocean surf', 'Forest birds', 'Forest wind',
   'Forest morning', 'Creek', 'Night crickets', 'Gentle rain', 'Steady rain', 'Rain on eaves'];
+// The recorded places and children play from audio/ambience/seamless/: the
+// same recordings rebuilt from the lossless trims in audio/source/
+// trimmed_originals with an equal-power crossfade across the loop point
+// (6 s for the ocean, 3 s for the rest). The first cuts were butt-spliced,
+// so a loud swell at the end of a file dropped straight into a quiet start
+// and some loops clicked. The rain loops were already smooth and stay put.
+const AMB_DIR = 'audio/ambience/seamless/';
 export const AMBIENCE_SOURCES = [
-  ...WORLDS.map((w, i) => ({ id: w.id, name: names[i], path: (w.dir || 'audio/ambience/') + w.bed })),
-  { id: 'kids-beach', name: 'Children · beach', path: 'audio/ambience/kids-beach' },
-  { id: 'kids-playground', name: 'Children · playground', path: 'audio/ambience/kids-playground' }
+  ...WORLDS.map((w, i) => ({ id: w.id, name: names[i], path: (w.dir || AMB_DIR) + w.bed })),
+  { id: 'kids-beach', name: 'Children · beach', path: AMB_DIR + 'kids-beach' },
+  { id: 'kids-playground', name: 'Children · playground', path: AMB_DIR + 'kids-playground' }
 ];
 export function normalizeAmbLayers(layers) {
   // Always expose the entire library, preserving saved levels where available.
+  // `peak` is the level the drift brings this sound up to when it fades it in:
+  // the recording's default until someone sets its fader by hand, and from
+  // then on the last level they gave it (see setAmbLayerLevel).
   return AMBIENCE_SOURCES.map(source => {
     const saved = layers.find(l => l && l.source === source.id);
-    return { source: source.id, level: Number.isFinite(saved?.level)
-      ? Math.max(0, Math.min(1, saved.level)) : 0,
+    const clamp = v => Math.max(0, Math.min(1, v));
+    return { source: source.id, level: Number.isFinite(saved?.level) ? clamp(saved.level) : 0,
+      peak: Number.isFinite(saved?.peak) && saved.peak > 0 ? clamp(saved.peak) : defaultPeak(source.id),
       muted: saved?.muted === true, solo: saved?.solo === true };
   });
 }
+function defaultPeak(id) {
+  return id.startsWith('kids-') ? KIDS_LEVEL : DRIFT_LEVEL;
+}
+// A fader moved by hand. Any level above zero also becomes the sound's peak,
+// so the next time the drift fades it in, it comes back up to where it was
+// last set. Zero is a pull-down, not a new peak, or the sound could never
+// return. Both mixers (v0's window, v1's screen) set levels through here.
+export function setAmbLayerLevel(layer, level) {
+  if (!layer) return;
+  layer.level = level;
+  if (level > 0) layer.peak = level;
+}
+const peakOf = layer => layer && layer.peak > 0 ? layer.peak : (layer ? defaultPeak(layer.source) : DRIFT_LEVEL);
 
 const canOpus = (() => {
   const a = new Audio();
@@ -41,14 +68,18 @@ const canOpus = (() => {
 const EXT = canOpus ? '.opus' : '.mp3';
 
 const cache = new Map();
-let out = null, verb = null, wet = null;
+let out = null, room = null, wet = null;
 let running = false;
 const mixVoices = new Map();
-const notifyMixer = () => window.dispatchEvent(new Event('atmospherechange'));
+// One event object, dispatched again on every sync (a finished dispatch can
+// be reused), rather than a fresh one five times a second while the drift runs.
+let mixEvt = null;
+const notifyMixer = () => window.dispatchEvent(mixEvt || (mixEvt = new Event('atmospherechange')));
 
+// Mute and solo come from the mix gate, whose solo test spans the whole mix:
+// a soloed fixed channel (the piano, say) silences every recording too.
 function layerGain(layer) {
-  const soloing = S.ambLayers.some(l => l.solo);
-  return layer.muted || (soloing && !layer.solo) ? 0 : layer.level;
+  return layerGate(layer) * layer.level;
 }
 
 async function buf(url) {
@@ -63,17 +94,6 @@ async function buf(url) {
   return job;
 }
 
-// A decaying noise burst, the same serviceable room the piano uses.
-function impulse(ctx, sec, decay) {
-  const n = Math.floor(ctx.sampleRate * sec);
-  const b = ctx.createBuffer(2, n, ctx.sampleRate);
-  for (let c = 0; c < 2; c++) {
-    const d = b.getChannelData(c);
-    for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, decay);
-  }
-  return b;
-}
-
 function ensureOut() {
   if (out) return out;
   const ctx = getContext(), master = getMaster();
@@ -85,36 +105,30 @@ function ensureOut() {
   // the room is added behind it, so turning this up moves the place further
   // off rather than washing it out -- the ocean heard from inside a cavern,
   // not an ocean with the detail smeared out of it.
-  verb = ctx.createConvolver();
-  verb.buffer = impulse(ctx, S.ambRevTime, 2.0);
+  room = createRoom(ctx, () => S.ambRevTime, 2.0);
   wet = ctx.createGain();
   wet.gain.value = S.ambReverb;
-  out.connect(verb).connect(wet).connect(master);
+  out.connect(room.input);
+  room.output.connect(wet).connect(master);
   return out;
 }
+// Both glide: a straight line over a preset's transition, the usual short
+// approach for a fader (see glideParam in audio.js).
 export function applyAmbVol() {
-  if (out) out.gain.setTargetAtTime(S.ambVol, getContext().currentTime, 0.2);
+  if (out) glideParam(out.gain, S.ambVol, 0.2);
 }
 export function applyAmbReverb() {
-  if (wet) wet.gain.setTargetAtTime(S.ambReverb, getContext().currentTime, 0.12);
+  if (wet) glideParam(wet.gain, S.ambReverb, 0.12);
 }
 
 // Unlike the piano, the bed is always sounding, so there is never a quiet
-// moment to swap an impulse in. Changing the buffer under a signal that is
-// mid-tail steps the output. So duck the send first, swap in the gap, and
-// bring it back: the room changes shape without a click.
-let irTimer = null;
+// moment to swap an impulse in, and changing the buffer under a signal that
+// is mid-tail steps the output. This used to duck the whole send, swap in the
+// gap and bring it back, which was smooth but left the room briefly empty.
+// The room is a pair of convolvers now (createRoom in audio.js), so the new
+// impulse is crossfaded in under the old one's tail instead.
 export function rebuildAmbIR() {
-  if (!verb || !wet) return;
-  clearTimeout(irTimer);
-  const ctx = getContext();
-  wet.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-  irTimer = setTimeout(() => {
-    const c = getContext();
-    if (!verb || !wet || !c) return;
-    verb.buffer = impulse(c, S.ambRevTime, 2.0);
-    wet.gain.setTargetAtTime(S.ambReverb, c.currentTime, 0.25);
-  }, 320);
+  swapRoom(room, 200);
 }
 
 // A voice is a looping source with its own gain, so two can overlap during a
@@ -129,19 +143,155 @@ function voice(buffer, level, fade) {
   meter.fftSize = 1024;
   s.connect(g); g.connect(meter); meter.connect(ensureOut());
   s.start(ctx.currentTime, Math.random() * buffer.duration);   // never the same entry twice
-  g.gain.setTargetAtTime(level, ctx.currentTime, fade / 3);
+  glideParam(g.gain, level, fade / 3);
   return { s, g, meter, samples: new Float32Array(meter.fftSize) };
 }
 function fadeOut(v, fade) {
   if (!v) return;
   const ctx = getContext();
-  v.g.gain.setTargetAtTime(0, ctx.currentTime, fade / 3);
-  setTimeout(() => { try { v.s.stop(); } catch (e) {} }, (fade + 2) * 1000);
+  // A glide may still have ramps queued into the future, and a target laid
+  // among them would be pulled back up by the next one, so they go first.
+  hold(v.g.gain, ctx.currentTime);
+  glideParam(v.g.gain, 0, fade / 3);
+  // stopped once it is silent, however long a transition made the fade
+  const end = glideEnd();
+  const wait = Math.max(fade + 2, end ? end - ctx.currentTime + 0.5 : 0);
+  setTimeout(() => { try { v.s.stop(); } catch (e) {} }, wait * 1000);
+}
+
+// ---------- glides ----------
+// A glide is a slow level change written onto the audio clock all at once,
+// so it plays out smoothly however late or rarely the page gets to run. The
+// drift used to walk each level along from a 5 Hz tick on the render loop, and
+// when that loop stalled (a hidden tab, an occluded window, a busy machine)
+// the level waited and then leapt to wherever the clock said it should be:
+// a twelve second crossfade heard as a cut. Now the whole curve is scheduled
+// on the gain the moment it starts, and the tick only reads it back so the
+// fader on screen can follow.
+//
+// layer.level stays the logical level the mixer shows. A glide remembers the
+// last value it wrote there, and if the level has since become anything else
+// a person (or a preset, or another tab) has set it, so the glide steps aside
+// and that layer is theirs again. Mute and solo still close the gate over a
+// gliding layer; opening it again picks the glide back up where it has got to.
+// Kept in a WeakMap rather than on the layer, so a glide is never saved.
+const glides = new WeakMap();      // layer -> { from, to, t0, t1, shown }
+const GLIDE_SEG_S = 0.25;          // breakpoint spacing of the scheduled curve
+// and the most breakpoints one glide writes. Every event is inserted by a
+// scan of the param's list, so a ten minute drift fade at 0.25 s was 2400
+// ramps written in one go, a stall of several milliseconds each time a
+// place changed. 96 straight segments follow the quarter sine to within
+// about 0.00003 of full scale; glides up to 24 s (the default 12 s fade
+// among them) keep the quarter second spacing exactly as before.
+const GLIDE_SEG_MAX = 96;
+
+// Equal power: rising layers follow a quarter sine, falling ones the matching
+// quarter cosine, so a crossfade between two places holds its loudness
+// instead of dipping in the middle the way a straight line of gain does.
+function glideAt(g, t) {
+  const f = (t - g.t0) / (g.t1 - g.t0);
+  if (f >= 1) return g.to;
+  if (f <= 0) return g.from;
+  const e = g.to > g.from ? Math.sin(f * Math.PI / 2) : 1 - Math.cos(f * Math.PI / 2);
+  return g.from + (g.to - g.from) * e;
+}
+
+// Freeze a gain where it is right now and drop everything queued after it,
+// including a preset transition's ramp, which this replaces.
+function hold(param, t) {
+  holdParam(param, t);
+}
+
+// The whole remaining glide, as short linear segments on the curve. A glide
+// that already started (a voice that finished loading late, a gate that just
+// reopened) is met after a short approach rather than jumped to.
+function scheduleGlide(param, g, now, approach) {
+  hold(param, now);
+  const start = now + approach;
+  if (start >= g.t1) { param.linearRampToValueAtTime(g.to, start); return; }
+  param.linearRampToValueAtTime(glideAt(g, start), start);
+  const n = Math.max(1, Math.min(GLIDE_SEG_MAX, Math.ceil((g.t1 - start) / GLIDE_SEG_S)));
+  for (let k = 1; k <= n; k++) {
+    const t = start + (g.t1 - start) * k / n;
+    param.linearRampToValueAtTime(glideAt(g, t), t);
+  }
+}
+
+// Brings layer.level up to date with its glide, and retires the glide when it
+// has landed or when someone else has moved the fader. Returns the glide
+// still running, or null.
+function advanceGlide(layer, now) {
+  const g = glides.get(layer);
+  if (!g) return null;
+  if (layer.level !== g.shown) { glides.delete(layer); return null; }
+  if (now >= g.t1) { layer.level = g.to; glides.delete(layer); return null; }
+  layer.level = g.shown = glideAt(g, now);
+  return g;
+}
+
+// Starts a glide of one layer's level to `to` over `seconds` of audio time.
+// With no audio context yet there is nothing to hear, so the level is just
+// set. The gain itself is scheduled by the next syncAmbLayers.
+export function glideAmbLayer(layer, to, seconds) {
+  if (!layer) return;
+  const ctx = getContext();
+  if (ctx) advanceGlide(layer, ctx.currentTime);
+  if (!ctx || !(seconds > 0) || Math.abs(layer.level - to) < 1e-4) {
+    glides.delete(layer); layer.level = to; return;
+  }
+  const t0 = ctx.currentTime;
+  glides.set(layer, { from: layer.level, to, t0, t1: t0 + seconds, shown: layer.level });
+}
+export const ambLayerGliding = layer => glides.has(layer);
+
+// Stops every glide where it has got to; the levels stay put.
+export function haltAmbGlides() {
+  const ctx = getContext();
+  for (const layer of S.ambLayers) {
+    if (ctx) advanceGlide(layer, ctx.currentTime);
+    glides.delete(layer);
+  }
+}
+
+// One voice's gain: either its glide, scheduled once on the audio clock, or
+// the plain level approached over 0.12 s as always (or, inside a preset's
+// transition, a straight line over its window). A glide already on the
+// gain is left alone, so the 5 Hz syncs during a fade never fight it.
+function applyGain(slot, glide, gate, level, now, approach) {
+  const p = slot.v.g.gain;
+  if (glide && gate) {
+    if (slot.glideOn === glide) return;
+    slot.glideOn = glide;
+    scheduleGlide(p, glide, now, approach);
+    return;
+  }
+  if (slot.glideOn) { hold(p, now); slot.glideOn = null; slot.applied = NaN; }
+  // Every sync re-applies every voice, and syncs come thick: each tick of a
+  // level fader's drag, and five a second while the drift is moving. Each
+  // re-apply was a setTargetAtTime on every recording's gain, a dozen
+  // automation events a sync on voices whose level had not moved at all, each
+  // one taking the parameter's lock against the audio thread. A voice already
+  // heading for this level is left alone. Inside a preset's transition the
+  // call still goes through, so the transition's straight line is laid down.
+  if (level === slot.applied && !glideEnd()) return;
+  slot.applied = level;
+  glideParam(p, level, 0.12);
 }
 
 // Manual layers share the atmosphere bus, reverb and main transport. Each
 // channel owns its pending load so stale requests cannot resurrect removed audio.
 export function syncAmbLayers() {
+  // A recording's solo coming on or off moves the six fixed channels' gates
+  // as well; this re-applies them only when that answer actually changed.
+  layerSoloChanged();
+  // Glides advance even while the atmosphere is off, so the faders keep
+  // showing where the drift has got to.
+  const ctx = getContext();
+  const now = ctx ? ctx.currentTime : 0;
+  // A recording that has to load arrives after a preset's transition has
+  // closed; this is the window it belongs to.
+  const end = glideEnd();
+  for (const layer of S.ambLayers) advanceGlide(layer, now);
   if (!running) { notifyMixer(); return; }
   for (const [layer, slot] of mixVoices) {
     if (S.ambLayers.includes(layer)) continue;
@@ -150,18 +300,23 @@ export function syncAmbLayers() {
     mixVoices.delete(layer);
   }
   for (const layer of S.ambLayers) {
-    const level = layerGain(layer);
+    const glide = glides.get(layer) || null;
+    const gate = layerGate(layer);
+    const level = gate * layer.level;
+    // A layer gliding up from silence needs its recording loaded before its
+    // level leaves zero, and one gliding down keeps it until it lands.
+    const wanted = glide ? gate * Math.max(layer.level, glide.to) : level;
     let slot = mixVoices.get(layer);
-    if (!slot) { slot = { request: 0, v: null, source: null, pending: null, error: '' }; mixVoices.set(layer, slot); }
-    if (slot.v) slot.v.g.gain.setTargetAtTime(level, getContext().currentTime, 0.12);
+    if (!slot) { slot = { request: 0, v: null, source: null, pending: null, error: '', glideOn: null, applied: NaN }; mixVoices.set(layer, slot); }
+    if (slot.v) applyGain(slot, glide, gate, level, now, 0.15);
     if (slot.source === layer.source && slot.v) {
       if (slot.pending) { slot.request++; slot.pending = null; }
       slot.error = '';
       continue;
     }
-    if (level === 0) {
+    if (wanted === 0) {
       slot.request++; slot.pending = null; slot.error = '';
-      if (slot.v) { fadeOut(slot.v, 0.35); slot.v = null; slot.source = null; }
+      if (slot.v) { fadeOut(slot.v, 0.35); slot.v = null; slot.source = null; slot.glideOn = null; }
       continue;
     }
     if (slot.pending === layer.source) continue;
@@ -169,14 +324,19 @@ export function syncAmbLayers() {
     if (!source) continue;
     const request = ++slot.request;
     slot.pending = source.id; slot.error = '';
-    buf(source.path + EXT).then(b => {
+    buf(source.path + EXT).then(b => continueGlide(end, () => {
       if (!running || mixVoices.get(layer) !== slot || slot.request !== request) return;
       const old = slot.v;
       slot.v = voice(b, layerGain(layer), 0.6);
+      slot.glideOn = null; slot.applied = NaN;
+      // A glide that was waiting on this load takes the new voice over from
+      // its first moment, met over the same 0.6 s a fresh voice fades in on.
+      const c = getContext(), g = advanceGlide(layer, c.currentTime);
+      if (g && layerGate(layer)) applyGain(slot, g, 1, 0, c.currentTime, 0.6);
       slot.source = source.id; slot.pending = null;
       if (old) fadeOut(old, 0.6);
       notifyMixer();
-    }).catch(() => {
+    })).catch(() => {
       if (mixVoices.get(layer) !== slot || slot.request !== request) return;
       slot.pending = null;
       slot.error = slot.v ? 'Could not load; previous recording still playing.' : 'Could not load. Move this slider to retry.';
@@ -185,6 +345,9 @@ export function syncAmbLayers() {
   }
   notifyMixer();
 }
+
+// The mix gate re-syncs the recordings whenever any mute or solo changes.
+onLayerGates(syncAmbLayers);
 
 export function ambLayerStatus(layer) {
   const slot = mixVoices.get(layer);
@@ -195,9 +358,10 @@ export function ambLayerStatus(layer) {
 export function ambLayerPeak(layer) {
   const v = mixVoices.get(layer)?.v;
   if (!running || !v || !S.running || !S.audioEnabled || getContext()?.state !== 'running') return 0;
-  v.meter.getFloatTimeDomainData(v.samples);
-  let peak = 0;
-  for (const sample of v.samples) peak = Math.max(peak, Math.abs(sample));
+  const x = v.samples;
+  v.meter.getFloatTimeDomainData(x);
+  let peak = 0;   // indexed, as tapPeak in util.js, for the same reason
+  for (let i = 0; i < x.length; i++) { const a = x[i] < 0 ? -x[i] : x[i]; if (a > peak) peak = a; }
   return peak;
 }
 
@@ -215,4 +379,127 @@ export function ambienceOff() {
   }
   mixVoices.clear();
   notifyMixer();
+}
+
+// ---------- drift ----------
+// An unattended hand on the mixer, shared by v0's mixer window and v1: every
+// so often the atmosphere crossfades to a different recorded place and
+// settles there a while before moving on. Each fade is a glide, so it is
+// scheduled on the audio clock and sounds the same however unevenly the
+// caller's tick arrives; the tick only decides when the next move is due.
+//
+// The children ride alongside the places. While drift runs they come and go:
+// a visit and an absence alternate. A visit lasts 60 to 180 s and an absence
+// 30 to 90 s, so on average they are there about two thirds of the time. A visit brings one track only, the one the current
+// place names in its `kids` field (the beach for the ocean places, the
+// playground inland); night and rain name none, so a visit that falls there
+// is silent and counts as an absence. They sit well back, at 0.4 of the
+// place's own drift level, and fade over ten seconds. If the drift moves to a
+// place whose children differ, the visit ends and they fade out with the
+// crossfade. Every visit is followed by at least 30 s of absence, longer than
+// any fade, so one track has always gone before the other can arrive.
+const DRIFT_IDS = WORLDS.map(w => w.id);
+const KIDS_IDS = [...new Set(WORLDS.map(w => w.kids).filter(Boolean))];
+export const DRIFT_LEVEL = 0.55;
+// The crossfade between places, in seconds, set by the Drift transition
+// control (S.ambDriftFadeS); 12 s when unset or out of range.
+const driftFadeS = () => {
+  const v = S.ambDriftFadeS;
+  return typeof v === 'number' && v >= 1 && v <= 600 ? v : 12;
+};
+const DWELL_MIN_MS = 45000, DWELL_SPAN_MS = 45000;
+const KIDS_LEVEL = DRIFT_LEVEL * 0.4;
+const KIDS_FADE_S = 10;
+const KIDS_VISIT_MIN_MS = 60000, KIDS_VISIT_SPAN_MS = 120000;     // visits 60-180 s
+const KIDS_AWAY_MIN_MS = 30000, KIDS_AWAY_SPAN_MS = 60000;        // absences 30-90 s
+const kidsVisitPeriod = () => KIDS_VISIT_MIN_MS + Math.random() * KIDS_VISIT_SPAN_MS;
+const kidsPeriod = () => KIDS_AWAY_MIN_MS + Math.random() * KIDS_AWAY_SPAN_MS;
+
+// world: where the drift is going or has settled; dwellUntil: 0 while the
+// crossfade is still sounding; kids: the current visit or absence.
+let drift = null;
+
+function layerOf(id) {
+  const layers = S.ambLayers;
+  for (let i = 0; i < layers.length; i++) if (layers[i].source === id) return layers[i];
+  return undefined;
+}
+function anyGliding(ids) {
+  for (let i = 0; i < ids.length; i++) if (glides.has(layerOf(ids[i]))) return true;
+  return false;
+}
+
+function crossfadeWorld() {
+  const current = drift.world;
+  let next = DRIFT_IDS[Math.floor(Math.random() * DRIFT_IDS.length)];
+  if (DRIFT_IDS.length > 1) while (next === current) next = DRIFT_IDS[Math.floor(Math.random() * DRIFT_IDS.length)];
+  drift.world = next; drift.dwellUntil = 0;
+  for (let i = 0; i < DRIFT_IDS.length; i++) {
+    const id = DRIFT_IDS[i];
+    glideAmbLayer(layerOf(id), id === next ? peakOf(layerOf(id)) : 0, driftFadeS());
+  }
+  // Children who do not belong in the new place leave with the old one, on
+  // their own fade rather than the place's, so a long place crossfade can
+  // never keep one children's track sounding into the next visit.
+  const k = drift.kids, kids = WORLDS.find(w => w.id === next).kids;
+  if (k.present && k.id && k.id !== kids) {
+    glideAmbLayer(layerOf(k.id), 0, KIDS_FADE_S);
+    k.present = false; k.id = null; k.until = Date.now() + kidsPeriod();
+  }
+}
+
+function kidsTick(now) {
+  const k = drift.kids;
+  if (now < k.until) return;
+  if (k.present) {
+    if (k.id) glideAmbLayer(layerOf(k.id), 0, KIDS_FADE_S);
+    k.present = false; k.id = null;
+  } else {
+    k.present = true;
+    k.id = WORLDS.find(w => w.id === drift.world).kids;
+    if (k.id) glideAmbLayer(layerOf(k.id), peakOf(layerOf(k.id)), KIDS_FADE_S);
+  }
+  k.until = now + (k.present ? kidsVisitPeriod() : kidsPeriod());
+}
+
+export function startAmbDrift() {
+  if (drift) return;
+  drift = { world: null, dwellUntil: 0, moving: false,
+            kids: { present: false, id: null, until: Date.now() + kidsPeriod() } };
+  crossfadeWorld();
+  // Drift starts in an absence, so any children left up from before go now.
+  for (let i = 0; i < KIDS_IDS.length; i++) glideAmbLayer(layerOf(KIDS_IDS[i]), 0, KIDS_FADE_S);
+  drift.moving = true;
+  syncAmbLayers();
+}
+
+// Every glide stops where it has got to, and the children become an ordinary
+// recording again, on their own fader.
+export function stopAmbDrift() {
+  if (!drift) return;
+  drift = null;
+  haltAmbGlides();
+  syncAmbLayers();
+}
+export const ambDriftOn = () => !!drift;
+
+// The caller's periodic tick, a few times a second. Returns 'moving' while any
+// drift fade is sounding, 'landed' on the tick the last one finishes (the
+// moment worth saving), and '' otherwise.
+export function ambDriftTick() {
+  if (!drift) return '';
+  const ctx = getContext();
+  if (ctx) for (const layer of S.ambLayers) advanceGlide(layer, ctx.currentTime);
+  const now = Date.now();
+  if (!drift.dwellUntil) {
+    if (!anyGliding(DRIFT_IDS)) drift.dwellUntil = now + DWELL_MIN_MS + Math.random() * DWELL_SPAN_MS;
+  } else if (now >= drift.dwellUntil) {
+    crossfadeWorld();
+  }
+  kidsTick(now);
+  const was = drift.moving;
+  drift.moving = anyGliding(DRIFT_IDS) || anyGliding(KIDS_IDS);
+  if (!drift.moving && !was) return '';
+  syncAmbLayers();
+  return drift.moving ? 'moving' : 'landed';
 }

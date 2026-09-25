@@ -14,6 +14,7 @@
 // S.phase, S.lastPhase, S.rgb and S.effFreq as though nothing had moved.
 import { S, layers } from './state.js';
 import { $, cv } from './dom.js';
+import { guard } from './panel-guard.js';
 
 const FLAG = 'signal_worker';
 // The drawer's Strobe thread buttons read and write the same key, so the two
@@ -84,6 +85,26 @@ export function syncWorkerInset() {
   if (worker) worker.postMessage({ t: 'inset', edgeInset: S.edgeInset });
 }
 
+// The panel guard runs in the worker alongside the strobe it watches, since
+// only there are the frames and their timestamps real. A trip comes back as
+// one message carrying what the guard saw; it is copied onto this side's
+// guard object so guardMessage() reads it exactly as if the step had run
+// here, and main.js's handler then stops the session and shows the card.
+let guardHandler = null;
+export function setWorkerGuardHandler(fn) { guardHandler = fn; }
+// signalGuard.simulate in the console, forwarded so the worker's guard models
+// the same display.
+export function syncWorkerGuardSim(hz) {
+  if (worker) worker.postMessage({ t: 'guardSim', hz });
+}
+
+// The display changed (js/main.js's tripwire): the worker throws away its
+// refresh measurement, its frame lock count and its panel guard's
+// integrators, as the main thread has done with its own.
+export function resetWorkerRefresh() {
+  if (worker) worker.postMessage({ t: 'displayReset' });
+}
+
 function onMessage(e) {
   const m = e.data;
   if (m.t === 'frame') {
@@ -102,6 +123,13 @@ function onMessage(e) {
     S.framesPerCycle = m.framesPerCycle;
     S.intervals = m.intervals;
     S.litLog = m.litLog;
+    guard.imbalance = m.imbalance;
+  } else if (m.t === 'guard') {
+    guard.tripped = true;
+    guard.trips++;
+    guard.tripHz = m.hz; guard.tripFreq = m.freq; guard.tripAchieved = m.achieved;
+    guard.tripFpc = m.fpc; guard.tripLock = m.lock; guard.tripImbalance = m.imbalance;
+    if (guardHandler) guardHandler();
   } else if (m.t === 'started') {
     $('rendName').textContent = (m.name || 'none available') + ' (worker)';
   }
@@ -159,6 +187,8 @@ export function startStrobeWorker(done) {
     worker = w;
     worker.onmessage = onMessage;
     worker.postMessage({ t: 'init', canvas: off, state: snapshot(true) }, [off]);
+    // a simulation asked for at boot, before the worker existed
+    if (guard.simHz) worker.postMessage({ t: 'guardSim', hz: guard.simHz });
     done(true);
   };
 }

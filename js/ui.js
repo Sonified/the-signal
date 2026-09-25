@@ -5,7 +5,7 @@ import { bandName, posToAmp, ampToPos, ampToDb} from './util.js';
 import { setColorFromPicker } from './color.js';
 import { seedParticles, applyEdgeDir, seedTunnel } from './sim.js';
 import { invalidateGradients } from './renderers/canvas2d.js';
-import { saveSettings } from './settings.js';
+import { saveSettings, paintPipLpf, lpfFromPos } from './settings.js';
 import { strobeInWorker, syncWorker, WORKER_FLAG } from './strobe-bridge.js';
 import { applyPreset } from './presets.js';
 import { pianoOn, pianoOff, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, pianoAvailable } from './piano.js';
@@ -16,7 +16,7 @@ import { chirpDurationMs } from './chirp.js';
 import {
   setParam, applyLevel, applyAudioShape, applyHarmonics, applyReverbMix,
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
-  warmDevice, isDeviceWarm, refreshChirp, setPipShape} from './audio.js';
+  warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf} from './audio.js';
 
 // ---------- readouts ----------
 export function updateReadouts() {
@@ -540,6 +540,7 @@ export function initUI() {
   bind('pianoDensity','pianoDensity', v => v/100);
   bind('pianoSpread','pianoSpread', v => v/100);
   bind('pianoHold', 'pianoHold', v => v/100);
+  bind('pianoRubato', 'pianoRubato', v => v/100);
   bind('pianoBass', 'pianoBass', v => v);
   $('pianoReverb').addEventListener('input', e => {
     S.pianoReverb = +e.target.value/100; $('pianoRevVal').textContent = e.target.value;
@@ -868,9 +869,8 @@ export function initUI() {
     $('chirpLenVal').textContent = chirpDurationMs(S.chirpLowHz, S.chirpHighHz).toFixed(1);
   }
   function setClickMode(mode) {
-    // The drawer can update at once; the sound has to dip through silence first,
-    // which setPipShape owns. It calls back at the bottom of the dip, which is
-    // where the level and the room actually change hands.
+    // The drawer updates at once; the sound crossfades from one shape's voice
+    // to the other's, which setPipShape owns.
     $('cmClick').classList.toggle('on', mode === 'click');
     $('cmChirp').classList.toggle('on', mode === 'chirp');
     $('clickModeVal').textContent = mode;
@@ -911,6 +911,25 @@ export function initUI() {
     S.chirpTilt = +e.target.value/100; $('chirpTiltVal').textContent = tiltName(S.chirpTilt);
     refreshChirp(); saveSettings();
   });
+
+  // The lowpass sweep over the whole train, click or chirp alike.
+  $('pipLpfToggle').onclick = e => {
+    S.pipLpfOn = !S.pipLpfOn;
+    paintPipLpf(); paintPipVisibility();
+    applyPipLpf(); saveSettings();
+    e.currentTarget.blur();
+  };
+  for (const k of ['pipLpfLo', 'pipLpfHi', 'pipLpfPeriod', 'pipLpfQ']) {
+    $(k).addEventListener('input', e => {
+      S[k] = lpfFromPos(k, +e.target.value);
+      paintPipLpf(); applyPipLpf(); saveSettings();
+    });
+  }
+  $('pipLpfWander').addEventListener('input', e => {
+    S.pipLpfWander = +e.target.value / 100;
+    paintPipLpf(); applyPipLpf(); saveSettings();
+  });
+  paintPipLpf();
 
   function setHarm(on) {
     S.harmOn = on;
@@ -1002,7 +1021,8 @@ export function initUI() {
     document.querySelectorAll('.pip-ctl').forEach(el => {
       const only = el.classList.contains('chirp-only') ? 'chirp'
                  : el.classList.contains('click-only') ? 'click' : null;
-      el.hidden = !live || (only !== null && only !== (chirp ? 'chirp' : 'click'));
+      el.hidden = !live || (only !== null && only !== (chirp ? 'chirp' : 'click'))
+               || (el.classList.contains('lpf-ctl') && !S.pipLpfOn);
     });
   }
 

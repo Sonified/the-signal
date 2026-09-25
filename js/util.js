@@ -74,8 +74,11 @@ export function meterTap(ctx, ...into) {
 }
 export function tapPeak(tap) {
   if (!tap) return 0;
-  tap.analyser.getFloatTimeDomainData(tap.samples);
+  const x = tap.samples;
+  tap.analyser.getFloatTimeDomainData(x);
+  // indexed, not for-of: this scans a thousand samples per tap per meter
+  // read, and an iterator per call is garbage until the loop is optimised
   let peak = 0;
-  for (const sample of tap.samples) peak = Math.max(peak, Math.abs(sample));
+  for (let i = 0; i < x.length; i++) { const a = x[i] < 0 ? -x[i] : x[i]; if (a > peak) peak = a; }
   return peak;
 }

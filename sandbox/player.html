@@ -201,6 +201,7 @@
   <div id="trims"></div>
   <div id="trimSide">
     <button id="trimLoad">default</button>
+    <button id="trimSaved">saved</button>
     <button id="copyTrim">copy</button>
     <button id="trimReset">reset</button>
   </div>
@@ -264,9 +265,20 @@ const inScale = m => DEGREES.includes((((m - ROOT_WRITTEN) % 12) + 12) % 12);
 const CLOUD = { '-12':'octbelow', '-5':'5below', '0':'1', '2':'2',
                 '4':'3', '7':'5', '11':'7', '12':'8' };
 
+// Julia's loops, tuned onto the 40 Hz grid and rendered as centred mono. Eight
+// files per vowel, named by scale degree low to high; the semitone key here is
+// their distance from the written-C3 root, same convention as everything else.
+const JULIA = { 23:'deg1_302.0Hz_from62', 24:'deg2_320.0Hz_from64',
+                26:'deg3_359.2Hz_from66', 28:'deg4_403.2Hz_from69',
+                31:'deg5_479.5Hz_from71', 35:'deg6_604.1Hz_from74',
+                36:'deg7_640.0Hz_from76', 38:'deg8_718.4Hz_from78' };
+const JULIA_NAMES = Object.fromEntries(
+  Object.entries(JULIA).map(([sm, f]) => [sm, f.slice(3, 4)]));
+
 const INSTRUMENTS = {
   piano: {
     label: 'piano',
+    title: 'Lekko',
     dir: '../audio/piano',
     semis: [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40],
     note: sm => `lekko-${String(sm).padStart(2,'0')}`,
@@ -290,6 +302,7 @@ const INSTRUMENTS = {
   },
   clouds: {
     label: 'clouds',
+    title: 'Clouds',
     dir: '../audio/music/clouds',
     semis: [-12,-5,0,2,4,7,11,12],
     note: sm => `clouds-${CLOUD[sm]}`,
@@ -306,9 +319,37 @@ const INSTRUMENTS = {
     perKey: true,
     formats: ['opus','mp3'],
     manifest: 'manifest.json',
-    levels: () => ({})          // the pads came out even; nothing was ever trimmed
+    levels: () => ({}),         // the pads came out even; nothing was ever trimmed
+    names: CLOUD
   }
 };
+
+// The two vowels are the same instrument twice: same files apart from the vowel
+// in their name, same range, same behaviour. A factory keeps them identical by
+// construction instead of by discipline.
+const juliaVox = vowel => ({
+  label: 'julia ' + vowel.toLowerCase(),
+  title: 'Julia',
+  dir: '../audio/source/julia_vox/tuned',
+  semis: Object.keys(JULIA).map(Number),
+  note: sm => `Julia_${vowel}_${JULIA[sm]}`,
+  lifts: 0,
+  lift: null,
+  // an octave under the lowest loop up to a fifth over the highest; a voice
+  // resampled further than that stops sounding like a person
+  lo: 12, hi: 43,
+  fade: 1.5,                    // a sung note lets go like a breath, not a damper
+  perKey: true,                 // eight loops across 32 keys: same deal as the clouds
+  formats: ['wav'],             // local renders, never committed, so never encoded
+  manifest: 'manifest.json',
+  levels: () => ({}),
+  names: JULIA_NAMES,
+  // These are seamless loops, so a held key holds: the buffer cycles instead of
+  // running off its end sixteen seconds in.
+  loop: true
+});
+INSTRUMENTS.ooo = juliaVox('Ooo');
+INSTRUMENTS.aah = juliaVox('Aah');
 
 // ---- format: Opus where the browser will take it, mp3 where it will not ----
 const probe = new Audio();
@@ -404,6 +445,14 @@ const ENV_DEFAULTS = {
             hpOn: false, hp: 20,
             len: 0 }
 };
+// Julia arrives and leaves like a singer taking and releasing a breath: quicker
+// than the clouds, slower than a struck string. The filter stays out of the way;
+// the recording's own vowel is the timbre.
+ENV_DEFAULTS.ooo = { on: true, aA: 0.5, aD: 1.0, aS: 90, aR: 2.2,
+                     fOn: false, cut: 18000, q: 0.7, fAmt: 0, fA: 0.5, fD: 1.0, fS: 50, fR: 1.0,
+                     hpOn: false, hp: 20,
+                     len: 0 };
+ENV_DEFAULTS.aah = { ...ENV_DEFAULTS.ooo };
 
 const allEnv = (() => {
   const src = preload.env || {};
@@ -614,6 +663,7 @@ function play(written, vel = 0.85, capture = true) {
   if (!buf) return;
   const s = ctx.createBufferSource();
   s.buffer = buf;
+  if (I.loop) s.loop = true;    // a seamless loop holds as long as the key does
   // Piano is trimmed per SAMPLE (several keys share one recording and its
   // correction); clouds is trimmed per KEY (every key is its own slider, since
   // most of them are resampled neighbours with no reason to match). Same
@@ -884,10 +934,25 @@ const TRIM_GEN = 2;
 // One set per instrument. A cents offset that lines up a piano sample means
 // nothing on a cloud pad, so keying them together would quietly carry one
 // instrument's tuning onto the other's files.
+// A generation bump means the audio itself changed, so trims from the round
+// before it must not be applied on top of the new files. They are still the only
+// record of what an ear decided, though, so they are set aside under their own
+// key rather than thrown away, and the "saved" button puts them back.
+const ARCHIVE = STORE + '.archive';
 const allTrim = (() => {
-  if (saved.trimGen !== TRIM_GEN) return {};
+  if (saved.trims && saved.trimGen !== TRIM_GEN) {
+    try {
+      localStorage.setItem(ARCHIVE, JSON.stringify({
+        gen: saved.trimGen == null ? 0 : saved.trimGen, at: Date.now(), trims: saved.trims
+      }));
+    } catch (e) {}
+    return {};
+  }
   if (saved.trims) return saved.trims;
   return saved.trim ? { piano: saved.trim } : {};   // from before there were two
+})();
+const archivedTrim = (() => {
+  try { return JSON.parse(localStorage.getItem(ARCHIVE)) || null; } catch (e) { return null; }
 })();
 let trim = {};
 function loadTrims() {
@@ -1022,7 +1087,7 @@ async function setInstrument(name) {
   loadTrims();
   env = allEnv[INST];
   showEnv();
-  document.getElementById('title').textContent = I.label === 'piano' ? 'Lekko' : 'Clouds';
+  document.getElementById('title').textContent = I.title;
   // key lifts are a piano's action noise; the clouds have none to offer
   document.getElementById('lift').style.display = RELEASES ? '' : 'none';
   paintInstRow();
@@ -1143,7 +1208,7 @@ const envGeom = {};
 let envDrag = null, envHover = null;
 
 function startCursor() {
-  if (cursorRAF || INST !== 'clouds') return;
+  if (cursorRAF || INST === 'piano') return;
   const step = () => { drawEnv(); cursorRAF = cursors.size ? requestAnimationFrame(step) : 0; };
   cursorRAF = requestAnimationFrame(step);
 }
@@ -1493,16 +1558,17 @@ if (window.ResizeObserver) {
 
 function setEnvOpen(open) {
   envWin.open = open;
-  document.getElementById('envBtn').classList.toggle('on', open && INST === 'clouds');
+  document.getElementById('envBtn').classList.toggle('on', open && INST !== 'piano');
   showEnv();
   save();
 }
 
 function showEnv() {
-  // The piano's sound is its samples; the envelope window belongs to the pads.
-  const isClouds = INST === 'clouds';
-  const on = isClouds && envWin.open;
-  document.getElementById('envBtn').style.display = isClouds ? '' : 'none';
+  // The piano's sound is its samples; the envelope window belongs to the pads
+  // and the voice.
+  const hasEnv = INST !== 'piano';
+  const on = hasEnv && envWin.open;
+  document.getElementById('envBtn').style.display = hasEnv ? '' : 'none';
   document.getElementById('envBtn').classList.toggle('on', on);
   winEl.classList.toggle('show', on);
   if (!on) return;
@@ -1843,7 +1909,7 @@ function onMidi(e) {
 // playable key for the clouds. The clouds are filed under their scale degree
 // when a column IS one, so that is what it says; anything resampled gets the
 // ordinary written name, same as the piano.
-const NOTE_NAME = sm => (INST === 'clouds' && CLOUD[sm] != null) ? CLOUD[sm] : nameOf(ROOT_WRITTEN + sm);
+const NOTE_NAME = sm => (I.names && I.names[sm] != null) ? I.names[sm] : nameOf(ROOT_WRITTEN + sm);
 function buildTrims() {
   const wrap = document.getElementById('trims');
   wrap.textContent = '';
@@ -1958,6 +2024,21 @@ document.getElementById('trimReset').onclick = e => {
 // Pull the repo's levels into the live sliders. Whether they belong there is a
 // question only the ear settles: if they were already baked into the audio this
 // applies them a second time, and reset puts it back.
+// Whatever this instrument's sliders held before the last generation bump.
+document.getElementById('trimSaved').onclick = e => {
+  const set = archivedTrim && archivedTrim.trims && archivedTrim.trims[INST];
+  const keys = set ? Object.keys(set) : [];
+  if (!keys.length) return flash(e.target, 'nothing saved');
+  let n = 0;
+  for (const sm of TRIM_RANGE) {
+    const t = set[sm];
+    if (!t) continue;
+    if (typeof t.vol === 'number') { trim[sm].vol = t.vol; n++; }
+    if (typeof t.cents === 'number') trim[sm].cents = t.cents;
+  }
+  buildTrims(); save(); e.target.blur();
+  flash(e.target, n ? `${n} restored` : 'nothing for ' + I.label);
+};
 document.getElementById('trimLoad').onclick = e => {
   const n = Object.keys(manifestLevels).length;
   if (!n) return flash(e.target, 'no defaults');
@@ -1968,7 +2049,7 @@ document.getElementById('trimLoad').onclick = e => {
 
 paintInstRow();
 showEnv();
-document.getElementById('title').textContent = I.label === 'piano' ? 'Lekko' : 'Clouds';
+document.getElementById('title').textContent = I.title;
 document.getElementById('lift').style.display = RELEASES ? '' : 'none';
 build();
 buildTrims();

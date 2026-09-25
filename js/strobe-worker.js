@@ -23,6 +23,7 @@ import { shape, hslToRgb } from './util.js';
 import { bandHue } from './color.js';
 import { seedParticles, seedTunnel, applyEdgeDir, updateRings, updateParticles } from './sim.js';
 import { initCanvas2D, invalidateGradients } from './renderers/canvas2d.js';
+import { guard, guardStep, guardSimulate, guardReset } from './panel-guard.js';
 
 let canvas = null, renderer = null;
 let wasRunning = false;
@@ -174,6 +175,16 @@ function tick(t) {
   const lum = S.running ? shape(S.phase) : 0;
   if (S.running) { S.litLog.push(lum > 0.5 ? 1 : 0); if (S.litLog.length > 120) S.litLog.shift(); }
 
+  // The panel guard (js/panel-guard.js) watches the level this frame shows.
+  // A trip is reported once and latches; the main thread stops the session
+  // through its own toggle, which reaches here as running = false.
+  if (guardStep(t, lum)) {
+    self.postMessage({
+      t: 'guard', hz: guard.tripHz, freq: guard.tripFreq, achieved: guard.tripAchieved,
+      fpc: guard.tripFpc, lock: guard.tripLock, imbalance: guard.tripImbalance
+    });
+  }
+
   updateRings(dt, t/1000);
   updateParticles(dt);
 
@@ -198,7 +209,8 @@ function tick(t) {
       t: 'diag',
       refreshHz: S.refreshHz, dropCount: S.dropCount, duty: S.duty,
       achievedFreq: S.achievedFreq, framesPerCycle: S.framesPerCycle,
-      intervals: S.intervals.slice(), litLog: S.litLog.slice()
+      intervals: S.intervals.slice(), litLog: S.litLog.slice(),
+      imbalance: guard.imbalance
     });
   }
 }
@@ -215,6 +227,17 @@ self.onmessage = e => {
     requestAnimationFrame(tick);
   } else if (m.t === 'state') {
     apply(m.state);
+  } else if (m.t === 'guardSim') {
+    guardSimulate(m.hz);
+  } else if (m.t === 'displayReset') {
+    // The window is on another screen (js/main.js's display tripwire). What
+    // was measured here describes the old one, so it all starts again.
+    S.frameTimes.length = 0;
+    S.refreshHz = 0;
+    S.framesPerCycle = 0;
+    S.frameIdx = 0;
+    S.lastT = null;
+    guardReset();
   } else if (m.t === 'inset') {
     // Its own message because it changes on every frame of the drawer
     // animation and carries nothing else with it.

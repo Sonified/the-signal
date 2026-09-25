@@ -623,6 +623,27 @@
     color:var(--ui-dim); font-size:13px; cursor:pointer; user-select:none;
   }
   #gate .skip input { accent-color:var(--ui-accent); margin:0; cursor:pointer; }
+  /* The panel guard's notice: the opening safety card's look, floating in the
+     middle of the visible field rather than covering the page, since the field
+     is already stopped behind it and the drawer should stay reachable. Only
+     ever shown while stopped, so it never sits over a running strobe. */
+  #guard {
+    position:fixed; z-index:40;
+    left:calc(50% + var(--edge-inset, 0px) / 2); top:50%;
+    transform:translate(-50%, -50%);
+    width:min(92vw, 440px);
+  }
+  #guard[hidden] { display:none; }
+  #guard .card {
+    border:1px solid var(--ui-line); border-radius:12px;
+    padding:26px 28px; background:var(--ui-panel);
+    box-shadow:0 12px 40px rgba(0,0,0,.5);
+  }
+  #guard h1 { margin:0 0 12px; font-size:17px; }
+  #guard p { margin:0 0 14px; color:var(--ui-dim); }
+  #guard #guardNote { color:#e0a44c; }
+  #guard button { width:100%; padding:11px; }
+
   #copyParams, #resetWarn, #copyDiag {
     background:#1a2027; border:1px solid var(--ui-line);
     color:var(--ui-text); border-radius:6px; padding:8px 9px;

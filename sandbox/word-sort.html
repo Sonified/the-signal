@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Word Sort</title>
+<style>
+  :root { --bg:#0f141a; --pane:#1a222c; --line:#2c3742; --ink:#e8edf2; --dim:#8b97a3; --faint:#5b6672;
+          --no:#dc626a; --maybe:#e0a44c; --yes:#62d7aa; --sleep:#8b6ec0; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { position:sticky; top:0; z-index:2; background:rgba(15,20,26,.94); backdrop-filter:blur(8px);
+           border-bottom:1px solid var(--line); padding:12px 16px; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.02em; }
+  .counts { color:var(--dim); font-size:13px; }
+  .counts b { color:var(--ink); font-weight:600; }
+  .tabs { display:flex; gap:6px; margin-left:auto; flex-wrap:wrap; }
+  button { font:inherit; font-size:13px; color:var(--ink); background:#121820; border:1px solid var(--line);
+           border-radius:7px; padding:6px 11px; cursor:pointer; }
+  button:hover { border-color:#3a4551; }
+  .tabs button.on { border-color:var(--ink); }
+  .hint { color:var(--faint); font-size:12px; width:100%; }
+  main { max-width:760px; margin:0 auto; padding:14px 16px 80px; }
+  .card { background:var(--pane); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:8px 0;
+          display:grid; grid-template-columns:1fr auto; gap:6px 12px; align-items:center; outline:none; }
+  .card.focus { border-color:#6ea8fe; box-shadow:0 0 0 1px #6ea8fe; }
+  .card.no { opacity:.55; }
+  .word { font-size:20px; font-weight:600; }
+  .src { color:var(--dim); font-size:12px; margin-left:8px; font-weight:400; }
+  .note { grid-column:1 / 2; color:var(--dim); font-size:13px; }
+  .picks { grid-row:1 / 3; grid-column:2; display:flex; gap:6px; }
+  .picks button { min-width:62px; }
+  .picks button.no.on { background:#3a1c20; border-color:var(--no); color:#ffd6d9; }
+  .picks button.maybe.on { background:#3a2c14; border-color:var(--maybe); color:#ffe8c4; }
+  .picks button.yes.on { background:#123126; border-color:var(--yes); color:#d6fff0; }
+  .picks button.sleep.on { background:#2a2340; border-color:var(--sleep); color:#e6dcff; }
+  #out { width:100%; min-height:90px; margin-top:10px; background:#0b0f14; color:var(--ink); border:1px solid var(--line);
+         border-radius:8px; padding:8px; font:12px/1.4 ui-monospace, Menlo, monospace; display:none; }
+  .empty { color:var(--faint); text-align:center; padding:40px 0; }
+  .thought { grid-column:1 / -1; width:100%; background:#121820; color:var(--ink); border:1px solid var(--line);
+             border-radius:7px; padding:6px 9px; font:inherit; font-size:13px; }
+  .thought:focus { outline:none; border-color:#6ea8fe; }
+  .thought::placeholder { color:var(--faint); }
+  @media (max-width:560px) {
+    .card { grid-template-columns:1fr; }
+    .picks { grid-row:auto; grid-column:1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Word Sort</h1>
+  <span class="counts" id="counts"></span>
+  <div class="tabs" id="tabs">
+    <button data-f="all" class="on">All</button>
+    <button data-f="yes">Yes</button>
+    <button data-f="sleep">Sleep</button>
+    <button data-f="maybe">Maybe</button>
+    <button data-f="no">No</button>
+    <button id="copy">Copy results</button>
+  </div>
+  <div class="hint">Keys: <b>1</b> no · <b>2</b> maybe · <b>3</b> yes · <b>4</b> yes + sleep, left to right · <b>0</b> clear · <b>↑ ↓</b> move. Each word has its own thoughts box. Everything saves in this browser as you go.</div>
+  <textarea id="out" readonly></textarea>
+</header>
+<main>
+  <div id="list"></div>
+</main>
+<script>
+const WORDS = [{"w": "soft animal", "src": "Oliver · Berry · Gay", "note": "the Wild Geese phrase itself"}, {"w": "tenderly", "src": "Oliver · Berry · Gay", "note": "Oliver, \"she took me back so tenderly\""}, {"w": "thank you", "src": "Oliver · Berry · Gay", "note": "Gay's closing refrain, repeated"}, {"w": "giddy", "src": "Oliver · Berry · Gay", "note": "Gay, \"the giddy throngs\""}, {"w": "amazed", "src": "Oliver · Berry · Gay", "note": "Berry, \"walk on radiance, amazed\""}, {"w": "ordinary", "src": "Oliver · Berry · Gay", "note": "Oliver, Mindful: \"but of the ordinary\""}, {"w": "precious", "src": "Oliver · Berry · Gay", "note": "Oliver, \"one wild and precious life\""}, {"w": "sit still", "src": "Oliver · Berry · Gay", "note": "Berry, opening Sabbath line"}, {"w": "still water", "src": "Oliver · Berry · Gay", "note": "Berry, \"the presence of still water\""}, {"w": "presence", "src": "Oliver · Berry · Gay · Rumi · Hafiz", "note": "Berry, same line  /  92 uses in Rumi; plain and grounding"}, {"w": "lie down", "src": "Oliver · Berry · Gay", "note": "Berry, \"I go and lie down\""}, {"w": "slowly", "src": "Oliver · Berry · Gay", "note": "Berry \"Slowly, slowly\"; Oliver \"walk slowly\""}, {"w": "linger", "src": "Oliver · Berry · Gay", "note": "Oliver, Invitation"}, {"w": "stay awhile", "src": "Oliver · Berry · Gay", "note": "Oliver, what the trees call out"}, {"w": "stir", "src": "Oliver · Berry · Gay", "note": "Oliver, \"the trees stir in their leaves\""}, {"w": "flows", "src": "Oliver · Berry · Gay", "note": "Oliver, \"the light flows from their branches\""}, {"w": "rise", "src": "Oliver · Berry · Gay", "note": "Oliver, \"All night I rose\""}, {"w": "nodding", "src": "Oliver · Berry · Gay", "note": "Oliver, \"nodding morning glories\""}, {"w": "warm hand", "src": "Oliver · Berry · Gay", "note": "Gay, sun moving across the body in bed"}, {"w": "blur of light", "src": "Oliver · Berry · Gay", "note": "Gay's hummingbird"}, {"w": "morning", "src": "Oliver · Berry · Gay · Rumi · Hafiz", "note": "all three, everywhere  /  Rumi guest house: \"Every morning a new arrival\""}, {"w": "good morning", "src": "Oliver · Berry · Gay", "note": "Oliver's threefold repetition"}, {"w": "hello", "src": "Oliver · Berry · Gay", "note": "Oliver, \"Hello, sun in my face\""}, {"w": "circles on water", "src": "Oliver · Berry · Gay", "note": "Berry, stirring going quiet"}, {"w": "riverbed", "src": "Oliver · Berry · Gay", "note": "Oliver, \"a stone on the riverbed\""}, {"w": "cupped hands", "src": "Oliver · Berry · Gay", "note": "Oliver, \"I dip my cupped hands\""}, {"w": "fields", "src": "Oliver · Berry · Gay", "note": "Oliver and Berry both"}, {"w": "canopy", "src": "Oliver · Berry · Gay", "note": "Gay, \"the canopy of a fig\""}, {"w": "orchard", "src": "Oliver · Berry · Gay · Rumi · Hafiz", "note": "Gay, the Catalog's planted orchard  /  Rumi: \"Come to the orchard in Spring\""}, {"w": "beech", "src": "Oliver · Berry · Gay", "note": "Oliver, same list"}, {"w": "pockets", "src": "Oliver · Berry · Gay", "note": "Oliver's earth; Gay loading his own"}, {"w": "lilies", "src": "Oliver · Berry · Gay", "note": "Oliver, \"every year the lilies are so perfect\""}, {"w": "tulips", "src": "Oliver · Berry · Gay", "note": "Oliver, \"the faces of the tulips\""}, {"w": "morning glories", "src": "Oliver · Berry · Gay", "note": "Oliver, same line"}, {"w": "zinnia", "src": "Oliver · Berry · Gay", "note": "Gay's catalog of thanks"}, {"w": "gooseberry", "src": "Oliver · Berry · Gay", "note": "Gay, same list"}, {"w": "pawpaw", "src": "Oliver · Berry · Gay", "note": "Gay, same list"}, {"w": "persimmon", "src": "Oliver · Berry · Gay", "note": "Berry, \"we taste persimmon\""}, {"w": "sugar", "src": "Oliver · Berry · Gay", "note": "Oliver's grasshopper; Gay \"sugar stoned\""}, {"w": "gathered", "src": "Oliver · Berry · Gay", "note": "Gay, people under the tree"}, {"w": "feeding each other", "src": "Oliver · Berry · Gay", "note": "Gay's ending"}, {"w": "goldfinch", "src": "Oliver · Berry · Gay", "note": "Oliver, Invitation / Don't Hesitate"}, {"w": "geese", "src": "Oliver · Berry · Gay", "note": "Oliver and Berry both have a \"Wild Geese\""}, {"w": "moths", "src": "Oliver · Berry · Gay", "note": "Oliver, \"light as moths\""}, {"w": "cattle", "src": "Oliver · Berry · Gay", "note": "Berry, \"asleep like cattle\""}, {"w": "lap", "src": "Rumi · Hafiz", "note": "Rumi: ocean \"letting its lap fill with pearls\""}, {"w": "tongue", "src": "Rumi · Hafiz", "note": "Rumi: \"Let your tongue become that flower\""}, {"w": "throat", "src": "Rumi · Hafiz", "note": "plain body-locating word, both poets"}, {"w": "lean", "src": "Rumi · Hafiz", "note": "Hafiz: \"Hafiz will lean over and offer you\""}, {"w": "near", "src": "Rumi · Hafiz", "note": "47 in Hafiz; his poem \"God Just Came Near\""}, {"w": "close", "src": "Rumi · Hafiz", "note": "both poets, constant"}, {"w": "company", "src": "Rumi · Hafiz", "note": "Hafiz: \"the nourishing Company of the finer Worlds\""}, {"w": "guest", "src": "Rumi · Hafiz", "note": "from the guest house; 30 uses in Rumi"}, {"w": "enough", "src": "Rumi · Hafiz", "note": "Hafiz: \"Enough that in the meadow...\""}, {"w": "cypress", "src": "Rumi · Hafiz", "note": "Hafiz: \"the shadow of a graceful cypress\""}, {"w": "nightingale", "src": "Rumi · Hafiz", "note": "14 in Hafiz; \"the nightingale's perfect lyric\""}, {"w": "fruit", "src": "Rumi · Hafiz", "note": "Hafiz: \"fall like a golden fruit into my hand\""}, {"w": "milk", "src": "Rumi · Hafiz", "note": "Rumi: \"the milk of grace starts to flow\""}, {"w": "salt", "src": "Rumi · Hafiz", "note": "Rumi: \"a salt breeze from that, traveling inland\""}, {"w": "house", "src": "Rumi · Hafiz", "note": "Rumi's guest house; 77 uses"}, {"w": "door", "src": "Rumi · Hafiz", "note": "Rumi: \"meet them at the door laughing\""}, {"w": "threshold", "src": "Rumi · Hafiz", "note": "Rumi: \"his head on the threshold\""}, {"w": "courtyard", "src": "Rumi · Hafiz", "note": "Rumi: \"the courtyard hidden in the center of my chest\""}, {"w": "bed", "src": "Rumi · Hafiz", "note": "Hafiz: \"left it beside your bed\""}, {"w": "lute", "src": "Rumi · Hafiz", "note": "17 in Hafiz; \"replacing lute strings\""}];
+const KEY = 'signal.wordsort.v1', NOTES_KEY = 'signal.wordsort.notes', TAB_KEY = 'signal.wordsort.tab';
+const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const put = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+let picks = {};
+try { picks = JSON.parse(get(KEY) || '{}') || {}; } catch (e) { picks = {}; }
+const save = () => put(KEY, JSON.stringify(picks));
+// Words never leave the list when sorted: the choice lights up and the focus
+// steps down to the next word. The filter tabs are for reviewing afterwards.
+let filter = get(TAB_KEY) || 'all', focusIdx = 0;
+if (filter === 'todo') filter = 'all';
+// thoughts, one per word, saved as they are typed
+let notes = {};
+try { notes = JSON.parse(get(NOTES_KEY) || '{}') || {}; } catch (e) { notes = {}; }
+if (typeof notes !== 'object' || Array.isArray(notes)) notes = {};
+
+function shown() {
+  return WORDS.filter(x => filter === 'all' ? true : picks[x.w] === filter);
+}
+function counts() {
+  const c = { no: 0, maybe: 0, yes: 0, sleep: 0 };
+  for (const x of WORDS) if (picks[x.w] in c) c[picks[x.w]]++;
+  const left = WORDS.length - c.no - c.maybe - c.yes - c.sleep;
+  document.getElementById('counts').innerHTML =
+    `<b>${left}</b> unsorted · <b>${c.yes}</b> yes · <b>${c.sleep}</b> sleep · <b>${c.maybe}</b> maybe · <b>${c.no}</b> no`;
+}
+function render() {
+  const list = document.getElementById('list');
+  const rows = shown();
+  if (focusIdx >= rows.length) focusIdx = Math.max(0, rows.length - 1);
+  list.innerHTML = rows.length ? '' : '<div class="empty">Nothing here.</div>';
+  rows.forEach((x, i) => {
+    const d = document.createElement('div');
+    const p = picks[x.w] || '';
+    d.className = 'card' + (p ? ' ' + p : '') + (i === focusIdx ? ' focus' : '');
+    d.innerHTML = `<div class="word"></div><div class="picks">
+        <button class="no${p === 'no' ? ' on' : ''}">1 No</button>
+        <button class="maybe${p === 'maybe' ? ' on' : ''}">2 Maybe</button>
+        <button class="yes${p === 'yes' ? ' on' : ''}">3 Yes</button>
+        <button class="sleep${p === 'sleep' ? ' on' : ''}">4 Yes + sleep</button></div>
+      <div class="note"></div>
+      <input class="thought" type="text" placeholder="Thoughts on this word…">`;
+    d.querySelector('.word').textContent = x.w;
+    const s = document.createElement('span'); s.className = 'src'; s.textContent = x.src;
+    d.querySelector('.word').appendChild(s);
+    d.querySelector('.note').textContent = x.note;
+    const th = d.querySelector('.thought');
+    th.value = notes[x.w] || '';
+    th.oninput = () => { if (th.value) notes[x.w] = th.value; else delete notes[x.w]; put(NOTES_KEY, JSON.stringify(notes)); };
+    th.onfocus = () => { if (focusIdx !== i) { focusIdx = i; paintFocus(); } };
+    // Enter leaves the box and steps down to the next word
+    th.onkeydown = e => { if (e.key === 'Enter') { th.blur(); focusIdx = Math.min(i + 1, shown().length - 1); render(); } };
+    d.querySelector('.no').onclick = () => choose(x.w, 'no', i);
+    d.querySelector('.maybe').onclick = () => choose(x.w, 'maybe', i);
+    d.querySelector('.yes').onclick = () => choose(x.w, 'yes', i);
+    d.querySelector('.sleep').onclick = () => choose(x.w, 'sleep', i);
+    d.onclick = e => { if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') { focusIdx = i; render(); } };
+    list.appendChild(d);
+  });
+  counts();
+  const f = list.querySelector('.focus');
+  if (f) f.scrollIntoView({ block: 'nearest' });
+}
+function paintFocus() {
+  document.querySelectorAll('#list .card').forEach((c, k) => c.classList.toggle('focus', k === focusIdx));
+}
+function choose(w, v, i) {
+  picks[w] = picks[w] === v ? undefined : v;
+  if (!picks[w]) delete picks[w];
+  save();
+  // step down to the next word (in a filtered tab the row may have left, so stay put)
+  focusIdx = filter === 'all' ? Math.min(i + 1, shown().length - 1) : Math.min(i, shown().length - 1);
+  render();
+}
+document.getElementById('tabs').onclick = e => {
+  const f = e.target.dataset && e.target.dataset.f;
+  if (!f) return;
+  filter = f; focusIdx = 0; put(TAB_KEY, f);
+  paintTabs();
+  render();
+};
+function paintTabs() {
+  document.querySelectorAll('#tabs button[data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === filter));
+}
+document.getElementById('copy').onclick = () => {
+  const out = { yes: [], sleep: [], maybe: [], no: [] };
+  for (const x of WORDS) if (out[picks[x.w]]) out[picks[x.w]].push(notes[x.w] ? x.w + ' (' + notes[x.w] + ')' : x.w);
+  let txt = 'Word sort results\nyes: ' + out.yes.join(', ') + '\nyes + sleep: ' + out.sleep.join(', ') +
+    '\nmaybe: ' + out.maybe.join(', ') + '\nno: ' + out.no.join(', ');
+  const loose = WORDS.filter(x => !picks[x.w] && notes[x.w]).map(x => x.w + ' (' + notes[x.w] + ')');
+  if (loose.length) txt += '\nunsorted, with thoughts: ' + loose.join(', ');
+  const ta = document.getElementById('out');
+  ta.style.display = 'block'; ta.value = txt; ta.select();
+  const b = document.getElementById('copy');
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+    () => { b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy results', 1400); },
+    () => { document.execCommand && document.execCommand('copy'); });
+};
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.tagName === 'INPUT') return;   // typing in a thoughts box is just typing
+  const rows = shown(), x = rows[focusIdx];
+  if (e.key === 'ArrowDown') { focusIdx = Math.min(rows.length - 1, focusIdx + 1); render(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { focusIdx = Math.max(0, focusIdx - 1); render(); e.preventDefault(); }
+  else if (!x) return;
+  else if (e.key === '1') choose(x.w, 'no', focusIdx);
+  else if (e.key === '2') choose(x.w, 'maybe', focusIdx);
+  else if (e.key === '3') choose(x.w, 'yes', focusIdx);
+  else if (e.key === '4') choose(x.w, 'sleep', focusIdx);
+  else if (e.key === '0') { delete picks[x.w]; save(); render(); }
+});
+paintTabs();
+render();
+</script>
+</body>
+</html>

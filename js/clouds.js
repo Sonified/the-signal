@@ -25,8 +25,9 @@
 // note on it was that it ran 25 to 50 percent busier than he wanted, so every
 // measured gap is stretched by CLOUD_SPARSE before anything else touches it.
 import { S } from './state.js';
-import { getContext, getMaster } from './audio.js';
+import { getContext, getMaster, createRoom, swapRoom, glideParam } from './audio.js';
 import { meterTap, tapPeak } from './util.js';
+import { chanGate, onChannelGates } from './mixgate.js';
 
 const ROOT = 48;                       // written C3; sounds ~79.5 Hz
 const DEG  = [0, 2, 4, 7, 11];         // 1 2 3 5 7, the 8 is the next octave's 1
@@ -100,7 +101,7 @@ const CLOUD_SPARSE = 1.6;
 
 const pads = new Map();                // semitone offset -> AudioBuffer
 let ready = false, loading = null;
-let dry = null, verb = null, wet = null, padTap = null;
+let dry = null, room = null, wet = null, padTap = null, bus = null;
 let running = false, clock = 0, timer = null;
 // walk state: where the line is, which way it is going, how much of this run is left
 let idx = 0, dir = 1, run = 0;
@@ -137,16 +138,6 @@ const LOG = (() => {
 // note may be several landing together.
 let voices = 0;
 
-function impulse(ctx, sec, decay) {
-  const n = Math.floor(ctx.sampleRate * sec);
-  const b = ctx.createBuffer(2, n, ctx.sampleRate);
-  for (let c = 0; c < 2; c++) {
-    const d = b.getChannelData(c);
-    for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, decay);
-  }
-  return b;
-}
-
 // Loaded on demand rather than at boot, for the same reason the piano is: two
 // megabytes should not be fetched by someone who never turns the music on.
 export function loadClouds() {
@@ -168,12 +159,26 @@ function buildGraph() {
   const ctx = getContext(), master = getMaster();
   if (!ctx || !master) return;
   dry  = ctx.createGain(); dry.gain.value = 1;
-  verb = ctx.createConvolver(); verb.buffer = impulse(ctx, S.cloudRevTime, 2.2);
+  // two convolvers, so a new decay fades in under the old tail (audio.js)
+  room = createRoom(ctx, () => S.cloudRevTime, 2.2);
   wet  = ctx.createGain(); wet.gain.value = S.cloudReverb;
   dry.connect(master);
-  verb.connect(wet).connect(master);
-  padTap = meterTap(ctx, dry, verb);       // the mixer's clouds meter
+  room.output.connect(wet).connect(master);
+  padTap = meterTap(ctx, dry, room.input); // the mixer's clouds meter
+  // Every pad passes through this bus on its way in: the mix gate's mute and
+  // solo (mixgate.js). S.cloudVol is baked into each pad as it starts, so the
+  // gate lives here instead, where it also reaches the pads already sounding.
+  // Ahead of the meter, so a muted channel reads silent.
+  bus = ctx.createGain();
+  bus.gain.value = chanGate('clouds');
+  bus.connect(padTap.analyser);
 }
+
+// A short glide rather than a step, so a gate closing mid-pad never clicks;
+// a preset's transition stretches it over its window (glideParam, audio.js).
+onChannelGates(() => {
+  if (bus) glideParam(bus.gain, chanGate('clouds'), 0.03);
+});
 
 // A suspended context keeps returning the last block it rendered, so the
 // transport decides whether there is anything to show, not the analyser.
@@ -181,13 +186,11 @@ export const cloudPeak = () =>
   S.running && S.audioEnabled && getContext()?.state === 'running' ? tapPeak(padTap) : 0;
 
 export function applyCloudReverb() {
-  if (wet) wet.gain.setTargetAtTime(S.cloudReverb, getContext().currentTime, 0.08);
+  if (wet) glideParam(wet.gain, S.cloudReverb, 0.08);
 }
-let irTimer = null;
+// Crossfaded into the room rather than swapped under a ringing tail.
 export function rebuildCloudIR() {
-  if (!verb) return;
-  clearTimeout(irTimer);
-  irTimer = setTimeout(() => { verb.buffer = impulse(getContext(), S.cloudRevTime, 2.2); }, 200);
+  swapRoom(room, 200);
 }
 
 // One pad, shaped by the fixed performance envelope: an amplitude ADSR and a
@@ -247,7 +250,7 @@ function cloud(written, vel, at, tag = '') {
     node.connect(hp);
     node = hp;
   }
-  node.connect(g); g.connect(padTap.analyser);
+  node.connect(g); g.connect(bus);
 
   // ---- the amplitude envelope -----------------------------------------------
   const A = Math.max(0.002, ENV.aA) * kA, D = Math.max(0.02, ENV.aD * kA);

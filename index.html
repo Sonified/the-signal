@@ -175,6 +175,17 @@
   <div class="hsub">press the &ldquo;~&rdquo; key for settings &nbsp;&middot;&nbsp; press ENTER for full screen<br>T for words &nbsp;&middot;&nbsp; C for color</div>
 </div>
 
+<!-- The panel guard's notice (js/panel-guard.js, wired in js/main.js): shown
+     when the strobe has been paused because every flash was landing on the
+     same half of the display's refresh cycle. Hidden until then. -->
+<div id="guard" role="alertdialog" aria-labelledby="guardTitle" aria-describedby="guardBody" hidden>
+  <div class="card">
+    <h1 id="guardTitle"></h1>
+    <p id="guardBody"></p>
+    <p id="guardNote" hidden></p>
+    <button id="guardOk">OK</button>
+  </div>
+</div>
 <!-- One word at a time, centre screen. Outside the canvas so the renderer's
      hot loop never touches text. -->
 <div id="word" aria-hidden="true"></div>
@@ -479,7 +490,7 @@
   </div>
   <div class="ctl tone-ctl">
     <label>Carrier <b><span id="carrVal">40</span> Hz</b></label>
-    <input id="carrier" type="range" min="20" max="10000" step="10" value="40">
+    <input id="carrier" type="range" min="1" max="1000" step="1" value="40">
   </div>
   <div class="ctl tone-ctl">
     <label>Level <b><span id="toneVolVal">-10.5</span> dB</b></label>
@@ -540,6 +551,30 @@
   <div class="ctl pip-ctl">
     <label><span class="pipword">Click</span> loudness var rate <b><span id="clickModRateVal">26</span>s / cycle</b></label>
     <input id="clickModRate" type="range" min="1" max="60" step="1" value="26">
+  </div>
+  <div class="ctl pip-ctl">
+    <label>Filter sweep</label>
+    <div class="row"><button id="pipLpfToggle">Off</button></div>
+  </div>
+  <div class="ctl pip-ctl lpf-ctl" hidden>
+    <label>Filter low <b><span id="pipLpfLoVal">400 Hz</span></b></label>
+    <input id="pipLpfLo" type="range" min="0" max="1000" step="1" value="500">
+  </div>
+  <div class="ctl pip-ctl lpf-ctl" hidden>
+    <label>Filter high <b><span id="pipLpfHiVal">9.00 kHz</span></b></label>
+    <input id="pipLpfHi" type="range" min="0" max="1000" step="1" value="800">
+  </div>
+  <div class="ctl pip-ctl lpf-ctl" hidden>
+    <label>Filter sweep time <b><span id="pipLpfPeriodVal">60s</span> / cycle</b></label>
+    <input id="pipLpfPeriod" type="range" min="0" max="1000" step="1" value="660">
+  </div>
+  <div class="ctl pip-ctl lpf-ctl" hidden>
+    <label>Filter wander <b><span id="pipLpfWanderVal">30</span>%</b></label>
+    <input id="pipLpfWander" type="range" min="0" max="100" step="1" value="30">
+  </div>
+  <div class="ctl pip-ctl lpf-ctl" hidden>
+    <label>Filter resonance <b><span id="pipLpfQVal">0.71</span></b></label>
+    <input id="pipLpfQ" type="range" min="0" max="1000" step="1" value="140">
   </div>
 
   <div class="subhead">
@@ -654,6 +689,10 @@
   <div class="ctl music-ctl">
     <label>Hold length <b><span id="pianoHoldVal">100</span>%</b></label>
     <input id="pianoHold" type="range" min="30" max="250" step="5" value="100">
+  </div>
+  <div class="ctl music-ctl">
+    <label>Rubato <b><span id="pianoRubatoVal">50</span>%</b></label>
+    <input id="pianoRubato" type="range" min="0" max="200" step="5" value="50">
   </div>
   <div class="ctl music-ctl">
     <label>Low anchor <b><span id="pianoBassVal">10</span>%</b></label>

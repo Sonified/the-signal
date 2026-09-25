@@ -39,6 +39,12 @@ export function updateParticles(dt) {
 }
 
 // ---------- tunnel rings ----------
+// Rings that pass the viewer are kept here and handed out again rather than
+// left for the collector, since one is born on every strobe cycle for the
+// whole session. Nothing holds a ring past the frame it is drawn in (the
+// renderers read S.rings afresh each frame), so reusing one is invisible.
+const ringPool = [];
+
 export function emitRing(z) {
   if (S.rings.length >= MAX_RINGS) return;
   // squared distribution biases hard toward slow, so the field keeps
@@ -48,8 +54,10 @@ export function emitRing(z) {
   // range it is drawn from, so turning it up does not thicken everything, it
   // spreads the population between the thinnest and thickest possible line.
   const tw = 1 + (Math.random() * 2 - 1) * S.ringThickVar;
-  S.rings.push({ z: z !== undefined ? z : Z_FAR, v: 0.10 + s * 0.62,
-                 hue: Math.random(), hv: 0, tw: Math.max(0.05, tw) });
+  const ring = ringPool.length ? ringPool.pop() : { z: 0, v: 0, hue: 0, hv: 0, tw: 1 };
+  ring.z = z !== undefined ? z : Z_FAR; ring.v = 0.10 + s * 0.62;
+  ring.hue = Math.random(); ring.hv = 0; ring.tw = Math.max(0.05, tw);
+  S.rings.push(ring);
 }
 
 export function seedTunnel(n) {
@@ -71,6 +79,7 @@ export function updateRings(dt, t) {
     ring.z -= ring.v * S.ringSpeedMul * dt;
     if (S.perElementColor && S.colorWalk > 0) walkHue(ring, dt);
     if (ring.z > Z_NEAR) rings[w++] = ring;
+    else if (ringPool.length < MAX_RINGS) ringPool.push(ring);
   }
   rings.length = w;
 }

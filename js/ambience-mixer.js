@@ -3,7 +3,10 @@
 import { S } from './state.js';
 import { $ } from './dom.js';
 import { saveSettings } from './settings.js';
-import { AMBIENCE_SOURCES, WORLDS, normalizeAmbLayers, syncAmbLayers, ambLayerStatus, ambLayerPeak } from './ambience.js';
+import {
+  AMBIENCE_SOURCES, normalizeAmbLayers, syncAmbLayers, ambLayerStatus, ambLayerPeak,
+  startAmbDrift, stopAmbDrift, ambDriftTick, setAmbLayerLevel
+} from './ambience.js';
 import { enginePeaks } from './audio.js';
 import { pianoPeak, bedPeak } from './piano.js';
 import { cloudPeak } from './clouds.js';
@@ -41,64 +44,55 @@ function paintMeter(meter, level, dt) {
   meter.count = count;
 }
 
-// Locations drift moves between -- the recorded places, not the one-off
-// children's tracks that ride alongside them.
-const DRIFT_IDS = WORLDS.map(w => w.id);
-const DRIFT_LEVEL = 0.55;
-const DRIFT_FADE_MS = 12000;
-const ease = t => t * t * (3 - 2 * t);
+// The drift (places crossfading, children coming and going) is scheduled in
+// ambience.js, shared with v1, and every fade is written onto the audio clock
+// when it begins, so a throttled timer can no longer make one jump. This
+// window only ticks it and decides when to save.
 
 export function initAmbMixer() {
   S.ambLayers = normalizeAmbLayers(S.ambLayers);
   const win = $('ambMixerWindow'), bar = $('ambMixerBar');
   const rows = new Map();
-  const driftLayer = id => S.ambLayers.find(l => l.source === id);
-  let driftTimer = null, drift = null, driftSaveTimer = null;
-
-  function beginCrossfade() {
-    const current = drift?.to ?? null;
-    let next = DRIFT_IDS[Math.floor(Math.random() * DRIFT_IDS.length)];
-    if (DRIFT_IDS.length > 1) while (next === current) next = DRIFT_IDS[Math.floor(Math.random() * DRIFT_IDS.length)];
-    const startLevels = new Map(DRIFT_IDS.map(id => [id, driftLayer(id)?.level ?? 0]));
-    drift = { to: next, phase: 'crossfade', start: Date.now(), duration: DRIFT_FADE_MS, startLevels };
+  let driftTimer = null, driftSaveTimer = null;
+  // A hidden tab keeps drifting (the audio plays on), but it does not save
+  // while nobody can see it: every one of those saves rewrites the whole
+  // shared settings object, and a forgotten background tab doing that every
+  // few seconds overwrites whatever the viewer is doing in another tab. The
+  // save is remembered instead, and made once when the tab is seen again.
+  let driftSaveOwed = false;
+  function driftSave() {
+    if (document.hidden) { driftSaveOwed = true; return; }
+    driftSaveOwed = false;
+    saveSettings();
   }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && driftSaveOwed) driftSave();
+  });
+
   function driftTick() {
-    if (!drift) return;
-    const now = Date.now();
-    if (drift.phase === 'crossfade') {
-      const frac = Math.min(1, (now - drift.start) / drift.duration);
-      const e = ease(frac);
-      for (const [id, startLevel] of drift.startLevels) {
-        const layer = driftLayer(id);
-        if (!layer) continue;
-        const target = id === drift.to ? DRIFT_LEVEL : 0;
-        layer.level = startLevel + (target - startLevel) * e;
-      }
-      const settled = frac >= 1;
-      if (settled) { drift.phase = 'dwell'; drift.start = now; drift.duration = 45000 + Math.random() * 45000; }
-      syncAmbLayers();
-      // A crossfade is twelve seconds of this tick at 5 Hz, and every one of
-      // those used to serialise the whole settings object and write it to
-      // localStorage: sixty synchronous disk round trips, on the main thread,
-      // while the strobe is trying to present. What is actually worth saving
-      // is where the fade ends up, so the write trails the motion instead of
-      // following it, and the landing is written exactly.
-      if (settled) { clearTimeout(driftSaveTimer); driftSaveTimer = null; saveSettings(); }
-      else if (!driftSaveTimer) {
-        driftSaveTimer = setTimeout(() => { driftSaveTimer = null; saveSettings(); }, 2000);
-      }
-    } else if (now - drift.start >= drift.duration) {
-      beginCrossfade();
+    const moved = ambDriftTick();
+    // A crossfade is twelve seconds of this tick at 5 Hz, and every one of
+    // those used to serialise the whole settings object and write it to
+    // localStorage: sixty synchronous disk round trips, on the main thread,
+    // while the strobe is trying to present. What is actually worth saving
+    // is where the fade ends up, so the write trails the motion instead of
+    // following it, and the landing is written exactly.
+    if (moved === 'landed') { clearTimeout(driftSaveTimer); driftSaveTimer = null; driftSave(); }
+    else if (moved !== 'moving') return;
+    else if (document.hidden) driftSaveOwed = true;
+    else if (!driftSaveTimer) {
+      driftSaveTimer = setTimeout(() => { driftSaveTimer = null; driftSave(); }, 2000);
     }
   }
   function startDrift() {
     if (driftTimer) return;
-    beginCrossfade();
+    startAmbDrift();
     driftTimer = setInterval(driftTick, 200);
   }
   function stopDrift() {
-    clearInterval(driftTimer); driftTimer = null; drift = null;
-    clearTimeout(driftSaveTimer); driftSaveTimer = null;
+    clearInterval(driftTimer); driftTimer = null;
+    stopAmbDrift();
+    clearTimeout(driftSaveTimer); driftSaveTimer = null; driftSaveOwed = false;
   }
   const WINDOW_KEY = 'signal.atmosphere.window.v1';
   let layout = { open: true, x: null, y: 80, width: 500, version: 3 };
@@ -228,7 +222,7 @@ export function initAmbMixer() {
     value.textContent = slider.value;
     rows.set(layer, { el, meter: readout, mute, solo, slider, value });
     slider.oninput = () => {
-      layer.level = +slider.value / 100;
+      setAmbLayerLevel(layer, +slider.value / 100);
       value.textContent = slider.value;
       fill(slider); syncAmbLayers(); saveSettings();
     };

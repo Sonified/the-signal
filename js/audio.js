@@ -4,10 +4,11 @@
 import { S } from './state.js';
 import { $ } from './dom.js';
 import { buildChirp } from './chirp.js';
+import { chanGate, onChannelGates } from './mixgate.js';
 
 let audioCtx = null, volGain = null, node = null;
 let harmDry = null, harmWet = null, convolver = null, clickWet = null;
-let clickConv = null, irTimer = null;
+let clickRoom = null;
 let graphPromise = null, deviceWarm = false, audioHasPlayed = false;
 
 // The mixer's tone, harmonics and pulse meters. The worklet posts the loudest
@@ -20,6 +21,19 @@ export function enginePeaks() {
   return enginePk;
 }
 const SILENT_PEAKS = { tone: 0, pulse: 0, harm: 0 };
+
+// Whether anyone is reading those meters. v0's mixer always wants them, so
+// they default on; v1 turns them off while its mixer window is shut, which
+// stops fifty messages a second (each one a small pile of garbage on the main
+// thread) that nothing would look at. Remembered, so a call made before the
+// worklet exists still takes effect the moment it is built.
+let engineMetersOn = true;
+export function setEngineMeters(on) {
+  on = !!on;
+  if (on === engineMetersOn) return;
+  engineMetersOn = on;
+  if (node) node.port.postMessage({ meters: on });
+}
 
 // The worklet used to be a template literal turned into a Blob URL. As a real
 // file it can be handed straight to addModule(). The URL is resolved against
@@ -34,23 +48,326 @@ export const getContext = () => audioCtx;
 // volume slider and the transport mute reach it without any extra wiring.
 export const getMaster = () => volGain;
 
-// A decaying noise burst is a perfectly serviceable reverb impulse, and it
-// costs nothing to generate compared with shipping an audio file.
-function makeImpulse(seconds, decay) {
-  const sr = audioCtx.sampleRate, len = Math.floor(sr * seconds);
-  const buf = audioCtx.createBuffer(2, len, sr);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
-    for (let i = 0; i < len; i++) {
-      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
-    }
-  }
-  return buf;
+// ---------- impulse responses ----------
+// A decaying noise burst is a perfectly serviceable reverb impulse, and it is
+// far lighter to ship than an audio file. It is not free to make, though, and
+// it used to be made on the main thread in one go: about 0.85 ms per second
+// of stereo impulse to fill (measured in V8, warm), so a 4.5 s piano room was
+// about 4 ms of one task and a 15 s one about 12. Handing the finished buffer
+// to a ConvolverNode costs roughly as much again, because Chrome cuts it into
+// FFT partitions right there on the main thread, and nothing can move that
+// part anywhere else. Either one alone is a dropped strobe frame.
+//
+// So the noise is made in a worker (ir-worker.js) and transferred back; each
+// finished impulse is kept by its length and decay, so asking for the same
+// room again builds nothing; and the main-thread work that is left, copying
+// the samples into an AudioBuffer and giving a buffer to a convolver, runs as
+// separate jobs, one per idle slot. Several rooms changing in one preset then
+// land across several frames instead of all in one task.
+const IR_CACHE_MAX = 4;
+const irCache = new Map();     // key to AudioBuffer, least recently used first
+const irWaiting = new Map();   // key to the callbacks waiting on its build
+const irKey = (sr, sec, decay) => sr + ':' + sec.toFixed(2) + ':' + decay;
+// A rough guess at what giving a convolver this much impulse costs, used only
+// to wait for an idle period with room for it. Past about 6 ms no idle period
+// between strobe frames is long enough anyway, so the wait stops asking.
+const assignCost = sec => Math.min(6, 0.5 + sec * 0.8);
+
+// Hands cb an AudioBuffer holding the impulse, from the cache when it is
+// there. The callback runs inside an idle slot of its own (or at once, on a
+// cache hit), so whatever it does next should queue its own slot.
+function getIR(ctx, sec, decay, cb) {
+  const sr = ctx.sampleRate, key = irKey(sr, sec, decay);
+  const hit = irCache.get(key);
+  if (hit) { irCache.delete(key); irCache.set(key, hit); cb(hit); return; }
+  const waiting = irWaiting.get(key);
+  if (waiting) { waiting.push(cb); return; }
+  irWaiting.set(key, [cb]);
+  const len = Math.max(1, Math.floor(sr * sec));
+  fillIR(len, decay, (l, r) => inSlot(() => {
+    const buf = ctx.createBuffer(2, len, sr);
+    buf.copyToChannel(l, 0);
+    buf.copyToChannel(r, 1);
+    irCache.set(key, buf);
+    if (irCache.size > IR_CACHE_MAX) irCache.delete(irCache.keys().next().value);
+    const cbs = irWaiting.get(key) || [];
+    irWaiting.delete(key);
+    for (const f of cbs) f(buf);
+  }, 1));
 }
 
-// Rebuilding an impulse means filling up to 8 seconds of stereo noise, so the
-// slider is debounced. Swapping the buffer mid-tail truncates whatever is
-// still ringing, which is unavoidable and brief.
+// The worker is made on first use. If it cannot be made, or its script fails
+// to load, the noise is made here instead, in slices of about a millisecond
+// each with a task boundary between them, so no single task runs long.
+let irWorker = null, irWorkerDead = false, irSeq = 0;
+const irJobs = new Map();
+const IR_SLICE = 24000;
+function fillIR(len, decay, done) {
+  const w = irWorkerGet();
+  if (!w) { fillHere(len, decay, done); return; }
+  const id = ++irSeq;
+  irJobs.set(id, { len, decay, done });
+  w.postMessage({ id, len, decay });
+}
+function irWorkerGet() {
+  if (irWorker || irWorkerDead) return irWorker;
+  try {
+    irWorker = new Worker(new URL('./ir-worker.js', import.meta.url));
+  } catch (e) {
+    irWorkerDead = true;
+    return null;
+  }
+  irWorker.onmessage = e => {
+    const d = e.data, job = irJobs.get(d.id);
+    if (!job) return;
+    irJobs.delete(d.id);
+    job.done(d.l, d.r);
+  };
+  irWorker.onerror = () => {
+    console.warn('audio: impulse worker failed, building impulses on the main thread');
+    irWorkerDead = true;
+    try { irWorker.terminate(); } catch (e) {}
+    irWorker = null;
+    for (const job of irJobs.values()) fillHere(job.len, job.decay, job.done);
+    irJobs.clear();
+  };
+  return irWorker;
+}
+function fillHere(len, decay, done) {
+  const l = new Float32Array(len), r = new Float32Array(len);
+  let i = 0;
+  const step = () => {
+    const stop = Math.min(len, i + IR_SLICE);
+    for (; i < stop; i++) {
+      const env = Math.pow(1 - i / len, decay);
+      l[i] = (Math.random() * 2 - 1) * env;
+      r[i] = (Math.random() * 2 - 1) * env;
+    }
+    if (i < len) setTimeout(step, 0); else done(l, r);
+  };
+  setTimeout(step, 0);
+}
+
+// Idle slots. Each job runs alone in an idle period of its own, the gap the
+// browser leaves between one frame's work and the next frame's deadline, so
+// it never lands in the middle of a frame. A job that expects to take longer
+// than the time left waits for a roomier period, but only for so long: past
+// SLOT_WAIT_MS it runs in the next one regardless. Where there is no
+// requestIdleCallback (Safari), a short timer stands in, which still keeps
+// the jobs a frame or more apart.
+const SLOT_WAIT_MS = 400;
+const slotJobs = [];
+let slotArmed = false;
+const ric = typeof requestIdleCallback === 'function' ? requestIdleCallback : null;
+function inSlot(fn, cost) {
+  slotJobs.push({ fn, cost, t0: performance.now() });
+  armSlot();
+}
+function armSlot() {
+  if (slotArmed || !slotJobs.length) return;
+  slotArmed = true;
+  if (ric) ric(runSlot, { timeout: 200 }); else setTimeout(runSlot, 20);
+}
+function runSlot(deadline) {
+  slotArmed = false;
+  const job = slotJobs[0];
+  if (!job) return;
+  if (deadline && !deadline.didTimeout && deadline.timeRemaining() < job.cost
+      && performance.now() - job.t0 < SLOT_WAIT_MS) { armSlot(); return; }
+  slotJobs.shift();
+  try { job.fn(); } catch (e) { console.warn('audio: room update failed', e); }
+  armSlot();
+}
+
+// ---------- preset transitions ----------
+// A preset used to land every one of its changes at once, each on whatever
+// short ramp its own control happened to use, and several of them were not
+// ramps at all: a rounded harmonic count, a pip shape flag, a reverb impulse
+// swapped under its own tail. Heard together, that was a click on every
+// recall.
+//
+// Now a preset opens a transition around its set() calls (presets.js, in v0
+// and v1 alike). While one is open, every level, every engine parameter,
+// every room and every gain the music and atmosphere modules own moves along
+// a straight line to its new value, and all of them arrive together at the
+// end of one shared window. No dip, no fade out and back in: each number
+// simply glides from where it was to where the preset puts it. Outside a
+// transition nothing is different, and a slider still moves its parameter on
+// the same short glide it always has.
+export const PRESET_GLIDE_S = 1.5;
+let glideDepth = 0, glideT1 = 0;
+// What each parameter a transition moved is heading for. A call made after
+// the transition's scope that asks for that same value is already being
+// answered by the ramp, so it leaves the ramp alone instead of cutting it
+// short (the atmosphere re-syncs its gains a few times a second while the
+// drift runs, and another tab's settings arrive with a second sync behind
+// them). Weakly keyed, so a node that goes away takes its entry with it.
+const glideTarget = new WeakMap();
+
+// Nested opens share the outer window, so a preset recalled from a snapshot
+// (which opens one inside another) still has a single end time.
+export function beginGlide(sec = PRESET_GLIDE_S) {
+  if (glideDepth++ === 0 && audioCtx) glideT1 = audioCtx.currentTime + sec;
+}
+export function endGlide() { if (glideDepth > 0) glideDepth--; }
+
+// The end of the open transition, or 0 when none is open. Work that finishes
+// after the transition's synchronous scope (an impulse built on a timer, a
+// recording that has to load, an audio start that awaits the device) takes
+// this with it and hands it back to continueGlide when it gets there.
+export const glideEnd = () => (glideDepth > 0 && audioCtx) ? glideT1 : 0;
+
+// Runs fn as part of a transition ending at `end`, provided enough of it is
+// left to be worth gliding over; otherwise fn runs as an ordinary change.
+export function continueGlide(end, fn) {
+  if (glideDepth > 0 || !audioCtx || !(end > audioCtx.currentTime + 0.05)) { fn(); return; }
+  const prev = glideT1;
+  glideDepth = 1; glideT1 = end;
+  try { fn(); } finally { glideDepth = 0; glideT1 = Math.max(prev, end); }
+}
+
+// Holds a parameter at the value it has right now and drops everything
+// queued after it, so the next ramp starts from where the sound actually is.
+function anchorParam(prm, t) {
+  const v = prm.value;
+  prm.cancelScheduledValues(t);
+  prm.setValueAtTime(v, t);
+}
+// The same, for a caller that is about to write its own automation onto a
+// parameter (the atmosphere's drift schedules whole curves). The ramp it
+// replaces is no longer the parameter's destination, so it is forgotten too.
+export function holdParam(prm, t) {
+  glideTarget.delete(prm);
+  anchorParam(prm, t);
+}
+
+// Moves one AudioParam to `value`. Inside a transition: a straight line to
+// the end of the window. Otherwise: the caller's usual exponential approach
+// with time constant tc, after dropping any transition ramp still running on
+// it, because a setTarget laid among a ramp's events is pulled back to the
+// ramp's end value when that event comes due.
+export function glideParam(prm, value, tc) {
+  if (!audioCtx || !prm) return;
+  const now = audioCtx.currentTime;
+  if (glideDepth > 0) {
+    anchorParam(prm, now);
+    prm.linearRampToValueAtTime(value, glideT1);
+    glideTarget.set(prm, value);
+    return;
+  }
+  // Only a parameter still carrying a transition ramp needs that ramp cut
+  // away first. One already cut free takes a plain setTarget, which matters
+  // for the linked pulse rate: the strobe's own glide calls this on every
+  // frame of the window, and anchoring each time was three automation calls a
+  // frame, and a step back to the last rendered value, instead of one.
+  if (now < glideT1) {
+    const heading = glideTarget.get(prm);
+    if (heading === value) return;
+    if (heading !== undefined) {
+      glideTarget.delete(prm);
+      anchorParam(prm, now);
+    }
+  }
+  prm.setTargetAtTime(value, now, tc);
+}
+
+// ---------- rooms ----------
+// A reverb whose impulse can change without cutting its tail. Replacing a
+// ConvolverNode's buffer drops everything still ringing in it at once, which
+// is a click and then a hole where the tail was. So each room is two
+// convolvers side by side: a new impulse goes into the idle one and the two
+// are crossfaded in straight lines, over the transition window during a
+// preset and over ROOM_XFADE_S otherwise. Once a fade is done the retired
+// side is unplugged from the input, so the spare convolver costs nothing
+// while it waits. Shared by the pip send here and the piano, clouds and
+// atmosphere rooms.
+//
+// A room is described rather than handed a buffer: sec reads its length from
+// the settings, decay is fixed. Each side remembers which impulse it holds,
+// so a request for the one already playing does nothing at all, and one for
+// the impulse the spare side still holds (a preset recalled and then undone)
+// crossfades straight back to it without building or partitioning anything.
+// Even the first impulse arrives this way, faded in from an empty room, so
+// making a room never builds anything in the task that asked for it.
+const ROOM_XFADE_S = 0.3;
+export function createRoom(ctx, sec, decay) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const side = () => {
+    const c = ctx.createConvolver(), g = ctx.createGain();
+    g.gain.value = 0;
+    c.connect(g); g.connect(output);
+    return { c, g, key: '' };
+  };
+  const room = { ctx, sec, decay, input, output, live: side(), idle: side(),
+                 target: '', tok: 0, busyUntil: 0, timer: null, gen: 0 };
+  roomWant(room, 0);
+  return room;
+}
+
+// Asks the room for the impulse its settings now describe, after delayMs (a
+// drag is debounced, so only the last of a burst is built). The settings are
+// read again when the delay runs out, so the last value is the one heard. The
+// transition's end is taken now, while it is still open. A setting that names
+// the impulse the room already has, or is already on its way to, returns
+// here and costs nothing, which is every preset that leaves reverb time alone.
+export function swapRoom(room, delayMs = 0) {
+  if (!room) return;
+  clearTimeout(room.timer);
+  room.timer = null;
+  if (roomKey(room) === room.target) return;
+  const end = glideEnd();
+  room.timer = setTimeout(() => { room.timer = null; roomWant(room, end); }, delayMs);
+}
+const roomKey = room => irKey(room.ctx.sampleRate, room.sec(), room.decay);
+
+// tok marks the newest request, so a build that finishes after the settings
+// have moved on is dropped rather than faded in.
+function roomWant(room, end) {
+  const sec = room.sec(), key = irKey(room.ctx.sampleRate, sec, room.decay);
+  if (key === room.target) return;
+  room.target = key;
+  const tok = ++room.tok;
+  if (key === room.live.key) return;
+  if (key === room.idle.key) { inSlot(() => roomPlace(room, tok, null, end), 0.5); return; }
+  getIR(room.ctx, sec, room.decay, buf =>
+    inSlot(() => roomPlace(room, tok, buf, end), assignCost(sec)));
+}
+
+function roomPlace(room, tok, buf, end) {
+  if (room.tok !== tok) return;
+  const ctx = room.ctx, now = ctx.currentTime;
+  // One crossfade at a time: until the last one lands, the idle side is
+  // still fading out and has to be left alone.
+  if (now < room.busyUntil) {
+    setTimeout(() => inSlot(() => roomPlace(room, tok, buf, end), buf ? assignCost(buf.duration) : 0.5),
+      Math.max(50, (room.busyUntil - now) * 1000 + 20));
+    return;
+  }
+  const incoming = room.idle, outgoing = room.live;
+  if (incoming.key !== room.target) {
+    // Expected the spare side to hold it and it does not: build it after all.
+    if (!buf) { room.target = ''; roomWant(room, end); return; }
+    // The one expensive line: Chrome partitions the impulse for FFT right
+    // here, which is why it runs alone in an idle slot.
+    incoming.c.buffer = buf;
+    incoming.key = room.target;
+  }
+  room.input.connect(incoming.c);
+  const dur = Math.max(ROOM_XFADE_S, end - now);
+  const gi = incoming.g.gain;
+  gi.cancelScheduledValues(now);
+  gi.setValueAtTime(0, now);
+  gi.linearRampToValueAtTime(1, now + dur);
+  anchorParam(outgoing.g.gain, now);
+  outgoing.g.gain.linearRampToValueAtTime(0, now + dur);
+  room.live = incoming; room.idle = outgoing; room.busyUntil = now + dur;
+  const gen = ++room.gen;
+  setTimeout(() => {
+    if (room.gen !== gen) return;
+    try { room.input.disconnect(outgoing.c); } catch (e) {}
+  }, dur * 1000 + 100);
+}
+
 // The active pip shape owns its own level and room. Everything downstream reads
 // through these three, so switching mode swaps the whole set at once and no
 // chirp control can write into a click value or the reverse.
@@ -61,21 +378,19 @@ export const pipRevTime = () => S.clickMode === 'chirp' ? S.chirpRevTime : S.cli
 export const pipModDepth  = () => S.clickMode === 'chirp' ? S.chirpModDepth  : S.clickModDepth;
 export const pipModPeriod = () => S.clickMode === 'chirp' ? S.chirpModPeriod : S.clickModPeriod;
 
+// Debounced, and crossfaded into the pip room rather than swapped under it.
+// Nothing is built when the live shape's reverb time is the one already in
+// the room, which is most shape changes and every preset that leaves it be.
 export function rebuildClickIR() {
-  if (!clickConv) return;
-  clearTimeout(irTimer);
-  irTimer = setTimeout(() => {
-    if (clickConv) clickConv.buffer = makeImpulse(pipRevTime(), 2.5);
-  }, 140);
+  swapRoom(clickRoom, 140);
 }
 
 export function applyReverbMix() {
   if (!harmDry) return;
-  const t = audioCtx.currentTime;
   // equal-power crossfade so the total stays level as reverb comes up
-  harmDry.gain.setTargetAtTime(Math.cos(S.harmReverb * Math.PI / 2), t, 0.05);
-  harmWet.gain.setTargetAtTime(Math.sin(S.harmReverb * Math.PI / 2) * 0.9, t, 0.05);
-  if (clickWet) clickWet.gain.setTargetAtTime(pipReverb() * 0.9, t, 0.05);
+  glideParam(harmDry.gain, Math.cos(S.harmReverb * Math.PI / 2), 0.05);
+  glideParam(harmWet.gain, Math.sin(S.harmReverb * Math.PI / 2) * 0.9, 0.05);
+  if (clickWet) glideParam(clickWet.gain, pipReverb() * 0.9, 0.05);
 }
 
 // Deliberately does not touch harmLevel. That param is owned by rampLevel,
@@ -93,6 +408,18 @@ export function applyHarmonics() {
   setParam('biHard',  S.biHardSwitch ? 1 : 0, 0.001);
   setParam('shimDepth',  S.shimDepth,   0.05);
   setParam('shimRate',   S.shimRate,    0.05);
+  applyPipLpf();
+}
+
+// The pip train's lowpass sweep (worklet.js). The worklet owns the motion and
+// the glide; this only hands it the settings.
+export function applyPipLpf() {
+  setParam('lpfOn',     S.pipLpfOn ? 1 : 0, 0.001);
+  setParam('lpfLo',     S.pipLpfLo,     0.05);
+  setParam('lpfHi',     S.pipLpfHi,     0.05);
+  setParam('lpfPeriod', S.pipLpfPeriod, 0.001);
+  setParam('lpfQ',      S.pipLpfQ,      0.05);
+  setParam('lpfWander', S.pipLpfWander, 0.05);
 }
 
 // A ramp with no preceding automation event has no defined start value and can
@@ -100,10 +427,24 @@ export function applyHarmonics() {
 // Anchoring the current value first makes every ramp actually ramp. Mixing
 // linearRamp and setTarget on one param does the same thing, so master volume
 // uses only this path.
+//
+// Inside a transition the ramp runs to the end of the window instead of over
+// dur, so the master glides with everything else. A start held for later
+// (the first fade in) is its own business and keeps its own timing.
 function rampVol(target, dur, startAt) {
   if (!volGain) return;
   const g = volGain.gain;
   const now = audioCtx.currentTime;
+  if (startAt === undefined) {
+    if (glideDepth > 0) {
+      anchorParam(g, now);
+      g.linearRampToValueAtTime(target, glideT1);
+      glideTarget.set(g, target);
+      return;
+    }
+    if (now < glideT1 && glideTarget.get(g) === target) return;
+  }
+  glideTarget.delete(g);
   const t = startAt !== undefined ? startAt : now;
   g.cancelScheduledValues(now);
   g.setValueAtTime(g.value, now);
@@ -140,6 +481,10 @@ function chirpSignature() {
   return [audioCtx.sampleRate, S.chirpLowHz, S.chirpHighHz, S.chirpComp, S.chirpTilt].join(':');
 }
 
+// The worklet crossfades from the table it has to the new one rather than
+// swapping it under a chirp that is sounding: over what is left of the window
+// during a transition, and over CHIRP_XF_S for a slider or a resend.
+const CHIRP_XF_S = 0.03;
 function sendChirp() {
   if (!node || !audioCtx) return;
   const buf = buildChirp({
@@ -149,7 +494,9 @@ function sendChirp() {
     comp:   S.chirpComp,
     tilt:   S.chirpTilt
   });
-  node.port.postMessage({ chirp: buf, sig: chirpSig }, [buf.buffer]);
+  const end = glideEnd();
+  const xf = end ? Math.max(CHIRP_XF_S, end - audioCtx.currentTime) : CHIRP_XF_S;
+  node.port.postMessage({ chirp: buf, sig: chirpSig, xf }, [buf.buffer]);
   chirpTries++;
   clearTimeout(chirpRetry);
   // Only worth retrying while the context is rendering, since a suspended one
@@ -185,69 +532,112 @@ export function setParam(name, value, glide = 0.02) {
   // out-of-range values get silently clamped by the engine, which hides real
   // bugs. Clamp here so the value sent is always the value meant.
   const v = Math.min(prm.maxValue, Math.max(prm.minValue, value));
-  prm.setTargetAtTime(v, audioCtx.currentTime, glide);
+  // glide is the time constant used outside a transition; inside one the
+  // parameter runs in a straight line to the end of the window
+  glideParam(prm, v, glide);
 }
 
 // Levels get an explicit linear ramp rather than an exponential approach, so
-// they start at exactly zero and arrive at exactly the target.
+// they start at exactly zero and arrive at exactly the target. Inside a
+// transition the ramp runs to the end of the window instead of over dur.
 function rampLevel(name, target, dur = 0.25, lead = 0) {
   if (!node) return;
   const prm = node.parameters.get(name);
   if (!prm) return;
-  const t = audioCtx.currentTime + lead;
+  const now = audioCtx.currentTime;
+  if (!lead) {
+    if (glideDepth > 0) {
+      anchorParam(prm, now);
+      prm.linearRampToValueAtTime(target, glideT1);
+      glideTarget.set(prm, target);
+      return;
+    }
+    if (now < glideT1 && glideTarget.get(prm) === target) return;
+  }
+  glideTarget.delete(prm);
+  const t = now + lead;
   prm.cancelScheduledValues(t);
   prm.setValueAtTime(prm.value, t);
   prm.linearRampToValueAtTime(target, t + dur);
 }
 
+// Each level carries its channel's mix gate (mixgate.js), so mute and solo
+// ride the same ramp as every other level change. The pulse's reverb send is
+// gated with the pulse itself, so a muted pulse leaves nothing feeding the
+// room and no tail behind it; the harmonics' room is fed from harmLevel's
+// output, so gating that level silences their reverb too.
+//
+// The click and the chirp are two voices in the worklet with a level and a
+// send each. Only the live shape's pair is ever above zero, so a change of
+// shape is the one pair ramping down while the other ramps up.
+const shapeVol  = chirp => Math.min(1, (chirp ? S.chirpVol : S.clickVol) * trimGain());
+const shapeLive = chirp => S.audioEnabled && S.clickOn && (S.clickMode === 'chirp') === chirp;
 const levelTargets = {
-  toneLevel:  () => S.audioEnabled && S.toneOn  ? S.toneVol  : 0,
-  clickLevel: () => S.audioEnabled && S.clickOn ? pipVol() : 0,
+  toneLevel:  () => S.audioEnabled && S.toneOn  ? S.toneVol * chanGate('fund') : 0,
+  clickLevel: () => shapeLive(false) ? shapeVol(false) * chanGate('pulse') : 0,
+  chirpLevel: () => shapeLive(true)  ? shapeVol(true)  * chanGate('pulse') : 0,
   // Harmonics are the tone's own overtones, not a source of their own. With the
   // sine tone off they have nothing to be harmonics of, so they follow it down.
   // The harmonics switch keeps its own state and comes back with the tone.
-  harmLevel:  () => S.audioEnabled && S.harmOn && S.toneOn ? S.harmVol : 0,
-  clickSend:  () => S.audioEnabled && S.clickOn ? pipVol() * pipReverb() : 0
+  harmLevel:  () => S.audioEnabled && S.harmOn && S.toneOn ? S.harmVol * chanGate('harm') : 0,
+  clickSend:  () => shapeLive(false) ? shapeVol(false) * S.clickReverb * chanGate('pulse') : 0,
+  chirpSend:  () => shapeLive(true)  ? shapeVol(true)  * S.chirpReverb * chanGate('pulse') : 0
 };
+const LEVEL_NAMES = Object.keys(levelTargets);
+// Every caller still speaks of the pulse as clickLevel and clickSend, one
+// level and one send whatever the shape, so each of those names moves its
+// chirp twin with it.
+const LEVEL_TWIN = { clickLevel: 'chirpLevel', clickSend: 'chirpSend' };
 
 // Ramps one level only. Touching a slider used to re-ramp every level at once,
 // which made the whole mix lurch whenever any one of them moved.
 export function applyLevel(name, dur = 0.12, lead = 0) {
   rampLevel(name, levelTargets[name](), dur, lead);
+  const twin = LEVEL_TWIN[name];
+  if (twin) rampLevel(twin, levelTargets[twin](), dur, lead);
 }
 
-// Switching the pip shape has to pass through silence.
+// A mute or solo anywhere in the mix re-ramps the four engine levels. Each
+// goes through applyLevel, so the gate glides in on the same short linear
+// ramp a fader move does and never steps.
+onChannelGates(() => {
+  applyLevel('toneLevel');
+  applyLevel('harmLevel');
+  applyLevel('clickLevel');
+  applyLevel('clickSend');
+});
+
+// Switching the pip shape is a crossfade between the two voices.
 //
-// chirpOn is a step and the level is a ramp, so flipping the shape first left
-// the first chirp sounding at the CLICK's level, which is around 20 dB louder.
-// One very loud chirp, then the ramp caught up. At 7.5 Hz a cycle is 133 ms and
-// the level ramp is 120 ms, so the overshoot lands square on the first transient
-// every time.
-//
-// Dropping to silence, swapping at the bottom and coming back up cannot
-// overshoot in either direction. It costs about 100 ms, inside which nothing
-// was going to sound anyway.
+// It used to have to pass through silence. With one shared level and a shape
+// flag, the flag was a step and the level a ramp, so the first chirp after a
+// switch sounded at the CLICK's level, around 20 dB louder, and the fix was
+// to dip to nothing, swap at the bottom and come back up. That dip is what a
+// preset heard as a hole. Now each shape has its own level (worklet.js): the
+// click ramps from its level to zero while the chirp ramps from zero to its
+// own, so neither can pass through the other's level and there is nothing
+// left for a dip to protect against. Inside a transition the whole exchange
+// rides the window; outside, it takes SHAPE_XFADE_S, about what the dip took.
+const SHAPE_XFADE_S = 0.1;
 export function setPipShape(mode, onSwapped) {
-  const swap = () => {
-    S.clickMode = mode;
-    setParam('chirpOn', mode === 'chirp' ? 1 : 0, 0.001);
-    if (mode === 'chirp') refreshChirp();
-    applyReverbMix();
-    if (clickConv) clickConv.buffer = makeImpulse(pipRevTime(), 2.5);
-    setParam('clickModDepth', pipModDepth(), 0.05);
-    setParam('clickModRate',  1 / pipModPeriod(), 0.05);
-    if (onSwapped) onSwapped();
-    applyLevel('clickLevel', 0.07);
-    applyLevel('clickSend',  0.07);
-  };
-  if (!node || !audioCtx) { S.clickMode = mode; if (onSwapped) onSwapped(); return; }
-  rampLevel('clickLevel', 0, 0.04);
-  rampLevel('clickSend',  0, 0.04);
-  setTimeout(swap, 55);
+  S.clickMode = mode;
+  if (!node || !audioCtx) { if (onSwapped) onSwapped(); return; }
+  // The table goes first so it is usually in hand before the chirp's level
+  // leaves zero; until it lands, the chirp voice plays the click's sine, as
+  // it always has.
+  if (mode === 'chirp') refreshChirp();
+  applyReverbMix();
+  rebuildClickIR();
+  setParam('clickModDepth', pipModDepth(), 0.05);
+  setParam('clickModRate',  1 / pipModPeriod(), 0.05);
+  if (onSwapped) onSwapped();
+  applyLevel('clickLevel', SHAPE_XFADE_S);
+  applyLevel('clickSend',  SHAPE_XFADE_S);
 }
 
 export function applyAudioShape(lead = 0) {
-  for (const name of Object.keys(levelTargets)) {
+  for (let i = 0; i < LEVEL_NAMES.length; i++) {
+    const name = LEVEL_NAMES[i];
     rampLevel(name, levelTargets[name](), lead ? 0.3 : 0.12, lead);
   }
   applyHarmonics();
@@ -288,12 +678,16 @@ export function ensureAudioGraph() {
       outputChannelCount: [2, 2, 1]   // 0: tone and pips, 1: harmonics, 2: pip reverb send
     });
     node.connect(volGain, 0);
+    if (!engineMetersOn) node.port.postMessage({ meters: false });
 
     // The processor reports which chirp table it is actually holding, so a lost
     // post can be told apart from a delivered one.
     node.port.onmessage = e => {
-      if (e.data && e.data.peaks) {
-        [enginePk.tone, enginePk.pulse, enginePk.harm] = e.data.peaks;
+      const d = e.data;
+      if (d && d.peaks) {
+        // three plain fields rather than an array destructured through the
+        // iterator protocol: this arrives every 20 ms
+        enginePk.tone = d.tone; enginePk.pulse = d.pulse; enginePk.harm = d.harm;
         enginePk.at = performance.now();
         return;
       }
@@ -314,25 +708,28 @@ export function ensureAudioGraph() {
     // carry the entrainment.
     harmDry = audioCtx.createGain();
     harmWet = audioCtx.createGain();
+    // Its impulse never changes, but it is still built off the main thread
+    // and handed over in an idle slot (see impulse responses, above); the
+    // harmonics' wet side is simply silent until it lands.
     convolver = audioCtx.createConvolver();
-    convolver.buffer = makeImpulse(2.6, 2.5);
+    getIR(audioCtx, 2.6, 2.5, buf => inSlot(() => { convolver.buffer = buf; }, assignCost(2.6)));
     node.connect(harmDry, 1);
     node.connect(convolver, 1);
     convolver.connect(harmWet);
     harmDry.connect(volGain);
     harmWet.connect(volGain);
 
-    // pips get their own send into the same room, so the dry pip stays sharp
+    // pips get their own send into a room of their own, so the dry pip stays
+    // sharp; a pair of convolvers, so its impulse can change under a tail
     clickWet = audioCtx.createGain();
-    clickConv = audioCtx.createConvolver();
-    clickConv.buffer = makeImpulse(pipRevTime(), 2.5);
-    node.connect(clickConv, 2);
-    clickConv.connect(clickWet);
+    clickRoom = createRoom(audioCtx, pipRevTime, 2.5);
+    node.connect(clickRoom.input, 2);
+    clickRoom.output.connect(clickWet);
     clickWet.connect(volGain);
 
     applyReverbMix();
 
-    for (const nm of ['toneLevel','clickLevel']) {
+    for (const nm of ['toneLevel','clickLevel','chirpLevel']) {
       node.parameters.get(nm).setValueAtTime(0, audioCtx.currentTime);
     }
     setParam('rate',    S.amLinked ? S.effFreq : S.amRate, 0.001);
@@ -340,7 +737,6 @@ export function ensureAudioGraph() {
     setParam('pipMs',   S.pipMs,     0.001);
 
     S.workletReady = true;
-    setParam('chirpOn', S.clickMode === 'chirp' ? 1 : 0, 0.001);
     refreshChirp();
   })().catch(e => {
     console.warn('audio graph failed:', e);
@@ -349,12 +745,20 @@ export function ensureAudioGraph() {
   return graphPromise;
 }
 
+// Whether the Audio layer is switched on. v0 keeps that in its checkbox;
+// v1 has no DOM and keeps it in S.audioOnBoot (unset means on, as the
+// checkbox ships checked). Reading through here lets both share this module.
+function audioLayerChecked() {
+  const el = $('lAudio');
+  return el ? el.checked : S.audioOnBoot !== false;
+}
+
 // Wakes the output device. Everything is held at hard silence for a moment
 // afterwards so the wake transient lands in silence rather than underneath
 // whatever is about to fade in.
 export async function warmDevice() {
   // nothing to wake for if audio is not in play
-  if (!$('lAudio').checked && !S.audioEnabled) return;
+  if (!audioLayerChecked() && !S.audioEnabled) return;
   if (deviceWarm) return;
 
   // Resume FIRST, synchronously, while the gesture that called us is still the
@@ -391,16 +795,22 @@ export function audioOn() {
 
 async function startAudio() {
   S.audioEnabled = true;
+  // A preset that switches audio on opens its transition before this awaits
+  // anything, and the ramps below come after; the window's end carries over.
+  const end = glideEnd();
   await warmDevice();
   await ensureAudioGraph();          // warmDevice can bail before the graph exists
   if (!S.workletReady) return;
   const firstStart = !audioHasPlayed;
   audioHasPlayed = true;
   const lead = firstStart ? 0.9 : 0;
-  applyAudioShape(lead);
-  // The first fade matches the visual one: the field and the sound arrive
-  // together over two seconds rather than the sound landing first.
-  rampVol(S.running ? S.volume : 0, firstStart ? 2.0 : 0.35, audioCtx.currentTime + lead);
+  continueGlide(end, () => {
+    applyAudioShape(lead);
+    // The first fade matches the visual one: the field and the sound arrive
+    // together over two seconds rather than the sound landing first.
+    rampVol(S.running ? S.volume : 0, firstStart ? 2.0 : 0.35,
+            firstStart ? audioCtx.currentTime + lead : undefined);
+  });
 }
 
 // Deliberately keeps the context and the worklet alive. Closing and rebuilding
@@ -420,7 +830,7 @@ export function applyAudioGain() {
   // This is the only place that knows the session is actually running, so it is
   // the right place to be self-healing about it.
   if (!audioHasPlayed) {
-    if (S.running && $('lAudio').checked) audioOn();
+    if (S.running && audioLayerChecked()) audioOn();
     return;
   }
   // The very first time the volume actually comes up it takes the same two

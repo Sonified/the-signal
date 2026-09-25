@@ -6,17 +6,87 @@ import { setColorFromPicker, bandHue } from './color.js';
 import { seedParticles, updateRings, updateParticles } from './sim.js';
 import { initRenderer } from './renderer.js';
 import { applySettings } from './settings.js';
-import { initUI, updateReadouts, resize, syncAmbControls } from './ui.js';
+import { initUI, updateReadouts, resize, syncAmbControls, toggle } from './ui.js';
 import { ensureAudioGraph, warmDevice, audioOn, setAmRate, hasNode } from './audio.js';
 import { initText, updateText } from './text.js';
 import { initAmbMixer } from './ambience-mixer.js';
-import { startStrobeWorker, strobeInWorker, syncWorkerInset } from './strobe-bridge.js';
+import { startStrobeWorker, strobeInWorker, syncWorkerInset, syncWorkerGuardSim, setWorkerGuardHandler, resetWorkerRefresh } from './strobe-bridge.js';
+import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from './panel-guard.js';
+import { displayListenScreen, displaySampleScreen, displaySummary, DISPLAY_CHANGED } from './display-watch.js';
 
 let lastInset = -1;
+
+// ---------- panel guard ----------
+// js/panel-guard.js decides; this is v0's half of acting on it. A trip stops
+// the session through the same toggle() the space bar and the play button
+// use, so the audio, the music and the atmosphere all stop with it, then
+// shows a card in the style of the opening safety notice. The card goes on a
+// dismiss, on Escape, or on the next start; a start with the same setting
+// simply trips again. With the strobe in its worker the step runs over there
+// and the trip arrives through strobe-bridge.js, landing in the same place.
+const guardEl = $('guard');
+let guardShown = false;
+function guardPause() {
+  if (S.running) toggle();
+  showGuardCard(guardMessage());
+  console.warn('panel guard ' + guardSummary());
+}
+function showGuardCard(m) {
+  $('guardTitle').textContent = m.title;
+  $('guardBody').textContent = m.body;
+  $('guardNote').textContent = m.note;
+  $('guardNote').hidden = !m.note;
+  guardEl.hidden = false;
+  guardShown = true;
+  // the opening line sits in the same place; it comes back when the card goes
+  hint.classList.add('hide');
+}
+function hideGuard() {
+  guardEl.hidden = true;
+  guardShown = false;
+  if (!S.running) hint.classList.remove('hide');
+}
+$('guardOk').addEventListener('click', hideGuard);
+window.addEventListener('keydown', e => { if (guardShown && e.key === 'Escape') hideGuard(); });
+setWorkerGuardHandler(guardPause);
+
+// ---------- display tripwire ----------
+// js/display-watch.js explains why: a window dragged onto another screen can
+// keep being handed frames at the old screen's rate, and every safety number
+// here is derived from that rate. So the screen's identity is read every
+// frame, and on any change the refresh measurement, the frame lock's count
+// and the panel guard's integrators are all thrown away (on the strobe
+// worker's side too), and a running session stops through the same toggle a
+// guard trip uses, with its own card. The next start measures the new screen
+// from zero. The read is a handful of property reads and compares.
+function displayPause() {
+  const oldHz = S.refreshHz;
+  S.frameTimes.length = 0;
+  S.refreshHz = 0;
+  S.framesPerCycle = 0;
+  S.frameIdx = 0;
+  S.lastT = null;
+  guardReset();
+  resetWorkerRefresh();
+  // The pause-and-notice on a screen change is switched off by Robert's call
+  // (2026-09-25): everything still re-measures from zero, and the panel
+  // guard, judging by the new display, pauses on its own if the new panel is
+  // at risk. Uncomment to bring the immediate pause back.
+  // if (S.running) {
+  //   toggle();
+  //   showGuardCard(DISPLAY_CHANGED);
+  // }
+  console.warn('display changed: ' + displaySummary(oldHz, false));
+}
+displayListenScreen();
+displaySampleScreen();
 
 // ---------- main loop ----------
 function tick(t) {
   requestAnimationFrame(tick);
+
+  // first, so a frame on a new screen never runs on the old screen's numbers
+  if (displaySampleScreen()) displayPause();
 
   if (S.lastT === null) S.lastT = t;
   let dt = (t - S.lastT)/1000; S.lastT = t;
@@ -26,6 +96,9 @@ function tick(t) {
   // other side and arrive here through strobe-bridge.js, so the measurements
   // below would be describing the wrong thread and are left to the worker.
   const inWorker = strobeInWorker();
+
+  // a start (with the card still up) puts the guard's card away
+  if (guardShown && S.running) hideGuard();
 
   // frame-health tracking: a dropped frame is a lost luminance sample,
   // which is exactly what an uneven strobe looks like
@@ -79,12 +152,14 @@ function tick(t) {
   // centre themselves in CSS from it, and an inline `left` would beat that rule
   // and pin them to the drawer's edge instead. Set on the two elements, not on
   // the root: a property on the root invalidates style for the whole page on
-  // every frame of the drawer's slide, and only these two read it.
+  // every frame of the drawer's slide, and only these read it (the panel
+  // guard's card centres the same way).
   if (S.edgeInset !== lastInset) {
     lastInset = S.edgeInset;
     const off = S.edgeInset + 'px';
     hint.style.setProperty('--edge-inset', off);
     $('word').style.setProperty('--edge-inset', off);
+    guardEl.style.setProperty('--edge-inset', off);
     syncWorkerInset();
   }
 
@@ -189,6 +264,10 @@ function tick(t) {
   const lum = S.running ? shape(S.phase) : 0;
   if (S.running) { S.litLog.push(lum > 0.5 ? 1 : 0); if (S.litLog.length > 120) S.litLog.shift(); }
 
+  // The panel guard watches the level this frame is about to show; a trip
+  // stops the session before the next one.
+  if (guardStep(t, lum)) guardPause();
+
   const ts = t/1000;
   updateRings(dt, ts);
   updateParticles(dt);
@@ -199,6 +278,24 @@ function tick(t) {
 }
 
 // ---------- boot ----------
+// Console handle for the panel guard, and its test switch. With no 60 Hz
+// display to hand, signalGuard.simulate(60) makes the guard model one (see
+// js/panel-guard.js); simulate(0) goes back to the real display. Setting
+// localStorage 'signal_guard_test' to a refresh rate ('60', or '1' for 60)
+// does the same from boot.
+function simulateGuard(hz) {
+  guardSimulate(hz);
+  syncWorkerGuardSim(hz);
+  return guard.simHz ? 'simulating a ' + guard.simHz + ' Hz display' : 'measuring the real display';
+}
+window.signalGuard = { simulate: simulateGuard, get state() { return guard; } };
+{
+  let v = null;
+  try { v = localStorage.getItem('signal_guard_test'); } catch {}
+  const hz = v === '1' ? 60 : parseFloat(v);
+  if (hz > 0) simulateGuard(hz);
+}
+
 initUI();
 applySettings();
 syncAmbControls();

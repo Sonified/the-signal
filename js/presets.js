@@ -1,6 +1,7 @@
 import { S } from './state.js';
 import { $ } from './dom.js';
 import { saveSettings } from './settings.js';
+import { beginGlide, endGlide } from './audio.js';
 
 // Presets are declarative and drive the real inputs, firing real events, so
 // every readout, save hook and audio side effect behaves exactly as if the
@@ -211,7 +212,16 @@ export const PRESETS = {
   }
 };
 
+// Every handler below runs synchronously inside this call, so wrapping it in
+// a transition makes each audio change it causes glide in a straight line
+// over one shared window instead of landing at once (see beginGlide in
+// audio.js). v0's strobe frequency still steps; only v1 glides the field.
 export function applyPreset(name) {
+  beginGlide();
+  try { applyPresetNow(name); } finally { endGlide(); }
+}
+
+function applyPresetNow(name) {
   const P = PRESETS[name];
   if (!P) return;
 

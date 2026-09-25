@@ -32,18 +32,26 @@ export function saveSettings() {
       textOpacityVarPeriod: S.textOpacityVarPeriod,
       textColorMode: S.textColorMode,
       musicOn: S.musicOn, pianoVol: S.pianoVol, bedVol: S.bedVol,
-      pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP,
+      bedLpfOn: S.bedLpfOn, bedLpfLo: S.bedLpfLo, bedLpfHi: S.bedLpfHi, bedLpfPeriod: S.bedLpfPeriod,
+      bedLpfQ: S.bedLpfQ, bedLpfWander: S.bedLpfWander, bedLpfSlope: S.bedLpfSlope, bedDetune: S.bedDetune,
+      bedRevOn: S.bedRevOn, bedRevLevel: S.bedRevLevel, bedVerbOn: S.bedVerbOn, bedVerbLo: S.bedVerbLo, bedVerbHi: S.bedVerbHi, bedVerbPeriod: S.bedVerbPeriod,
+      bedVerbWander: S.bedVerbWander,
+      pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP, musicRevOn: S.musicRevOn, bedOn: S.bedOn, pianoOn: S.pianoOn, arpOn: S.arpOn, arpVol: S.arpVol, arpRate: S.arpRate, arpWave: S.arpWave, arpAtk: S.arpAtk, arpDec: S.arpDec, arpOct: S.arpOct, arpRev: S.arpRev, arpSpread: S.arpSpread,
+      arpSwOn: S.arpSwOn, arpSwLo: S.arpSwLo, arpSwHi: S.arpSwHi, arpSwPeriod: S.arpSwPeriod, arpSwWander: S.arpSwWander,
       pianoDensity: S.pianoDensity, pianoCentre: S.pianoCentre,
       pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
+      pianoRubato: S.pianoRubato,
       cloudsOn: S.cloudsOn, cloudVol: S.cloudVol, cloudDensity: S.cloudDensity,
       cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb, cloudRevTime: S.cloudRevTime,
-      ambOn: S.ambOn, ambVol: S.ambVol, ambDrift: S.ambDrift,
+      ambOn: S.ambOn, ambVol: S.ambVol, ambDrift: S.ambDrift, ambDriftFadeS: S.ambDriftFadeS,
       ambReverb: S.ambReverb, ambRevTime: S.ambRevTime,
       ambLayers: S.ambLayers,
       pipTrimDb: S.pipTrimDb, biOn: S.biOn, chirpVol: S.chirpVol, chirpReverb: S.chirpReverb, chirpRevTime: S.chirpRevTime,
       chirpModDepth: S.chirpModDepth, chirpModPeriod: S.chirpModPeriod,
       clickMode: S.clickMode, chirpLowHz: S.chirpLowHz, chirpHighHz: S.chirpHighHz,
       chirpComp: S.chirpComp, chirpTilt: S.chirpTilt,
+      pipLpfOn: S.pipLpfOn, pipLpfLo: S.pipLpfLo, pipLpfHi: S.pipLpfHi, pipLpfPeriod: S.pipLpfPeriod,
+      pipLpfQ: S.pipLpfQ, pipLpfWander: S.pipLpfWander,
       textRestFreq: S.textRestFreq, textRestSec: S.textRestSec, textRestVar: S.textRestVar,
       depthVar: S.depthVar, varPeriod: S.varPeriod, panelOpen: S.panelOpen,
       freqDrift: S.freqDrift, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
@@ -69,6 +77,29 @@ export function saveSettings() {
   // the one place that is guaranteed to see all of them, presets included.
   // A no-op unless the strobe is running in its worker.
   syncWorker();
+}
+
+// The pip filter's v0 sliders run 0-1000 on a log track (the low end of a
+// frequency or a time wants the travel); S keeps real units. Shared with
+// ui.js, which binds the inputs, so the mapping lives in one place.
+export const LPF_LOG = { pipLpfLo: [40, 4000], pipLpfHi: [500, 18000],
+                         pipLpfPeriod: [2, 300], pipLpfQ: [0.5, 6] };
+export const lpfFromPos = (k, pos) => { const [a, b] = LPF_LOG[k]; return a * Math.pow(b / a, pos / 1000); };
+export const lpfToPos = (k, v) => { const [a, b] = LPF_LOG[k]; return Math.round(1000 * Math.log(v / a) / Math.log(b / a)); };
+export const fmtLpfHz = hz => hz >= 1000 ? (hz / 1000).toFixed(hz >= 10000 ? 1 : 2) + ' kHz' : Math.round(hz) + ' Hz';
+export const fmtLpfSweep = sec => sec < 90 ? Math.round(sec) + 's'
+  : Math.floor(sec / 60) + 'm ' + String(Math.round(sec % 60)).padStart(2, '0') + 's';
+
+export function paintPipLpf() {
+  $('pipLpfToggle').classList.toggle('on', S.pipLpfOn);
+  $('pipLpfToggle').textContent = S.pipLpfOn ? 'On' : 'Off';
+  for (const k of ['pipLpfLo', 'pipLpfHi', 'pipLpfPeriod', 'pipLpfQ']) $(k).value = lpfToPos(k, S[k]);
+  $('pipLpfWander').value = Math.round(S.pipLpfWander * 100);
+  $('pipLpfLoVal').textContent = fmtLpfHz(S.pipLpfLo);
+  $('pipLpfHiVal').textContent = fmtLpfHz(S.pipLpfHi);
+  $('pipLpfPeriodVal').textContent = fmtLpfSweep(S.pipLpfPeriod);
+  $('pipLpfWanderVal').textContent = Math.round(S.pipLpfWander * 100);
+  $('pipLpfQVal').textContent = S.pipLpfQ.toFixed(2);
 }
 
 export function applySettings() {
@@ -231,8 +262,8 @@ export function applySettings() {
   if (typeof s.ambOn   === 'boolean') S.ambOn   = s.ambOn;
   if (typeof s.ambDrift === 'boolean') S.ambDrift = s.ambDrift;
   if (Array.isArray(s.ambLayers)) S.ambLayers = normalizeAmbLayers(s.ambLayers);
-  ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','pianoDensity','pianoCentre',
-   'pianoSpread','pianoHold','pianoBass','ambVol','ambReverb','ambRevTime',
+  ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','arpVol','arpRate','arpAtk','arpDec','arpOct','arpRev','arpSpread','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
+   'pianoSpread','pianoHold','pianoRubato','pianoBass','ambVol','ambReverb','ambRevTime','ambDriftFadeS',
    'cloudVol','cloudDensity','cloudPhrase','cloudReverb','cloudRevTime'].forEach(k => num(k));
   {
     const pc = (id, v) => { const e = $(id); if (e) e.value = v; };
@@ -247,6 +278,7 @@ export function applySettings() {
     pc('pianoCentre', S.pianoCentre);                 tx('pianoCentreVal', N[S.pianoCentre%12]+(Math.floor(S.pianoCentre/12)-1));
     pc('pianoSpread', Math.round(S.pianoSpread*100)); tx('pianoSpreadVal', Math.round(S.pianoSpread*100));
     pc('pianoHold', Math.round(S.pianoHold*100));     tx('pianoHoldVal', Math.round(S.pianoHold*100));
+    pc('pianoRubato', Math.round(S.pianoRubato*100)); tx('pianoRubatoVal', Math.round(S.pianoRubato*100));
     pc('pianoBass', S.pianoBass);                     tx('pianoBassVal', S.pianoBass);
     pc('ambVol', Math.round(S.ambVol*100));           tx('ambVolVal', Math.round(S.ambVol*100));
     pc('ambReverb', Math.round(S.ambReverb*100));     tx('ambRevVal', Math.round(S.ambReverb*100));
@@ -282,6 +314,22 @@ export function applySettings() {
   if (typeof s.clickVol === 'number')       S.clickVol       = s.clickVol;
   if (typeof s.chirpModDepth === 'number')  S.chirpModDepth  = s.chirpModDepth;
   if (typeof s.chirpModPeriod === 'number') S.chirpModPeriod = s.chirpModPeriod;
+  if (typeof s.pipLpfOn === 'boolean')     S.pipLpfOn     = s.pipLpfOn;
+  for (const k of ['pipLpfLo','pipLpfHi','pipLpfPeriod','pipLpfQ','pipLpfWander'])
+    if (typeof s[k] === 'number') S[k] = s[k];
+  if (typeof s.bedLpfOn === 'boolean')  S.bedLpfOn  = s.bedLpfOn;
+  if (typeof s.bedVerbOn === 'boolean') S.bedVerbOn = s.bedVerbOn;
+  if (typeof s.bedRevOn === 'boolean') S.bedRevOn = s.bedRevOn;
+  if (typeof s.arpOn === 'boolean') S.arpOn = s.arpOn;
+  if (typeof s.musicRevOn === 'boolean') S.musicRevOn = s.musicRevOn;
+  if (typeof s.bedOn === 'boolean') S.bedOn = s.bedOn;
+  if (typeof s.pianoOn === 'boolean') S.pianoOn = s.pianoOn;
+  if (typeof s.arpSwOn === 'boolean') S.arpSwOn = s.arpSwOn;
+  if (['sine', 'triangle', 'sawtooth', 'square'].includes(s.arpWave)) S.arpWave = s.arpWave;
+  if (typeof s.bedRevLevel === 'number') S.bedRevLevel = s.bedRevLevel;
+  for (const k of ['bedLpfLo','bedLpfHi','bedLpfPeriod','bedLpfQ','bedLpfWander','bedLpfSlope','bedDetune',
+                   'bedVerbLo','bedVerbHi','bedVerbPeriod','bedVerbWander'])
+    if (typeof s[k] === 'number') S[k] = s[k];
   if (typeof s.shimDepth === 'number') { S.shimDepth = s.shimDepth; $('shimDepth').value = Math.round(S.shimDepth*100); $('shimDepthVal').textContent = Math.round(S.shimDepth*100); }
   if (typeof s.shimRate === 'number')  { S.shimRate = s.shimRate; $('shimRate').value = S.shimRate; $('shimRateVal').textContent = S.shimRate.toFixed(2); }
   if (typeof s.harmReverb === 'number')  { S.harmReverb = s.harmReverb; $('harmReverb').value = Math.round(S.harmReverb*100); $('harmRevVal').textContent = Math.round(S.harmReverb*100); }
@@ -326,8 +374,10 @@ export function applySettings() {
   document.querySelectorAll('.pip-ctl').forEach(el => {
     const only = el.classList.contains('chirp-only') ? 'chirp'
                : el.classList.contains('click-only') ? 'click' : null;
-    el.hidden = !S.clickOn || (only !== null && only !== S.clickMode);
+    el.hidden = !S.clickOn || (only !== null && only !== S.clickMode)
+             || (el.classList.contains('lpf-ctl') && !S.pipLpfOn);
   });
+  paintPipLpf();
   // the shared five read whichever set the restored mode points at
   {
     const c = S.clickMode === 'chirp';
