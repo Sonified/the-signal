@@ -451,7 +451,9 @@ const ENV_DEFAULTS = {
 ENV_DEFAULTS.ooo = { on: true, aA: 0.5, aD: 1.0, aS: 90, aR: 2.2,
                      fOn: false, cut: 18000, q: 0.7, fAmt: 0, fA: 0.5, fD: 1.0, fS: 50, fR: 1.0,
                      hpOn: false, hp: 20,
-                     len: 0 };
+                     // a loop has no natural end, so "held" here means forever;
+                     // a sung phrase length is the default instead
+                     len: 6 };
 ENV_DEFAULTS.aah = { ...ENV_DEFAULTS.ooo };
 
 const allEnv = (() => {
@@ -843,8 +845,9 @@ function release(written) {
     s.start();
   }
   // The envelope's own release when there is one, otherwise a damper on the
-  // piano and a long breath on the clouds.
-  if (!sustain) stopVoice(v);
+  // piano and a long breath on the clouds. The pedal lets a note ring out its
+  // natural decay, but a looping voice has none, so key-up always releases it.
+  if (!sustain || I.loop) stopVoice(v);
 }
 
 // A window onto the live state. This is a sandbox instrument, and being able to
