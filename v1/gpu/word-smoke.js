@@ -14,7 +14,7 @@
 // Only ARRIVAL is recorded, because only arrival needs time reversal: the
 // recording slot holds the NEXT word's dissolution (words.js picks a word
 // ahead for this), replayed backward. DEPARTURE is simulated LIVE during
-// the fade-out itself, at 1024x512 — near display resolution — stepping
+// the fade-out itself, at three quarters of the viewport's css size, stepping
 // the same physics in real time: no snapshots, no interpolation, every
 // frame a real step, and every smoke dial acts on the departure happening
 // right now. Each recording and each live departure rolls its own flow
@@ -29,7 +29,7 @@
 // No per-frame allocations, no synchronous readback, nothing made until
 // the effect is first used. Memory: the arrival recording, 640x320
 // rgba16float x 48 layers (~79 MB), its ping-pong pair, and the live
-// departure pair at 1024x512 (~16 MB).
+// departure pair at 3/4 of the viewport (~9 MB on a laptop screen).
 
 import { S } from '../../js/state.js';
 import { PREP_WGSL, PLAY_WGSL, WIND_WGSL } from './word-smoke.wgsl.js';
@@ -38,12 +38,14 @@ import { wordState, fadeOutMs } from '../core/words.js';
 import { W, TRACK } from '../ui/theme.js';
 
 const TEX_W = 640, TEX_H = 320;
-const LIVE_W = 1536, LIVE_H = 768;
+// The live departure's field is the viewport at three quarters of its css
+// size, so it keeps the screen's own shape (a portrait phone gets a tall
+// field, not a stretched wide one) and scales its cost with the screen.
+const LIVE_SCALE = 0.75;
 // The baked wind's grids (see windMain): a third of each field's resolution,
 // ample for a wind whose finest eddies span several of its texels.
 const WIND_DIV = 3;
 const WP_W = Math.ceil(TEX_W / WIND_DIV), WP_H = Math.ceil(TEX_H / WIND_DIV);
-const WL_W = Math.ceil(LIVE_W / WIND_DIV), WL_H = Math.ceil(LIVE_H / WIND_DIV);
 const SNAPS = 48;
 const SLOTS = 1, ARR = 0;
 const LIVE_DT = 1 / 120;
@@ -63,13 +65,15 @@ const LETTER_FLOATS = MAX_CLOUD_LETTERS * 12;
 // Bumped on every behaviour change, printed on load: the console proves
 // which build the page is actually running, so a stale worker-module cache
 // can never again masquerade as "nothing changed".
-const SMOKE_BUILD = 11;
+const SMOKE_BUILD = 12;
 console.log('[smoke] build', SMOKE_BUILD);
 
 export function createWordSmoke(device, format, text) {
   let made = false, playing = false, playSlot = -1;
   let densA = null, densB = null, recTex = null;
-  let liveA = null, liveB = null;
+  let liveA = null, liveB = null, windLive = null;
+  let liveW = 0, liveH = 0, wlW = 0, wlH = 0;
+  let prepBgl = null, windBgl = null, playBgl = null, samp = null, atlasView = null;
   let uniBufs = null, compBuf = null, rasterBuf = null, letterBuf = null;
   let liveUni = null, liveRasterBuf = null, liveCompBuf = null;
   let rasterPipe = null, simPipe = null, playPipe = null;
@@ -130,25 +134,16 @@ export function createWordSmoke(device, format, text) {
       label: 'wordsmoke.recordings', size: [TEX_W, TEX_H, SNAPS * SLOTS], format: 'rgba16float',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
     });
-    const mkLive = label => device.createTexture({
-      label, size: [LIVE_W, LIVE_H, 1], format: 'rgba16float',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING
-    });
-    liveA = mkLive('wordsmoke.live.a');
-    liveB = mkLive('wordsmoke.live.b');
     const mkWind = (label, w, h) => device.createTexture({
       label, size: [w, h, 1], format: 'rgba16float',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING
     });
     const windPrepV = mkWind('wordsmoke.wind.prep', WP_W, WP_H).createView();
-    const windLiveV = mkWind('wordsmoke.wind.live', WL_W, WL_H).createView();
     liveCompBuf = device.createBuffer({ label: 'wordsmoke.uni.liveplay', size: UNI_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     const dens = [densA.createView(), densB.createView()];
-    const liveV = [liveA.createView({ dimension: '2d' }), liveB.createView({ dimension: '2d' })];
-    const liveArr = [liveA.createView({ dimension: '2d-array' }), liveB.createView({ dimension: '2d-array' })];
     const recView = recTex.createView({ dimension: '2d-array' });
-    const atlasView = text.texture.createView();
-    const samp = device.createSampler({
+    atlasView = text.texture.createView();
+    samp = device.createSampler({
       magFilter: 'linear', minFilter: 'linear',
       addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge'
     });
@@ -168,7 +163,7 @@ export function createWordSmoke(device, format, text) {
 
     const prepMod = device.createShaderModule({ label: 'wordsmoke.prep.wgsl', code: PREP_WGSL });
     check(prepMod, 'wordsmoke.prep.wgsl');
-    const prepBgl = device.createBindGroupLayout({
+    prepBgl = device.createBindGroupLayout({
       label: 'wordsmoke.prep.bgl',
       entries: [
         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -206,29 +201,12 @@ export function createWordSmoke(device, format, text) {
         label: 'wordsmoke.sim.bind.' + r + '.' + p, layout: prepBgl, entries: prepEntries(uniBufs[r], p)
       })));
     }
-    // the live departure runs the same pipelines over its own hi-res pair
-    const liveEntries = (buf, p) => [
-      { binding: 0, resource: { buffer: buf } },
-      { binding: 1, resource: liveV[p] },
-      { binding: 2, resource: samp },
-      { binding: 3, resource: liveV[1 - p] },
-      { binding: 4, resource: atlasView },
-      { binding: 5, resource: { buffer: letterBuf } },
-      { binding: 6, resource: windLiveV }
-    ];
-    liveRasterBind = device.createBindGroup({ label: 'wordsmoke.live.raster.bind', layout: prepBgl, entries: liveEntries(liveRasterBuf, 1) });
-    liveSimBinds = [];
-    for (let r = 0; r < MAX_LIVE_STEPS; r++) {
-      liveSimBinds.push([0, 1].map(p => device.createBindGroup({
-        label: 'wordsmoke.live.sim.bind.' + r + '.' + p, layout: prepBgl, entries: liveEntries(liveUni[r], p)
-      })));
-    }
 
     // the baked wind: one dispatch before each step, reading that step's
     // own uniforms (region, time, size, turbulence, seed)
     const windMod = device.createShaderModule({ label: 'wordsmoke.wind.wgsl', code: WIND_WGSL });
     check(windMod, 'wordsmoke.wind.wgsl');
-    const windBgl = device.createBindGroupLayout({
+    windBgl = device.createBindGroupLayout({
       label: 'wordsmoke.wind.bgl',
       entries: [
         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -240,16 +218,11 @@ export function createWordSmoke(device, format, text) {
       layout: device.createPipelineLayout({ label: 'wordsmoke.wind.layout', bindGroupLayouts: [windBgl] }),
       compute: { module: windMod, entryPoint: 'windMain' }
     });
-    const windBind = (label, buf, view) => device.createBindGroup({
-      label, layout: windBgl,
-      entries: [{ binding: 0, resource: { buffer: buf } }, { binding: 1, resource: view }]
-    });
     windPrepBinds = uniBufs.map((b, r) => windBind('wordsmoke.wind.prep.' + r, b, windPrepV));
-    windLiveBinds = liveUni.map((b, r) => windBind('wordsmoke.wind.live.' + r, b, windLiveV));
 
     const playMod = device.createShaderModule({ label: 'wordsmoke.play.wgsl', code: PLAY_WGSL });
     check(playMod, 'wordsmoke.play.wgsl');
-    const playBgl = device.createBindGroupLayout({
+    playBgl = device.createBindGroupLayout({
       label: 'wordsmoke.play.bgl',
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
@@ -282,6 +255,49 @@ export function createWordSmoke(device, format, text) {
         { binding: 4, resource: { buffer: letterBuf } }
       ]
     });
+  }
+
+  function windBind(label, buf, view) {
+    return device.createBindGroup({
+      label, layout: windBgl,
+      entries: [{ binding: 0, resource: { buffer: buf } }, { binding: 1, resource: view }]
+    });
+  }
+
+  // The live departure's field, sized to the viewport (LIVE_SCALE) when a
+  // departure begins; a resize reaches the next departure, never the one
+  // flowing now. Same pipelines as the recordings, its own textures.
+  function sizeLive() {
+    const w = Math.max(8, Math.round(cssW * LIVE_SCALE));
+    const h = Math.max(8, Math.round(cssH * LIVE_SCALE));
+    if (w === liveW && h === liveH) return;
+    if (liveA) { liveA.destroy(); liveB.destroy(); windLive.destroy(); }
+    liveW = w; liveH = h;
+    wlW = Math.ceil(w / WIND_DIV); wlH = Math.ceil(h / WIND_DIV);
+    const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING;
+    liveA = device.createTexture({ label: 'wordsmoke.live.a', size: [w, h, 1], format: 'rgba16float', usage });
+    liveB = device.createTexture({ label: 'wordsmoke.live.b', size: [w, h, 1], format: 'rgba16float', usage });
+    windLive = device.createTexture({ label: 'wordsmoke.wind.live', size: [wlW, wlH, 1], format: 'rgba16float', usage });
+    const liveV = [liveA.createView({ dimension: '2d' }), liveB.createView({ dimension: '2d' })];
+    const liveArr = [liveA.createView({ dimension: '2d-array' }), liveB.createView({ dimension: '2d-array' })];
+    const windLiveV = windLive.createView();
+    const liveEntries = (buf, p) => [
+      { binding: 0, resource: { buffer: buf } },
+      { binding: 1, resource: liveV[p] },
+      { binding: 2, resource: samp },
+      { binding: 3, resource: liveV[1 - p] },
+      { binding: 4, resource: atlasView },
+      { binding: 5, resource: { buffer: letterBuf } },
+      { binding: 6, resource: windLiveV }
+    ];
+    liveRasterBind = device.createBindGroup({ label: 'wordsmoke.live.raster.bind', layout: prepBgl, entries: liveEntries(liveRasterBuf, 1) });
+    liveSimBinds = [];
+    for (let r = 0; r < MAX_LIVE_STEPS; r++) {
+      liveSimBinds.push([0, 1].map(p => device.createBindGroup({
+        label: 'wordsmoke.live.sim.bind.' + r + '.' + p, layout: prepBgl, entries: liveEntries(liveUni[r], p)
+      })));
+    }
+    windLiveBinds = liveUni.map((b, r) => windBind('wordsmoke.wind.live.' + r, b, windLiveV));
     playBindLive = [0, 1].map(p => device.createBindGroup({
       label: 'wordsmoke.play.live.bind.' + p, layout: playBgl,
       entries: [
@@ -348,6 +364,7 @@ export function createWordSmoke(device, format, text) {
     const linger = Math.max(0, Math.min(1, fxv('textSmokeLinger', true) ?? 0.5));
     const radialC = Math.max(0, Math.min(1, fxv('textSmokeRadial', true) ?? 0.75));
 
+    sizeLive();
     live.text = word;
     live.fadeS = Math.max(0.3, (fadeOutMs() || 1000) / 1000);
     // The live field is the WHOLE viewport: it costs almost nothing (two
@@ -390,7 +407,7 @@ export function createWordSmoke(device, format, text) {
   // clock and the live sweep gating the physics (see simMain)
   function fillLiveUni(dt, t, sws, tailN) {
     uni[0] = live.rx; uni[1] = live.ry; uni[2] = live.rw; uni[3] = live.rh;
-    uni[4] = 1 / LIVE_W; uni[5] = 1 / LIVE_H; uni[6] = dt; uni[7] = t;
+    uni[4] = 1 / liveW; uni[5] = 1 / liveH; uni[6] = dt; uni[7] = t;
     uni[8] = live.size; uni[9] = live.fadeS; uni[10] = live.diff; uni[11] = live.decayMul;
     uni[12] = cssW; uni[13] = cssH; uni[14] = live.turb; uni[15] = live.seed;
     uni[16] = live.wind; uni[17] = 0; uni[18] = 0; uni[19] = 0;
@@ -567,7 +584,7 @@ export function createWordSmoke(device, format, text) {
       const sws = fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpd : 0;
       const ox = ax - live.cx, oy = ay - live.cy;
       uni[0] = live.rx + ox; uni[1] = live.ry + oy; uni[2] = live.rw; uni[3] = live.rh;
-      uni[4] = 1 / LIVE_W; uni[5] = 1 / LIVE_H; uni[6] = 0; uni[7] = live.size;
+      uni[4] = 1 / liveW; uni[5] = 1 / liveH; uni[6] = 0; uni[7] = live.size;
       uni[8] = 0; uni[9] = 0; uni[10] = p; uni[11] = liveMode === 1 ? wordState.peak : heldPeak;
       uni[12] = cssW; uni[13] = cssH; uni[14] = 0; uni[15] = sharp;
       const c = wordState.color;
@@ -586,7 +603,7 @@ export function createWordSmoke(device, format, text) {
   function encode(encoder) {
     if (!made) return;
     if (needLiveRaster || liveSteps > 0) {
-      const lgw = Math.ceil(LIVE_W / 8), lgh = Math.ceil(LIVE_H / 8);
+      const lgw = Math.ceil(liveW / 8), lgh = Math.ceil(liveH / 8);
       const lp = encoder.beginComputePass();
       if (needLiveRaster) {
         needLiveRaster = false;
@@ -596,7 +613,7 @@ export function createWordSmoke(device, format, text) {
         liveParity = 0;                // the raster wrote texture A
       }
       if (liveSteps > 0) {
-        const wgw = Math.ceil(WL_W / 8), wgh = Math.ceil(WL_H / 8);
+        const wgw = Math.ceil(wlW / 8), wgh = Math.ceil(wlH / 8);
         for (let s = 0; s < liveSteps; s++) {
           lp.setPipeline(windPipe);
           lp.setBindGroup(0, windLiveBinds[s]);
