@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Signal</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128302;</text></svg>">
+<!-- v1 reuses v0's audio modules, which fetch samples by paths relative to
+     the page (audio/piano/...). Basing the page at the repo root makes those
+     resolve exactly as they do for v0. Module imports are unaffected: they
+     resolve against their own file, not the page. -->
+<base href="../">
+<!-- One element. Everything visible is drawn by the GPU into this canvas; see
+     ARCHITECTURE.md for why nothing may ever sit on top of it. -->
+<style>
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+  canvas { display:block; position:fixed; inset:0; width:100vw; height:100vh;
+           touch-action:none; outline:none; -webkit-user-select:none; user-select:none; }
+</style>
+</head>
+<body>
+<canvas id="v1" tabindex="0"></canvas>
+<!-- Temporary boot tracing: brackets the module-import phase, so a hang
+     before the first [boot] line means an import never finished. -->
+<script>console.log('[boot] html parsed, loading main.js modules');</script>
+<script type="module" src="v1/main.js"></script>
+</body>
+</html>
