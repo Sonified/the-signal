@@ -659,8 +659,6 @@ export const WORDS = [
   ['mouse', 'creatures'],
   ['horse', 'creatures'],
   ['pony', 'creatures'],
-  ['lamb', 'creatures'],
-  ['sheep', 'creatures'],
   ['goat', 'creatures'],
   ['cow', 'creatures'],
   ['dog', 'creatures'],
