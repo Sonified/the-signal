@@ -363,9 +363,14 @@ export function nextFrameLit() {
 // per frame drawn, so nothing is ever skipped, only late. Free-running the
 // clock moves on and a missed callback skips its sample outright, so there
 // the next sample must be dark as well or a whole flash could be lost.
-// Stopped, there is no strobe to disturb, so every slot is safe.
+// Stopped, there is no strobe to disturb, so every slot is safe. So is a
+// slow strobe: below CHORE_GUARD_HZ a flash spans many refreshes, and one
+// held a refresh longer is a sliver of it nobody sees, so the chores get
+// every slot rather than waiting for the dark ones.
+const CHORE_GUARD_HZ = 20;
 export function darkSlot() {
   if (!S.running) return true;
+  if ((S.effFreq || S.freq) < CHORE_GUARD_HZ) return true;
   if (prevLit) return false;
   if (S.frameLock && S.refreshHz > 0) return true;
   return !nextFrameLit();
