@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Celestial studies · The Signal</title>
+<style>
+  :root { color-scheme: dark; font: 15px/1.5 system-ui,sans-serif; color: #eae5f4; background: #101019; }
+  * { box-sizing: border-box; }
+  body { max-width: 1120px; margin: auto; padding: 48px 28px 64px; }
+  .eyebrow { color: #bca9d9; text-transform: uppercase; letter-spacing: .2em; font-size: 11px; }
+  h1 { font: 400 clamp(36px,6vw,62px)/1.1 Georgia,serif; letter-spacing: -.035em; margin: 18px 0; }
+  .intro { color: #aaa6ba; max-width: 600px; margin-bottom: 30px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: center; margin-bottom: 26px; }
+  button,select { font: inherit; background: #252334; border: 1px solid #4a425a; color: #eee8f8; border-radius: 8px; padding: 8px 14px; }
+  button { cursor: pointer; min-width: 92px; }
+  input { accent-color: #cfb8f3; }
+  label { display: flex; align-items: center; gap: 10px; color: #bbb5c9; }
+  .cards { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+  article { border: 1px solid #34303f; border-radius: 18px; overflow: hidden; background: #171520; }
+  .stage { height: 300px; display: grid; place-content: center; background: #080b16; }
+  body[data-bg="light"] .stage { background: #e8e3ee; }
+  body[data-bg="checker"] .stage { background: repeating-conic-gradient(#292532 0% 25%,#393340 0% 50%) 0 / 24px 24px; }
+  canvas { display: block; }
+  .details { padding: 22px 24px; }
+  h2 { font: 400 27px/1.2 Georgia,serif; margin: 0 0 8px; }
+  p { margin: 8px 0; }
+  .meta,.note { color: #a6a0b4; font-size: 13px; }
+  .scrub { width: 100%; margin: 18px 0 10px; }
+  .frame { color: #d8c7eb; font-variant-numeric: tabular-nums; font-size: 12px; }
+  a { color: #d8c0fa; text-underline-offset: 4px; }
+  .links { display: flex; gap: 20px; margin-top: 12px; font-size: 13px; }
+  .note { margin-top: 24px; max-width: 750px; }
+  #status { color: #d5b6ae; }
+  @media(max-width:650px) { body { padding: 28px 18px; } .cards { grid-template-columns: 1fr; } .stage { height: 250px; } }
+</style>
+<body data-bg="dark">
+  <div class="eyebrow">The Signal / Motion studies 01</div>
+  <h1>A little light, unfolding.</h1>
+  <p class="intro">Opal petals and celestial sparks. Two transparent sprite studies, each breathing through a repeating sequence of 32 frames.</p>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <label>Surface <select id="background"><option value="dark">Midnight</option><option value="light">Pearl</option><option value="checker">Transparency grid</option></select></label>
+    <label>Scale <select id="scale"><option value="1">Actual pixels</option><option value="2" selected>2×</option></select></label>
+    <label>Speed <select id="speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+  </div>
+  <div id="status" role="status">Loading sprite studies…</div>
+  <main class="cards" id="cards"></main>
+  <p class="note">The small study uses 64 × 64 px tiles; the lotus uses 128 × 128 px. Both sheets run left to right, then down, with the closing motion baked in. Scrub a study to pause and inspect individual frames.</p>
+  <p class="note">First art prototypes: the grid and transparency are verified; generated petal detail can still shift between frames. <a href="../assets/sprites/celestial-v1/README.md">Pack notes & future studies</a></p>
+<script type="module">
+const base = '../assets/sprites/celestial-v1/';
+const playButton = document.querySelector('#play');
+const settingsKey = 'the-signal:sprite-studies:v1';
+let savedSettings = {};
+try {
+  const saved = JSON.parse(localStorage.getItem(settingsKey));
+  if (saved && typeof saved === 'object' && !Array.isArray(saved)) savedSettings = saved;
+} catch { /* Storage may be unavailable or contain invalid data. */ }
+let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (typeof savedSettings.playing === 'boolean') playing = savedSettings.playing;
+let speed = 1, scale = 2, lastTime = null;
+if ([0.5, 1, 2].includes(savedSettings.speed)) speed = savedSettings.speed;
+if ([1, 2].includes(savedSettings.scale)) scale = savedSettings.scale;
+if (['dark', 'light', 'checker'].includes(savedSettings.background)) document.body.dataset.bg = savedSettings.background;
+document.querySelector('#background').value = document.body.dataset.bg;
+document.querySelector('#scale').value = String(scale);
+document.querySelector('#speed').value = String(speed);
+const players = [];
+function saveSettings() {
+  const frames = { ...savedSettings.frames };
+  for (const player of players) frames[player.asset.id] = Math.floor(player.position);
+  try {
+    localStorage.setItem(settingsKey, JSON.stringify({
+      background: document.body.dataset.bg, scale, speed, playing, frames,
+    }));
+  } catch { /* Keep the preview usable when storage is unavailable. */ }
+}
+function updatePlay() { playButton.textContent = playing ? 'Pause' : 'Play'; }
+function render(player) {
+  const { asset, canvas, context, image } = player;
+  const frame = Math.floor(player.position) % asset.frameCount;
+  const size = asset.tileSize;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(image, (frame % asset.columns) * size,
+    Math.floor(frame / asset.columns) * size, size, size,
+    0, 0, canvas.width, canvas.height);
+  player.scrub.value = frame;
+  player.label.textContent = `Frame ${String(frame + 1).padStart(2, '0')} / ${asset.frameCount}`;
+}
+function resize(player) {
+  const size = player.asset.tileSize * scale;
+  const dpr = window.devicePixelRatio || 1;
+  player.canvas.width = Math.round(size * dpr);
+  player.canvas.height = Math.round(size * dpr);
+  player.canvas.style.width = `${size}px`;
+  player.canvas.style.height = `${size}px`;
+  render(player);
+}
+playButton.onclick = () => { playing = !playing; updatePlay(); saveSettings(); };
+document.querySelector('#background').onchange = e => { document.body.dataset.bg = e.target.value; saveSettings(); };
+document.querySelector('#scale').onchange = e => { scale = Number(e.target.value); players.forEach(resize); saveSettings(); };
+document.querySelector('#speed').onchange = e => { speed = Number(e.target.value); saveSettings(); };
+window.addEventListener('resize', () => players.forEach(resize));
+window.addEventListener('pagehide', saveSettings);
+document.addEventListener('visibilitychange', () => {
+  lastTime = null;
+  if (document.hidden) saveSettings();
+});
+updatePlay();
+try {
+  const response = await fetch(base + 'manifest.json');
+  if (!response.ok) throw new Error(`Manifest request failed: ${response.status}`);
+  const manifest = await response.json();
+  for (const asset of manifest.assets) {
+    const image = new Image();
+    image.src = `${base + asset.image}?v=${asset.revision || manifest.version}`;
+    await image.decode();
+    if (image.naturalWidth !== asset.width || image.naturalHeight !== asset.height) throw new Error(`Wrong sheet dimensions: ${asset.name}`);
+    const card = document.createElement('article');
+    card.innerHTML = `<div class="stage"><canvas aria-label="${asset.name} animation" role="img"></canvas></div>
+      <div class="details"><h2>${asset.name}</h2><p class="meta">${asset.tileSize} × ${asset.tileSize} px · ${asset.fps} fps · ${asset.durationSeconds} second loop</p>
+      <input class="scrub" type="range" min="0" max="${asset.frameCount - 1}" step="1" value="0" aria-label="${asset.name} frame">
+      <div class="frame"></div><div class="links"><a href="${base + asset.image}" download>Download PNG atlas</a><a href="${base}manifest.json">Manifest</a></div></div>`;
+    document.querySelector('#cards').append(card);
+    const canvas = card.querySelector('canvas');
+    const player = { asset, image, canvas, context: canvas.getContext('2d'),
+      scrub: card.querySelector('.scrub'), label: card.querySelector('.frame'), position: 0 };
+    const savedFrame = savedSettings.frames?.[asset.id];
+    if (Number.isInteger(savedFrame) && savedFrame >= 0 && savedFrame < asset.frameCount) player.position = savedFrame;
+    player.scrub.oninput = () => { playing = false; updatePlay(); player.position = Number(player.scrub.value); render(player); saveSettings(); };
+    players.push(player);
+    resize(player);
+  }
+  document.querySelector('#status').textContent = '';
+  function tick(time) {
+    const dt = lastTime === null ? 0 : Math.min((time - lastTime) / 1000, .1);
+    lastTime = time;
+    if (playing && !document.hidden) for (const player of players) {
+      player.position = (player.position + dt * player.asset.fps * speed) % player.asset.frameCount;
+      render(player);
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+} catch (error) {
+  document.querySelector('#status').textContent = `Could not load studies. Serve the project over HTTP. ${error.message}`;
+}
+</script>
+</body>
+</html>

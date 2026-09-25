@@ -1,0 +1,257 @@
+{
+  "version": 1,
+  "pack": "biodigital-kaleidoscope-motifs-256-v1",
+  "image": "motifs-256.png",
+  "width": 1024,
+  "height": 1024,
+  "tileSize": 256,
+  "padding": 20,
+  "columns": 4,
+  "rows": 4,
+  "frameOrder": "row-major",
+  "alpha": "straight",
+  "colorSpace": "srgb",
+  "defaultOrientation": "up",
+  "assets": [
+    {
+      "id": "ginkgo-neural-interface",
+      "index": 0,
+      "row": 0,
+      "column": 0,
+      "x": 0,
+      "y": 0,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "quantum-fern",
+      "index": 1,
+      "row": 0,
+      "column": 1,
+      "x": 256,
+      "y": 0,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "sensor-eucalyptus",
+      "index": 2,
+      "row": 0,
+      "column": 2,
+      "x": 512,
+      "y": 0,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "signal-spear-leaf",
+      "index": 3,
+      "row": 0,
+      "column": 3,
+      "x": 768,
+      "y": 0,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "consciousness-lotus",
+      "index": 4,
+      "row": 1,
+      "column": 0,
+      "x": 0,
+      "y": 256,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "biointerface-orchid",
+      "index": 5,
+      "row": 1,
+      "column": 1,
+      "x": 256,
+      "y": 256,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "recursive-dahlia",
+      "index": 6,
+      "row": 1,
+      "column": 2,
+      "x": 512,
+      "y": 256,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "plasma-star-blossom",
+      "index": 7,
+      "row": 1,
+      "column": 3,
+      "x": 768,
+      "y": 256,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "energy-vine",
+      "index": 8,
+      "row": 2,
+      "column": 0,
+      "x": 0,
+      "y": 512,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "lattice-succulent",
+      "index": 9,
+      "row": 2,
+      "column": 1,
+      "x": 256,
+      "y": 512,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "signal-lavender",
+      "index": 10,
+      "row": 2,
+      "column": 2,
+      "x": 512,
+      "y": 512,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "data-seed-pod",
+      "index": 11,
+      "row": 2,
+      "column": 3,
+      "x": 768,
+      "y": 512,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "mycelial-neural-node",
+      "index": 12,
+      "row": 3,
+      "column": 0,
+      "x": 0,
+      "y": 768,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "living-portal-torus",
+      "index": 13,
+      "row": 3,
+      "column": 1,
+      "x": 256,
+      "y": 768,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "coherent-aurora",
+      "index": 14,
+      "row": 3,
+      "column": 2,
+      "x": 512,
+      "y": 768,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "awareness-vortex",
+      "index": 15,
+      "row": 3,
+      "column": 3,
+      "x": 768,
+      "y": 768,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    }
+  ]
+}

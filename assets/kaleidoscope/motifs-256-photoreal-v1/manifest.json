@@ -1,0 +1,257 @@
+{
+  "version": 1,
+  "pack": "photoreal-botanical-kaleidoscope-motifs-256-v1",
+  "image": "motifs-256.png",
+  "width": 1024,
+  "height": 1024,
+  "tileSize": 256,
+  "padding": 20,
+  "columns": 4,
+  "rows": 4,
+  "frameOrder": "row-major",
+  "alpha": "straight",
+  "colorSpace": "srgb",
+  "defaultOrientation": "up",
+  "assets": [
+    {
+      "id": "ginkgo-leaf",
+      "index": 0,
+      "row": 0,
+      "column": 0,
+      "x": 0,
+      "y": 0,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "fiddlehead-fern",
+      "index": 1,
+      "row": 0,
+      "column": 1,
+      "x": 256,
+      "y": 0,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "eucalyptus-sprig",
+      "index": 2,
+      "row": 0,
+      "column": 2,
+      "x": 512,
+      "y": 0,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "monstera-leaf",
+      "index": 3,
+      "row": 0,
+      "column": 3,
+      "x": 768,
+      "y": 0,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "pink-lotus",
+      "index": 4,
+      "row": 1,
+      "column": 0,
+      "x": 0,
+      "y": 256,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "cream-orchid",
+      "index": 5,
+      "row": 1,
+      "column": 1,
+      "x": 256,
+      "y": 256,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "coral-dahlia",
+      "index": 6,
+      "row": 1,
+      "column": 2,
+      "x": 512,
+      "y": 256,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "scarlet-poppy",
+      "index": 7,
+      "row": 1,
+      "column": 3,
+      "x": 768,
+      "y": 256,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "white-peony",
+      "index": 8,
+      "row": 2,
+      "column": 0,
+      "x": 0,
+      "y": 512,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "blue-anemone",
+      "index": 9,
+      "row": 2,
+      "column": 1,
+      "x": 256,
+      "y": 512,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "passionflower",
+      "index": 10,
+      "row": 2,
+      "column": 2,
+      "x": 512,
+      "y": 512,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "white-magnolia",
+      "index": 11,
+      "row": 2,
+      "column": 3,
+      "x": 768,
+      "y": 512,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "lavender-stem",
+      "index": 12,
+      "row": 3,
+      "column": 0,
+      "x": 0,
+      "y": 768,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "vine-tendril",
+      "index": 13,
+      "row": 3,
+      "column": 1,
+      "x": 256,
+      "y": 768,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "echeveria-rosette",
+      "index": 14,
+      "row": 3,
+      "column": 2,
+      "x": 512,
+      "y": 768,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "milkweed-seed-pod",
+      "index": 15,
+      "row": 3,
+      "column": 3,
+      "x": 768,
+      "y": 768,
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    }
+  ]
+}
