@@ -243,6 +243,9 @@ export function createText(device, platform) {
   // drained head-first so nothing here ever splices or shifts ----
   const pendingQueue = [];
   let pendingHead = 0;
+  // glyphs on screen that are not ready yet (see needGlyph), drained first
+  const urgentQueue = [];
+  let urgentHead = 0;
   let initialRemaining = 0;
   let isInitialBatch = false;
   let resolveReady;
@@ -275,6 +278,22 @@ export function createText(device, platform) {
 
   function ensureGlyph(wi, code) {
     if (readStatus(wi, code) === 0) touchGlyph(wi, code);
+  }
+
+  // A glyph something is drawing right now: onboarded if new, and if it is
+  // still waiting in the preload queue, moved to the urgent queue, which
+  // tick() drains first, so the text on screen fills in within a few
+  // frames instead of waiting its turn behind the whole Latin-1 preload.
+  // Status 3 marks it as already moved. Returns the glyph's status.
+  function needGlyph(wi, code) {
+    let st = readStatus(wi, code);
+    if (st === 0) { touchGlyph(wi, code); st = readStatus(wi, code); }
+    if (st === 1) {
+      if (code < 256) statusTab[wi][code] = 3; else mapTab[wi].get(code).status = 3;
+      urgentQueue.push(wi, code);
+      st = 3;
+    }
+    return st;
   }
 
   // The expensive half: draw the glyph to the scratch canvas, seed the two
@@ -352,12 +371,23 @@ export function createText(device, platform) {
   // Returns whether glyphs are still queued, so the frame loop's chore
   // scheduler (core/chores.js) knows this slice did not finish them.
   function tick(budgetMs) {
-    if (pendingHead >= pendingQueue.length) return false;
+    if (pendingHead >= pendingQueue.length && urgentHead >= urgentQueue.length) return false;
     const start = platform.now();
+    while (urgentHead < urgentQueue.length) {
+      const wi = urgentQueue[urgentHead], code = urgentQueue[urgentHead + 1];
+      urgentHead += 2;
+      if (readStatus(wi, code) !== 2) rasterizeFull(wi, code);
+      if (platform.now() - start >= budgetMs) break;
+    }
+    if (urgentHead >= urgentQueue.length) { urgentQueue.length = 0; urgentHead = 0; }
+    else return true;
+    if (pendingHead >= pendingQueue.length) return false;
+    if (platform.now() - start >= budgetMs) return true;
     while (pendingHead < pendingQueue.length) {
       const wi = pendingQueue[pendingHead], code = pendingQueue[pendingHead + 1];
       pendingHead += 2;
-      rasterizeFull(wi, code);
+      // one the screen asked for may already have jumped the queue
+      if (readStatus(wi, code) !== 2) rasterizeFull(wi, code);
       if (initialRemaining > 0) {
         initialRemaining--;
         if (initialRemaining === 0) resolveReady();
@@ -442,8 +472,7 @@ export function createText(device, platform) {
           const c2 = str.charCodeAt(i + 1);
           if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
         }
-        ensureGlyph(wi, code);
-        const status = readStatus(wi, code);
+        const status = needGlyph(wi, code);
         const adv = readAdvance(wi, code);
         if (status === 2) {
           let u0, v0, u1, v1, ox, oy, qw, qh;
@@ -502,8 +531,7 @@ export function createText(device, platform) {
           const c2 = str.charCodeAt(i + 1);
           if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
         }
-        ensureGlyph(wi, code);
-        const status = readStatus(wi, code);
+        const status = needGlyph(wi, code);
         const adv = readAdvance(wi, code);
         if (status === 2) {
           let u0, v0, u1, v1, ox, oy, qw, qh;
@@ -581,8 +609,7 @@ export function createText(device, platform) {
           const c2 = str.charCodeAt(i + 1);
           if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
         }
-        ensureGlyph(wi, code);
-        const status = readStatus(wi, code);
+        const status = needGlyph(wi, code);
         const adv = readAdvance(wi, code);
         if (status !== 2) { ready = false; }
         else {
