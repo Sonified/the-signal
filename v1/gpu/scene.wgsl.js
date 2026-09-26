@@ -20,6 +20,8 @@
 // running total reaches 1, further additions keep it at or above 1 under
 // either scheme, so the final clamp lands on the same number.
 
+import { RADIAL_FADE_WGSL } from '../core/fade.js';
+
 export const SCENE_WGSL = `
 // Every fragment of an instance shares one kind, so the per-kind branch below
 // never splits a 2x2 pixel quad and derivatives (fwidth, textureSample's
@@ -33,10 +35,11 @@ struct U {
   cornerA: vec4f,              // per-corner glow alpha, order matches canvas2d: TL(inset), TR, BR, BL(inset)
   cornerCol: array<vec4f, 4>,   // per-corner glow colour, same order
   misc: vec4f,                  // corner glow radius, ring outer radius, LUT_N, ringsOn
-  misc2: vec4f,                  // cornersOn, left inset in device px, unused, unused
+  misc2: vec4f,                  // cornersOn, left inset in device px, field fade radius, fade softness
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read> lut: array<f32>;   // rgb triples, one per radial sample
+${RADIAL_FADE_WGSL}
 
 fn sdRoundBox(p: vec2f, b: f32, r: f32) -> f32 {
   let q = abs(p) - vec2f(b - r);
@@ -70,6 +73,21 @@ fn fsFull(@builtin(position) fc: vec4f) -> @location(0) vec4f {
     } else {
       // full: a flat cut at the inset, not a falloff, matching canvas2d's fillRect.
       a = select(0.0, 1.0, p.x >= insetPx);
+    }
+    // Centre fade: dark at the centre, easing up outward on the rings' curve
+    // against the rings' rim, so the radius means what it means on every
+    // layer. Softness compresses where the ease begins: at 1 it spans the
+    // whole way from the centre (the shared curve exactly), at 0 it is a
+    // hard-edged circle at the radius. The fade in only; the rim keeps its
+    // full field.
+    let ff = u.misc2.z;
+    if (ff >= 0.01) {
+      let edge = ff * 0.98;
+      let k = length(p - ctr) / u.misc.y;
+      // The floor keeps smoothstep's edges apart at softness 0, where equal
+      // edges are undefined in WGSL; visually it is still a hard circle.
+      let soft = max(u.misc2.w, 0.004);
+      a = a * pow(smoothstep(edge * (1.0 - soft), edge, k), 1.0 + ff * 2.0);
     }
     rgb = rgb + u.col.rgb * (u.col.w * a);
   }

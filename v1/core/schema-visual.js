@@ -253,6 +253,26 @@ export const VISUAL_CONTROLS = [
     set: (S, v) => { S.fieldShape = v; save(); }
   },
   {
+    // The field eased in from the centre on the rings' own curve (core/fade.js),
+    // so the middle stays dark like the other layers' Fade in. 0 is no fade.
+    id: 'fieldFade', section: 'strobe', label: 'Center fade radius', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.fieldFade || 0) * 100),
+    set: (S, pos) => { S.fieldFade = pos / 100; save(); },
+    format: S => Math.round((S.fieldFade || 0) * 100) + '%'
+  },
+  {
+    // How soft the fade's edge is. At 100% the ease spans the whole way from
+    // the centre to the fade radius, exactly the shared curve; lower values
+    // compress the ease toward the radius, down to a hard-edged circle at 0.
+    id: 'fieldSoft', section: 'strobe', label: 'Center fade softness', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.fieldSoft ?? 1) * 100),
+    set: (S, pos) => { S.fieldSoft = pos / 100; save(); },
+    format: S => Math.round((S.fieldSoft ?? 1) * 100) + '%',
+    visible: S => (S.fieldFade || 0) > 0
+  },
+  {
     // Two buttons in v0, not a single input, so there is no v0 DOM id that
     // names the control itself; 'frameLock' is the natural name for the pair,
     // and each option carries the id of the button that sets it.
@@ -445,7 +465,7 @@ export const VISUAL_CONTROLS = [
     format: S => S.ringSpeedMul.toFixed(1) + '×'
   },
   {
-    id: 'ringFade', section: 'tunnel', label: 'Ring fade in', kind: 'slider',
+    id: 'ringFade', section: 'tunnel', label: 'Center fade radius', kind: 'slider',
     min: 0, max: 100, step: 1, def: 55,
     get: S => Math.round(S.ringFade * 100),
     set: (S, pos) => { S.ringFade = pos / 100; save(); },

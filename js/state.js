@@ -21,6 +21,8 @@ export const S = {
   freq: 7.5, depth: 0.80, bright: 1.0, wave: 'square', duty: 0.5,
   rgb: [212, 0, 255],
   fieldShape: 'full',
+  fieldFade: 0,               // v1: the field's radial fade in, 0..1, the tunnel layers' curve
+  fieldSoft: 1,               // v1: how soft that fade's edge is, 1 the full ease, 0 a hard circle
   running: false,
 
   // phase is ACCUMULATED so frequency changes never cause a click

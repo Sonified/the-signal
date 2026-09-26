@@ -182,7 +182,7 @@ export const FLOWER_CONTROLS = [
   // The tunnel rings' fade in from the centre (core/fade.js), with its own
   // amount so the flowers can ease in sooner or later than the rings do.
   // Both modes use it, so it is never hidden.
-  percent('flowerFade', 'flowerFade', 'Fade in'),
+  percent('flowerFade', 'flowerFade', 'Center fade radius'),
 
   // How far the flowers follow the strobe, in colour and in brightness. Both
   // default to 0, which keeps them a steady layer of their own on top of the

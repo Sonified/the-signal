@@ -105,6 +105,7 @@ let v0Noted = false;
 function buildSettings() {
   return {
     freq: S.freq, depth: S.depth, bright: S.bright, wave: S.wave, fieldShape: S.fieldShape,
+    fieldFade: S.fieldFade, fieldSoft: S.fieldSoft,
     color: rgbHex(S.rgb),
     ringSpeedMul: S.ringSpeedMul, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
@@ -584,6 +585,8 @@ function applySettings(s, live) {
   if (s.color) setColorFromPicker(s.color);
   if (typeof s.ringSpeedMul === 'number') S.ringSpeedMul = s.ringSpeedMul;
   if (typeof s.ringFade === 'number')     S.ringFade = s.ringFade;
+  if (typeof s.fieldFade === 'number')    S.fieldFade = s.fieldFade;
+  if (typeof s.fieldSoft === 'number')    S.fieldSoft = s.fieldSoft;
   if (typeof s.edgeCount === 'number')    S.edgeCount = s.edgeCount;
   if (typeof s.edgeOpacity === 'number')  S.edgeOpacity = s.edgeOpacity;
   if (typeof s.edgeSize === 'number')     S.edgeSize = s.edgeSize;

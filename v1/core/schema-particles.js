@@ -288,7 +288,7 @@ export const PARTICLE_CONTROLS = [
   // How far out from the centre the particles take to come up to full
   // brightness, the tunnel rings' own 'Ring fade in' curve (core/fade.js),
   // so the two layers fade alike at the same setting. 0 is no fade at all.
-  percent('partFade', 'partFade', 'Fade in', null, 'Colour'),
+  percent('partFade', 'partFade', 'Center fade radius', null, 'Colour'),
 
   // An optional fold of the whole particle field into wedges, like the
   // Kaleidoscope layer's own. The three rows under the switch only show
