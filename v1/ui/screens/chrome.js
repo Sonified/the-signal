@@ -17,8 +17,8 @@
 //
 // Layout mirrors v0 so muscle memory carries: burger top left, play and mute
 // top right, the quick bar along the bottom right, read right to left. The
-// whole set fades out once the pointer settles, as v0's body.idle did, and
-// never while the drawer is open.
+// whole set fades out once the pointer settles, as v0's body.idle did,
+// drawer open or shut.
 //
 // The panel guard's notice lives here too (drawGuardNotice, at the end): a
 // frosted card in the middle of the field, on the top layer, shown when

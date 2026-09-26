@@ -178,6 +178,11 @@ export const mixer = {
 // the UI state store.js keeps apart from settings. It is read on the first
 // frame, since store.js only has its storage once main.js has booted, and
 // written whenever it changes, except mid-drag, when the release writes it.
+//
+// Unlike v0, a page load always starts with the mixer shut, first visit or
+// not, on every platform: the page opens on the field, and the mixer comes up
+// only when asked for (M, the Open mixer chip, the drawer). Where it was and
+// how big it was are still restored, so it reopens in the same place.
 let restored = false;
 const saved = { open: false, placed: false, x: 0, y: 0, w: 0, h: 0 };
 function restore() {
@@ -185,13 +190,11 @@ function restore() {
   const all = loadUiState();
   const m = all && all.mixer && typeof all.mixer === 'object' ? all.mixer : null;
   if (m) {
-    mixer.open = m.open !== false;
     if (m.placed && Number.isFinite(m.x) && Number.isFinite(m.y)) { mixer.placed = true; mixer.x = m.x; mixer.y = m.y; }
     if (Number.isFinite(m.width)) mixer.w = m.width;
     if (Number.isFinite(m.height)) mixer.h = m.height;
-  } else {
-    mixer.open = true;
   }
+  mixer.open = false;
   remember();
 }
 function remember() {

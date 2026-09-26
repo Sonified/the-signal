@@ -64,7 +64,7 @@ import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION } from './ui/theme.js';
 import { drawOverlay, overlayState } from './ui/screens/overlay.js';
 import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice } from './ui/screens/chrome.js';
-import { drawDrawer, stepDrawer, drawProfileBadge } from './ui/screens/drawer.js';
+import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
 
@@ -266,6 +266,8 @@ async function boot() {
   const renderArgs = { lum: 0, lit: false, overlayList, uiList, topList, glassVisible: false, sceneChanged: true };
   const uiEvents = [];
   let lastActivity = 0, audioWoken = false, lastCursor = '';
+  // Whether the pointer rested on the UI (see chromeAwake) at the last build.
+  let overUI = false, overWin = false;
   let frontWin = 'mixer', seqWasOpen = false, mixerWasOpen = false;
   const inWin = (r, x, y) => r.rw > 0 && x >= r.rx && x < r.rx + r.rw && y >= r.ry && y < r.ry + r.rh;
   // What the last UI build left behind, for deciding whether this frame can
@@ -383,7 +385,16 @@ async function boot() {
     // the empty lists go to the engine as they are. Any input, even a bare
     // move, brings the build straight back, which is also what keeps a click
     // on the field working. A held press (a fader mid-drag) keeps it awake.
-    const awake = S.panelOpen || guard.noticeOpen || ui.activeId !== -1 || t - lastActivity < LAYOUT.idleMs;
+    // The chrome and the cursor fade on the same idle rule with the drawer
+    // open or shut; an open drawer only keeps the UI BUILD awake, since the
+    // drawer itself stays up. The mixer and sequencer are deliberately not
+    // part of the fade at all: they open and close only by their buttons,
+    // their keys and their own X, so while open they hold at full strength
+    // and only keep the build awake, like the drawer. A pointer resting on
+    // any of the UI floating over the picture holds the chrome up; one
+    // resting on the bare picture lets the chrome alone fade.
+    const chromeAwake = guard.noticeOpen || ui.activeId !== -1 || overUI || t - lastActivity < LAYOUT.idleMs;
+    const awake = chromeAwake || S.panelOpen || mixer.open || sequencer.open;
     const idle = !awake && events.length === 0 && !uiUnsettled && ui.activeId === -1 && lastChromeA < 0.01;
     if (idle) {
       // ui.begin normally hands the springs this frame's dt; the overlay's
@@ -393,7 +404,7 @@ async function boot() {
       // UI, top layer first so it wins the pointer
       ui.begin(uiEvents, t, dt * 1000, width, height, topList);
 
-      const chromeA = ui.spring('chrome.alpha', awake ? 1 : 0, MOTION.fade);
+      const chromeA = ui.spring('chrome.alpha', chromeAwake ? 1 : 0, MOTION.fade);
       // the chrome chips frost only while a window that needs the capture is up
       const frost = ui.spring('chrome.frost', S.panelOpen || mixer.open ? 1 : 0, MOTION.fade);
       lastChromeA = chromeA;
@@ -414,14 +425,27 @@ async function boot() {
       }
       const front = frontWin === 'seq' ? sequencer : mixer;
       ui.setOcclusion(front.rx, front.ry, front.rw, front.rh);
-      if (frontWin === 'seq') drawMixer(ui, app, chromeA); else drawSequencer(ui, app, chromeA);
+      if (frontWin === 'seq') drawMixer(ui, app, 1); else drawSequencer(ui, app, 1);
       ui.clearOcclusion();
-      if (frontWin === 'seq') drawSequencer(ui, app, chromeA); else drawMixer(ui, app, chromeA);
-      drawBurger(ui, app, S.panelOpen ? 1 : chromeA, frost);
+      if (frontWin === 'seq') drawSequencer(ui, app, 1); else drawMixer(ui, app, 1);
+      drawBurger(ui, app, chromeA, frost);
 
       ui.dl = uiList;
       drawDrawer(ui, app);
       drawChrome(ui, app, chromeA, frost);
+
+      // Everything above the field has run its hit tests, so a hot widget
+      // here is UI under the pointer; the window and drawer rects catch the
+      // gaps between their controls.
+      {
+        // The windows are their own world: a pointer resting on the mixer or
+        // sequencer (their widgets included) lets the rest of the chrome
+        // fade, and only keeps the cursor alive below.
+        const px = ui.pointerX, py = ui.pointerY;
+        overWin = px >= 0 && (inWin(mixer, px, py) || inWin(sequencer, px, py));
+        overUI = px >= 0 && !overWin && (ui.hotId !== -1 ||
+                             (S.panelOpen && px < drawerEdge()));
+      }
 
       // the field: any press nothing above claimed. With the drawer open it
       // puts the drawer away, as v0 does; otherwise it starts and stops.
@@ -431,7 +455,7 @@ async function boot() {
       const res = ui.end();
       uiUnsettled = res.wantsFrames;
       // the pointer goes with the chrome's idle fade and returns on any move
-      const cursor = awake ? res.cursor : 'none';
+      const cursor = (chromeAwake || overWin) ? res.cursor : 'none';
       if (cursor !== lastCursor) { lastCursor = cursor; platform.setCursor(cursor); }
     }
 
