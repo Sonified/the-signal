@@ -34,6 +34,7 @@ export const COLOR = {
   // text
   ink:        c(232, 237, 242),        // v0 --ui-text
   inkDim:     c(139, 151, 163),        // v0 --ui-dim
+  inkHead:    c(163, 175, 187),        // the caps sub-group headings: a touch over inkDim, well under ink
   inkFaint:   c(91, 102, 114),         // v0 hint sub-line
   inkOnAccent: c(8, 16, 28),
 

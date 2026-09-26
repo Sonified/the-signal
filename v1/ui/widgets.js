@@ -199,6 +199,7 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout)
     if (ui.clicked) ui.sliderReadoutClicked = true;
   }
   ui.sliderReadoutW = roW;
+  labelHit(ui, nid, label, rx, ry - RO_PAD_Y, trackY0 - 1 - (ry - RO_PAD_Y), rw - roW - RO_PAD_X * 2, disabled);
 
   // An indented (child) row still takes presses from the column's left edge;
   // a press left of the track reads as 0%, exactly as one past its start does.
@@ -316,6 +317,17 @@ function anyShift(ui) { for (let i = 0; i < ui.keyCount; i++) if (ui.keyShift(i)
 // Folded to 31 bits like imgui.js's ids, so a derived spring or hit id stays
 // a small integer and never has to be boxed on its way into a Map.
 function combine2(a, b) { return ((a ^ Math.imul(b, 0x9e3779b1)) << 1) >> 1; }
+
+// A control's name is also its reset: a click on the label text sets
+// ui.labelClicked, and ui.control puts the value back to the schema's def.
+// The hit is the text itself, not the whole line, so it never sits under
+// a readout.
+function labelHit(ui, nid, label, x, y, h, maxW, disabled) {
+  const w = Math.min(maxW, ui.text.measure(label, TYPE.sm, W.regular));
+  ui.interact(combine2(nid, 16), x, y, w, h, !!disabled);
+  if (ui.hover) ui.setCursorHint('pointer');
+  if (ui.clicked) ui.labelClicked = true;
+}
 
 // ---------------- segment ----------------
 
@@ -438,6 +450,7 @@ function select(id, label, labels, index, readout, disabled) {
   const by = ry + labelH + gap;
 
   let newIndex = index;
+  labelHit(ui, nid, label, rx, ry, labelH, rw / 2, disabled);
   ui.interact(nid, rx, by, rw, boxH, !!disabled);
   const boxHover = ui.hover;
   if (boxHover) ui.setCursorHint('pointer');
@@ -529,7 +542,7 @@ function toggle(id, label, on, disabled, heading) {
   // The label stays dim whatever the state, like every other control label,
   // so no row outshines the section header above it; the switch shows on/off.
   ui.text.draw(ui.dl, label, rx, baseline, TYPE.sm, heading ? W.bold : W.regular,
-    disabled ? COLOR.inkFaint : heading ? COLOR.ink : COLOR.inkDim, 0, heading ? TRACK.caps : TRACK.ui, 1);
+    disabled ? COLOR.inkFaint : heading ? COLOR.inkHead : COLOR.inkDim, 0, heading ? TRACK.caps : TRACK.ui, 1);
 
   const onA = ui.spring(combine2(nid, 6), newOn ? 1 : 0, MOTION.hover);
   drawSwitch(ui, rx + rw - SWITCH_W, ry + h / 2 - SWITCH_H / 2, SWITCH_W, SWITCH_H, onA, newOn);
@@ -953,6 +966,9 @@ const SW = 22, SW_GAP = 8;
 // different string, so a steady colour costs no string work per frame.
 let swRaw = null, swLower = '';
 function swatches(ui, ctrl, S, enabled) {
+  ui.peek();
+  ui.text.lineMetrics(TYPE.sm, ui._lm);
+  labelHit(ui, ui.id(ctrl.id), ctrl.label, ui.px, ui.py, ui._lm.ascent + ui._lm.descent, ui.pw, !enabled);
   ui.label(ctrl.label, TYPE.sm, W.regular, COLOR.inkDim);
   ui.nextRect(SW + 4);
   const raw = ctrl.get(S);
@@ -1071,6 +1087,7 @@ function control(ctrl, S) {
   if (!enabled) ui.dl.pushAlpha(0.45);
 
   let changed = false;
+  ui.labelClicked = false;
   switch (ctrl.kind === 'segment' && ctrl.multi ? 'segment-multi' : ctrl.kind) {
     case 'slider': {
       const nid = ui.id(ctrl.id);
@@ -1152,6 +1169,10 @@ function control(ctrl, S) {
     case 'color':
       changed = swatches(ui, ctrl, S, enabled);
       break;
+  }
+  if (ui.labelClicked && enabled && ctrl.def !== undefined && ctrl.get(S) !== ctrl.def) {
+    ctrl.set(S, ctrl.def);
+    changed = true;
   }
 
   if (!enabled) ui.dl.popAlpha();
