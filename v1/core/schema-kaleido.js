@@ -51,8 +51,11 @@ const NUM = [
   ['kaleidoTint',        0,   1,   0,    false],
   ['kaleidoPulse',       0,   1,   0,    false],
   // Which motif atlas the shapes come from (kaleido.js ATLAS_SETS): 1 the
-  // original motifs, 2 the botanical atlas.
-  ['kaleidoSet',         1,   2,   1,    true ],
+  // botanical atlas, 2 petal specimens, 3 petals and green leaves, 4 ferns
+  // and wildflower petals, 5 botanical specimens, 6 the original motifs,
+  // 7 colorful shapes, 8 flat colorful shapes, 9 confetti and sparkles,
+  // 10 photoreal confetti and sparkles, 11 fireworks, 12 peaceful shapes.
+  ['kaleidoSet',         1,   12,  1,    true ],
   // The layer's own colour grade, applied in the fold: 1 leaves the motifs
   // as they are, 0 is black, flat grey or greyscale, 2 doubles the effect.
   ['kaleidoBright',      0,   2,   1,    false],
@@ -299,10 +302,20 @@ export const KALEIDO_CONTROLS = [
     id: 'kaleidoSet', section: 'kaleido', sub: 'Shapes', label: 'Image set', kind: 'segment', def: 1,
     options: [
       { value: 1, label: 'Set 1', domId: null },
-      { value: 2, label: 'Set 2', domId: null }
+      { value: 2, label: 'Set 2', domId: null },
+      { value: 3, label: 'Set 3', domId: null },
+      { value: 4, label: 'Set 4', domId: null },
+      { value: 5, label: 'Set 5', domId: null },
+      { value: 6, label: 'Set 6', domId: null },
+      { value: 7, label: 'Set 7', domId: null },
+      { value: 8, label: 'Set 8', domId: null },
+      { value: 9, label: 'Set 9', domId: null },
+      { value: 10, label: 'Set 10', domId: null },
+      { value: 11, label: 'Set 11', domId: null },
+      { value: 12, label: 'Set 12', domId: null }
     ],
     get: S => S.kaleidoSet,
-    set: (S, v) => { S.kaleidoSet = fit(Number(v), 1, 2, true); save(); },
+    set: (S, v) => { S.kaleidoSet = fit(Number(v), 1, 12, true); save(); },
     enabled: layerOn
   },
   {

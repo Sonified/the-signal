@@ -36,7 +36,109 @@ const packs = {
       ['short-stem-flower', 'two-leaf-flower', 'shy-bud', 'paired-blossoms', 'flower-sprout', 'cloud-flower', 'smiling-flower', 'sleepy-flower'],
     ],
   },
+  // Sets 3 and 4: generated sheets whose shapes do not sit exactly on the
+  // 8 x 8 grid (1254 px, so 156.75 px cells, and a few shapes spill over a
+  // cell line), so they are packed by component instead (packByComponents).
+  'peaceful-shapes': {
+    root: '../assets/kaleidoscope/peaceful-shapes-v1',
+    source: 'source/peaceful-shapes-source.png',
+    output: 'peaceful-shapes-128.png',
+    pack: 'peaceful-shapes-v1',
+    layout: 'components',
+    rows: numberedRows('peaceful'),
+  },
+  'colorful-shapes': {
+    root: '../assets/kaleidoscope/colorful-shapes-v1',
+    source: 'source/colorful-shapes-source.png',
+    output: 'colorful-shapes-128.png',
+    pack: 'colorful-shapes-v1',
+    layout: 'components',
+    rows: numberedRows('colorful'),
+  },
+  'flat-colorful-shapes': {
+    root: '../assets/kaleidoscope/flat-colorful-shapes-v1',
+    source: 'source/flat-colorful-shapes-source.png',
+    output: 'flat-colorful-shapes-128.png',
+    pack: 'flat-colorful-shapes-v1',
+    layout: 'components',
+    rows: numberedRows('flat-colorful'),
+  },
+  'confetti-sparkles': {
+    root: '../assets/kaleidoscope/confetti-sparkles-v1',
+    source: 'source/confetti-sparkles-source.png',
+    output: 'confetti-sparkles-128.png',
+    pack: 'confetti-sparkles-v1',
+    layout: 'components',
+    rows: numberedRows('sparkle'),
+  },
+  // Clusters of tiny pieces (sequins, star confetti, shards), so the
+  // smallest piece kept is far smaller than the other sheets need.
+  'photoreal-confetti': {
+    root: '../assets/kaleidoscope/photoreal-confetti-v1',
+    source: 'source/photoreal-confetti-source.png',
+    output: 'photoreal-confetti-128.png',
+    pack: 'photoreal-confetti-v1',
+    layout: 'components',
+    minPixels: 12,
+    rows: numberedRows('confetti'),
+  },
+  // Fine sparks and soft glow: a lower seed so faint spark tips count as the
+  // burst, a wider kept ring so the glow is not clipped, and tiny pieces
+  // kept for the scattered-star bursts.
+  fireworks: {
+    root: '../assets/kaleidoscope/fireworks-v1',
+    source: 'source/fireworks-source.png',
+    output: 'fireworks-128.png',
+    pack: 'fireworks-v1',
+    layout: 'components',
+    seed: 16,
+    keepRing: 10,
+    minPixels: 8,
+    rows: numberedRows('firework'),
+  },
+  // Photographed leaves and flowers; small pieces kept for the floret
+  // clusters (Queen Anne's lace) and fine stems.
+  'petal-specimens': {
+    root: '../assets/kaleidoscope/set-2',
+    source: 'source/set-2.png',
+    output: 'set-2-128.png',
+    pack: 'set-2',
+    layout: 'components',
+    minPixels: 12,
+    rows: numberedRows('petal'),
+  },
+  'petals-green-leaves': {
+    root: '../assets/kaleidoscope/set-3',
+    source: 'source/set-3.png',
+    output: 'set-3-128.png',
+    pack: 'set-3',
+    layout: 'components',
+    minPixels: 12,
+    rows: numberedRows('petal-leaf'),
+  },
+  'ferns-wildflower-petals': {
+    root: '../assets/kaleidoscope/set-4',
+    source: 'source/set-4.png',
+    output: 'set-4-128.png',
+    pack: 'set-4',
+    layout: 'components',
+    minPixels: 8,
+    rows: numberedRows('fern-petal'),
+  },
+  'botanical-specimens': {
+    root: '../assets/kaleidoscope/botanical-specimens-v1',
+    source: 'source/botanical-specimens-source.png',
+    output: 'botanical-specimens-128.png',
+    pack: 'botanical-specimens-v1',
+    layout: 'components',
+    minPixels: 12,
+    rows: numberedRows('botanical'),
+  },
 };
+function numberedRows(prefix) {
+  return Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) =>
+    prefix + '-' + String(r * 8 + c + 1).padStart(2, '0')));
+}
 const packName = process.argv[2] || 'motifs';
 const spec = packs[packName];
 if (!spec) throw new Error(`Unknown pack "${packName}". Use: ${Object.keys(packs).join(', ')}`);
@@ -113,7 +215,114 @@ function retainMotifComponents(data, width, height, channels) {
   }
 }
 
+// Component packing: every shape is the set of pixels connected (8-way) to a
+// solid body, and belongs to the grid cell its centroid falls in, so a shape
+// that spills over a cell line comes along whole and a stacked shape (cairn
+// stones, a double wave) keeps all its parts. Everything else in the sheet,
+// the faint matte the background removal left behind included, is dropped.
+// One scale for the whole sheet, set by its largest shape, so the shapes
+// keep their sizes relative to each other; each is centred in its tile.
+async function packByComponents() {
+  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height, ch = info.channels;
+  const SEED = spec.seed || 40, KEEP_RING = spec.keepRing || 6, MIN_PIXELS = spec.minPixels || 120;
+  const label = new Int32Array(W * H).fill(-1);
+  const queue = new Int32Array(W * H);
+  const comps = [];
+  for (let start = 0; start < W * H; start++) {
+    if (label[start] >= 0 || data[start * ch + 3] < SEED) continue;
+    const id = comps.length;
+    let head = 0, tail = 0, sx = 0, sy = 0, n = 0;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    label[start] = id; queue[tail++] = start;
+    while (head < tail) {
+      const i = queue[head++], x = i % W, y = (i / W) | 0;
+      sx += x; sy += y; n++;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        const nx = x + ox, ny = y + oy;
+        if ((ox || oy) && nx >= 0 && nx < W && ny >= 0 && ny < H) {
+          const j = ny * W + nx;
+          if (label[j] < 0 && data[j * ch + 3] >= SEED) { label[j] = id; queue[tail++] = j; }
+        }
+      }
+    }
+    comps.push({ n, cx: sx / n, cy: sy / n, x0, y0, x1, y1 });
+  }
+  // each cell: its components (by centroid) and their joint bounds
+  const cellW = W / columns, cellH = H / rows.length;
+  const cells = Array.from({ length: columns * rows.length }, () => ({ ids: new Set(), x0: W, y0: H, x1: -1, y1: -1 }));
+  comps.forEach((c, id) => {
+    if (c.n < MIN_PIXELS) return;
+    const col = Math.min(columns - 1, Math.floor(c.cx / cellW)), row = Math.min(rows.length - 1, Math.floor(c.cy / cellH));
+    const cell = cells[row * columns + col];
+    cell.ids.add(id);
+    cell.x0 = Math.min(cell.x0, c.x0); cell.y0 = Math.min(cell.y0, c.y0);
+    cell.x1 = Math.max(cell.x1, c.x1); cell.y1 = Math.max(cell.y1, c.y1);
+  });
+  const empty = cells.map((c, i) => c.ids.size ? -1 : i).filter(i => i >= 0);
+  if (empty.length) throw new Error('No shape found in cells ' + empty.join(', '));
+  const contentSize = tileSize - padding * 2;
+  let largest = 0;
+  for (const c of cells) largest = Math.max(largest, c.x1 - c.x0 + 1 + KEEP_RING * 2, c.y1 - c.y0 + 1 + KEEP_RING * 2);
+  const scale = contentSize / largest;
+
+  const composites = [], assets = [];
+  for (let row = 0; row < rows.length; row++) {
+    for (let column = 0; column < columns; column++) {
+      const cell = cells[row * columns + column];
+      const bx0 = Math.max(0, cell.x0 - KEEP_RING), by0 = Math.max(0, cell.y0 - KEEP_RING);
+      const bx1 = Math.min(W - 1, cell.x1 + KEEP_RING), by1 = Math.min(H - 1, cell.y1 + KEEP_RING);
+      const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
+      // this cell's own pixels, plus a ring of KEEP_RING around them for the
+      // antialiasing and glow; a neighbour's pixels never come along
+      const own = new Uint8Array(bw * bh);
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+        if (cell.ids.has(label[(by0 + y) * W + bx0 + x])) own[y * bw + x] = 1;
+      }
+      let keep = own;
+      for (let pass = 0; pass < KEEP_RING; pass++) {
+        const next = keep.slice();
+        for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+          if (!keep[y * bw + x]) continue;
+          for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+            const nx = x + ox, ny = y + oy;
+            if (nx >= 0 && nx < bw && ny >= 0 && ny < bh) {
+              const lj = label[(by0 + ny) * W + bx0 + nx];
+              if (lj < 0 || cell.ids.has(lj)) next[ny * bw + nx] = 1;
+            }
+          }
+        }
+        keep = next;
+      }
+      const crop = Buffer.alloc(bw * bh * 4);
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+        const si = ((by0 + y) * W + bx0 + x) * ch, di = (y * bw + x) * 4;
+        crop[di] = data[si]; crop[di + 1] = data[si + 1]; crop[di + 2] = data[si + 2];
+        crop[di + 3] = keep[y * bw + x] ? data[si + 3] : 0;
+      }
+      const tw = Math.max(1, Math.round(bw * scale)), th = Math.max(1, Math.round(bh * scale));
+      const input = await sharp(crop, { raw: { width: bw, height: bh, channels: 4 } })
+        .resize(tw, th, { fit: 'fill', kernel: 'lanczos3' }).png().toBuffer();
+      composites.push({
+        input,
+        left: column * tileSize + Math.round((tileSize - tw) / 2),
+        top: row * tileSize + Math.round((tileSize - th) / 2),
+      });
+      assets.push({ id: rows[row][column], index: row * columns + column, row, column,
+        x: column * tileSize, y: row * tileSize, width: tileSize, height: tileSize,
+        anchor: [0.5, 0.5], orientation: 'up' });
+    }
+  }
+  return { composites, assets };
+}
+
 async function main() {
+  if (spec.layout === 'components') {
+    const { composites, assets } = await packByComponents();
+    await writeAtlas(composites, assets);
+    return;
+  }
   const { width, height, hasAlpha } = await sharp(source).metadata();
   if (!width || !height || !hasAlpha) throw new Error('Expected an RGBA source image.');
 
@@ -169,6 +378,10 @@ async function main() {
     }
   }
 
+  await writeAtlas(composites, assets);
+}
+
+async function writeAtlas(composites, assets) {
   await sharp({
     create: {
       width: columns * tileSize,

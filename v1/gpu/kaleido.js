@@ -42,7 +42,7 @@
 // (ATLAS_SETS); changing it loads the other one in the background and swaps
 // it in under the live shapes once it is built. The atlas the renderer works
 // with is 8 x 8 tiles of 128 px with 12 px of transparent padding, one family
-// of motifs per row. A smaller square 8 x 8 atlas (set 2 is 512 px, 64 px
+// of motifs per row. A smaller square 8 x 8 atlas (set 1, the botanical atlas, is 512 px, 64 px
 // tiles with no padding) is first repacked into that layout, each tile
 // scaled into the 104 px inner square (see repack).
 // Its background removal left a faint matte around every motif: tens of
@@ -70,8 +70,18 @@ import { radialFade, radialFadeIn, RADIAL_FADE_OUT_K } from '../core/fade.js';
 // Relative to the page base (v1/index.html sets <base href="../">), so this
 // resolves from the repo root.
 const ATLAS_SETS = {
-  1: 'assets/kaleidoscope/motifs-v1/motifs-128.png',
-  2: 'assets/kaleidoscope/botanical-atlas-meditation-draft.png'
+  1: 'assets/kaleidoscope/botanical-atlas-meditation-draft.png',
+  2: 'assets/kaleidoscope/set-2/set-2-128.png',
+  3: 'assets/kaleidoscope/set-3/set-3-128.png',
+  4: 'assets/kaleidoscope/set-4/set-4-128.png',
+  5: 'assets/kaleidoscope/botanical-specimens-v1/botanical-specimens-128.png',
+  6: 'assets/kaleidoscope/motifs-v1/motifs-128.png',
+  7: 'assets/kaleidoscope/colorful-shapes-v1/colorful-shapes-128.png',
+  8: 'assets/kaleidoscope/flat-colorful-shapes-v1/flat-colorful-shapes-128.png',
+  9: 'assets/kaleidoscope/confetti-sparkles-v1/confetti-sparkles-128.png',
+  10: 'assets/kaleidoscope/photoreal-confetti-v1/photoreal-confetti-128.png',
+  11: 'assets/kaleidoscope/fireworks-v1/fireworks-128.png',
+  12: 'assets/kaleidoscope/peaceful-shapes-v1/peaceful-shapes-128.png'
 };
 const GRID = 8;                     // 8 x 8 tiles, one family per row
 const TILE = 128;
@@ -1050,7 +1060,7 @@ export function createKaleido(device, format, platform) {
     instCount = 0;
     const lyr = S.layers;
     if (!lyr || !lyr.kaleido) { wasOn = false; return; }
-    const wantSet = S.kaleidoSet === 2 ? 2 : 1;
+    const wantSet = ATLAS_SETS[S.kaleidoSet] ? S.kaleidoSet : 1;
     if (wantSet !== requestedSet) load(wantSet);
     if (!ready) return;
 

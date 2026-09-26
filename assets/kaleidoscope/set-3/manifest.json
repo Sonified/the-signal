@@ -1,0 +1,977 @@
+{
+  "version": 1,
+  "pack": "set-3",
+  "image": "set-3-128.png",
+  "width": 1024,
+  "height": 1024,
+  "tileSize": 128,
+  "padding": 12,
+  "columns": 8,
+  "rows": 8,
+  "frameOrder": "row-major",
+  "alpha": "straight",
+  "colorSpace": "srgb",
+  "defaultOrientation": "up",
+  "assets": [
+    {
+      "id": "petal-leaf-01",
+      "index": 0,
+      "row": 0,
+      "column": 0,
+      "x": 0,
+      "y": 0,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-02",
+      "index": 1,
+      "row": 0,
+      "column": 1,
+      "x": 128,
+      "y": 0,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-03",
+      "index": 2,
+      "row": 0,
+      "column": 2,
+      "x": 256,
+      "y": 0,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-04",
+      "index": 3,
+      "row": 0,
+      "column": 3,
+      "x": 384,
+      "y": 0,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-05",
+      "index": 4,
+      "row": 0,
+      "column": 4,
+      "x": 512,
+      "y": 0,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-06",
+      "index": 5,
+      "row": 0,
+      "column": 5,
+      "x": 640,
+      "y": 0,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-07",
+      "index": 6,
+      "row": 0,
+      "column": 6,
+      "x": 768,
+      "y": 0,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-08",
+      "index": 7,
+      "row": 0,
+      "column": 7,
+      "x": 896,
+      "y": 0,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-09",
+      "index": 8,
+      "row": 1,
+      "column": 0,
+      "x": 0,
+      "y": 128,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-10",
+      "index": 9,
+      "row": 1,
+      "column": 1,
+      "x": 128,
+      "y": 128,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-11",
+      "index": 10,
+      "row": 1,
+      "column": 2,
+      "x": 256,
+      "y": 128,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-12",
+      "index": 11,
+      "row": 1,
+      "column": 3,
+      "x": 384,
+      "y": 128,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-13",
+      "index": 12,
+      "row": 1,
+      "column": 4,
+      "x": 512,
+      "y": 128,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-14",
+      "index": 13,
+      "row": 1,
+      "column": 5,
+      "x": 640,
+      "y": 128,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-15",
+      "index": 14,
+      "row": 1,
+      "column": 6,
+      "x": 768,
+      "y": 128,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-16",
+      "index": 15,
+      "row": 1,
+      "column": 7,
+      "x": 896,
+      "y": 128,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-17",
+      "index": 16,
+      "row": 2,
+      "column": 0,
+      "x": 0,
+      "y": 256,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-18",
+      "index": 17,
+      "row": 2,
+      "column": 1,
+      "x": 128,
+      "y": 256,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-19",
+      "index": 18,
+      "row": 2,
+      "column": 2,
+      "x": 256,
+      "y": 256,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-20",
+      "index": 19,
+      "row": 2,
+      "column": 3,
+      "x": 384,
+      "y": 256,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-21",
+      "index": 20,
+      "row": 2,
+      "column": 4,
+      "x": 512,
+      "y": 256,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-22",
+      "index": 21,
+      "row": 2,
+      "column": 5,
+      "x": 640,
+      "y": 256,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-23",
+      "index": 22,
+      "row": 2,
+      "column": 6,
+      "x": 768,
+      "y": 256,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-24",
+      "index": 23,
+      "row": 2,
+      "column": 7,
+      "x": 896,
+      "y": 256,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-25",
+      "index": 24,
+      "row": 3,
+      "column": 0,
+      "x": 0,
+      "y": 384,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-26",
+      "index": 25,
+      "row": 3,
+      "column": 1,
+      "x": 128,
+      "y": 384,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-27",
+      "index": 26,
+      "row": 3,
+      "column": 2,
+      "x": 256,
+      "y": 384,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-28",
+      "index": 27,
+      "row": 3,
+      "column": 3,
+      "x": 384,
+      "y": 384,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-29",
+      "index": 28,
+      "row": 3,
+      "column": 4,
+      "x": 512,
+      "y": 384,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-30",
+      "index": 29,
+      "row": 3,
+      "column": 5,
+      "x": 640,
+      "y": 384,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-31",
+      "index": 30,
+      "row": 3,
+      "column": 6,
+      "x": 768,
+      "y": 384,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-32",
+      "index": 31,
+      "row": 3,
+      "column": 7,
+      "x": 896,
+      "y": 384,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-33",
+      "index": 32,
+      "row": 4,
+      "column": 0,
+      "x": 0,
+      "y": 512,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-34",
+      "index": 33,
+      "row": 4,
+      "column": 1,
+      "x": 128,
+      "y": 512,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-35",
+      "index": 34,
+      "row": 4,
+      "column": 2,
+      "x": 256,
+      "y": 512,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-36",
+      "index": 35,
+      "row": 4,
+      "column": 3,
+      "x": 384,
+      "y": 512,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-37",
+      "index": 36,
+      "row": 4,
+      "column": 4,
+      "x": 512,
+      "y": 512,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-38",
+      "index": 37,
+      "row": 4,
+      "column": 5,
+      "x": 640,
+      "y": 512,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-39",
+      "index": 38,
+      "row": 4,
+      "column": 6,
+      "x": 768,
+      "y": 512,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-40",
+      "index": 39,
+      "row": 4,
+      "column": 7,
+      "x": 896,
+      "y": 512,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-41",
+      "index": 40,
+      "row": 5,
+      "column": 0,
+      "x": 0,
+      "y": 640,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-42",
+      "index": 41,
+      "row": 5,
+      "column": 1,
+      "x": 128,
+      "y": 640,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-43",
+      "index": 42,
+      "row": 5,
+      "column": 2,
+      "x": 256,
+      "y": 640,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-44",
+      "index": 43,
+      "row": 5,
+      "column": 3,
+      "x": 384,
+      "y": 640,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-45",
+      "index": 44,
+      "row": 5,
+      "column": 4,
+      "x": 512,
+      "y": 640,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-46",
+      "index": 45,
+      "row": 5,
+      "column": 5,
+      "x": 640,
+      "y": 640,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-47",
+      "index": 46,
+      "row": 5,
+      "column": 6,
+      "x": 768,
+      "y": 640,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-48",
+      "index": 47,
+      "row": 5,
+      "column": 7,
+      "x": 896,
+      "y": 640,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-49",
+      "index": 48,
+      "row": 6,
+      "column": 0,
+      "x": 0,
+      "y": 768,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-50",
+      "index": 49,
+      "row": 6,
+      "column": 1,
+      "x": 128,
+      "y": 768,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-51",
+      "index": 50,
+      "row": 6,
+      "column": 2,
+      "x": 256,
+      "y": 768,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-52",
+      "index": 51,
+      "row": 6,
+      "column": 3,
+      "x": 384,
+      "y": 768,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-53",
+      "index": 52,
+      "row": 6,
+      "column": 4,
+      "x": 512,
+      "y": 768,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-54",
+      "index": 53,
+      "row": 6,
+      "column": 5,
+      "x": 640,
+      "y": 768,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-55",
+      "index": 54,
+      "row": 6,
+      "column": 6,
+      "x": 768,
+      "y": 768,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-56",
+      "index": 55,
+      "row": 6,
+      "column": 7,
+      "x": 896,
+      "y": 768,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-57",
+      "index": 56,
+      "row": 7,
+      "column": 0,
+      "x": 0,
+      "y": 896,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-58",
+      "index": 57,
+      "row": 7,
+      "column": 1,
+      "x": 128,
+      "y": 896,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-59",
+      "index": 58,
+      "row": 7,
+      "column": 2,
+      "x": 256,
+      "y": 896,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-60",
+      "index": 59,
+      "row": 7,
+      "column": 3,
+      "x": 384,
+      "y": 896,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-61",
+      "index": 60,
+      "row": 7,
+      "column": 4,
+      "x": 512,
+      "y": 896,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-62",
+      "index": 61,
+      "row": 7,
+      "column": 5,
+      "x": 640,
+      "y": 896,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-63",
+      "index": 62,
+      "row": 7,
+      "column": 6,
+      "x": 768,
+      "y": 896,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    },
+    {
+      "id": "petal-leaf-64",
+      "index": 63,
+      "row": 7,
+      "column": 7,
+      "x": 896,
+      "y": 896,
+      "width": 128,
+      "height": 128,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up"
+    }
+  ]
+}
