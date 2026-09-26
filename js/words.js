@@ -83,8 +83,7 @@ export const WORDS = [
   ['shoulder', 'body'],
   ['shoulders', 'body'],
   ['collarbone', 'body'],
-  ['arm', 'body'],
-  ['arms', 'body'],
+  ['upper arm', 'body'],
   ['forearm', 'body'],
   ['elbow', 'body'],
   ['wrist', 'body'],
@@ -730,7 +729,6 @@ export const WORDS = [
   ['bike', 'play'],
   ['car', 'play'],
   ['train', 'play'],
-  ['puppet', 'play'],
   ['kaleidoscope', 'play', 'wonder'],
   ['whistle', 'play', 'art'],
   ['fun', 'play', 'joy'],
@@ -1459,3 +1457,4 @@ export const WORDS = [
   ['nourishing company', 'connection', 'safety'],
   ['welcome guest', 'connection', 'open']
 ];
+
