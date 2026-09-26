@@ -34,6 +34,10 @@ const NUM = [
   ['kaleidoFolds',       3,   16,  8,    true ],
   ['kaleidoDensity',     0,   1,   0.5,  false],
   ['kaleidoSpeed',       0,   3,   1,    false],
+  // How far each shape's speed strays from Speed, and the seconds one
+  // cycle of that wander takes, as the strobe's variance rates read.
+  ['kaleidoSpeedVar',    0,   1,   0.15, false],
+  ['kaleidoSpeedPeriod', 1,   60,  10,   true ],
   ['kaleidoSize',        0.2, 3,   1,    false],
   ['kaleidoSizeVar',     0,   1,   0.6,  false],
   ['kaleidoSpinMax',     0,   3,   0.35, false],
@@ -197,7 +201,7 @@ const times2 = key => S => S[key].toFixed(2) + '×';
 function grade(id, key, label) {
   const n = spec(key);
   return {
-    id, section: 'kaleido', sub: 'Color', label, kind: 'slider',
+    id, section: 'kaleido', label, kind: 'slider',
     parent: 'kaleidoGrade',
     min: 0, max: 200, step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
@@ -225,11 +229,31 @@ export const KALEIDO_CONTROLS = [
     get: S => !!S.layers.kaleido,
     set: (S, on) => { S.layers.kaleido = on; save(); }
   },
+  // The layer's master opacity, then how far it takes on the strobe's
+  // colour and flicker, at the head of the section under the switch.
+  percent('kaleidoOpacity', 'kaleidoOpacity', 'Opacity'),
+  percent('kaleidoTint', 'kaleidoTint', 'Tint to strobe colour',
+    S => S.kaleidoTint === 0 ? 'own colour' : Math.round(S.kaleidoTint * 100) + '%'),
+  percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
+    S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%'),
+  // The motifs' own color, graded before any tint toward the strobe. The
+  // switch is the group's heading, its sliders indented under it; off, the
+  // grade is not applied and the sliders are hidden, keeping their values
+  // for when it comes back on.
+  {
+    id: 'kaleidoGrade', section: 'kaleido', label: 'Color', kind: 'toggle', def: DEF_GRADE,
+    get: S => !!S.kaleidoGrade,
+    set: (S, on) => { S.kaleidoGrade = !!on; save(); },
+    enabled: layerOn
+  },
+  grade('kaleidoBright', 'kaleidoBright', 'Brightness'),
+  grade('kaleidoContrast', 'kaleidoContrast', 'Contrast'),
+  grade('kaleidoSat', 'kaleidoSat', 'Saturation'),
   // The radial fade in from the centre, the rings' Ring fade in for this
   // layer: 0 is no fade, higher values ease the shapes in further out.
-  // Second in the section, beside the switch, since it shapes how the
-  // whole layer reads rather than any one kind of motion.
-  percent('kaleidoFade', 'kaleidoFade', 'Fade in'),
+  // Up top with the opacity, since it shapes how the whole layer reads
+  // rather than any one kind of motion.
+  percent('kaleidoFade', 'kaleidoFade', 'Center fade radius'),
 
   // How many wedges the circle is cut into. The readout keeps the number
   // first, so clicking it to type opens on the fold count itself.
@@ -244,6 +268,8 @@ export const KALEIDO_CONTROLS = [
   },
   percent('kaleidoDensity', 'kaleidoDensity', 'Density'),
   direct('kaleidoSpeed', 'kaleidoSpeed', 'Speed', 0.05, times2('kaleidoSpeed')),
+  percent('kaleidoSpeedVar', 'kaleidoSpeedVar', 'Speed variance'),
+  direct('kaleidoSpeedPeriod', 'kaleidoSpeedPeriod', 'Variance rate', 1, S => S.kaleidoSpeedPeriod + 's / cycle'),
   direct('kaleidoSize', 'kaleidoSize', 'Max size', 0.05, times2('kaleidoSize')),
   percent('kaleidoSizeVar', 'kaleidoSizeVar', 'Size variance'),
   {
@@ -343,29 +369,6 @@ export const KALEIDO_CONTROLS = [
     enabled: layerOn
   },
 
-  // How far the kaleidoscope follows the strobe, in colour and in
-  // brightness. Both default to 0, a steady layer of its own on top of the
-  // flicker, and the readouts spell out what 0 means.
-  // The motifs' own color, graded before any tint toward the strobe. The
-  // switch heads the group; off, the grade is not applied and the sliders
-  // are hidden, keeping their values for when it comes back on.
-  {
-    id: 'kaleidoGrade', section: 'kaleido', sub: 'Color', label: 'On', kind: 'toggle', def: DEF_GRADE,
-    get: S => !!S.kaleidoGrade,
-    set: (S, on) => { S.kaleidoGrade = !!on; save(); },
-    enabled: layerOn
-  },
-  grade('kaleidoBright', 'kaleidoBright', 'Brightness'),
-  grade('kaleidoContrast', 'kaleidoContrast', 'Contrast'),
-  grade('kaleidoSat', 'kaleidoSat', 'Saturation'),
-
-  percent('kaleidoOpacity', 'kaleidoOpacity', 'Opacity', null, 'With the strobe'),
-  percent('kaleidoTint', 'kaleidoTint', 'Tint to strobe colour',
-    S => S.kaleidoTint === 0 ? 'own colour' : Math.round(S.kaleidoTint * 100) + '%',
-    'With the strobe'),
-  percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
-    S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%',
-    'With the strobe')
 ];
 
 export const KALEIDO_SECTIONS = [

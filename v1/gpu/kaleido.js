@@ -178,9 +178,14 @@ const FILL_MIN_RATE = 30;
 const FILL_DEADBAND = 0.08;
 // Quadrature steps per axis for inDomainShare.
 const SHARE_STEPS = 16;
-// Each object travels a little faster or slower than the average, so the
-// motifs drift past one another instead of marching out in lockstep.
-const SPEED_JITTER = 0.15;
+// Speed variance: each object travels faster or slower than the average,
+// by up to the setting's share of it either way, so the motifs drift past
+// one another instead of marching out in lockstep. Its own speed is the
+// sine of a phase drawn at birth, and Variance rate is the seconds one
+// cycle of it takes: each object surges and slows on that period, scaled
+// by its own velW so they never pulse together. SPEED_FLOOR keeps a
+// full-variance object from stalling at the centre for good.
+const SPEED_FLOOR = 0.1;
 // With spin variance at 0 every object turns at this fraction of the maximum
 // rate, all the same way, which reads as one slow shared sway.
 const COMMON_SPIN = 0.5;
@@ -372,7 +377,8 @@ export function createKaleido(device, format, platform) {
   // and orbitRnd are the object's own random draws, kept raw so the size,
   // spin and orbit sliders act on live objects at once.
   const depth = new Float32Array(MAX_SHAPES);
-  const vel = new Float32Array(MAX_SHAPES);
+  const velPh = new Float32Array(MAX_SHAPES);   // speed phase (see SPEED_FLOOR)
+  const velW = new Float32Array(MAX_SHAPES);    // its own share of the wander rate
   const phiU = new Float32Array(MAX_SHAPES);
   const sizeRnd = new Float32Array(MAX_SHAPES);
   const spinRnd = new Float32Array(MAX_SHAPES);
@@ -767,7 +773,8 @@ export function createKaleido(device, format, platform) {
     if (!freeTop || !allowedCount) return;
     const i = free[--freeTop];
     depth[i] = d;
-    vel[i] = 1 + SPEED_JITTER * (Math.random() * 2 - 1);
+    velPh[i] = Math.random() * TAU;
+    velW[i] = 0.5 + Math.random();
     sizeRnd[i] = Math.random();
     spinRnd[i] = Math.random() * 2 - 1;
     orbitRnd[i] = Math.random() * 2 - 1;
@@ -1008,12 +1015,16 @@ export function createKaleido(device, format, platform) {
   // spin draw, at the depth it had reached: the band keeps a steady flow of
   // objects crossing it at every radius, not only near the centre.
   // Unmirrored, the angle simply wraps round the wedge.
-  function advance(dt, travel, spinMax, spinVar, orbitMax, orbitVar) {
+  function advance(dt, travel, spinMax, spinVar, orbitMax, orbitVar, speedVar, speedPeriod) {
     let w = 0;
     const du = dt / spanNow;
+    const dph = dt * TAU / speedPeriod;
     for (let n = 0; n < live; n++) {
       const i = order[n];
-      const d = depth[i] + dt * travel * vel[i];
+      velPh[i] = (velPh[i] + dph * velW[i]) % TAU;
+      let v = 1 + speedVar * Math.sin(velPh[i]);
+      if (v < SPEED_FLOOR) v = SPEED_FLOOR;
+      const d = depth[i] + dt * travel * v;
       if (d >= 1) { release(i); continue; }
       depth[i] = d;                // reachU reads it
       const om = orbitRate(i, orbitMax, orbitVar);
@@ -1042,7 +1053,7 @@ export function createKaleido(device, format, platform) {
   }
 
   // Insertion sort, far to near. The order barely changes between frames
-  // (the speed jitter reorders neighbours, newborns arrive at the end with
+  // (the speed variance reorders neighbours, newborns arrive at the end with
   // the smallest depth, and a catch-up adds a few a frame at random depths),
   // so this is close to one pass.
   function sortOrder() {
@@ -1068,6 +1079,8 @@ export function createKaleido(device, format, platform) {
     const mirror = S.kaleidoMirror !== false;   // missing means on
     const density = clampNum(S.kaleidoDensity, 0, 1, 0.5);
     const speed = clampNum(S.kaleidoSpeed, 0, 3, 1);
+    const speedVar = clampNum(S.kaleidoSpeedVar ?? 0.15, 0, 1, 0.15);
+    const speedPeriod = clampNum(S.kaleidoSpeedPeriod ?? 10, 1, 60, 10);
     const sizeMul = clampNum(S.kaleidoSize, 0.2, 3, 1);
     const sizeVar = clampNum(S.kaleidoSizeVar, 0, 1, 0.6);
     const spinMax = clampNum(S.kaleidoSpinMax, 0, 3, 0.35);
@@ -1133,7 +1146,7 @@ export function createKaleido(device, format, platform) {
 
     if (S.running && dt > 0) {
       twistAng = (twistAng + dt * twist) % TAU;
-      advance(dt, travel, spinMax, spinVar, orbitMax, orbitVar);
+      advance(dt, travel, spinMax, spinVar, orbitMax, orbitVar, speedVar, speedPeriod);
       // Births at the centre arrive at the rate that holds the live count at
       // its target (target objects per flight), at jittered intervals so
       // they come in a loose trickle rather than a metronome.
