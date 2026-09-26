@@ -251,6 +251,7 @@ export const S = {
   // Drift: an unattended hand on the mixer, slowly crossfading from one
   // recorded place to another instead of holding a fixed blend.
   ambDrift: false,
+  ambKidsFreq: 2 / 3, // share of the time the children are there while drift runs (js/ambience.js)
   ambDriftFadeS: 12,   // seconds one drift crossfade between places takes
   // Dry by default: these are real places, recorded in the room they were in.
   ambReverb: 0, ambRevTime: 4.5,

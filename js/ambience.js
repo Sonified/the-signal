@@ -389,15 +389,20 @@ export function ambienceOff() {
 // caller's tick arrives; the tick only decides when the next move is due.
 //
 // The children ride alongside the places. While drift runs they come and go:
-// a visit and an absence alternate. A visit lasts 60 to 180 s and an absence
-// 30 to 90 s, so on average they are there about two thirds of the time. A visit brings one track only, the one the current
+// a visit and an absence alternate. A visit lasts 60 to 180 s; how long an
+// absence lasts follows Children (S.ambKidsFreq, the share of the time they
+// are there): at its default of two thirds, 30 to 90 s, as it always was,
+// shorter above it and longer below, until at 100% they never leave and at
+// 0 never come. A visit brings one track only, the one the current
 // place names in its `kids` field (the beach for the ocean places, the
-// playground inland); night and rain name none, so a visit that falls there
-// is silent and counts as an absence. They sit well back, at 0.4 of the
+// playground inland); night and rain name none, so there the children
+// already playing stay, and a visit that starts there brings one of the two
+// at random (kidsFor). Children are never silenced by the place alone. They sit well back, at 0.4 of the
 // place's own drift level, and fade over ten seconds. If the drift moves to a
 // place whose children differ, the visit ends and they fade out with the
-// crossfade. Every visit is followed by at least 30 s of absence, longer than
-// any fade, so one track has always gone before the other can arrive.
+// crossfade. At the default every visit is followed by at least 30 s of
+// absence, longer than any fade, so one track has always gone before the
+// other can arrive; turned high, a change of place can crossfade the two.
 const DRIFT_IDS = WORLDS.map(w => w.id);
 const KIDS_IDS = [...new Set(WORLDS.map(w => w.kids).filter(Boolean))];
 export const DRIFT_LEVEL = 0.55;
@@ -413,7 +418,24 @@ const KIDS_FADE_S = 10;
 const KIDS_VISIT_MIN_MS = 60000, KIDS_VISIT_SPAN_MS = 120000;     // visits 60-180 s
 const KIDS_AWAY_MIN_MS = 30000, KIDS_AWAY_SPAN_MS = 60000;        // absences 30-90 s
 const kidsVisitPeriod = () => KIDS_VISIT_MIN_MS + Math.random() * KIDS_VISIT_SPAN_MS;
-const kidsPeriod = () => KIDS_AWAY_MIN_MS + Math.random() * KIDS_AWAY_SPAN_MS;
+// The children for a place: its own track, or for a place with none, the
+// ones already there, else either at random.
+function kidsFor(worldId, current) {
+  const w = WORLDS.find(x => x.id === worldId);
+  if (w && w.kids) return w.kids;
+  return current || KIDS_IDS[Math.floor(Math.random() * KIDS_IDS.length)];
+}
+const kidsShare = () => {
+  const v = S.ambKidsFreq;
+  return typeof v === 'number' && v >= 0 && v <= 1 ? v : 2 / 3;
+};
+// The absence that gives the visits their share: 2 (1 - f) / f times the
+// 30-90 s draw, since the visits average 120 s and the absences 60 at 2/3.
+const kidsPeriod = () => {
+  const f = kidsShare();
+  if (f <= 0 || f >= 1) return 0;
+  return (KIDS_AWAY_MIN_MS + Math.random() * KIDS_AWAY_SPAN_MS) * 2 * (1 - f) / f;
+};
 
 // world: where the drift is going or has settled; dwellUntil: 0 while the
 // crossfade is still sounding; kids: the current visit or absence.
@@ -441,22 +463,40 @@ function crossfadeWorld() {
   // Children who do not belong in the new place leave with the old one, on
   // their own fade rather than the place's, so a long place crossfade can
   // never keep one children's track sounding into the next visit.
-  const k = drift.kids, kids = WORLDS.find(w => w.id === next).kids;
-  if (k.present && k.id && k.id !== kids) {
+  const k = drift.kids, kids = kidsFor(next, k.id);
+  if (k.present && k.id && k.id !== kids && kidsShare() < 1) {
     glideAmbLayer(layerOf(k.id), 0, KIDS_FADE_S);
     k.present = false; k.id = null; k.until = Date.now() + kidsPeriod();
   }
 }
 
+// At either end of Children the schedule steps aside: 0 sends any visit
+// home at once, and 100% keeps the current place's children in, following
+// the drift from place to place. Both take effect on the next tick.
 function kidsTick(now) {
-  const k = drift.kids;
+  const k = drift.kids, f = kidsShare();
+  if (f <= 0) {
+    if (k.present) { if (k.id) glideAmbLayer(layerOf(k.id), 0, KIDS_FADE_S); k.present = false; k.id = null; }
+    k.until = now;
+    return;
+  }
+  if (f >= 1) {
+    const want = kidsFor(drift.world, k.present ? k.id : null);
+    if (!k.present || k.id !== want) {
+      if (k.present && k.id) glideAmbLayer(layerOf(k.id), 0, KIDS_FADE_S);
+      k.present = true; k.id = want;
+      if (want) glideAmbLayer(layerOf(want), peakOf(layerOf(want)), KIDS_FADE_S);
+    }
+    if (k.until < now) k.until = now + kidsVisitPeriod();
+    return;
+  }
   if (now < k.until) return;
   if (k.present) {
     if (k.id) glideAmbLayer(layerOf(k.id), 0, KIDS_FADE_S);
     k.present = false; k.id = null;
   } else {
     k.present = true;
-    k.id = WORLDS.find(w => w.id === drift.world).kids;
+    k.id = kidsFor(drift.world, null);
     if (k.id) glideAmbLayer(layerOf(k.id), peakOf(layerOf(k.id)), KIDS_FADE_S);
   }
   k.until = now + (k.present ? kidsVisitPeriod() : kidsPeriod());

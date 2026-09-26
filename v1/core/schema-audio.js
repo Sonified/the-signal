@@ -307,10 +307,10 @@ export function audioToggleEffects(s) {
 export const AUDIO_SECTIONS = [
   { id: 'audio',      title: 'Audio' },
   { id: 'music',      title: 'Music' },
-  { id: 'atmosphere', title: 'Atmosphere' },
+  { id: 'atmosphere', title: 'Ambience' },
   { id: 'quick',      title: 'Quick bar' },
   { id: 'transport',  title: 'Transport' },
-  { id: 'mixer',      title: 'Atmosphere mixer' }
+  { id: 'mixer',      title: 'Ambience mixer' }
 ];
 
 // ---------- Audio section ----------
@@ -1209,7 +1209,7 @@ const musicControls = [
 // own 'mixer' section further down) ----------
 const atmosphereControls = [
   {
-    id: 'ambOn', section: 'atmosphere', label: 'Atmosphere', kind: 'segment',
+    id: 'ambOn', section: 'atmosphere', label: 'Ambience', kind: 'segment',
     options: [
       { value: true,  label: 'On',  domId: 'amOn' },
       { value: false, label: 'Off', domId: 'amOff' }
@@ -1219,7 +1219,7 @@ const atmosphereControls = [
     format: s => s.ambOn ? 'on' : 'off'
   },
   {
-    id: 'ambVol', section: 'atmosphere', label: 'Atmosphere level', kind: 'slider',
+    id: 'ambVol', section: 'atmosphere', label: 'Ambience level', kind: 'slider',
     min: 0, max: 100, step: 1, def: 18,
     get: s => Math.round(s.ambVol * 100),
     set: (s, pos) => { s.ambVol = pos / 100; applyAmbVol(); save(); },
@@ -1261,6 +1261,17 @@ const atmosphereControls = [
     set: (s, pos) => { s.ambDriftFadeS = pos; save(); },
     format: s => s.ambDriftFadeS + 's',
     visible: s => s.ambOn
+  },
+  {
+    // How much of the time the children are there while the drift runs
+    // (js/ambience.js kidsShare): 0 never, 100% always, and the default the
+    // two thirds the visits and absences always averaged.
+    id: 'ambKidsFreq', section: 'atmosphere', label: 'Children', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 67,
+    get: s => Math.round(s.ambKidsFreq * 100),
+    set: (s, pos) => { s.ambKidsFreq = pos / 100; save(); },
+    format: s => s.ambKidsFreq <= 0 ? 'never' : s.ambKidsFreq >= 1 ? 'always' : Math.round(s.ambKidsFreq * 100) + '%',
+    visible: s => s.ambOn
   }
 ];
 
@@ -1282,7 +1293,7 @@ const quickControls = [
   {
     id: 'ambQuick', section: 'quick', label: 'Open mixer', kind: 'action',
     act: s => { s.panelOpen = false; mixerOpenHook(true); },
-    format: s => s.ambOn ? 'atmosphere: on' : 'atmosphere: off'
+    format: s => s.ambOn ? 'ambience: on' : 'ambience: off'
   },
   {
     id: 'musicQuick', section: 'quick', label: 'Music on or off', kind: 'action',
@@ -1430,7 +1441,7 @@ const mixerControls = [
     format: s => Math.round(s.arpVol * 100) + '%'
   },
   {
-    id: 'ambMixerMaster', section: 'mixer', label: 'Atmosphere', kind: 'slider',
+    id: 'ambMixerMaster', section: 'mixer', label: 'Ambience', kind: 'slider',
     min: 0, max: 100, step: 1, def: 18,
     get: s => Math.round(s.ambVol * 100),
     set: (s, pos) => { s.ambVol = pos / 100; applyAmbVol(); save(); },
