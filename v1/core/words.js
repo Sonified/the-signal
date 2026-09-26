@@ -36,8 +36,16 @@ const REVEAL_MS = 2000;
 // rolled once per word so each one scatters its own way.
 // The Fade in and Fade out switches: off, the word just appears or goes,
 // and the time slider keeps its value for when the switch comes back on.
-export function fadeInMs()  { return S.textFadeInOn  === false ? 0 : Math.max(0, S.textFadeInMs); }
-export function fadeOutMs() { return S.textFadeOutOn === false ? 0 : Math.max(0, S.textFadeOutMs); }
+// Each time dips from its slider by its variance on its own cycle, the shape
+// a fresh roll for every word: taken once as the word appears, so a
+// transition already under way never changes speed.
+let fadeInMul = 1, fadeOutMul = 1;
+export function fadeInMs()  { return S.textFadeInOn  === false ? 0 : Math.max(0, S.textFadeInMs) * fadeInMul; }
+export function fadeOutMs() { return S.textFadeOutOn === false ? 0 : Math.max(0, S.textFadeOutMs) * fadeOutMul; }
+// The variance is a per-word roll, not an oscillation: the set duration is
+// the cap, and each word's fade lands anywhere from (1 - variance) of it up
+// to the full value.
+function fadeRoll(v) { return 1 - (v || 0) * Math.random(); }
 
 export const wordState = {
   text: '',
@@ -54,6 +62,7 @@ export const wordState = {
 wordState.color.set(WHITE);
 
 let words = [];       // [word, ...themeKeys] rows from js/words.js
+let affirmations = []; // [phrase] rows, same shape so pick() reads either pool
 let pool = [];         // rows currently allowed by S.textThemes
 let loaded = false;
 let loadedCbs = [];
@@ -81,8 +90,13 @@ export function onWordsLoaded(fn) {
 // never hold up first paint, and a missing or broken list should degrade to
 // "no words" rather than take the app down with it.
 export function initWords() {
-  import('../../js/words.js').then(m => {
+  Promise.all([
+    import('../../js/words.js'),
+    // its absence degrades to an empty affirmations pool, never a crash
+    import('../../js/affirmations.js').catch(() => ({}))
+  ]).then(([m, af]) => {
     words = m.WORDS || [];
+    affirmations = (af.AFFIRMATIONS || []).map(a => [a]);
     loaded = true;
     rebuildWordPool();
     const cbs = loadedCbs;
@@ -97,27 +111,52 @@ export function initWords() {
 // tick, so picking a word stays a single random index no matter how many
 // themes happen to be switched off.
 export function rebuildWordPool() {
+  // Affirmations are their own pool, whole phrases with no theme filter;
+  // the themes only carve up the individual-words pool.
   const on = S.textThemes;
-  pool = (!on || !Object.keys(on).length)
+  pool = S.textMode === 'affirmations'
+    ? affirmations.slice()
+    : (!on || !Object.keys(on).length)
     ? words.slice()
     : words.filter(row => {
         for (let i = 1; i < row.length; i++) if (on[row[i]]) return true;
         return false;
       });
   lastIdx = -1;
+  order.length = 0;   // a fresh pool deals a fresh cycle
   nextPick = pick();
   wordState.nextText = nextPick;
 }
 
 export function poolSize() { return pool.length; }
 
+// The walk is a shuffled cycle, not independent rolls: the whole pool is
+// dealt in random order and consumed to the end before any word can come
+// again — every word (or affirmation) appears exactly once per cycle. Each
+// new deal is its own shuffle, and the seam is guarded so the first word
+// of a cycle never repeats the last word of the one before.
+let order = [];
+let orderAt = 0;
+
+function reshuffle(avoid) {
+  order.length = pool.length;
+  for (let i = 0; i < pool.length; i++) order[i] = i;
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const t = order[i]; order[i] = order[j]; order[j] = t;
+  }
+  if (order.length > 1 && order[0] === avoid) {
+    const k = 1 + ((Math.random() * (order.length - 1)) | 0);
+    const t = order[0]; order[0] = order[k]; order[k] = t;
+  }
+  orderAt = 0;
+}
+
 function pick() {
   if (!pool.length) return '';
-  if (pool.length === 1) return pool[0][0];
-  let i = (Math.random() * pool.length) | 0;
-  if (i === lastIdx) i = (i + 1) % pool.length; // never the same word twice running
-  lastIdx = i;
-  return pool[i][0];
+  if (orderAt >= order.length) reshuffle(lastIdx);
+  lastIdx = order[orderAt++];
+  return pool[lastIdx][0];
 }
 
 // One tick is one chance at a word. The deterministic slot accumulator crosses
@@ -182,6 +221,8 @@ export function stepWords(t, dt) {
       const w = nextPick || pick();
       if (w) {
         current = w; shownAt = t; showing = true;
+        fadeInMul = fadeRoll(S.textFadeInVar);
+        fadeOutMul = fadeRoll(S.textFadeOutVar);
         wordState.text = w;
         wordState.visible = true;
         wordState.seed = Math.random() * 1000;

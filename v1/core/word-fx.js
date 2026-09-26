@@ -39,6 +39,11 @@ export const FX_NAMES = { fade: 'Fade', gather: 'Gather', wind: 'Wind', cloud: '
 // Arrive and Leave each have their own copy of the transition settings, the
 // Leave copy under the same name plus 'Out'. A mirrored exit leaves the way
 // it came, so it reads the arrival's.
+// Whether a multi-line block's lines move as one rather than one after
+// another: Fade lines together does it both ways; the Fade out block's own
+// switch does it for departures alone.
+export function linesTogether(leaving) { return !!S.textLinesTogether || (leaving && !!S.textLinesTogetherOut); }
+
 export function fxv(name, leaving) { return leaving && !S.textFxMirror ? S[name + 'Out'] : S[name]; }
 
 // The smoke recording's scoreboard. gpu/word-smoke.js writes readyText
@@ -57,7 +62,7 @@ let smokeLatchSeed = -1, smokeLatchPhase = -1;
 // (atlas cell), rotation, cloud dissolve (0 for none), cumulative share of the
 // word's quad area (filled in by the cloud layer), and +1 leaving / -1 arriving.
 // seed is the word's own, so the cloud knows when to reseed its particles.
-export const MAX_CLOUD_LETTERS = 32;
+export const MAX_CLOUD_LETTERS = 72;   // an affirmation phrase runs to ~62 letters
 export const wordLetters = { count: 0, seed: 0, data: new Float32Array(MAX_CLOUD_LETTERS * 12) };
 
 const TAU = Math.PI * 2;
@@ -80,6 +85,11 @@ function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 //   ghost     0..1 strength of the blurred halo copy underneath
 //   cloud     the particles' dissolve amount, 0 when they are not in play
 // relX, relY: the letter's centre relative to the word's centre, css px.
+// Which wrapped line the letters being drawn belong to: the overlay sets
+// this before each line's drawWord call. With Fade lines together off, a
+// block's lines run one after another, each on its own compressed clock.
+export const lineCtx = { k: 0, n: 1 };
+
 export function letterFx(i, n, relX, relY, wordW, size, out) {
   out[0] = 0; out[1] = 0; out[2] = 1; out[3] = 0; out[4] = 1; out[5] = 0; out[6] = 0; out[7] = 0;
   const ph = wordState.phase;
@@ -109,8 +119,10 @@ export function letterFx(i, n, relX, relY, wordW, size, out) {
   else ord = n > 1 ? i / (n - 1) : 0;
   ord = clamp01(ord + (h3 - 0.5) * turb * 0.4);
 
+  let prog = wordState.progress;
+  if (lineCtx.n > 1 && !linesTogether(leaving)) prog = clamp01(prog * lineCtx.n - lineCtx.k);
   const st = Math.min(0.9, fxv('textFxStagger', leaving));
-  const u = clamp01((wordState.progress - st * ord) / (1 - st));
+  const u = clamp01((prog - st * ord) / (1 - st));
   const k = 1 + 3 * fxv('textFxEase', leaving);
   const d = leaving ? Math.pow(u, k) : Math.pow(1 - u, k);
 

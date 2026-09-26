@@ -28,6 +28,7 @@ import { S } from '../../js/state.js';
 import { MASK_WGSL, SIM_WGSL, COMP_WGSL } from './word-cloud.wgsl.js';
 import { wordLetters, MAX_CLOUD_LETTERS, fxv } from '../core/word-fx.js';
 import { wordState, fadeInMs, fadeOutMs } from '../core/words.js';
+import { W, TRACK } from '../ui/theme.js';
 
 const DENS_W = 256, DENS_H = 128;
 const MASK_W = 512, MASK_H = 256;
@@ -243,7 +244,10 @@ export function createWordCloud(device, format, text) {
     wasActive = true;
     active = true;
 
-    const size = S.textSize || 35;
+    // the word's drawn size: a long affirmation fits itself smaller, and
+    // the cloud's distances scale with the pixels actually on screen
+    const size = text.wordSize(wordState.text, S.textSize || 35, W.light, TRACK.word,
+                               cssW - (S.edgeInset || 0));
     // Arrive and Leave have their own settings; the tail is a departure's.
     const leaving = dir > 0 || (dir === 0 && lastDir > 0);
     const D = Math.max(1, (fxv('textFxDist', leaving) || 1.5) * size);

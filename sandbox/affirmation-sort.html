@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Affirmation Sort</title>
+<style>
+  :root { --bg:#0f141a; --pane:#1a222c; --line:#2c3742; --ink:#e8edf2; --dim:#8b97a3; --faint:#5b6672;
+          --no:#dc626a; --maybe:#e0a44c; --yes:#62d7aa; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { position:sticky; top:0; z-index:2; background:rgba(15,20,26,.94); backdrop-filter:blur(8px);
+           border-bottom:1px solid var(--line); padding:12px 16px; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.02em; }
+  .counts { color:var(--dim); font-size:13px; }
+  .counts b { color:var(--ink); font-weight:600; }
+  .tabs { display:flex; gap:6px; margin-left:auto; flex-wrap:wrap; }
+  button { font:inherit; font-size:13px; color:var(--ink); background:#121820; border:1px solid var(--line);
+           border-radius:7px; padding:6px 11px; cursor:pointer; }
+  button:hover { border-color:#3a4551; }
+  .tabs button.on { border-color:var(--ink); }
+  .hint { color:var(--faint); font-size:12px; width:100%; }
+  main { max-width:760px; margin:0 auto; padding:14px 16px 80px; }
+  .group { color:var(--faint); font-size:12px; letter-spacing:.08em; text-transform:uppercase; margin:22px 2px 4px; }
+  .card { background:var(--pane); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:8px 0;
+          display:grid; grid-template-columns:1fr auto; gap:6px 12px; align-items:center; outline:none; }
+  .card.focus { border-color:#6ea8fe; box-shadow:0 0 0 1px #6ea8fe; }
+  .card.no { opacity:.55; }
+  .phrase { font-size:20px; font-weight:600; }
+  .picks { display:flex; gap:6px; }
+  .picks button { min-width:62px; }
+  .picks button.no.on { background:#3a1c20; border-color:var(--no); color:#ffd6d9; }
+  .picks button.maybe.on { background:#3a2c14; border-color:var(--maybe); color:#ffe8c4; }
+  .picks button.yes.on { background:#123126; border-color:var(--yes); color:#d6fff0; }
+  #out { width:100%; min-height:90px; margin-top:10px; background:#0b0f14; color:var(--ink); border:1px solid var(--line);
+         border-radius:8px; padding:8px; font:12px/1.4 ui-monospace, Menlo, monospace; display:none; }
+  .empty { color:var(--faint); text-align:center; padding:40px 0; }
+  .thought { grid-column:1 / -1; width:100%; background:#121820; color:var(--ink); border:1px solid var(--line);
+             border-radius:7px; padding:6px 9px; font:inherit; font-size:13px; }
+  .thought:focus { outline:none; border-color:#6ea8fe; }
+  .thought::placeholder { color:var(--faint); }
+  @media (max-width:560px) {
+    .card { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Affirmation Sort · round three</h1>
+  <span class="counts" id="counts"></span>
+  <div class="tabs" id="tabs">
+    <button data-f="all" class="on">All</button>
+    <button data-f="yes">Yes</button>
+    <button data-f="maybe">Maybe</button>
+    <button data-f="no">No</button>
+    <button id="copy">Copy results</button>
+  </div>
+  <div class="hint">Keys: <b>1</b> no · <b>2</b> maybe · <b>3</b> yes · <b>0</b> clear · <b>↑ ↓</b> move. Each phrase has its own thoughts box, for rewording or smart breaks (write them with a /). Everything saves in this browser as you go.</div>
+  <textarea id="out" readonly></textarea>
+</header>
+<main>
+  <div id="list"></div>
+</main>
+<script>
+// Candidates for js/affirmations.js: short, in "you", ending in a period
+// (or a question mark). Grouped by feel; the group is only for reading.
+const GROUPS = [
+ [
+  "Gerunds",
+  [
+   "Releasing.",
+   "Receiving.",
+   "Melting.",
+   "Loosening.",
+   "Easing.",
+   "Relaxing.",
+   "Trusting.",
+   "Welcoming.",
+   "Drifting.",
+   "Floating.",
+   "Landing.",
+   "Coming back.",
+   "Letting it be.",
+   "Letting yourself rest.",
+   "Resting in the breath.",
+   "Breathing slowly.",
+   "Sinking deeper.",
+   "Being breathed."
+  ]
+ ],
+ [
+  "Nothing to",
+  [
+   "Nothing to chase.",
+   "Nothing to fight.",
+   "Nothing to fear.",
+   "Nothing to know.",
+   "Nothing to earn.",
+   "Nothing to hide.",
+   "Nothing to manage.",
+   "Nothing to perform.",
+   "Nothing to push.",
+   "Nothing to figure out.",
+   "Nothing is wrong.",
+   "No one to please.",
+   "Nothing needs to happen."
+  ]
+ ],
+ [
+  "Just and enough",
+  [
+   "Just breathing.",
+   "Just resting.",
+   "Just noticing.",
+   "Just here.",
+   "This is plenty.",
+   "This body is enough.",
+   "This pace is enough.",
+   "Enough for now."
+  ]
+ ],
+ [
+  "Body",
+  [
+   "Feel your belly rise.",
+   "Feel your chest soften.",
+   "Feel your heartbeat.",
+   "Feel the air on your skin.",
+   "Feel your back.",
+   "Soften your hands.",
+   "Soften your brow.",
+   "Soften your belly.",
+   "Soften your tongue.",
+   "Loosen your shoulders.",
+   "Unclench your hands.",
+   "Your hands can rest.",
+   "Your breath is enough.",
+   "Your body is listening.",
+   "Your body is home.",
+   "Let your belly be soft.",
+   "Let your eyes rest.",
+   "Let the breath come."
+  ]
+ ],
+ [
+  "Gentle inquiry",
+  [
+   "Can you feel your hands?",
+   "Can you feel your feet?",
+   "Can you feel your heartbeat?",
+   "Can you feel the stillness?",
+   "Can you soften your jaw?",
+   "What wants to rest?",
+   "What wants to let go?",
+   "What is here now?",
+   "Where is the breath?",
+   "What does your body need?",
+   "What if you are already held?"
+  ]
+ ],
+ [
+  "You are",
+  [
+   "You are home.",
+   "You are peace.",
+   "You are breathing.",
+   "You are resting.",
+   "You are open.",
+   "You are allowed.",
+   "You are listening.",
+   "You are becoming still."
+  ]
+ ],
+ [
+  "Gratitude",
+  [
+   "Thank you, heart.",
+   "Thank you, earth.",
+   "Thank you, hands.",
+   "Grateful for this stillness.",
+   "Grateful to be here.",
+   "This moment is a gift."
+  ]
+ ],
+ [
+  "Trust",
+  [
+   "Trust the breath.",
+   "Trust your body.",
+   "It’s all ok.",
+   "Everything is allowed.",
+   "All of you is welcome."
+  ]
+ ],
+ [
+  "Short pieces (smart-break shaped)",
+  [
+   "Breathe. Soften. Rest.",
+   "Soft. Still. Safe.",
+   "Here. Now. Home.",
+   "Let go. Let in.",
+   "Nothing to do. Nowhere to go.",
+   "You are safe. You are free.",
+   "Slow. Soft. Still.",
+   "Just this. Just now.",
+   "Feel. Soften. Release.",
+   "Breathe in. Soften.",
+   "Still here. Still held.",
+   "Rest. Receive. Return.",
+   "Breathing in. Letting go."
+  ]
+ ]
+];
+const ITEMS = [];
+for (const [g, list] of GROUPS) for (const p of list) ITEMS.push({ p, g });
+
+const KEY = 'signal.affsort.v3', NOTES_KEY = 'signal.affsort.notes.v3', TAB_KEY = 'signal.affsort.tab';
+const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const put = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+let picks = {};
+try { picks = JSON.parse(get(KEY) || '{}') || {}; } catch (e) { picks = {}; }
+const save = () => put(KEY, JSON.stringify(picks));
+let notes = {};
+try { notes = JSON.parse(get(NOTES_KEY) || '{}') || {}; } catch (e) { notes = {}; }
+if (typeof notes !== 'object' || Array.isArray(notes)) notes = {};
+// Phrases never leave the list when sorted: the choice lights up and the
+// focus steps down to the next one. The tabs are for reviewing afterwards.
+let filter = get(TAB_KEY) || 'all', focusIdx = 0;
+
+function shown() {
+  return ITEMS.filter(x => filter === 'all' ? true : picks[x.p] === filter);
+}
+function counts() {
+  const c = { no: 0, maybe: 0, yes: 0 };
+  for (const x of ITEMS) if (picks[x.p] in c) c[picks[x.p]]++;
+  const left = ITEMS.length - c.no - c.maybe - c.yes;
+  document.getElementById('counts').innerHTML =
+    `<b>${left}</b> unsorted · <b>${c.yes}</b> yes · <b>${c.maybe}</b> maybe · <b>${c.no}</b> no`;
+}
+function render() {
+  const list = document.getElementById('list');
+  const rows = shown();
+  if (focusIdx >= rows.length) focusIdx = Math.max(0, rows.length - 1);
+  list.innerHTML = rows.length ? '' : '<div class="empty">Nothing here.</div>';
+  let lastGroup = '';
+  rows.forEach((x, i) => {
+    if (x.g !== lastGroup) {
+      lastGroup = x.g;
+      const h = document.createElement('div'); h.className = 'group'; h.textContent = x.g;
+      list.appendChild(h);
+    }
+    const d = document.createElement('div');
+    const p = picks[x.p] || '';
+    d.className = 'card' + (p ? ' ' + p : '') + (i === focusIdx ? ' focus' : '');
+    d.innerHTML = `<div class="phrase"></div><div class="picks">
+        <button class="no${p === 'no' ? ' on' : ''}">1 No</button>
+        <button class="maybe${p === 'maybe' ? ' on' : ''}">2 Maybe</button>
+        <button class="yes${p === 'yes' ? ' on' : ''}">3 Yes</button></div>
+      <input class="thought" type="text" placeholder="Thoughts, rewording, smart breaks…">`;
+    d.querySelector('.phrase').textContent = x.p;
+    const th = d.querySelector('.thought');
+    th.value = notes[x.p] || '';
+    th.oninput = () => { if (th.value) notes[x.p] = th.value; else delete notes[x.p]; put(NOTES_KEY, JSON.stringify(notes)); };
+    th.onfocus = () => { if (focusIdx !== i) { focusIdx = i; paintFocus(); } };
+    // Enter leaves the box and steps down to the next phrase
+    th.onkeydown = e => { if (e.key === 'Enter') { th.blur(); focusIdx = Math.min(i + 1, shown().length - 1); render(); } };
+    d.querySelector('.no').onclick = () => choose(x.p, 'no', i);
+    d.querySelector('.maybe').onclick = () => choose(x.p, 'maybe', i);
+    d.querySelector('.yes').onclick = () => choose(x.p, 'yes', i);
+    d.onclick = e => { if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') { focusIdx = i; render(); } };
+    list.appendChild(d);
+  });
+  counts();
+  const f = list.querySelector('.focus');
+  if (f) f.scrollIntoView({ block: 'nearest' });
+}
+function paintFocus() {
+  document.querySelectorAll('#list .card').forEach((c, k) => c.classList.toggle('focus', k === focusIdx));
+}
+function choose(p, v, i) {
+  picks[p] = picks[p] === v ? undefined : v;
+  if (!picks[p]) delete picks[p];
+  save();
+  // step down to the next phrase (in a filtered tab the row may have left, so stay put)
+  focusIdx = filter === 'all' ? Math.min(i + 1, shown().length - 1) : Math.min(i, shown().length - 1);
+  render();
+}
+document.getElementById('tabs').onclick = e => {
+  const f = e.target.dataset && e.target.dataset.f;
+  if (!f) return;
+  filter = f; focusIdx = 0; put(TAB_KEY, f);
+  paintTabs();
+  render();
+};
+function paintTabs() {
+  document.querySelectorAll('#tabs button[data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === filter));
+}
+document.getElementById('copy').onclick = () => {
+  const out = { yes: [], maybe: [], no: [] };
+  for (const x of ITEMS) if (out[picks[x.p]]) out[picks[x.p]].push(notes[x.p] ? x.p + ' (' + notes[x.p] + ')' : x.p);
+  let txt = 'Affirmation sort results\nyes:\n  ' + out.yes.join('\n  ') + '\nmaybe:\n  ' + out.maybe.join('\n  ') +
+    '\nno:\n  ' + out.no.join('\n  ');
+  const loose = ITEMS.filter(x => !picks[x.p] && notes[x.p]).map(x => x.p + ' (' + notes[x.p] + ')');
+  if (loose.length) txt += '\nunsorted, with thoughts:\n  ' + loose.join('\n  ');
+  const ta = document.getElementById('out');
+  ta.style.display = 'block'; ta.value = txt; ta.select();
+  const b = document.getElementById('copy');
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+    () => { b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy results', 1400); },
+    () => { document.execCommand && document.execCommand('copy'); });
+};
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.tagName === 'INPUT') return;   // typing in a thoughts box is just typing
+  const rows = shown(), x = rows[focusIdx];
+  if (e.key === 'ArrowDown') { focusIdx = Math.min(rows.length - 1, focusIdx + 1); render(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { focusIdx = Math.max(0, focusIdx - 1); render(); e.preventDefault(); }
+  else if (!x) return;
+  else if (e.key === '1') choose(x.p, 'no', focusIdx);
+  else if (e.key === '2') choose(x.p, 'maybe', focusIdx);
+  else if (e.key === '3') choose(x.p, 'yes', focusIdx);
+  else if (e.key === '0') { delete picks[x.p]; save(); render(); }
+});
+paintTabs();
+render();
+</script>
+</body>
+</html>

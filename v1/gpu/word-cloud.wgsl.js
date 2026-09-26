@@ -31,7 +31,7 @@ struct U {
 };
 
 // three vec4s per letter, word-fx.js's wordLetters layout
-struct Letters { v: array<vec4f, 96> };
+struct Letters { v: array<vec4f, 216> };
 
 const ATLAS = 2048.0;
 const SDF_RANGE = 6.0;

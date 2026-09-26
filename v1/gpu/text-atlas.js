@@ -29,6 +29,8 @@
 // runs where the rasteriser actually put the outline.
 
 import { FONT, W } from '../ui/theme.js';
+import { S } from '../../js/state.js';
+import { SMART_BREAKS } from '../../js/affirmations.js';
 
 const ATLAS_SIZE = 2048;
 // px the glyphs are rasterised at. 64 rather than 48 gives the centre word
@@ -418,6 +420,44 @@ export function createText(device, platform) {
     return width;
   }
 
+  const phraseCache = { key: '', out: null };
+
+  // One run of text into balanced lines appended to `out`: a single line if
+  // it fits, else up to four, each breaking near its fair share of the
+  // total width, so a block reads like a couplet, not a paragraph with an
+  // orphan. Breaks fall only on spaces.
+  function wrapInto(str, wi, scale, spacingPx, avail, out) {
+    const total = computeWidth(wi, scale, str, spacingPx);
+    const words = str.split(' ');
+    if (total <= avail || words.length < 2) { out.push(str); return; }
+    const space = computeWidth(wi, scale, ' ', spacingPx);
+    let lines = null;
+    for (let n = 2; n <= 4; n++) {
+      const target = total / n;
+      const next = []; let line = ''; let w = 0;
+      for (let j = 0; j < words.length; j++) {
+        const ww = computeWidth(wi, scale, words[j], spacingPx);
+        const add = (line ? space : 0) + ww;
+        // break before this word once the line has content and the word
+        // would carry it past its fair share (or off the view entirely),
+        // as long as a line remains to break into
+        if (line && next.length < n - 1 && (w + add > avail || w + add / 2 > target)) {
+          next.push(line);
+          line = words[j]; w = ww;
+        } else {
+          line = line ? line + ' ' + words[j] : words[j];
+          w += add;
+        }
+      }
+      next.push(line);
+      lines = next;
+      let maxw = 0;
+      for (const L of next) maxw = Math.max(maxw, computeWidth(wi, scale, L, spacingPx));
+      if (maxw <= avail) break;
+    }
+    for (const L of lines) out.push(L);
+  }
+
   const text = {
     texture: atlasTexture,
     sampler,
@@ -428,6 +468,48 @@ export function createText(device, platform) {
     measure(str, size, weight) {
       if (!str) return 0;
       return computeWidth(weightIndex(weight), size / BASE_SIZE, str, 0);
+    },
+
+    // How the centre-screen text actually lays out: a word is one line at
+    // the configured size, and a phrase that does not fit wraps into up to
+    // four BALANCED lines around the middle before it ever shrinks — each
+    // line breaks near its fair share of the total width, so the block
+    // reads like a couplet, not a paragraph with an orphan. Only when even
+    // four lines cannot fit (or one unbreakable word cannot) does the size
+    // come down. Everyone who lays the word out — the overlay, the smoke,
+    // the cloud — reads this one policy, so they always agree on the
+    // pixels. Memoized on its inputs; the same object comes back until a
+    // word, size or view width changes.
+    phrase(str, size, weight, letterSpacing, availW) {
+      const lw = Math.max(0.2, Math.min(1, S.textLineWidth ?? 0.92));
+      // Smart breaks (js/affirmations.js): a marked phrase is laid out piece
+      // by piece, each piece starting its own line, so every line is one
+      // whole idea. A piece still too wide wraps inside itself, never
+      // across a break.
+      const pieces = (S.textSmartBreaks !== false && SMART_BREAKS.get(str)) || null;
+      const key = str + '|' + size + '|' + weight + '|' + letterSpacing + '|' + Math.round(availW) + '|' + lw + '|' + (pieces ? 1 : 0);
+      if (phraseCache.key === key) return phraseCache.out;
+      const wi = weightIndex(weight);
+      const scale = size / BASE_SIZE;
+      const spacingPx = letterSpacing * size;
+      // Line width is THE wrap control: the one dial (a share of the view)
+      // every line must fit inside; breaks fall only on spaces.
+      const avail = (availW > 0 ? availW : 1e9) * lw;
+      const lines = [];
+      if (pieces) for (const piece of pieces) wrapInto(piece, wi, scale, spacingPx, avail, lines);
+      else wrapInto(str, wi, scale, spacingPx, avail, lines);
+      let maxw = 0;
+      for (const L of lines) maxw = Math.max(maxw, computeWidth(wi, scale, L, spacingPx));
+      const s2 = maxw > avail ? Math.max(10, size * avail / maxw) : size;
+      phraseCache.key = key;
+      phraseCache.out = { size: s2, lines, lineH: s2 * 1.3 };
+      return phraseCache.out;
+    },
+
+    // the phrase-aware size alone, for anyone scaling physics to the pixels
+    wordSize(str, size, weight, letterSpacing, availW) {
+      if (!str) return size;
+      return this.phrase(str, size, weight, letterSpacing, availW).size;
     },
 
     lineMetrics(size, out) {
@@ -591,8 +673,8 @@ export function createText(device, platform) {
     // from this layout lands on exactly the pixels the word will occupy.
     // Returns false while any inked glyph is still waiting on the
     // rasteriser; the caller tries again next frame.
-    layoutWord(str, x, y, size, weight, letterSpacing, rec) {
-      rec.count = 0;
+    layoutWord(str, x, y, size, weight, letterSpacing, rec, append) {
+      if (!append) rec.count = 0;
       if (!str) return false;
       const wi = weightIndex(weight);
       const scale = size / BASE_SIZE;

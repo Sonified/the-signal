@@ -9,7 +9,7 @@
 // move with the drawer exactly as the scene's own recentring does.
 import { S } from '../../../js/state.js';
 import { wordState } from '../../core/words.js';
-import { letterFx, wordLetters } from '../../core/word-fx.js';
+import { letterFx, wordLetters, lineCtx } from '../../core/word-fx.js';
 import { guard } from '../../../js/panel-guard.js';
 import { COLOR, TYPE, TRACK, W, MOTION } from '../theme.js';
 import * as anim from '../anim.js';
@@ -54,10 +54,21 @@ export function drawOverlay(dl, text, t, width, height) {
   wordLetters.count = 0;
   wordLetters.seed = wordState.seed;
   if (wordState.visible && wordState.peak > 0.002 && wordState.text) {
-    const size = S.textSize || TYPE.word;
+    // An affirmation wraps into balanced lines around the middle (see
+    // phrase in text-atlas); a single word is simply one line of it. The
+    // letters of every line share one record, so the transitions and the
+    // cloud see the whole block as one word.
+    const ph = text.phrase(wordState.text, S.textSize || TYPE.word, W.light, TRACK.word, width - inset);
+    const size = ph.size;
     if (size !== lmSize) { text.lineMetrics(size, lm); lmSize = size; }
-    text.drawWord(dl, wordState.text, cx, cy + (lm.ascent - lm.descent) / 2, size, W.light,
-                  wordState.color, TRACK.word, wordState.peak, letterFx, wordLetters);
+    const baseY = cy + (lm.ascent - lm.descent) / 2;
+    const n = ph.lines.length;
+    lineCtx.n = n;
+    for (let k = 0; k < n; k++) {
+      lineCtx.k = k;
+      text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
+                    wordState.color, TRACK.word, wordState.peak, letterFx, wordLetters);
+    }
   }
 
   // the panel guard's card sits where the hint does, so the hint makes way

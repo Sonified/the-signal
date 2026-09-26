@@ -33,7 +33,7 @@
 
 import { S } from '../../js/state.js';
 import { PREP_WGSL, PLAY_WGSL, WIND_WGSL } from './word-smoke.wgsl.js';
-import { MAX_CLOUD_LETTERS, smokeState, fxv } from '../core/word-fx.js';
+import { MAX_CLOUD_LETTERS, smokeState, fxv, linesTogether } from '../core/word-fx.js';
 import { wordState, fadeOutMs } from '../core/words.js';
 import { W, TRACK } from '../ui/theme.js';
 
@@ -59,13 +59,13 @@ const TOTAL_STEPS = (SNAPS - 1) * STEPS_PER_SNAP;
 const REC_SECONDS = TOTAL_STEPS * SIM_DT;
 const SNAP_S = REC_SECONDS / (SNAPS - 1);
 const PREP_BUDGET = 26;               // steps per frame; a recording lands in ~6 frames
-const UNI_FLOATS = 32;                // eight vec4f of U
+const UNI_FLOATS = 36;                // nine vec4f of U
 const LETTER_FLOATS = MAX_CLOUD_LETTERS * 12;
 
 // Bumped on every behaviour change, printed on load: the console proves
 // which build the page is actually running, so a stale worker-module cache
 // can never again masquerade as "nothing changed".
-const SMOKE_BUILD = 12;
+const SMOKE_BUILD = 16;
 console.log('[smoke] build', SMOKE_BUILD);
 
 export function createWordSmoke(device, format, text) {
@@ -91,7 +91,7 @@ export function createWordSmoke(device, format, text) {
     size: 35, count: 0, wind: 0, diff: 1, decayMul: 1, turb: 0.5, seed: 0,
     wx0: 0, wx1: 0,   // the ink's own x extent, for the playback sweep's clock
     icx: 0, icy: 0,   // the middle of the ink, where Outward pushes from
-    radial: 0.75, accel: 0.7
+    radial: 0.75, accel: 0.7, eq: 0.5, availW: 0, lineW: 0.92, lines: 1, lineH: 0
   }));
 
   // the live departure: metadata mirrors a recording's, but the field is
@@ -99,7 +99,8 @@ export function createWordSmoke(device, format, text) {
   const live = {
     text: '', rx: 0, ry: 0, rw: 1, rh: 1, cx: 0, cy: 0,
     size: 35, wind: 0, diff: 1, decayMul: 1, turb: 0.5, seed: 0,
-    wx0: 0, wx1: 0, icx: 0, icy: 0, fadeS: 3, tailS: 6, radial: 0.75, accel: 0.7
+    wx0: 0, wx1: 0, icx: 0, icy: 0, fadeS: 3, tailS: 6, radial: 0.75, accel: 0.7, eq: 0.5,
+    lines: 1, lineH: 0
   };
   // liveMode: 0 idle, 1 the word is fading out, 2 the tail — the word is
   // gone and its vapour keeps flowing until dilution finishes it
@@ -337,6 +338,7 @@ export function createWordSmoke(device, format, text) {
     uni[20] = 0; uni[21] = 0; uni[22] = 0; uni[23] = 0;
     uni[24] = 0; uni[25] = 0; uni[26] = 0; uni[27] = 0;
     uni[28] = r.radial; uni[29] = r.accel; uni[30] = r.icx; uni[31] = r.icy;
+    uni[32] = r.eq; uni[33] = 0; uni[34] = 0; uni[35] = 0;
   }
 
   // Start the live departure for the word on screen: the same layout and
@@ -344,12 +346,22 @@ export function createWordSmoke(device, format, text) {
   // and the field lives at display-grade resolution. The word is showing,
   // so its glyphs are ready and this cannot miss.
   function beginLive(word) {
-    const size = S.textSize || 35;
     const inset = S.edgeInset || 0;
+    // the same wrap the overlay draws: every line's letters into one
+    // layout, so the smoke is the whole block
+    const ph = text.phrase(word, S.textSize || 35, W.light, TRACK.word, cssW - inset);
+    const size = ph.size;
     const cx = inset + (cssW - inset) / 2;
     text.lineMetrics(size, lm);
     const y = cssH / 2 + (lm.ascent - lm.descent) / 2;
-    if (!text.layoutWord(word, cx, y, size, W.light, TRACK.word, layout)) return false;
+    layout.count = 0;
+    let laid = true;
+    for (let k = 0; k < ph.lines.length; k++) {
+      if (!text.layoutWord(ph.lines[k], cx, y + (k - (ph.lines.length - 1) / 2) * ph.lineH,
+                           size, W.light, TRACK.word, layout, true)) laid = false;
+    }
+    if (!laid || !layout.count) return false;
+    live.lines = ph.lines.length; live.lineH = ph.lineH;
 
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     const L = layout.data;
@@ -380,6 +392,7 @@ export function createWordSmoke(device, format, text) {
     live.decayMul = 1.6 - 1.2 * linger;
     live.turb = fxv('textFxTurb', true);
     live.radial = Math.max(0, Math.min(1, fxv('textSmokeRadial', true) ?? 0.75));
+    live.eq = Math.max(0, Math.min(1, fxv('textSmokeEq', true) ?? 0.5));
     live.accel = Math.max(0, Math.min(1, fxv('textSmokeAccel', true) ?? 0.7));
     live.seed = Math.random() * 100;
     // Linger is the tail: how long the vapour may outlive the word,
@@ -414,17 +427,29 @@ export function createWordSmoke(device, format, text) {
     uni[20] = sws; uni[21] = 1; uni[22] = 0; uni[23] = tailN;
     uni[24] = live.wx0; uni[25] = live.wx1; uni[26] = 1; uni[27] = 0;
     uni[28] = live.radial; uni[29] = live.accel; uni[30] = live.icx; uni[31] = live.icy;
+    const seqN = !linesTogether(true) && live.lines > 1 ? live.lines : 1;
+    uni[32] = live.eq; uni[33] = seqN; uni[34] = live.lineH; uni[35] = 0;
   }
 
   // Try to begin recording `word` into `slot`: lay it out exactly as the
   // overlay will draw it; glyphs still rasterising mean "not yet".
   function beginPrep(word, slot) {
-    const size = S.textSize || 35;
     const inset = S.edgeInset || 0;
+    // the same wrap the overlay draws: every line's letters into one
+    // layout, so the smoke is the whole block
+    const ph = text.phrase(word, S.textSize || 35, W.light, TRACK.word, cssW - inset);
+    const size = ph.size;
     const cx = inset + (cssW - inset) / 2;
     text.lineMetrics(size, lm);
     const y = cssH / 2 + (lm.ascent - lm.descent) / 2;
-    if (!text.layoutWord(word, cx, y, size, W.light, TRACK.word, layout)) return false;
+    layout.count = 0;
+    let laid = true;
+    for (let k = 0; k < ph.lines.length; k++) {
+      if (!text.layoutWord(ph.lines[k], cx, y + (k - (ph.lines.length - 1) / 2) * ph.lineH,
+                           size, W.light, TRACK.word, layout, true)) laid = false;
+    }
+    if (!laid || !layout.count) return false;
+    r.lines = ph.lines.length; r.lineH = ph.lineH;
 
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     const L = layout.data;
@@ -459,9 +484,13 @@ export function createWordSmoke(device, format, text) {
     r.decayMul = 1.6 - 1.2 * linger;
     r.turb = fxv('textFxTurb', leaving);
     r.radial = Math.max(0, Math.min(1, fxv('textSmokeRadial', leaving) ?? 0.75));
+    r.eq = Math.max(0, Math.min(1, fxv('textSmokeEq', leaving) ?? 0.5));
     r.accel = Math.max(0, Math.min(1, fxv('textSmokeAccel', leaving) ?? 0.7));
     r.seed = Math.random() * 100;      // a new sky for every recording, always
     r.wx0 = x0; r.wx1 = x1;            // sweep is playback-side; it only needs to know where the ink sits
+    r.availW = Math.round(cssW - inset); // the width the phrase wrapped against
+    r.lineW = S.textLineWidth ?? 0.92;   // and the Line width dial it wrapped under
+    r.smart = S.textSmartBreaks !== false; // and whether smart breaks were on
     r.icx = (x0 + x1) / 2; r.icy = (y0 + y1) / 2;   // Outward's centre (see beginLive)
 
     device.queue.writeBuffer(letterBuf, 0, layout.data, 0, layout.count * 12);
@@ -491,8 +520,19 @@ export function createWordSmoke(device, format, text) {
 
     if (made) {
       // a recording made at another word size no longer matches the word's
-      // pixels; stale, not usable
-      for (let s = 0; s < SLOTS; s++) if (rec[s].ready && rec[s].size !== size) invalidate(s);
+      // pixels; stale, not usable. The size to match is the word's own
+      // fitted size (a long affirmation shrinks to the view), so a resize
+      // that changes the fit invalidates too.
+      // A changed view width can also re-break a phrase's lines without
+      // moving the fitted size, so the wrapped width must match too.
+      const ins = S.edgeInset || 0;
+      for (let s = 0; s < SLOTS; s++) {
+        if (rec[s].ready &&
+            (rec[s].availW !== Math.round(cssW - ins) ||
+             rec[s].lineW !== (S.textLineWidth ?? 0.92) ||
+             rec[s].smart !== (S.textSmartBreaks !== false) ||
+             rec[s].size !== text.wordSize(rec[s].text, size, W.light, TRACK.word, cssW - ins))) invalidate(s);
+      }
     }
 
     // Arrival reads its recording; departure is simulated live. The latch
@@ -518,7 +558,10 @@ export function createWordSmoke(device, format, text) {
       if (dt > 0 && dt < 0.25) liveAcc += dt;
       if (liveAcc > MAX_LIVE_STEPS * LIVE_DT) liveAcc = MAX_LIVE_STEPS * LIVE_DT;
       const swSpdL = Math.max(0, Math.min(1, fxv('textSmokeSweepSpeed', true) ?? 0.5));
-      const swsL = fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpdL : 0;
+      let swsL = fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpdL : 0;
+      // lines running one after another read left to right within each
+      // line, whether or not the sweep is switched on
+      if (!linesTogether(true) && live.lines > 1 && !swsL) swsL = 0.5;
       while (liveAcc >= LIVE_DT && liveSteps < MAX_LIVE_STEPS) {
         liveAcc -= LIVE_DT;
         const tailN = Math.max(0, Math.min(1, (liveT - live.fadeS) / live.tailS));
@@ -546,9 +589,10 @@ export function createWordSmoke(device, format, text) {
     // whole field moves by the difference, so the smoke rides the drawer
     // and any resize exactly as the word does.
     const inset = S.edgeInset || 0;
-    text.lineMetrics(size, lm);
     const ax = inset + (cssW - inset) / 2;
-    const ay = cssH / 2 + (lm.ascent - lm.descent) / 2;
+    // the anchor's height depends on the word's OWN drawn size (a long
+    // affirmation fits itself smaller), so each branch measures with its own
+    const anchorY = sz => { text.lineMetrics(sz, lm); return cssH / 2 + (lm.ascent - lm.descent) / 2; };
 
     // The arrival's recorded playback, into its own uniform block. The
     // shader does the easing and the sweep per column.
@@ -558,8 +602,10 @@ export function createWordSmoke(device, format, text) {
       const p = wordState.progress;
       const sharp = smooth01((p - 0.92) / 0.08);
       const swSpd = Math.max(0, Math.min(1, fxv('textSmokeSweepSpeed', false) ?? 0.5));
-      const sws = fxv('textSmokeSweep', false) ? 0.85 - 0.72 * swSpd : 0;
-      const ox = ax - r.cx, oy = ay - r.cy;
+      const seqN = !linesTogether(false) && r.lines > 1 ? r.lines : 1;
+      let sws = fxv('textSmokeSweep', false) ? 0.85 - 0.72 * swSpd : 0;
+      if (seqN > 1 && !sws) sws = 0.5;
+      const ox = ax - r.cx, oy = anchorY(r.size) - r.cy;
       uni[0] = r.rx + ox; uni[1] = r.ry + oy; uni[2] = r.rw; uni[3] = r.rh;
       uni[4] = 1 / TEX_W; uni[5] = 1 / TEX_H; uni[6] = SNAP_S; uni[7] = r.size;
       uni[8] = playSlot * SNAPS; uni[9] = SNAPS - 1; uni[10] = p; uni[11] = wordState.peak;
@@ -569,6 +615,7 @@ export function createWordSmoke(device, format, text) {
       uni[20] = r.turb; uni[21] = r.seed; uni[22] = sws; uni[23] = 0;
       uni[24] = r.wx0 + ox; uni[25] = r.wx1 + ox; uni[26] = -1; uni[27] = k;
       uni[28] = r.radial; uni[29] = r.accel; uni[30] = r.icx + ox; uni[31] = r.icy + oy;
+      uni[32] = r.eq; uni[33] = seqN; uni[34] = r.lineH; uni[35] = 0;
       device.queue.writeBuffer(compBuf, 0, uni);
       playing = true;
     }
@@ -581,8 +628,10 @@ export function createWordSmoke(device, format, text) {
       const p = liveMode === 1 ? wordState.progress : 1.001;
       const sharp = 1 - smooth01(p / 0.08);
       const swSpd = Math.max(0, Math.min(1, fxv('textSmokeSweepSpeed', true) ?? 0.5));
-      const sws = fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpd : 0;
-      const ox = ax - live.cx, oy = ay - live.cy;
+      const seqN = !linesTogether(true) && live.lines > 1 ? live.lines : 1;
+      let sws = fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpd : 0;
+      if (seqN > 1 && !sws) sws = 0.5;
+      const ox = ax - live.cx, oy = anchorY(live.size) - live.cy;
       uni[0] = live.rx + ox; uni[1] = live.ry + oy; uni[2] = live.rw; uni[3] = live.rh;
       uni[4] = 1 / liveW; uni[5] = 1 / liveH; uni[6] = 0; uni[7] = live.size;
       uni[8] = 0; uni[9] = 0; uni[10] = p; uni[11] = liveMode === 1 ? wordState.peak : heldPeak;
@@ -592,6 +641,7 @@ export function createWordSmoke(device, format, text) {
       uni[20] = live.turb; uni[21] = live.seed; uni[22] = sws; uni[23] = 0;
       uni[24] = live.wx0 + ox; uni[25] = live.wx1 + ox; uni[26] = 1; uni[27] = k;
       uni[28] = live.radial; uni[29] = live.accel; uni[30] = live.icx + ox; uni[31] = live.icy + oy;
+      uni[32] = live.eq; uni[33] = seqN; uni[34] = live.lineH; uni[35] = 0;
       device.queue.writeBuffer(liveCompBuf, 0, uni);
       playing = true;
     }

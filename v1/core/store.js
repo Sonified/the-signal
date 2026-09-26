@@ -113,7 +113,10 @@ function buildSettings() {
     textLinked: S.textLinked, textRateHz: S.textRateHz, textFreq: S.textFreq,
     textRandom: S.textRandom, textDwellMs: S.textDwellMs,
     textFadeInMs: S.textFadeInMs, textFadeOutMs: S.textFadeOutMs,
-    textSize: S.textSize, textThemes: S.textThemes,
+    textFadeInVar: S.textFadeInVar, textFadeOutVar: S.textFadeOutVar,
+    textSize: S.textSize, textThemes: S.textThemes, textMode: S.textMode, textLineWidth: S.textLineWidth,
+    textSmartBreaks: S.textSmartBreaks,
+    textLinesTogether: S.textLinesTogether, textLinesTogetherOut: S.textLinesTogetherOut,
     textOpacity: S.textOpacity, textOpacityVar: S.textOpacityVar,
     textOpacityVarPeriod: S.textOpacityVarPeriod, textBrighten: S.textBrighten,
     textColorMode: S.textColorMode,
@@ -237,7 +240,7 @@ function applySeqState(s, x) {
 // plus 'Out'.
 const WORD_FX_SIDED = ['textFxDist', 'textFxStagger', 'textFxTurb', 'textFxBlur', 'textFxEase', 'textFxWindDir',
                        'textSmokeSpeed', 'textSmokeSoft', 'textSmokeLinger', 'textSmokeSweepSpeed',
-                       'textSmokeRadial', 'textSmokeAccel'];
+                       'textSmokeRadial', 'textSmokeAccel', 'textSmokeEq'];
 const WORD_FX_NUMS = WORD_FX_SIDED.concat(WORD_FX_SIDED.map(k => k + 'Out'), ['textCloudCount', 'textCloudSize']);
 function wordFxStateOf(s) {
   const o = { textFxIn: s.textFxIn, textFxOut: s.textFxOut, textFxMirror: s.textFxMirror,
@@ -647,6 +650,9 @@ function applySettings(s, live) {
   if (typeof s.textFadeMs === 'number') { S.textFadeInMs = S.textFadeOutMs = s.textFadeMs; }
   if (typeof s.textFadeInMs === 'number')  S.textFadeInMs = s.textFadeInMs;
   if (typeof s.textFadeOutMs === 'number') S.textFadeOutMs = s.textFadeOutMs;
+  for (const k of ['textFadeInVar', 'textFadeOutVar']) {
+    if (typeof s[k] === 'number') S[k] = s[k];
+  }
   if (typeof s.textSize === 'number')    S.textSize = s.textSize;
   if (typeof s.textRestFreq === 'number') S.textRestFreq = s.textRestFreq;
   if (typeof s.textRestSec === 'number')  S.textRestSec = s.textRestSec;
@@ -657,6 +663,11 @@ function applySettings(s, live) {
   if (typeof s.textBrighten === 'number') S.textBrighten = s.textBrighten;
   if (s.textColorMode === 'white' || s.textColorMode === 'system') S.textColorMode = s.textColorMode;
   if (s.textThemes && typeof s.textThemes === 'object') S.textThemes = { ...s.textThemes };
+  if (s.textMode === 'words' || s.textMode === 'affirmations') S.textMode = s.textMode;
+  if (typeof s.textLineWidth === 'number') S.textLineWidth = s.textLineWidth;
+  if (typeof s.textSmartBreaks === 'boolean') S.textSmartBreaks = s.textSmartBreaks;
+  if (typeof s.textLinesTogether === 'boolean') S.textLinesTogether = s.textLinesTogether;
+  if (typeof s.textLinesTogetherOut === 'boolean') S.textLinesTogetherOut = s.textLinesTogetherOut;
 
   // music and ambience
   if (typeof s.musicOn === 'boolean') S.musicOn = s.musicOn;

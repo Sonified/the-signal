@@ -119,6 +119,11 @@ function fxRows(leaving) {
     // quivering, edges fraying — while the outward momentum builds; high
     // and it just goes.
     pct('textSmokeAccel', 'Acceleration', 100, 70, ['smoke']),
+    // How evenly the vapour washes out in all directions. Low is the raw
+    // wind, where a gust can carry the whole word one way; high removes
+    // that shared drift so every push away from centre has its equal on
+    // the far side, and no direction steals the eye.
+    pct('textSmokeEq', 'Radial equality', 100, 50, ['smoke']),
     // How long the vapour stays thick before thinning away. The recording
     // always ends in empty air; this shapes how it gets there.
     pct('textSmokeLinger', 'Linger', 100, 50, ['smoke']),
@@ -749,6 +754,16 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.textFadeInMs = pos; save(); },
     format: S => S.textFadeInMs + ' ms'
   },
+  // Each word rolls its own fade time as it appears: the slider above is the
+  // cap, and the variance is how far below it the roll may land.
+  {
+    id: 'textFadeInVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeInOn',
+    min: 0, max: 100, step: 1, def: 0,
+    visible: fadeInOn,
+    get: S => Math.round(S.textFadeInVar * 100),
+    set: (S, pos) => { S.textFadeInVar = pos / 100; save(); },
+    format: S => Math.round(S.textFadeInVar * 100) + '%'
+  },
   {
     id: 'textFxIn', section: 'text', label: 'Arrive', kind: 'segment', def: 'gather', parent: 'textFadeInOn',
     options: fxOptions('fxIn'),
@@ -783,6 +798,25 @@ export const VISUAL_CONTROLS = [
     format: S => S.textFadeOutMs + ' ms'
   },
   {
+    id: 'textFadeOutVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeOutOn',
+    min: 0, max: 100, step: 1, def: 0,
+    visible: fadeOutOn,
+    get: S => Math.round(S.textFadeOutVar * 100),
+    set: (S, pos) => { S.textFadeOutVar = pos / 100; save(); },
+    format: S => Math.round(S.textFadeOutVar * 100) + '%'
+  },
+  {
+    // Affirmations only (a single word is one line). On, a multi-line
+    // phrase dissolves every line at once on its way out, rather than one
+    // line after another.
+    id: 'textLinesTogetherOut', section: 'text', label: 'Lines fade out together', kind: 'toggle', def: false,
+    parent: 'textFadeOutOn',
+    visible: S => fadeOutOn(S) && S.textMode === 'affirmations',
+    get: S => !!S.textLinesTogetherOut,
+    set: (S, on) => { S.textLinesTogetherOut = !!on; save(); },
+    format: S => S.textLinesTogetherOut ? 'On' : 'Off'
+  },
+  {
     id: 'textFxOut', section: 'text', label: 'Leave', kind: 'segment', def: 'wind', parent: 'textFadeOutOn',
     options: fxOptions('fxOut'),
     visible: S => fadeOutOn(S) && !S.textFxMirror,
@@ -802,7 +836,51 @@ export const VISUAL_CONTROLS = [
     // be made real before any single key can be subtracted from it. The All
     // and None buttons are separate action controls below, matching v0's
     // txAllOn/txAllOff, which write every key at once rather than toggling.
+    // Individual words draw from the themed pool below; affirmations swap
+    // in whole phrases (js/words.js's AFFIRMATIONS) and the themes step
+    // aside, since that set is its own theme.
+    id: 'textMode', section: 'text', label: 'Text', kind: 'segment', def: 'words',
+    options: [
+      { value: 'words',        label: 'Words',        domId: 'txModeWords' },
+      { value: 'affirmations', label: 'Affirmations', domId: 'txModeAff' }
+    ],
+    get: S => S.textMode,
+    set: (S, v) => { S.textMode = v; rebuildWordPool(); save(); },
+    format: S => S.textMode === 'affirmations' ? 'affirmations' : 'individual words'
+  },
+  {
+    // The one wrap control: how wide a line may run, as a share of the
+    // view. A phrase breaks (only ever between words) into balanced,
+    // centred lines that each fit inside it.
+    id: 'textLineWidth', section: 'text', label: 'Line width', kind: 'slider',
+    min: 20, max: 100, step: 1, def: 92,
+    get: S => Math.round((S.textLineWidth ?? 0.92) * 100),
+    set: (S, pos) => { S.textLineWidth = pos / 100; save(); },
+    format: S => Math.round((S.textLineWidth ?? 0.92) * 100) + '%'
+  },
+  {
+    // On, a phrase with smart breaks marked in js/affirmations.js breaks
+    // there, a line per piece and each line one complete idea; a piece too
+    // wide for the Line width still wraps inside itself. Off, or for a
+    // phrase with none marked, the plain balanced wrap.
+    id: 'textSmartBreaks', section: 'text', label: 'Smart breaks', kind: 'toggle', def: true,
+    visible: S => S.textMode === 'affirmations',
+    get: S => S.textSmartBreaks !== false,
+    set: (S, on) => { S.textSmartBreaks = !!on; save(); },
+    format: S => S.textSmartBreaks !== false ? 'On' : 'Off'
+  },
+  {
+    // Off, a wrapped block transitions line by line — the first line
+    // arrives, then the second, each reading left to right. On, the whole
+    // block fades as one.
+    id: 'textLinesTogether', section: 'text', label: 'Fade lines together', kind: 'toggle', def: false,
+    get: S => !!S.textLinesTogether,
+    set: (S, on) => { S.textLinesTogether = !!on; save(); },
+    format: S => S.textLinesTogether ? 'On' : 'Off'
+  },
+  {
     id: 'textThemes', section: 'text', label: 'Themes', kind: 'segment', multi: true,
+    visible: S => S.textMode !== 'affirmations',
     options: Object.keys(THEMES).map(k => ({
       value: k, label: THEMES[k],
       // v0 builds these buttons from THEMES at runtime with no id attribute,
@@ -827,6 +905,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'txAllOn', section: 'text', label: 'All', kind: 'action',
+    visible: S => S.textMode !== 'affirmations',
     set: S => {
       Object.keys(THEMES).forEach(k => { S.textThemes[k] = true; });
       rebuildWordPool();
@@ -835,6 +914,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'txAllOff', section: 'text', label: 'None', kind: 'action',
+    visible: S => S.textMode !== 'affirmations',
     set: S => {
       Object.keys(THEMES).forEach(k => { S.textThemes[k] = false; });
       rebuildWordPool();

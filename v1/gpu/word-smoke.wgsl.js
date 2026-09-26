@@ -41,10 +41,12 @@ struct U {
                // live sim: sweep share, 1 (the live flag), 0, tail position 0..1
   m6: vec4f,   // word ink x0, x1 (css px), direction (+1 leave, -1 arrive), ease exponent
   m7: vec4f,   // Outward (radial vs swirl balance 0..1), Acceleration (wind-up 0..1), the ink's centre x, y (css px), where Outward pushes from
+  m8: vec4f,   // radial equality 0..1 (whole-word drift removed as it rises); lines running
+               // separately: their count (1 = together) and spacing (css px); 0
 };
 
 // three vec4s per letter, word-fx.js's wordLetters layout
-struct Letters { v: array<vec4f, 96> };
+struct Letters { v: array<vec4f, 216> };
 
 const ATLAS = 2048.0;
 const SDF_RANGE = 6.0;
@@ -174,18 +176,30 @@ fn simMain(@builtin(global_invocation_id) gid: vec3u) {
   var tnL = tnE;
   if (sw > 0.0) {
     let soft = size * 0.9;
+    // Lines running one after another (m8.y > 1): this cell belongs to one
+    // wrapped line, and that line owns a compressed window of the fade —
+    // the first line dissolves, then the next. Its front and local clock
+    // run inside that window; ahead of it the letters stand untouched.
+    var tL = t;
+    var TT = P.m2.y;
+    let nL = P.m8.y;
+    if (nL > 1.5) {
+      let kL = clamp(round((pos.y - P.m7.w) / max(P.m8.z, 1.0) + (nL - 1.0) * 0.5), 0.0, nL - 1.0);
+      TT = P.m2.y / nL;
+      tL = t - kL * TT;
+    }
     // f is deliberately unclamped: the front keeps travelling past the ink
     // at the same pace instead of parking at the last letter — a parked
     // front is an invisible wall that only the rightward smoke ever meets.
     // And shortly after the crossing the gate releases everywhere, so
     // vapour outrunning the front is never held against it either.
-    let f = t / max(sw * P.m2.y, 0.001);
+    let f = tL / max(sw * TT, 0.001);
     let frontX = mix(P.m6.x - soft, P.m6.y + soft, f);
     act = 1.0 - smoothstep(frontX, frontX + soft, pos.x);
     act = max(act, smoothstep(1.0, 1.6, f));
     let fx = clamp((pos.x - P.m6.x) / max(P.m6.y - P.m6.x, 1.0), 0.0, 1.0);
-    let tf = fx * sw * P.m2.y;
-    tnL = clamp((t - tf) / max(P.m2.y - tf, 0.1), 0.0, 1.0);
+    let tf = fx * sw * TT;
+    tnL = clamp((tL - tf) / max(TT - tf, 0.1), 0.0, 1.0);
   }
 
   // Outward (m7.x) balances the radial bloom against the curls: high and
@@ -267,7 +281,18 @@ fn windMain(@builtin(global_invocation_id) gid: vec3u) {
   if (gid.x >= dims.x || gid.y >= dims.y) { return; }
   let uv = (vec2f(gid.xy) + 0.5) / vec2f(dims);
   let pos = P.m0.xy + uv * P.m0.zw;
-  let w = windShape(pos, P.m1.w, P.m2.x, P.m3.z, P.m3.w);
+  var w = windShape(pos, P.m1.w, P.m2.x, P.m3.z, P.m3.w);
+  // Radial equality: whole-word drift is the half of the wind that is the
+  // SAME at a point and at its mirror through the word's centre; flow that
+  // blooms outward is the half that flips sign there. Blending toward the
+  // flipping half removes "the whole word goes up" without touching the
+  // swirls' texture — at 1 every push away from centre has its equal on
+  // the far side, at 0 the wind is what it always was.
+  let eq = P.m8.x;
+  if (eq > 0.0) {
+    let wm = windShape(2.0 * P.m7.zw - pos, P.m1.w, P.m2.x, P.m3.z, P.m3.w);
+    w = mix(w, (w - wm) * 0.5, eq);
+  }
   textureStore(windOut, vec2i(gid.xy), vec4f(w, 0.0, 0.0));
 }
 `;
@@ -316,6 +341,14 @@ fn fsSmoke(in: VOut) -> @location(0) vec4f {
   // fade the front spends crossing; each column then plays its whole
   // dissolution in the time that remains after its delay.
   var pl = P.m2.z;
+  // Lines running one after another: this pixel's line owns a compressed
+  // share of the fade — the block arrives (and leaves) top line first. The
+  // column sweep and the firmness below then read the line's own clock.
+  let nLp = P.m8.y;
+  if (nLp > 1.5) {
+    let kL = clamp(round((in.world.y - P.m7.w) / max(P.m8.z, 1.0) + (nLp - 1.0) * 0.5), 0.0, nLp - 1.0);
+    pl = clamp(pl * nLp - kL, 0.0, 1.0);
+  }
   let sws = P.m5.z;
   if (sws > 0.0) {
     let fx = clamp((in.world.x - P.m6.x) / max(P.m6.y - P.m6.x, 1.0), 0.0, 1.0);
@@ -347,7 +380,13 @@ fn fsSmoke(in: VOut) -> @location(0) vec4f {
     let windMul = 0.9 - 0.6 * P.m7.x;
     let envW = smoothstep(0.0, max(mix(0.65, 0.02, P.m7.y), 0.001), tn);
     let vOut = radial / max(length(radial), sz) * P.m4.w * (radB + 0.5 * tn) * envW;
-    let w = windShape(in.world, lf * snapS, sz, P.m5.x, P.m5.y) * P.m4.w * windMul * (0.35 + 0.65 * envW) + vOut;
+    var wr = windShape(in.world, lf * snapS, sz, P.m5.x, P.m5.y);
+    // the same radial-equality blend the recording was simulated under
+    if (P.m8.x > 0.0) {
+      let wm = windShape(2.0 * ctr - in.world, lf * snapS, sz, P.m5.x, P.m5.y);
+      wr = mix(wr, (wr - wm) * 0.5, P.m8.x);
+    }
+    let w = wr * P.m4.w * windMul * (0.35 + 0.65 * envW) + vOut;
     duv = (w * snapS) / P.m0.zw;
   }
   let sa = textureSampleLevel(rec, samp, in.uv - duv * frac, i32(P.m2.x + la), 0.0);

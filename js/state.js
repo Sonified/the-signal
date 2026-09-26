@@ -143,6 +143,8 @@ export const S = {
   textLinked: true, textRateHz: 2,
   textFreq: 0.5, textRandom: 1,
   textDwellMs: 80, textFadeInMs: 0, textFadeOutMs: 0, textSize: 35,
+  textFadeInVar: 0,           // v1: each word's fade-in rolls between (1-var)x and 1x the set time
+  textFadeOutVar: 0,
   textOpacity: 0.95, textOpacityVar: 0.1, textOpacityVarPeriod: 20, textOpacityPhase: 0,
   textColorMode: 'system',    // white | system, where system follows the strobe hue
   textBrighten: 0,            // system mode only: 0 is the strobe colour, 1 is white
@@ -162,17 +164,22 @@ export const S = {
   // Smoke (v1/gpu/word-smoke.js): recorded-vapour tuning, all 0..1 except
   // speed (0..2, 1 is travel of about the Distance setting).
   textSmokeSpeed: 1, textSmokeSoft: 0.5, textSmokeLinger: 0.5,
-  textSmokeRadial: 0.75, textSmokeAccel: 0.7,   // Smoke: outward-vs-swirl balance, and motion wind-up
+  textSmokeRadial: 0.75, textSmokeAccel: 0.7, textSmokeEq: 0.5,   // Smoke: outward-vs-swirl balance, and motion wind-up
   textSmokeSweep: false, textSmokeSweepSpeed: 0.5,   // Smoke: dissolve behind a left-to-right front
   textGatherSweep: false,     // Gather: letters in left to right, Stagger the sweep's pace
   // Leave's own copy of the settings above, used unless the word leaves the way it came.
   textFxDistOut: 1.5, textFxStaggerOut: 0.5, textFxTurbOut: 0.5, textFxBlurOut: 0.6,
   textFxEaseOut: 0.6, textFxWindDirOut: 0,
   textSmokeSpeedOut: 1, textSmokeSoftOut: 0.5, textSmokeLingerOut: 0.5,
-  textSmokeRadialOut: 0.75, textSmokeAccelOut: 0.7,
+  textSmokeRadialOut: 0.75, textSmokeAccelOut: 0.7, textSmokeEqOut: 0.5,
   textSmokeSweepOut: false, textSmokeSweepSpeedOut: 0.5,
   textGatherSweepOut: false,
   textThemes: {},             // empty means every theme is in play
+  textMode: 'words',          // 'words' shows the themed pool, 'affirmations' the phrases
+  textLineWidth: 0.92,        // the wrap width, as a share of the view; phrases break to fit it
+  textSmartBreaks: true,      // v1: a phrase with marked breaks (js/affirmations.js) takes a line per piece
+  textLinesTogetherOut: false, // v1: the Fade out block's own switch, departures only
+  textLinesTogether: false,   // false: a block's lines transition one after another, top first
 
   // ---------- music ----------
   // A generative felt piano whose root sits two octaves under the 40 Hz carrier,
