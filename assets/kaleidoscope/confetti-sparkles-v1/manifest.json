@@ -26,7 +26,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-02",
@@ -41,7 +42,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles"
     },
     {
       "id": "sparkle-03",
@@ -56,7 +58,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-04",
@@ -71,7 +74,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-05",
@@ -86,7 +90,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-06",
@@ -101,7 +106,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "zigzags"
     },
     {
       "id": "sparkle-07",
@@ -116,7 +122,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-08",
@@ -131,7 +138,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-09",
@@ -146,7 +154,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-10",
@@ -161,7 +170,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-11",
@@ -176,7 +186,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-12",
@@ -191,7 +202,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-13",
@@ -206,7 +218,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles"
     },
     {
       "id": "sparkle-14",
@@ -221,7 +234,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-15",
@@ -236,7 +250,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-16",
@@ -251,7 +266,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-17",
@@ -266,7 +282,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-18",
@@ -281,7 +298,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-19",
@@ -296,7 +314,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-20",
@@ -311,7 +330,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-21",
@@ -326,7 +346,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "zigzags"
     },
     {
       "id": "sparkle-22",
@@ -341,7 +362,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles"
     },
     {
       "id": "sparkle-23",
@@ -356,7 +378,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-24",
@@ -371,7 +394,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-25",
@@ -386,7 +410,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-26",
@@ -401,7 +426,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-27",
@@ -416,7 +442,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-28",
@@ -431,7 +458,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-29",
@@ -446,7 +474,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles"
     },
     {
       "id": "sparkle-30",
@@ -461,7 +490,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "zigzags"
     },
     {
       "id": "sparkle-31",
@@ -476,7 +506,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-32",
@@ -491,7 +522,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-33",
@@ -506,7 +538,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-34",
@@ -521,7 +554,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "zigzags"
     },
     {
       "id": "sparkle-35",
@@ -536,7 +570,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles"
     },
     {
       "id": "sparkle-36",
@@ -551,7 +586,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-37",
@@ -566,7 +602,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-38",
@@ -581,7 +618,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-39",
@@ -596,7 +634,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-40",
@@ -611,7 +650,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-41",
@@ -626,7 +666,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-42",
@@ -641,7 +682,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-43",
@@ -656,7 +698,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "zigzags"
     },
     {
       "id": "sparkle-44",
@@ -671,7 +714,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-45",
@@ -686,7 +730,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-46",
@@ -701,7 +746,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles"
     },
     {
       "id": "sparkle-47",
@@ -716,7 +762,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-48",
@@ -731,7 +778,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-49",
@@ -746,7 +794,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-50",
@@ -761,7 +810,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-51",
@@ -776,7 +826,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles"
     },
     {
       "id": "sparkle-52",
@@ -791,7 +842,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "zigzags"
     },
     {
       "id": "sparkle-53",
@@ -806,7 +858,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons-curves"
     },
     {
       "id": "sparkle-54",
@@ -821,7 +874,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-55",
@@ -836,7 +890,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-56",
@@ -851,7 +906,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-57",
@@ -866,7 +922,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "zigzags"
     },
     {
       "id": "sparkle-58",
@@ -881,7 +938,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-59",
@@ -896,7 +954,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     },
     {
       "id": "sparkle-60",
@@ -911,7 +970,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "polygons"
     },
     {
       "id": "sparkle-61",
@@ -926,7 +986,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "bars-shards"
     },
     {
       "id": "sparkle-62",
@@ -941,7 +1002,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles"
     },
     {
       "id": "sparkle-63",
@@ -956,7 +1018,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "zigzags"
     },
     {
       "id": "sparkle-64",
@@ -971,7 +1034,111 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sparkles"
     }
-  ]
+  ],
+  "groups": [
+    {
+      "id": "sparkles",
+      "label": "Sparkles",
+      "assetIndices": [
+        0,
+        7,
+        14,
+        18,
+        25,
+        37,
+        40,
+        54,
+        58,
+        63
+      ]
+    },
+    {
+      "id": "circles",
+      "label": "Circles",
+      "assetIndices": [
+        1,
+        12,
+        21,
+        28,
+        34,
+        45,
+        50,
+        61
+      ]
+    },
+    {
+      "id": "polygons",
+      "label": "Polygons",
+      "assetIndices": [
+        2,
+        9,
+        17,
+        27,
+        32,
+        39,
+        46,
+        48,
+        55,
+        59
+      ]
+    },
+    {
+      "id": "bars-shards",
+      "label": "Bars & shards",
+      "assetIndices": [
+        3,
+        8,
+        10,
+        13,
+        16,
+        19,
+        22,
+        23,
+        26,
+        30,
+        36,
+        38,
+        43,
+        44,
+        49,
+        53,
+        57,
+        60
+      ]
+    },
+    {
+      "id": "ribbons-curves",
+      "label": "Ribbons & curves",
+      "assetIndices": [
+        4,
+        6,
+        11,
+        15,
+        24,
+        31,
+        35,
+        41,
+        47,
+        52
+      ]
+    },
+    {
+      "id": "zigzags",
+      "label": "Zigzags",
+      "assetIndices": [
+        5,
+        20,
+        29,
+        33,
+        42,
+        51,
+        56,
+        62
+      ]
+    }
+  ],
+  "name": "Confetti and sparkles"
 }

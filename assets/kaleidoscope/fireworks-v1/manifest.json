@@ -26,7 +26,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-02",
@@ -41,7 +42,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-03",
@@ -56,7 +58,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-04",
@@ -71,7 +74,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-05",
@@ -86,7 +90,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-06",
@@ -101,7 +106,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-07",
@@ -116,7 +122,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-08",
@@ -131,7 +138,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-09",
@@ -146,7 +154,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-10",
@@ -161,7 +170,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-11",
@@ -176,7 +186,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-12",
@@ -191,7 +202,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-13",
@@ -206,7 +218,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-14",
@@ -221,7 +234,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-15",
@@ -236,7 +250,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-16",
@@ -251,7 +266,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-17",
@@ -266,7 +282,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-18",
@@ -281,7 +298,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-19",
@@ -296,7 +314,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-20",
@@ -311,7 +330,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-21",
@@ -326,7 +346,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-22",
@@ -341,7 +362,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-23",
@@ -356,7 +378,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-24",
@@ -371,7 +394,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-25",
@@ -386,7 +410,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-26",
@@ -401,7 +426,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-27",
@@ -416,7 +442,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-28",
@@ -431,7 +458,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-29",
@@ -446,7 +474,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-30",
@@ -461,7 +490,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-31",
@@ -476,7 +506,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-32",
@@ -491,7 +522,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-33",
@@ -506,7 +538,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-34",
@@ -521,7 +554,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-35",
@@ -536,7 +570,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-36",
@@ -551,7 +586,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-37",
@@ -566,7 +602,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-38",
@@ -581,7 +618,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-39",
@@ -596,7 +634,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-40",
@@ -611,7 +650,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-41",
@@ -626,7 +666,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-42",
@@ -641,7 +682,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-43",
@@ -656,7 +698,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-44",
@@ -671,7 +714,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-45",
@@ -686,7 +730,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-46",
@@ -701,7 +746,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-47",
@@ -716,7 +762,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-48",
@@ -731,7 +778,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-49",
@@ -746,7 +794,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-50",
@@ -761,7 +810,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-51",
@@ -776,7 +826,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-52",
@@ -791,7 +842,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-53",
@@ -806,7 +858,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-54",
@@ -821,7 +874,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-55",
@@ -836,7 +890,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-56",
@@ -851,7 +906,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-57",
@@ -866,7 +922,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-58",
@@ -881,7 +938,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-59",
@@ -896,7 +954,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-60",
@@ -911,7 +970,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-61",
@@ -926,7 +986,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-62",
@@ -941,7 +1002,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-63",
@@ -956,7 +1018,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     },
     {
       "id": "firework-64",
@@ -971,7 +1034,81 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "fireworks"
     }
-  ]
+  ],
+  "groups": [
+    {
+      "id": "fireworks",
+      "label": "Fireworks",
+      "assetIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ]
+    }
+  ],
+  "name": "Fireworks"
 }

@@ -26,7 +26,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-02",
@@ -41,7 +42,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-03",
@@ -56,7 +58,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-04",
@@ -71,7 +74,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "waves"
     },
     {
       "id": "peaceful-05",
@@ -86,7 +90,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-06",
@@ -101,7 +106,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "arches-crescents"
     },
     {
       "id": "peaceful-07",
@@ -116,7 +122,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-08",
@@ -131,7 +138,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-09",
@@ -146,7 +154,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-10",
@@ -161,7 +170,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "landscapes"
     },
     {
       "id": "peaceful-11",
@@ -176,7 +186,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "arches-crescents"
     },
     {
       "id": "peaceful-12",
@@ -191,7 +202,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-13",
@@ -206,7 +218,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-14",
@@ -221,7 +234,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-15",
@@ -236,7 +250,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-16",
@@ -251,7 +266,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-17",
@@ -266,7 +282,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-18",
@@ -281,7 +298,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-19",
@@ -296,7 +314,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-20",
@@ -311,7 +330,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-21",
@@ -326,7 +346,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "landscapes"
     },
     {
       "id": "peaceful-22",
@@ -341,7 +362,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "waves"
     },
     {
       "id": "peaceful-23",
@@ -356,7 +378,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-24",
@@ -371,7 +394,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "arches-crescents"
     },
     {
       "id": "peaceful-25",
@@ -386,7 +410,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-26",
@@ -401,7 +426,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "waves"
     },
     {
       "id": "peaceful-27",
@@ -416,7 +442,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-28",
@@ -431,7 +458,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "arches-crescents"
     },
     {
       "id": "peaceful-29",
@@ -446,7 +474,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-30",
@@ -461,7 +490,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-31",
@@ -476,7 +506,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "landscapes"
     },
     {
       "id": "peaceful-32",
@@ -491,7 +522,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-33",
@@ -506,7 +538,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "waves"
     },
     {
       "id": "peaceful-34",
@@ -521,7 +554,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-35",
@@ -536,7 +570,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-36",
@@ -551,7 +586,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-37",
@@ -566,7 +602,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-38",
@@ -581,7 +618,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "arches-crescents"
     },
     {
       "id": "peaceful-39",
@@ -596,7 +634,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-40",
@@ -611,7 +650,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-41",
@@ -626,7 +666,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "arches-crescents"
     },
     {
       "id": "peaceful-42",
@@ -641,7 +682,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-43",
@@ -656,7 +698,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-44",
@@ -671,7 +714,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "waves"
     },
     {
       "id": "peaceful-45",
@@ -686,7 +730,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-46",
@@ -701,7 +746,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-47",
@@ -716,7 +762,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "waves"
     },
     {
       "id": "peaceful-48",
@@ -731,7 +778,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-49",
@@ -746,7 +794,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-50",
@@ -761,7 +810,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-51",
@@ -776,7 +826,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-52",
@@ -791,7 +842,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-53",
@@ -806,7 +858,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-54",
@@ -821,7 +874,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "landscapes"
     },
     {
       "id": "peaceful-55",
@@ -836,7 +890,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-56",
@@ -851,7 +906,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "arches-crescents"
     },
     {
       "id": "peaceful-57",
@@ -866,7 +922,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-58",
@@ -881,7 +938,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-59",
@@ -896,7 +954,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "arches-crescents"
     },
     {
       "id": "peaceful-60",
@@ -911,7 +970,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     },
     {
       "id": "peaceful-61",
@@ -926,7 +986,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-62",
@@ -941,7 +1002,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "botanical"
     },
     {
       "id": "peaceful-63",
@@ -956,7 +1018,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "organic"
     },
     {
       "id": "peaceful-64",
@@ -971,7 +1034,111 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "circles-stacks"
     }
-  ]
+  ],
+  "groups": [
+    {
+      "id": "botanical",
+      "label": "Botanical",
+      "assetIndices": [
+        2,
+        7,
+        11,
+        16,
+        22,
+        26,
+        28,
+        33,
+        38,
+        42,
+        47,
+        48,
+        51,
+        57,
+        61
+      ]
+    },
+    {
+      "id": "arches-crescents",
+      "label": "Arches & crescents",
+      "assetIndices": [
+        5,
+        10,
+        23,
+        27,
+        37,
+        40,
+        55,
+        58
+      ]
+    },
+    {
+      "id": "waves",
+      "label": "Waves",
+      "assetIndices": [
+        3,
+        21,
+        25,
+        32,
+        43,
+        46
+      ]
+    },
+    {
+      "id": "landscapes",
+      "label": "Landscapes",
+      "assetIndices": [
+        9,
+        20,
+        30,
+        53
+      ]
+    },
+    {
+      "id": "circles-stacks",
+      "label": "Circles & stacks",
+      "assetIndices": [
+        0,
+        4,
+        14,
+        17,
+        19,
+        34,
+        35,
+        39,
+        44,
+        49,
+        54,
+        59,
+        63
+      ]
+    },
+    {
+      "id": "organic",
+      "label": "Organic shapes",
+      "assetIndices": [
+        1,
+        6,
+        8,
+        12,
+        13,
+        15,
+        18,
+        24,
+        29,
+        31,
+        36,
+        41,
+        45,
+        50,
+        52,
+        56,
+        60,
+        62
+      ]
+    }
+  ],
+  "name": "Peaceful shapes"
 }

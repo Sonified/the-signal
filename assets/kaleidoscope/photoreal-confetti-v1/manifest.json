@@ -26,7 +26,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-02",
@@ -41,7 +42,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-03",
@@ -56,7 +58,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gem-shards"
     },
     {
       "id": "confetti-04",
@@ -71,7 +74,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "stars-hearts"
     },
     {
       "id": "confetti-05",
@@ -86,7 +90,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-06",
@@ -101,7 +106,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-07",
@@ -116,7 +122,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-08",
@@ -131,7 +138,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-09",
@@ -146,7 +154,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "stars-hearts"
     },
     {
       "id": "confetti-10",
@@ -161,7 +170,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-11",
@@ -176,7 +186,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-12",
@@ -191,7 +202,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gem-shards"
     },
     {
       "id": "confetti-13",
@@ -206,7 +218,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "glitter-clusters"
     },
     {
       "id": "confetti-14",
@@ -221,7 +234,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-15",
@@ -236,7 +250,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-16",
@@ -251,7 +266,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gem-shards"
     },
     {
       "id": "confetti-17",
@@ -266,7 +282,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-18",
@@ -281,7 +298,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-19",
@@ -296,7 +314,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-20",
@@ -311,7 +330,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-21",
@@ -326,7 +346,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "stars-hearts"
     },
     {
       "id": "confetti-22",
@@ -341,7 +362,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-23",
@@ -356,7 +378,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-24",
@@ -371,7 +394,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-25",
@@ -386,7 +410,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "glitter-clusters"
     },
     {
       "id": "confetti-26",
@@ -401,7 +426,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "stars-hearts"
     },
     {
       "id": "confetti-27",
@@ -416,7 +442,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gem-shards"
     },
     {
       "id": "confetti-28",
@@ -431,7 +458,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-29",
@@ -446,7 +474,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-30",
@@ -461,7 +490,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-31",
@@ -476,7 +506,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-32",
@@ -491,7 +522,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-33",
@@ -506,7 +538,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-34",
@@ -521,7 +554,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gem-shards"
     },
     {
       "id": "confetti-35",
@@ -536,7 +570,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-36",
@@ -551,7 +586,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "glitter-clusters"
     },
     {
       "id": "confetti-37",
@@ -566,7 +602,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "stars-hearts"
     },
     {
       "id": "confetti-38",
@@ -581,7 +618,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-39",
@@ -596,7 +634,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-40",
@@ -611,7 +650,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gem-shards"
     },
     {
       "id": "confetti-41",
@@ -626,7 +666,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-42",
@@ -641,7 +682,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "glitter-clusters"
     },
     {
       "id": "confetti-43",
@@ -656,7 +698,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "stars-hearts"
     },
     {
       "id": "confetti-44",
@@ -671,7 +714,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-45",
@@ -686,7 +730,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-46",
@@ -701,7 +746,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "stars-hearts"
     },
     {
       "id": "confetti-47",
@@ -716,7 +762,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-48",
@@ -731,7 +778,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-49",
@@ -746,7 +794,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gem-shards"
     },
     {
       "id": "confetti-50",
@@ -761,7 +810,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-51",
@@ -776,7 +826,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "glitter-clusters"
     },
     {
       "id": "confetti-52",
@@ -791,7 +842,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-53",
@@ -806,7 +858,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-54",
@@ -821,7 +874,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-55",
@@ -836,7 +890,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-56",
@@ -851,7 +906,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "sequins"
     },
     {
       "id": "confetti-57",
@@ -866,7 +922,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "glitter-clusters"
     },
     {
       "id": "confetti-58",
@@ -881,7 +938,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-59",
@@ -896,7 +954,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-60",
@@ -911,7 +970,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "stars-hearts"
     },
     {
       "id": "confetti-61",
@@ -926,7 +986,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "glitter-clusters"
     },
     {
       "id": "confetti-62",
@@ -941,7 +1002,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ribbons"
     },
     {
       "id": "confetti-63",
@@ -956,7 +1018,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     },
     {
       "id": "confetti-64",
@@ -971,7 +1034,111 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "foil-paper"
     }
-  ]
+  ],
+  "groups": [
+    {
+      "id": "ribbons",
+      "label": "Ribbons",
+      "assetIndices": [
+        4,
+        13,
+        16,
+        22,
+        32,
+        46,
+        51,
+        57,
+        61
+      ]
+    },
+    {
+      "id": "sequins",
+      "label": "Sequins",
+      "assetIndices": [
+        0,
+        6,
+        10,
+        19,
+        27,
+        30,
+        38,
+        44,
+        53,
+        55
+      ]
+    },
+    {
+      "id": "stars-hearts",
+      "label": "Stars & hearts",
+      "assetIndices": [
+        3,
+        8,
+        20,
+        25,
+        36,
+        42,
+        45,
+        59
+      ]
+    },
+    {
+      "id": "gem-shards",
+      "label": "Gem shards",
+      "assetIndices": [
+        2,
+        11,
+        15,
+        26,
+        33,
+        39,
+        48
+      ]
+    },
+    {
+      "id": "glitter-clusters",
+      "label": "Glitter clusters",
+      "assetIndices": [
+        12,
+        24,
+        35,
+        41,
+        50,
+        56,
+        60
+      ]
+    },
+    {
+      "id": "foil-paper",
+      "label": "Foil & paper",
+      "assetIndices": [
+        1,
+        5,
+        7,
+        9,
+        14,
+        17,
+        18,
+        21,
+        23,
+        28,
+        29,
+        31,
+        34,
+        37,
+        40,
+        43,
+        47,
+        49,
+        52,
+        54,
+        58,
+        62,
+        63
+      ]
+    }
+  ],
+  "name": "Photoreal confetti"
 }

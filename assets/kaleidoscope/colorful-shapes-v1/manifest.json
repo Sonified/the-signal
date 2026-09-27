@@ -26,7 +26,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-02",
@@ -41,7 +42,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-03",
@@ -56,7 +58,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-04",
@@ -71,7 +74,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-05",
@@ -86,7 +90,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-06",
@@ -101,7 +106,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-07",
@@ -116,7 +122,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-08",
@@ -131,7 +138,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-09",
@@ -146,7 +154,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "abstract"
     },
     {
       "id": "colorful-10",
@@ -161,7 +170,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-11",
@@ -176,7 +186,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-12",
@@ -191,7 +202,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-13",
@@ -206,7 +218,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-14",
@@ -221,7 +234,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-15",
@@ -236,7 +250,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-16",
@@ -251,7 +266,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "abstract"
     },
     {
       "id": "colorful-17",
@@ -266,7 +282,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-18",
@@ -281,7 +298,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-19",
@@ -296,7 +314,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-20",
@@ -311,7 +330,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-21",
@@ -326,7 +346,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-22",
@@ -341,7 +362,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-23",
@@ -356,7 +378,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-24",
@@ -371,7 +394,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-25",
@@ -386,7 +410,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "abstract"
     },
     {
       "id": "colorful-26",
@@ -401,7 +426,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-27",
@@ -416,7 +442,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-28",
@@ -431,7 +458,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-29",
@@ -446,7 +474,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-30",
@@ -461,7 +490,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-31",
@@ -476,7 +506,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-32",
@@ -491,7 +522,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-33",
@@ -506,7 +538,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-34",
@@ -521,7 +554,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-35",
@@ -536,7 +570,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-36",
@@ -551,7 +586,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-37",
@@ -566,7 +602,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "abstract"
     },
     {
       "id": "colorful-38",
@@ -581,7 +618,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-39",
@@ -596,7 +634,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-40",
@@ -611,7 +650,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-41",
@@ -626,7 +666,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-42",
@@ -641,7 +682,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-43",
@@ -656,7 +698,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-44",
@@ -671,7 +714,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-45",
@@ -686,7 +730,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-46",
@@ -701,7 +746,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-47",
@@ -716,7 +762,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-48",
@@ -731,7 +778,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-49",
@@ -746,7 +794,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-50",
@@ -761,7 +810,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-51",
@@ -776,7 +826,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-52",
@@ -791,7 +842,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-53",
@@ -806,7 +858,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-54",
@@ -821,7 +874,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-55",
@@ -836,7 +890,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "abstract"
     },
     {
       "id": "colorful-56",
@@ -851,7 +906,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-57",
@@ -866,7 +922,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-58",
@@ -881,7 +938,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     },
     {
       "id": "colorful-59",
@@ -896,7 +954,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "celestial"
     },
     {
       "id": "colorful-60",
@@ -911,7 +970,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "abstract"
     },
     {
       "id": "colorful-61",
@@ -926,7 +986,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-62",
@@ -941,7 +1002,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "gems"
     },
     {
       "id": "colorful-63",
@@ -956,7 +1018,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "colorful-64",
@@ -971,7 +1034,105 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "spirals"
     }
-  ]
+  ],
+  "groups": [
+    {
+      "id": "flowers",
+      "label": "Flowers",
+      "assetIndices": [
+        1,
+        4,
+        11,
+        13,
+        17,
+        20,
+        27,
+        29,
+        35,
+        38,
+        42,
+        44,
+        50,
+        53,
+        60,
+        62
+      ]
+    },
+    {
+      "id": "celestial",
+      "label": "Celestial",
+      "assetIndices": [
+        0,
+        2,
+        3,
+        7,
+        10,
+        19,
+        23,
+        25,
+        31,
+        34,
+        40,
+        45,
+        47,
+        49,
+        52,
+        55,
+        58
+      ]
+    },
+    {
+      "id": "gems",
+      "label": "Gems",
+      "assetIndices": [
+        5,
+        9,
+        12,
+        16,
+        22,
+        28,
+        32,
+        37,
+        41,
+        46,
+        48,
+        56,
+        61
+      ]
+    },
+    {
+      "id": "spirals",
+      "label": "Spirals",
+      "assetIndices": [
+        6,
+        14,
+        18,
+        21,
+        26,
+        30,
+        33,
+        39,
+        43,
+        51,
+        57,
+        63
+      ]
+    },
+    {
+      "id": "abstract",
+      "label": "Abstract",
+      "assetIndices": [
+        8,
+        15,
+        24,
+        36,
+        54,
+        59
+      ]
+    }
+  ],
+  "name": "Colorful shapes"
 }

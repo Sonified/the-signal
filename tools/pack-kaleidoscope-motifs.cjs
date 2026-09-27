@@ -2,9 +2,11 @@
 const sharp = require('sharp');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const packs = {
   motifs: {
+    set: 6,
     root: '../assets/kaleidoscope/motifs-v1',
     source: 'source/kaleidoscope-motifs-source.png',
     output: 'motifs-128.png',
@@ -40,6 +42,7 @@ const packs = {
   // 8 x 8 grid (1254 px, so 156.75 px cells, and a few shapes spill over a
   // cell line), so they are packed by component instead (packByComponents).
   'peaceful-shapes': {
+    set: 12,
     root: '../assets/kaleidoscope/peaceful-shapes-v1',
     source: 'source/peaceful-shapes-source.png',
     output: 'peaceful-shapes-128.png',
@@ -48,6 +51,7 @@ const packs = {
     rows: numberedRows('peaceful'),
   },
   'colorful-shapes': {
+    set: 7,
     root: '../assets/kaleidoscope/colorful-shapes-v1',
     source: 'source/colorful-shapes-source.png',
     output: 'colorful-shapes-128.png',
@@ -56,6 +60,7 @@ const packs = {
     rows: numberedRows('colorful'),
   },
   'flat-colorful-shapes': {
+    set: 8,
     root: '../assets/kaleidoscope/flat-colorful-shapes-v1',
     source: 'source/flat-colorful-shapes-source.png',
     output: 'flat-colorful-shapes-128.png',
@@ -64,6 +69,7 @@ const packs = {
     rows: numberedRows('flat-colorful'),
   },
   'confetti-sparkles': {
+    set: 9,
     root: '../assets/kaleidoscope/confetti-sparkles-v1',
     source: 'source/confetti-sparkles-source.png',
     output: 'confetti-sparkles-128.png',
@@ -74,6 +80,7 @@ const packs = {
   // Clusters of tiny pieces (sequins, star confetti, shards), so the
   // smallest piece kept is far smaller than the other sheets need.
   'photoreal-confetti': {
+    set: 10,
     root: '../assets/kaleidoscope/photoreal-confetti-v1',
     source: 'source/photoreal-confetti-source.png',
     output: 'photoreal-confetti-128.png',
@@ -86,6 +93,7 @@ const packs = {
   // burst, a wider kept ring so the glow is not clipped, and tiny pieces
   // kept for the scattered-star bursts.
   fireworks: {
+    set: 11,
     root: '../assets/kaleidoscope/fireworks-v1',
     source: 'source/fireworks-source.png',
     output: 'fireworks-128.png',
@@ -99,6 +107,7 @@ const packs = {
   // Photographed leaves and flowers; small pieces kept for the floret
   // clusters (Queen Anne's lace) and fine stems.
   'petal-specimens': {
+    set: 2,
     root: '../assets/kaleidoscope/set-2',
     source: 'source/set-2.png',
     output: 'set-2-128.png',
@@ -108,6 +117,7 @@ const packs = {
     rows: numberedRows('petal'),
   },
   'petals-green-leaves': {
+    set: 3,
     root: '../assets/kaleidoscope/set-3',
     source: 'source/set-3.png',
     output: 'set-3-128.png',
@@ -117,6 +127,7 @@ const packs = {
     rows: numberedRows('petal-leaf'),
   },
   'ferns-wildflower-petals': {
+    set: 4,
     root: '../assets/kaleidoscope/set-4',
     source: 'source/set-4.png',
     output: 'set-4-128.png',
@@ -126,6 +137,7 @@ const packs = {
     rows: numberedRows('fern-petal'),
   },
   'botanical-specimens': {
+    set: 5,
     root: '../assets/kaleidoscope/botanical-specimens-v1',
     source: 'source/botanical-specimens-source.png',
     output: 'botanical-specimens-128.png',
@@ -391,6 +403,18 @@ async function writeAtlas(composites, assets) {
     },
   }).composite(composites).png().toFile(output);
 
+  let groups, setName;
+  if (spec.set) {
+    const metadataUrl = pathToFileURL(path.resolve(__dirname, '../assets/kaleidoscope/sets.mjs')).href;
+    const { kaleidoscopeSet } = await import(metadataUrl);
+    const metadata = kaleidoscopeSet(spec.set);
+    setName = metadata.name;
+    groups = metadata.groups.map(item => ({ id: item.id, label: item.label, assetIndices: item.assetIndices }));
+    const owner = new Array(assets.length);
+    for (const item of groups) for (const index of item.assetIndices) owner[index] = item.id;
+    assets = assets.map((asset, index) => ({ ...asset, group: owner[index] }));
+  }
+
   await fs.writeFile(path.join(root, 'manifest.json'), JSON.stringify({
     version: 1,
     pack: spec.pack,
@@ -405,6 +429,8 @@ async function writeAtlas(composites, assets) {
     alpha: 'straight',
     colorSpace: 'srgb',
     defaultOrientation: 'up',
+    ...(setName ? { name: setName } : {}),
+    ...(groups ? { groups } : {}),
     assets,
   }, null, 2) + '\n');
 

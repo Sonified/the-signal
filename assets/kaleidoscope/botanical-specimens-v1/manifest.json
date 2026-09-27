@@ -26,7 +26,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-02",
@@ -41,7 +42,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "botanical-03",
@@ -56,7 +58,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-04",
@@ -71,7 +74,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     },
     {
       "id": "botanical-05",
@@ -86,7 +90,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-06",
@@ -101,7 +106,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     },
     {
       "id": "botanical-07",
@@ -116,7 +122,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-08",
@@ -131,7 +138,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-09",
@@ -146,7 +154,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ferns-sprigs"
     },
     {
       "id": "botanical-10",
@@ -161,7 +170,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-11",
@@ -176,7 +186,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-12",
@@ -191,7 +202,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-13",
@@ -206,7 +218,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-14",
@@ -221,7 +234,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     },
     {
       "id": "botanical-15",
@@ -236,7 +250,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ferns-sprigs"
     },
     {
       "id": "botanical-16",
@@ -251,7 +266,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-17",
@@ -266,7 +282,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-18",
@@ -281,7 +298,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-19",
@@ -296,7 +314,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-20",
@@ -311,7 +330,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-21",
@@ -326,7 +346,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "botanical-22",
@@ -341,7 +362,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-23",
@@ -356,7 +378,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-24",
@@ -371,7 +394,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     },
     {
       "id": "botanical-25",
@@ -386,7 +410,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-26",
@@ -401,7 +426,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-27",
@@ -416,7 +442,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-28",
@@ -431,7 +458,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-29",
@@ -446,7 +474,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-30",
@@ -461,7 +490,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-31",
@@ -476,7 +506,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-32",
@@ -491,7 +522,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-33",
@@ -506,7 +538,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     },
     {
       "id": "botanical-34",
@@ -521,7 +554,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ferns-sprigs"
     },
     {
       "id": "botanical-35",
@@ -536,7 +570,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-36",
@@ -551,7 +586,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     },
     {
       "id": "botanical-37",
@@ -566,7 +602,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-38",
@@ -581,7 +618,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "botanical-39",
@@ -596,7 +634,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ferns-sprigs"
     },
     {
       "id": "botanical-40",
@@ -611,7 +650,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-41",
@@ -626,7 +666,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-42",
@@ -641,7 +682,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-43",
@@ -656,7 +698,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-44",
@@ -671,7 +714,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-45",
@@ -686,7 +730,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-46",
@@ -701,7 +746,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-47",
@@ -716,7 +762,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     },
     {
       "id": "botanical-48",
@@ -731,7 +778,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ferns-sprigs"
     },
     {
       "id": "botanical-49",
@@ -746,7 +794,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-50",
@@ -761,7 +810,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     },
     {
       "id": "botanical-51",
@@ -776,7 +826,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-52",
@@ -791,7 +842,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-53",
@@ -806,7 +858,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "botanical-54",
@@ -821,7 +874,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-55",
@@ -836,7 +890,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-56",
@@ -851,7 +906,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-57",
@@ -866,7 +922,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-58",
@@ -881,7 +938,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-59",
@@ -896,7 +954,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-60",
@@ -911,7 +970,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-61",
@@ -926,7 +986,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "ferns-sprigs"
     },
     {
       "id": "botanical-62",
@@ -941,7 +1002,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "flowers"
     },
     {
       "id": "botanical-63",
@@ -956,7 +1018,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "green-leaves"
     },
     {
       "id": "botanical-64",
@@ -971,7 +1034,105 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "autumn-leaves"
     }
-  ]
+  ],
+  "groups": [
+    {
+      "id": "flowers",
+      "label": "Flowers",
+      "assetIndices": [
+        2,
+        6,
+        9,
+        11,
+        16,
+        18,
+        22,
+        25,
+        27,
+        29,
+        31,
+        39,
+        41,
+        43,
+        45,
+        50,
+        54,
+        56,
+        57,
+        59,
+        61
+      ]
+    },
+    {
+      "id": "petals",
+      "label": "Petals",
+      "assetIndices": [
+        1,
+        20,
+        37,
+        52
+      ]
+    },
+    {
+      "id": "green-leaves",
+      "label": "Green leaves",
+      "assetIndices": [
+        0,
+        4,
+        7,
+        10,
+        12,
+        15,
+        17,
+        19,
+        21,
+        24,
+        26,
+        28,
+        30,
+        34,
+        36,
+        40,
+        42,
+        44,
+        48,
+        51,
+        53,
+        55,
+        58,
+        62
+      ]
+    },
+    {
+      "id": "autumn-leaves",
+      "label": "Autumn leaves",
+      "assetIndices": [
+        3,
+        5,
+        13,
+        23,
+        32,
+        35,
+        46,
+        49,
+        63
+      ]
+    },
+    {
+      "id": "ferns-sprigs",
+      "label": "Ferns & sprigs",
+      "assetIndices": [
+        8,
+        14,
+        33,
+        38,
+        47,
+        60
+      ]
+    }
+  ],
+  "name": "Botanical specimens"
 }

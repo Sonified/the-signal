@@ -26,7 +26,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-02",
@@ -41,7 +42,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-03",
@@ -56,7 +58,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-04",
@@ -71,7 +74,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-05",
@@ -86,7 +90,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-06",
@@ -101,7 +106,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-07",
@@ -116,7 +122,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-08",
@@ -131,7 +138,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-09",
@@ -146,7 +154,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-10",
@@ -161,7 +170,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-11",
@@ -176,7 +186,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-12",
@@ -191,7 +202,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-13",
@@ -206,7 +218,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-14",
@@ -221,7 +234,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-15",
@@ -236,7 +250,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-16",
@@ -251,7 +266,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-17",
@@ -266,7 +282,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-18",
@@ -281,7 +298,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-19",
@@ -296,7 +314,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-20",
@@ -311,7 +330,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-21",
@@ -326,7 +346,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-22",
@@ -341,7 +362,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-23",
@@ -356,7 +378,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-24",
@@ -371,7 +394,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-25",
@@ -386,7 +410,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-26",
@@ -401,7 +426,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-27",
@@ -416,7 +442,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-28",
@@ -431,7 +458,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-29",
@@ -446,7 +474,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-30",
@@ -461,7 +490,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-31",
@@ -476,7 +506,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-32",
@@ -491,7 +522,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-33",
@@ -506,7 +538,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-34",
@@ -521,7 +554,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-35",
@@ -536,7 +570,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-36",
@@ -551,7 +586,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-37",
@@ -566,7 +602,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-38",
@@ -581,7 +618,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-39",
@@ -596,7 +634,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-40",
@@ -611,7 +650,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-41",
@@ -626,7 +666,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-42",
@@ -641,7 +682,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-43",
@@ -656,7 +698,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-44",
@@ -671,7 +714,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-45",
@@ -686,7 +730,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-46",
@@ -701,7 +746,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-47",
@@ -716,7 +762,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-48",
@@ -731,7 +778,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-49",
@@ -746,7 +794,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-50",
@@ -761,7 +810,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-51",
@@ -776,7 +826,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-52",
@@ -791,7 +842,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-53",
@@ -806,7 +858,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-54",
@@ -821,7 +874,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-55",
@@ -836,7 +890,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-56",
@@ -851,7 +906,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-57",
@@ -866,7 +922,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-58",
@@ -881,7 +938,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-59",
@@ -896,7 +954,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-60",
@@ -911,7 +970,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-61",
@@ -926,7 +986,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-62",
@@ -941,7 +1002,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     },
     {
       "id": "petal-leaf-63",
@@ -956,7 +1018,8 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "leaves"
     },
     {
       "id": "petal-leaf-64",
@@ -971,7 +1034,87 @@
         0.5,
         0.5
       ],
-      "orientation": "up"
+      "orientation": "up",
+      "group": "petals"
     }
-  ]
+  ],
+  "groups": [
+    {
+      "id": "petals",
+      "label": "Petals",
+      "assetIndices": [
+        0,
+        2,
+        4,
+        6,
+        9,
+        11,
+        12,
+        13,
+        15,
+        16,
+        18,
+        20,
+        22,
+        25,
+        27,
+        29,
+        30,
+        32,
+        34,
+        36,
+        39,
+        41,
+        43,
+        45,
+        46,
+        48,
+        50,
+        52,
+        54,
+        57,
+        59,
+        61,
+        63
+      ]
+    },
+    {
+      "id": "leaves",
+      "label": "Leaves",
+      "assetIndices": [
+        1,
+        3,
+        5,
+        7,
+        8,
+        10,
+        14,
+        17,
+        19,
+        21,
+        23,
+        24,
+        26,
+        28,
+        31,
+        33,
+        35,
+        37,
+        38,
+        40,
+        42,
+        44,
+        47,
+        49,
+        51,
+        53,
+        55,
+        56,
+        58,
+        60,
+        62
+      ]
+    }
+  ],
+  "name": "Petals and green leaves"
 }
