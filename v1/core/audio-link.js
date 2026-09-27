@@ -93,10 +93,12 @@ export function createAudioLink(post) {
   // Every control with a position, clickMode first as presets.js orders its
   // replay (the five shared pip controls address the click or the chirp by
   // S.clickMode, so the voice must be settled before them), then the mixer's
-  // per-recording rows, which live outside CONTROLS.
+  // per-recording rows, which live outside CONTROLS. A uiOnly control (a
+  // sub-drawer's open/close) belongs to the drawer, not the sound, so it
+  // is never sent.
   const watched = CONTROLS.filter(c =>
     (c.kind === 'slider' || c.kind === 'segment' || c.kind === 'toggle') &&
-    !c.multi && c.get && c.set && c.id !== 'engineThread');
+    !c.multi && !c.uiOnly && c.get && c.set && c.id !== 'engineThread');
   watched.sort((a, b) => (b.id === 'clickMode') - (a.id === 'clickMode'));
   const levelIdx = [];
   for (let i = 0; i < AMB_LAYER_COUNT; i++) {

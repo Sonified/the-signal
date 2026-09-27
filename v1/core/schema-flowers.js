@@ -17,6 +17,7 @@
 // ends with the debounced save(). The state-only helpers at the bottom never
 // call save(); store.js decides when to write.
 import { save } from './store.js';
+import { subDrawer } from './schema-visual.js';
 
 // Mode, the layer switch, and every numeric field with its range. The GPU
 // agent reads these names off S directly, so they are the source of truth
@@ -108,7 +109,7 @@ function direct(id, key, label, step, format, visible) {
 
 // One whole-percent slider over a 0 to 1 field, the way schema-visual.js
 // does depth, fade and every other amount.
-function percent(id, key, label, format, visible, sub) {
+function percent(id, key, label, format, visible) {
   const n = spec(key);
   const c = {
     id, section: 'flowers', label, kind: 'slider',
@@ -119,9 +120,14 @@ function percent(id, key, label, format, visible, sub) {
     enabled: layerOn
   };
   if (visible) c.visible = visible;
-  if (sub) c.sub = sub;
   return c;
 }
+
+// Nests a control in the sub-drawer straight above it (the schema's
+// `parent`), so the drawer folds it with that drawer. A row's own mode rule
+// still applies inside, so it shows only while its drawer is open and its
+// mode is the current one.
+const under = (parent, c) => { c.parent = parent; return c; };
 
 // Every control in the Flowers section dims while the layer is off, the
 // same way a v0 row locks when the thing it tunes is not running. They stay
@@ -161,40 +167,61 @@ export const FLOWER_CONTROLS = [
     set: (S, v) => { S.flowerMode = MODES.indexOf(v) >= 0 ? v : DEF_MODE; save(); },
     enabled: layerOn
   },
-  direct('flowerCount', 'flowerCount', 'Flowers', 1, S => String(S.flowerCount)),
-  direct('flowerRings', 'flowerRings', 'Rings',   1, S => String(S.flowerRings), isTunnel),
-  direct('flowerSize',  'flowerSize',  'Size',    0.05, times2('flowerSize')),
+  // ---- three sub-drawers, Motion, Shape and Brightness (see subDrawer in
+  // schema-visual.js), each with its rows straight after it. Mode stays
+  // above them, since it decides which of their rows show at all ----
+  subDrawer('flowersMotionDrawer', 'Motion', 'flowers', ['flowerSpeed', 'flowerFlow', 'flowerBloomRate']),
   // The same S.flowerSpeed under two names: in the tunnel it is how fast the
   // blooms travel toward the viewer, in the mandala how fast the pattern
   // flows outward, and the label should say which. The toolkit takes a
   // control's label as a plain string, so rather than a label that changes
   // under it, each mode gets its own row and only the right one is visible.
-  direct('flowerSpeed', 'flowerSpeed', 'Speed',   0.05, times2('flowerSpeed'), isTunnel),
-  direct('flowerFlow',  'flowerSpeed', 'Flow',    0.05, times2('flowerSpeed'), isMandala),
-  direct('flowerBloomRate', 'flowerBloomRate', 'Bloom speed', 0.05, times2('flowerBloomRate')),
+  under('flowersMotionDrawer',
+    direct('flowerSpeed', 'flowerSpeed', 'Speed', 0.05, times2('flowerSpeed'), isTunnel)),
+  under('flowersMotionDrawer',
+    direct('flowerFlow', 'flowerSpeed', 'Outward speed', 0.05, times2('flowerSpeed'), isMandala)),
+  under('flowersMotionDrawer',
+    direct('flowerBloomRate', 'flowerBloomRate', 'Bloom speed', 0.05, times2('flowerBloomRate'))),
   // Signed: negative turns the other way. A step of 0.01 so the default,
   // 0.12, is a position the slider can actually land on.
-  direct('flowerSpin',  'flowerSpin',  'Spin',    0.01,
-    S => S.flowerSpin === 0 ? 'still' : (S.flowerSpin > 0 ? '+' : '') + S.flowerSpin.toFixed(2) + '×'),
-  percent('flowerSpiral', 'flowerSpiral', 'Spiral', null, isTunnel),
-  percent('flowerRipple', 'flowerRipple', 'Ripple', null, isTunnel),
-  percent('flowerOpacity', 'flowerOpacity', 'Opacity'),
+  under('flowersMotionDrawer',
+    direct('flowerSpin', 'flowerSpin', 'Spin', 0.01,
+      S => S.flowerSpin === 0 ? 'still' : (S.flowerSpin > 0 ? '+' : '') + S.flowerSpin.toFixed(2) + '×')),
+
+  subDrawer('flowersShapeDrawer', 'Shape', 'flowers', ['flowerCount', 'flowerSize']),
+  under('flowersShapeDrawer',
+    direct('flowerCount', 'flowerCount', 'Flowers', 1, S => String(S.flowerCount))),
+  under('flowersShapeDrawer',
+    direct('flowerRings', 'flowerRings', 'Rings', 1, S => String(S.flowerRings), isTunnel)),
+  under('flowersShapeDrawer',
+    direct('flowerSize', 'flowerSize', 'Size', 0.05, times2('flowerSize'))),
+  under('flowersShapeDrawer', percent('flowerSpiral', 'flowerSpiral', 'Spiral', null, isTunnel)),
+  under('flowersShapeDrawer', percent('flowerRipple', 'flowerRipple', 'Ripple', null, isTunnel)),
+
+  subDrawer('flowersBrightnessDrawer', 'Brightness', 'flowers', ['flowerOpacity', 'flowerFade']),
+  under('flowersBrightnessDrawer', percent('flowerOpacity', 'flowerOpacity', 'Opacity')),
   // The tunnel rings' fade in from the centre (core/fade.js), with its own
   // amount so the flowers can ease in sooner or later than the rings do.
   // Both modes use it, so it is never hidden.
-  percent('flowerFade', 'flowerFade', 'Center fade radius'),
-
-  // How far the flowers follow the strobe, in colour and in brightness. Both
+  under('flowersBrightnessDrawer', percent('flowerFade', 'flowerFade', 'Center fade radius')),
+  // How far the flowers follow the strobe, in brightness and in colour. Both
   // default to 0, which keeps them a steady layer of their own on top of the
   // flicker; the Pulse readout spells that out at 0 so nobody has to guess
-  // whether 0 means "no pulse" or "no flowers".
-  percent('flowerTint', 'flowerTint', 'Tint to strobe colour',
-    S => S.flowerTint === 0 ? 'own colour' : Math.round(S.flowerTint * 100) + '%',
-    null, 'With the strobe'),
-  percent('flowerPulse', 'flowerPulse', 'Pulse with strobe',
-    S => S.flowerPulse === 0 ? 'never flickers' : Math.round(S.flowerPulse * 100) + '%',
-    null, 'With the strobe')
+  // whether 0 means "no pulse" or "no flowers". They sat under a "With the
+  // strobe" heading before the sub-drawers; a heading inside a sub-drawer
+  // would end its run, and the two names already say it.
+  under('flowersBrightnessDrawer', percent('flowerPulse', 'flowerPulse', 'Pulse with strobe',
+    S => S.flowerPulse === 0 ? 'never flickers' : Math.round(S.flowerPulse * 100) + '%')),
+  under('flowersBrightnessDrawer', percent('flowerTint', 'flowerTint', 'Tint to strobe colour',
+    S => S.flowerTint === 0 ? 'own colour' : Math.round(S.flowerTint * 100) + '%'))
 ];
+
+// Shorthand names for the shut sub-drawer strips' summaries (see summary in
+// schema-visual.js subDrawer), set once here rather than threaded through
+// the helpers above.
+const FLOWER_SHORT = { flowerSpeed: 'Speed', flowerFlow: 'Speed', flowerBloomRate: 'Bloom',
+  flowerCount: 'Count', flowerSize: 'Size', flowerOpacity: 'Opacity', flowerFade: 'Fade' };
+for (const c of FLOWER_CONTROLS) if (FLOWER_SHORT[c.id]) c.summaryLabel = FLOWER_SHORT[c.id];
 
 export const FLOWER_SECTIONS = [
   { id: 'flowers', title: 'Flowers' }

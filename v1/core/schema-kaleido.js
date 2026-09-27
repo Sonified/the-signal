@@ -16,6 +16,8 @@
 // Every set() ends with the debounced save(). The state-only helpers never
 // call save(); store.js decides when to write.
 import { save } from './store.js';
+import { KALEIDOSCOPE_SETS, KALEIDOSCOPE_SET_COUNT, kaleidoscopeSet } from '../../assets/kaleidoscope/sets.mjs';
+import { subDrawer } from './schema-visual.js';
 
 // The layer switch, the mirror flag and constant size are plain booleans;
 // every numeric field
@@ -54,12 +56,12 @@ const NUM = [
   ['kaleidoFade',        0,   1,   0.55, false],
   ['kaleidoTint',        0,   1,   0,    false],
   ['kaleidoPulse',       0,   1,   0,    false],
-  // Which motif atlas the shapes come from (kaleido.js ATLAS_SETS): 1 the
+  // Which motif atlas the shapes come from (assets/kaleidoscope/sets.mjs): 1 the
   // botanical atlas, 2 petal specimens, 3 petals and green leaves, 4 ferns
   // and wildflower petals, 5 botanical specimens, 6 the original motifs,
   // 7 colorful shapes, 8 flat colorful shapes, 9 confetti and sparkles,
   // 10 photoreal confetti and sparkles, 11 fireworks, 12 peaceful shapes.
-  ['kaleidoSet',         1,   12,  1,    true ],
+  ['kaleidoSet',         1,   KALEIDOSCOPE_SET_COUNT, 1, true],
   // The layer's own colour grade, applied in the fold: 1 leaves the motifs
   // as they are, 0 is black, flat grey or greyscale, 2 doubles the effect.
   ['kaleidoBright',      0,   2,   1,    false],
@@ -67,15 +69,13 @@ const NUM = [
   ['kaleidoSat',         0,   2,   1,    false]
 ];
 
-// The shape families the renderer draws from, by index. S.kaleidoFamilies
-// holds the chosen indices; an empty list means every family, so a first
-// visit, and any record that never chose, draws the whole set without
-// having to write all eight numbers into storage.
-const FAMILIES = ['Leaves', 'Flowers', 'Celestial', 'Sky & water', 'Botanical', 'Candy', 'Treasures', 'Light'];
-const N_FAM = FAMILIES.length;
-// What get() hands the chips when the list is empty. Built once and never
-// mutated, so the drawer can ask for it every frame without allocating.
-const ALL_FAMILIES = Object.freeze(FAMILIES.map((_, i) => i));
+// Each atlas names and maps its own semantic groups in sets.mjs. Generated
+// sheets often interleave subjects, so a group can contain arbitrary tile
+// indices rather than being forced to occupy one row.
+const FAMILY_OPTIONS = KALEIDOSCOPE_SETS.map(set => set && Object.freeze(
+  set.groups.map((item, i) => Object.freeze({ value: i, label: item.label, domId: null }))
+));
+const ALL_FAMILIES = KALEIDOSCOPE_SETS.map(set => set && Object.freeze(set.groups.map((_, i) => i)));
 
 // A slider's rounded position can come back as 1.1500000000000001; this
 // trims it to the step's precision and clamps it into range, so S holds the
@@ -97,18 +97,19 @@ function spec(key) {
 // that names none, since a kaleidoscope with no shapes to draw is never
 // what anyone meant; both come out as []. Anything that is not a valid
 // index is skipped rather than failing the whole list.
-function cleanFamilies(list) {
-  const seen = new Array(N_FAM).fill(false);
+function cleanFamilies(list, set) {
+  const nFam = kaleidoscopeSet(set).groups.length;
+  const seen = new Array(nFam).fill(false);
   let n = 0;
   for (let i = 0; i < list.length; i++) {
     const v = list[i];
-    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v >= N_FAM || seen[v]) continue;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v >= nFam || seen[v]) continue;
     seen[v] = true;
     n++;
   }
-  if (n === 0 || n === N_FAM) return [];
+  if (n === 0 || n === nFam) return [];
   const out = [];
-  for (let i = 0; i < N_FAM; i++) if (seen[i]) out.push(i);
+  for (let i = 0; i < nFam; i++) if (seen[i]) out.push(i);
   return out;
 }
 
@@ -125,7 +126,7 @@ export function initKaleidoState(S) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
   }
-  if (!Array.isArray(S.kaleidoFamilies)) S.kaleidoFamilies = [];
+  S.kaleidoFamilies = Array.isArray(S.kaleidoFamilies) ? cleanFamilies(S.kaleidoFamilies, S.kaleidoSet) : [];
 }
 
 // A plain copy of the kaleidoscope state, the shape store.js writes and a
@@ -154,7 +155,7 @@ export function applyKaleidoState(S, o) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
   }
-  if (Array.isArray(o.kaleidoFamilies)) S.kaleidoFamilies = cleanFamilies(o.kaleidoFamilies);
+  if (Array.isArray(o.kaleidoFamilies)) S.kaleidoFamilies = cleanFamilies(o.kaleidoFamilies, S.kaleidoSet);
 }
 
 // Every control in the Kaleidoscope section dims while the layer is off, the
@@ -165,7 +166,7 @@ const layerOn = S => !!S.layers.kaleido;
 // One slider bound 1:1 to a kaleidoscope field (a multiplier, a rate or a
 // count), whose range and default come from the NUM table so the two can
 // never disagree.
-function direct(id, key, label, step, format, sub) {
+function direct(id, key, label, step, format) {
   const n = spec(key);
   const c = {
     id, section: 'kaleido', label, kind: 'slider',
@@ -175,12 +176,11 @@ function direct(id, key, label, step, format, sub) {
     format,
     enabled: layerOn
   };
-  if (sub) c.sub = sub;
   return c;
 }
 
 // One whole-percent slider over a 0 to 1 field.
-function percent(id, key, label, format, sub) {
+function percent(id, key, label, format) {
   const n = spec(key);
   const c = {
     id, section: 'kaleido', label, kind: 'slider',
@@ -190,11 +190,17 @@ function percent(id, key, label, format, sub) {
     format: format || (S => Math.round(S[key] * 100) + '%'),
     enabled: layerOn
   };
-  if (sub) c.sub = sub;
   return c;
 }
 
 const times2 = key => S => S[key].toFixed(2) + '×';
+
+// Tags a control as part of the variance of the row straight above it (the
+// schema's varianceOf), so the drawer folds it out from under that row.
+const varianceOf = (owner, c) => { c.varianceOf = owner; return c; };
+// Nests a control in the sub-drawer straight above it (the schema's
+// `parent`), so the drawer folds it with that drawer.
+const under = (parent, c) => { c.parent = parent; return c; };
 
 // One whole-percent slider over a 0 to 2 grade field, 100% unchanged,
 // shown only while the Color switch is on, and drawn as that switch's child.
@@ -229,87 +235,33 @@ export const KALEIDO_CONTROLS = [
     get: S => !!S.layers.kaleido,
     set: (S, on) => { S.layers.kaleido = on; save(); }
   },
-  // The layer's master opacity, then how far it takes on the strobe's
-  // colour and flicker, at the head of the section under the switch.
-  percent('kaleidoOpacity', 'kaleidoOpacity', 'Opacity'),
-  percent('kaleidoTint', 'kaleidoTint', 'Tint to strobe colour',
-    S => S.kaleidoTint === 0 ? 'own colour' : Math.round(S.kaleidoTint * 100) + '%'),
-  percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
-    S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%'),
-  // The motifs' own color, graded before any tint toward the strobe. The
-  // switch is the group's heading, its sliders indented under it; off, the
-  // grade is not applied and the sliders are hidden, keeping their values
-  // for when it comes back on.
-  {
-    id: 'kaleidoGrade', section: 'kaleido', label: 'Color', kind: 'toggle', def: DEF_GRADE,
-    get: S => !!S.kaleidoGrade,
-    set: (S, on) => { S.kaleidoGrade = !!on; save(); },
-    enabled: layerOn
-  },
-  grade('kaleidoBright', 'kaleidoBright', 'Brightness'),
-  grade('kaleidoContrast', 'kaleidoContrast', 'Contrast'),
-  grade('kaleidoSat', 'kaleidoSat', 'Saturation'),
-  // The radial fade in from the centre, the rings' Ring fade in for this
-  // layer: 0 is no fade, higher values ease the shapes in further out.
-  // Up top with the opacity, since it shapes how the whole layer reads
-  // rather than any one kind of motion.
-  percent('kaleidoFade', 'kaleidoFade', 'Center fade radius'),
-
-  // How many wedges the circle is cut into. The readout keeps the number
-  // first, so clicking it to type opens on the fold count itself.
-  direct('kaleidoFolds', 'kaleidoFolds', 'Symmetry', 1, S => S.kaleidoFolds + '-fold'),
-  {
-    // Whether alternate wedges are reflected, the way a real kaleidoscope's
-    // mirrors fold the image, or simply repeated around the circle.
-    id: 'kaleidoMirror', section: 'kaleido', label: 'Mirror', kind: 'toggle', def: DEF_MIRROR,
-    get: S => !!S.kaleidoMirror,
-    set: (S, on) => { S.kaleidoMirror = !!on; save(); },
-    enabled: layerOn
-  },
-  percent('kaleidoDensity', 'kaleidoDensity', 'Density'),
-  direct('kaleidoSpeed', 'kaleidoSpeed', 'Speed', 0.05, times2('kaleidoSpeed')),
-  percent('kaleidoSpeedVar', 'kaleidoSpeedVar', 'Speed variance'),
-  direct('kaleidoSpeedPeriod', 'kaleidoSpeedPeriod', 'Variance rate', 1, S => S.kaleidoSpeedPeriod + 's / cycle'),
-  direct('kaleidoSize', 'kaleidoSize', 'Max size', 0.05, times2('kaleidoSize')),
-  percent('kaleidoSizeVar', 'kaleidoSizeVar', 'Size variance'),
-  {
-    // Whether a shape grows as it comes toward the rim. Checked, each one
-    // keeps one size for its whole flight (Max size times its own share of
-    // the variance) while it still flies outward and fades as before.
-    id: 'kaleidoConstSize', section: 'kaleido', label: 'Constant size', kind: 'toggle', def: DEF_CONST_SIZE,
-    get: S => !!S.kaleidoConstSize,
-    set: (S, on) => { S.kaleidoConstSize = !!on; save(); },
-    enabled: layerOn
-  },
-
-  // Rotation comes in three layers, largest first, each under its own
-  // heading so the names say which kind of turning a slider moves.
+  // ---- four sub-drawers, Motion, Shapes, Brightness and Color (see
+  // subDrawer in schema-visual.js), each with its rows straight after it.
+  // Rotation's three kinds sat under headings of their own before the
+  // drawers; a heading inside a drawer would end its run, and the labels
+  // already say which kind of turning a slider moves ----
+  subDrawer('kaleidoMotionDrawer', 'Motion', 'kaleido', ['kaleidoSpeed', 'kaleidoDensity']),
+  under('kaleidoMotionDrawer', direct('kaleidoSpeed', 'kaleidoSpeed', 'Speed', 0.05, times2('kaleidoSpeed'))),
+  // The speed's variance and its rate fold out from under Speed, and the
+  // size's from under Max size (drawer.js, the schema's varianceOf).
+  varianceOf('kaleidoSpeed', percent('kaleidoSpeedVar', 'kaleidoSpeedVar', 'Speed variance')),
+  varianceOf('kaleidoSpeed', direct('kaleidoSpeedPeriod', 'kaleidoSpeedPeriod', 'Variance rate', 1, S => S.kaleidoSpeedPeriod + 's / cycle')),
+  under('kaleidoMotionDrawer', percent('kaleidoDensity', 'kaleidoDensity', 'Density')),
+  // Rotation comes in three layers, largest first.
   //
   // Complete rotation is the whole pattern turning as one. Signed: it
   // twists one way or the other as it flows, and 0 holds it square. The id
   // stays kaleidoTwist so presets and saved settings still find it.
-  direct('kaleidoTwist', 'kaleidoTwist', 'Complete rotation', 0.01,
-    S => S.kaleidoTwist === 0 ? 'none' : (S.kaleidoTwist > 0 ? '+' : '') + S.kaleidoTwist.toFixed(2),
-    'Complete rotation'),
-
+  under('kaleidoMotionDrawer', direct('kaleidoTwist', 'kaleidoTwist', 'Complete rotation', 0.01,
+    S => S.kaleidoTwist === 0 ? 'none' : (S.kaleidoTwist > 0 ? '+' : '') + S.kaleidoTwist.toFixed(2))),
   // Internal rotation is each shape orbiting within its wedge, so it slides
   // into the mirrors, merges with its own reflection and vanishes off the
   // edge. The ceiling reads in radians per second, with 'still' at 0; the
   // randomness runs from every shape moving together in one direction (0)
   // to each shape taking its own speed and direction (100%).
-  direct('kaleidoOrbitMax', 'kaleidoOrbitMax', 'Max internal rotation', 0.01,
-    S => S.kaleidoOrbitMax === 0 ? 'still' : S.kaleidoOrbitMax.toFixed(2) + ' rad/s',
-    'Internal rotation'),
-  percent('kaleidoOrbitVar', 'kaleidoOrbitVar', 'Internal randomness', null, 'Internal rotation'),
-  // Where a shape is born across its wedge. At 0 every shape starts on the
-  // wedge's axis, clear of both mirrors, so it shows whole, centred and
-  // pointing outward until internal rotation carries it into a mirror; the
-  // readout says so. Higher values spread births off the axis, and 100% is
-  // anywhere across the wedge and the band beyond it.
-  percent('kaleidoScatter', 'kaleidoScatter', 'Scatter',
-    S => S.kaleidoScatter === 0 ? 'on the axis' : Math.round(S.kaleidoScatter * 100) + '%',
-    'Internal rotation'),
-
+  under('kaleidoMotionDrawer', direct('kaleidoOrbitMax', 'kaleidoOrbitMax', 'Max internal rotation', 0.01,
+    S => S.kaleidoOrbitMax === 0 ? 'still' : S.kaleidoOrbitMax.toFixed(2) + ' rad/s')),
+  under('kaleidoMotionDrawer', percent('kaleidoOrbitVar', 'kaleidoOrbitVar', 'Internal randomness')),
   // Shape spin is each shape turning about its own centre, at its own rate
   // up to the ceiling set here; the randomness spreads the shapes between
   // still and that ceiling. The ceiling reads in radians per second so a
@@ -317,31 +269,34 @@ export const KALEIDO_CONTROLS = [
   // whether 0 means stopped. A step of 0.01 so the default, 0.35, is a
   // position the slider can land on. The ids stay kaleidoSpinMax and
   // kaleidoSpinVar for presets and saved settings.
-  direct('kaleidoSpinMax', 'kaleidoSpinMax', 'Max shape spin', 0.01,
-    S => S.kaleidoSpinMax === 0 ? 'still' : S.kaleidoSpinMax.toFixed(2) + ' rad/s', 'Shape spin'),
-  percent('kaleidoSpinVar', 'kaleidoSpinVar', 'Spin randomness', null, 'Shape spin'),
+  under('kaleidoMotionDrawer', direct('kaleidoSpinMax', 'kaleidoSpinMax', 'Max shape spin', 0.01,
+    S => S.kaleidoSpinMax === 0 ? 'still' : S.kaleidoSpinMax.toFixed(2) + ' rad/s')),
+  under('kaleidoMotionDrawer', percent('kaleidoSpinVar', 'kaleidoSpinVar', 'Spin randomness')),
 
+  subDrawer('kaleidoShapesDrawer', 'Shapes', 'kaleido', ['kaleidoSet', 'kaleidoFolds']),
   {
     // Which atlas the shapes are drawn from. Switching swaps the images
     // under the live shapes once the new atlas is ready, so the pattern
     // keeps flowing rather than restarting.
-    id: 'kaleidoSet', section: 'kaleido', sub: 'Shapes', label: 'Image set', kind: 'segment', def: 1,
-    options: [
-      { value: 1, label: 'Set 1', domId: null },
-      { value: 2, label: 'Set 2', domId: null },
-      { value: 3, label: 'Set 3', domId: null },
-      { value: 4, label: 'Set 4', domId: null },
-      { value: 5, label: 'Set 5', domId: null },
-      { value: 6, label: 'Set 6', domId: null },
-      { value: 7, label: 'Set 7', domId: null },
-      { value: 8, label: 'Set 8', domId: null },
-      { value: 9, label: 'Set 9', domId: null },
-      { value: 10, label: 'Set 10', domId: null },
-      { value: 11, label: 'Set 11', domId: null },
-      { value: 12, label: 'Set 12', domId: null }
-    ],
+    id: 'kaleidoSet', section: 'kaleido', label: 'Image set', kind: 'segment', dropdown: true, def: 1,
+    parent: 'kaleidoShapesDrawer',
+    // the strip's summary says just 'Set 1'; the row keeps its full labels
+    summaryLabel: '',
+    format: S => 'Set ' + S.kaleidoSet,
+    options: KALEIDOSCOPE_SETS.slice(1).map(set => ({
+      value: set.id,
+      label: 'Set ' + set.id + ' - ' + set.name,
+      domId: null,
+    })),
     get: S => S.kaleidoSet,
-    set: (S, v) => { S.kaleidoSet = fit(Number(v), 1, 12, true); save(); },
+    set: (S, v) => {
+      S.kaleidoSet = fit(Number(v), 1, KALEIDOSCOPE_SET_COUNT, true);
+      // Group indices mean different things in each atlas. A new set starts
+      // with all of its categories selected instead of inheriting another
+      // set's numeric selection.
+      S.kaleidoFamilies = [];
+      save();
+    },
     enabled: layerOn
   },
   {
@@ -351,25 +306,95 @@ export const KALEIDO_CONTROLS = [
     // touch on the blanket "all" makes it an explicit set so that one family
     // can be taken out of it, and turning the last lit family off lights
     // them all again rather than leaving the layer with nothing to draw.
-    id: 'kaleidoFamilies', section: 'kaleido', sub: 'Shapes', label: 'Shapes', kind: 'segment', multi: true,
-    options: FAMILIES.map((label, i) => ({ value: i, label, domId: null })),
-    get: S => (S.kaleidoFamilies && S.kaleidoFamilies.length ? S.kaleidoFamilies : ALL_FAMILIES),
+    id: 'kaleidoFamilies', section: 'kaleido', label: 'Families', kind: 'segment', multi: true,
+    parent: 'kaleidoShapesDrawer',
+    options: FAMILY_OPTIONS[1],
+    optionsFor: S => FAMILY_OPTIONS[kaleidoscopeSet(S.kaleidoSet).id],
+    get: S => (S.kaleidoFamilies && S.kaleidoFamilies.length
+      ? S.kaleidoFamilies
+      : ALL_FAMILIES[kaleidoscopeSet(S.kaleidoSet).id]),
     set: (S, value) => {
       const i = Number(value);
-      if (!Number.isInteger(i) || i < 0 || i >= N_FAM) return;
-      const cur = S.kaleidoFamilies && S.kaleidoFamilies.length ? S.kaleidoFamilies : ALL_FAMILIES;
+      const set = kaleidoscopeSet(S.kaleidoSet);
+      const nFam = set.groups.length;
+      if (!Number.isInteger(i) || i < 0 || i >= nFam) return;
+      const cur = S.kaleidoFamilies && S.kaleidoFamilies.length ? S.kaleidoFamilies : ALL_FAMILIES[set.id];
       const next = cur.indexOf(i) >= 0 ? cur.filter(v => v !== i) : cur.concat(i);
-      S.kaleidoFamilies = cleanFamilies(next);
+      S.kaleidoFamilies = cleanFamilies(next, set.id);
       save();
     },
     format: S => {
-      const n = S.kaleidoFamilies && S.kaleidoFamilies.length ? S.kaleidoFamilies.length : N_FAM;
-      return n === N_FAM ? 'all shapes' : n + ' of ' + N_FAM;
+      const nFam = kaleidoscopeSet(S.kaleidoSet).groups.length;
+      const n = S.kaleidoFamilies && S.kaleidoFamilies.length ? S.kaleidoFamilies.length : nFam;
+      return n === nFam ? 'all shapes' : n + ' of ' + nFam;
     },
     enabled: layerOn
   },
+  // How many wedges the circle is cut into. The readout keeps the number
+  // first, so clicking it to type opens on the fold count itself.
+  under('kaleidoShapesDrawer', direct('kaleidoFolds', 'kaleidoFolds', 'Symmetry', 1, S => S.kaleidoFolds + '-fold')),
+  {
+    // Whether alternate wedges are reflected, the way a real kaleidoscope's
+    // mirrors fold the image, or simply repeated around the circle.
+    id: 'kaleidoMirror', section: 'kaleido', label: 'Mirror', kind: 'toggle', def: DEF_MIRROR,
+    parent: 'kaleidoShapesDrawer',
+    get: S => !!S.kaleidoMirror,
+    set: (S, on) => { S.kaleidoMirror = !!on; save(); },
+    enabled: layerOn
+  },
+  under('kaleidoShapesDrawer', direct('kaleidoSize', 'kaleidoSize', 'Max size', 0.05, times2('kaleidoSize'))),
+  varianceOf('kaleidoSize', percent('kaleidoSizeVar', 'kaleidoSizeVar', 'Size variance')),
+  {
+    // Whether a shape grows as it comes toward the rim. Checked, each one
+    // keeps one size for its whole flight (Max size times its own share of
+    // the variance) while it still flies outward and fades as before.
+    id: 'kaleidoConstSize', section: 'kaleido', label: 'Constant size', kind: 'toggle', def: DEF_CONST_SIZE,
+    parent: 'kaleidoShapesDrawer',
+    get: S => !!S.kaleidoConstSize,
+    set: (S, on) => { S.kaleidoConstSize = !!on; save(); },
+    enabled: layerOn
+  },
+  // Where a shape is born across its wedge. At 0 every shape starts on the
+  // wedge's axis, clear of both mirrors, so it shows whole, centred and
+  // pointing outward until internal rotation carries it into a mirror; the
+  // readout says so. Higher values spread births off the axis, and 100% is
+  // anywhere across the wedge and the band beyond it.
+  under('kaleidoShapesDrawer', percent('kaleidoScatter', 'kaleidoScatter', 'Scatter',
+    S => S.kaleidoScatter === 0 ? 'on the axis' : Math.round(S.kaleidoScatter * 100) + '%')),
 
+  // The layer's master opacity, its radial fade in from the centre (the
+  // rings' Ring fade in for this layer: 0 is no fade, higher values ease the
+  // shapes in further out), and how far it flickers with the strobe.
+  subDrawer('kaleidoBrightnessDrawer', 'Brightness', 'kaleido', ['kaleidoOpacity', 'kaleidoFade']),
+  under('kaleidoBrightnessDrawer', percent('kaleidoOpacity', 'kaleidoOpacity', 'Opacity')),
+  under('kaleidoBrightnessDrawer', percent('kaleidoFade', 'kaleidoFade', 'Center fade radius')),
+  under('kaleidoBrightnessDrawer', percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
+    S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%')),
+
+  // The motifs' own color, graded before any tint toward the strobe, then
+  // how far the layer takes on the strobe's colour. The grade's switch heads
+  // its sliders, indented under it; off, the grade is not applied and the
+  // sliders are hidden, keeping their values for when it comes back on.
+  subDrawer('kaleidoColorDrawer', 'Color', 'kaleido', ['kaleidoTint']),
+  {
+    id: 'kaleidoGrade', section: 'kaleido', label: 'Color', kind: 'toggle', def: DEF_GRADE,
+    parent: 'kaleidoColorDrawer',
+    get: S => !!S.kaleidoGrade,
+    set: (S, on) => { S.kaleidoGrade = !!on; save(); },
+    enabled: layerOn
+  },
+  grade('kaleidoBright', 'kaleidoBright', 'Brightness'),
+  grade('kaleidoContrast', 'kaleidoContrast', 'Contrast'),
+  grade('kaleidoSat', 'kaleidoSat', 'Saturation'),
+  under('kaleidoColorDrawer', percent('kaleidoTint', 'kaleidoTint', 'Tint to strobe colour',
+    S => S.kaleidoTint === 0 ? 'own colour' : Math.round(S.kaleidoTint * 100) + '%'))
 ];
+
+// Shorthand names for the shut sub-drawer strips' summaries (see summary in
+// schema-visual.js subDrawer), set once here rather than threaded through
+// the helpers above.
+const KALEIDO_SHORT = { kaleidoFade: 'Fade' };
+for (const c of KALEIDO_CONTROLS) if (KALEIDO_SHORT[c.id]) c.summaryLabel = KALEIDO_SHORT[c.id];
 
 export const KALEIDO_SECTIONS = [
   { id: 'kaleido', title: 'Kaleidoscope' }

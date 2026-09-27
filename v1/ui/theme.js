@@ -78,12 +78,12 @@ export const GLASS = {
 export const MOTION = {
   hover:  { stiffness: 520, damping: 38 },
   press:  { stiffness: 900, damping: 50 },
-  panel:  { stiffness: 260, damping: 30 },   // drawer, mixer
+  panel:  { stiffness: 460, damping: 40 },   // drawer, mixer; a third faster than the original 260/30
   // A group's body height. The panel's stiffness, so a section folds at the
   // pace the drawer slides, but just past critical damping (2 * sqrt(260) is
   // about 32.2) and integrated monotone (see anim.js): the whole list below a
   // section flows from this number, so it must arrive without overshooting.
-  fold:   { stiffness: 260, damping: 34, monotone: true },
+  fold:   { stiffness: 460, damping: 45, monotone: true },   // a third faster than the original 260/34
   fade:   { stiffness: 180, damping: 26 },   // chrome idle fade
   scroll: { friction: 5.5 }                   // momentum decay per second
 };

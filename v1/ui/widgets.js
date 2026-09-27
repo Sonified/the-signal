@@ -60,15 +60,20 @@
 // always belongs to the enclosing ui.scroll. The one exception is the
 // slider's fine nudge, which needs Alt/Option held (see slider()).
 //   ui.segment(id, labels, index, disabled) -> new index
-//   ui.toggle(id, label, on, disabled) -> new on
+//   ui.select(id, label, labels, index, readout, disabled) -> new index
+//     a dropdown whose open menu floats over the rows below it; a screen
+//     with selects calls ui.popupInput() before its rows and ui.popupDraw()
+//     after its panel closes (see select() below)
+//   ui.toggle(id, label, on, disabled, heading) -> new on
 //   ui.button(id, label, variant, disabled) -> clicked   variant: 'chip'|'primary'|'ghost'
 //   ui.iconButton(id, icon, x, y, size, disabled) -> clicked  // ICON.* id from drawlist.js, explicit rect
 //   ui.tooltip(str)   // call right after the widget it describes; anchors to
 //                      // that widget's rect, shows after a 450 ms hover hold
 //   ui.tooltipAt(id, x, y, w, h, hovered, str)   // the same for an explicit
 //                      // rect; call every frame for that id, hovered or not
-//   ui.control(ctrl, S) -> changed (bool)   // dispatch by ctrl.kind; see imgui.js's
-//                                            // header for why S is a second argument
+//   ui.control(ctrl, S, shown) -> changed (bool)   // dispatch by ctrl.kind; see imgui.js's
+//                                            // header for why S is a second argument;
+//                                            // shown true skips ctrl.visible (already decided)
 //
 // Text entry, a general single-line field (the drawer's preset names use it;
 // so can any readout a screen wants to make typeable):
@@ -142,6 +147,8 @@ export function installWidgets(ui) {
   ui.slider = slider;
   ui.segment = segment;
   ui.select = select;
+  ui.popupInput = popupInput;
+  ui.popupDraw = popupDraw;
   ui.toggle = toggle;
   ui.button = button;
   ui.iconButton = iconButton;
@@ -426,30 +433,92 @@ function segment(id, labels, index, disabled) {
 // (a schema segment with dropdown: true). The label sits on its own line,
 // with the control's readout at the right as a slider's does; under it, a
 // box shows the current choice and a chevron. A click on the box opens the
-// options as a list right beneath it, in the layout, so the rows below move
-// down rather than being covered, and it can never be clipped by the
-// drawer's scroll. Picking an option, or clicking the box again, shuts it.
+// options as a menu floating over the rows beneath it (above the box when
+// there is no room below), the way any menu does: the row keeps its shut
+// height, so nothing moves. Picking an option, clicking the box again, or a
+// press anywhere else shuts it, and so does the box moving (a scroll, a fold
+// opening above it), so the menu can never drift away from its box.
 // Focused: Enter or Space opens and shuts, the arrows step the choice.
-const selectOpen = new Set();
+//
+// The menu is drawn and hit tested outside the row, because it covers rows
+// laid out after it. A screen holding selects calls ui.popupInput() before
+// its rows (the open menu then has the first claim on a press over it, from
+// where it was drawn last frame, and occludes the rows under it for the rest
+// of the screen) and ui.popupDraw() once its panel is closed, so the menu is
+// painted over everything the screen drew and no clip cuts it. One menu is
+// open at a time; its state is the one object below, reused.
 const SELECT_ROW_H = 28;
+const pop = { nid: -1, frame: -1, pick: -1, hover: -1, labels: null, index: 0, n: 0,
+              x: 0, y: 0, w: 0, rowH: 0, boxX: 0, boxY: 0, boxW: 0, boxH: 0 };
+
+// The open menu's input, from last frame's rect: each option claims a press
+// over it, so the rows it covers never see one, and a press anywhere outside
+// the menu and its box shuts it (that press still lands where it was aimed,
+// as a browser's select does). A menu whose select was not drawn last frame
+// (its section shut, its row hidden, the drawer put away) is dropped.
+function popupInput() {
+  const ui = this;
+  pop.hover = -1;
+  if (pop.nid === -1) return;
+  if (pop.frame !== ui.frame - 1) { pop.nid = -1; pop.pick = -1; return; }
+  const x = pop.x, y = pop.y, w = pop.w, rowH = pop.rowH, h = pop.n * rowH;
+  for (let i = 0; i < pop.n; i++) {
+    ui.interact(combine2(pop.nid, 100 + i), x, y + i * rowH, w, rowH, false);
+    if (ui.hover) { pop.hover = i; ui.setCursorHint('pointer'); }
+    if (ui.clicked) pop.pick = i;
+  }
+  if (ui._downEvent) {
+    const dx = ui._downX, dy = ui._downY;
+    const inList = dx >= x && dx < x + w && dy >= y && dy < y + h;
+    const inBox = dx >= pop.boxX && dx < pop.boxX + pop.boxW && dy >= pop.boxY && dy < pop.boxY + pop.boxH;
+    if (!inList && !inBox) { pop.nid = -1; pop.pick = -1; return; }
+  }
+  ui.setOcclusion(x, y, w, h);
+}
+
+// Paints the open menu where its select placed it this frame, on the pane's
+// own glass so the rows beneath cannot show through, and lifts the occlusion
+// popupInput set.
+function popupDraw() {
+  const ui = this;
+  ui.clearOcclusion();
+  if (pop.nid === -1 || pop.frame !== ui.frame) return;
+  const x = pop.x, y = pop.y, w = pop.w, rowH = pop.rowH, n = pop.n, labels = pop.labels;
+  const dl = ui.dl, cs = 14;
+  dl.glass(x, y, w, n * rowH, RADIUS.sm, COLOR.paneTint, 1, 1, COLOR.line, 12, 0.4);
+  dl.rect(x, y, w, n * rowH, RADIUS.sm, COLOR.well, 0, null, 0, 0);
+  for (let i = 0; i < n; i++) {
+    const oy = y + i * rowH;
+    if (i === pop.hover) dl.rect(x + 1, oy + 1, w - 2, rowH - 2, RADIUS.sm, COLOR.hover, 0, null, 0, 0);
+    const sel = i === pop.index;
+    ui.text.draw(dl, labels[i], x + SPACE.md, centerBaseline(ui, oy, rowH, TYPE.sm), TYPE.sm,
+      sel ? W.semibold : W.regular, sel ? COLOR.accent : COLOR.inkDim, 0, TRACK.ui, 1);
+    if (sel) dl.icon(ICON.CHECK, x + w - SPACE.md - cs, oy + (rowH - cs) / 2, cs, cs, COLOR.accent, 1.6, 0);
+  }
+}
 
 function select(id, label, labels, index, readout, disabled) {
   const ui = this;
   const nid = ui.id(id);
   const focused = disabled ? false : ui.registerFocusable(nid);
   const n = labels.length;
-  let open = !disabled && selectOpen.has(nid);
+  const wasOpen = pop.nid === nid;
+  let open = !disabled && wasOpen;
 
   ui.text.lineMetrics(TYPE.sm, ui._lm);
   const labelH = ui._lm.ascent + ui._lm.descent;
   const gap = SPACE.xxs + 2;
   const boxH = touchAware(ui, SEG_H), rowH = touchAware(ui, SELECT_ROW_H);
-  const totalH = labelH + gap + boxH + (open ? SPACE.xxs + n * rowH : 0);
+  const totalH = labelH + gap + boxH;
   ui.nextRect(totalH);
   const rx = ui.rx, ry = ui.ry, rw = ui.rw;
   const by = ry + labelH + gap;
 
   let newIndex = index;
+  // an option picked in the menu (popupInput, earlier this frame)
+  if (open && pop.pick >= 0) { if (pop.pick < n) newIndex = pop.pick; open = false; }
+  // the box moved under an open menu: shut it rather than let it float off
+  if (open && (Math.abs(by - pop.boxY) > 0.5 || Math.abs(rx - pop.boxX) > 0.5)) open = false;
   labelHit(ui, nid, label, rx, ry, labelH, rw / 2, disabled);
   ui.interact(nid, rx, by, rw, boxH, !!disabled);
   const boxHover = ui.hover;
@@ -480,33 +549,18 @@ function select(id, label, labels, index, readout, disabled) {
   ui.dl.icon(ICON.CHEVRON, rx + rw - SPACE.md - cs, by + (boxH - cs) / 2, cs, cs, COLOR.inkDim, 1.6, rot);
   if (focused && ui.focusVisible) ui._focusRing(rx, by, rw, boxH, RADIUS.sm);
 
-  // ---- the list ----
+  // ---- the menu: placed here, drawn by popupDraw over everything after ----
   if (open) {
-    const ly = by + boxH + SPACE.xxs;
-    ui.dl.rect(rx, ly, rw, n * rowH, RADIUS.sm, COLOR.well, 1, COLOR.line, 0, 0);
-    for (let i = 0; i < n; i++) {
-      const oy = ly + i * rowH;
-      const iid = ui.idx(id, 100 + i);
-      ui.interact(iid, rx, oy, rw, rowH, false);
-      if (ui.hover) {
-        ui.setCursorHint('pointer');
-        ui.dl.rect(rx + 1, oy + 1, rw - 2, rowH - 2, RADIUS.sm, COLOR.hover, 0, null, 0, 0);
-      }
-      if (ui.clicked) { newIndex = i; open = false; }
-      const sel = i === newIndex;
-      ui.text.draw(ui.dl, labels[i], rx + SPACE.md, centerBaseline(ui, oy, rowH, TYPE.sm), TYPE.sm,
-        sel ? W.semibold : W.regular, sel ? COLOR.accent : COLOR.inkDim, 0, TRACK.ui, 1);
-      if (sel) ui.dl.icon(ICON.CHECK, rx + rw - SPACE.md - cs, oy + (rowH - cs) / 2, cs, cs, COLOR.accent, 1.6, 0);
-    }
-  }
+    const listH = n * rowH;
+    let ly = by + boxH + SPACE.xxs;
+    if (ly + listH > ui.height - SPACE.sm && by - SPACE.xxs - listH >= SPACE.sm) ly = by - SPACE.xxs - listH;
+    pop.nid = nid; pop.frame = ui.frame; pop.labels = labels; pop.index = newIndex; pop.n = n;
+    pop.x = rx; pop.y = ly; pop.w = rw; pop.rowH = rowH;
+    pop.boxX = rx; pop.boxY = by; pop.boxW = rw; pop.boxH = boxH;
+    if (!wasOpen) pop.hover = -1;
+  } else if (wasOpen) pop.nid = -1;
+  if (wasOpen) pop.pick = -1;
 
-  // A press anywhere outside the box and its list shuts it. The press is not
-  // taken: whatever it landed on still gets it, as a browser's select does.
-  if (open && ui._downEvent) {
-    const dx = ui._downX, dy = ui._downY;
-    if (dx < rx || dx >= rx + rw || dy < by || dy >= ry + totalH) open = false;
-  }
-  if (open) selectOpen.add(nid); else selectOpen.delete(nid);
   ui._lastId = nid; ui._lastX = rx; ui._lastY = ry; ui._lastW = rw; ui._lastH = totalH;
   ui._lastHover = ui.pointerX >= rx && ui.pointerX < rx + rw && ui.pointerY >= by && ui.pointerY < ry + totalH;
   return newIndex;
@@ -524,7 +578,8 @@ function capsLabel(ctrl) {
 
 // `heading` draws the label as a small section head (caps come from the
 // caller, the weight and tracking here), for a toggle whose children nest
-// beneath it.
+// beneath it. (A sub-drawer's header is not a toggle row: the drawer draws
+// it through imgui.js beginFold.)
 function toggle(id, label, on, disabled, heading) {
   const ui = this;
   const nid = ui.id(id);
@@ -911,16 +966,18 @@ export function actionLabel(ui, ctrl, S, force) {
 
 // Multi-select chips (the word themes): a wrapped flow of pills, each lit when
 // its value is in the control's current set. set(S, value) toggles one.
-const chipWidths = new Map();          // ctrl.id -> Float32Array of pill widths
+const chipWidths = new Map();          // ctrl.id -> { options, widths }
 const CHIP_H = 24, CHIP_GAP = 6, CHIP_PAD = 10;
 function multiChips(ui, ctrl, S, enabled) {
-  const opts = ctrl.options;
-  let widths = chipWidths.get(ctrl.id);
-  if (!widths || widths.length !== opts.length) {
-    widths = new Float32Array(opts.length);
+  const opts = ctrl.optionsFor ? ctrl.optionsFor(S) : ctrl.options;
+  let cache = chipWidths.get(ctrl.id);
+  if (!cache || cache.options !== opts) {
+    const widths = new Float32Array(opts.length);
     for (let i = 0; i < opts.length; i++) widths[i] = ui.text.measure(opts[i].label, TYPE.xs, W.regular) + CHIP_PAD * 2;
-    chipWidths.set(ctrl.id, widths);
+    cache = { options: opts, widths };
+    chipWidths.set(ctrl.id, cache);
   }
+  const widths = cache.widths;
   ui.label(ctrl.label, TYPE.sm, W.regular, COLOR.inkDim);
   // Measure the wrapped height first so the layout reserves exactly it,
   // against the width nextRect is about to hand out (narrower when indented).
@@ -1080,9 +1137,12 @@ function commitReadout(ctrl, S, text) {
   return true;
 }
 
-function control(ctrl, S) {
+// shown: the caller has already settled that the row shows (the drawer
+// decides once per row, and keeps a row sliding shut on screen after its own
+// rule has hidden it), so its visible() is not asked again.
+function control(ctrl, S, shown) {
   const ui = this;
-  if (ctrl.visible && !ctrl.visible(S)) return false;
+  if (!shown && ctrl.visible && !ctrl.visible(S)) return false;
   const enabled = ctrl.enabled ? ctrl.enabled(S) : true;
   if (!enabled) ui.dl.pushAlpha(0.45);
 

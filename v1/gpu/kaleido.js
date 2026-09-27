@@ -39,10 +39,10 @@
 //
 // The motif atlas is loaded lazily, the first time the layer is switched on,
 // and nothing is drawn until it is ready. S.kaleidoSet picks which atlas
-// (ATLAS_SETS); changing it loads the other one in the background and swaps
+// (assets/kaleidoscope/sets.mjs); changing it loads the other one in the background and swaps
 // it in under the live shapes once it is built. The atlas the renderer works
-// with is 8 x 8 tiles of 128 px with 12 px of transparent padding, one family
-// of motifs per row. A smaller square 8 x 8 atlas (set 1, the botanical atlas, is 512 px, 64 px
+// with is 8 x 8 tiles of 128 px with 12 px of transparent padding. A smaller
+// square 8 x 8 atlas (set 1, the botanical atlas, is 512 px, 64 px
 // tiles with no padding) is first repacked into that layout, each tile
 // scaled into the 104 px inner square (see repack).
 // Its background removal left a faint matte around every motif: tens of
@@ -66,24 +66,9 @@ import { S } from '../../js/state.js';
 import { KALEIDO_WGSL } from './kaleido.wgsl.js';
 import { MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade, radialFadeIn, RADIAL_FADE_OUT_K } from '../core/fade.js';
+import { kaleidoscopeSet } from '../../assets/kaleidoscope/sets.mjs';
 
-// Relative to the page base (v1/index.html sets <base href="../">), so this
-// resolves from the repo root.
-const ATLAS_SETS = {
-  1: 'assets/kaleidoscope/botanical-atlas-meditation-draft.png',
-  2: 'assets/kaleidoscope/set-2/set-2-128.png',
-  3: 'assets/kaleidoscope/set-3/set-3-128.png',
-  4: 'assets/kaleidoscope/set-4/set-4-128.png',
-  5: 'assets/kaleidoscope/botanical-specimens-v1/botanical-specimens-128.png',
-  6: 'assets/kaleidoscope/motifs-v1/motifs-128.png',
-  7: 'assets/kaleidoscope/colorful-shapes-v1/colorful-shapes-128.png',
-  8: 'assets/kaleidoscope/flat-colorful-shapes-v1/flat-colorful-shapes-128.png',
-  9: 'assets/kaleidoscope/confetti-sparkles-v1/confetti-sparkles-128.png',
-  10: 'assets/kaleidoscope/photoreal-confetti-v1/photoreal-confetti-128.png',
-  11: 'assets/kaleidoscope/fireworks-v1/fireworks-128.png',
-  12: 'assets/kaleidoscope/peaceful-shapes-v1/peaceful-shapes-128.png'
-};
-const GRID = 8;                     // 8 x 8 tiles, one family per row
+const GRID = 8;                     // every atlas is an 8 x 8 tile sheet
 const TILE = 128;
 const ATLAS = TILE * GRID;          // 1024
 const MOTIFS = GRID * GRID;
@@ -487,7 +472,7 @@ export function createKaleido(device, format, platform) {
       console.warn('kaleido: the platform has no loadImagePixels; the layer stays empty');
       return;
     }
-    const url = ATLAS_SETS[set] || ATLAS_SETS[1];
+    const url = kaleidoscopeSet(set).image;
     platform.loadImagePixels(url)
       .then(img => buildAtlas(img, token))
       .catch(err => { console.warn('kaleido: could not load the motif atlas ' + url + ':', err && err.message ? err.message : err); });
@@ -694,27 +679,32 @@ export function createKaleido(device, format, platform) {
   }
 
   // ---------- the pool, per frame ----------
-  // The families setting as a bitmask (bit f for row f); empty, missing or
-  // nonsense means every family. The allowed list is rebuilt only when the
-  // mask changes, so reading the array each frame costs a few comparisons.
+  // The families setting as a bitmask over this atlas's semantic groups;
+  // empty, missing or nonsense means every group. Groups map to arbitrary
+  // motif indices because photographed leaves and petals are interleaved.
   function refreshFamilies() {
+    const groups = kaleidoscopeSet(requestedSet).groups;
     const fams = S.kaleidoFamilies;
     let mask = 0;
     if (fams && typeof fams.length === 'number') {
       for (let i = 0; i < fams.length; i++) {
         const f = fams[i];
-        if (typeof f === 'number' && f >= 0 && f < GRID) mask |= 1 << (f | 0);
+        if (typeof f === 'number' && f >= 0 && f < groups.length) mask |= 1 << (f | 0);
       }
     }
-    if (mask === 0) mask = (1 << GRID) - 1;
+    if (mask === 0) mask = (1 << groups.length) - 1;
     if (mask === familyMask) return;
     familyMask = mask;
     allowedCount = 0;
     let fillSum = 0;
-    for (let f = 0; f < GRID; f++) {
+    const seen = new Uint8Array(MOTIFS);
+    for (let f = 0; f < groups.length; f++) {
       if (!(mask & (1 << f))) continue;
-      for (let c = 0; c < GRID; c++) {
-        const m = f * GRID + c;
+      const indices = groups[f].assetIndices;
+      for (let c = 0; c < indices.length; c++) {
+        const m = indices[c];
+        if (seen[m]) continue;
+        seen[m] = 1;
         allowed[allowedCount++] = m;
         fillSum += motifFill[m];
       }
@@ -1071,7 +1061,7 @@ export function createKaleido(device, format, platform) {
     instCount = 0;
     const lyr = S.layers;
     if (!lyr || !lyr.kaleido) { wasOn = false; return; }
-    const wantSet = ATLAS_SETS[S.kaleidoSet] ? S.kaleidoSet : 1;
+    const wantSet = kaleidoscopeSet(S.kaleidoSet).id;
     if (wantSet !== requestedSet) load(wantSet);
     if (!ready) return;
 

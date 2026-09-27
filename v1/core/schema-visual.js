@@ -31,7 +31,7 @@ import { seedParticles, applyEdgeDir } from '../../js/sim.js';
 import { THEMES, WORDS } from '../../js/words.js';
 import { rebuildWordPool } from './words.js';
 import { FX_NAMES } from './word-fx.js';
-import { save } from './store.js';
+import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 
 // S stores colour as an [r,g,b] triple (js/color.js's setColorFromPicker
@@ -50,6 +50,56 @@ import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engin
 // and hide while the word leaves the way it came. Each row names the effects
 // it belongs to and steps out of the way for every other choice: a preset
 // only ever shows the controls it has.
+// The sub-drawers (Text's Timing, Styling and Fades; Strobe's Timing,
+// Brightness and Color; Tunnel's Motion, Brightness and Style; Edge's Motion
+// and Style; Flowers' Motion, Shape and Brightness; Kaleidoscope's Motion,
+// Shapes, Brightness and Color; Particles' Motion, Shape and Color; and the
+// Audio and Music voices, whose strips carry the voice's switch): each a toggle
+// whose rows nest under it, open while it is on. They are disclosures, not
+// features, so whether one is open is how the interface was arranged, not
+// how the session looks or sounds. It lives beside the drawer's own open
+// sections in the UI record (store.js saveUiState), never in S, so no preset,
+// snapshot or other tab ever sees it, and `uiOnly` keeps these rows out of
+// the preset replay and the audio mirror. The drawer folds every row under
+// one open and shut the way a section folds (imgui.js beginFold). All start open: the record lists only the ones the
+// viewer shut. It is read the first time the drawer asks, well after main.js
+// has handed the store its storage.
+let shutSubs = null;
+function shutSubDrawers() {
+  if (shutSubs === null) {
+    shutSubs = new Set();
+    const saved = loadUiState();
+    const list = saved && Array.isArray(saved.shutSubDrawers) ? saved.shutSubDrawers : [];
+    for (const id of list) if (typeof id === 'string') shutSubs.add(id);
+  }
+  return shutSubs;
+}
+// The section defaults to Text, where sub-drawers began; the others name theirs.
+// Ids are unique across sections, since they share the one shut list.
+// Exported for the sections defined in files of their own (schema-flowers.js),
+// so every sub-drawer shares the one shut list and the one way of saving it.
+// summary lists the ids whose readouts a shut strip shows beside its name
+// (drawer.js, imgui.js beginFold), the drawer's primary settings; left out,
+// the drawer takes its first two sliders or segments. Each reads as the
+// control's summaryLabel (a shorthand such as 'Freq'; its label's first word
+// when it has none) and then its readout.
+// switchId (optional) names a real on/off control, a voice's own switch, that
+// the strip then carries beside its chevron the way a section header carries
+// its layer's (drawer.js, imgui.js beginFold): a click on it runs that
+// control's set() and leaves the drawer as it was, a click anywhere else on
+// the strip opens or shuts it. That control is not drawn as a row of its own.
+export function subDrawer(id, label, section = 'text', summary, switchId) {
+  return {
+    id, section, label, kind: 'toggle', uiOnly: true, summary, switchId,
+    get: () => !shutSubDrawers().has(id),
+    set: (S, on) => {
+      const shut = shutSubDrawers();
+      if (on) shut.delete(id); else shut.add(id);
+      saveUiState({ shutSubDrawers: Array.from(shut) });
+    }
+  };
+}
+
 const fadeInOn = S => S.textFadeInOn !== false;
 const fadeOutOn = S => S.textFadeOutOn !== false;
 function fxRows(leaving) {
@@ -223,8 +273,13 @@ export const VISUAL_CONTROLS = [
   // Corners are their own layer with their own section (below Strobe), so
   // the Strobe switch never touches them.
   sectionToggle('cornersOn', 'corners', 'corners', 'On'),
+  // ---- three sub-drawers, Timing, Brightness and Color (see subDrawer),
+  // each with its rows straight after it ----
+  subDrawer('strobeTimingDrawer', 'Timing', 'strobe', ['freq', 'wave']),
   {
     id: 'freq', section: 'strobe', label: 'Frequency', kind: 'slider',
+    summaryLabel: 'Freq',
+    parent: 'strobeTimingDrawer',
     min: 0.5, max: 45, step: 0.5, def: 7.5,
     get: S => S.freq,
     set: (S, pos) => {
@@ -238,7 +293,38 @@ export const VISUAL_CONTROLS = [
     format: S => S.freq.toFixed(1) + ' Hz'
   },
   {
+    // Off holds the strobe on the set frequency; the amount and rate below
+    // keep their values for when it comes back on.
+    id: 'freqDriftOn', section: 'strobe', label: 'Frequency drift', kind: 'toggle', def: true,
+    varianceOf: 'freq',
+    get: S => S.freqDriftOn !== false,
+    set: (S, on) => { S.freqDriftOn = !!on; save(); },
+    format: S => S.freqDriftOn !== false ? 'On' : 'Off'
+  },
+  {
+    id: 'freqDrift', section: 'strobe', label: 'Drift amount', kind: 'slider',
+    varianceOf: 'freq',
+    parent: 'freqDriftOn',
+    min: 0, max: 15, step: 0.5, def: 1,
+    get: S => S.freqDrift,
+    set: (S, pos) => { S.freqDrift = pos; save(); },
+    format: S => '±' + S.freqDrift.toFixed(1) + ' Hz',
+    visible: S => S.freqDriftOn !== false
+  },
+  {
+    id: 'driftRate', section: 'strobe', label: 'Drift rate', kind: 'slider',
+    varianceOf: 'freq',
+    parent: 'freqDriftOn',
+    min: 1, max: 60, step: 1, def: 60,
+    get: S => S.driftPeriod,
+    set: (S, pos) => { S.driftPeriod = pos; save(); },
+    format: S => S.driftPeriod + 's / cycle',
+    visible: S => S.freqDriftOn !== false
+  },
+  {
     id: 'wave', section: 'strobe', label: 'Waveform', kind: 'segment', def: 'square',
+    summaryLabel: 'Wave',
+    parent: 'strobeTimingDrawer',
     options: [
       { value: 'sine',     label: 'Sine',   domId: 'wSine' },
       { value: 'triangle', label: 'Tri',    domId: 'wTri'  },
@@ -248,42 +334,13 @@ export const VISUAL_CONTROLS = [
     set: (S, v) => { S.wave = v; save(); }
   },
   {
-    id: 'fieldShape', section: 'strobe', label: 'Field shape', kind: 'segment', def: 'full',
-    options: [
-      { value: 'circle', label: 'Circle', domId: 'sCircle' },
-      { value: 'panel',  label: 'Panel',  domId: 'sPanel'  },
-      { value: 'full',   label: 'Full',   domId: 'sFull'   }
-    ],
-    get: S => S.fieldShape,
-    set: (S, v) => { S.fieldShape = v; save(); }
-  },
-  {
-    // The field eased in from the centre on the rings' own curve (core/fade.js),
-    // so the middle stays dark like the other layers' Fade in. 0 is no fade.
-    id: 'fieldFade', section: 'strobe', label: 'Center fade radius', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 0,
-    get: S => Math.round((S.fieldFade || 0) * 100),
-    set: (S, pos) => { S.fieldFade = pos / 100; save(); },
-    format: S => Math.round((S.fieldFade || 0) * 100) + '%'
-  },
-  {
-    // How soft the fade's edge is. At 100% the ease spans the whole way from
-    // the centre to the fade radius, exactly the shared curve; lower values
-    // compress the ease toward the radius, down to a hard-edged circle at 0.
-    id: 'fieldSoft', section: 'strobe', label: 'Center fade softness', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 100,
-    get: S => Math.round((S.fieldSoft ?? 1) * 100),
-    set: (S, pos) => { S.fieldSoft = pos / 100; save(); },
-    format: S => Math.round((S.fieldSoft ?? 1) * 100) + '%',
-    visible: S => (S.fieldFade || 0) > 0
-  },
-  {
     // Two buttons in v0, not a single input, so there is no v0 DOM id that
     // names the control itself; 'frameLock' is the natural name for the pair,
     // and each option carries the id of the button that sets it.
     // Drawn as a dropdown (widgets.js select): the options say what each
     // one does, which is too long for two buttons side by side.
     id: 'frameLock', section: 'strobe', label: 'Flash quantization', kind: 'segment', def: true,
+    parent: 'strobeTimingDrawer',
     dropdown: true,
     options: [
       { value: false, label: 'Free (possible irregular frames)',       domId: 'lkOff' },
@@ -297,34 +354,11 @@ export const VISUAL_CONTROLS = [
     format: S => !S.frameLock ? 'off'
       : S.framesPerCycle ? S.achievedFreq.toFixed(2) + ' Hz · ' + S.framesPerCycle + ' fr' : 'on'
   },
-  {
-    // Off holds the strobe on the set frequency; the amount and rate below
-    // keep their values for when it comes back on.
-    id: 'freqDriftOn', section: 'strobe', label: 'Frequency drift', kind: 'toggle', def: true,
-    get: S => S.freqDriftOn !== false,
-    set: (S, on) => { S.freqDriftOn = !!on; save(); },
-    format: S => S.freqDriftOn !== false ? 'On' : 'Off'
-  },
-  {
-    id: 'freqDrift', section: 'strobe', label: 'Drift amount', kind: 'slider',
-    parent: 'freqDriftOn',
-    min: 0, max: 15, step: 0.5, def: 1,
-    get: S => S.freqDrift,
-    set: (S, pos) => { S.freqDrift = pos; save(); },
-    format: S => '±' + S.freqDrift.toFixed(1) + ' Hz',
-    visible: S => S.freqDriftOn !== false
-  },
-  {
-    id: 'driftRate', section: 'strobe', label: 'Drift rate', kind: 'slider',
-    parent: 'freqDriftOn',
-    min: 1, max: 60, step: 1, def: 60,
-    get: S => S.driftPeriod,
-    set: (S, pos) => { S.driftPeriod = pos; save(); },
-    format: S => S.driftPeriod + 's / cycle',
-    visible: S => S.freqDriftOn !== false
-  },
+  subDrawer('strobeBrightnessDrawer', 'Brightness', 'strobe', ['depth', 'bright']),
   {
     id: 'depth', section: 'strobe', label: 'Depth', kind: 'slider',
+    summaryLabel: 'Depth',
+    parent: 'strobeBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 80,
     get: S => Math.round(S.depth * 100),
     set: (S, pos) => { S.depth = pos / 100; save(); },
@@ -334,12 +368,14 @@ export const VISUAL_CONTROLS = [
     // Off holds the depth at its set value; the amount and rate below keep
     // their values for when it comes back on.
     id: 'depthVarOn', section: 'strobe', label: 'Depth variance', kind: 'toggle', def: true,
+    varianceOf: 'depth',
     get: S => S.depthVarOn !== false,
     set: (S, on) => { S.depthVarOn = !!on; save(); },
     format: S => S.depthVarOn !== false ? 'On' : 'Off'
   },
   {
     id: 'depthVar', section: 'strobe', label: 'Variance amount', kind: 'slider',
+    varianceOf: 'depth',
     parent: 'depthVarOn',
     min: 0, max: 100, step: 1, def: 80,
     get: S => Math.round(S.depthVar * 100),
@@ -349,6 +385,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'varPeriod', section: 'strobe', label: 'Variance rate', kind: 'slider',
+    varianceOf: 'depth',
     parent: 'depthVarOn',
     min: 1, max: 60, step: 1, def: 10,
     get: S => S.varPeriod,
@@ -358,6 +395,8 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'bright', section: 'strobe', label: 'Brightness', kind: 'slider',
+    summaryLabel: 'Bright',
+    parent: 'strobeBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.bright * 100),
     set: (S, pos) => { S.bright = pos / 100; save(); },
@@ -367,12 +406,14 @@ export const VISUAL_CONTROLS = [
     // Off holds the brightness at its set value; the amount and rate below keep
     // their values for when it comes back on.
     id: 'brightVarOn', section: 'strobe', label: 'Brightness variance', kind: 'toggle', def: true,
+    varianceOf: 'bright',
     get: S => S.brightVarOn !== false,
     set: (S, on) => { S.brightVarOn = !!on; save(); },
     format: S => S.brightVarOn !== false ? 'On' : 'Off'
   },
   {
     id: 'brightVar', section: 'strobe', label: 'Variance amount', kind: 'slider',
+    varianceOf: 'bright',
     parent: 'brightVarOn',
     min: 0, max: 100, step: 1, def: 85,
     get: S => Math.round(S.brightVar * 100),
@@ -382,6 +423,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'brightVarPeriod', section: 'strobe', label: 'Variance rate', kind: 'slider',
+    varianceOf: 'bright',
     parent: 'brightVarOn',
     min: 1, max: 60, step: 1, def: 22,
     get: S => S.brightVarPeriod,
@@ -390,7 +432,42 @@ export const VISUAL_CONTROLS = [
     visible: S => S.brightVarOn !== false
   },
   {
+    id: 'fieldShape', section: 'strobe', label: 'Field shape', kind: 'segment', def: 'full',
+    parent: 'strobeBrightnessDrawer',
+    options: [
+      { value: 'circle', label: 'Circle', domId: 'sCircle' },
+      { value: 'panel',  label: 'Panel',  domId: 'sPanel'  },
+      { value: 'full',   label: 'Full',   domId: 'sFull'   }
+    ],
+    get: S => S.fieldShape,
+    set: (S, v) => { S.fieldShape = v; save(); }
+  },
+  {
+    // The field eased in from the centre on the rings' own curve (core/fade.js),
+    // so the middle stays dark like the other layers' Fade in. 0 is no fade.
+    id: 'fieldFade', section: 'strobe', label: 'Center fade radius', kind: 'slider',
+    parent: 'strobeBrightnessDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.fieldFade || 0) * 100),
+    set: (S, pos) => { S.fieldFade = pos / 100; save(); },
+    format: S => Math.round((S.fieldFade || 0) * 100) + '%'
+  },
+  {
+    // How soft the fade's edge is. At 100% the ease spans the whole way from
+    // the centre to the fade radius, exactly the shared curve; lower values
+    // compress the ease toward the radius, down to a hard-edged circle at 0.
+    id: 'fieldSoft', section: 'strobe', label: 'Center fade softness', kind: 'slider',
+    parent: 'strobeBrightnessDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.fieldSoft ?? 1) * 100),
+    set: (S, pos) => { S.fieldSoft = pos / 100; save(); },
+    format: S => Math.round((S.fieldSoft ?? 1) * 100) + '%',
+    visible: S => (S.fieldFade || 0) > 0
+  },
+  subDrawer('strobeColorDrawer', 'Color', 'strobe', ['hueBand', 'colorWalk']),
+  {
     id: 'color', section: 'strobe', label: 'Color', kind: 'color', def: '#d400ff',
+    parent: 'strobeColorDrawer',
     get: S => rgbHex(S.rgb),
     set: (S, hex) => { setColorFromPicker(hex); save(); }
   },
@@ -398,6 +475,8 @@ export const VISUAL_CONTROLS = [
     // Same shape as frameLock: three buttons, no single owning v0 id, so the
     // group takes the natural name and each option carries its button id.
     id: 'hueBand', section: 'strobe', label: 'Hue range', kind: 'segment', def: 'full',
+    summaryLabel: 'Hue',
+    parent: 'strobeColorDrawer',
     options: [
       { value: 'full', label: 'Full', domId: 'hbFull' },
       { value: 'warm', label: 'Warm', domId: 'hbWarm' },
@@ -422,6 +501,8 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'colorWalk', section: 'strobe', label: 'Color walk', kind: 'slider',
+    summaryLabel: 'Walk',
+    parent: 'strobeColorDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.colorWalk * 100),
     set: (S, pos) => {
@@ -436,6 +517,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'walkPeriod', section: 'strobe', label: 'Walk speed', kind: 'slider',
+    parent: 'strobeColorDrawer',
     min: 1, max: 300, step: 1, def: 60,
     get: S => S.walkPeriod,
     set: (S, pos) => { S.walkPeriod = pos; save(); },
@@ -443,6 +525,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'colorWalkMode', section: 'strobe', label: 'Walk mode', kind: 'segment', def: false,
+    parent: 'strobeColorDrawer',
     options: [
       { value: false, label: 'Together',    domId: 'cwTogether' },
       { value: true,  label: 'Per element', domId: 'cwEach'     }
@@ -462,22 +545,71 @@ export const VISUAL_CONTROLS = [
 
   // ---------- Tunnel ----------
   sectionToggle('ringsOn', 'rings', 'tunnel', 'On'),
+  // ---- three sub-drawers, Motion, Brightness and Style (see subDrawer),
+  // each with its rows straight after it. Motion's id still says Timing, its
+  // first name, so an open or shut state saved under it carries over ----
+  subDrawer('tunnelTimingDrawer', 'Motion', 'tunnel', ['ringSpeed', 'ringDensity']),
   {
-    id: 'ringSpeed', section: 'tunnel', label: 'Ring spread', kind: 'slider',
+    id: 'ringSpeed', section: 'tunnel', label: 'Ring speed', kind: 'slider',
+    summaryLabel: 'Speed',
+    parent: 'tunnelTimingDrawer',
     min: 0.2, max: 3, step: 0.05, def: 0.5,
     get: S => S.ringSpeedMul,
     set: (S, pos) => { S.ringSpeedMul = pos; save(); },
     format: S => S.ringSpeedMul.toFixed(1) + '×'
   },
   {
+    // How often a new ring is born, straight in rings a second; the old
+    // behaviour was one per flash capped near five, so five is the familiar
+    // pace and higher packs the tunnel denser at any strobe frequency.
+    id: 'ringDensity', section: 'tunnel', label: 'Ring density', kind: 'slider',
+    summaryLabel: 'Density',
+    parent: 'tunnelTimingDrawer',
+    min: 0.2, max: 20, step: 0.1, def: 5,
+    get: S => S.ringRate,
+    set: (S, pos) => { S.ringRate = pos; save(); },
+    format: S => S.ringRate.toFixed(1) + ' / s'
+  },
+  subDrawer('tunnelBrightnessDrawer', 'Brightness', 'tunnel', ['ringOpacity', 'ringFade']),
+  {
+    id: 'ringOpacity', section: 'tunnel', label: 'Ring opacity', kind: 'slider',
+    summaryLabel: 'Opacity',
+    parent: 'tunnelBrightnessDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.ringOpacity ?? 1) * 100),
+    set: (S, pos) => { S.ringOpacity = pos / 100; save(); },
+    format: S => Math.round((S.ringOpacity ?? 1) * 100) + '%'
+  },
+  {
+    id: 'ringBrightVar', section: 'tunnel', label: 'Ring brightness var', kind: 'slider',
+    varianceOf: 'ringOpacity',
+    min: 0, max: 100, step: 1, def: 55,
+    get: S => Math.round(S.ringBrightVar * 100),
+    set: (S, pos) => { S.ringBrightVar = pos / 100; save(); },
+    format: S => Math.round(S.ringBrightVar * 100) + '%'
+  },
+  {
+    id: 'ringBrightPeriod', section: 'tunnel', label: 'Ring bright var rate', kind: 'slider',
+    varianceOf: 'ringOpacity',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.ringBrightPeriod,
+    set: (S, pos) => { S.ringBrightPeriod = pos; save(); },
+    format: S => S.ringBrightPeriod + 's / cycle'
+  },
+  {
     id: 'ringFade', section: 'tunnel', label: 'Center fade radius', kind: 'slider',
+    summaryLabel: 'Fade',
+    parent: 'tunnelBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 55,
     get: S => Math.round(S.ringFade * 100),
     set: (S, pos) => { S.ringFade = pos / 100; save(); },
     format: S => Math.round(S.ringFade * 100) + '%'
   },
+  subDrawer('tunnelStyleDrawer', 'Style', 'tunnel', ['ringThick']),
   {
     id: 'ringThick', section: 'tunnel', label: 'Line thickness', kind: 'slider',
+    summaryLabel: 'Thickness',
+    parent: 'tunnelStyleDrawer',
     min: 0.2, max: 5, step: 0.1, def: 3,
     get: S => S.ringThick,
     set: (S, pos) => { S.ringThick = pos; save(); },
@@ -485,6 +617,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'ringThickVar', section: 'tunnel', label: 'Line thickness variance', kind: 'slider',
+    varianceOf: 'ringThick',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.ringThickVar * 100),
     // Existing rings keep the thickness factor they were born with (see
@@ -493,27 +626,104 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.ringThickVar = pos / 100; save(); },
     format: S => Math.round(S.ringThickVar * 100) + '%'
   },
-  {
-    id: 'ringBrightVar', section: 'tunnel', label: 'Ring brightness var', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 55,
-    get: S => Math.round(S.ringBrightVar * 100),
-    set: (S, pos) => { S.ringBrightVar = pos / 100; save(); },
-    format: S => Math.round(S.ringBrightVar * 100) + '%'
-  },
-  {
-    id: 'ringBrightPeriod', section: 'tunnel', label: 'Ring bright var rate', kind: 'slider',
-    min: 1, max: 60, step: 1, def: 10,
-    get: S => S.ringBrightPeriod,
-    set: (S, pos) => { S.ringBrightPeriod = pos; save(); },
-    format: S => S.ringBrightPeriod + 's / cycle'
-  },
 
   // ---------- Edge ----------
   sectionToggle('edgeOn', 'edge', 'edge', 'On'),
+  // ---- two sub-drawers, Motion and Style (see subDrawer), each with its
+  // rows straight after it ----
+  subDrawer('edgeMotionDrawer', 'Motion', 'edge', ['edgeSpeed', 'edgeDir']),
+  {
+    id: 'edgeSpeed', section: 'edge', label: 'Edge speed', kind: 'slider',
+    summaryLabel: 'Speed',
+    parent: 'edgeMotionDrawer',
+    min: 0, max: 6, step: 0.1, def: 4,
+    get: S => S.edgeSpeedMul,
+    set: (S, pos) => { S.edgeSpeedMul = pos; save(); },
+    format: S => S.edgeSpeedMul.toFixed(1) + '×'
+  },
+  {
+    id: 'edgeSpeedVar', section: 'edge', label: 'Edge speed variance', kind: 'slider',
+    varianceOf: 'edgeSpeed',
+    min: 0, max: 100, step: 1, def: 50,
+    get: S => Math.round(S.edgeSpeedVar * 100),
+    set: (S, pos) => { S.edgeSpeedVar = pos / 100; save(); },
+    format: S => Math.round(S.edgeSpeedVar * 100) + '%'
+  },
+  {
+    id: 'edgeSpeedVarPeriod', section: 'edge', label: 'Edge speed var rate', kind: 'slider',
+    varianceOf: 'edgeSpeed',
+    min: 1, max: 60, step: 1, def: 22,
+    get: S => S.edgeSpeedVarPeriod,
+    set: (S, pos) => { S.edgeSpeedVarPeriod = pos; save(); },
+    format: S => S.edgeSpeedVarPeriod + 's / cycle'
+  },
+  {
+    // A native <select> in v0, not a button row, so there is no per-option
+    // DOM id to hand out; the options below exist for the toolkit's segment
+    // widget, and byDomId only ever matches this control's own id ('edgeDir'),
+    // never one of its options.
+    id: 'edgeDir', section: 'edge', label: 'Edge rotation', kind: 'segment', def: 'both',
+    summaryLabel: 'Rotation',
+    parent: 'edgeMotionDrawer',
+    options: [
+      { value: 'cw',   label: 'Clockwise',          domId: null },
+      { value: 'ccw',  label: 'Counter clockwise',   domId: null },
+      { value: 'both', label: 'Both',                domId: null }
+    ],
+    get: S => S.edgeDir,
+    set: (S, v) => { S.edgeDir = v; applyEdgeDir(); save(); }
+  },
+  subDrawer('edgeStyleDrawer', 'Style', 'edge', ['edgeCount', 'edgeSize']),
+  {
+    id: 'edgeCount', section: 'edge', label: 'Edge density', kind: 'slider',
+    summaryLabel: 'Density',
+    parent: 'edgeStyleDrawer',
+    min: 2, max: 200, step: 1, def: 60,
+    get: S => S.edgeCount,
+    set: (S, pos) => { S.edgeCount = pos; seedParticles(S.edgeCount); save(); },
+    format: S => String(S.edgeCount)
+  },
+  {
+    // The slider reads in half the stored units: S.edgeSize stays in the
+    // units v0 and saved presets use (so they draw exactly as before), while
+    // the slider's 1 is the old 2 and its top is 20.
+    id: 'edgeSize', section: 'edge', label: 'Edge size', kind: 'slider',
+    summaryLabel: 'Size',
+    parent: 'edgeStyleDrawer',
+    min: 0.1, max: 20, step: 0.1, def: 3,
+    get: S => S.edgeSize / 2,
+    set: (S, pos) => { S.edgeSize = pos * 2; save(); },
+    format: S => (S.edgeSize / 2).toFixed(1) + '×'
+  },
+  {
+    id: 'edgeSizeVar', section: 'edge', label: 'Edge size variance', kind: 'slider',
+    varianceOf: 'edgeSize',
+    min: 0, max: 100, step: 1, def: 50,
+    get: S => Math.round(S.edgeSizeVar * 100),
+    set: (S, pos) => { S.edgeSizeVar = pos / 100; save(); },
+    format: S => Math.round(S.edgeSizeVar * 100) + '%'
+  },
+  {
+    id: 'edgeSizeVarPeriod', section: 'edge', label: 'Edge size var rate', kind: 'slider',
+    varianceOf: 'edgeSize',
+    min: 1, max: 60, step: 1, def: 18,
+    get: S => S.edgeSizeVarPeriod,
+    set: (S, pos) => { S.edgeSizeVarPeriod = pos; save(); },
+    format: S => S.edgeSizeVarPeriod + 's / cycle'
+  },
+  {
+    id: 'trailLen', section: 'edge', label: 'Trail length', kind: 'slider',
+    parent: 'edgeStyleDrawer',
+    min: 0.2, max: 6, step: 0.1, def: 1,
+    get: S => S.trailMul,
+    set: (S, pos) => { S.trailMul = pos; save(); },
+    format: S => S.trailMul.toFixed(1) + '×'
+  },
   {
     // The particle's leading tip (gpu/scene-data.js's buildEdge). v1 only,
     // so no v0 button ids.
     id: 'edgeCap', section: 'edge', label: 'Head shape', kind: 'segment', def: 'wedge',
+    parent: 'edgeStyleDrawer',
     options: [
       { value: 'wedge', label: 'Wedge',   domId: null },
       { value: 'round', label: 'Rounded', domId: null },
@@ -526,83 +736,11 @@ export const VISUAL_CONTROLS = [
   {
     // Scales every edge particle's brightness, tail and head alike.
     id: 'edgeOpacity', section: 'edge', label: 'Edge opacity', kind: 'slider',
+    parent: 'edgeStyleDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.edgeOpacity * 100),
     set: (S, pos) => { S.edgeOpacity = pos / 100; save(); },
     format: S => Math.round(S.edgeOpacity * 100) + '%'
-  },
-  {
-    id: 'edgeCount', section: 'edge', label: 'Edge density', kind: 'slider',
-    min: 2, max: 200, step: 1, def: 60,
-    get: S => S.edgeCount,
-    set: (S, pos) => { S.edgeCount = pos; seedParticles(S.edgeCount); save(); },
-    format: S => String(S.edgeCount)
-  },
-  {
-    // The slider reads in half the stored units: S.edgeSize stays in the
-    // units v0 and saved presets use (so they draw exactly as before), while
-    // the slider's 1 is the old 2 and its top is 20.
-    id: 'edgeSize', section: 'edge', label: 'Edge size', kind: 'slider',
-    min: 0.1, max: 20, step: 0.1, def: 3,
-    get: S => S.edgeSize / 2,
-    set: (S, pos) => { S.edgeSize = pos * 2; save(); },
-    format: S => (S.edgeSize / 2).toFixed(1) + '×'
-  },
-  {
-    id: 'edgeSizeVar', section: 'edge', label: 'Edge size variance', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 50,
-    get: S => Math.round(S.edgeSizeVar * 100),
-    set: (S, pos) => { S.edgeSizeVar = pos / 100; save(); },
-    format: S => Math.round(S.edgeSizeVar * 100) + '%'
-  },
-  {
-    id: 'edgeSizeVarPeriod', section: 'edge', label: 'Edge size var rate', kind: 'slider',
-    min: 1, max: 60, step: 1, def: 18,
-    get: S => S.edgeSizeVarPeriod,
-    set: (S, pos) => { S.edgeSizeVarPeriod = pos; save(); },
-    format: S => S.edgeSizeVarPeriod + 's / cycle'
-  },
-  {
-    id: 'trailLen', section: 'edge', label: 'Trail length', kind: 'slider',
-    min: 0.2, max: 6, step: 0.1, def: 1,
-    get: S => S.trailMul,
-    set: (S, pos) => { S.trailMul = pos; save(); },
-    format: S => S.trailMul.toFixed(1) + '×'
-  },
-  {
-    id: 'edgeSpeed', section: 'edge', label: 'Edge speed', kind: 'slider',
-    min: 0, max: 6, step: 0.1, def: 4,
-    get: S => S.edgeSpeedMul,
-    set: (S, pos) => { S.edgeSpeedMul = pos; save(); },
-    format: S => S.edgeSpeedMul.toFixed(1) + '×'
-  },
-  {
-    id: 'edgeSpeedVar', section: 'edge', label: 'Edge speed variance', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 50,
-    get: S => Math.round(S.edgeSpeedVar * 100),
-    set: (S, pos) => { S.edgeSpeedVar = pos / 100; save(); },
-    format: S => Math.round(S.edgeSpeedVar * 100) + '%'
-  },
-  {
-    id: 'edgeSpeedVarPeriod', section: 'edge', label: 'Edge speed var rate', kind: 'slider',
-    min: 1, max: 60, step: 1, def: 22,
-    get: S => S.edgeSpeedVarPeriod,
-    set: (S, pos) => { S.edgeSpeedVarPeriod = pos; save(); },
-    format: S => S.edgeSpeedVarPeriod + 's / cycle'
-  },
-  {
-    // A native <select> in v0, not a button row, so there is no per-option
-    // DOM id to hand out; the options below exist for the toolkit's segment
-    // widget, and byDomId only ever matches this control's own id ('edgeDir'),
-    // never one of its options.
-    id: 'edgeDir', section: 'edge', label: 'Edge rotation', kind: 'segment', def: 'both',
-    options: [
-      { value: 'cw',   label: 'Clockwise',          domId: null },
-      { value: 'ccw',  label: 'Counter clockwise',   domId: null },
-      { value: 'both', label: 'Both',                domId: null }
-    ],
-    get: S => S.edgeDir,
-    set: (S, v) => { S.edgeDir = v; applyEdgeDir(); save(); }
   },
 
   // ---------- Text ----------
@@ -622,7 +760,24 @@ export const VISUAL_CONTROLS = [
     format: S => S.layers.text ? 'on' : 'off'
   },
   {
+    // Individual words draw from the themed pool below; affirmations swap
+    // in whole phrases (js/words.js's AFFIRMATIONS) and the themes step
+    // aside, since that set is its own theme.
+    id: 'textMode', section: 'text', label: 'Text', kind: 'segment', def: 'words',
+    options: [
+      { value: 'words',        label: 'Words',        domId: 'txModeWords' },
+      { value: 'affirmations', label: 'Affirmations', domId: 'txModeAff' }
+    ],
+    get: S => S.textMode,
+    set: (S, v) => { S.textMode = v; rebuildWordPool(); save(); },
+    format: S => S.textMode === 'affirmations' ? 'affirmations' : 'individual words'
+  },
+  // ---- three sub-drawers, Timing, Styling and Fades (see subDrawer), each
+  // with its rows straight after it, then the themes at the section's level ----
+  subDrawer('textRateDrawer', 'Timing', 'text', ['textFreq', 'textAppearPerMin', 'textDwell']),
+  {
     id: 'textLink', section: 'text', label: 'Blink source', kind: 'segment', def: true,
+    parent: 'textRateDrawer',
     options: [
       { value: true,  label: 'Match the strobe', domId: 'txLink' },
       { value: false, label: 'Own rate',          domId: 'txFree' }
@@ -643,12 +798,96 @@ export const VISUAL_CONTROLS = [
     format: S => S.textRateHz.toFixed(1) + ' Hz'
   },
   {
+    // Whether a word's chance rolls per strobe tick (so 40 Hz offers forty
+    // chances a second) or holds a set pace in words per minute whatever
+    // the frequency.
+    id: 'textAppearMode', section: 'text', label: 'Appearance timing', kind: 'segment', def: 'frame',
+    parent: 'textRateDrawer',
+    options: [
+      { value: 'frame', label: 'By frame', domId: null },
+      { value: 'time',  label: 'By time',  domId: null }
+    ],
+    get: S => S.textAppearMode || 'frame',
+    set: (S, v) => { S.textAppearMode = v; save(); },
+    format: S => S.textAppearMode === 'time' ? 'by time' : 'by frame'
+  },
+  {
+    id: 'textAppearPerMin', section: 'text', label: 'Appearance rate', kind: 'slider',
+    summaryLabel: 'Rate',
+    // In By time mode this row shows in Appearance's place, so it wears
+    // Appearance's variance chevron (drawer.js varianceProxy) and the
+    // variance folds out beneath it.
+    varianceProxy: 'textFreq',
+    parent: 'textRateDrawer',
+    min: 1, max: 60, step: 1, def: 10,
+    visible: S => S.textAppearMode === 'time',
+    get: S => S.textAppearPerMin,
+    set: (S, pos) => { S.textAppearPerMin = pos; save(); },
+    format: S => S.textAppearPerMin + ' / min'
+  },
+  {
+    id: 'textFreq', section: 'text', label: 'Appearance', kind: 'slider',
+    summaryLabel: 'Appear',
+    parent: 'textRateDrawer',
+    visible: S => S.textAppearMode !== 'time',
+    min: 0, max: 100, step: 1, def: 50,
+    get: S => Math.round(S.textFreq * 100),
+    set: (S, pos) => { S.textFreq = pos / 100; save(); },
+    format: S => Math.round(S.textFreq * 100) + '%'
+  },
+  {
+    id: 'textRandom', section: 'text', label: 'Appearance variance', kind: 'slider',
+    varianceOf: 'textFreq',
+    parent: 'textRateDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round(S.textRandom * 100),
+    set: (S, pos) => { S.textRandom = pos / 100; save(); },
+    format: S => Math.round(S.textRandom * 100) + '%'
+  },
+  {
+    id: 'textRestFreq', section: 'text', label: 'Rest frequency', kind: 'slider',
+    parent: 'textRateDrawer',
+    min: 0, max: 100, step: 1, def: 4,
+    get: S => Math.round(S.textRestFreq * 100),
+    set: (S, pos) => { S.textRestFreq = pos / 100; save(); },
+    format: S => Math.round(S.textRestFreq * 100) + '%'
+  },
+  {
+    id: 'textRestSec', section: 'text', label: 'Rest duration', kind: 'slider',
+    parent: 'textRateDrawer',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.textRestSec,
+    set: (S, pos) => { S.textRestSec = pos; save(); },
+    format: S => S.textRestSec + 's'
+  },
+  {
+    id: 'textRestVar', section: 'text', label: 'Rest variance', kind: 'slider',
+    varianceOf: 'textRestSec',
+    parent: 'textRateDrawer',
+    min: 0, max: 100, step: 1, def: 70,
+    get: S => Math.round(S.textRestVar * 100),
+    set: (S, pos) => { S.textRestVar = pos / 100; save(); },
+    format: S => Math.round(S.textRestVar * 100) + '%'
+  },
+  {
+    id: 'textDwell', section: 'text', label: 'Time on screen', kind: 'slider',
+    summaryLabel: 'Dwell',
+    parent: 'textRateDrawer',
+    min: 0, max: 4000, step: 10, def: 80,
+    get: S => S.textDwellMs,
+    set: (S, pos) => { S.textDwellMs = pos; save(); },
+    format: S => S.textDwellMs + ' ms'
+  },
+  subDrawer('textStylingDrawer', 'Styling', 'text', ['textSize', 'textOpacity']),
+  {
     // v0's set() also calls recentreWord(), which re-measures the DOM word
     // element's ink offset at the new font size. The SDF text system
     // (v1/gpu/text-atlas.js) measures exact glyph advances on every draw, so
     // per ARCHITECTURE.md's Words section the whole ink-centring hack is
     // unnecessary in v1; there is nothing for this control to call instead.
     id: 'textSize', section: 'text', label: 'Word size', kind: 'slider',
+    summaryLabel: 'Size',
+    parent: 'textStylingDrawer',
     min: 16, max: 160, step: 1, def: 35,
     get: S => S.textSize,
     set: (S, pos) => { S.textSize = pos; save(); },
@@ -656,6 +895,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'textColorMode', section: 'text', label: 'Word color', kind: 'segment', def: 'system',
+    parent: 'textStylingDrawer',
     options: [
       { value: 'white',  label: 'White',              domId: 'txWhite'  },
       { value: 'system', label: 'Match the strobe',    domId: 'txSystem' }
@@ -665,15 +905,9 @@ export const VISUAL_CONTROLS = [
     format: S => S.textColorMode === 'system' ? 'match the strobe' : 'white'
   },
   {
-    id: 'textOpacity', section: 'text', label: 'Opacity', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 95,
-    get: S => Math.round(S.textOpacity * 100),
-    set: (S, pos) => { S.textOpacity = pos / 100; save(); },
-    format: S => Math.round(S.textOpacity * 100) + '%'
-  },
-  {
     // Lifts a strobe-coloured word toward white so it pops off the field.
     id: 'textBrighten', section: 'text', label: 'Brighten', kind: 'slider',
+    parent: 'textStylingDrawer',
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round(S.textBrighten * 100),
     set: (S, pos) => { S.textBrighten = pos / 100; save(); },
@@ -681,7 +915,18 @@ export const VISUAL_CONTROLS = [
     visible: S => S.textColorMode === 'system'
   },
   {
+    id: 'textOpacity', section: 'text', label: 'Opacity', kind: 'slider',
+    summaryLabel: 'Opacity',
+    parent: 'textStylingDrawer',
+    min: 0, max: 100, step: 1, def: 95,
+    get: S => Math.round(S.textOpacity * 100),
+    set: (S, pos) => { S.textOpacity = pos / 100; save(); },
+    format: S => Math.round(S.textOpacity * 100) + '%'
+  },
+  {
     id: 'textOpacityVar', section: 'text', label: 'Opacity variance', kind: 'slider',
+    varianceOf: 'textOpacity',
+    parent: 'textStylingDrawer',
     min: 0, max: 100, step: 1, def: 10,
     get: S => Math.round(S.textOpacityVar * 100),
     set: (S, pos) => { S.textOpacityVar = pos / 100; save(); },
@@ -689,52 +934,62 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'textOpacityVarPeriod', section: 'text', label: 'Opacity var rate', kind: 'slider',
+    varianceOf: 'textOpacity',
+    parent: 'textStylingDrawer',
     min: 1, max: 60, step: 1, def: 20,
     get: S => S.textOpacityVarPeriod,
     set: (S, pos) => { S.textOpacityVarPeriod = pos; save(); },
     format: S => S.textOpacityVarPeriod + 's / cycle'
   },
   {
-    id: 'textFreq', section: 'text', label: 'Appearance', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 50,
-    get: S => Math.round(S.textFreq * 100),
-    set: (S, pos) => { S.textFreq = pos / 100; save(); },
-    format: S => Math.round(S.textFreq * 100) + '%'
+    // The one wrap control: how wide a line may run, as a share of the
+    // view. A phrase breaks (only ever between words) into balanced,
+    // centred lines that each fit inside it.
+    id: 'textLineWidth', section: 'text', label: 'Line width', kind: 'slider',
+    parent: 'textStylingDrawer',
+    min: 20, max: 100, step: 1, def: 92,
+    get: S => Math.round((S.textLineWidth ?? 0.92) * 100),
+    set: (S, pos) => { S.textLineWidth = pos / 100; save(); },
+    format: S => Math.round((S.textLineWidth ?? 0.92) * 100) + '%'
   },
   {
-    id: 'textRandom', section: 'text', label: 'Appearance variance', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 100,
-    get: S => Math.round(S.textRandom * 100),
-    set: (S, pos) => { S.textRandom = pos / 100; save(); },
-    format: S => Math.round(S.textRandom * 100) + '%'
+    // On, a phrase with smart breaks marked in js/affirmations.js breaks
+    // there, a line per piece and each line one complete idea; a piece too
+    // wide for the Line width still wraps inside itself. Off, or for a
+    // phrase with none marked, the plain balanced wrap.
+    id: 'textSmartBreaks', section: 'text', label: 'Smart line breaks', kind: 'toggle', def: true,
+    parent: 'textStylingDrawer',
+    visible: S => S.textMode === 'affirmations',
+    get: S => S.textSmartBreaks !== false,
+    set: (S, on) => { S.textSmartBreaks = !!on; save(); },
+    format: S => S.textSmartBreaks !== false ? 'On' : 'Off'
   },
   {
-    id: 'textRestFreq', section: 'text', label: 'Rest frequency', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 4,
-    get: S => Math.round(S.textRestFreq * 100),
-    set: (S, pos) => { S.textRestFreq = pos / 100; save(); },
-    format: S => Math.round(S.textRestFreq * 100) + '%'
+    // Off, a wrapped block transitions line by line — the first line
+    // arrives, then the second, each reading left to right. On, the whole
+    // block fades as one.
+    id: 'textLinesTogether', section: 'text', label: 'Fade lines together', kind: 'toggle', def: false,
+    parent: 'textStylingDrawer',
+    get: S => !!S.textLinesTogether,
+    set: (S, on) => { S.textLinesTogether = !!on; save(); },
+    format: S => S.textLinesTogether ? 'On' : 'Off'
   },
+  subDrawer('textFadesDrawer', 'Fades', 'text', ['textFadeIn', 'textFadeOut']),
   {
-    id: 'textRestSec', section: 'text', label: 'Rest duration', kind: 'slider',
-    min: 1, max: 60, step: 1, def: 10,
-    get: S => S.textRestSec,
-    set: (S, pos) => { S.textRestSec = pos; save(); },
-    format: S => S.textRestSec + 's'
-  },
-  {
-    id: 'textRestVar', section: 'text', label: 'Rest variance', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 70,
-    get: S => Math.round(S.textRestVar * 100),
-    set: (S, pos) => { S.textRestVar = pos / 100; save(); },
-    format: S => Math.round(S.textRestVar * 100) + '%'
-  },
-  {
-    id: 'textDwell', section: 'text', label: 'Time on screen', kind: 'slider',
-    min: 0, max: 4000, step: 10, def: 80,
-    get: S => S.textDwellMs,
-    set: (S, pos) => { S.textDwellMs = pos; save(); },
-    format: S => S.textDwellMs + ' ms'
+    // Affirmations only. When a block's lines arrive or leave one after
+    // another, the rest between one line finishing and the next beginning,
+    // as a share of a line's own transition: 0 back to back, 100% a rest as
+    // long as a line takes. The fade time stays the whole block's, so a
+    // longer pause gives each line a shorter share of it. Nothing to do
+    // when the lines fade together.
+    id: 'textLinePause', section: 'text', label: 'Line pause', kind: 'slider',
+    summaryLabel: 'Pause',
+    parent: 'textFadesDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    visible: S => S.textMode === 'affirmations',
+    get: S => Math.round((S.textLinePause || 0) * 100),
+    set: (S, pos) => { S.textLinePause = pos / 100; save(); },
+    format: S => Math.round((S.textLinePause || 0) * 100) + '%'
   },
   // ---- fade in and fade out, each with its transition (core/word-fx.js) ----
   // Each side is a switch with everything it governs listed under it: the
@@ -742,12 +997,14 @@ export const VISUAL_CONTROLS = [
   // own settings. Off, the word just appears or disappears, as at 0 ms.
   {
     id: 'textFadeInOn', section: 'text', label: 'Fade in', kind: 'toggle', def: true,
+    parent: 'textFadesDrawer',
     get: fadeInOn,
     set: (S, on) => { S.textFadeInOn = !!on; save(); },
     format: S => fadeInOn(S) ? 'On' : 'Off'
   },
   {
     id: 'textFadeIn', section: 'text', label: 'Duration', kind: 'slider', parent: 'textFadeInOn',
+    summaryLabel: 'In',
     min: 0, max: 10000, step: 50, def: 0,
     visible: fadeInOn,
     get: S => S.textFadeInMs,
@@ -758,6 +1015,7 @@ export const VISUAL_CONTROLS = [
   // cap, and the variance is how far below it the roll may land.
   {
     id: 'textFadeInVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeInOn',
+    varianceOf: 'textFadeIn',
     min: 0, max: 100, step: 1, def: 0,
     visible: fadeInOn,
     get: S => Math.round(S.textFadeInVar * 100),
@@ -765,7 +1023,18 @@ export const VISUAL_CONTROLS = [
     format: S => Math.round(S.textFadeInVar * 100) + '%'
   },
   {
+    // Affirmations only. On, a multi-line block arrives as one; off, line
+    // by line, the same switch Fade out has for departures.
+    id: 'textLinesTogetherIn', section: 'text', label: 'Lines fade in together', kind: 'toggle', def: false,
+    parent: 'textFadeInOn',
+    visible: S => fadeInOn(S) && S.textMode === 'affirmations',
+    get: S => !!S.textLinesTogetherIn,
+    set: (S, on) => { S.textLinesTogetherIn = !!on; save(); },
+    format: S => S.textLinesTogetherIn ? 'On' : 'Off'
+  },
+  {
     id: 'textFxIn', section: 'text', label: 'Arrive', kind: 'segment', def: 'gather', parent: 'textFadeInOn',
+    dropdown: true,
     options: fxOptions('fxIn'),
     visible: fadeInOn,
     get: S => S.textFxIn,
@@ -778,6 +1047,7 @@ export const VISUAL_CONTROLS = [
     // a fresh path back out, and the Leave rows step out of the way. Its own
     // line between the two sides, since it ties one to the other.
     id: 'textFxMirror', section: 'text', label: 'Leave the way it came', kind: 'toggle', def: false,
+    parent: 'textFadesDrawer',
     visible: fadeOutOn,
     get: S => !!S.textFxMirror,
     set: (S, on) => { S.textFxMirror = !!on; save(); },
@@ -785,12 +1055,14 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'textFadeOutOn', section: 'text', label: 'Fade out', kind: 'toggle', def: true,
+    parent: 'textFadesDrawer',
     get: fadeOutOn,
     set: (S, on) => { S.textFadeOutOn = !!on; save(); },
     format: S => fadeOutOn(S) ? 'On' : 'Off'
   },
   {
     id: 'textFadeOut', section: 'text', label: 'Duration', kind: 'slider', parent: 'textFadeOutOn',
+    summaryLabel: 'Out',
     min: 0, max: 10000, step: 50, def: 0,
     visible: fadeOutOn,
     get: S => S.textFadeOutMs,
@@ -799,6 +1071,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'textFadeOutVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeOutOn',
+    varianceOf: 'textFadeOut',
     min: 0, max: 100, step: 1, def: 0,
     visible: fadeOutOn,
     get: S => Math.round(S.textFadeOutVar * 100),
@@ -818,6 +1091,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'textFxOut', section: 'text', label: 'Leave', kind: 'segment', def: 'wind', parent: 'textFadeOutOn',
+    dropdown: true,
     options: fxOptions('fxOut'),
     visible: S => fadeOutOn(S) && !S.textFxMirror,
     get: S => S.textFxOut,
@@ -825,7 +1099,7 @@ export const VISUAL_CONTROLS = [
     format: S => FX_NAMES[S.textFxOut] || S.textFxOut
   },
   ...fxRows(true),
-  {
+  // (textThemes below)
     // Multi-select: every theme chip is independently on or off. get()
     // returns the array of theme keys currently active; an empty S.textThemes
     // reads as "every theme", matching rebuildPool's own rule in js/text.js,
@@ -836,48 +1110,6 @@ export const VISUAL_CONTROLS = [
     // be made real before any single key can be subtracted from it. The All
     // and None buttons are separate action controls below, matching v0's
     // txAllOn/txAllOff, which write every key at once rather than toggling.
-    // Individual words draw from the themed pool below; affirmations swap
-    // in whole phrases (js/words.js's AFFIRMATIONS) and the themes step
-    // aside, since that set is its own theme.
-    id: 'textMode', section: 'text', label: 'Text', kind: 'segment', def: 'words',
-    options: [
-      { value: 'words',        label: 'Words',        domId: 'txModeWords' },
-      { value: 'affirmations', label: 'Affirmations', domId: 'txModeAff' }
-    ],
-    get: S => S.textMode,
-    set: (S, v) => { S.textMode = v; rebuildWordPool(); save(); },
-    format: S => S.textMode === 'affirmations' ? 'affirmations' : 'individual words'
-  },
-  {
-    // The one wrap control: how wide a line may run, as a share of the
-    // view. A phrase breaks (only ever between words) into balanced,
-    // centred lines that each fit inside it.
-    id: 'textLineWidth', section: 'text', label: 'Line width', kind: 'slider',
-    min: 20, max: 100, step: 1, def: 92,
-    get: S => Math.round((S.textLineWidth ?? 0.92) * 100),
-    set: (S, pos) => { S.textLineWidth = pos / 100; save(); },
-    format: S => Math.round((S.textLineWidth ?? 0.92) * 100) + '%'
-  },
-  {
-    // On, a phrase with smart breaks marked in js/affirmations.js breaks
-    // there, a line per piece and each line one complete idea; a piece too
-    // wide for the Line width still wraps inside itself. Off, or for a
-    // phrase with none marked, the plain balanced wrap.
-    id: 'textSmartBreaks', section: 'text', label: 'Smart breaks', kind: 'toggle', def: true,
-    visible: S => S.textMode === 'affirmations',
-    get: S => S.textSmartBreaks !== false,
-    set: (S, on) => { S.textSmartBreaks = !!on; save(); },
-    format: S => S.textSmartBreaks !== false ? 'On' : 'Off'
-  },
-  {
-    // Off, a wrapped block transitions line by line — the first line
-    // arrives, then the second, each reading left to right. On, the whole
-    // block fades as one.
-    id: 'textLinesTogether', section: 'text', label: 'Fade lines together', kind: 'toggle', def: false,
-    get: S => !!S.textLinesTogether,
-    set: (S, on) => { S.textLinesTogether = !!on; save(); },
-    format: S => S.textLinesTogether ? 'On' : 'Off'
-  },
   {
     id: 'textThemes', section: 'text', label: 'Themes', kind: 'segment', multi: true,
     visible: S => S.textMode !== 'affirmations',
@@ -982,7 +1214,7 @@ export const VISUAL_SECTIONS = [
   { id: 'layers', title: 'Layers' },
   { id: 'strobe', title: 'Strobe' },
   { id: 'corners', title: 'Corners' },
-  { id: 'tunnel', title: 'Tunnel' },
+  { id: 'tunnel', title: 'Rings' },
   { id: 'edge',   title: 'Edge'   },
   { id: 'text',   title: 'Text'   },
   { id: 'render', title: 'Render' }

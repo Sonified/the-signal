@@ -30,6 +30,7 @@ import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, AMB
 import { applyMixGates } from '../../js/mixgate.js';
 import { startDrift, stopDrift } from './atmosphere.js';
 import { save } from './store.js';
+import { subDrawer } from './schema-visual.js';
 
 // ---------- shared helpers, ported from js/ui.js closures ----------
 
@@ -344,14 +345,34 @@ const audioControls = [
     enabled: s => !s.amLinked
   },
   {
-    id: 'aTone', section: 'audio', sub: 'Sine tone', label: 'Sine tone', kind: 'toggle',
+    // How the pulse rate is set: free, from Pulse rate above, or locked to
+    // the strobe's frequency. It sits with Pulse rate at the head of the
+    // section, since it decides whether that slider is live, and shows
+    // whatever voices are on.
+    id: 'amLinked', section: 'audio', label: 'Audio mode', kind: 'segment',
+    options: [
+      { value: false, label: 'Free',            domId: 'aFree' },
+      { value: true,  label: 'Link to visual',  domId: 'aLink' }
+    ],
+    get: s => s.amLinked,
+    set: (s, v) => setAmLinked(s, !!v),
+    format: s => s.amLinked ? 'Link to visual' : 'Free'
+  },
+  // ---- the four voices, each its own switch and then a sub-drawer whose
+  // strip carries that switch (subDrawer in schema-visual.js, its switchId),
+  // with the voice's rows straight after it. The switch is drawn on the strip
+  // only, never as a row; its rows keep their own rules, so a voice switched
+  // off still opens, its rows hidden until it is on ----
+  {
+    id: 'aTone', section: 'audio', label: 'Sine tone', kind: 'toggle',
     get: s => s.toneOn,
     set: (s, on) => setToneOn(s, !!on),
     format: s => s.toneOn ? 'On' : 'Off'
   },
+  subDrawer('audioToneDrawer', 'Tone', 'audio', ['carrier', 'toneVol'], 'aTone'),
   {
-    id: 'carrier', section: 'audio', sub: 'Sine tone', label: 'Carrier', kind: 'slider',
-    parent: 'aTone',
+    id: 'carrier', section: 'audio', label: 'Carrier', kind: 'slider',
+    parent: 'audioToneDrawer',
     min: 1, max: 1000, step: 1, def: 40,
     get: s => s.carrierHz,
     set: (s, pos) => { s.carrierHz = pos; setParam('carrier', s.carrierHz); save(); },
@@ -363,8 +384,8 @@ const audioControls = [
     visible: s => s.toneOn
   },
   {
-    id: 'toneVol', section: 'audio', sub: 'Sine tone', label: 'Level', kind: 'slider',
-    parent: 'aTone',
+    id: 'toneVol', section: 'audio', label: 'Level', kind: 'slider',
+    parent: 'audioToneDrawer',
     min: 0, max: 100, step: 1, def: 83,
     get: s => ampToPos(s.toneVol),
     set: (s, pos) => { s.toneVol = posToAmp(pos); applyLevel('toneLevel'); save(); },
@@ -373,14 +394,15 @@ const audioControls = [
     visible: s => s.toneOn
   },
   {
-    id: 'aClick', section: 'audio', sub: 'Click train', label: 'Click train', kind: 'toggle',
+    id: 'aClick', section: 'audio', label: 'Click train', kind: 'toggle',
     get: s => s.clickOn,
     set: (s, on) => setClickOn(s, !!on),
     format: s => s.clickOn ? 'On' : 'Off'
   },
+  subDrawer('audioPulseDrawer', 'Pulse', 'audio', ['clickMode', 'clickVol'], 'aClick'),
   {
-    id: 'clickMode', section: 'audio', sub: 'Click train', label: 'Mode', kind: 'segment',
-    parent: 'aClick',
+    id: 'clickMode', section: 'audio', label: 'Mode', kind: 'segment',
+    parent: 'audioPulseDrawer',
     options: [
       { value: 'click', label: 'Click', domId: 'cmClick' },
       { value: 'chirp', label: 'Chirp', domId: 'cmChirp' }
@@ -391,8 +413,8 @@ const audioControls = [
     visible: s => s.clickOn
   },
   {
-    id: 'pipMs', section: 'audio', sub: 'Click train', label: 'Pip width', kind: 'slider',
-    parent: 'aClick',
+    id: 'pipMs', section: 'audio', label: 'Pip width', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 0.5, max: 25, step: 0.5, def: 8,
     get: s => s.pipMs,
     set: (s, pos) => { s.pipMs = pos; setParam('pipMs', s.pipMs); save(); },
@@ -400,8 +422,8 @@ const audioControls = [
     visible: s => s.clickOn && s.clickMode === 'click'
   },
   {
-    id: 'chirpLow', section: 'audio', sub: 'Click train', label: 'Chirp low', kind: 'slider',
-    parent: 'aClick',
+    id: 'chirpLow', section: 'audio', label: 'Chirp low', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 40, max: 2000, step: 10, def: 150,
     get: s => s.chirpLowHz,
     set: (s, pos) => { s.chirpLowHz = pos; refreshChirp(); save(); },
@@ -409,8 +431,8 @@ const audioControls = [
     visible: s => s.clickOn && s.clickMode === 'chirp'
   },
   {
-    id: 'chirpHigh', section: 'audio', sub: 'Click train', label: 'Chirp high', kind: 'slider',
-    parent: 'aClick',
+    id: 'chirpHigh', section: 'audio', label: 'Chirp high', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 1000, max: 12000, step: 100, def: 6000,
     get: s => s.chirpHighHz,
     set: (s, pos) => { s.chirpHighHz = pos; refreshChirp(); save(); },
@@ -418,8 +440,8 @@ const audioControls = [
     visible: s => s.clickOn && s.clickMode === 'chirp'
   },
   {
-    id: 'chirpComp', section: 'audio', sub: 'Click train', label: 'Delay compensation', kind: 'slider',
-    parent: 'aClick',
+    id: 'chirpComp', section: 'audio', label: 'Delay compensation', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round(s.chirpComp * 100),
     set: (s, pos) => { s.chirpComp = pos / 100; refreshChirp(); save(); },
@@ -427,8 +449,8 @@ const audioControls = [
     visible: s => s.clickOn && s.clickMode === 'chirp'
   },
   {
-    id: 'chirpTilt', section: 'audio', sub: 'Click train', label: 'Spectral tilt', kind: 'slider',
-    parent: 'aClick',
+    id: 'chirpTilt', section: 'audio', label: 'Spectral tilt', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 0, max: 150, step: 5, def: 130,
     get: s => Math.round(s.chirpTilt * 100),
     set: (s, pos) => { s.chirpTilt = pos / 100; refreshChirp(); save(); },
@@ -442,16 +464,16 @@ const audioControls = [
   // the section still accounts for every row the drawer draws, and a screen
   // that skips disabled actions renders it as the plain readout it is.
   {
-    id: 'chirpLen', section: 'audio', sub: 'Click train', label: 'Chirp length', kind: 'action',
-    parent: 'aClick',
+    id: 'chirpLen', section: 'audio', label: 'Chirp length', kind: 'action',
+    parent: 'audioPulseDrawer',
     act: () => {},
     format: s => chirpDurationMs(s.chirpLowHz, s.chirpHighHz).toFixed(1) + ' ms',
     enabled: () => false,
     visible: s => s.clickOn && s.clickMode === 'chirp'
   },
   {
-    id: 'clickVol', section: 'audio', sub: 'Click train', label: 'Level', kind: 'slider',
-    parent: 'aClick',
+    id: 'clickVol', section: 'audio', label: 'Level', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 0, max: 100, step: 1, def: 0,
     get: s => ampToPos(pipGet(s, 'vol')),
     set: (s, pos) => { pipSet(s, 'vol', posToAmp(pos)); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
@@ -460,8 +482,8 @@ const audioControls = [
     visible: s => s.clickOn
   },
   {
-    id: 'clickReverb', section: 'audio', sub: 'Click train', label: 'Click / Chirp reverb', kind: 'slider',
-    parent: 'aClick',
+    id: 'clickReverb', section: 'audio', label: 'Click / Chirp reverb', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 0, max: 100, step: 1, def: 37,
     get: s => Math.round(pipGet(s, 'reverb') * 100),
     set: (s, pos) => { pipSet(s, 'reverb', pos / 100); applyReverbMix(); applyLevel('clickSend'); save(); },
@@ -469,8 +491,8 @@ const audioControls = [
     visible: s => s.clickOn
   },
   {
-    id: 'clickRevTime', section: 'audio', sub: 'Click train', label: 'Click / Chirp reverb time', kind: 'slider',
-    parent: 'aClick',
+    id: 'clickRevTime', section: 'audio', label: 'Click / Chirp reverb time', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 0.2, max: 8, step: 0.1, def: 0.5,
     get: s => pipGet(s, 'revTime'),
     set: (s, pos) => { pipSet(s, 'revTime', pos); rebuildClickIR(); save(); },
@@ -478,8 +500,8 @@ const audioControls = [
     visible: s => s.clickOn
   },
   {
-    id: 'clickModDepth', section: 'audio', sub: 'Click train', label: 'Click / Chirp loudness variance', kind: 'slider',
-    parent: 'aClick',
+    id: 'clickModDepth', section: 'audio', label: 'Click / Chirp loudness variance', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 0, max: 100, step: 1, def: 0,
     get: s => Math.round(pipGet(s, 'modDep') * 100),
     set: (s, pos) => { pipSet(s, 'modDep', pos / 100); applyHarmonics(); save(); },
@@ -487,8 +509,8 @@ const audioControls = [
     visible: s => s.clickOn
   },
   {
-    id: 'clickModRate', section: 'audio', sub: 'Click train', label: 'Click / Chirp loudness var rate', kind: 'slider',
-    parent: 'aClick',
+    id: 'clickModRate', section: 'audio', label: 'Click / Chirp loudness var rate', kind: 'slider',
+    parent: 'audioPulseDrawer',
     min: 1, max: 60, step: 1, def: 26,
     get: s => pipGet(s, 'modPer'),
     set: (s, pos) => { pipSet(s, 'modPer', pos); applyHarmonics(); save(); },
@@ -498,15 +520,15 @@ const audioControls = [
   // The lowpass sweep. One filter for the whole train, click or chirp, so it
   // sits after the shape's own rows and is not swapped by the mode.
   {
-    id: 'pipLpf', section: 'audio', sub: 'Click train', label: 'Filter sweep', kind: 'toggle',
-    parent: 'aClick',
+    id: 'pipLpf', section: 'audio', label: 'Filter sweep', kind: 'toggle',
+    parent: 'audioPulseDrawer',
     get: s => s.pipLpfOn,
     set: (s, on) => { s.pipLpfOn = !!on; applyPipLpf(); save(); },
     format: s => s.pipLpfOn ? 'On' : 'Off',
     visible: s => s.clickOn
   },
   {
-    id: 'pipLpfLo', section: 'audio', sub: 'Click train', label: 'Filter low', kind: 'slider',
+    id: 'pipLpfLo', section: 'audio', label: 'Filter low', kind: 'slider',
     parent: 'pipLpf',
     min: 40, max: 4000, step: 10, def: 400, taper: 'log',
     get: s => s.pipLpfLo,
@@ -515,7 +537,7 @@ const audioControls = [
     visible: s => s.clickOn && s.pipLpfOn
   },
   {
-    id: 'pipLpfHi', section: 'audio', sub: 'Click train', label: 'Filter high', kind: 'slider',
+    id: 'pipLpfHi', section: 'audio', label: 'Filter high', kind: 'slider',
     parent: 'pipLpf',
     min: 500, max: 18000, step: 100, def: 9000, taper: 'log',
     get: s => s.pipLpfHi,
@@ -524,7 +546,7 @@ const audioControls = [
     visible: s => s.clickOn && s.pipLpfOn
   },
   {
-    id: 'pipLpfPeriod', section: 'audio', sub: 'Click train', label: 'Filter sweep time', kind: 'slider',
+    id: 'pipLpfPeriod', section: 'audio', label: 'Filter sweep time', kind: 'slider',
     parent: 'pipLpf',
     min: 2, max: 300, step: 1, def: 60, taper: 'log',
     get: s => s.pipLpfPeriod,
@@ -533,7 +555,7 @@ const audioControls = [
     visible: s => s.clickOn && s.pipLpfOn
   },
   {
-    id: 'pipLpfWander', section: 'audio', sub: 'Click train', label: 'Filter wander', kind: 'slider',
+    id: 'pipLpfWander', section: 'audio', label: 'Filter wander', kind: 'slider',
     parent: 'pipLpf',
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round(s.pipLpfWander * 100),
@@ -542,7 +564,7 @@ const audioControls = [
     visible: s => s.clickOn && s.pipLpfOn
   },
   {
-    id: 'pipLpfQ', section: 'audio', sub: 'Click train', label: 'Filter resonance', kind: 'slider',
+    id: 'pipLpfQ', section: 'audio', label: 'Filter resonance', kind: 'slider',
     parent: 'pipLpf',
     min: 50, max: 600, step: 1, def: 71, taper: 'log',
     get: s => Math.round(s.pipLpfQ * 100),
@@ -551,14 +573,15 @@ const audioControls = [
     visible: s => s.clickOn && s.pipLpfOn
   },
   {
-    id: 'biToggle', section: 'audio', sub: 'Bilateral', label: 'Bilateral', kind: 'toggle',
+    id: 'biToggle', section: 'audio', label: 'Bilateral', kind: 'toggle',
     get: s => s.biOn,
     set: (s, on) => setBilateral(s, !!on),
     format: s => s.biOn ? 'On' : 'Off'
   },
+  subDrawer('audioBilateralDrawer', 'Bilateral', 'audio', ['biDepth', 'biRate'], 'biToggle'),
   {
-    id: 'biDepth', section: 'audio', sub: 'Bilateral', label: 'Bilateral depth', kind: 'slider',
-    parent: 'biToggle',
+    id: 'biDepth', section: 'audio', label: 'Bilateral depth', kind: 'slider',
+    parent: 'audioBilateralDrawer',
     min: 0, max: 100, step: 1, def: 60,
     get: s => Math.round(s.biDepth * 100),
     set: (s, pos) => { s.biDepth = pos / 100; applyHarmonics(); save(); },
@@ -566,8 +589,8 @@ const audioControls = [
     visible: s => s.biOn
   },
   {
-    id: 'biRate', section: 'audio', sub: 'Bilateral', label: 'Bilateral rate', kind: 'slider',
-    parent: 'biToggle',
+    id: 'biRate', section: 'audio', label: 'Bilateral rate', kind: 'slider',
+    parent: 'audioBilateralDrawer',
     min: 0.4, max: 10, step: 0.1, def: 1,
     get: s => s.biPeriod,
     set: (s, pos) => { s.biPeriod = pos; applyHarmonics(); save(); },
@@ -575,8 +598,8 @@ const audioControls = [
     visible: s => s.biOn
   },
   {
-    id: 'biHardSwitch', section: 'audio', sub: 'Bilateral', label: 'Bilateral shape', kind: 'segment',
-    parent: 'biToggle',
+    id: 'biHardSwitch', section: 'audio', label: 'Bilateral shape', kind: 'segment',
+    parent: 'audioBilateralDrawer',
     options: [
       { value: true,  label: 'Switch', domId: 'biHard' },
       { value: false, label: 'Sweep',  domId: 'biSoft' }
@@ -587,7 +610,7 @@ const audioControls = [
     visible: s => s.biOn
   },
   {
-    id: 'harmToggle', section: 'audio', sub: 'Harmonics', label: 'Harmonics', kind: 'toggle',
+    id: 'harmToggle', section: 'audio', label: 'Harmonics', kind: 'toggle',
     get: s => s.harmOn,
     set: (s, on) => setHarmOn(s, !!on),
     format: s => s.harmOn ? 'On' : 'Off',
@@ -598,9 +621,10 @@ const audioControls = [
     // of a handler that never checked.
     enabled: s => s.toneOn
   },
+  subDrawer('audioHarmonicsDrawer', 'Harmonics', 'audio', ['harmVol', 'harmCount'], 'harmToggle'),
   {
-    id: 'harmVol', section: 'audio', sub: 'Harmonics', label: 'Level', kind: 'slider',
-    parent: 'harmToggle',
+    id: 'harmVol', section: 'audio', label: 'Level', kind: 'slider',
+    parent: 'audioHarmonicsDrawer',
     min: 0, max: 100, step: 1, def: 87,
     get: s => ampToPos(s.harmVol),
     set: (s, pos) => { s.harmVol = posToAmp(pos); applyLevel('harmLevel'); save(); },
@@ -609,8 +633,8 @@ const audioControls = [
     visible: s => s.harmOn && s.toneOn
   },
   {
-    id: 'harmCount', section: 'audio', sub: 'Harmonics', label: 'How many', kind: 'slider',
-    parent: 'harmToggle',
+    id: 'harmCount', section: 'audio', label: 'How many', kind: 'slider',
+    parent: 'audioHarmonicsDrawer',
     min: 1, max: 16, step: 1, def: 9,
     get: s => s.harmCount,
     set: (s, pos) => { s.harmCount = pos; applyHarmonics(); save(); },
@@ -618,8 +642,8 @@ const audioControls = [
     visible: s => s.harmOn && s.toneOn
   },
   {
-    id: 'harmBright', section: 'audio', sub: 'Harmonics', label: 'Brightness', kind: 'slider',
-    parent: 'harmToggle',
+    id: 'harmBright', section: 'audio', label: 'Brightness', kind: 'slider',
+    parent: 'audioHarmonicsDrawer',
     min: 0, max: 100, step: 1, def: 45,
     get: s => Math.round(s.harmBright * 100),
     set: (s, pos) => { s.harmBright = pos / 100; applyHarmonics(); save(); },
@@ -627,8 +651,8 @@ const audioControls = [
     visible: s => s.harmOn && s.toneOn
   },
   {
-    id: 'harmSpread', section: 'audio', sub: 'Harmonics', label: 'Stereo spread', kind: 'slider',
-    parent: 'harmToggle',
+    id: 'harmSpread', section: 'audio', label: 'Stereo spread', kind: 'slider',
+    parent: 'audioHarmonicsDrawer',
     min: 0, max: 100, step: 1, def: 70,
     get: s => Math.round(s.harmSpread * 100),
     set: (s, pos) => { s.harmSpread = pos / 100; applyHarmonics(); save(); },
@@ -636,8 +660,8 @@ const audioControls = [
     visible: s => s.harmOn && s.toneOn
   },
   {
-    id: 'harmPanRate', section: 'audio', sub: 'Harmonics', label: 'Pan speed', kind: 'slider',
-    parent: 'harmToggle',
+    id: 'harmPanRate', section: 'audio', label: 'Pan speed', kind: 'slider',
+    parent: 'audioHarmonicsDrawer',
     min: 0, max: 4, step: 0.05, def: 0.45,
     get: s => s.harmPanRate,
     set: (s, pos) => { s.harmPanRate = pos; applyHarmonics(); save(); },
@@ -645,8 +669,8 @@ const audioControls = [
     visible: s => s.harmOn && s.toneOn
   },
   {
-    id: 'shimDepth', section: 'audio', sub: 'Harmonics', label: 'Shimmer depth', kind: 'slider',
-    parent: 'harmToggle',
+    id: 'shimDepth', section: 'audio', label: 'Shimmer depth', kind: 'slider',
+    parent: 'audioHarmonicsDrawer',
     min: 0, max: 100, step: 1, def: 57,
     get: s => Math.round(s.shimDepth * 100),
     set: (s, pos) => { s.shimDepth = pos / 100; applyHarmonics(); save(); },
@@ -654,8 +678,8 @@ const audioControls = [
     visible: s => s.harmOn && s.toneOn
   },
   {
-    id: 'shimRate', section: 'audio', sub: 'Harmonics', label: 'Shimmer rate', kind: 'slider',
-    parent: 'harmToggle',
+    id: 'shimRate', section: 'audio', label: 'Shimmer rate', kind: 'slider',
+    parent: 'audioHarmonicsDrawer',
     min: 0.01, max: 6, step: 0.01, def: 0.12,
     get: s => s.shimRate,
     set: (s, pos) => { s.shimRate = pos; applyHarmonics(); save(); },
@@ -663,24 +687,12 @@ const audioControls = [
     visible: s => s.harmOn && s.toneOn
   },
   {
-    id: 'harmReverb', section: 'audio', sub: 'Harmonics', label: 'Reverb', kind: 'slider',
-    parent: 'harmToggle',
+    id: 'harmReverb', section: 'audio', label: 'Reverb', kind: 'slider',
+    parent: 'audioHarmonicsDrawer',
     min: 0, max: 100, step: 1, def: 35,
     get: s => Math.round(s.harmReverb * 100),
     set: (s, pos) => { s.harmReverb = pos / 100; applyReverbMix(); save(); },
     format: s => Math.round(s.harmReverb * 100) + '%',
-    visible: s => s.harmOn && s.toneOn
-  },
-  {
-    id: 'amLinked', section: 'audio', sub: 'Harmonics', label: 'Audio mode', kind: 'segment',
-    parent: 'harmToggle',
-    options: [
-      { value: false, label: 'Free',            domId: 'aFree' },
-      { value: true,  label: 'Link to visual',  domId: 'aLink' }
-    ],
-    get: s => s.amLinked,
-    set: (s, v) => setAmLinked(s, !!v),
-    format: s => s.amLinked ? 'Link to visual' : 'Free',
     visible: s => s.harmOn && s.toneOn
   },
   // The layers-row Audio checkbox. Visually it sits with the four visual
@@ -710,6 +722,10 @@ const musicControls = [
     format: s => s.musicOn ? 'on' : 'off',
     visible: () => false
   },
+  // ---- the five voices, Piano, Arpeggio, Drone, Clouds and the shared
+  // Reverb, each its own switch then a sub-drawer whose strip carries it, as
+  // the Audio section's voices are. A strip hides with its switch's own
+  // rule, so with the music off the section is empty as it always was ----
   {
     // The generative piano voice alone; the drone, arpeggio and clouds keep
     // playing. Read by the player as each gesture is chosen (js/piano.js).
@@ -719,11 +735,12 @@ const musicControls = [
     format: s => s.pianoOn !== false ? 'On' : 'Off',
     visible: s => s.musicOn
   },
+  subDrawer('musicPianoDrawer', 'Piano', 'music', ['pianoStyle', 'pianoVol'], 'pianoOn'),
   {
     // v1 only, so no v0 button ids. Read by piano.js as each gesture is
     // chosen, so a switch is heard from the next phrase on.
     id: 'pianoStyle', section: 'music',
-    parent: 'pianoOn', label: 'Play style', kind: 'segment',
+    parent: 'musicPianoDrawer', label: 'Play style', kind: 'segment',
     options: [
       { value: 'generative', label: 'Generative', domId: null },
       { value: 'snippets',   label: 'Snippets',   domId: null }
@@ -735,7 +752,7 @@ const musicControls = [
   },
   {
     id: 'pianoVol', section: 'music',
-    parent: 'pianoOn', label: 'Piano level', kind: 'slider',
+    parent: 'musicPianoDrawer', label: 'Piano level', kind: 'slider',
     min: 0, max: 100, step: 1, def: 90,
     get: s => Math.round(s.pianoVol * 100),
     set: (s, pos) => { s.pianoVol = pos / 100; save(); },
@@ -744,7 +761,7 @@ const musicControls = [
   },
   {
     id: 'pianoHP', section: 'music',
-    parent: 'pianoOn', label: 'Piano high-pass', kind: 'slider',
+    parent: 'musicPianoDrawer', label: 'Piano high-pass', kind: 'slider',
     min: 20, max: 600, step: 5, def: 20,
     get: s => s.pianoHP,
     set: (s, pos) => { s.pianoHP = pos; applyPianoHP(); save(); },
@@ -757,7 +774,7 @@ const musicControls = [
   // the low root anchors them (Low anchor) ----
   {
     id: 'pianoDensity', section: 'music',
-    parent: 'pianoOn', label: 'Density', kind: 'slider',
+    parent: 'musicPianoDrawer', label: 'Density', kind: 'slider',
     min: 20, max: 250, step: 5, def: 100,
     get: s => Math.round(s.pianoDensity * 100),
     set: (s, pos) => { s.pianoDensity = pos / 100; save(); },
@@ -766,7 +783,7 @@ const musicControls = [
   },
   {
     id: 'pianoCentre', section: 'music',
-    parent: 'pianoOn', label: 'Register centre', kind: 'slider',
+    parent: 'musicPianoDrawer', label: 'Register centre', kind: 'slider',
     min: 48, max: 84, step: 1, def: 72,
     get: s => s.pianoCentre,
     set: (s, pos) => { s.pianoCentre = pos; save(); },
@@ -776,7 +793,7 @@ const musicControls = [
   },
   {
     id: 'pianoSpread', section: 'music',
-    parent: 'pianoOn', label: 'Register drift', kind: 'slider',
+    parent: 'musicPianoDrawer', label: 'Register drift', kind: 'slider',
     min: 0, max: 100, step: 1, def: 55,
     get: s => Math.round(s.pianoSpread * 100),
     set: (s, pos) => { s.pianoSpread = pos / 100; save(); },
@@ -785,7 +802,7 @@ const musicControls = [
   },
   {
     id: 'pianoHold', section: 'music',
-    parent: 'pianoOn', label: 'Hold length', kind: 'slider',
+    parent: 'musicPianoDrawer', label: 'Hold length', kind: 'slider',
     min: 30, max: 250, step: 5, def: 100,
     get: s => Math.round(s.pianoHold * 100),
     set: (s, pos) => { s.pianoHold = pos / 100; save(); },
@@ -794,7 +811,7 @@ const musicControls = [
   },
   {
     id: 'pianoBass', section: 'music',
-    parent: 'pianoOn', label: 'Low anchor', kind: 'slider',
+    parent: 'musicPianoDrawer', label: 'Low anchor', kind: 'slider',
     min: 0, max: 60, step: 1, def: 10,
     get: s => s.pianoBass,
     set: (s, pos) => { s.pianoBass = pos; save(); },
@@ -810,17 +827,18 @@ const musicControls = [
     format: s => s.arpOn ? 'On' : 'Off',
     visible: s => s.musicOn
   },
+  subDrawer('musicArpDrawer', 'Arpeggio', 'music', ['arpVol', 'arpRate'], 'arpOn'),
   {
     // The step grid, in its own floating window (ui/screens/sequencer.js).
     id: 'seqOpen', section: 'music', label: 'Open sequencer', kind: 'action',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     act: () => seqOpenHook(),
     format: () => 'Open sequencer',
     visible: s => s.musicOn && s.arpOn
   },
   {
     id: 'arpVol', section: 'music', label: 'Sequencer level', kind: 'slider',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.arpVol * 100),
     set: (s, pos) => { s.arpVol = pos / 100; applyArp(); save(); },
@@ -829,7 +847,7 @@ const musicControls = [
   },
   {
     id: 'arpRate', section: 'music', label: 'Sequencer speed', kind: 'slider',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     min: 2, max: 14, step: 0.5, def: 7,
     get: s => s.arpRate,
     set: (s, pos) => { s.arpRate = pos; applyArp(); save(); },
@@ -839,7 +857,7 @@ const musicControls = [
   {
     // The running oscillators switch shape at once, level-matched.
     id: 'arpWave', section: 'music', label: 'Sequencer waveform', kind: 'segment', def: 'sine',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     options: [
       { value: 'sine',     label: 'Sine' },
       { value: 'triangle', label: 'Triangle' },
@@ -855,7 +873,7 @@ const musicControls = [
     // How fast each note's filter opens (the figure is played by the filter,
     // so this is the swell into every note).
     id: 'arpAtk', section: 'music', label: 'Sequencer attack', kind: 'slider',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     min: 1, max: 500, step: 1, def: 10, taper: 'log',
     get: s => Math.round(s.arpAtk * 1000),
     set: (s, pos) => { s.arpAtk = pos / 1000; save(); },
@@ -864,7 +882,7 @@ const musicControls = [
   },
   {
     id: 'arpDec', section: 'music', label: 'Sequencer decay', kind: 'slider',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     min: 20, max: 2000, step: 10, def: 250, taper: 'log',
     get: s => Math.round(s.arpDec * 1000),
     set: (s, pos) => { s.arpDec = pos / 1000; save(); },
@@ -875,7 +893,7 @@ const musicControls = [
     // Whole octaves either side of the written figure; the next note lands
     // in the new register.
     id: 'arpOct', section: 'music', label: 'Sequencer octave', kind: 'slider',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     min: -2, max: 2, step: 1, def: 0,
     get: s => s.arpOct,
     set: (s, pos) => { s.arpOct = pos; save(); },
@@ -886,7 +904,7 @@ const musicControls = [
     // How wide the two lines and their echoes sit: 0 folds everything to the
     // centre, 100% pans hard left and right.
     id: 'arpSpread', section: 'music', label: 'Sequencer stereo spread', kind: 'slider',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     min: 0, max: 100, step: 1, def: 90,
     get: s => Math.round(s.arpSpread * 100),
     set: (s, pos) => { s.arpSpread = pos / 100; applyArp(); save(); },
@@ -898,7 +916,7 @@ const musicControls = [
     // layered over everything else the level does; 0 is none, 100% swings
     // the line from full down to silence on every flash.
     id: 'arpStrobeAm', section: 'music', label: 'Vary with strobe', kind: 'slider',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     min: 0, max: 100, step: 1, def: 0,
     get: s => Math.round((s.arpStrobeAm || 0) * 100),
     set: (s, pos) => { s.arpStrobeAm = pos / 100; applyArp(); save(); },
@@ -907,7 +925,7 @@ const musicControls = [
   },
   {
     id: 'arpSw', section: 'music', label: 'Sequencer volume sweep', kind: 'toggle',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     get: s => !!s.arpSwOn,
     set: (s, on) => { s.arpSwOn = !!on; applyArp(); save(); },
     format: s => s.arpSwOn ? 'On' : 'Off',
@@ -952,7 +970,7 @@ const musicControls = [
   {
     // Its share of the piano's room; the shared Reverb level still applies.
     id: 'arpRev', section: 'music', label: 'Sequencer reverb', kind: 'slider',
-    parent: 'arpOn',
+    parent: 'musicArpDrawer',
     min: 0, max: 200, step: 1, def: 100,
     get: s => Math.round(s.arpRev * 100),
     set: (s, pos) => { s.arpRev = pos / 100; applyArp(); save(); },
@@ -966,9 +984,10 @@ const musicControls = [
     format: s => s.bedOn !== false ? 'On' : 'Off',
     visible: s => s.musicOn
   },
+  subDrawer('musicDroneDrawer', 'Drone', 'music', ['bedVol', 'bedDetune'], 'bedOn'),
   {
     id: 'bedVol', section: 'music', label: 'Drone level', kind: 'slider',
-    parent: 'bedOn',
+    parent: 'musicDroneDrawer',
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round(s.bedVol * 100),
     set: (s, pos) => { s.bedVol = pos / 100; applyBedVol(); save(); },
@@ -979,7 +998,7 @@ const musicControls = [
     // Which render of the drone plays: the same drone bounced at four detune
     // amounts (audio/music/manifest.json). A change crossfades to the new one.
     id: 'bedDetune', section: 'music', label: 'Drone detune', kind: 'segment', def: 152,
-    parent: 'bedOn',
+    parent: 'musicDroneDrawer',
     options: [
       { value: 152, label: '.152' },
       { value: 188, label: '.188' },
@@ -995,7 +1014,7 @@ const musicControls = [
   // low-pass (js/piano.js), with the same ranges, tapers and readouts.
   {
     id: 'bedLpf', section: 'music',
-    parent: 'bedOn', label: 'Drone filter sweep', kind: 'toggle',
+    parent: 'musicDroneDrawer', label: 'Drone filter sweep', kind: 'toggle',
     get: s => s.bedLpfOn,
     set: (s, on) => { s.bedLpfOn = !!on; applyBedLpf(); save(); },
     format: s => s.bedLpfOn ? 'On' : 'Off',
@@ -1069,7 +1088,7 @@ const musicControls = [
   // low and a high share of the level, by the same motion as the filter.
   {
     id: 'bedRev', section: 'music',
-    parent: 'bedOn', label: 'Drone reverb', kind: 'toggle',
+    parent: 'musicDroneDrawer', label: 'Drone reverb', kind: 'toggle',
     get: s => s.bedRevOn,
     set: (s, on) => { s.bedRevOn = !!on; applyBedVerb(); save(); },
     format: s => s.bedRevOn ? 'On' : 'Off',
@@ -1129,34 +1148,6 @@ const musicControls = [
     visible: s => s.musicOn && s.bedOn !== false && s.bedRevOn && s.bedVerbOn
   },
   {
-    // The room every music voice shares: the piano, the drone and the
-    // arpeggio all feed this one reverb, and the per-voice rows (Drone
-    // reverb level, Arpeggio reverb) only set each voice's share of it.
-    id: 'musicRevOn', section: 'music', label: 'Master reverb', kind: 'toggle',
-    get: s => s.musicRevOn !== false,
-    set: (s, on) => { s.musicRevOn = !!on; applyPianoReverb(); save(); },
-    format: s => s.musicRevOn !== false ? 'On' : 'Off',
-    visible: s => s.musicOn
-  },
-  {
-    id: 'pianoReverb', section: 'music', label: 'Reverb level', kind: 'slider',
-    parent: 'musicRevOn',
-    min: 0, max: 200, step: 1, def: 100,
-    get: s => Math.round(s.pianoReverb * 100),
-    set: (s, pos) => { s.pianoReverb = pos / 100; applyPianoReverb(); save(); },
-    format: s => Math.round(s.pianoReverb * 100) + '%',
-    visible: s => s.musicOn && s.musicRevOn !== false
-  },
-  {
-    id: 'pianoRevTime', section: 'music', label: 'Reverb decay', kind: 'slider',
-    parent: 'musicRevOn',
-    min: 1, max: 15, step: 0.5, def: 4.5,
-    get: s => s.pianoRevTime,
-    set: (s, pos) => { s.pianoRevTime = pos; rebuildPianoIR(); save(); },
-    format: s => s.pianoRevTime.toFixed(1) + 's',
-    visible: s => s.musicOn && s.musicRevOn !== false
-  },
-  {
     id: 'cloudsOn', section: 'music', label: 'Clouds', kind: 'segment',
     options: [
       { value: true,  label: 'On',  domId: 'clOn' },
@@ -1167,9 +1158,10 @@ const musicControls = [
     format: s => s.cloudsOn ? 'on' : 'off',
     visible: s => s.musicOn
   },
+  subDrawer('musicCloudsDrawer', 'Clouds', 'music', ['cloudVol', 'cloudDensity'], 'cloudsOn'),
   {
     id: 'cloudVol', section: 'music', label: 'Clouds level', kind: 'slider',
-    parent: 'cloudsOn',
+    parent: 'musicCloudsDrawer',
     min: 0, max: 100, step: 1, def: 60,
     get: s => Math.round(s.cloudVol * 100),
     set: (s, pos) => { s.cloudVol = pos / 100; save(); },
@@ -1178,7 +1170,7 @@ const musicControls = [
   },
   {
     id: 'cloudDensity', section: 'music', label: 'Clouds density', kind: 'slider',
-    parent: 'cloudsOn',
+    parent: 'musicCloudsDrawer',
     min: 20, max: 250, step: 5, def: 100,
     get: s => Math.round(s.cloudDensity * 100),
     set: (s, pos) => { s.cloudDensity = pos / 100; save(); },
@@ -1187,7 +1179,7 @@ const musicControls = [
   },
   {
     id: 'cloudPhrase', section: 'music', label: 'Falling figure', kind: 'slider',
-    parent: 'cloudsOn',
+    parent: 'musicCloudsDrawer',
     min: 0, max: 100, step: 1, def: 35,
     get: s => Math.round(s.cloudPhrase * 100),
     set: (s, pos) => { s.cloudPhrase = pos / 100; save(); },
@@ -1196,12 +1188,41 @@ const musicControls = [
   },
   {
     id: 'cloudReverb', section: 'music', label: 'Clouds reverb', kind: 'slider',
-    parent: 'cloudsOn',
+    parent: 'musicCloudsDrawer',
     min: 0, max: 150, step: 1, def: 100,
     get: s => Math.round(s.cloudReverb * 100),
     set: (s, pos) => { s.cloudReverb = pos / 100; applyCloudReverb(); save(); },
     format: s => Math.round(s.cloudReverb * 100) + '%',
     visible: s => s.musicOn && s.cloudsOn
+  },
+  {
+    // The room every music voice shares: the piano, the drone and the
+    // arpeggio all feed this one reverb, and the per-voice rows (Drone
+    // reverb level, Arpeggio reverb) only set each voice's share of it.
+    id: 'musicRevOn', section: 'music', label: 'Master reverb', kind: 'toggle',
+    get: s => s.musicRevOn !== false,
+    set: (s, on) => { s.musicRevOn = !!on; applyPianoReverb(); save(); },
+    format: s => s.musicRevOn !== false ? 'On' : 'Off',
+    visible: s => s.musicOn
+  },
+  subDrawer('musicReverbDrawer', 'Reverb', 'music', ['pianoReverb', 'pianoRevTime'], 'musicRevOn'),
+  {
+    id: 'pianoReverb', section: 'music', label: 'Reverb level', kind: 'slider',
+    parent: 'musicReverbDrawer',
+    min: 0, max: 200, step: 1, def: 100,
+    get: s => Math.round(s.pianoReverb * 100),
+    set: (s, pos) => { s.pianoReverb = pos / 100; applyPianoReverb(); save(); },
+    format: s => Math.round(s.pianoReverb * 100) + '%',
+    visible: s => s.musicOn && s.musicRevOn !== false
+  },
+  {
+    id: 'pianoRevTime', section: 'music', label: 'Reverb decay', kind: 'slider',
+    parent: 'musicReverbDrawer',
+    min: 1, max: 15, step: 0.5, def: 4.5,
+    get: s => s.pianoRevTime,
+    set: (s, pos) => { s.pianoRevTime = pos; rebuildPianoIR(); save(); },
+    format: s => s.pianoRevTime.toFixed(1) + 's',
+    visible: s => s.musicOn && s.musicRevOn !== false
   }
 ];
 
@@ -1508,3 +1529,12 @@ export const AUDIO_CONTROLS = [
   ...audioControls, ...musicControls, ...atmosphereControls,
   ...quickControls, ...transportControls, ...mixerControls
 ];
+
+// Shorthand names for the voice strips' summaries (see summary in
+// schema-visual.js subDrawer), where a label's first word would repeat the
+// voice's own name or say nothing ('Bilateral 60%', 'How 9'). Set once here
+// rather than on each entry above.
+const AUDIO_SHORT = { biDepth: 'Depth', biRate: 'Rate', harmCount: 'Count', pianoStyle: 'Style',
+  pianoVol: 'Level', arpVol: 'Level', arpRate: 'Speed', bedVol: 'Level', bedDetune: 'Detune',
+  cloudVol: 'Level', cloudDensity: 'Density', pianoReverb: 'Level', pianoRevTime: 'Decay' };
+for (const c of AUDIO_CONTROLS) if (AUDIO_SHORT[c.id]) c.summaryLabel = AUDIO_SHORT[c.id];

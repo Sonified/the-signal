@@ -21,6 +21,7 @@ import { seqPlayheadNow } from '../../core/audio-mirror.js';
 import { loadUiState, saveUiState, save } from '../../core/store.js';
 import { byId } from '../../core/schema.js';
 import { W, MOTION } from '../theme.js';
+import { ICON } from '../drawlist.js';
 
 // ---------- colours: the mixer's, and Sonara's purple for the cells ----------
 function css(hex, a) {
@@ -69,12 +70,12 @@ const ALPHA_MIN = 0.15;
 const ALPHA_K = 20, ALPHA_LN = Math.log(1 + ALPHA_K);
 const uToAlpha = u => ALPHA_MIN + (1 - ALPHA_MIN) * Math.log(1 + ALPHA_K * u) / ALPHA_LN;
 const alphaToU = a => (Math.exp((a - ALPHA_MIN) / (1 - ALPHA_MIN) * ALPHA_LN) - 1) / ALPHA_K;
-export const sequencer = { open: false, placed: false, x: 0, y: 0, alpha: 1, dragging: false, grabX: 0, grabY: 0, alphaDrag: false,
+export const sequencer = { open: false, placed: false, x: 0, y: 0, alpha: 0.9, dragging: false, grabX: 0, grabY: 0, alphaDrag: false,
   rx: 0, ry: 0, rw: 0, rh: 0 };   // where it was drawn last frame (rw 0: not showing), for stacking
 
 // ---------- persistence of the window, as the mixer's ----------
 let restored = false;
-const saved = { open: false, placed: false, x: 0, y: 0, alpha: 1 };
+const saved = { open: false, placed: false, x: 0, y: 0, alpha: 0.9 };
 function restore() {
   restored = true;
   const all = loadUiState();
@@ -82,7 +83,8 @@ function restore() {
   if (m) {
     sequencer.open = !!m.open;
     if (m.placed && Number.isFinite(m.x) && Number.isFinite(m.y)) { sequencer.placed = true; sequencer.x = m.x; sequencer.y = m.y; }
-    if (Number.isFinite(m.alpha)) sequencer.alpha = Math.max(ALPHA_MIN, Math.min(1, m.alpha));
+    // The window's opacity is fixed at its default now that its slider is
+    // the volume; an old saved alpha is deliberately ignored.
   }
   remember();
 }
@@ -130,6 +132,19 @@ const SLOT_LABELS = ['1', '2', '3', '4'];
 // reading and writing through it so the two can never disagree.
 const RATE = byId('arpRate');
 let rateShown = NaN, rateText = '';
+// The header's volume slider drives the arpeggio's own level through its
+// drawer control, so the mixer, the drawer and this knob can never disagree.
+const VOL = byId('arpVol');
+
+// The play and pause button beside the title: the sequencer's own switch,
+// S.arpOn, turned through the drawer's Sequencer toggle so its side effects
+// (applyArp, the save) are that control's, and so worker mode's per-frame
+// comparison of every control's position carries it to the page's sound.
+// Playing shows pause, stopped shows play. PLAY_BOX is the drawn box, a
+// little narrower than the close button; the hit box reaches PLAY_SLOP past
+// it on every side so the press lands without aiming.
+const ARP_ON = byId('arpOn');
+const PLAY_BOX = 22, PLAY_ICON = 18, PLAY_SLOP = 4, PLAY_GAP = 8;
 
 // fade is the chrome's idle fade, as the mixer's.
 export function drawSequencer(ui, app, fade = 1) {
@@ -163,9 +178,7 @@ export function drawSequencer(ui, app, fade = 1) {
 
   const closeW = ui.text.measure('×', 18, W.regular) + CLOSE_PAD_X * 2 + 2;
   const closeX = x + winW - 1 - 8 - closeW;
-  const powerLabel = S.arpOn ? 'on' : 'off';
-  const powerW = measureBtn(ui, powerLabel, 10);
-  const powerX = closeX - BAR_GAP - powerW;
+
 
   // the light: green while it sounds, red while on but the session is
   // stopped, dark when off, as the mixer's
@@ -179,17 +192,40 @@ export function drawSequencer(ui, app, fade = 1) {
   }
   ui.text.draw(dl, 'SEQUENCER', lightX + 6 + BAR_GAP, baseline(ui, cy, 11), 11, W.semibold, C.title, 0, 0.13, 1);
 
-  // the window's opacity, a small slider right of the title; a press jumps
-  // it there and dragging follows
-  const ax = lightX + 6 + BAR_GAP + ui.text.measure('SEQUENCER', 11, W.semibold) + 14, aw = 80;
-  ui.interact(ui.id('seq.alpha'), ax - 6, cy - 9, aw + 12, 18, false);
+  // play and pause, right of the title, claimed here before the title bar's
+  // drag so a press on it never moves the window
+  // measure() knows nothing of tracking, and the title draws letterspaced
+  // (0.13 em per gap), so the spacing is added by hand or the button lands
+  // on the final letters
+  const playX = lightX + 6 + BAR_GAP + ui.text.measure('SEQUENCER', 11, W.semibold)
+              + 0.13 * 11 * ('SEQUENCER'.length - 1) + PLAY_GAP;
+  const playing = S.arpOn;
+  if (btn(ui, 'seq.play', playX - PLAY_SLOP, cy - PLAY_BOX / 2 - PLAY_SLOP, PLAY_BOX + PLAY_SLOP * 2, PLAY_BOX + PLAY_SLOP * 2)) {
+    if (ARP_ON) ARP_ON.set(S, !playing); else { S.arpOn = !playing; applyArp(); save(); }
+  }
+  dl.rect(playX, cy - PLAY_BOX / 2, PLAY_BOX, PLAY_BOX, 6, C.btnBg, 1,
+    playing ? C.powerBorder : btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
+  dl.icon(playing ? ICON.PAUSE : ICON.PLAY, playX + (PLAY_BOX - PLAY_ICON) / 2, cy - PLAY_ICON / 2, PLAY_ICON, PLAY_ICON,
+    btnHover ? C.valueInk : playing ? C.powerInk : C.btnInk, 2.2, 0);
+
+  // the arpeggio's volume, a small slider right of the play button; a
+  // press jumps it there and dragging follows. The window's opacity has no
+  // slider any more and rests at its 90% default.
+  const ax = playX + PLAY_BOX + 12, aw = 70;
+  ui.interact(ui.id('seq.vol'), ax - 6, cy - 9, aw + 12, 18, false);
   if (ui.hover || ui.pressed) { ui.setCursorHint('ew-resize'); overBtn = true; }
   const aHover = ui.hover || ui.pressed;
-  if (ui.pressed) {
-    sequencer.alphaDrag = true;
-    sequencer.alpha = uToAlpha(Math.max(0, Math.min(1, (ui.pointerX - ax) / aw)));
-  } else sequencer.alphaDrag = false;
-  const au = Math.max(0, Math.min(1, alphaToU(sequencer.alpha)));
+  // The slider's whole travel covers only the bottom third of the level:
+  // the arpeggio at full is far past useful, so the top of this knob is 33
+  // and the working range gets the whole sweep. A drawer setting above 33
+  // just shows as full here.
+  const VOL_TOP = 33;
+  const curVol = VOL ? VOL.get(S) : Math.round((S.arpVol || 0) * 100);
+  if (ui.pressed && VOL) {
+    const pos = Math.round(Math.max(0, Math.min(1, (ui.pointerX - ax) / aw)) * VOL_TOP);
+    if (pos !== curVol) VOL.set(S, pos);
+  }
+  const au = Math.max(0, Math.min(1, curVol / VOL_TOP));
   dl.rect(ax, cy - 1.5, aw, 3, 1.5, C.btnBorder, 0, null, 0, 0);
   dl.rect(ax, cy - 1.5, aw * au, 3, 1.5, C.label, 0, null, 0, 0);
   const kr = aHover ? 6 : 5;
@@ -197,7 +233,7 @@ export function drawSequencer(ui, app, fade = 1) {
 
   // the step rate, the same kind of slider after it, with its value beside
   if (RATE) {
-    const rx = ax + aw + 18, rw = 80;
+    const rx = ax + aw + 18, rw = 70;
     const lo = RATE.min, hi = RATE.max, stp = RATE.step || 0.5;
     ui.interact(ui.id('seq.rate'), rx - 6, cy - 9, rw + 12, 18, false);
     if (ui.hover || ui.pressed) { ui.setCursorHint('ew-resize'); overBtn = true; }
@@ -218,10 +254,8 @@ export function drawSequencer(ui, app, fade = 1) {
     ui.text.draw(dl, rateText, rx + rw + 10, baseline(ui, cy, 10), 10, W.regular, C.valueInk, 0, 0, 1);
   }
 
-  if (btn(ui, 'seq.power', powerX, cy - BTN_H / 2, powerW, BTN_H)) { S.arpOn = !S.arpOn; applyArp(); save(); }
-  dl.rect(powerX, cy - BTN_H / 2, powerW, BTN_H, 6, C.btnBg, 1,
-    S.arpOn ? C.powerBorder : btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
-  ui.text.draw(dl, powerLabel, powerX + powerW / 2, baseline(ui, cy, 10), 10, W.regular, S.arpOn ? C.powerInk : C.btnInk, 1, 0, 1);
+  // The on/off that used to sit here duplicated the title's play/pause
+  // (both drive S.arpOn) and is gone by Robert's call (2026-09-26).
 
   if (btn(ui, 'seq.close', closeX, cy - CLOSE_H / 2, closeW, CLOSE_H)) sequencer.open = false;
   dl.rect(closeX, cy - CLOSE_H / 2, closeW, CLOSE_H, 6, C.btnBg, 1, btnHover ? C.closeHoverBorder : C.btnBorder, 0, 0);

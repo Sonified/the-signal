@@ -14,15 +14,15 @@ import { S } from '../../../js/state.js';
 import { CONTROLS, SECTIONS, byId } from '../../core/schema.js';
 import {
   presetsVersion, presetCount, presetLabel, presetHasOverride, presetIsActive,
-  applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset
+  applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset, renamePresetAt, presetIsUser
 } from '../../core/presets.js';
 import { ICON } from '../drawlist.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { prof, profToggle, profSave, profCopy } from '../../core/profiler.js';
-import { makeTextState, TEXT_COMMIT } from '../widgets.js';
+import { makeTextState, TEXT_COMMIT, TEXT_CANCEL } from '../widgets.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 
-const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'corners', 'tunnel', 'edge', 'flowers', 'kaleido', 'particles', 'fireworks', 'audio', 'music', 'atmosphere', 'render'];
+const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'corners', 'tunnel', 'edge', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'render'];
 
 // The control each section's header switch stands for: the layer's own on/off,
 // the same one the section holds as its first row, so the header and the row
@@ -30,9 +30,14 @@ const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'corners', 'tunnel', 'edge'
 // have (yet), gets a header with no switch.
 const SECTION_SWITCH = {
   strobe: 'fieldOn', corners: 'cornersOn', tunnel: 'ringsOn', edge: 'edgeOn', text: 'textOn',
-  flowers: 'flowersOn', kaleido: 'kaleidoOn', particles: 'particlesOn', fireworks: 'fireworksOn',
+  flowers: 'flowersOn', kaleido: 'kaleidoOn', particles: 'particlesOn', fireworks: 'fireworksOn', confetti: 'confettiOn',
   audio: 'audioOn', music: 'musicOn', atmosphere: 'ambOn'
 };
+
+// The controls a sub-drawer's strip carries as its switch (the schema's
+// switchId, a voice's own on/off): drawn on the strip only, so, like a
+// section's switch, never as a body row as well.
+const STRIP_SWITCH = new Set(CONTROLS.filter(c => c.uiOnly && c.switchId).map(c => c.switchId));
 
 // A header switch's control, resolved once: a toggle, or a two-way segment
 // whose option values are booleans. For a segment the on and off options are
@@ -48,6 +53,49 @@ function makeSwitch(id) {
   return null;
 }
 
+// Variance folds. A row the schema tags `varianceOf: '<owner id>'` belongs to
+// that owner's variance, and the owner's variance rows fold out from under it:
+// shut by default, opened by a small chevron seated in the guide line beside
+// the owner (imgui.js lineChevron), folding on a headerless fold (beginFold
+// with no label) one indent in. Each owner gets a slot here, made once: its
+// id, its variance rows that carry an amount (sliders from 0, whose value
+// above 0 means the variance is acting; a rate never reaches 0, so it never
+// counts), and whether it is open, mirrored from the UI record so the frame
+// loop reads a byte rather than a set. A row tagged `varianceProxy: '<owner
+// id>'` wears that owner's chevron while it is the one showing (Appearance
+// rate stands in for Appearance in By time mode, the two never showing at
+// once), and the fold still opens beneath it.
+const OWNERS = [];
+const ownerSlot = new Map();   // owner id -> slot, while GROUPS is built
+let varOpen = new Uint8Array(0);
+
+// Switch folds. A run of child rows that its parent's setting shows and
+// hides (a variance switch's amount and rate, Fade in's rows, a mode's own
+// rows) slides open and shut on a headerless fold like the variance folds,
+// rather than popping. Each such run gets a gate slot, made once: its fold
+// id and its direct children, and the run is open while any of them shows by
+// its own rule. Shutting, the rows are held on screen exactly as they last
+// showed (seen, one byte per row, written whenever a row's rule is asked)
+// while they slide away, and take no input (ui.pushInert). A run whose
+// children have no visible rule never changes, so it gets no fold.
+const GATES = [];
+const UNSET = {};
+let gateOpen = new Uint8Array(0);
+
+// The parent a row's run hangs from: a variance row hangs from its owner,
+// unless its own parent is another row of the same variance (the amount and
+// rate under a variance switch), which it keeps.
+function runParent(it) {
+  if (it.heading) return undefined;
+  const v = it.varianceOf;
+  if (!v) return it.parent;
+  if (it.parent) {
+    const p = byId(it.parent);
+    if (p && p.varianceOf === v) return it.parent;
+  }
+  return v;
+}
+
 // Built once: per section, its controls in schema order with a sub-heading
 // item wherever the sub-group changes, so the frame loop only walks arrays.
 // A section the schema does not define (one still being merged) is left out.
@@ -59,14 +107,209 @@ const GROUPS = DRAWER_SECTIONS.filter(id => SECTIONS.some(s => s.id === id)).map
     if (c.section !== id) continue;
     // The section's own switch lives in the header; a body row for the same
     // control would just say "On" twice, so it is left out here.
-    if (c.id === SECTION_SWITCH[id]) continue;
+    if (c.id === SECTION_SWITCH[id] || STRIP_SWITCH.has(c.id)) continue;
     if (c.sub && c.sub !== sub) { sub = c.sub; items.push({ heading: c.sub.toUpperCase() }); }
     items.push(c);
   }
   const runs = childRuns(items, id);
+  // A sub-drawer (a schema uiOnly toggle with a run under it) is drawn as a
+  // fold (imgui.js beginFold): its header strip in place of the toggle row,
+  // and its run inside the fold. Its fold's id is made here, once.
+  const foldId = new Array(items.length).fill(null);
+  for (let i = 0; i + 1 < items.length; i++) {
+    const c = items[i];
+    if (!c.heading && c.uiOnly && runs.open[i + 1]) foldId[i] = 'fold.' + c.id;
+  }
+  // A sub-drawer whose strip carries a switch (the schema's switchId): that
+  // control resolved as a section header's is (makeSwitch), else null.
+  const stripSw = new Array(items.length).fill(null);
+  for (let i = 0; i < items.length; i++) {
+    if (!foldId[i] || !items[i].switchId) continue;
+    stripSw[i] = makeSwitch(items[i].switchId);
+    if (!stripSw[i]) console.warn('drawer: ' + id + '.' + items[i].id + ' names switch ' + items[i].switchId + ', which is not a toggle or two-way segment');
+  }
+  // Each sub-drawer's summary (see subSummary): the schema's list, else its
+  // first two sliders or segments.
+  const subSum = new Array(items.length).fill(null);
+  for (let i = 0; i < items.length; i++) {
+    if (!foldId[i]) continue;
+    const c = items[i];
+    let ctrls;
+    if (Array.isArray(c.summary)) ctrls = c.summary.map(byId).filter(x => !!x);
+    else ctrls = items.filter(x => !x.heading && x.parent === c.id &&
+                               (x.kind === 'slider' || (x.kind === 'segment' && !x.multi))).slice(0, 2);
+    if (ctrls.length) subSum[i] = makeSummary(ctrls);
+  }
+  // A variance owner: a row whose run opens straight under it with one of its
+  // own variance rows. varFold[i] is its slot (the fold begins after it),
+  // chev[i] the slot whose chevron item i wears (the owner, or a proxy row),
+  // chevId[i] that chevron's id; -1 and null elsewhere.
+  const varFold = new Int16Array(items.length).fill(-1);
+  const chev = new Int16Array(items.length).fill(-1);
+  const chevId = new Array(items.length).fill(null);
+  for (let i = 0; i + 1 < items.length; i++) {
+    const c = items[i], next = items[i + 1];
+    if (c.heading || !runs.open[i + 1] || next.heading || next.varianceOf !== c.id) continue;
+    const slot = OWNERS.length;
+    const amounts = [];
+    for (let k = i + 1; k < items.length && !items[k].heading && items[k].varianceOf === c.id; k++) {
+      const v = items[k];
+      if (v.kind === 'slider' && v.min === 0) amounts.push(v);
+    }
+    OWNERS.push({ id: c.id, foldId: 'vfold.' + c.id, amounts });
+    ownerSlot.set(c.id, slot);
+    varFold[i] = slot; chev[i] = slot; chevId[i] = 'vchev.' + c.id;
+  }
+  for (let i = 0; i < items.length; i++) {
+    const c = items[i];
+    if (c.heading || !c.varianceProxy) continue;
+    const slot = ownerSlot.get(c.varianceProxy);
+    if (slot === undefined) { console.warn('drawer: ' + id + '.' + c.id + ' stands in for ' + c.varianceProxy + ', which has no variance fold'); continue; }
+    chev[i] = slot; chevId[i] = 'vchev.' + c.id;
+  }
+  // gateFold[i] is the gate slot of a run opening under item i, else -1: any
+  // parent row that is not a plain sub-drawer or a variance owner, whose
+  // direct children (runParent names it) include one with a visible rule. A
+  // sub-drawer carrying a switch gets one too, inside its own fold, so its
+  // voice's rows slide away when the switch turns off with the drawer open,
+  // as they did under the voice's toggle row.
+  const gateFold = new Int16Array(items.length).fill(-1);
+  for (let j = 0; j + 1 < items.length; j++) {
+    const c = items[j];
+    if (c.heading || !runs.open[j + 1] || (foldId[j] && !stripSw[j]) || varFold[j] >= 0) continue;
+    const desc = new Set([c.id]), kids = [];
+    for (let k = j + 1; k < items.length; k++) {
+      const v = items[k];
+      const p = v.heading ? undefined : runParent(v);
+      if (!p || !desc.has(p)) break;
+      desc.add(v.id);
+      if (p === c.id) kids.push(v);
+    }
+    if (!kids.some(v => !!v.visible)) continue;
+    gateFold[j] = GATES.length;
+    GATES.push({ foldId: 'gfold.' + c.id, kids });
+  }
   return { gid: 'drawer.' + id, title: sec.title, items, sw: makeSwitch(SECTION_SWITCH[id]),
-           open: runs.open, close: runs.close, closeEnd: runs.closeEnd };
+           open: runs.open, close: runs.close, closeEnd: runs.closeEnd, foldId, varFold, chev, chevId,
+           gateFold, seen: new Uint8Array(items.length), subSum, stripSw };
 });
+varOpen = new Uint8Array(OWNERS.length);
+gateOpen = new Uint8Array(GATES.length);
+
+// A shut sub-drawer's strip shows its primary settings' readouts beside its
+// name, dim, joined by a thin dot (imgui.js beginFold draws it). Each part is
+// remembered against the value it was printed from, and the joined line is
+// rebuilt only when a part's text or which parts show changes, so a steady
+// drawer builds no strings. A part whose row is hidden by its own rule is
+// left out, so of two rows that take turns (Speed and Outward speed) the one
+// showing is the one summarised. A segment with no readout of its own prints
+// its chosen option's label. (UNSET, the value no part has been printed
+// from yet, is declared with GATES above, before GROUPS is built.)
+// Each part reads as a short name then its amount ("Freq 7.5 Hz"): the
+// control's summaryLabel, else its label's first word, made once here.
+function makeSummary(ctrls) {
+  // an explicit empty summaryLabel means the value alone carries the entry
+  return { ctrls, names: ctrls.map(c => c.summaryLabel !== undefined ? c.summaryLabel : c.label.split(' ')[0]),
+           key: new Array(ctrls.length).fill(UNSET), text: new Array(ctrls.length).fill(''),
+           shown: new Uint8Array(ctrls.length), line: '' };
+}
+function partText(c, v) {
+  if (c.format) return c.format(S);
+  if (c.kind === 'segment') {
+    for (const o of c.options) if (o.value === v) return o.label;
+  }
+  return String(v);
+}
+function subSummary(sum) {
+  const ctrls = sum.ctrls;
+  let changed = false;
+  for (let k = 0; k < ctrls.length; k++) {
+    const c = ctrls[k];
+    const vis = !c.visible || c.visible(S) ? 1 : 0;
+    if (vis !== sum.shown[k]) { sum.shown[k] = vis; changed = true; }
+    if (!vis) continue;
+    const v = c.get(S);
+    if (v !== sum.key[k]) { sum.key[k] = v; sum.text[k] = sum.names[k] ? sum.names[k] + ' ' + partText(c, v) : partText(c, v); changed = true; }
+  }
+  if (changed) {
+    let line = '';
+    for (let k = 0; k < ctrls.length; k++) {
+      if (!sum.shown[k]) continue;
+      line = line ? line + '  ·  ' + sum.text[k] : sum.text[k];
+    }
+    sum.line = line;
+  }
+  return sum.line;
+}
+
+// Begins a gate's headerless fold (see GATES) for the run that opens next:
+// open while its run shows, or, inside a switch fold sliding shut, as it last
+// was; one sliding shut itself freezes the run it holds.
+function beginGate(ui, gs) {
+  let open;
+  if (frozenFrom) open = gateOpen[gs] === 1;
+  else { open = gateShows(gs); gateOpen[gs] = open ? 1 : 0; }
+  foldNext++;
+  if (!ui.beginFold(GATES[gs].foldId, null, open)) skipNext = 1;
+  else if (ui.foldShutting) nextFrozen = 1;
+}
+
+// Whether a gate's run shows: any direct child that shows by its own rule.
+function gateShows(slot) {
+  const kids = GATES[slot].kids;
+  for (let k = 0; k < kids.length; k++) {
+    const c = kids[k];
+    if (!c.visible || c.visible(S)) return true;
+  }
+  return false;
+}
+
+// Whether an owner's variance is acting: any amount row that shows (by its
+// own rule, fold aside) set above 0. Read every frame its chevron draws, so
+// it only walks the slot's array and calls cheap gets.
+function varianceLive(slot) {
+  const a = OWNERS[slot].amounts;
+  for (let k = 0; k < a.length; k++) {
+    const c = a[k];
+    if ((!c.visible || c.visible(S)) && c.get(S) > 0) return true;
+  }
+  return false;
+}
+
+// A chevron click: flips the slot and rewrites the saved list of open
+// variance folds (a click's worth of work, never per frame).
+function toggleVariance(slot) {
+  varOpen[slot] = varOpen[slot] ? 0 : 1;
+  const list = [];
+  for (let s = 0; s < OWNERS.length; s++) if (varOpen[s]) list.push(OWNERS[s].id);
+  saveUiState({ openVariance: list });
+}
+
+// Which open child runs sit inside a sub-drawer fold, by depth, for the
+// frame loop. A fold begins at its header, just before its run opens, and
+// ends just after the run closes, so the run's guide line folds with it.
+// foldNext carries the folds just begun to the run they hold, as a count
+// (a strip with a switch begins two: its own and, inside it, its voice's
+// gate), and foldAt keeps that count per depth until the run closes.
+// skipNext says one of them is shut at rest, or the strip is hidden, so the
+// run's rows are skipped until it closes.
+// frozenFrom is the depth of a switch fold sliding shut (0 for none):
+// inside it rows show as they last did and take no input, and switch folds
+// nested in it keep the state they had. nextFrozen carries that to the run.
+const foldAt = new Uint8Array(16);
+let runDepth = 0, skipFrom = 0, foldNext = 0, skipNext = 0, frozenFrom = 0, nextFrozen = 0;
+
+// Closes the innermost child run, then the folds it holds.
+function closeRun(ui) {
+  ui.endIndent();
+  if (runDepth < foldAt.length) {
+    for (let k = foldAt[runDepth]; k > 0; k--) ui.endFold();
+    foldAt[runDepth] = 0;
+  }
+  if (skipFrom === runDepth) skipFrom = 0;
+  if (frozenFrom === runDepth) { frozenFrom = 0; ui.popInert(); }
+  runDepth--;
+}
 
 // The second level of the hierarchy, under the section line: a control whose
 // schema `parent` names the toggle or segment above it is a child row, drawn
@@ -84,7 +327,8 @@ function childRuns(items, sectionId) {
   const stack = [];
   for (let i = 0; i < n; i++) {
     const it = items[i];
-    const p = it.heading ? undefined : it.parent;
+    // a variance row hangs from its owner (see runParent)
+    const p = runParent(it);
     const prev = items[i - 1];
     // The first child of the row straight above opens a run one level inside
     // whatever runs that row sits in. Otherwise runs close until the one
@@ -114,6 +358,22 @@ function setSwitch(sw, on) {
 // has handed the store its storage.
 let openGroups = null;
 
+// The one column every strip's summary starts in, measured once from the
+// longest sub-drawer name in the drawer plus a gap, so the summaries line up
+// strip to strip (imgui.js _foldSummary).
+let sumCol = 0;
+function measureSumCol(ui) {
+  let w = 0;
+  for (const grp of GROUPS) {
+    for (let i = 0; i < grp.items.length; i++) {
+      if (!grp.foldId[i]) continue;
+      const lw = ui.text.measure(grp.items[i].label, TYPE.sm, W.semibold);
+      if (lw > w) w = lw;
+    }
+  }
+  sumCol = Math.ceil(w) + SPACE.lg;
+}
+
 function groupOpenAtStart(id) {
   return openGroups.has(id);
 }
@@ -128,6 +388,14 @@ function installGroupMemory(ui) {
   const list = saved && Array.isArray(saved.openGroups) ? saved.openGroups : [];
   openGroups = new Set();
   for (const id of list) if (typeof id === 'string') openGroups.add(id);
+  // Open variance folds, by owner id, beside the sub-drawers' shutSubDrawers
+  // in the same UI record: every fold starts shut, the record lists the
+  // ones the viewer opened.
+  const vars = saved && Array.isArray(saved.openVariance) ? saved.openVariance : [];
+  for (const id of vars) {
+    const slot = ownerSlot.get(id);
+    if (slot !== undefined) varOpen[slot] = 1;
+  }
   ui.groupInitialOpen = groupOpenAtStart;
   ui.onGroupToggle = groupToggled;
 }
@@ -140,6 +408,11 @@ const ADD_W = 30, EDIT_MIN_W = 110;
 let presetW = new Float32Array(16);
 let widthsVersion = -1;
 const nameEdit = makeTextState(32, 'Name');
+// Renaming in place (edit mode, one plain click on a chip): which row index
+// is being renamed, and its own field state, separate from the + field so
+// the two can never collide.
+const renameEdit = makeTextState(32, 'Name');
+let renameK = -1;
 // Confirmation after a save: the chip that was saved reads "Saved" and
 // takes an accent wash for SAVED_MS, springing in and out on that state.
 const SAVED_MS = 1200;
@@ -147,7 +420,7 @@ let savedIdx = -1, savedUntil = 0;
 const TIP_PRESET = 'Click to load  ·  Shift-click to save over';
 const TIP_ADD = 'Save the current settings as a new preset';
 const TIP_EDIT = 'Delete or reorder presets';
-const TIP_EDITING = 'Drag to reorder  ·  × to delete';
+const TIP_EDITING = 'Drag to move  ·  click to rename  ·  × to delete';
 
 // Edit mode: the chip right of + turns it on and off. While on, every chip
 // wears an × in its upper right corner that deletes it, a click no longer
@@ -333,6 +606,10 @@ function measurePresets(ui) {
 // Item k of the row: a preset chip below n, then the + chip or, while a name
 // is being typed, the field that grows as it fills, then the Edit chip.
 function itemW(k, n, editing, maxW) {
+  if (k === renameK && renameEdit.active) {
+    const w = renameEdit.textW + CHIP_PAD * 2 + 4;
+    return w < EDIT_MIN_W ? EDIT_MIN_W : w > maxW ? maxW : w;
+  }
   if (k < n) return presetW[k] + (presetEditing ? EDIT_PAD : 0);
   if (k > n) return editLabelW;
   if (!editing) return ADD_W;
@@ -370,7 +647,16 @@ function drawPresets(ui) {
   for (let k = 0; k < total; k++) {
     const w = itemW(k, n, editing, maxW);
     if (px > x0 && px + w > x0 + maxW) { px = x0; py += PRESET_H + PRESET_GAP; }
-    if (k < n) { chipX[k] = px; chipY[k] = py; chipW[k] = w; presetChip(ui, k, px, py, w, t); }
+    if (k === renameK && renameEdit.active) {
+      // The chip as a name field. Enter or a click elsewhere commits;
+      // Escape, an empty name or a clash with another label leaves it as
+      // it was. Built-ins never get here (see the click below).
+      chipX[k] = px; chipY[k] = py; chipW[k] = w;
+      const res = ui.textField('drawer.presetRename', px, py, w, PRESET_H, renameEdit);
+      if (res === TEXT_COMMIT) { renamePresetAt(k, renameEdit.text); renameK = -1; }
+      else if (res === TEXT_CANCEL) renameK = -1;
+    }
+    else if (k < n) { chipX[k] = px; chipY[k] = py; chipW[k] = w; presetChip(ui, k, px, py, w, t); }
     else if (k > n) editChip(ui, px, py, w);
     else if (editing) {
       // Enter or a click elsewhere names it; Escape, or an empty name, drops it.
@@ -425,7 +711,7 @@ function editChip(ui, px, py, w) {
   ui.interact(id, px, py, w, PRESET_H, false);
   const hover = ui.hover;
   if (hover) { ui.setCursorHint('pointer'); noteTip(id, px, py, w, presetEditing ? TIP_EDITING : TIP_EDIT); }
-  if (ui.clicked) { presetEditing = !presetEditing; drag.k = -1; }
+  if (ui.clicked) { presetEditing = !presetEditing; drag.k = -1; renameK = -1; renameEdit.active = false; }
   const hv = ui.spring(id, hover ? 1 : 0, MOTION.hover);
   ui.dl.rect(px, py, w, PRESET_H, RADIUS.pill, presetEditing ? COLOR.accentSoft : hv > 0.5 ? COLOR.wellHi : COLOR.well, 1,
              presetEditing ? COLOR.accent : COLOR.lineSoft, 0, 0);
@@ -443,7 +729,7 @@ function presetChip(ui, k, px, py, w, t) {
     ui.interact(did, dcx - DEL_R, dcy - DEL_R, DEL_R * 2, DEL_R * 2, false);
     if (ui.hover) ui.setCursorHint('pointer');
     const dHover = ui.hover;
-    if (ui.clicked) { deletePresetAt(k); drag.k = -1; return; }
+    if (ui.clicked) { deletePresetAt(k); drag.k = -1; renameK = -1; renameEdit.active = false; return; }
     delHover = dHover;
   }
   ui.interact(id, px, py, w, PRESET_H, false);
@@ -456,8 +742,11 @@ function presetChip(ui, k, px, py, w, t) {
         drag.ox = ui.pointerX - px; drag.oy = ui.pointerY - py; drag.ins = -1;
       } else if (!drag.moved && Math.abs(ui.pointerX - drag.sx) + Math.abs(ui.pointerY - drag.sy) > DRAG_SLOP) drag.moved = true;
     } else if (drag.k === k) {
-      // released: land it where the bar was
+      // released: a real drag lands it where the bar was, and a plain click
+      // (never past the slop) opens the name for editing, on the viewer's
+      // own presets; a built-in's name is fixed.
       if (drag.moved && drag.ins >= 0) movePreset(k, drag.ins > k ? drag.ins - 1 : drag.ins);
+      else if (!drag.moved && presetIsUser(k)) { renameK = k; ui.textBegin(renameEdit, presetLabel(k), true, false); }
       drag.k = -1; drag.moved = false;
     }
   } else {
@@ -521,9 +810,13 @@ export function drawerEdge() { return slideDx + W_DRAWER; }
 export function drawDrawer(ui, app) {
   const o = slideO, dx = slideDx;
   if (o < 0.002) return;
-  if (openGroups === null) installGroupMemory(ui);
+  if (openGroups === null) { installGroupMemory(ui); measureSumCol(ui); }
 
   const height = app.height;
+  // An open dropdown's menu floats over the rows after its own (widgets.js
+  // select): it takes its presses first, from where it was drawn last frame,
+  // and hides the rows it covers from the pointer until popupDraw below.
+  ui.popupInput();
   ui.panel('drawer', dx - BLEED, -BLEED, W_DRAWER + BLEED, height + BLEED * 2, true);
   ui.setCursor(dx, TOP, W_DRAWER);
   ui.scroll('drawer.body', height - TOP - FOOT_H);
@@ -557,20 +850,87 @@ export function drawDrawer(ui, app) {
       // Child runs open and close around their rows (see childRuns). Each
       // endIndent draws its run's line down whatever the run laid out this
       // frame, so a run whose rows are hidden draws none.
-      const items = grp.items, runOpen = grp.open, runClose = grp.close;
+      // A sub-drawer is a fold (imgui.js beginFold) around its run, opening
+      // and shutting on the section's own height spring; shut and at rest,
+      // its rows are skipped, the runs inside it still counted so all balance.
+      // A variance owner (see OWNERS) wears a chevron in the guide line beside
+      // it, drawn around its row, and its variance run sits in a headerless
+      // fold begun straight after it, carried to the run by foldNext as a
+      // sub-drawer's is. The owner's own row may be hidden (a proxy row
+      // above wears the chevron then); the fold still begins in its place.
+      const items = grp.items, runOpen = grp.open, runClose = grp.close, foldId = grp.foldId;
+      const varFold = grp.varFold, chev = grp.chev, chevId = grp.chevId;
+      const gateFold = grp.gateFold, seen = grp.seen, stripSw = grp.stripSw;
+      runDepth = 0; skipFrom = 0; foldNext = 0; skipNext = 0; frozenFrom = 0; nextFrozen = 0;
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        for (let k = runClose[i]; k > 0; k--) ui.endIndent();
-        if (runOpen[i]) ui.beginIndent();
+        for (let k = runClose[i]; k > 0; k--) closeRun(ui);
+        if (runOpen[i]) {
+          ui.beginIndent();
+          runDepth++;
+          if (runDepth < foldAt.length) {
+            foldAt[runDepth] = foldNext;
+            if (skipNext) skipFrom = runDepth;
+          }
+          if (nextFrozen && !frozenFrom) { frozenFrom = runDepth; ui.pushInert(); }
+          foldNext = 0; skipNext = 0; nextFrozen = 0;
+        }
+        if (skipFrom) continue;
+        if (foldId[i]) {
+          // its header, which the fold draws (and pins) itself
+          const sw = stripSw[i];
+          // A strip carrying a switch hides by that switch's own rule (a
+          // music voice's while the music is off), rows and all, as the
+          // voice's toggle row did; no fold is begun and the run is skipped.
+          if (sw && sw.ctrl.visible && !sw.ctrl.visible(S)) { skipNext = 1; continue; }
+          const open = !!it.get(S);
+          // The summary is kept current even while open (a few gets, no
+          // strings once steady), so it is there on the very click that
+          // shuts the strip; the strip shows it only while set shut.
+          const sum = grp.subSum[i];
+          const sumStr = sum ? subSummary(sum) : '';
+          let drawn;
+          if (sw) {
+            // The switch rides the strip; a click on it runs its control's
+            // set() (setSwitch) and leaves the drawer open or shut as it was.
+            drawn = ui.beginFold(foldId[i], it.label, open, sumStr, sumCol, !!sw.ctrl.get(S),
+                                 !!sw.ctrl.enabled && !sw.ctrl.enabled(S));
+            if (ui.foldSwitchChanged) setSwitch(sw, ui.foldSwitch);
+          } else drawn = ui.beginFold(foldId[i], it.label, open, sumStr, sumCol);
+          if (ui.foldToggled) it.set(S, open ? 0 : 1);
+          foldNext++;
+          if (!drawn) skipNext = 1;
+          else if (gateFold[i] >= 0) beginGate(ui, gateFold[i]);
+          continue;
+        }
         if (it.heading) {
           subHeading(ui, it.heading, i > 0);
         } else {
-          ui.control(it, S);
-          // a control can carry a hover tip (schema `tip`), shown like the chips'
-          if (it.tip && ui._lastHover) noteTip(ui._lastId, ui._lastX, ui._lastY, ui._lastW, it.tip, ui._lastH);
+          // Whether the row shows is settled once, here: by its own rule,
+          // remembered in seen, or inside a switch fold sliding shut, as it
+          // last showed.
+          let shown;
+          if (frozenFrom) shown = seen[i] === 1;
+          else { shown = !it.visible || it.visible(S); seen[i] = shown ? 1 : 0; }
+          if (shown) {
+            const slot = chev[i];
+            if (slot >= 0) {
+              const open = varOpen[slot] === 1;
+              if (ui.lineChevron(chevId[i], open, open || varianceLive(slot))) toggleVariance(slot);
+            }
+            ui.control(it, S, true);
+            if (slot >= 0) ui.endLineChevron();
+            // a control can carry a hover tip (schema `tip`), shown like the chips'
+            if (it.tip && ui._lastHover) noteTip(ui._lastId, ui._lastX, ui._lastY, ui._lastW, it.tip, ui._lastH);
+          }
+          if (varFold[i] >= 0) {
+            foldNext++;
+            if (!ui.beginFold(OWNERS[varFold[i]].foldId, null, varOpen[varFold[i]] === 1)) skipNext = 1;
+          }
+          if (gateFold[i] >= 0) beginGate(ui, gateFold[i]);
         }
       }
-      for (let k = grp.closeEnd; k > 0; k--) ui.endIndent();
+      for (let k = grp.closeEnd; k > 0; k--) closeRun(ui);
     }
     ui.endGroup();
   }
@@ -600,6 +960,9 @@ export function drawDrawer(ui, app) {
   // session.
   ui.interact(ui.id('drawer.backstop'), dx, 0, W_DRAWER, height, false);
   ui.endPanel();
+
+  // the open menu, over every row, header and clip of the pane
+  ui.popupDraw();
 
   // after the pane's clip too: a tip centred on a chip near the right edge
   // is wider than the space left in the pane, so it may overhang the field

@@ -324,6 +324,10 @@ declarative entry:
  * @property {(S)=>boolean} [enabled]   v0 'locked' logic
  * @property {(S)=>boolean} [visible]   v0 visibility logic (e.g. chirp-only rows)
  * @property {string} [parent]  id of the toggle or segment row this one hangs under (its visible() keys on it); the drawer indents it one level with a guide line. Must directly follow its parent, or a sibling child; never set on a section's own On switch's rows
+ * @property {boolean} [uiOnly] a toggle that only opens and closes a sub-drawer (schema-visual.js subDrawer): its state lives in the UI record ('signal.v1.ui'), never in S, presets or the audio mirror; drawn by the drawer as a sub-drawer header strip that folds its run open and shut on a section's height spring and pins under its section's pinned header (imgui.js beginFold/endFold)
+ * @property {string} [switchId] on a sub-drawer (uiOnly) row only: the id of a real toggle, or two-way boolean segment, that its strip carries as an on/off switch left of the chevron, as a section header carries its layer's. A click on the switch runs that control's set() and never opens or shuts the drawer; that control is not drawn as a row. The strip hides with the control's own visible() and the switch dims and locks with its enabled()
+ * @property {string} [varianceOf] id of the row this one is the variance of (its amount, rate or on/off). The owner's variance rows must follow it directly; the drawer indents them one level under it in a headerless fold, shut by default, opened by a chevron in the guide line beside the owner (imgui.js lineChevron). Which folds are open lives in the UI record under openVariance, never in S or presets. Folding changes no value
+ * @property {string} [varianceProxy] id of an owner whose chevron this row wears while it shows (a row that stands in the owner's place when the owner is hidden)
  */
 ```
 Every slider's readout can be clicked and typed into. The viewer types in

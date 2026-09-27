@@ -245,8 +245,31 @@ fn shapeLayer(local: vec2f, halfSize: vec2f, radius: f32, interior: vec4f,
   return layer;
 }
 
-fn shadeRect(in: VOut) -> vec4f {
-  let layer = shapeLayer(in.local, in.halfSize, in.radius, in.fill,
+// A carbon fibre micro-weave, -0.5..0.5, from a physical pixel's screen
+// position alone: 7 px square cells, each filled with parallel hairlines at
+// 45 degrees on a 2 px pitch (a triangle-wave stripe, no trig), alternate
+// cells turned to -45 so the cells read as a woven checker, and the two
+// orientations a shade apart, the weave's sheen.
+fn carbonWeave(p: vec2f) -> f32 {
+  let cell = floor(p / 7.0);
+  let flip = fract((cell.x + cell.y) * 0.5) * 2.0;          // 0 or 1, a checker
+  let u = select(p.x - p.y, p.x + p.y, flip > 0.5);          // along the cell's diagonal
+  let stripe = abs(fract(u / 2.8284271) * 2.0 - 1.0) - 0.5;   // 2 px pitch across the lines
+  return stripe * 0.6 + (flip - 0.5) * 0.4;
+}
+
+// Field A on a RECT is a texture amount (DrawList grainRect; 0 for every
+// other rect): the fill's alpha is lifted or lowered per physical pixel by
+// the carbon weave above, so a translucent strip reads as a woven panel.
+// Static by construction: there is no time term, and a pixel's texture
+// never changes while the strip sits still. The UI never strobes, so
+// nothing here may animate.
+fn shadeRect(in: VOut, fragXY: vec2f) -> vec4f {
+  var fill = in.fill;
+  if (in.fieldAB.x > 0.0) {
+    fill.a = clamp(fill.a + carbonWeave(fragXY) * in.fieldAB.x, 0.0, 1.0);
+  }
+  let layer = shapeLayer(in.local, in.halfSize, in.radius, fill,
                           in.borderWidth, in.borderColor, in.shadow.x, in.shadow.y);
   let outA = layer.a * in.opacity;
   return vec4f(layer.rgb * outA, outA);
@@ -450,7 +473,7 @@ fn shadeIcon(in: VOut) -> vec4f {
 @fragment
 fn fsMain(in: VOut) -> @location(0) vec4f {
   let k = i32(round(in.kind));
-  if (k == 0) { return shadeRect(in); }
+  if (k == 0) { return shadeRect(in, in.pos.xy); }
   if (k == 1) { return shadeGlass(in, in.pos.xy); }
   if (k == 2) { return shadeGlyph(in); }
   return shadeIcon(in);

@@ -84,6 +84,36 @@
 //       scrolling and folding and draws nothing when the run laid out
 //       nothing. Inside a group it fades with the group's open state and is
 //       clipped by its body like any row. Levels nest, up to MAX_INDENT.
+//   ui.beginFold(id, label, open, summary, summaryX, switchOn, switchDisabled)
+//       -> draw rows (bool) / ui.endFold()
+//       A sub-drawer: a low header strip (the label, a chevron), then rows
+//       that open and shut on a group's height spring, clipped, sliding with
+//       the fold's bottom edge, and everything after rides on it. The caller
+//       owns open; a click on the strip sets ui.foldToggled for it to write
+//       back. summary (optional) is a dim line the strip shows while it is
+//       set shut (from the click on, through the fold), starting summaryX
+//       px right of the name's x, or after the name when that is longer.
+//       False means shut, at rest and measured: skip the rows, still
+//       call endFold. A group holding a moving fold follows it exactly
+//       (endGroup). The header pins under its pinned section's header, as a
+//       section's does under the viewport's top, and only while its rows
+//       have height: a shut strip scrolls by as an ordinary row. A null
+//       label is a fold with no header at all, only its rows, which never
+//       pins; the caller opens and shuts it from something on the row above.
+//       ui.foldShutting, read straight after, is true while the fold just
+//       begun is sliding shut. switchOn (optional, a strip only) puts an
+//       on/off switch on the strip left of the chevron, the header switch
+//       of group() a size down: ui.foldSwitchChanged is true on the frame
+//       the viewer flipped it and ui.foldSwitch holds the new value, and a
+//       click on it never opens or shuts the fold. switchDisabled dims it
+//       and lets it take no click.
+//   ui.pushInert() / ui.popInert()
+//       Between them widgets draw but take no pointer input.
+//   ui.lineChevron(id, open, lit) -> clicked / ui.endLineChevron()
+//       Around a row: a small chevron seated in the innermost guide line
+//       beside it, the line broken around it, hit anywhere in the gutter
+//       the row is indented past. The disclosure for a headerless fold
+//       under that row; the caller owns open and flips it on a click.
 //   ui.row(cols, gap) / ui.endRow()
 //       Splits the current line into `cols` equal columns; every layout call
 //       between row() and endRow() claims the next column instead of a full
@@ -216,6 +246,29 @@ const SECTION_LINE_W = 1.5, SECTION_LINE_ALPHA = 0.45;
 // (childIndent - 10 = 4 px in from that column).
 const CHILD_LINE_W = 1, CHILD_LINE_ALPHA = 0.3, CHILD_LINE_X = 1;
 const MAX_INDENT = 4;
+// A variance fold's chevron (lineChevron): a small chevron seated in the
+// innermost guide line beside the row it belongs to, the line broken for
+// LINE_GAP px either side of its centre so the glyph sits in the gap. Each
+// line keeps up to MAX_GAPS of those breaks a frame; past that the line just
+// runs under the glyph. A group's body clip reaches GROUP_CLIP_BLEED px left
+// of the section line, which is its body's very edge, so a chevron seated on
+// that line is not cut in half; nothing else a body draws reaches there.
+const LINE_CHEVRON = 10, LINE_GAP = 5, MAX_GAPS = 8, GROUP_CLIP_BLEED = 6;
+const MAX_FOLD = 8;
+// A sub-drawer's header strip (beginFold): lower than a section header's 36,
+// reaching FOLD_HEAD_BLEED past the control column into the body's 10 px
+// gutter, with the carbon weave at FOLD_GRAIN in its fill's alpha (about 1%
+// of white either way, a whisper; 0 turns it off; see grainRect), and the
+// section band's black at FOLD_SHADE over its lower half and FOLD_EDGE along
+// its bottom hairline, for depth (see _foldHeader).
+// FOLD_GRAIN 0 turns the carbon weave off entirely (the shader path stays,
+// so any value brings it back).
+const FOLD_HEAD_H = 28, FOLD_HEAD_BLEED = 6, FOLD_GRAIN = 0;
+const FOLD_SHADE = 0.18, FOLD_EDGE = 0.6;
+// A strip's optional on/off switch (beginFold's switchOn): the section
+// header's switch (GROUP_SWITCH_W by GROUP_SWITCH_H on a 36 px band) scaled
+// to the 28 px strip, so the two read as one family a size apart.
+const FOLD_SWITCH_W = 22, FOLD_SWITCH_H = 12;
 const GROUP_PAD_BOTTOM = SPACE.md - SPACE.xs;
 const CHEVRON_SIZE = 12;
 // The header's optional on/off switch: the toggle's switch (widgets.js
@@ -240,10 +293,37 @@ const GROUP_PIN_BLEED = GROUP_PIN_SHADOW * 3;
 // scroll's content. Pooled: created once per depth the app ever reaches,
 // reused every frame after. Every field any kind uses is declared here, so
 // all regions share one shape.
+// gaps and gapN are the breaks lineChevron cut in a group's section line
+// this frame (top, bottom pairs), made once with the region.
 function makeRegion() {
   return { x: 0, y: 0, w: 0, cursorY: 0, top: 0, clipX: 0, clipY: 0, clipW: 0, clipH: 0, key: 0, kind: '',
-           lineX: 0, lineA: 0, animH: 0, foldU: 0, glass: false, indent: 0,
-           viewportX: 0, viewportY: 0, viewportW: 0, viewportH: 0 };
+           lineX: 0, lineA: 0, animH: 0, foldU: 0, glass: false, indent: 0, nestFold: false,
+           viewportX: 0, viewportY: 0, viewportW: 0, viewportH: 0,
+           gaps: new Float32Array(MAX_GAPS * 2), gapN: 0 };
+}
+
+// Per-chevron state (lineChevron), one per id for the life of the app: the
+// top of the row it sits beside this frame and that row's height as last
+// measured, which is what places the glyph and its hit box before the row is
+// drawn.
+function makeChevronState() {
+  return { y: 0, h: 0 };
+}
+
+// Per-fold state (beginFold), one per fold id for the life of the app: the
+// group's height bookkeeping without a header. h is the rows' last measured
+// height, hId its spring, stepFrame and animNow as a group's (the enclosing
+// scroll steps it ahead of layout), animH the height last laid out, sized
+// whether the rows have been measured, and moving whether it is between an
+// open or a close and coming to rest. At rest open it follows its rows
+// exactly; the spring only runs for a real open or close.
+function makeFoldState(open, hId) {
+  return { open, h: 0, hId, stepFrame: -1, animNow: 0, animH: 0, sized: false, moving: false,
+           folding: false, foldA0: 0, foldHidden: 0, foldS: 0, foldU: 0,
+           label: '', x: 0, y: 0, w: 0, hh: 0, lx: 0, rEdge: 0, hoverA: 0, rot: 0,
+           focused: false, pinned: false, pinA: 0, g: null,
+           labelOf: '', labelW: 0, sumX: 0, sumSrc: '', sumOf: '', sumFit: -1, sumDraw: '', sumW: 0,
+           hasSwitch: false, swOn: false, swA: 1, swX: 0, swY: 0, swFocused: false, swDisabled: false };
 }
 
 // Per-group state, one per group id for the life of the app. Beyond whether
@@ -262,7 +342,7 @@ function makeRegion() {
 // the scroll has given back so far, and foldU how far the body is slid up
 // under the header this frame.
 function makeGroupState(open, hId) {
-  return { open, h: 0, fresh: open, hId, stepFrame: -1, animNow: 0, animH: 0, sized: false,
+  return { open, h: 0, fresh: open, hId, stepFrame: -1, animNow: 0, animH: 0, sized: false, nestFold: false,
            folding: false, foldA0: 0, foldHidden: 0, foldS: 0, foldU: 0,
            label: '', x: 0, y: 0, w: 0, hh: 0, swX: 0, swY: 0,
            hoverA: 0, openA: 0, swA: 1, rot: 0,
@@ -303,6 +383,17 @@ class UI {
     this._indentDepth = 0;
     this._indentX = new Float32Array(MAX_INDENT);
     this._indentY = new Float32Array(MAX_INDENT);
+    // each level's line breaks for chevrons (see lineChevron), as makeRegion's
+    this._indentGaps = new Float32Array(MAX_INDENT * MAX_GAPS * 2);
+    this._indentGapN = new Uint8Array(MAX_INDENT);
+    this._chevrons = new Map();
+    this._chevronOpen = null;
+    // beginFold's levels: each open fold's state and where it was begun.
+    this._foldDepth = 0;
+    this._foldStack = new Array(MAX_FOLD).fill(null);
+    this._foldY0 = new Float64Array(MAX_FOLD);
+    this._foldTop = new Float64Array(MAX_FOLD);
+    this._folds = new Map();
     this.px = 0; this.py = 0; this.pw = 0;
     this._row = { active: false, cols: 1, index: 0, gap: 0, x0: 0, y0: 0, colW: 0, maxH: 0 };
 
@@ -388,6 +479,18 @@ class UI {
     this.groupSwitchChanged = false;
     // whether the group just drawn may have its body skipped (see the header)
     this.groupSettled = false;
+    // whether the viewer flipped the fold just begun (see beginFold)
+    this.foldToggled = false;
+    // whether the fold just begun is sliding shut (see beginFold)
+    this.foldShutting = false;
+    // the strip switch's report, as groupSwitch and groupSwitchChanged are
+    // the header's, written by every beginFold call (see beginFold)
+    this.foldSwitch = false;
+    this.foldSwitchChanged = false;
+    // pushInert's depth: above 0, no widget answers the pointer
+    this._inert = 0;
+    // whether each open fold level pushed a clip (see beginFold)
+    this._foldClip = new Uint8Array(MAX_FOLD);
 
     // colour scratch for widgets, three slots covers fill+border+glow at once
     this.scratch0 = new Float32Array(4);
@@ -426,6 +529,8 @@ class UI {
     root.clipX = 0; root.clipY = 0; root.clipW = width; root.clipH = height;
     root.kind = 'root'; root.indent = 0;
     this._indentDepth = 0;
+    this._foldDepth = 0;
+    this._inert = 0;
     this.rx = 0; this.ry = 0; this.rw = width; this.rh = 0; this.rIndent = 0;
     this._row.active = false;
 
@@ -608,7 +713,7 @@ class UI {
     if (this._regionDepth >= this._regions.length) this._regions.push(makeRegion());
     const reg = this._regions[this._regionDepth];
     reg.x = x; reg.y = y; reg.w = w; reg.cursorY = y; reg.top = y; reg.kind = kind; reg.key = key;
-    reg.indent = 0;
+    reg.indent = 0; reg.nestFold = false; reg.gapN = 0;
     this._row.active = false;
     return reg;
   }
@@ -682,7 +787,7 @@ class UI {
     this.hover = false; this.pressed = false; this.clicked = false; this.released = false; this.dbl = false;
     // A disabled holder is not marked seen, so a widget that locks mid-press
     // lets go of it at end().
-    if (disabled) return;
+    if (disabled || this._inert > 0) return;
     if (this.activeId === id) this._activeSeen = true;
     // A widget can only be hit where it can be seen: the pointer has to be
     // inside the current clip as well as the widget's rect. A row scrolled
@@ -1043,9 +1148,13 @@ class UI {
     // During a pinned fold the body's region starts foldU higher, so its
     // rows slide up under the header with the body's bottom edge rather
     // than being cut off where they stand; its size is measured the same.
+    // While a fold inside the open body is moving (beginFold), the body
+    // follows its rows exactly rather than chasing them on its own spring
+    // (see endGroup), so it is left unbounded below the same way.
     const clipTop = pinned ? hy + hh : cy;
     const clipH = cy + animH - clipTop;
-    this.dl.pushClip(hx, clipTop, hw, g.fresh ? 1e6 : (clipH > 0 ? clipH : 0));
+    const follow = g.fresh || (g.nestFold && g.open);
+    this.dl.pushClip(hx - GROUP_CLIP_BLEED, clipTop, hw + GROUP_CLIP_BLEED, follow ? 1e6 : (clipH > 0 ? clipH : 0));
     const u = g.folding ? g.foldU : 0;
     const reg = this._pushRegion(hx, cy - u, hw, 'group', nid);
     reg.animH = animH;
@@ -1148,10 +1257,16 @@ class UI {
   // invisible as a shape and simply hides what scrolled under it. Glass is
   // opaque, so nothing shows through. Drawn under the scroll's clip, which
   // also cuts the shadow's top and sides away.
+  // `g` is the pinned section whose pane and viewport it borrows, top and h
+  // the strip; a pinned sub-drawer header (endFold) uses the same backing,
+  // one strip lower, with its own pinA.
   _groupPinBacking(g) {
+    this._pinBacking(g, g.y - GROUP_PIN_GAP, g.hh + GROUP_PIN_GAP, g.pinA);
+  }
+
+  _pinBacking(g, top, h, pinA) {
     const dl = this.dl;
-    const top = g.y - GROUP_PIN_GAP, h = g.hh + GROUP_PIN_GAP;
-    const sa = GROUP_PIN_SHADOW_ALPHA * g.pinA;
+    const sa = GROUP_PIN_SHADOW_ALPHA * pinA;
     if (sa > 0.001) {
       dl.rect(g.viewX - GROUP_PIN_BLEED, top, g.viewW + GROUP_PIN_BLEED * 2, h, 0, COLOR.clear, 0, null,
               GROUP_PIN_SHADOW, sa);
@@ -1167,12 +1282,13 @@ class UI {
       dl.glass(g.viewX, top, g.viewW, h, 0, COLOR.paneTint, GLASS.blurMix, 0, null, 0, 0);
     }
     dl.popClip();
-    if (g.pinA > 0.001) {
+    if (pinA > 0.001) {
       this.scratch0[0] = COLOR.lineSoft[0]; this.scratch0[1] = COLOR.lineSoft[1];
-      this.scratch0[2] = COLOR.lineSoft[2]; this.scratch0[3] = COLOR.lineSoft[3] * g.pinA;
-      dl.rect(g.viewX, g.y + g.hh, g.viewW, 1, 0, this.scratch0, 0, null, 0, 0);
+      this.scratch0[2] = COLOR.lineSoft[2]; this.scratch0[3] = COLOR.lineSoft[3] * pinA;
+      dl.rect(g.viewX, top + h, g.viewW, 1, 0, this.scratch0, 0, null, 0, 0);
     }
   }
+
 
   endGroup() {
     const reg = this._popRegion();
@@ -1197,6 +1313,17 @@ class UI {
       anim.reset(g.hId, g.h);
       reg.animH = g.h;
     }
+    // A fold inside the open body moved this frame (endFold marks it): the
+    // body takes exactly the height its rows now measure, on this frame, and
+    // the spring is left resting there, so the fold is the one motion and
+    // everything below the section rides along with it, never a second
+    // spring lagging behind. The enclosing scroll counted the fold's change
+    // in its prediction (see scroll()), not this group's.
+    if (reg.nestFold && g.open) {
+      anim.reset(g.hId, g.h);
+      reg.animH = g.h;
+    }
+    g.nestFold = reg.nestFold && g.open;
     // what this frame laid out, for the next frame's content prediction
     g.animH = reg.animH;
     this.dl.popClip();
@@ -1209,7 +1336,7 @@ class UI {
     const lineH = reg.animH + reg.foldU - GROUP_PAD_BOTTOM;
     if (reg.lineA > 0.001 && lineH > 1) {
       this._guideLine(reg.lineX + (GROUP_BAR_W - SECTION_LINE_W) / 2, reg.top, SECTION_LINE_W, lineH,
-                      SECTION_LINE_ALPHA * reg.lineA);
+                      SECTION_LINE_ALPHA * reg.lineA, reg.gaps, 0, reg.gapN);
     }
     // A pinned header is drawn last, after its body and the section line, so
     // it sits over everything that scrolls beneath it.
@@ -1222,11 +1349,109 @@ class UI {
 
   // The accent guide line both hierarchy levels draw: a group's section line
   // (endGroup) and a child run's line (endIndent). A rounded vertical bar in
-  // the accent at the given share of its alpha, mixed into scratch1.
-  _guideLine(x, y, w, h, alpha) {
+  // the accent at the given share of its alpha, mixed into scratch1, broken
+  // wherever a chevron sits in it: n (top, bottom) pairs in gaps from off, in
+  // the order the rows were laid out, so top to bottom.
+  _guideLine(x, y, w, h, alpha, gaps, off, n) {
     const c = this.scratch1;
     c[0] = COLOR.accent[0]; c[1] = COLOR.accent[1]; c[2] = COLOR.accent[2]; c[3] = COLOR.accent[3] * alpha;
-    this.dl.rect(x, y, w, h, w / 2, c, 0, null, 0, 0);
+    let top = y;
+    const bot = y + h;
+    for (let k = 0; k < n; k++) {
+      const g0 = gaps[off + k * 2], g1 = gaps[off + k * 2 + 1];
+      if (g1 <= top || g0 >= bot) continue;
+      if (g0 - top > 0.5) this.dl.rect(x, top, w, g0 - top, w / 2, c, 0, null, 0, 0);
+      top = g1;
+    }
+    if (bot - top > 0.5) this.dl.rect(x, top, w, bot - top, w / 2, c, 0, null, 0, 0);
+  }
+
+  // ---------------- layout: line chevron ----------------
+
+  // A disclosure seated in the guide line beside a row, for rows that fold
+  // out of it (the drawer's variance rows): a small chevron in the innermost
+  // guide line's column at the row's vertical centre, the line broken around
+  // it, pointing down shut and turning up open as a section's does. Call
+  // lineChevron straight before the row's own widget and endLineChevron
+  // straight after it; the caller owns open and flips it when this returns
+  // true (a click). lit draws it in the full accent (the caller passes open,
+  // or anything folded away that still acts); otherwise it wears the line's
+  // own faint accent, lifting on hover.
+  //
+  // It runs before the row so it has the first claim on a press in its hit
+  // box, which is the whole gutter the row is indented past (from the line's
+  // column to the row's left edge) by the row's height. An indented slider's
+  // track also takes presses from that gutter, and first come, first served,
+  // the chevron wins there. The row's height is not known until it is drawn,
+  // so the box and the glyph use the height endLineChevron measured last
+  // frame; a row's first frame draws no chevron.
+  lineChevron(id, open, lit) {
+    const nid = this.id(id);
+    let c = this._chevrons.get(nid);
+    if (!c) {
+      c = makeChevronState();
+      this._chevrons.set(nid, c);
+      anim.reset(combine(nid, 2), open ? Math.PI : 0);
+      anim.reset(combine(nid, 1), lit ? 1 : 0);
+    }
+    const reg = this.region;
+    const y = reg.cursorY, rowX = reg.x + reg.indent;
+    c.y = y;
+    this._chevronOpen = c;
+    // The innermost line beside the row: the deepest child run's (past
+    // MAX_INDENT the deepest one drawn), else the section line, else none.
+    const depth = this._indentDepth < MAX_INDENT ? this._indentDepth : MAX_INDENT;
+    let lx, col, lineA, gaps = null, off = 0, gapN = 0;
+    const inGroup = reg.kind === 'group';
+    const fade = inGroup ? reg.lineA : 1;
+    if (depth > 0) {
+      const d = depth - 1;
+      lx = this._indentX[d] + CHILD_LINE_W / 2;
+      col = this._indentX[d] - CHILD_LINE_X;
+      lineA = CHILD_LINE_ALPHA;
+      gaps = this._indentGaps; off = d * MAX_GAPS * 2; gapN = this._indentGapN[d];
+    } else if (inGroup) {
+      lx = reg.lineX + GROUP_BAR_W / 2;
+      col = reg.lineX;
+      lineA = SECTION_LINE_ALPHA;
+      gaps = reg.gaps; gapN = reg.gapN;
+    } else {
+      lx = rowX - LAYOUT.childIndent / 2;
+      col = rowX - LAYOUT.childIndent;
+      lineA = CHILD_LINE_ALPHA;
+    }
+    const h = c.h;
+    const x0 = lx - LINE_CHEVRON / 2 < col ? lx - LINE_CHEVRON / 2 : col;
+    this.interact(nid, x0, y, rowX - x0, h, h <= 0);
+    const hover = this.hover;
+    if (hover) this.setCursorHint('pointer');
+    const clicked = this.clicked;
+    const now = clicked ? !open : open;
+    const litA = this.spring(combine(nid, 1), lit || now ? 1 : hover ? 0.6 : 0, MOTION.hover);
+    const rot = this.spring(combine(nid, 2), now ? Math.PI : 0, MOTION.panel);
+    if (h > 0) {
+      const cy = y + h / 2;
+      const a = (lineA + (1 - lineA) * litA) * fade;
+      const col4 = this.scratch2;
+      col4[0] = COLOR.accent[0]; col4[1] = COLOR.accent[1]; col4[2] = COLOR.accent[2]; col4[3] = COLOR.accent[3] * a;
+      if (a > 0.001) this._chevron(lx - LINE_CHEVRON / 2, cy - LINE_CHEVRON / 2, LINE_CHEVRON, col4, rot);
+      if (gaps !== null && gapN < MAX_GAPS) {
+        gaps[off + gapN * 2] = cy - LINE_GAP;
+        gaps[off + gapN * 2 + 1] = cy + LINE_GAP;
+        if (depth > 0) this._indentGapN[depth - 1] = gapN + 1; else reg.gapN = gapN + 1;
+      }
+    }
+    return clicked;
+  }
+
+  // Measures the row just drawn beside the chevron, for the next frame. A
+  // row that drew nothing (hidden this frame) keeps the last height.
+  endLineChevron() {
+    const c = this._chevronOpen;
+    if (c === null) return;
+    this._chevronOpen = null;
+    const h = this.region.cursorY - SPACE.xs - c.y;
+    if (h > 0.5) c.h = h;
   }
 
   // ---------------- layout: indent ----------------
@@ -1242,6 +1467,7 @@ class UI {
     const reg = this.region;
     this._indentX[d] = reg.x + reg.indent + CHILD_LINE_X;
     this._indentY[d] = reg.cursorY;
+    this._indentGapN[d] = 0;
     reg.indent += LAYOUT.childIndent;
   }
 
@@ -1260,8 +1486,325 @@ class UI {
     const top = this._indentY[d];
     const h = reg.cursorY - SPACE.xs - top;
     const a = reg.kind === 'group' ? reg.lineA : 1;
-    if (h > 1 && a > 0.001) this._guideLine(this._indentX[d], top, CHILD_LINE_W, h, CHILD_LINE_ALPHA * a);
+    if (h > 1 && a > 0.001) {
+      this._guideLine(this._indentX[d], top, CHILD_LINE_W, h, CHILD_LINE_ALPHA * a,
+                      this._indentGaps, d * MAX_GAPS * 2, this._indentGapN[d]);
+    }
   }
+
+  // ---------------- layout: fold ----------------
+
+  // A sub-drawer: a header strip, then rows that open and shut under it on
+  // the same height spring (MOTION.fold) a section's body does, clipped to
+  // it, with whatever follows riding on its height. The caller owns the open
+  // state and passes it every frame; a click on the strip (or Enter or Space
+  // on it) flips the fold at once and sets ui.foldToggled for the caller to
+  // write back. The rows sit in the enclosing region, indent and all, and
+  // slide with the fold's bottom edge: down out from under the header as it
+  // opens, up under it as it shuts. Returns false once it is shut, at rest and
+  // measured, when the caller may skip the rows until it opens (endFold must
+  // still be called); the height survives the skipping. At rest open it takes
+  // exactly its rows' height every frame, so a row appearing inside it is no
+  // animation at all.
+  //
+  // The header is sticky one level down from its section's, the same way:
+  // inside a section whose header is pinned, once the strip scrolls above
+  // that header's bottom edge while its rows still show, it stays pinned
+  // there, on a strip of the pane, until its rows' bottom pushes it up and
+  // out, so the next sub-drawer's header, or the section's end, hands it off.
+  // Shutting one while it is pinned folds as a pinned section does (see
+  // _foldStep): the header stays put while the rows slide up beneath it and
+  // the scroll gives back what was pinned past.
+  //
+  // switchOn, when given (true or false, never undefined), puts an on/off
+  // switch on the strip just left of the chevron, as group() does on a
+  // section header: a click on it flips it and sets ui.foldSwitchChanged
+  // (ui.foldSwitch the new value) for the caller to write back, and neither
+  // opens nor shuts the fold; a click anywhere else on the strip does that
+  // as usual. switchDisabled draws it dimmed and lets it take no click, the
+  // way a locked toggle row looks; a press on it still lands on it, so it
+  // never falls through to the strip.
+  beginFold(id, label, open, summary, summaryX, switchOn, switchDisabled) {
+    const nid = this.id(id);
+    let f = this._folds.get(nid);
+    if (!f) {
+      // appears in its state rather than animating into it, as a group does
+      f = makeFoldState(open, combine(nid, 3));
+      this._folds.set(nid, f);
+      anim.reset(f.hId, 0);
+      anim.reset(combine(nid, 2), open ? Math.PI : 0);
+      anim.reset(combine(nid, 6), switchOn ? 1 : 0);
+    }
+    if (f.open !== open) { f.open = open; f.moving = true; }
+    // Stepped already by the enclosing scroll, before layout, as a group is;
+    // an open or close this frame therefore moves from the next one.
+    const a = f.stepFrame === this.frame ? f.animNow : this._stepFoldHeight(f);
+    // listed on the nearest scroll so its next scroll() steps it first
+    let st = null;
+    for (let i = this._regionDepth; i >= 0; i--) {
+      const r = this._regions[i];
+      if (r.kind !== 'scroll') continue;
+      st = this._scrolls.get(r.key);
+      if (st.foldCount >= st.folds.length) st.folds.push(f);
+      else st.folds[st.foldCount] = f;
+      st.foldCount++;
+      break;
+    }
+
+    // A fold with no header of its own (label null) is only its rows, from
+    // the cursor: something drawn on the row above opens and shuts it (the
+    // drawer's variance rows and their lineChevron). It never pins, and the
+    // caller writes its open state back itself.
+    const reg = this.region;
+    this.foldToggled = false;
+    this.foldSwitchChanged = false;
+    this.foldSwitch = !!switchOn;
+    let y0 = reg.cursorY, pinned = false, hy = 0, hh = 0;
+    if (label === null) {
+      f.pinned = false; f.pinA = 0; f.g = null; f.hasSwitch = false;
+    } else {
+      // The header strip. ly is where the layout puts it, hy where it is drawn
+      // and hit, lower than ly only while pinned. The strip reaches past the
+      // column on both sides, so its name and chevron line up with the rows'
+      // labels and switches.
+      hh = touchAware(this, FOLD_HEAD_H);
+      this.nextRect(hh);
+      const ly = this.ry, lx = this.rx, rEdge = this.rx + this.rw;
+      const sx = lx - this.rIndent - FOLD_HEAD_BLEED, sw = this.rw + this.rIndent + FOLD_HEAD_BLEED * 2;
+      y0 = reg.cursorY;
+      // Pinned just under its section's pinned header, never above it: only a
+      // section that is itself pinned can have scrolled a sub-header past it.
+      // Its rows' bottom pushes it up exactly as a section's body pushes its
+      // header: the strip's bottom never passes the last row's bottom, which is
+      // its layout place plus the fold's height (y0 less the gap nextRect left
+      // under the strip). A shut fold has no height, so its strip can never sit
+      // below its layout place and scrolls by as an ordinary row; measured from
+      // y0 instead, that gap alone pinned a shut strip and dragged it along
+      // under the section header.
+      let g = null;
+      hy = ly;
+      if (st && reg.kind === 'group') {
+        g = this._groups.get(reg.key);
+        if (g && g.pinned) {
+          const pinTop = g.y + g.hh;
+          const pushed = ly + a;
+          const at = pushed < pinTop ? pushed : pinTop;
+          if (at > ly) hy = at;
+        }
+      }
+      pinned = hy > ly;
+
+      const focused = this.registerFocusable(nid);
+      // The strip's switch, when it has one: its own focusable, after the
+      // strip in Tab order, and hit first, so a press on it is consumed
+      // before the strip's interact runs and the fold stays as it was
+      // (group() does the same for a section header's switch). Its hit
+      // area is the strip's height and a little wider than the pill, up to
+      // a finger's width on touch, stopping short of the chevron.
+      const hasSwitch = switchOn !== undefined;
+      const swDisabled = hasSwitch && !!switchDisabled;
+      let swOn = !!switchOn, swHover = false, swFocused = false, swId = 0;
+      const swX = rEdge - CHEVRON_SIZE - SPACE.sm - FOLD_SWITCH_W;
+      const swY = hy + hh / 2 - FOLD_SWITCH_H / 2;
+      if (hasSwitch) {
+        swId = combine(nid, 5);
+        swFocused = swDisabled ? false : this.registerFocusable(swId);
+        let hitW = touchAware(this, FOLD_SWITCH_W + SPACE.sm * 2);
+        const room = (rEdge - CHEVRON_SIZE) - (swX + FOLD_SWITCH_W / 2);
+        if (hitW / 2 > room) hitW = room * 2;
+        this.interact(swId, swX + FOLD_SWITCH_W / 2 - hitW / 2, hy, hitW, hh, false);
+        swHover = this.hover;
+        if (swHover && !swDisabled) this.setCursorHint('pointer');
+        if (!swDisabled && (this.clicked || (swFocused && this._keyActivated()))) {
+          swOn = !swOn;
+          this.foldSwitchChanged = true;
+          this.foldSwitch = swOn;
+        }
+      }
+      this.interact(nid, sx, hy, sw, hh, false);
+      // With the pointer on the switch the strip is not what a click would
+      // hit, so it neither lifts nor claims the hot id.
+      if (swHover) { this.hover = false; this.hotId = swId; }
+      if (this.hover) this.setCursorHint('pointer');
+      if (this.clicked || (focused && this._keyActivated())) {
+        f.open = !f.open;
+        f.moving = true;
+        this.foldToggled = true;
+        if (!f.open && pinned && !f.folding && a > 0.5) {
+          let hidden = hy - ly;
+          const room = st.offset > 0 ? st.offset : 0;
+          if (hidden > room) hidden = room;
+          f.folding = true; f.foldA0 = a; f.foldHidden = hidden; f.foldS = 0; f.foldU = 0;
+        }
+      }
+      f.label = label; f.x = sx; f.y = hy; f.w = sw; f.hh = hh; f.lx = lx; f.rEdge = rEdge;
+      f.sumSrc = summary || ''; f.sumX = summaryX || 0;
+      f.hoverA = this.spring(combine(nid, 1), this.hover ? 1 : 0, MOTION.hover);
+      // down when shut, a half turn to up when open, as a section's chevron
+      f.rot = this.spring(combine(nid, 2), f.open ? Math.PI : 0, MOTION.panel);
+      f.focused = focused;
+      f.hasSwitch = hasSwitch; f.swOn = swOn; f.swX = swX; f.swY = swY;
+      f.swFocused = swFocused; f.swDisabled = swDisabled;
+      // The switch's travel, and the name's dim while it is off, on one
+      // spring, as a section header's switch and title share one.
+      f.swA = hasSwitch ? this.spring(combine(nid, 6), swOn ? 1 : 0, MOTION.hover) : 1;
+      f.pinned = pinned;
+      f.g = pinned ? g : null;
+      if (pinned) {
+        const dp = (hy - ly) / GROUP_PIN_FADE;
+        f.pinA = dp < 1 ? dp : 1;
+      } else {
+        f.pinA = 0;
+        this._foldHeader(f);
+      }
+    }
+
+    // At rest open the clip is left unbounded below (pushClip intersects it
+    // with the parent's), since the rows are what measure it, as for a group
+    // on its first frame. Moving, the rows start as far above y0 as the fold
+    // is short of full, so they slide with its bottom edge. Pinned, the clip
+    // starts under the header, so rows that scrolled beneath it can neither
+    // show nor be hit there.
+    // An unpinned fold at rest open would clip nothing its enclosing clip
+    // does not, so it pushes none: every clip starts a draw batch, and the
+    // drawer has a fold around most of its runs.
+    const follow = f.open && !f.moving;
+    const up = follow ? 0 : f.h - a;
+    const clipTop = pinned ? hy + hh : y0;
+    const clipH = y0 + a - clipTop;
+    const d = this._foldDepth++;
+    const clip = d >= MAX_FOLD || !follow || pinned;
+    if (clip) this.dl.pushClip(-1e6, clipTop, 2e6, follow ? 1e6 : (clipH > 0 ? clipH : 0));
+    reg.cursorY = y0 - up;
+    if (d < MAX_FOLD) { this._foldStack[d] = f; this._foldY0[d] = y0; this._foldTop[d] = y0 - up; this._foldClip[d] = clip ? 1 : 0; }
+    this.foldShutting = !f.open && f.moving;
+    return !(!f.open && !f.moving && f.sized && a === 0);
+  }
+
+  // Closes the innermost fold: measures what its rows laid out, and leaves
+  // the cursor at the fold's top plus its height this frame, so the rows
+  // after it move with it. A moving fold marks the group holding it, which
+  // then follows the fold rather than springing after it (endGroup). A
+  // pinned header is drawn here, over its rows.
+  endFold() {
+    if (this._foldDepth === 0) return;
+    const d = --this._foldDepth;
+    if (d >= MAX_FOLD) { this.dl.popClip(); return; }
+    if (this._foldClip[d]) this.dl.popClip();
+    const f = this._foldStack[d], y0 = this._foldY0[d];
+    this._foldStack[d] = null;
+    const reg = this.region;
+    const measured = reg.cursorY - this._foldTop[d];
+    // A skipped (shut, settled) fold measured nothing; keep the real height.
+    // (Float64 positions, so nothing measures a rounding error as a height.)
+    if (measured > 0.5 || f.open) f.h = measured > 0.5 ? measured : 0;
+    if (measured > 0.5) f.sized = true;
+    let a = f.animNow;
+    if (f.moving) {
+      if (anim.settled(f.hId) && (f.open ? Math.abs(a - f.h) < 0.5 : a === 0)) f.moving = false;
+    }
+    if (f.open && !f.moving) {
+      // at rest open: exactly its rows, with the spring resting there
+      anim.reset(f.hId, f.h);
+      f.animNow = a = f.h;
+    }
+    f.animH = a;
+    reg.cursorY = y0 + a;
+    if (f.moving && reg.kind === 'group') reg.nestFold = true;
+    if (f.pinned) {
+      this._pinBacking(f.g, f.y, f.hh, f.pinA);
+      this._foldHeader(f);
+    }
+  }
+
+  // A sub-drawer's header strip, from the state beginFold left on the fold:
+  // a low band of neutral fill with a faint static grain, the same open or
+  // shut (only hover lifts it), the name in sentence case at semibold (the
+  // nearest weight the atlas has to medium) in the sub-heading ink, and the
+  // section chevron at the right edge. No accent: the fill, weight and
+  // height set it apart from the setting rows under it.
+  _foldHeader(f) {
+    const dl = this.dl;
+    anim.mixColor(this.scratch0, COLOR.well, COLOR.wellHi, f.hoverA);
+    dl.grainRect(f.x, f.y, f.w, f.hh, RADIUS.sm, this.scratch0, FOLD_GRAIN);
+    // Depth in the section header's own material, scaled down: its band's
+    // black as a soft shade over the lower half and a firmer hairline along
+    // the bottom, and its headHi hairline along the top, inset past the
+    // corner radius as the section's is, so the strip reads as a raised bar.
+    const sc = this.scratch1;
+    sc[0] = GROUP_BAND[0]; sc[1] = GROUP_BAND[1]; sc[2] = GROUP_BAND[2];
+    sc[3] = GROUP_BAND[3] * FOLD_SHADE;
+    dl.rect(f.x, f.y + f.hh / 2, f.w, f.hh / 2, RADIUS.sm, sc, 0, null, 0, 0);
+    sc[3] = GROUP_BAND[3] * FOLD_EDGE;
+    dl.rect(f.x + RADIUS.sm, f.y + f.hh - 1, f.w - RADIUS.sm * 2, 1, 0, sc, 0, null, 0, 0);
+    dl.rect(f.x + RADIUS.sm, f.y, f.w - RADIUS.sm * 2, 1, 0, COLOR.headHi, 0, null, 0, 0);
+    this.text.lineMetrics(TYPE.sm, this._lm);
+    const baseline = f.y + f.hh / 2 + (this._lm.ascent - this._lm.descent) / 2;
+    // A strip with a switch dims its name toward inkFaint while the switch
+    // is off, on the switch's own spring, as a section's title dims.
+    let nameCol = COLOR.inkHead;
+    if (f.hasSwitch) {
+      anim.mixColor(this.scratch2, COLOR.inkFaint, COLOR.inkHead, f.swA);
+      nameCol = this.scratch2;
+    }
+    this.text.draw(dl, f.label, f.lx, baseline, TYPE.sm, W.semibold, nameCol, 0, TRACK.ui, 1);
+    // Always up, open or shut, so the bar reads as the group's one-line
+    // face at a glance in either state.
+    if (f.sumSrc) this._foldSummary(f, baseline);
+    if (f.hasSwitch) {
+      if (f.swDisabled) dl.pushAlpha(0.45);
+      drawSwitch(this, f.swX, f.swY, FOLD_SWITCH_W, FOLD_SWITCH_H, f.swA, f.swOn);
+      if (f.swDisabled) dl.popAlpha();
+      if (f.swFocused && this.focusVisible) this._focusRing(f.swX, f.swY, FOLD_SWITCH_W, FOLD_SWITCH_H, FOLD_SWITCH_H / 2);
+    }
+    this._chevron(f.rEdge - CHEVRON_SIZE, f.y + f.hh / 2 - CHEVRON_SIZE / 2, CHEVRON_SIZE, COLOR.inkHead, f.rot);
+    if (f.focused && this.focusVisible) this._focusRing(f.x, f.y, f.w, f.hh, RADIUS.sm);
+  }
+
+  // A shut strip's summary (beginFold's summary): dim and small, starting
+  // in one column the caller sets for every strip (sumX from the name's x),
+  // so the summaries line up strip to strip, or a gap after a name longer
+  // than that. The name always wins, and a summary too long for the room
+  // before the chevron is cut to fit with an ellipsis. Widths and the cut
+  // are worked out only when the text or the room changes, so a steady
+  // strip measures nothing and builds no strings.
+  _foldSummary(f, baseline) {
+    if (f.labelOf !== f.label) { f.labelOf = f.label; f.labelW = this.text.measure(f.label, TYPE.sm, W.semibold); }
+    // ending before the chevron, or before the strip's switch when it has one
+    const right = (f.hasSwitch ? f.swX : f.rEdge - CHEVRON_SIZE) - SPACE.sm;
+    const after = f.labelW + SPACE.md;
+    const x = f.lx + (f.sumX > after ? f.sumX : after);
+    const room = Math.floor(right - x);
+    if (room < 24) return;
+    if (f.sumOf !== f.sumSrc || f.sumFit !== room) {
+      let str = f.sumSrc, w = this.text.measure(str, TYPE.xs, W.regular);
+      if (w > room) {
+        let n = str.length;
+        while (n > 1) {
+          n--;
+          str = f.sumSrc.slice(0, n).trimEnd() + '\u2026';
+          w = this.text.measure(str, TYPE.xs, W.regular);
+          if (w <= room) break;
+        }
+      }
+      f.sumOf = f.sumSrc; f.sumDraw = str; f.sumW = w; f.sumFit = room;
+    }
+    // inkFaint rather than inkDim: soft, a read below the setting labels
+    this.text.draw(this.dl, f.sumDraw, x, baseline, TYPE.xs, W.regular, COLOR.inkFaint, 0, TRACK.ui, 1);
+  }
+
+  _stepFoldHeight(f) {
+    f.animNow = this.spring(f.hId, f.open ? f.h : 0, MOTION.fold);
+    f.stepFrame = this.frame;
+    return f.animNow;
+  }
+
+  // While inert (nested pushInert / popInert), every widget still lays out
+  // and draws but none answers the pointer, as if disabled, without the
+  // disabled look: the drawer's rows sliding shut under a switch just
+  // turned off, which are on their way out and must not take a press.
+  pushInert() { this._inert++; }
+  popInert() { if (this._inert > 0) this._inert--; }
 
   _keyActivated() {
     for (let i = 0; i < this.keyCount; i++) {
@@ -1291,7 +1834,7 @@ class UI {
     let st = this._scrolls.get(nid);
     if (!st) {
       st = { offset: 0, vel: 0, dragging: false, dragStartY: 0, dragStartOffset: 0, contentH: 0, lastY: 0,
-             _pendingClaim: false, layMax: 0, groups: [], groupCount: 0 };
+             _pendingClaim: false, layMax: 0, groups: [], groupCount: 0, folds: [], foldCount: 0 };
       this._scrolls.set(nid, st);
     }
 
@@ -1314,6 +1857,20 @@ class UI {
       st.groups[i] = null;
     }
     st.groupCount = 0;
+    // The folds laid anywhere inside it last frame, the same way. A moving
+    // fold's change is the content's change: the group holding it follows
+    // its rows exactly (see endGroup), so the group adds nothing here.
+    for (let i = 0; i < st.foldCount; i++) {
+      const f = st.folds[i];
+      if (f.stepFrame !== this.frame) {
+        const a = this._stepFoldHeight(f);
+        dH += a - f.animH;
+        // a pinned sub-drawer shutting gives back its share, as a section does
+        if (f.folding) give += this._foldStep(f, a);
+      }
+      st.folds[i] = null;
+    }
+    st.foldCount = 0;
     const lastMax = st.contentH > h ? st.contentH - h : 0;
     const predH = st.contentH + dH;
     const newMax = predH > h ? predH - h : 0;

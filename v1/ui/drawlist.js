@@ -34,7 +34,7 @@ export const ICON = {
 //   15 shadow radius                css px, 0 for none; the quad is expanded by this
 //   16 shadow alpha
 //   17..20 u0 v0 u1 v1              GLYPH atlas uvs; ICON unused
-//   21 A                            GLYPH sdf range in atlas px; ICON icon id; GLASS blur mix 0..1
+//   21 A                            GLYPH sdf range in atlas px; ICON icon id; GLASS blur mix 0..1; RECT grain amount (grainRect)
 //   22 B                            ICON stroke width css px; GLYPH edge softness css px; ICON rotation lives in 17 (radians)
 //   23 opacity                      the group-alpha stack product at emit time
 export const STRIDE = 24;
@@ -123,6 +123,16 @@ export class DrawList {
     const o = this._slot(KIND.RECT, x, y, w, h, r, fill, shadow > 0 ? shadow : 0);
     if (o < 0) return;
     this._border(o, border, borderColor, shadow, shadowAlpha);
+  }
+
+  // A plain rounded rect with static film grain over its fill: the fill's
+  // alpha moves by up to half of `grain` either way per physical pixel,
+  // fixed to the screen (see shadeRect in gpu/ui.wgsl.js). Only a sub-drawer
+  // header's strip uses it.
+  grainRect(x, y, w, h, r, fill, grain) {
+    const o = this._slot(KIND.RECT, x, y, w, h, r, fill, 0);
+    if (o < 0) return;
+    this.data[o + 21] = grain;
   }
 
   // Frosted glass: replaces what is under it with the blurred lit-frame

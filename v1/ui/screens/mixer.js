@@ -137,7 +137,7 @@ const METER_TIP = 'Post-fader signal · -60 to 0 dBFS';
 const DRIFT_TIP = 'Drift: slowly crossfade from place to place on its own';
 
 // ---------- controls ----------
-const POWER = byId('ambMixerPower'), DRIFT = byId('ambMixerDrift');
+const DRIFT = byId('ambMixerDrift');
 const COPY = byId('ambMixerCopy'), CLOSE = byId('ambMixerClose');
 
 // One per fader: the schema control, the readout as last formatted (with the
@@ -656,11 +656,10 @@ export function drawMixer(ui, app, fade = 1) {
   // laid out from the right, as v0's flex row ends: close, on, copy, drift
   const closeW = ui.text.measure('×', 18, W.regular) + CLOSE_PAD_X * 2 + 2;
   const closeX = x + winW - 1 - BAR_PAD_R - closeW;
-  const powerLabel = S.ambOn ? 'on' : 'off';
-  const powerW = ui.text.measure(powerLabel, 10, W.regular) + BTN_PAD_X * 2 + 2;
-  const powerX = closeX - BAR_GAP - powerW;
+  // The header's on/off is gone by Robert's call (2026-09-26): it doubled
+  // the atmosphere switch, and never quite drove it right from here.
   const copyW = ui.text.measure('copy settings', 10, W.regular) + BTN_PAD_X * 2 + 2;
-  const copyX = powerX - BAR_GAP - copyW;
+  const copyX = closeX - BAR_GAP - copyW;
   const driftW = ui.text.measure('drift', 10, W.regular) + BTN_PAD_X * 2 + 2;
   const driftX = copyX - BAR_GAP - driftW;
 
@@ -703,9 +702,6 @@ export function drawMixer(ui, app, fade = 1) {
   }
 
   // on / off
-  if (barHit(ui, 'mixer.power', powerX, cy - BTN_H / 2, powerW, BTN_H) && POWER) POWER.set(S, !POWER.get(S));
-  barButton(ui, powerX, cy, powerW, BTN_H, C.btnBg,
-    S.ambOn ? C.powerBorder : btnHover ? C.btnBorderHover : C.btnBorder, S.ambOn ? C.powerInk : C.btnInk, powerLabel, 10);
 
   // close
   if (barHit(ui, 'mixer.close', closeX, cy - CLOSE_H / 2, closeW, CLOSE_H)) { if (CLOSE) runAction(CLOSE, S); else mixer.open = false; }

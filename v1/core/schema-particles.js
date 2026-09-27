@@ -17,6 +17,7 @@
 // it. Every set() ends with the debounced save(). The state-only helpers
 // never call save(); store.js decides when to write.
 import { save } from './store.js';
+import { subDrawer } from './schema-visual.js';
 
 // The three choices, the two plain booleans, and every numeric field with its
 // range. The GPU agent reads these names off S directly, so this table is the
@@ -201,9 +202,12 @@ function toggle(id, key, label, def, sub, visible) {
 
 const times2 = key => S => S[key].toFixed(2) + '×';
 
-// Marks a control as a child row of the toggle or segment straight above it
-// (the schema's `parent`), so the drawer indents it under that row.
+// Marks a control as a child row of the toggle, segment or sub-drawer
+// straight above it (the schema's `parent`), so the drawer nests it there.
 const under = (parent, c) => { c.parent = parent; return c; };
+// Tags a control as part of the variance of the row straight above it (the
+// schema's varianceOf), so the drawer folds it out from under that row.
+const varianceOf = (owner, c) => { c.varianceOf = owner; return c; };
 // Gives a control a hover tip in the drawer (the schema's `tip`).
 const tip = (str, c) => { c.tip = str; return c; };
 
@@ -262,33 +266,49 @@ export const PARTICLE_CONTROLS = [
     set: (S, on) => { S.layers.particles = on; save(); }
   },
 
-  // Where the particles are born, and what each one looks like.
+  // Where the particles are born, above the drawers, since it decides the
+  // shape of the whole stream.
   choice('partEmitter', 'partEmitter', 'Emitter', EMITTERS, ['Centre', 'Ring', 'Spiral'], DEF_EMITTER),
-  choice('partStyle', 'partStyle', 'Style', STYLES, ['Glow', 'Streak', 'Spark', 'Bokeh', 'Dust'], DEF_STYLE),
 
+  // ---- three sub-drawers, Motion, Shape and Color (see subDrawer in
+  // schema-visual.js), each with its rows straight after it. Their rows sat
+  // under headings of their own before the drawers; a heading inside a
+  // drawer would end its run ----
+  //
   // How many are born, how fast they travel, how widely they fan out, and
   // which way the stream bends. Swirl is signed: it curls one way or the
   // other, and 0 sends the particles straight out.
-  percent('partRate', 'partRate', 'Rate', rateText, 'Flow'),
-  direct('partSpeed', 'partSpeed', 'Speed', 0.01, speedText, 'Flow'),
-  percent('partSpread', 'partSpread', 'Spread (toward screen edge)', null, 'Flow'),
-  direct('partSwirl', 'partSwirl', 'Swirl', 0.01, signed('partSwirl'), 'Flow'),
+  subDrawer('partMotionDrawer', 'Motion', 'particles', ['partRate', 'partSpeed']),
+  under('partMotionDrawer', percent('partRate', 'partRate', 'Rate', rateText)),
+  under('partMotionDrawer', direct('partSpeed', 'partSpeed', 'Speed', 0.01, speedText)),
+  under('partMotionDrawer', percent('partSpread', 'partSpread', 'Spread (toward screen edge)')),
+  under('partMotionDrawer', direct('partSwirl', 'partSwirl', 'Swirl', 0.01, signed('partSwirl'))),
 
-  // Size is the largest a particle gets; the variance spreads them between
-  // that and small. Trail only exists for the streak style.
-  direct('partSize', 'partSize', 'Size', 0.05, times2('partSize'), 'Size'),
-  percent('partSizeVar', 'partSizeVar', 'Size variance', null, 'Size'),
-  percent('partTrail', 'partTrail', 'Trail', null, 'Size', isStreak),
+  // What each one looks like. Size is the largest a particle gets; the
+  // variance spreads them between that and small. Trail only exists for the
+  // streak style.
+  subDrawer('partShapeDrawer', 'Shape', 'particles', ['partStyle', 'partSize']),
+  under('partShapeDrawer', choice('partStyle', 'partStyle', 'Style', STYLES, ['Glow', 'Streak', 'Spark', 'Bokeh', 'Dust'], DEF_STYLE)),
+  under('partShapeDrawer', direct('partSize', 'partSize', 'Size', 0.05, times2('partSize'))),
+  // (the variance folds out from under Size; drawer.js, the schema's varianceOf)
+  varianceOf('partSize', percent('partSizeVar', 'partSizeVar', 'Size variance')),
+  under('partShapeDrawer', percent('partTrail', 'partTrail', 'Trail', null, null, isStreak)),
 
   // Where the colour comes from, how far each particle wanders from it, how
-  // solid the layer is, and how it fades in from the centre.
-  choice('partColor', 'partColor', 'Colour', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR, 'Colour'),
-  percent('partHueVar', 'partHueVar', 'Hue variation', null, 'Colour'),
-  percent('partOpacity', 'partOpacity', 'Opacity', null, 'Colour'),
+  // solid the layer is, how it fades in from the centre, and how far it
+  // flickers with the strobe.
+  subDrawer('partColorDrawer', 'Color', 'particles', ['partColor', 'partOpacity']),
+  under('partColorDrawer', choice('partColor', 'partColor', 'Colour', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR)),
+  under('partColorDrawer', percent('partHueVar', 'partHueVar', 'Hue variation')),
+  under('partColorDrawer', percent('partOpacity', 'partOpacity', 'Opacity')),
   // How far out from the centre the particles take to come up to full
   // brightness, the tunnel rings' own 'Ring fade in' curve (core/fade.js),
   // so the two layers fade alike at the same setting. 0 is no fade at all.
-  percent('partFade', 'partFade', 'Center fade radius', null, 'Colour'),
+  under('partColorDrawer', percent('partFade', 'partFade', 'Center fade radius')),
+  // It defaults to 0, a steady layer of its own on top of the flicker, and
+  // the readout spells out what 0 means.
+  under('partColorDrawer', percent('partPulse', 'partPulse', 'Pulse with strobe',
+    S => S.partPulse === 0 ? 'never flickers' : Math.round(S.partPulse * 100) + '%')),
 
   // An optional fold of the whole particle field into wedges, like the
   // Kaleidoscope layer's own. The three rows under the switch only show
@@ -298,13 +318,6 @@ export const PARTICLE_CONTROLS = [
   under('partKaleido', direct('partFolds', 'partFolds', 'Symmetry', 1, S => S.partFolds + '-fold', 'Kaleidoscope', isFolded)),
   under('partKaleido', toggle('partMirror', 'partMirror', 'Mirror', DEF_MIRROR, 'Kaleidoscope', isFolded)),
   under('partKaleido', direct('partFoldSpin', 'partFoldSpin', 'Rotation', 0.01, signed('partFoldSpin'), 'Kaleidoscope', isFolded)),
-
-  // How far the particles flicker with the strobe. It defaults to 0, a
-  // steady layer of its own on top of the flicker, and the readout spells
-  // out what 0 means.
-  percent('partPulse', 'partPulse', 'Pulse with strobe',
-    S => S.partPulse === 0 ? 'never flickers' : Math.round(S.partPulse * 100) + '%',
-    'With the strobe'),
 
   // Pulse with the sequencer, behind its own switch: off, its five dials
   // hide and the particles ignore the sequencer. On, they follow the

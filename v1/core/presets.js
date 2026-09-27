@@ -135,12 +135,14 @@ export const PRESET_LIST = [
 // Every control a snapshot can move: sliders, segments, toggles and the
 // colour. Actions are left out because they do something rather than hold a
 // value, and the multi-select word themes because their set() toggles one
-// key rather than assigning. clickMode goes first, for the same reason it
+// key rather than assigning. A uiOnly control (a sub-drawer's open/close) is
+// how the drawer is arranged, not a setting, so a snapshot never moves it.
+// clickMode goes first, for the same reason it
 // does in applyPreset above: the five shared pip controls address the click
 // or the chirp by S.clickMode, so the voice has to be settled before them.
 const REPLAY = CONTROLS.filter(c =>
   (c.kind === 'slider' || c.kind === 'segment' || c.kind === 'toggle' || c.kind === 'color') &&
-  !c.multi && c.get && c.set);
+  !c.multi && !c.uiOnly && c.get && c.set);
 REPLAY.sort((a, b) => (b.id === 'clickMode') - (a.id === 'clickMode'));
 const before = new Array(REPLAY.length);
 
@@ -433,6 +435,15 @@ export function addUserPreset(name) {
   data.active = 'u:' + u.name;        // it holds the settings on screen now
   persist();
   return row.length - 1;
+}
+
+// Renames the preset at row index i, whichever kind it is allowed on: only
+// the viewer's own presets have editable names, so a built-in returns false.
+export function renamePresetAt(i, name) {
+  ensureLoaded();
+  const e = row[i];
+  if (!e || !e.u) return false;
+  return renameUserPreset(data.user.indexOf(e.u), name);
 }
 
 // Renames one of the viewer's presets (userIndex counts from the first of
