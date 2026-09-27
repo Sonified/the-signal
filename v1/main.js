@@ -35,6 +35,7 @@ import { createFlowers } from './gpu/flowers.js';
 import { createKaleido, setKaleidoYield } from './gpu/kaleido.js';
 import { createParticles } from './gpu/particles.js';
 import { createFireworks } from './gpu/fireworks.js';
+import { createConfetti } from './gpu/confetti.js';
 import { createWordCloud } from './gpu/word-cloud.js';
 import { createWordSmoke } from './gpu/word-smoke.js';
 import { createText } from './gpu/text-atlas.js';
@@ -140,6 +141,8 @@ async function boot() {
   engine.registerParticles(createParticles(device, format, platform));
   // The fireworks; they build nothing until first switched on.
   engine.registerFireworks(createFireworks(device, format));
+  // The confetti; it too builds nothing until first switched on.
+  engine.registerConfetti(createConfetti(device, format));
   // The word's Cloud transition; it builds nothing until a word first clouds.
   engine.registerWordCloud(createWordCloud(device, format, text));
   // The Smoke transition: recorded dissolution, prepared offscreen, played

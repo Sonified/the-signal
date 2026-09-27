@@ -12,21 +12,22 @@ import { FLOWER_CONTROLS, FLOWER_SECTIONS } from './schema-flowers.js';
 import { KALEIDO_CONTROLS, KALEIDO_SECTIONS } from './schema-kaleido.js';
 import { PARTICLE_CONTROLS, PARTICLE_SECTIONS } from './schema-particles.js';
 import { FIREWORK_CONTROLS, FIREWORK_SECTIONS } from './schema-fireworks.js';
+import { CONFETTI_CONTROLS, CONFETTI_SECTIONS } from './schema-confetti.js';
 
 // Flowers go straight after the visual controls, so their lFlowers toggle
 // follows Field, Rings, Corners, Edge and Text within the Layers section, and
 // the kaleidoscope follows the flowers, so lKaleido comes right after it,
 // and the particles follow the kaleidoscope, so lParticles comes after that,
-// with the fireworks' lFireworks last.
-export const CONTROLS = [...VISUAL_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONTROLS, ...PARTICLE_CONTROLS, ...FIREWORK_CONTROLS, ...AUDIO_CONTROLS];
+// then the fireworks' lFireworks, with the confetti's lConfetti last.
+export const CONTROLS = [...VISUAL_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONTROLS, ...PARTICLE_CONTROLS, ...FIREWORK_CONTROLS, ...CONFETTI_CONTROLS, ...AUDIO_CONTROLS];
 
 // The Flowers section slots in after Edge, the Kaleidoscope section right
-// after it and the Particles section right after that, all before Text, the
-// order a screen that lists every section would show them in.
+// after it, then the Particles, Fireworks and Confetti sections, all before
+// Text, the order a screen that lists every section would show them in.
 const visualSections = VISUAL_SECTIONS.slice();
 {
   const at = visualSections.findIndex(s => s.id === 'edge');
-  visualSections.splice(at < 0 ? visualSections.length : at + 1, 0, ...FLOWER_SECTIONS, ...KALEIDO_SECTIONS, ...PARTICLE_SECTIONS, ...FIREWORK_SECTIONS);
+  visualSections.splice(at < 0 ? visualSections.length : at + 1, 0, ...FLOWER_SECTIONS, ...KALEIDO_SECTIONS, ...PARTICLE_SECTIONS, ...FIREWORK_SECTIONS, ...CONFETTI_SECTIONS);
 }
 export const SECTIONS = [...visualSections, ...AUDIO_SECTIONS];
 

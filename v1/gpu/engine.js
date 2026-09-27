@@ -381,7 +381,7 @@ export async function createEngine(platform, opts) {
     if (particles && particles.setTimestampWrites) particles.setTimestampWrites(undefined);
   }
 
-  let scene = null, uiRenderer = null, blur = null, flowers = null, kaleido = null, particles = null, fireworks = null, wordCloud = null, wordSmoke = null;
+  let scene = null, uiRenderer = null, blur = null, flowers = null, kaleido = null, particles = null, fireworks = null, confetti = null, wordCloud = null, wordSmoke = null;
   let deviceLost = false;
   const lostCbs = [];
 
@@ -400,7 +400,7 @@ export async function createEngine(platform, opts) {
     // What the last render() did, for the perf counters in main.js.
     lastDirect: false, lastCapture: false,
     gpu, gpuInfo,
-    start, render, registerScene, registerFlowers, registerKaleido, registerParticles, registerFireworks, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
+    start, render, registerScene, registerFlowers, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
     onGpuError: fn => { gpuErrorCbs.push(fn); },
     profileBegin, profileEnd
   };
@@ -416,6 +416,7 @@ export async function createEngine(platform, opts) {
     if (kaleido && kaleido.resize) kaleido.resize(pixelWidth, pixelHeight, dpr);
     if (particles && particles.resize) particles.resize(pixelWidth, pixelHeight, dpr);
     if (fireworks) fireworks.resize(pixelWidth, pixelHeight, dpr);
+    if (confetti) confetti.resize(pixelWidth, pixelHeight, dpr);
     if (wordCloud) wordCloud.resize(pixelWidth, pixelHeight, dpr);
     if (wordSmoke) wordSmoke.resize(pixelWidth, pixelHeight, dpr);
     if (uiRenderer && uiRenderer.resize) uiRenderer.resize(pixelWidth, pixelHeight, dpr);
@@ -455,6 +456,12 @@ export async function createEngine(platform, opts) {
     fireworks = f;
     if (pixelWidth) fireworks.resize(pixelWidth, pixelHeight, engine.dpr);
   }
+  // The confetti (v1/gpu/confetti.js) draws over the fireworks and under the
+  // edge: opaque paper laid over the light beneath it, one instanced draw.
+  function registerConfetti(c) {
+    confetti = c;
+    if (pixelWidth) confetti.resize(pixelWidth, pixelHeight, engine.dpr);
+  }
   // The word cloud (v1/gpu/word-cloud.js) draws straight after the word, in
   // whichever pass the word is in; its seed dispatch, on the frame a word
   // first clouds, is encoded before either route.
@@ -485,12 +492,13 @@ export async function createEngine(platform, opts) {
   // one call.
   function drawScene(pass) {
     if (!scene) return;
-    if ((flowers || kaleido || particles || fireworks) && scene.drawBack) {
+    if ((flowers || kaleido || particles || fireworks || confetti) && scene.drawBack) {
       scene.drawBack(pass);
       if (flowers) flowers.draw(pass);
       if (kaleido) kaleido.draw(pass);
       if (particles) particles.draw(pass);
       if (fireworks) fireworks.draw(pass);
+      if (confetti) confetti.draw(pass);
       scene.drawFront(pass);
     } else if (scene.draw) {
       scene.draw(pass);
@@ -521,6 +529,7 @@ export async function createEngine(platform, opts) {
     if (kaleido) kaleido.update(frameT, frameDt, lum);
     if (particles) particles.update(frameT, frameDt, lum);
     if (fireworks) fireworks.update(frameT, frameDt);
+    if (confetti) confetti.update(frameT, frameDt);
     if (wordCloud) wordCloud.update(frameT, frameDt);
     if (wordSmoke) wordSmoke.update(frameT, frameDt);
     if (args.sceneChanged) captureStale = true;
@@ -571,6 +580,7 @@ export async function createEngine(platform, opts) {
     // a frame the layer is off or has nothing to draw.
     if (kaleido && kaleido.encodeChamber) kaleido.encodeChamber(encoder);
     if (particles && particles.encode) particles.encode(encoder);
+    if (confetti && confetti.encode) confetti.encode(encoder);
     if (wordCloud) wordCloud.encode(encoder);
     if (wordSmoke) wordSmoke.encode(encoder);
 

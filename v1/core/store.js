@@ -51,6 +51,7 @@ import { initFlowerState, flowerStateOf, applyFlowerState } from './schema-flowe
 import { initKaleidoState, kaleidoStateOf, applyKaleidoState } from './schema-kaleido.js';
 import { initParticleState, particleStateOf, applyParticleState } from './schema-particles.js';
 import { initFireworkState, fireworkStateOf, applyFireworkState } from './schema-fireworks.js';
+import { initConfettiState, confettiStateOf, applyConfettiState } from './schema-confetti.js';
 import { FX_NAMES } from './word-fx.js';
 
 // State that exists only in v1, kept out of the shared STORE object. v0's
@@ -107,16 +108,18 @@ function buildSettings() {
     freq: S.freq, depth: S.depth, bright: S.bright, wave: S.wave, fieldShape: S.fieldShape,
     fieldFade: S.fieldFade, fieldSoft: S.fieldSoft,
     color: rgbHex(S.rgb),
-    ringSpeedMul: S.ringSpeedMul, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
+    ringSpeedMul: S.ringSpeedMul, ringRate: S.ringRate, ringOpacity: S.ringOpacity, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
     edgeDir: S.edgeDir, layers: sharedLayers(),
     textLinked: S.textLinked, textRateHz: S.textRateHz, textFreq: S.textFreq,
     textRandom: S.textRandom, textDwellMs: S.textDwellMs,
     textFadeInMs: S.textFadeInMs, textFadeOutMs: S.textFadeOutMs,
+    textAppearMode: S.textAppearMode, textAppearPerMin: S.textAppearPerMin,
     textFadeInVar: S.textFadeInVar, textFadeOutVar: S.textFadeOutVar,
     textSize: S.textSize, textThemes: S.textThemes, textMode: S.textMode, textLineWidth: S.textLineWidth,
     textSmartBreaks: S.textSmartBreaks,
-    textLinesTogether: S.textLinesTogether, textLinesTogetherOut: S.textLinesTogetherOut,
+    textLinesTogether: S.textLinesTogether, textLinesTogetherIn: S.textLinesTogetherIn, textLinesTogetherOut: S.textLinesTogetherOut,
+    textLinePause: S.textLinePause,
     textOpacity: S.textOpacity, textOpacityVar: S.textOpacityVar,
     textOpacityVarPeriod: S.textOpacityVarPeriod, textBrighten: S.textBrighten,
     textColorMode: S.textColorMode,
@@ -177,7 +180,7 @@ function buildSettings() {
 // keys and list them among its active layers.
 function sharedLayers() {
   const out = {};
-  for (const k in layers) if (k !== 'flowers' && k !== 'kaleido' && k !== 'particles' && k !== 'fireworks') out[k] = layers[k];
+  for (const k in layers) if (k !== 'flowers' && k !== 'kaleido' && k !== 'particles' && k !== 'fireworks' && k !== 'confetti') out[k] = layers[k];
   return out;
 }
 
@@ -275,7 +278,7 @@ function applyWordFxState(s, x) {
 }
 
 function buildExtra() {
-  return Object.assign(flowerStateOf(S), kaleidoStateOf(S), particleStateOf(S), fireworkStateOf(S), mixStateOf(S), seqStateOf(S),
+  return Object.assign(flowerStateOf(S), kaleidoStateOf(S), particleStateOf(S), fireworkStateOf(S), confettiStateOf(S), mixStateOf(S), seqStateOf(S),
                        wordFxStateOf(S));
 }
 
@@ -288,6 +291,7 @@ function applyExtra(x) {
   applyKaleidoState(S, x);
   applyParticleState(S, x);
   applyFireworkState(S, x);
+  applyConfettiState(S, x);
   applyMixState(S, x);
   applySeqState(S, x);
   applyWordFxState(S, x);
@@ -557,6 +561,7 @@ export function load() {
   initKaleidoState(S);
   initParticleState(S);
   initFireworkState(S);
+  initConfettiState(S);
   if (!storage) return;
   let s;
   try { s = JSON.parse(storage.get(STORE) || '{}'); } catch (e) { s = {}; }
@@ -587,6 +592,8 @@ function applySettings(s, live) {
   if (typeof s.bright === 'number') S.bright = s.bright;
   if (s.color) setColorFromPicker(s.color);
   if (typeof s.ringSpeedMul === 'number') S.ringSpeedMul = s.ringSpeedMul;
+  if (typeof s.ringRate === 'number') S.ringRate = Math.max(0.2, Math.min(20, s.ringRate));
+  if (typeof s.ringOpacity === 'number') S.ringOpacity = Math.max(0, Math.min(1, s.ringOpacity));
   if (typeof s.ringFade === 'number')     S.ringFade = s.ringFade;
   if (typeof s.fieldFade === 'number')    S.fieldFade = s.fieldFade;
   if (typeof s.fieldSoft === 'number')    S.fieldSoft = s.fieldSoft;
@@ -650,6 +657,8 @@ function applySettings(s, live) {
   if (typeof s.textFadeMs === 'number') { S.textFadeInMs = S.textFadeOutMs = s.textFadeMs; }
   if (typeof s.textFadeInMs === 'number')  S.textFadeInMs = s.textFadeInMs;
   if (typeof s.textFadeOutMs === 'number') S.textFadeOutMs = s.textFadeOutMs;
+  if (s.textAppearMode === 'frame' || s.textAppearMode === 'time') S.textAppearMode = s.textAppearMode;
+  if (typeof s.textAppearPerMin === 'number') S.textAppearPerMin = Math.max(1, Math.min(60, s.textAppearPerMin));
   for (const k of ['textFadeInVar', 'textFadeOutVar']) {
     if (typeof s[k] === 'number') S[k] = s[k];
   }
@@ -668,6 +677,8 @@ function applySettings(s, live) {
   if (typeof s.textSmartBreaks === 'boolean') S.textSmartBreaks = s.textSmartBreaks;
   if (typeof s.textLinesTogether === 'boolean') S.textLinesTogether = s.textLinesTogether;
   if (typeof s.textLinesTogetherOut === 'boolean') S.textLinesTogetherOut = s.textLinesTogetherOut;
+  if (typeof s.textLinesTogetherIn === 'boolean') S.textLinesTogetherIn = s.textLinesTogetherIn;
+  if (typeof s.textLinePause === 'number') S.textLinePause = Math.max(0, Math.min(1, s.textLinePause));
 
   // music and ambience
   if (typeof s.musicOn === 'boolean') S.musicOn = s.musicOn;
