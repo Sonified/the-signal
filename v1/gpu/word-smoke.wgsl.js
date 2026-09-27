@@ -42,7 +42,8 @@ struct U {
   m6: vec4f,   // word ink x0, x1 (css px), direction (+1 leave, -1 arrive), ease exponent
   m7: vec4f,   // Outward (radial vs swirl balance 0..1), Acceleration (wind-up 0..1), the ink's centre x, y (css px), where Outward pushes from
   m8: vec4f,   // radial equality 0..1 (whole-word drift removed as it rises); lines running
-               // separately: their count (1 = together) and spacing (css px); 0
+               // separately: their count (1 = together) and spacing (css px), and the
+               // rest between them as a share of a line's own window (word-fx linePause)
 };
 
 // three vec4s per letter, word-fx.js's wordLetters layout
@@ -183,10 +184,13 @@ fn simMain(@builtin(global_invocation_id) gid: vec3u) {
     var tL = t;
     var TT = P.m2.y;
     let nL = P.m8.y;
+    // The Line pause (m8.w) rests between windows: n windows and n - 1
+    // rests share the fade, the same sum as word-fx lineProgress.
     if (nL > 1.5) {
       let kL = clamp(round((pos.y - P.m7.w) / max(P.m8.z, 1.0) + (nL - 1.0) * 0.5), 0.0, nL - 1.0);
-      TT = P.m2.y / nL;
-      tL = t - kL * TT;
+      let gL = P.m8.w;
+      TT = P.m2.y / (nL + (nL - 1.0) * gL);
+      tL = t - kL * TT * (1.0 + gL);
     }
     // f is deliberately unclamped: the front keeps travelling past the ink
     // at the same pace instead of parking at the last letter — a parked
@@ -344,10 +348,12 @@ fn fsSmoke(in: VOut) -> @location(0) vec4f {
   // Lines running one after another: this pixel's line owns a compressed
   // share of the fade — the block arrives (and leaves) top line first. The
   // column sweep and the firmness below then read the line's own clock.
+  // The Line pause (m8.w) rests between lines, as word-fx lineProgress.
   let nLp = P.m8.y;
   if (nLp > 1.5) {
     let kL = clamp(round((in.world.y - P.m7.w) / max(P.m8.z, 1.0) + (nLp - 1.0) * 0.5), 0.0, nLp - 1.0);
-    pl = clamp(pl * nLp - kL, 0.0, 1.0);
+    let gL = P.m8.w;
+    pl = clamp(pl * (nLp + (nLp - 1.0) * gL) - kL * (1.0 + gL), 0.0, 1.0);
   }
   let sws = P.m5.z;
   if (sws > 0.0) {

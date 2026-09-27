@@ -65,10 +65,16 @@ export function seedTunnel(n) {
   for (let i = 0; i < n; i++) emitRing(Z_NEAR + Math.random() * (Z_FAR - Z_NEAR));
 }
 
+// Births accumulate against the Ring density dial (rings a second) rather
+// than riding the strobe's cycle wrap, which capped at one ring per flash
+// and quietly slowed with the frequency. A fresh ring starts at the far
+// plane, invisible under the centre fade, so off-beat births never show.
+let ringAcc = 0;
 export function updateRings(dt, t) {
-  if (S.running && S.phase < S.lastPhase && (t - S.lastRingEmit) > 0.19) {
-    emitRing();
-    S.lastRingEmit = t;
+  if (S.running) {
+    ringAcc += dt * Math.max(0, S.ringRate ?? 5);
+    if (ringAcc > 4) ringAcc = 4;   // a stall is not a burst
+    while (ringAcc >= 1) { ringAcc -= 1; emitRing(); }
   }
   if (!S.running) return;
   // compacted in place; filter() built a new array every frame

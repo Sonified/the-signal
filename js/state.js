@@ -61,6 +61,7 @@ export const S = {
   // Rings run the same variance amount and rate on their own accumulator, started
   // half a cycle out, so the centre and the tunnel breathe against each other
   // rather than dimming together.
+  ringOpacity: 1,             // v1: the ring layer's own level under the variance
   ringBrightVar: 0.55, ringBrightPeriod: 10, ringBrightPhase: 0.5, effRingBright: 0.70,
 
   // ---------- tunnel and edge ----------
@@ -75,6 +76,7 @@ export const S = {
   edgeSizeVar:  0.5, edgeSizeVarPeriod:  18, edgeSizeVarPhase:  0.37, effEdgeSize:  1,
 
   rings: [], particles: [], lastRingEmit: -1,
+  ringRate: 5,                // v1: rings born per second (Ring density)
 
   // ---------- color ----------
   // Hue wanders via a damped random walk on its velocity rather than on the hue
@@ -143,6 +145,8 @@ export const S = {
   textLinked: true, textRateHz: 2,
   textFreq: 0.5, textRandom: 1,
   textDwellMs: 80, textFadeInMs: 0, textFadeOutMs: 0, textSize: 35,
+  textAppearMode: 'frame',    // v1: 'frame' rolls per tick, 'time' holds words per minute
+  textAppearPerMin: 10,
   textFadeInVar: 0,           // v1: each word's fade-in rolls between (1-var)x and 1x the set time
   textFadeOutVar: 0,
   textOpacity: 0.95, textOpacityVar: 0.1, textOpacityVarPeriod: 20, textOpacityPhase: 0,
@@ -178,8 +182,10 @@ export const S = {
   textMode: 'words',          // 'words' shows the themed pool, 'affirmations' the phrases
   textLineWidth: 0.92,        // the wrap width, as a share of the view; phrases break to fit it
   textSmartBreaks: true,      // v1: a phrase with marked breaks (js/affirmations.js) takes a line per piece
+  textLinesTogetherIn: false,  // v1: the Fade in block's own switch, arrivals only
   textLinesTogetherOut: false, // v1: the Fade out block's own switch, departures only
   textLinesTogether: false,   // false: a block's lines transition one after another, top first
+  textLinePause: 0,           // v1: the rest between those lines, 0..1 of a line's own transition; 0 back to back
 
   // ---------- music ----------
   // A generative felt piano whose root sits two octaves under the 40 Hz carrier,

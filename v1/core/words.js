@@ -163,7 +163,17 @@ function pick() {
 // 1 exactly every 1/appearance ticks, dead regular; appearance variance blends
 // that certainty toward an independent coin flip of the same long-run rate.
 function fires() {
-  const f = S.textFreq;
+  // By frame: the slider is a chance per tick, so a faster strobe means more
+  // words. By time: the words-per-minute dial is converted to the same
+  // per-tick fraction against the live tick rate, so the pace holds at any
+  // frequency; the accumulator and variance below treat both alike.
+  let f;
+  if (S.textAppearMode === 'time') {
+    const tick = Math.max(0.1, S.textLinked ? S.effFreq : S.textRateHz);
+    f = Math.min(1, (S.textAppearPerMin || 10) / 60 / tick);
+  } else {
+    f = S.textFreq;
+  }
   if (f <= 0) return false;
   schedPhase += f;
   let det = 0;

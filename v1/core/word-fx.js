@@ -42,7 +42,24 @@ export const FX_NAMES = { fade: 'Fade', gather: 'Gather', wind: 'Wind', cloud: '
 // Whether a multi-line block's lines move as one rather than one after
 // another: Fade lines together does it both ways; the Fade out block's own
 // switch does it for departures alone.
-export function linesTogether(leaving) { return !!S.textLinesTogether || (leaving && !!S.textLinesTogetherOut); }
+export function linesTogether(leaving) {
+  return !!S.textLinesTogether || (leaving ? !!S.textLinesTogetherOut : !!S.textLinesTogetherIn);
+}
+
+// Line pause: the rest between one line finishing and the next beginning,
+// as a share of a line's own transition. The lines always ran back to back
+// (0, the default); 1 rests as long as a line takes. The transition keeps
+// the fade time, so a block of n lines divides it into n + (n - 1) g equal
+// units, line k starting k (1 + g) units in. At g = 0 that is prog n - k,
+// exactly the old clock. The letters here and the smoke's shaders (which
+// get g in a uniform) all run this one sum.
+export function linePause() {
+  const v = S.textLinePause;
+  return v > 0 ? (v < 1 ? v : 1) : 0;
+}
+export function lineProgress(prog, k, n, g) {
+  return clamp01(prog * (n + (n - 1) * g) - k * (1 + g));
+}
 
 export function fxv(name, leaving) { return leaving && !S.textFxMirror ? S[name + 'Out'] : S[name]; }
 
@@ -120,7 +137,7 @@ export function letterFx(i, n, relX, relY, wordW, size, out) {
   ord = clamp01(ord + (h3 - 0.5) * turb * 0.4);
 
   let prog = wordState.progress;
-  if (lineCtx.n > 1 && !linesTogether(leaving)) prog = clamp01(prog * lineCtx.n - lineCtx.k);
+  if (lineCtx.n > 1 && !linesTogether(leaving)) prog = lineProgress(prog, lineCtx.k, lineCtx.n, linePause());
   const st = Math.min(0.9, fxv('textFxStagger', leaving));
   const u = clamp01((prog - st * ord) / (1 - st));
   const k = 1 + 3 * fxv('textFxEase', leaving);

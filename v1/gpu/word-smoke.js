@@ -33,7 +33,7 @@
 
 import { S } from '../../js/state.js';
 import { PREP_WGSL, PLAY_WGSL, WIND_WGSL } from './word-smoke.wgsl.js';
-import { MAX_CLOUD_LETTERS, smokeState, fxv, linesTogether } from '../core/word-fx.js';
+import { MAX_CLOUD_LETTERS, smokeState, fxv, linesTogether, linePause } from '../core/word-fx.js';
 import { wordState, fadeOutMs } from '../core/words.js';
 import { W, TRACK } from '../ui/theme.js';
 
@@ -428,7 +428,7 @@ export function createWordSmoke(device, format, text) {
     uni[24] = live.wx0; uni[25] = live.wx1; uni[26] = 1; uni[27] = 0;
     uni[28] = live.radial; uni[29] = live.accel; uni[30] = live.icx; uni[31] = live.icy;
     const seqN = !linesTogether(true) && live.lines > 1 ? live.lines : 1;
-    uni[32] = live.eq; uni[33] = seqN; uni[34] = live.lineH; uni[35] = 0;
+    uni[32] = live.eq; uni[33] = seqN; uni[34] = live.lineH; uni[35] = seqN > 1 ? linePause() : 0;
   }
 
   // Try to begin recording `word` into `slot`: lay it out exactly as the
@@ -449,7 +449,6 @@ export function createWordSmoke(device, format, text) {
                            size, W.light, TRACK.word, layout, true)) laid = false;
     }
     if (!laid || !layout.count) return false;
-    r.lines = ph.lines.length; r.lineH = ph.lineH;
 
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     const L = layout.data;
@@ -472,6 +471,7 @@ export function createWordSmoke(device, format, text) {
 
     const r = rec[slot];
     r.text = word;
+    r.lines = ph.lines.length; r.lineH = ph.lineH;
     r.ready = false;
     smokeState.readyText = '';
     r.rx = Math.max(0, x0 - mx); r.rw = Math.min(cssW, x1 + mx) - r.rx;
@@ -615,7 +615,7 @@ export function createWordSmoke(device, format, text) {
       uni[20] = r.turb; uni[21] = r.seed; uni[22] = sws; uni[23] = 0;
       uni[24] = r.wx0 + ox; uni[25] = r.wx1 + ox; uni[26] = -1; uni[27] = k;
       uni[28] = r.radial; uni[29] = r.accel; uni[30] = r.icx + ox; uni[31] = r.icy + oy;
-      uni[32] = r.eq; uni[33] = seqN; uni[34] = r.lineH; uni[35] = 0;
+      uni[32] = r.eq; uni[33] = seqN; uni[34] = r.lineH; uni[35] = seqN > 1 ? linePause() : 0;
       device.queue.writeBuffer(compBuf, 0, uni);
       playing = true;
     }
@@ -641,7 +641,7 @@ export function createWordSmoke(device, format, text) {
       uni[20] = live.turb; uni[21] = live.seed; uni[22] = sws; uni[23] = 0;
       uni[24] = live.wx0 + ox; uni[25] = live.wx1 + ox; uni[26] = 1; uni[27] = k;
       uni[28] = live.radial; uni[29] = live.accel; uni[30] = live.icx + ox; uni[31] = live.icy + oy;
-      uni[32] = live.eq; uni[33] = seqN; uni[34] = live.lineH; uni[35] = 0;
+      uni[32] = live.eq; uni[33] = seqN; uni[34] = live.lineH; uni[35] = seqN > 1 ? linePause() : 0;
       device.queue.writeBuffer(liveCompBuf, 0, uni);
       playing = true;
     }

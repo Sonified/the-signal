@@ -287,9 +287,12 @@ export function stepStrobe(t) {
     ? S.edgeSize * (1 - S.edgeSizeVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.edgeSizeVarPhase)))
     : S.edgeSize;
 
+  // The Ring opacity dial scales the whole layer under the variance, so the
+  // dips breathe inside whatever level the viewer set.
+  const ringBase = S.bright * (S.ringOpacity ?? 1);
   S.effRingBright = S.ringBrightVar
-    ? S.bright * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase)))
-    : S.bright;
+    ? ringBase * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase)))
+    : ringBase;
 
   if (S.perElementColor && S.colorWalk > 0 && S.running) {
     for (let i = 0; i < 4; i++) {
@@ -312,7 +315,10 @@ export function stepStrobe(t) {
     // place, as v0's strobe worker does; nothing holds S.rgb by identity.
     hslInto(S.rgb, bandHue(S.hue), S.hueSat, S.hueLight);
   }
-  const lum = S.running ? shape(S.phase) : 0;
+  // Paused, the field holds steady and lit rather than fading to black, so
+  // pressing space shows the strobe layer at rest instead of hiding it. A
+  // steady level is perfectly balanced, so the panel guard reads it as safe.
+  const lum = S.running ? shape(S.phase) : 1;
   const lit = isLit(lum);
   if (S.running) pushWindow(S.litLog, lit ? 1 : 0, 120);
   lastDt = dt;
