@@ -50,6 +50,7 @@ const ROOM_MAX = 24;
 // list, a status, a watcher count), so it knows when to remeasure.
 let sessions = [];   // { name, room, active, sock, status:'off'|'wait'|'live'|'dead', watchers, label }
 let key = '';
+let linkTarget = 'live';
 let version = 0;
 let available = false;
 let bits = null, hooks = null;
@@ -67,6 +68,7 @@ function ensureLoaded() {
   try { raw = JSON.parse(readKey(REC_KEY) || 'null'); } catch (e) { raw = null; }
   if (!raw || typeof raw !== 'object') return;
   if (typeof raw.key === 'string') key = raw.key;
+  if (raw.linkTarget === 'local' || raw.linkTarget === 'live') linkTarget = raw.linkTarget;
   if (Array.isArray(raw.sessions)) {
     for (const s of raw.sessions) {
       if (!s || typeof s.name !== 'string' || typeof s.room !== 'string') continue;
@@ -78,7 +80,7 @@ function ensureLoaded() {
 
 function persist() {
   version++;
-  const out = { key, sessions: [] };
+  const out = { key, linkTarget, sessions: [] };
   for (const s of sessions) out.sessions.push({ name: s.name, room: s.room, active: s.active });
   saveKey(REC_KEY, out);
 }
@@ -285,6 +287,14 @@ export function broadcastStatus(i) { const s = sessions[i]; return s ? s.status 
 export function broadcastWatchLabel(i) { const s = sessions[i]; return s ? s.label : ''; }
 export function broadcastHasKey() { return !!key; }
 export function broadcastKey() { return key; }
+export function broadcastLinkTarget() { return linkTarget; }
+
+export function broadcastSetLinkTarget(target) {
+  const next = target === 'local' ? 'local' : 'live';
+  if (next === linkTarget) return;
+  linkTarget = next;
+  persist();
+}
 
 export function broadcastSetKey(k) {
   const clean = String(k || '').trim();
@@ -332,7 +342,7 @@ export function broadcastToggle(i) {
 // The viewer's link for row i, built on the click that asks for it.
 export function broadcastLink(i) {
   const s = sessions[i];
-  return s ? bits.followUrl(s.room) : '';
+  return s ? bits.followUrl(s.room, linkTarget) : '';
 }
 
 // Copies row i's link and says so.

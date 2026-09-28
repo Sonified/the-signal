@@ -27,6 +27,7 @@
 // The deployed relay's host, printed by `npx wrangler deploy` in
 // broadcast-worker/.
 const RELAY_HOST = 'the-signal-broadcast.robertalexander-music.workers.dev';
+const LIVE_PAGE = 'https://sonified.github.io/the-signal/v1/';
 
 const PING_MS = 20000;
 const RETRY_CAP_MS = 8000;
@@ -39,11 +40,20 @@ function relayHost() {
   return q.get('relay') || RELAY_HOST;
 }
 
-// The page URL a viewer opens to follow the room: this page, with the one
-// query parameter. Any parameters on the broadcaster's own URL (a key, a
-// relay override) stay out of what gets handed around.
-export function makeFollowUrl(room) {
-  return location.origin + location.pathname + '?follow=' + encodeURIComponent(room);
+// The page URL a viewer opens to follow the room. A broadcaster developing on
+// localhost can deliberately copy either the public GitHub Pages link or a
+// local test link. From the public page, Localhost falls back to the documented
+// development address because location itself is no longer local.
+export function makeFollowUrl(room, target = 'live') {
+  let page;
+  if (target === 'local') {
+    page = LOCAL_RE.test(location.host)
+      ? location.origin + location.pathname
+      : 'http://localhost:8000/v1/';
+  } else {
+    page = LIVE_PAGE;
+  }
+  return page + '?follow=' + encodeURIComponent(room);
 }
 
 // One socket to the relay, reconnecting until close() is called. handlers:

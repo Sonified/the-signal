@@ -23,7 +23,7 @@ import { makeTextState, TEXT_COMMIT, TEXT_CANCEL, touchAware } from '../widgets.
 import {
   broadcastAvailable, broadcastVersion, broadcastCount, broadcastName, broadcastActive, broadcastStatus,
   broadcastWatchLabel, broadcastToggle, broadcastAdd, broadcastRemove, broadcastCopyLink,
-  broadcastHasKey, broadcastSetKey
+  broadcastHasKey, broadcastSetKey, broadcastLinkTarget, broadcastSetLinkTarget
 } from '../../core/broadcast.js';
 import {
   journeyEditing, journeyOverridden, journeyClearOverride,
@@ -851,6 +851,7 @@ function addChip(ui, px, py) {
 const BC_ROW_H = 30, BC_SWITCH_W = 34;   // a toggle row's height and its switch's width (widgets.js toggle)
 const BC_PLUS = 9, BC_PLUS_GAP = 6;      // the + chip's plus, and the gap before its label
 const BC_ADD_LABEL = 'New session', BC_LINK_LABEL = 'Link', BC_KEY_LABEL = 'Key';
+const BC_LINK_TARGETS = ['Live page', 'Localhost'];
 const BC_KEY_MASK = '••••••••';          // the same eight dots whatever the key, so its length never shows
 const BC_KEY_UNSET = 'Not set';
 const TIP_BC_LINK = 'Copy the link a viewer opens to follow this session';
@@ -896,6 +897,10 @@ function statusColor(st) {
 
 function drawBroadcast(ui) {
   measureBroadcast(ui);
+  const target = broadcastLinkTarget() === 'local' ? 1 : 0;
+  const nextTarget = ui.select('drawer.bcLinkTarget', 'Link target', BC_LINK_TARGETS, target, '', false);
+  if (nextTarget !== target) broadcastSetLinkTarget(nextTarget === 1 ? 'local' : 'live');
+  ui.spacer(SPACE.sm);
   const n = broadcastCount();
   if (!n) bcEditing = false;
   // An × click is carried out after the rows, so this frame draws the list

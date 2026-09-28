@@ -28,6 +28,9 @@ of `v1/platform/broadcast-socket.js` and push the site.
   session shows how many viewers are watching. Every settings change you make
   (and run/stop) goes up as it happens. The URL form
   `?broadcast=<room>&key=<passphrase>` still works and seeds a session.
+- **Link target:** choose Live page to copy a public GitHub Pages URL, or
+  Localhost to copy a development URL. Live page is the default even when the
+  broadcaster is running locally.
 - **Everyone else:** open the link you copied (`?follow=<room>`) — their
   settings glide to yours, live, exactly as a preset recall does. They still
   press Space once themselves so the browser lets sound play.
