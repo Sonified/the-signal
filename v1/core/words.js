@@ -76,6 +76,20 @@ let rateAcc = 0;         // own-rate tick accumulator, unlinked mode
 let schedPhase = 0;      // deterministic slot accumulator
 let lastIdx = -1;
 let revealStart = -1;
+let goneAt = -1;         // ms timestamp the last word finished leaving (-1: none yet), for the Phrase gap
+
+// The Phrase gap (Custom only): a set number of seconds between one phrase
+// leaving and the next arriving, in place of the scheduler's roll and rests.
+// -1 when it is on Auto, or the source is not Custom, and the roll runs.
+function phraseGapMs() {
+  return S.textMode === 'custom' && S.textPhraseGap >= 0 ? S.textPhraseGap * 1000 : -1;
+}
+
+// Listeners for the moment a word (or phrase) appears: the journey's piano
+// trigger plays a gesture on it (core/journey.js). Fired once per word, on
+// the tick it is chosen, never per frame; the list is read in place.
+const appearCbs = [];
+export function onWordAppear(fn) { appearCbs.push(fn); }
 
 // Registers a callback for when the word list finishes loading. If it has
 // already loaded, the callback runs right away rather than being dropped;
@@ -112,9 +126,13 @@ export function initWords() {
 // themes happen to be switched off.
 export function rebuildWordPool() {
   // Affirmations are their own pool, whole phrases with no theme filter;
-  // the themes only carve up the individual-words pool.
+  // the themes only carve up the individual-words pool. Custom is the
+  // viewer's own phrases (or a journey step's), typed as one line with a
+  // '|' between them, each phrase a row of its own in the same shape.
   const on = S.textThemes;
-  pool = S.textMode === 'affirmations'
+  pool = S.textMode === 'custom'
+    ? customRows(S.textCustomText)
+    : S.textMode === 'affirmations'
     ? affirmations.slice()
     : (!on || !Object.keys(on).length)
     ? words.slice()
@@ -128,6 +146,28 @@ export function rebuildWordPool() {
   wordState.nextText = nextPick;
 }
 
+// The Custom source's phrases, split on '|', trimmed, empties dropped. A '/'
+// inside a phrase is a forced line break: its segments are trimmed, empties
+// dropped, and joined by '\n', which the text layout (gpu/text-atlas.js's
+// phrase) takes as a hard break before any wrapping of its own. So
+// "Welcome to / this experience | Breathe in" is two phrases, the first on
+// two lines. Runs only when the pool is rebuilt, never per frame.
+function customRows(str) {
+  const out = [];
+  if (typeof str !== 'string') return out;
+  const parts = str.split('|');
+  for (let i = 0; i < parts.length; i++) {
+    const segs = parts[i].split('/');
+    let p = '';
+    for (let j = 0; j < segs.length; j++) {
+      const s = segs[j].replace(/\s+/g, ' ').trim();
+      if (s) p = p ? p + '\n' + s : s;
+    }
+    if (p) out.push([p]);
+  }
+  return out;
+}
+
 export function poolSize() { return pool.length; }
 
 // The walk is a shuffled cycle, not independent rolls: the whole pool is
@@ -138,9 +178,14 @@ export function poolSize() { return pool.length; }
 let order = [];
 let orderAt = 0;
 
+// Custom phrases are the one exception: they were written as a sequence
+// (often a journey step's script), so they are dealt in the order typed,
+// every cycle, with no shuffle and no seam guard.
 function reshuffle(avoid) {
   order.length = pool.length;
   for (let i = 0; i < pool.length; i++) order[i] = i;
+  orderAt = 0;
+  if (S.textMode === 'custom') return;
   for (let i = order.length - 1; i > 0; i--) {
     const j = (Math.random() * (i + 1)) | 0;
     const t = order[i]; order[i] = order[j]; order[j] = t;
@@ -199,10 +244,51 @@ function hide() {
   wordState.peak = 0;
 }
 
+// A journey step (core/journey.js) wants its text on screen now rather than
+// on the scheduler's next roll. Any rest is waived. A word already up starts
+// leaving at once: it enters its fade-out at the opacity it already has, so
+// nothing pops, and the next word shows the moment it is gone. With the words
+// layer off or the session stopped the ask stands until the words run again.
+// lastT is the words' own clock, the t of the latest stepWords, since a call
+// can come from anywhere in the frame (the journey's step, the window's text
+// field) and this module keeps no other time.
+let forceNext = false, lastT = 0;
+export function wordNow() {
+  forceNext = true;
+  restUntil = 0;
+  if (!showing) return;
+  const fin = fadeInMs(), fout = fadeOutMs(), hold = Math.max(0, S.textDwellMs);
+  const age = lastT - shownAt;
+  if (age < fin + hold) {
+    const o = age < fin ? (fin > 0 ? age / fin : 1) : 1;
+    shownAt = lastT - (fin + hold + fout - o * fout);
+  }
+}
+
+// Puts the next word up at t: the body of the tick loop's show, shared with
+// the forced show above. Returns whether a word was there to show.
+function showWord(t) {
+  const w = nextPick || pick();
+  if (!w) return false;
+  current = w; shownAt = t; showing = true;
+  fadeInMul = fadeRoll(S.textFadeInVar);
+  fadeOutMul = fadeRoll(S.textFadeOutVar);
+  wordState.text = w;
+  wordState.visible = true;
+  wordState.seed = Math.random() * 1000;
+  nextPick = pick();
+  wordState.nextText = nextPick;
+  forceNext = false;
+  for (let k = 0; k < appearCbs.length; k++) appearCbs[k](w);
+  return true;
+}
+
 export function stepWords(t, dt) {
+  lastT = t;
   if (!S.layers.text || !S.running) {
     if (showing || wordState.opacity > 0) hide();
     rateAcc = 0;
+    goneAt = -1;   // a restart's first phrase comes on the next tick, not a gap after the last
     return;
   }
 
@@ -210,6 +296,11 @@ export function stepWords(t, dt) {
   // deterministic slot picks up where it left off instead of firing the
   // instant the pause ends.
   if (revealStart < 0) revealStart = t;
+
+  // A word asked for by wordNow shows on the first tick the screen is clear,
+  // whatever the roll would have said: the word it cut short has finished
+  // leaving (or there was none), and no rest is taken in between.
+  if (forceNext && !showing) { restUntil = 0; showWord(t); }
   const resting = t < restUntil;
 
   // Tick source. Linked to the strobe by default, so words land on the pulse
@@ -223,22 +314,19 @@ export function stepWords(t, dt) {
     if (ticks > 4) ticks = 4; // a long stall is not a burst
   }
 
-  for (let i = 0; i < ticks && !resting; i++) {
-    const want = fires();
-    // A word still on screen holds its slot. The next one waits for a later
-    // tick rather than cutting this one short, so nothing ever half-appears.
-    if (want && !showing) {
-      const w = nextPick || pick();
-      if (w) {
-        current = w; shownAt = t; showing = true;
-        fadeInMul = fadeRoll(S.textFadeInVar);
-        fadeOutMul = fadeRoll(S.textFadeOutVar);
-        wordState.text = w;
-        wordState.visible = true;
-        wordState.seed = Math.random() * 1000;
-        nextPick = pick();
-        wordState.nextText = nextPick;
-      }
+  // With a Phrase gap set, the roll and the rests are out of it: the next
+  // phrase arrives exactly the gap after the last one finished leaving (at
+  // 0, the frame after it has gone), and the first, with none gone before
+  // it, on the next tick. On Auto the roll decides, as it always has.
+  const gap = phraseGapMs();
+  if (gap >= 0) {
+    if (!showing && (goneAt < 0 ? ticks > 0 : t - goneAt >= gap)) showWord(t);
+  } else {
+    for (let i = 0; i < ticks && !resting; i++) {
+      const want = fires();
+      // A word still on screen holds its slot. The next one waits for a later
+      // tick rather than cutting this one short, so nothing ever half-appears.
+      if (want && !showing) showWord(t);
     }
   }
 
@@ -279,7 +367,11 @@ export function stepWords(t, dt) {
   const age = t - shownAt;
 
   let o;
-  if (age >= total) { hide(); maybeRest(t); return; }
+  // A word leaving because wordNow cut it short takes no rest after it: the
+  // word asked for is next, on the following tick. Nor does one under a
+  // Phrase gap, which counts from the moment the word was due to be gone
+  // rather than the frame that noticed, so the gap holds at any frame rate.
+  if (age >= total) { goneAt = shownAt + total; hide(); if (!forceNext && gap < 0) maybeRest(t); return; }
   else if (age < fin) { o = fin > 0 ? age / fin : 1; wordState.phase = 0; wordState.progress = o; }
   else if (age > fin + hold) {
     o = fout > 0 ? (total - age) / fout : 1;

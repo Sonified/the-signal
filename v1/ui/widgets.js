@@ -49,6 +49,34 @@
 // clamped, snapped to step and handed to set() like any drag. Only one
 // readout is open at a time.
 //
+//   ui.range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi01, disabled) -> changed (bool)
+//     A slider with two knobs about a centre mark, for how far below and how
+//     far above a setting something may go. Every value is a fraction of the
+//     whole track, as slider()'s are: zero01 is where 0 (the setting itself)
+//     sits, marked by a small tick, and the lo knob is kept to [0, zero01],
+//     the hi knob to [zero01, 1]. The fill runs from one knob to the other.
+//     A press goes to the knob on its own side of the centre, which is the
+//     nearer knob that can reach it (a knob never crosses 0), and at the
+//     centre itself to the nearer knob, the hi knob when they meet there.
+//     On a knob it drags from where it is, with Shift for fine control;
+//     anywhere else the knob jumps to the press, as slider()'s does, and a
+//     touch waits the same way to learn whether the finger meant to scroll.
+//     A double-click resets the knob it lands on to its default. Alt+wheel
+//     nudges the knob on the pointer's side one step, and with focus the
+//     arrow keys nudge the knob last taken (hi until one has been). The
+//     readout is display only. It returns true when a knob moved, with the
+//     new positions in ui.rangeLo and ui.rangeHi (fractions, as passed in),
+//     which knob in ui.rangeWhich (0 lo, 1 hi) and, as ui.sliderNudge does,
+//     ui.rangeNudge -1 or 1 when the move was a notch rather than a drag.
+//     A schema range (kind: 'range', through ui.control) carries min (<= 0),
+//     max (>= 0), step, defLo and defHi in its own units, and getLo(S),
+//     getHi(S), setLo(S, v), setHi(S, v) and format(S), never a get that
+//     returns a pair, so reading it every frame allocates nothing. The
+//     control snaps each knob to step within its own side, and a click on
+//     the label puts both knobs back to their defaults. It has no position
+//     of its own, so the audio link and preset replay, which diff and set
+//     positions, leave it out; its state travels in the saved record.
+//
 // A control with taper: 'log' maps its position logarithmically onto the
 // track (value01 = ln(pos/min) / ln(max/min)) so the low end gets the travel,
 // while positions, presets and saved settings stay in the control's own
@@ -71,7 +99,8 @@
 //                      // that widget's rect, shows after a 450 ms hover hold
 //   ui.tooltipAt(id, x, y, w, h, hovered, str)   // the same for an explicit
 //                      // rect; call every frame for that id, hovered or not
-//   ui.control(ctrl, S, shown) -> changed (bool)   // dispatch by ctrl.kind; see imgui.js's
+//   ui.control(ctrl, S, shown) -> changed (bool)   // dispatch by ctrl.kind (slider, segment,
+//                                            // toggle, action, range, color, text); see imgui.js's
 //                                            // header for why S is a second argument;
 //                                            // shown true skips ctrl.visible (already decided)
 //
@@ -105,8 +134,10 @@
 //     frame. Keys: printable characters, Backspace, Delete, Left and Right,
 //     Home and End (Up and Down do the same), Cmd or Ctrl+A to select all,
 //     Cmd+Left/Right and Cmd+Backspace as on the Mac. A click places the
-//     caret, a double-click selects all. The caret blinks off the clock, not
-//     a spring. Not supported: IME composition, paste, drag selection.
+//     caret, a double-click selects all. Cmd+V pastes, through the platform's
+//     paste event (code 'Paste', the text in `key`), each character through
+//     the same filter typing runs. The caret blinks off the clock, not
+//     a spring. Not supported: IME composition, drag selection.
 //     While a field holds focus ui.textEditing is true (see imgui.js), so the
 //     app can keep its global shortcuts off the keyboard.
 //
@@ -163,6 +194,13 @@ export function installWidgets(ui) {
   ui.sliderReadoutClicked = false;
   ui.sliderReadoutW = 0;       // width of the readout text, when clickable
   ui.sliderNudge = 0;         // -1 or 1 when the change came from Alt+wheel or an arrow key
+  // range()'s report, the same way: the knobs' new positions, which one
+  // moved, and whether it was a notch.
+  ui.range = range;
+  ui.rangeLo = 0;
+  ui.rangeHi = 0;
+  ui.rangeWhich = -1;
+  ui.rangeNudge = 0;
 }
 
 // ---------------- slider ----------------
@@ -183,7 +221,9 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout)
   ui.text.lineMetrics(TYPE.sm, ui._lm);
   const labelH = ui._lm.ascent + ui._lm.descent;
   const trackAreaH = touchAware(ui, 18);
-  const gap = SPACE.xxs + 2;
+  // 2 px tighter than it once was: the label sits close over its bar,
+  // and every row in every drawer gives that height back.
+  const gap = SPACE.xxs;
   ui.nextRect(labelH + gap + trackAreaH);
   const rx = ui.rx, ry = ui.ry, rw = ui.rw;
 
@@ -334,6 +374,190 @@ function labelHit(ui, nid, label, x, y, h, maxW, disabled) {
   ui.interact(combine2(nid, 16), x, y, w, h, !!disabled);
   if (ui.hover) ui.setCursorHint('pointer');
   if (ui.clicked) ui.labelClicked = true;
+}
+
+// ---------------- range ----------------
+
+// The knob a press or the wheel goes to: the one on the pointer's side of the
+// centre. A knob never crosses the centre, so this is the nearer knob that
+// can reach the pointer, and a press is never spent on one that cannot move
+// toward it. Exactly on the centre it goes to the nearer knob, which is the
+// hi knob when the two sit together there.
+function rangeKnob(px, rx, rw, lo01, hi01, zero01) {
+  const xz = rx + zero01 * rw;
+  if (px < xz) return 0;
+  if (px > xz) return 1;
+  return Math.abs(px - (rx + lo01 * rw)) < Math.abs(px - (rx + hi01 * rw)) ? 0 : 1;
+}
+
+// A knob's new place kept to its own side: lo in [0, zero01], hi in
+// [zero01, 1].
+function rangeSide(u, which, zero01) {
+  if (which === 0) return u < 0 ? 0 : u > zero01 ? zero01 : u;
+  return u < zero01 ? zero01 : u > 1 ? 1 : u;
+}
+
+// One knob drawn as slider()'s is, with its own hover and press amounts.
+function rangeKnobDraw(ui, x, cy, hoverA, pressA, disabled) {
+  const r = 5 + 3 * hoverA + 2 * pressA;
+  ui.dl.rect(x - r, cy - r, r * 2, r * 2, r, COLOR.accent, 0, null, disabled ? 0 : 8, 0.4 * pressA + 0.15);
+}
+
+// Per range, made once: how the current press is dragging (as sliderDrag's
+// mode), which knob it holds, and the knob last taken, for the arrow keys.
+const rangeDrag = new Map();
+
+function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi01, disabled) {
+  const ui = this;
+  const step = step01 === undefined ? 0.02 : step01;
+  const nid = ui.id(id);
+  const focused = disabled ? false : ui.registerFocusable(nid);
+
+  // The same rows and sizes as slider(), so a range sits in a column of
+  // sliders as one of them.
+  ui.text.lineMetrics(TYPE.sm, ui._lm);
+  const labelH = ui._lm.ascent + ui._lm.descent;
+  const trackAreaH = touchAware(ui, 18);
+  // 2 px tighter than it once was: the label sits close over its bar,
+  // and every row in every drawer gives that height back.
+  const gap = SPACE.xxs;
+  ui.nextRect(labelH + gap + trackAreaH);
+  const rx = ui.rx, ry = ui.ry, rw = ui.rw;
+  const trackY0 = ry + labelH + gap;
+  const trackCY = trackY0 + trackAreaH / 2;
+  const trackH = 3;
+
+  ui.rangeLo = lo01; ui.rangeHi = hi01; ui.rangeWhich = -1; ui.rangeNudge = 0;
+  // The label is the reset, as a slider's. The readout takes no clicks, so
+  // the label's hit may run up to half the line without meeting it.
+  labelHit(ui, nid, label, rx, ry - RO_PAD_Y, trackY0 - 1 - (ry - RO_PAD_Y), rw / 2, disabled);
+
+  // As a slider's, an indented row still takes presses from the column's
+  // left edge, which reads as the far end of the lo side.
+  ui.interact(nid, rx - ui.rIndent, trackY0, rw + ui.rIndent, trackAreaH, !!disabled);
+  const hover = ui.hover, dbl = ui.dbl, pressed = ui.pressed;
+  if (hover) ui.setCursorHint('ew-resize');
+  if (focused && ui.focusVisible) ui._focusRing(rx, trackY0, rw, trackAreaH, RADIUS.xs);
+
+  let lo = lo01, hi = hi01;
+  let st = null;
+  if (!disabled) {
+    st = rangeDrag.get(nid);
+    if (!st) { st = { mode: '', which: 1, last: 1, anchorX: 0, base: 0, wasPressed: false }; rangeDrag.set(nid, st); }
+
+    // The press follows slider()'s rules exactly, for the knob it took: on
+    // the knob it drags from where the knob was ('rel', Shift for a tenth
+    // of the travel), elsewhere the knob jumps to it ('abs'), and a touch
+    // waits ('pending') until it knows the finger is moving sideways or
+    // lifted as a tap. u is the knob's new place, NaN for no move.
+    const knobHitR = Math.max(10, trackAreaH / 2);
+    const mine = pressed && ui.activeId === nid;
+    let u = NaN;
+    if (mine && !st.wasPressed) {
+      st.anchorX = ui.pointerX;
+      st.which = rangeKnob(ui.pointerX, rx, rw, lo01, hi01, zero01);
+      st.last = st.which;
+      st.base = st.which === 0 ? lo01 : hi01;
+      if (ui.slopPending) {
+        st.mode = 'pending';
+      } else {
+        st.mode = Math.abs(st.anchorX - (rx + st.base * rw)) <= knobHitR ? 'rel' : 'abs';
+        if (st.mode === 'abs') u = (ui.pointerX - rx) / rw;
+      }
+    } else if (mine) {
+      if (st.mode === 'pending' && !ui.slopPending) {
+        st.mode = Math.abs(st.anchorX - (rx + st.base * rw)) <= knobHitR ? 'rel' : 'abs';
+      }
+      if (st.mode === 'abs') {
+        u = (ui.pointerX - rx) / rw;
+      } else {
+        const shiftHeld = ui.keyCount > 0 && anyShift(ui);
+        u = st.base + ((ui.pointerX - st.anchorX) / rw) * (shiftHeld ? 0.1 : 1);
+      }
+    } else if (ui.released && st.mode === 'pending') {
+      // a touch tap that never travelled: the knob jumps to it unless it was on the knob
+      if (Math.abs(st.anchorX - (rx + st.base * rw)) > knobHitR) u = (st.anchorX - rx) / rw;
+    }
+    if (u === u) {
+      if (st.which === 0) lo = rangeSide(u, 0, zero01); else hi = rangeSide(u, 1, zero01);
+      ui.rangeWhich = st.which;
+    }
+    if (!pressed) st.mode = '';
+    st.wasPressed = pressed;
+
+    // A double-click puts the knob it landed on back to its default.
+    if (dbl) {
+      if (st.which === 0) { if (defLo01 !== undefined) lo = rangeSide(defLo01, 0, zero01); }
+      else if (defHi01 !== undefined) hi = rangeSide(defHi01, 1, zero01);
+      ui.rangeWhich = st.which;
+    }
+
+    // Alt/Option + wheel nudges the knob on the pointer's side, as a
+    // slider's fine adjust does; plain wheel stays with the scroll.
+    if (hover && ui.wheelAlt && ui.wheelDY !== 0 && !ui._wheelConsumed) {
+      const k = rangeKnob(ui.pointerX, rx, rw, lo01, hi01, zero01);
+      ui.rangeNudge = ui.wheelDY > 0 ? -1 : 1;
+      if (k === 0) lo = rangeSide(lo01 + ui.rangeNudge * step, 0, zero01);
+      else hi = rangeSide(hi01 + ui.rangeNudge * step, 1, zero01);
+      ui.rangeWhich = k; st.last = k;
+      ui._wheelConsumed = true;
+      ui._unsettled = true;
+    }
+
+    // With focus the arrow keys nudge the knob last taken, Shift for a
+    // tenth of a step, as a slider's do.
+    if (focused) {
+      for (let i = 0; i < ui.keyCount; i++) {
+        if (!ui.keyIsDown(i)) continue;
+        const c = ui.keyCode(i), fine = ui.keyShift(i) ? 0.1 : 1;
+        let d = 0;
+        if (c === 'ArrowLeft' || c === 'ArrowDown') d = -1;
+        else if (c === 'ArrowRight' || c === 'ArrowUp') d = 1;
+        if (d === 0) continue;
+        if (st.last === 0) lo = rangeSide(lo01 + d * step * fine, 0, zero01);
+        else hi = rangeSide(hi01 + d * step * fine, 1, zero01);
+        ui.rangeNudge = d; ui.rangeWhich = st.last;
+      }
+    }
+  }
+
+  const changed = !disabled && (lo !== lo01 || hi !== hi01);
+  ui.rangeLo = lo; ui.rangeHi = hi;
+
+  // ---- draw ----
+  const baseline1 = ry + ui._lm.ascent;
+  ui.text.draw(ui.dl, label, rx, baseline1, TYPE.sm, W.regular, disabled ? COLOR.inkFaint : COLOR.inkDim, 0, TRACK.ui, 1);
+  if (formatted) {
+    ui.text.draw(ui.dl, formatted, rx + rw, baseline1, TYPE.sm, W.regular, disabled ? COLOR.inkDim : COLOR.ink, 2, TRACK.tight, 1);
+  }
+
+  ui.dl.rect(rx, trackCY - trackH / 2, rw, trackH, trackH / 2, COLOR.well, 0, null, 0, 0);
+  const xl = rx + lo * rw, xh = rx + hi * rw, xz = rx + zero01 * rw;
+  // The fill between the knobs, left out while they are too close for it to
+  // show past them (a closed range is the tick alone).
+  if (xh - xl >= trackH) {
+    ui.dl.rect(xl, trackCY - trackH / 2, xh - xl, trackH, trackH / 2, COLOR.accent, 0, null, disabled ? 0 : 6, 0.35);
+  }
+  // The centre mark, over the fill and under the knobs: 0, the setting itself.
+  ui.dl.rect(xz - 0.75, trackCY - 5, 1.5, 10, 0.75, disabled ? COLOR.inkFaint : COLOR.inkDim, 0, null, 0, 0);
+
+  // The knob in hand, or under the pointer, grows as a slider's does, and is
+  // drawn last so it sits over the other where the two meet at the centre.
+  const hotK = disabled ? -1 : pressed ? st.which : hover ? rangeKnob(ui.pointerX, rx, rw, lo, hi, zero01) : -1;
+  const pLo = disabled ? 0 : ui.spring(combine2(nid, 20), pressed && hotK === 0 ? 1 : 0, MOTION.press);
+  const hLo = disabled ? 0 : ui.spring(combine2(nid, 21), hotK === 0 ? 1 : 0, MOTION.hover);
+  const pHi = disabled ? 0 : ui.spring(combine2(nid, 22), pressed && hotK === 1 ? 1 : 0, MOTION.press);
+  const hHi = disabled ? 0 : ui.spring(combine2(nid, 23), hotK === 1 ? 1 : 0, MOTION.hover);
+  if (hotK === 0) {
+    rangeKnobDraw(ui, xh, trackCY, hHi, pHi, disabled);
+    rangeKnobDraw(ui, xl, trackCY, hLo, pLo, disabled);
+  } else {
+    rangeKnobDraw(ui, xl, trackCY, hLo, pLo, disabled);
+    rangeKnobDraw(ui, xh, trackCY, hHi, pHi, disabled);
+  }
+
+  ui._lastId = nid; ui._lastX = rx; ui._lastY = ry; ui._lastW = rw; ui._lastH = labelH + gap + trackAreaH; ui._lastHover = hover;
+  return changed;
 }
 
 // ---------------- segment ----------------
@@ -507,7 +731,9 @@ function select(id, label, labels, index, readout, disabled) {
 
   ui.text.lineMetrics(TYPE.sm, ui._lm);
   const labelH = ui._lm.ascent + ui._lm.descent;
-  const gap = SPACE.xxs + 2;
+  // 2 px tighter than it once was: the label sits close over its bar,
+  // and every row in every drawer gives that height back.
+  const gap = SPACE.xxs;
   const boxH = touchAware(ui, SEG_H), rowH = touchAware(ui, SELECT_ROW_H);
   const totalH = labelH + gap + boxH;
   ui.nextRect(totalH);
@@ -703,14 +929,17 @@ function tooltip(str) {
 // toolkit widgets (the drawer's preset chips) or whose tip has to be drawn
 // later than the item itself, outside a clip that would cut it. Call it every
 // frame for the same id, hovered or not, so the fade out can play.
-function tooltipAt(id, x, y, w0, h0, hovered, str) {
+function tooltipAt(id, x, y, w0, h0, hovered, str, instant) {
   const ui = this;
   if (hovered) {
     if (ui._tipId !== id) { ui._tipId = id; ui._tipStart = ui.t; }
   } else if (ui._tipId === id) {
     ui._tipId = -1;
   }
-  const want = (ui._tipId === id && (ui.t - ui._tipStart) > TOOLTIP_DELAY_MS) ? 1 : 0;
+  // A tip marked instant (a schema row's `tip`) shows the moment the row
+  // is hovered; the chips keep the usual pause so mousing across a strip
+  // of them does not flash a tip per chip.
+  const want = (ui._tipId === id && (instant || (ui.t - ui._tipStart) > TOOLTIP_DELAY_MS)) ? 1 : 0;
   const op = ui.spring(combine2(id, 55), want, MOTION.fade);
   if (op < 0.01) return;
 
@@ -815,7 +1044,7 @@ function finishText(ui, st, nid, status) {
   return status;
 }
 
-function textField(id, x, y, w, h, st, size, align) {
+function textField(id, x, y, w, h, st, size, align, radius) {
   const ui = this;
   if (!st.active) return TEXT_IDLE;
   const nid = ui.id(id);
@@ -861,6 +1090,22 @@ function textField(id, x, y, w, h, st, size, align) {
     const key = ui.keyKey(i), code = ui.keyCode(i);
     const cmd = ui.keyMeta(i) || ui.keyCtrl(i);
     const len = st.text.length;
+    // A paste arrives as one event, its whole text in `key` (the platform's
+    // paste listener), taken before anything could read that text as a key
+    // name. Each character goes through insertChar, so the numeric filter
+    // and maxLen hold for pasted text exactly as for typed; control
+    // characters (a newline in a copied line) are dropped.
+    if (code === 'Paste') {
+      let took = false;
+      for (let k = 0; k < key.length; k++) {
+        const ch = key.charAt(k);
+        if (ch >= ' ') took = insertChar(st, ch) || took;
+      }
+      if (!took) continue;
+      st.dirty = true;
+      st.blinkT0 = ui.t;
+      continue;
+    }
     if (key === 'Enter') return finishText(ui, st, nid, TEXT_COMMIT);
     if (key === 'Escape') return finishText(ui, st, nid, TEXT_CANCEL);
     if (key === 'Backspace') {
@@ -901,7 +1146,7 @@ function textField(id, x, y, w, h, st, size, align) {
 
   // ---- draw ----
   const ox = textOriginX(st, x, w, pad, avail, align);
-  ui.dl.rect(x, y, w, h, RADIUS.pill, COLOR.wellHi, 1, COLOR.accent, 0, 0);
+  ui.dl.rect(x, y, w, h, radius === undefined ? RADIUS.pill : radius, COLOR.wellHi, 1, COLOR.accent, 0, 0);
   const baseline = centerBaseline(ui, y, h, sz);
   const asc = ui._lm.ascent, desc = ui._lm.descent;
   ui.dl.pushClip(x + pad / 2, y, w - pad, h);
@@ -1077,7 +1322,11 @@ function unitToPos(ctrl, u, log) {
 // which then lands in state and saved settings, so the result is also
 // rounded to the step's own count of decimals.
 function snapPos(ctrl, v) {
-  const lo = ctrl.min, hi = ctrl.max, step = ctrl.step;
+  return snapStep(v, ctrl.min, ctrl.max, ctrl.step);
+}
+// The same for any bounds, so a range's knobs each snap within their own
+// side: lo within [min, 0], hi within [0, max].
+function snapStep(v, lo, hi, step) {
   if (v < lo) v = lo; else if (v > hi) v = hi;
   if (step) {
     let p = 1;
@@ -1135,6 +1384,113 @@ function commitReadout(ctrl, S, text) {
   if (pos === ctrl.get(S)) return false;
   ctrl.set(S, pos);
   return true;
+}
+
+// A schema range (see the header): both knobs read through getLo and getHi,
+// the readout rebuilt only when either has moved, each knob's new place
+// snapped to step within its own side and written through its own setter,
+// and a label click putting both back to their defaults. The readout is
+// display only, so there is no typed edit to open.
+const rangeCache = new Map();   // ctrl.id -> { lo, hi, text }
+function rangeControl(ui, ctrl, S, enabled) {
+  let cache = rangeCache.get(ctrl.id);
+  if (!cache) { cache = { lo: NaN, hi: NaN, text: '' }; rangeCache.set(ctrl.id, cache); }
+  const lo = ctrl.getLo(S), hi = ctrl.getHi(S);
+  if (lo !== cache.lo || hi !== cache.hi) {
+    cache.lo = lo; cache.hi = hi;
+    cache.text = ctrl.format ? ctrl.format(S) : lo + ' / ' + hi;
+  }
+  const min = ctrl.min < 0 ? ctrl.min : 0, max = ctrl.max > 0 ? ctrl.max : 0;
+  const span = (max - min) || 1, step = ctrl.step || 0;
+  const defLo = ctrl.defLo !== undefined ? ctrl.defLo : 0, defHi = ctrl.defHi !== undefined ? ctrl.defHi : 0;
+  let changed = false;
+  if (ui.range(ctrl.id, ctrl.label, (lo - min) / span, (hi - min) / span, -min / span, cache.text,
+               step ? step / span : 0.02, (defLo - min) / span, (defHi - min) / span, !enabled)) {
+    // Only the knob that moved is written, so the other is never nudged by
+    // the trip through fractions.
+    let nLo = ui.rangeWhich === 0 ? snapStep(min + ui.rangeLo * span, min, 0, step) : lo;
+    let nHi = ui.rangeWhich === 1 ? snapStep(min + ui.rangeHi * span, 0, max, step) : hi;
+    // A notch smaller than a step (Shift with an arrow key) would snap
+    // straight back, so it moves one whole step, as a slider's does.
+    if (ui.rangeNudge !== 0 && step) {
+      if (ui.rangeWhich === 0 && nLo === lo) nLo = snapStep(lo + ui.rangeNudge * step, min, 0, step);
+      if (ui.rangeWhich === 1 && nHi === hi) nHi = snapStep(hi + ui.rangeNudge * step, 0, max, step);
+    }
+    if (nLo !== lo) { ctrl.setLo(S, nLo); changed = true; }
+    if (nHi !== hi) { ctrl.setHi(S, nHi); changed = true; }
+  }
+  if (ui.labelClicked && enabled) {
+    if (ctrl.getLo(S) !== defLo) { ctrl.setLo(S, defLo); changed = true; }
+    if (ctrl.getHi(S) !== defHi) { ctrl.setHi(S, defHi); changed = true; }
+  }
+  // Handled here; the shared reset after the switch keys off a single def.
+  ui.labelClicked = false;
+  return changed;
+}
+
+// A schema text row (kind: 'text'; the Custom source's phrases): its label on
+// the first line, as a dropdown's is, and under it a full-width pill holding
+// the value, or the control's placeholder dim while it is empty, cut to the
+// pill so a long line never spills. A click opens a ui.textField in the same
+// pill, seeded with the value; Enter or a press elsewhere commits it, trimmed,
+// through set(), and Escape leaves the value as it was. Only one field is
+// typed in at a time, so every text row shares the one state below, tagged
+// with the row that opened it (by scoped id), the way the typed readouts do.
+// The control may carry placeholder and maxLen; its label is no reset, since
+// a stray click there would throw away a paragraph of typing.
+const txt = { st: makeTextState(400), nid: -1 };
+const TEXT_PAD = 10;
+function textControl(ui, ctrl, S, enabled) {
+  const nid = ui.id(ctrl.id);
+  ui.text.lineMetrics(TYPE.sm, ui._lm);
+  const labelH = ui._lm.ascent + ui._lm.descent;
+  // 2 px tighter than it once was: the label sits close over its bar,
+  // and every row in every drawer gives that height back.
+  const gap = SPACE.xxs;
+  const boxH = touchAware(ui, SEG_H);
+  const totalH = labelH + gap + boxH;
+  ui.nextRect(totalH);
+  const rx = ui.rx, ry = ui.ry, rw = ui.rw, by = ry + labelH + gap;
+  ui.text.draw(ui.dl, ctrl.label, rx, ry + ui._lm.ascent, TYPE.sm, W.regular,
+    enabled ? COLOR.inkDim : COLOR.inkFaint, 0, TRACK.ui, 1);
+
+  let changed = false;
+  let editing = txt.st.active && txt.nid === nid;
+  if (editing && !enabled) {
+    txt.st.active = false; txt.nid = -1; editing = false;
+    if (ui.focusId === ui.id('text.edit')) ui.focusId = -1;
+  }
+  if (editing) {
+    const status = ui.textField('text.edit', rx, by, rw, boxH, txt.st, TYPE.sm, 0);
+    if (status === TEXT_COMMIT) {
+      const v = txt.st.text.trim();
+      if (v !== ctrl.get(S)) { ctrl.set(S, v); changed = true; }
+    }
+    if (status !== TEXT_EDITING) { txt.nid = -1; editing = false; }
+  }
+  let hover = false;
+  if (!editing) {
+    ui.interact(nid, rx, by, rw, boxH, !enabled);
+    hover = ui.hover;
+    if (hover) ui.setCursorHint('text');
+    const clicked = ui.clicked;
+    const hv = ui.spring(combine2(nid, 1), hover ? 1 : 0, MOTION.hover);
+    ui.dl.rect(rx, by, rw, boxH, RADIUS.pill, COLOR.well, 1, hv > 0.5 ? COLOR.lineStrong : COLOR.line, 0, 0);
+    const v = ctrl.get(S);
+    const base = centerBaseline(ui, by, boxH, TYPE.sm);
+    ui.dl.pushClip(rx + TEXT_PAD / 2, by, rw - TEXT_PAD, boxH);
+    if (v) ui.text.draw(ui.dl, v, rx + TEXT_PAD, base, TYPE.sm, W.regular, enabled ? COLOR.ink : COLOR.inkDim, 0, TRACK.tight, 1);
+    else if (ctrl.placeholder) ui.text.draw(ui.dl, ctrl.placeholder, rx + TEXT_PAD, base, TYPE.sm, W.regular, COLOR.inkFaint, 0, TRACK.tight, 1);
+    ui.dl.popClip();
+    if (clicked && enabled) {
+      txt.nid = nid;
+      txt.st.maxLen = ctrl.maxLen || 400;
+      txt.st.placeholder = ctrl.placeholder || '';
+      ui.textBegin(txt.st, v, false, false);
+    }
+  }
+  ui._lastId = nid; ui._lastX = rx; ui._lastY = ry; ui._lastW = rw; ui._lastH = totalH; ui._lastHover = hover;
+  return changed;
 }
 
 // shown: the caller has already settled that the row shows (the drawer
@@ -1223,11 +1579,17 @@ function control(ctrl, S, shown) {
       if (clicked) { runAction(ctrl, S); actionLabel(ui, ctrl, S, true); changed = true; }
       break;
     }
+    case 'range':
+      changed = rangeControl(ui, ctrl, S, enabled);
+      break;
     case 'segment-multi':
       changed = multiChips(ui, ctrl, S, enabled);
       break;
     case 'color':
       changed = swatches(ui, ctrl, S, enabled);
+      break;
+    case 'text':
+      changed = textControl(ui, ctrl, S, enabled);
       break;
   }
   if (ui.labelClicked && enabled && ctrl.def !== undefined && ctrl.get(S) !== ctrl.def) {

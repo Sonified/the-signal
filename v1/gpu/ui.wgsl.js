@@ -139,6 +139,17 @@ fn sdArc(pIn: vec2f, sc: vec2f, ra: f32, rb: f32) -> f32 {
   return d - rb;
 }
 
+// A quarter circle of radius r about c, the quarter lying toward q (each
+// component +1 or -1): the ring's distance inside that quadrant, the nearer
+// end's beyond it.
+fn sdQuarter(p: vec2f, c: vec2f, r: f32, q: vec2f) -> f32 {
+  let v = (p - c) * q;
+  if (v.x >= 0.0 && v.y >= 0.0) {
+    return abs(length(v) - r);
+  }
+  return min(length(v - vec2f(r, 0.0)), length(v - vec2f(0.0, r)));
+}
+
 fn rotate2(p: vec2f, a: f32) -> vec2f {
   let c = cos(a);
   let s = sin(a);
@@ -446,6 +457,22 @@ fn iconSDF(id: i32, pIn: vec2f, strokeQ: f32) -> f32 {
           d = min(d, length(p - pt(cx, cy)) - r);
         }
       }
+      return d;
+    }
+    case 17: { // LOOP: two runs chasing round a rounded box, arrowheads at their ends
+      var d = 1e5;
+      // the top run, bending down at its left end, its arrow pointing right
+      d = min(d, sdSegment(p, pt(4.0, 11.0), pt(4.0, 9.0)) - hs);
+      d = min(d, sdQuarter(p, pt(8.0, 9.0), 4.0 / 24.0, vec2f(-1.0, -1.0)) - hs);
+      d = min(d, sdSegment(p, pt(8.0, 5.0), pt(20.0, 5.0)) - hs);
+      d = min(d, sdSegment(p, pt(17.0, 2.0), pt(20.0, 5.0)) - hs);
+      d = min(d, sdSegment(p, pt(20.0, 5.0), pt(17.0, 8.0)) - hs);
+      // the bottom run, bending up at its right end, its arrow pointing left
+      d = min(d, sdSegment(p, pt(20.0, 13.0), pt(20.0, 15.0)) - hs);
+      d = min(d, sdQuarter(p, pt(16.0, 15.0), 4.0 / 24.0, vec2f(1.0, 1.0)) - hs);
+      d = min(d, sdSegment(p, pt(16.0, 19.0), pt(4.0, 19.0)) - hs);
+      d = min(d, sdSegment(p, pt(7.0, 16.0), pt(4.0, 19.0)) - hs);
+      d = min(d, sdSegment(p, pt(4.0, 19.0), pt(7.0, 22.0)) - hs);
       return d;
     }
     default: {

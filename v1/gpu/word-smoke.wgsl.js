@@ -29,6 +29,12 @@
 // wave crosses in wall-clock fade time under live settings, and the same
 // delay pattern makes arrivals assemble left to right when reversed.
 
+// The smoke's letter buffer, in letters. Larger than a word ever needs
+// (core/word-fx.js MAX_CLOUD_LETTERS) because the resting screen's hint, all
+// three of its lines, leaves through the live field too (core/word-fx.js
+// smokeHint is sized to match).
+export const SMOKE_LETTERS = 128;
+
 const COMMON = /* wgsl */ `
 struct U {
   m0: vec4f,   // region x, y, w, h (css px)
@@ -42,12 +48,13 @@ struct U {
   m6: vec4f,   // word ink x0, x1 (css px), direction (+1 leave, -1 arrive), ease exponent
   m7: vec4f,   // Outward (radial vs swirl balance 0..1), Acceleration (wind-up 0..1), the ink's centre x, y (css px), where Outward pushes from
   m8: vec4f,   // radial equality 0..1 (whole-word drift removed as it rises); lines running
-               // separately: their count (1 = together) and spacing (css px), and the
-               // rest between them as a share of a line's own window (word-fx linePause)
+               // separately: their count (1 = together) and spacing (css px), and how
+               // many line windows apart their starts sit (word-fx lineStep)
+  m9: vec4f,   // playback: the second ink's rgb (the hint's sub-lines), unused w
 };
 
 // three vec4s per letter, word-fx.js's wordLetters layout
-struct Letters { v: array<vec4f, 216> };
+struct Letters { v: array<vec4f, ${SMOKE_LETTERS * 3}> };
 
 const ATLAS = 2048.0;
 const SDF_RANGE = 6.0;
@@ -115,6 +122,10 @@ export const PREP_WGSL = COMMON + /* wgsl */ `
 // The word as density: soft coverage from the glyph SDFs, a touch over one
 // texel of anti-aliasing so thin strokes and letter counters survive the
 // advection instead of aliasing away.
+// Alpha carries the share of that density drawn in the second ink (a
+// letter's slot 9, 0 for every word, 1 for the hint's sub-lines), stored
+// premultiplied by the density so the two ride the physics together and
+// their ratio stays the ink wherever the vapour goes.
 @compute @workgroup_size(8, 8)
 fn rasterMain(@builtin(global_invocation_id) gid: vec3u) {
   let texel = 1.0 / P.m1.xy;
@@ -124,6 +135,7 @@ fn rasterMain(@builtin(global_invocation_id) gid: vec3u) {
   let texelCss = P.m0.z * P.m1.x;
 
   var cov = 0.0;
+  var ink = 0.0;
   let n = i32(P.m4.w);
   for (var j = 0; j < n; j++) {
     let A = LT.v[j * 3];
@@ -133,11 +145,12 @@ fn rasterMain(@builtin(global_invocation_id) gid: vec3u) {
     let auv = mix(B.xy, B.zw, local * 0.5 + vec2f(0.5));
     let s = textureSampleLevel(atlas, samp, auv, 0.0).r;
     let distCss = (s - 0.5) * 2.0 * SDF_RANGE * (2.0 * A.z) / max((B.z - B.x) * ATLAS, 0.001);
-    cov = max(cov, smoothstep(-0.7 * texelCss, 0.7 * texelCss, distCss));
+    let c = smoothstep(-0.7 * texelCss, 0.7 * texelCss, distCss);
+    if (c > cov) { cov = c; ink = LT.v[j * 3 + 2].y; }
   }
   // g, b: this spot's own coordinates, carried with the material from here
   let o = (pos - P.m7.zw) / max(P.m2.x, 1.0);
-  textureStore(next, vec2i(gid.xy), vec4f(cov, o.x, o.y, 0.0));
+  textureStore(next, vec2i(gid.xy), vec4f(cov, o.x, o.y, cov * ink));
 }
 
 // One fixed step of the dissolution: midpoint-backtraced advection through
@@ -184,13 +197,13 @@ fn simMain(@builtin(global_invocation_id) gid: vec3u) {
     var tL = t;
     var TT = P.m2.y;
     let nL = P.m8.y;
-    // The Line pause (m8.w) rests between windows: n windows and n - 1
-    // rests share the fade, the same sum as word-fx lineProgress.
+    // Line starts sit m8.w windows apart (Line pause, word-fx lineStep), so
+    // n lines span 1 + (n - 1) m8.w windows of the fade.
     if (nL > 1.5) {
       let kL = clamp(round((pos.y - P.m7.w) / max(P.m8.z, 1.0) + (nL - 1.0) * 0.5), 0.0, nL - 1.0);
-      let gL = P.m8.w;
-      TT = P.m2.y / (nL + (nL - 1.0) * gL);
-      tL = t - kL * TT * (1.0 + gL);
+      let aL = P.m8.w;
+      TT = P.m2.y / (1.0 + (nL - 1.0) * aL);
+      tL = t - kL * aL * TT;
     }
     // f is deliberately unclamped: the front keeps travelling past the ink
     // at the same pace instead of parking at the last letter — a parked
@@ -227,15 +240,19 @@ fn simMain(@builtin(global_invocation_id) gid: vec3u) {
   let fromUv = uv - (v2 * dt) / P.m0.zw;
   let src = textureSampleLevel(prev, samp, fromUv, 0.0);
   var d = src.r;
+  var inkD = src.a;   // the second ink's share, premultiplied (see rasterMain)
 
   // diffusion: a light pull toward the neighbourhood mean, the difference
-  // between filaments that soften as they stretch and edges that crumble
+  // between filaments that soften as they stretch and edges that crumble.
+  // The ink share diffuses with the density, so their ratio holds.
   let e = P.m1.xy;
-  let avg = 0.25 * (textureSampleLevel(prev, samp, fromUv + vec2f(e.x, 0.0), 0.0).r
-                  + textureSampleLevel(prev, samp, fromUv - vec2f(e.x, 0.0), 0.0).r
-                  + textureSampleLevel(prev, samp, fromUv + vec2f(0.0, e.y), 0.0).r
-                  + textureSampleLevel(prev, samp, fromUv - vec2f(0.0, e.y), 0.0).r);
-  d = mix(d, avg, (1.0 - exp(-P.m2.z * dt)) * act);
+  let avg = 0.25 * (textureSampleLevel(prev, samp, fromUv + vec2f(e.x, 0.0), 0.0)
+                  + textureSampleLevel(prev, samp, fromUv - vec2f(e.x, 0.0), 0.0)
+                  + textureSampleLevel(prev, samp, fromUv + vec2f(0.0, e.y), 0.0)
+                  + textureSampleLevel(prev, samp, fromUv - vec2f(0.0, e.y), 0.0));
+  let dm = (1.0 - exp(-P.m2.z * dt)) * act;
+  d = mix(d, avg.r, dm);
+  inkD = mix(inkD, avg.a, dm);
 
   // Dilution, not clocks. The expanding flow thins what it carries
   // (continuity: dRho/dt = -Rho * div v), and that thinning IS how smoke
@@ -265,9 +282,11 @@ fn simMain(@builtin(global_invocation_id) gid: vec3u) {
   // clamped sampler at the boundary itself.
   let er = length((uv - vec2f(0.5)) * 2.0);
   let edgeMix = 15.0 * smoothstep(0.985, 1.0, er);
-  d *= exp(-(decay + edgeMix) * dt);
+  let keep = exp(-(decay + edgeMix) * dt);
+  d *= keep;
+  inkD *= keep;
 
-  textureStore(next, vec2i(gid.xy), vec4f(d, src.g, src.b, 0.0));
+  textureStore(next, vec2i(gid.xy), vec4f(d, src.g, src.b, inkD));
 }
 `;
 
@@ -348,12 +367,12 @@ fn fsSmoke(in: VOut) -> @location(0) vec4f {
   // Lines running one after another: this pixel's line owns a compressed
   // share of the fade — the block arrives (and leaves) top line first. The
   // column sweep and the firmness below then read the line's own clock.
-  // The Line pause (m8.w) rests between lines, as word-fx lineProgress.
+  // Line starts sit m8.w windows apart (Line pause), as word-fx lineProgress.
   let nLp = P.m8.y;
   if (nLp > 1.5) {
     let kL = clamp(round((in.world.y - P.m7.w) / max(P.m8.z, 1.0) + (nLp - 1.0) * 0.5), 0.0, nLp - 1.0);
-    let gL = P.m8.w;
-    pl = clamp(pl * (nLp + (nLp - 1.0) * gL) - kL * (1.0 + gL), 0.0, 1.0);
+    let aL = P.m8.w;
+    pl = clamp(pl * (1.0 + (nLp - 1.0) * aL) - kL * aL, 0.0, 1.0);
   }
   let sws = P.m5.z;
   if (sws > 0.0) {
@@ -418,6 +437,10 @@ fn fsSmoke(in: VOut) -> @location(0) vec4f {
   let dd = d * (1.0 - shred);
   let d2 = mix(dd, smoothstep(0.35, 0.65, dd), firm);
   let a = (1.0 - exp(-mix(3.2, 6.0, firm) * d2)) * P.m2.w;
-  return vec4f(P.m4.rgb * a, a);
+  // which ink this vapour is: the second ink's share over the density, both
+  // interpolated alike, so a word (share 0) is exactly its own colour
+  let inkT = clamp(mix(sa.a, sb.a, frac) / max(d, 0.0001), 0.0, 1.0);
+  let col = mix(P.m4.rgb, P.m9.rgb, inkT);
+  return vec4f(col * a, a);
 }
 `;

@@ -188,6 +188,15 @@ function runShell(canvas, worker, shell, size0, env) {
     if (!canvasOwnsKeys(canvas)) return;
     send({ k: 'in', t: 'keyup', e: keyCopy(e) });
   });
+  // Paste, as web.js queues it: one key-shaped event, code 'Paste', the text
+  // in `key`, capped here since the worker's queue caps only what it makes.
+  window.addEventListener('paste', e => {
+    if (!canvasOwnsKeys(canvas)) return;
+    const t = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+    if (!t) return;
+    e.preventDefault();
+    send({ k: 'in', t: 'key', e: { key: t.slice(0, 512), code: 'Paste', shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, timeStamp: e.timeStamp } });
+  });
   guardGestures(canvas);
 
   // ---------- size, visibility, fullscreen ----------

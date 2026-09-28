@@ -19,7 +19,17 @@ import {
 import { ICON } from '../drawlist.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { prof, profToggle, profSave, profCopy } from '../../core/profiler.js';
-import { makeTextState, TEXT_COMMIT, TEXT_CANCEL } from '../widgets.js';
+import { makeTextState, TEXT_COMMIT, TEXT_CANCEL, touchAware } from '../widgets.js';
+import {
+  broadcastAvailable, broadcastVersion, broadcastCount, broadcastName, broadcastActive, broadcastStatus,
+  broadcastWatchLabel, broadcastToggle, broadcastAdd, broadcastRemove, broadcastCopyLink,
+  broadcastHasKey, broadcastSetKey
+} from '../../core/broadcast.js';
+import {
+  journeyEditing, journeyOverridden, journeyClearOverride,
+  journeyRampGlow, journeyRampingControl, journeyRampingSection, journeyRampingSub
+} from '../../core/journey.js';
+import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 
 const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'corners', 'tunnel', 'edge', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'render'];
@@ -58,9 +68,7 @@ function makeSwitch(id) {
 // shut by default, opened by a small chevron seated in the guide line beside
 // the owner (imgui.js lineChevron), folding on a headerless fold (beginFold
 // with no label) one indent in. Each owner gets a slot here, made once: its
-// id, its variance rows that carry an amount (sliders from 0, whose value
-// above 0 means the variance is acting; a rate never reaches 0, so it never
-// counts), and whether it is open, mirrored from the UI record so the frame
+// id and fold id, and whether it is open, mirrored from the UI record so the frame
 // loop reads a byte rather than a set. A row tagged `varianceProxy: '<owner
 // id>'` wears that owner's chevron while it is the one showing (Appearance
 // rate stands in for Appearance in By time mode, the two never showing at
@@ -151,12 +159,7 @@ const GROUPS = DRAWER_SECTIONS.filter(id => SECTIONS.some(s => s.id === id)).map
     const c = items[i], next = items[i + 1];
     if (c.heading || !runs.open[i + 1] || next.heading || next.varianceOf !== c.id) continue;
     const slot = OWNERS.length;
-    const amounts = [];
-    for (let k = i + 1; k < items.length && !items[k].heading && items[k].varianceOf === c.id; k++) {
-      const v = items[k];
-      if (v.kind === 'slider' && v.min === 0) amounts.push(v);
-    }
-    OWNERS.push({ id: c.id, foldId: 'vfold.' + c.id, amounts });
+    OWNERS.push({ id: c.id, foldId: 'vfold.' + c.id });
     ownerSlot.set(c.id, slot);
     varFold[i] = slot; chev[i] = slot; chevId[i] = 'vchev.' + c.id;
   }
@@ -189,7 +192,7 @@ const GROUPS = DRAWER_SECTIONS.filter(id => SECTIONS.some(s => s.id === id)).map
     gateFold[j] = GATES.length;
     GATES.push({ foldId: 'gfold.' + c.id, kids });
   }
-  return { gid: 'drawer.' + id, title: sec.title, items, sw: makeSwitch(SECTION_SWITCH[id]),
+  return { sec: id, gid: 'drawer.' + id, title: sec.title, items, sw: makeSwitch(SECTION_SWITCH[id]),
            open: runs.open, close: runs.close, closeEnd: runs.closeEnd, foldId, varFold, chev, chevId,
            gateFold, seen: new Uint8Array(items.length), subSum, stripSw };
 });
@@ -264,17 +267,6 @@ function gateShows(slot) {
   return false;
 }
 
-// Whether an owner's variance is acting: any amount row that shows (by its
-// own rule, fold aside) set above 0. Read every frame its chevron draws, so
-// it only walks the slot's array and calls cheap gets.
-function varianceLive(slot) {
-  const a = OWNERS[slot].amounts;
-  for (let k = 0; k < a.length; k++) {
-    const c = a[k];
-    if ((!c.visible || c.visible(S)) && c.get(S) > 0) return true;
-  }
-  return false;
-}
 
 // A chevron click: flips the slot and rewrites the saved list of open
 // variance folds (a click's worth of work, never per frame).
@@ -437,7 +429,7 @@ let editLabelW = 0;
 // The row sits at the very top of the scroll body, so a tooltip above it
 // would be cut by the scroll clip. The hovered chip is noted here and its
 // tooltip drawn once the pane is closed off, clear of every clip.
-const tip = { id: -1, x: 0, y: 0, w: 0, h: 0, hover: false, str: '' };
+const tip = { id: -1, x: 0, y: 0, w: 0, h: 0, hover: false, str: '', instant: false };
 
 const W_DRAWER = LAYOUT.drawerW, PAD_X = LAYOUT.drawerPadX, TOP = LAYOUT.drawerPadTop;
 const BLEED = 24;   // the pane runs past the screen's left, top and bottom so only its right edge shows
@@ -576,6 +568,51 @@ export function drawProfileBadge(dl, text, height) {
   text.draw(dl, str, x + CHIP_PAD + DOT + 6, y + FOOT_CHIP_H / 2 + 4, TYPE.xs, W.regular, COLOR.inkDim, 0, TRACK.ui, 1);
 }
 
+// While a journey step is being authored (core/journey.js), every row whose
+// control the step records wears a small gold dot at its upper left, in the
+// gutter the row is indented past, so the layout never moves for it. It sits
+// above where a variance chevron seats itself (the row's vertical middle, in
+// the guide line's column) and runs before it, so in the corner they share
+// the dot has the first claim on a press. A click takes the control out of
+// the step. The row's rect is read with peek() before the row lays itself
+// out, so the dot costs a Set lookup a row and nothing when not authoring.
+const JDOT_R = 2.5, JDOT_HIT = 12, JDOT_DX = 5, JDOT_DY = 6;
+const TIP_JDOT = 'Saved with this step  ·  click to remove';
+function journeyDot(ui, it, salt) {
+  ui.peek();
+  const cx = ui.px - JDOT_DX, cy = ui.py + JDOT_DY, hx = cx - JDOT_HIT / 2, hy = cy - JDOT_HIT / 2;
+  const id = ui.idx('drawer.jdot', salt);
+  ui.interact(id, hx, hy, JDOT_HIT, JDOT_HIT, false);
+  const hover = ui.hover;
+  if (hover) { ui.setCursorHint('pointer'); noteTip(id, hx, hy, JDOT_HIT, TIP_JDOT, JDOT_HIT); }
+  if (ui.clicked) { journeyClearOverride(it.id); return; }
+  const r = hover ? JDOT_R + 1 : JDOT_R;
+  ui.dl.rect(cx - r, cy - r, r * 2, r * 2, r, JOURNEY_ACCENT, 0, null, hover ? 6 : 0, 0.35);
+}
+
+// While a playing journey step ramps its settings in (core/journey.js), the
+// drawer shows where: each moving control's row wears a soft wash and ring
+// in the journey's gold, the header of every section holding one glows the
+// same (imgui.js headGlow), so the sections that are changing read from
+// across the room, and so does a sub-drawer's strip with a moving row shut
+// inside it. All of it at one strength, the ramp's own (journeyRampGlow),
+// which fades out as the ramp lands. With no ramp playing that strength is 0
+// and the drawer pays that one test a frame; each lit thing costs a set
+// lookup and a rect or two.
+const RAMP_PAD_X = 4, RAMP_PAD_Y = 3;
+const rampFill = new Float32Array(4), rampLine = new Float32Array(4);
+function rampColors(glow) {
+  rampFill[0] = rampLine[0] = JOURNEY_ACCENT[0];
+  rampFill[1] = rampLine[1] = JOURNEY_ACCENT[1];
+  rampFill[2] = rampLine[2] = JOURNEY_ACCENT[2];
+  rampFill[3] = 0.08 * glow;
+  rampLine[3] = 0.6 * glow;
+}
+function rampRow(ui, x, y, w, h) {
+  ui.dl.rect(x - RAMP_PAD_X, y - RAMP_PAD_Y, w + RAMP_PAD_X * 2, h + RAMP_PAD_Y * 2, RADIUS.sm,
+             rampFill, 1, rampLine, 0, 0);
+}
+
 // The third level of the drawer's hierarchy, under the group headers (see
 // imgui.js group()) and above the control labels: small tracked caps in faint
 // ink, the way an inspector labels a cluster of related rows. Inside a section
@@ -617,8 +654,8 @@ function itemW(k, n, editing, maxW) {
   return w < EDIT_MIN_W ? EDIT_MIN_W : w > maxW ? maxW : w;
 }
 
-function noteTip(id, x, y, w, str, h = PRESET_H) {
-  tip.id = id; tip.x = x; tip.y = y; tip.w = w; tip.h = h; tip.hover = true; tip.str = str;
+function noteTip(id, x, y, w, str, h = PRESET_H, instant = false) {
+  tip.id = id; tip.x = x; tip.y = y; tip.w = w; tip.h = h; tip.hover = true; tip.str = str; tip.instant = instant;
 }
 
 function mix4(out, a, b, t) {
@@ -794,6 +831,237 @@ function addChip(ui, px, py) {
   ui.dl.rect(cx - 0.75, cy - 4.5, 1.5, 9, 0.75, col, 0, null, 0, 0);
 }
 
+// The Broadcast section, the drawer's last (core/broadcast.js): a row per
+// named session, then a + chip that names a new one, then the key. It is
+// drawn only where a broadcast can start at all (broadcastAvailable), so a
+// follower tab, and a page in worker mode, never shows it.
+//
+// A session's row is a toggle row whose switch is the session's on/off, with
+// a status dot and the session's name where a toggle's label would be, the
+// watcher count right-aligned while it is live, and a Link chip (the
+// profiler footer's chip) that copies the viewer's link. The dot reads from
+// the theme's status tokens: faint while off, the accent while connecting,
+// the good green while live, and warn, the drawer's colour for deleting and
+// for trouble, once the session has given up. Deleting follows the presets:
+// an Edit chip beside the + turns every row's Link chip into an ×, and Done
+// turns them back. The + opens a name field in place, as the presets' does,
+// and the key row opens one where its value was. Every string drawn is a
+// literal or one the core keeps cached, and the widths are measured when
+// broadcastVersion moves, as the preset chips' are on presetsVersion.
+const BC_ROW_H = 30, BC_SWITCH_W = 34;   // a toggle row's height and its switch's width (widgets.js toggle)
+const BC_PLUS = 9, BC_PLUS_GAP = 6;      // the + chip's plus, and the gap before its label
+const BC_ADD_LABEL = 'New session', BC_LINK_LABEL = 'Link', BC_KEY_LABEL = 'Key';
+const BC_KEY_MASK = '••••••••';          // the same eight dots whatever the key, so its length never shows
+const BC_KEY_UNSET = 'Not set';
+const TIP_BC_LINK = 'Copy the link a viewer opens to follow this session';
+const TIP_BC_ON = 'Go live: anyone at this link follows your settings';
+const TIP_BC_OFF = 'Stop broadcasting to this link';
+const TIP_BC_NEEDKEY = 'Set the key below first';
+const TIP_BC_DEL = 'End this session and delete it';
+const TIP_BC_ADD = 'Name a new broadcast session';
+const TIP_BC_EDIT = 'Delete sessions';
+const TIP_BC_EDITING = '× ends a session and deletes it';
+const TIP_BC_KEY = 'Set the key the relay asks for';
+// The two name fields, made once: a new session's name (the core's own limit,
+// 32) and the key, which is typed fresh each time rather than shown.
+const sessionEdit = makeTextState(32, 'Session name');
+const keyEdit = makeTextState(128, 'Broadcast key');
+let bcEditing = false;
+// which row's Link chip is showing its copied check, and until when
+let bcLinkFlashRow = -1, bcLinkFlashUntil = 0;
+let bcNameW = new Float32Array(8), bcWatchW = new Float32Array(8);
+let bcVersion = -1;
+let bcLinkW = 0, bcAddW = 0, bcKeyLabelW = 0;
+
+function measureBroadcast(ui) {
+  if (!bcLinkW) {
+    bcLinkW = ui.text.measure(BC_LINK_LABEL, TYPE.xs, W.regular) + CHIP_PAD * 2;
+    bcAddW = ui.text.measure(BC_ADD_LABEL, TYPE.xs, W.regular) + CHIP_PAD * 2 + BC_PLUS + BC_PLUS_GAP;
+    bcKeyLabelW = ui.text.measure(BC_KEY_LABEL, TYPE.sm, W.regular);
+    if (!editLabelW) editLabelW = Math.max(ui.text.measure('Edit', TYPE.xs, W.regular), ui.text.measure('Done', TYPE.xs, W.regular)) + CHIP_PAD * 2;
+  }
+  const v = broadcastVersion(), n = broadcastCount();
+  if (v === bcVersion && bcNameW.length >= n) return;
+  if (bcNameW.length < n) { bcNameW = new Float32Array(n + 8); bcWatchW = new Float32Array(n + 8); }
+  for (let i = 0; i < n; i++) {
+    bcNameW[i] = ui.text.measure(broadcastName(i), TYPE.sm, W.regular);
+    bcWatchW[i] = ui.text.measure(broadcastWatchLabel(i), TYPE.xs, W.regular);
+  }
+  bcVersion = v;
+}
+
+function statusColor(st) {
+  return st === 'live' ? COLOR.good : st === 'wait' ? COLOR.accent : st === 'dead' ? COLOR.warn : COLOR.inkFaint;
+}
+
+function drawBroadcast(ui) {
+  measureBroadcast(ui);
+  const n = broadcastCount();
+  if (!n) bcEditing = false;
+  // An × click is carried out after the rows, so this frame draws the list
+  // it laid out from, with no row drawn under another's index.
+  let drop = -1;
+  for (let i = 0; i < n; i++) if (sessionRow(ui, i)) drop = i;
+  if (drop >= 0) broadcastRemove(drop);
+  addSessionRow(ui, n);
+  keyRow(ui);
+}
+
+// One session's row; true when its × was clicked. Each row is its own id
+// scope, so the toggle, chip and × ids repeat safely row to row. The row's
+// rect is read with peek() before the toggle lays it out, so the Link chip,
+// or the ×, can run first and have the first claim on a press over the row,
+// as a preset chip's × does over its chip.
+function sessionRow(ui, i) {
+  ui.pushScope(ui.idx('drawer.bcRow', i));
+  ui.peek();
+  const x = ui.px, y = ui.py, w = ui.pw, h = touchAware(ui, BC_ROW_H);
+  const chipX = x + w - BC_SWITCH_W - SPACE.sm - bcLinkW;
+  let del = false;
+  if (bcEditing) {
+    const cx = chipX + bcLinkW / 2, cy = y + h / 2;
+    // hit across the whole slot the Link chip had, larger than the × itself,
+    // so a near miss never lands on the row behind it
+    const did = ui.id('drawer.bcDel');
+    ui.interact(did, chipX, y, bcLinkW, h, false);
+    const dh = ui.hover;
+    if (dh) { ui.setCursorHint('pointer'); noteTip(did, chipX, y, bcLinkW, TIP_BC_DEL, h); }
+    del = ui.clicked;
+    ui.dl.rect(cx - DEL_R, cy - DEL_R, DEL_R * 2, DEL_R * 2, DEL_R, dh ? COLOR.warn : COLOR.wellHi, 1, dh ? COLOR.warn : COLOR.lineStrong, 0, 0);
+    const is = 8;
+    ui.dl.icon(ICON.CLOSE, cx - is / 2, cy - is / 2, is, is, COLOR.ink, 1.6, 0);
+  } else {
+    // The Link chip, at its cached width whatever it shows, so the pill
+    // never resizes: the label normally, and for a moment after a click a
+    // green check to say the link is on the clipboard. (Not footChip, which
+    // takes its width from the label it is given each frame.)
+    const cy = y + (h - FOOT_CHIP_H) / 2;
+    const lid = ui.id('drawer.bcLink');
+    ui.interact(lid, chipX, cy, bcLinkW, FOOT_CHIP_H, false);
+    const lh = ui.hover;
+    if (lh) { ui.setCursorHint('pointer'); noteTip(lid, chipX, cy, bcLinkW, TIP_BC_LINK, FOOT_CHIP_H); }
+    if (ui.clicked) { broadcastCopyLink(i); bcLinkFlashRow = i; bcLinkFlashUntil = ui.t + 1400; }
+    const hv = ui.spring(lid, lh ? 1 : 0, MOTION.hover);
+    ui.dl.rect(chipX, cy, bcLinkW, FOOT_CHIP_H, RADIUS.pill, hv > 0.5 ? COLOR.wellHi : COLOR.well, 1, COLOR.lineSoft, 0, 0);
+    if (bcLinkFlashRow === i && ui.t < bcLinkFlashUntil) {
+      const is = 10;
+      ui.dl.icon(ICON.CHECK, chipX + (bcLinkW - is) / 2, cy + (FOOT_CHIP_H - is) / 2, is, is, COLOR.good, 1.6, 0);
+    } else {
+      ui.text.draw(ui.dl, BC_LINK_LABEL, chipX + bcLinkW / 2, cy + FOOT_CHIP_H / 2 + 4, TYPE.xs, W.regular,
+                   lh ? COLOR.ink : COLOR.inkDim, 1, TRACK.ui, 1);
+    }
+  }
+  // In edit mode the row takes no click, as a preset chip no longer loads
+  // then, so a press meant for an × can never start a broadcast instead.
+  // Without a key the switch is inert too: flipped on it could only snap
+  // straight back, so instead it sits disabled and its tip says what to do.
+  const on = broadcastActive(i);
+  const hasKey = broadcastHasKey();
+  if (ui.toggle('drawer.bcOn', '', on, bcEditing || !hasKey) !== on) broadcastToggle(i);
+  // The switch explains itself on hover. A disabled interact never reports
+  // hover, so its rect is tested by hand, over the switch alone rather than
+  // the toggle's whole row.
+  if (!bcEditing) {
+    const sx = x + w - BC_SWITCH_W;
+    if (ui.pointerX >= sx && ui.pointerX < x + w && ui.pointerY >= y && ui.pointerY < y + h) {
+      noteTip(ui.id('drawer.bcOnTip'), sx, y, BC_SWITCH_W,
+              !hasKey ? TIP_BC_NEEDKEY : on ? TIP_BC_OFF : TIP_BC_ON, h);
+    }
+  }
+  // the dot and the name where the toggle's label would sit, on its baseline
+  ui.text.lineMetrics(TYPE.sm, ui._lm);
+  const base = y + h / 2 + (ui._lm.ascent - ui._lm.descent) / 2;
+  ui.dl.rect(x, y + (h - DOT) / 2, DOT, DOT, DOT / 2, statusColor(broadcastStatus(i)), 0, null, 0, 0);
+  const nx = x + DOT + 6, ww = bcWatchW[i];
+  const room = chipX - SPACE.sm - (ww > 0 ? ww + SPACE.sm : 0) - nx;
+  // a name too long for the room left is cut at its edge
+  const cut = bcNameW[i] > room;
+  if (cut) ui.dl.pushClip(nx, y, room > 0 ? room : 0, h);
+  ui.text.draw(ui.dl, broadcastName(i), nx, base, TYPE.sm, W.regular, COLOR.inkDim, 0, TRACK.ui, 1);
+  if (cut) ui.dl.popClip();
+  if (ww > 0) ui.text.draw(ui.dl, broadcastWatchLabel(i), chipX - SPACE.sm, base, TYPE.xs, W.regular, COLOR.inkDim, 2, TRACK.ui, 1);
+  ui.popScope();
+  return del;
+}
+
+// The + chip, or while a name is being typed the field that grows as it
+// fills, then the Edit chip once there is a session to delete. Enter or a
+// click elsewhere adds it; Escape, or an empty name, drops it.
+function addSessionRow(ui, n) {
+  const typing = sessionEdit.active;
+  let w = bcAddW;
+  if (typing) {
+    const maxW = ui.regionW - (n ? editLabelW + PRESET_GAP : 0);
+    w = sessionEdit.textW + CHIP_PAD * 2 + 4;
+    w = w < EDIT_MIN_W ? EDIT_MIN_W : w > maxW ? maxW : w;
+  }
+  ui.nextRect(PRESET_H);
+  const x = ui.rx, y = ui.ry;
+  if (typing) {
+    if (ui.textField('drawer.bcName', x, y, w, PRESET_H, sessionEdit) === TEXT_COMMIT) broadcastAdd(sessionEdit.text);
+  } else addSessionChip(ui, x, y);
+  if (n) bcEditChip(ui, x + w + PRESET_GAP, y, editLabelW);
+}
+
+function addSessionChip(ui, px, py) {
+  const id = ui.id('drawer.bcAdd');
+  ui.interact(id, px, py, bcAddW, PRESET_H, false);
+  const hover = ui.hover;
+  if (hover) { ui.setCursorHint('pointer'); noteTip(id, px, py, bcAddW, TIP_BC_ADD); }
+  if (ui.clicked) ui.textBegin(sessionEdit, '', false, false);
+  const hv = ui.spring(id, hover ? 1 : 0, MOTION.hover);
+  ui.dl.rect(px, py, bcAddW, PRESET_H, RADIUS.pill, hv > 0.5 ? COLOR.wellHi : COLOR.well, 1, COLOR.lineSoft, 0, 0);
+  // the plus in hairline bars, as the presets' + chip draws it
+  const col = hv > 0.5 ? COLOR.ink : COLOR.inkDim;
+  const cx = px + CHIP_PAD + BC_PLUS / 2, cy = py + PRESET_H / 2;
+  ui.dl.rect(cx - 4.5, cy - 0.75, 9, 1.5, 0.75, col, 0, null, 0, 0);
+  ui.dl.rect(cx - 0.75, cy - 4.5, 1.5, 9, 0.75, col, 0, null, 0, 0);
+  ui.text.draw(ui.dl, BC_ADD_LABEL, px + CHIP_PAD + BC_PLUS + BC_PLUS_GAP, cy + 4, TYPE.xs, W.regular, col, 0, TRACK.ui, 1);
+}
+
+// The presets' Edit chip (editChip), turning the sessions' edit mode on and off.
+function bcEditChip(ui, px, py, w) {
+  const id = ui.id('drawer.bcEdit');
+  ui.interact(id, px, py, w, PRESET_H, false);
+  const hover = ui.hover;
+  if (hover) { ui.setCursorHint('pointer'); noteTip(id, px, py, w, bcEditing ? TIP_BC_EDITING : TIP_BC_EDIT); }
+  if (ui.clicked) bcEditing = !bcEditing;
+  const hv = ui.spring(id, hover ? 1 : 0, MOTION.hover);
+  ui.dl.rect(px, py, w, PRESET_H, RADIUS.pill, bcEditing ? COLOR.accentSoft : hv > 0.5 ? COLOR.wellHi : COLOR.well, 1,
+             bcEditing ? COLOR.accent : COLOR.lineSoft, 0, 0);
+  ui.text.draw(ui.dl, bcEditing ? 'Done' : 'Edit', px + w / 2, py + PRESET_H / 2 + 4, TYPE.xs, W.regular,
+               bcEditing ? COLOR.accent : hv > 0.5 ? COLOR.ink : COLOR.inkDim, 1, TRACK.ui, 1);
+}
+
+// The key: a row labelled Key, its value right-aligned as eight dots or Not
+// set. A click anywhere on it opens a field where the value was, empty, so
+// the key is never shown in the clear; Enter or a click elsewhere stores
+// what was typed, and an empty field (or Escape) leaves the key as it was.
+function keyRow(ui) {
+  const h = touchAware(ui, BC_ROW_H);
+  ui.nextRect(h);
+  const x = ui.rx, y = ui.ry, w = ui.rw;
+  ui.text.lineMetrics(TYPE.sm, ui._lm);
+  const base = y + h / 2 + (ui._lm.ascent - ui._lm.descent) / 2;
+  ui.text.draw(ui.dl, BC_KEY_LABEL, x, base, TYPE.sm, W.regular, COLOR.inkDim, 0, TRACK.ui, 1);
+  if (keyEdit.active) {
+    const fx = x + bcKeyLabelW + SPACE.md;
+    const res = ui.textField('drawer.bcKey', fx, y + (h - PRESET_H) / 2, x + w - fx, PRESET_H, keyEdit, TYPE.xs, 2);
+    // trimmed on the commit only, a click's worth of work
+    if (res === TEXT_COMMIT && keyEdit.text.trim()) broadcastSetKey(keyEdit.text);
+    return;
+  }
+  const id = ui.id('drawer.bcKeyRow');
+  ui.interact(id, x, y, w, h, false);
+  const hover = ui.hover;
+  if (hover) { ui.setCursorHint('pointer'); noteTip(id, x, y, w, TIP_BC_KEY, h); }
+  if (ui.clicked) ui.textBegin(keyEdit, '', false, false);
+  const has = broadcastHasKey();
+  const hv = ui.spring(id, hover ? 1 : 0, MOTION.hover);
+  ui.text.draw(ui.dl, has ? BC_KEY_MASK : BC_KEY_UNSET, x + w, base, TYPE.xs, W.regular,
+               hv > 0.5 ? COLOR.ink : has ? COLOR.inkDim : COLOR.inkFaint, 2, TRACK.ui, 1);
+}
+
 // The drawer's slide, stepped once per frame before anything reads it, so
 // the drawer, the burger riding its edge and S.edgeInset all move on this
 // frame's value: the same spring, the same maths, no frame of lag.
@@ -832,9 +1100,13 @@ export function drawDrawer(ui, app) {
 
   // every section as a collapsible group, headers on the wider column
   ui.setCursor(dx + HEAD_X, ui.cursorY, HEAD_W);
+  const authoring = journeyEditing();
+  const rampGlow = journeyRampGlow();
+  if (rampGlow > 0) rampColors(rampGlow);
   for (let g = 0; g < GROUPS.length; g++) {
     const grp = GROUPS[g];
     const sw = grp.sw;
+    if (rampGlow > 0 && journeyRampingSection(grp.sec)) { ui.headGlow = rampGlow; ui.headGlowColor = JOURNEY_ACCENT; }
     const open = ui.group(grp.gid, grp.title, sw ? !!sw.ctrl.get(S) : undefined);
     if (sw && ui.groupSwitchChanged) setSwitch(sw, ui.groupSwitch);
     // Keep drawing through the whole closing animation, until the toolkit
@@ -883,12 +1155,16 @@ export function drawDrawer(ui, app) {
           // music voice's while the music is off), rows and all, as the
           // voice's toggle row did; no fold is begun and the run is skipped.
           if (sw && sw.ctrl.visible && !sw.ctrl.visible(S)) { skipNext = 1; continue; }
+          // So does a sub-drawer by a visible rule of its own (the Edge's
+          // Motion and Style, Surfing's, while another effect is chosen).
+          if (it.visible && !it.visible(S)) { skipNext = 1; continue; }
           const open = !!it.get(S);
           // The summary is kept current even while open (a few gets, no
           // strings once steady), so it is there on the very click that
           // shuts the strip; the strip shows it only while set shut.
           const sum = grp.subSum[i];
           const sumStr = sum ? subSummary(sum) : '';
+          if (rampGlow > 0 && journeyRampingSub(it.id)) { ui.headGlow = rampGlow; ui.headGlowColor = JOURNEY_ACCENT; }
           let drawn;
           if (sw) {
             // The switch rides the strip; a click on it runs its control's
@@ -913,15 +1189,30 @@ export function drawDrawer(ui, app) {
           if (frozenFrom) shown = seen[i] === 1;
           else { shown = !it.visible || it.visible(S); seen[i] = shown ? 1 : 0; }
           if (shown) {
+            if (authoring && journeyOverridden(it.id)) journeyDot(ui, it, g * 1024 + i);
+            // a row in a playing step's ramp: where it starts, before it
+            // lays out, and its height from how far it moved the cursor
+            const ramping = rampGlow > 0 && journeyRampingControl(it.id);
+            let rx = 0, ry = 0, rw = 0;
+            if (ramping) { ui.peek(); rx = ui.px; ry = ui.py; rw = ui.pw; }
             const slot = chev[i];
             if (slot >= 0) {
               const open = varOpen[slot] === 1;
-              if (ui.lineChevron(chevId[i], open, open || varianceLive(slot))) toggleVariance(slot);
+              // Always in the full accent, open or shut, acting or not: in the
+              // guide line's own faint colour it was too dim to find.
+              if (ui.lineChevron(chevId[i], open, true)) toggleVariance(slot);
             }
             ui.control(it, S, true);
+            if (ramping) rampRow(ui, rx, ry, rw, ui.cursorY - ry - SPACE.xs);
             if (slot >= 0) ui.endLineChevron();
             // a control can carry a hover tip (schema `tip`), shown like the chips'
-            if (it.tip && ui._lastHover) noteTip(ui._lastId, ui._lastX, ui._lastY, ui._lastW, it.tip, ui._lastH);
+            if (it.tip && ui._lastHover) {
+              // Anchored over the row's LABEL, not the whole row, so the
+              // tip sits above the word it explains rather than the slider.
+              // Measured only on hovered frames, so steady frames pay nothing.
+              const lw = it.label ? ui.text.measure(it.label, TYPE.sm, W.regular) : ui._lastW;
+              noteTip(ui._lastId, ui._lastX, ui._lastY, lw, it.tip, ui._lastH, true);
+            }
           }
           if (varFold[i] >= 0) {
             foldNext++;
@@ -948,6 +1239,20 @@ export function drawDrawer(ui, app) {
   }
   if (ui.button('drawer.copySettings', 'Copy settings', 'chip', false)) app.copySettings();
   ui.endRow();
+
+  // Broadcast, the last section of all (see drawBroadcast), on the headers'
+  // column like the sections above and skipped whole where no broadcast can
+  // start. Its body is drawn until it settles shut, as every section's is.
+  if (broadcastAvailable()) {
+    ui.spacer(SPACE.lg);
+    ui.setCursor(dx + HEAD_X, ui.cursorY, HEAD_W);
+    const open = ui.group('drawer.broadcast', 'Broadcast');
+    if (open || !ui.groupSettled) {
+      ui.setCursor(ui.cursorX + KNOB_OVERHANG, ui.cursorY, ui.regionW - KNOB_OVERHANG * 2);
+      drawBroadcast(ui);
+    }
+    ui.endGroup();
+  }
   ui.spacer(SPACE.xl);
 
   ui.endScroll();
@@ -966,5 +1271,5 @@ export function drawDrawer(ui, app) {
 
   // after the pane's clip too: a tip centred on a chip near the right edge
   // is wider than the space left in the pane, so it may overhang the field
-  if (tip.id !== -1) ui.tooltipAt(tip.id, tip.x, tip.y, tip.w, tip.h, tip.hover, tip.str);
+  if (tip.id !== -1) ui.tooltipAt(tip.id, tip.x, tip.y, tip.w, tip.h, tip.hover, tip.str, tip.instant);
 }

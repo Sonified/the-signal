@@ -524,12 +524,12 @@ export async function createEngine(platform, opts) {
     const lum = args.lum, lit = args.lit, glassVisible = args.glassVisible;
     const overlayList = args.overlayList, uiList = args.uiList, topList = args.topList;
 
-    if (scene && scene.update) scene.update(lum);
+    if (scene && scene.update) scene.update(lum, frameDt);
     if (flowers) flowers.update(frameT, frameDt, lum);
     if (kaleido) kaleido.update(frameT, frameDt, lum);
     if (particles) particles.update(frameT, frameDt, lum);
     if (fireworks) fireworks.update(frameT, frameDt);
-    if (confetti) confetti.update(frameT, frameDt);
+    if (confetti) confetti.update(frameT, frameDt, lum);
     if (wordCloud) wordCloud.update(frameT, frameDt);
     if (wordSmoke) wordSmoke.update(frameT, frameDt);
     if (args.sceneChanged) captureStale = true;
@@ -581,6 +581,8 @@ export async function createEngine(platform, opts) {
     if (kaleido && kaleido.encodeChamber) kaleido.encodeChamber(encoder);
     if (particles && particles.encode) particles.encode(encoder);
     if (confetti && confetti.encode) confetti.encode(encoder);
+    // The edge's feedback image, when it has one (scene.js).
+    if (scene && scene.encode) scene.encode(encoder);
     if (wordCloud) wordCloud.encode(encoder);
     if (wordSmoke) wordSmoke.encode(encoder);
 

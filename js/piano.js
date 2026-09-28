@@ -6,7 +6,7 @@
 // 40 Hz carrier, which means the music and the entrainment tone are the same
 // number rather than merely compatible.
 import { S } from './state.js';
-import { getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd } from './audio.js';
+import { getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, sourceGate } from './audio.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 import { createSweep } from './sweep.js';
@@ -79,6 +79,12 @@ function buildGraph() {
   wet  = ctx.createGain(); wet.gain.value = S.pianoReverb;
   dry.connect(master);
   room.output.connect(wet).connect(master);
+  // The pause gate (audio.js) on the way into the room and the dry bus
+  // alike, the two points every note, the drone and the arp all pass, so a
+  // pause stops them at once, notes already scheduled included, while the
+  // room rings on. Neither gain is set by anything else.
+  sourceGate(dry.gain);
+  sourceGate(room.input.gain);
   // A high-pass on the notes only, ahead of the room so the reverb is fed the
   // same thinned signal the dry path gets; filtering after the convolver would
   // leave a low bloom in the tail that the dry note no longer has. The drone
@@ -451,29 +457,51 @@ function gCluster(t) {
   return (at - t) / 0.55 + rnd(1.5, 4.0) * holdScale();
 }
 
+// One gesture at `at`, chosen by the measured mix, with its occasional key
+// lift. Returns its span, which step() spaces the next one by.
+function gesture(at) {
+  const c = centreNow();
+  const kind = weighted({ 0: S.pianoDyad, 1: S.pianoBloom, 2: S.pianoSingle, 3: S.pianoBass,
+                          4: S.pianoCall, 5: S.pianoCluster });
+  const span = kind === 0 ? gDyad(at, c)
+             : kind === 1 ? gBloom(at, c)
+             : kind === 2 ? gSingle(at, c)
+             : kind === 4 ? (S.pianoStyle === 'snippets' ? gCallSnip(at, c) : gCall(at, c))
+             : kind === 5 ? (S.pianoStyle === 'snippets' ? gClusterSnip(at) : gCluster(at))
+             : gBass(at);
+  if (S.pianoLifts && Math.random() < 0.45) keyLift(at + span * rnd(0.5, 0.95));
+  return span;
+}
+
+// One gesture now, on request: v1's journey plays the piano on the words,
+// one gesture as each appears (v1/core/journey.js). The free clock is left
+// alone, so free play picks up where it idled when the step lets it go.
+// Nothing without a running, loaded piano with its voice on, which also
+// makes it a harmless no-op in v1's engine worker, where no context exists.
+export function pianoGesture() {
+  if (!running || !ready || S.pianoOn === false) return;
+  const ctx = getContext();
+  if (!ctx) return;
+  gesture(ctx.currentTime + 0.06);
+}
+
 function step() {
   if (!running) return;
   const ctx = getContext();
   const now = ctx.currentTime;
   // The Piano voice switch: off, the player schedules nothing and the clock
   // idles just behind now, so switching back on picks up within a phrase.
-  if (S.pianoOn === false) {
+  // v1's journey idles it the same way while a step plays the piano on the
+  // words instead (S.pianoFreePlay false, never saved; undefined is free),
+  // each word then asking for one gesture through pianoGesture below.
+  if (S.pianoOn === false || S.pianoFreePlay === false) {
     clock = Math.max(clock, now + 0.5);
     timer = setTimeout(step, 250);
     return;
   }
   while (clock < now + 1.5) {
     const at = Math.max(clock, now + 0.06);
-    const c = centreNow();
-    const kind = weighted({ 0: S.pianoDyad, 1: S.pianoBloom, 2: S.pianoSingle, 3: S.pianoBass,
-                            4: S.pianoCall, 5: S.pianoCluster });
-    const span = kind === 0 ? gDyad(at, c)
-               : kind === 1 ? gBloom(at, c)
-               : kind === 2 ? gSingle(at, c)
-               : kind === 4 ? (S.pianoStyle === 'snippets' ? gCallSnip(at, c) : gCall(at, c))
-               : kind === 5 ? (S.pianoStyle === 'snippets' ? gClusterSnip(at) : gCluster(at))
-               : gBass(at);
-    if (S.pianoLifts && Math.random() < 0.45) keyLift(at + span * rnd(0.5, 0.95));
+    const span = gesture(at);
     // The real finding: not a rate, but short gaps inside a phrase and long
     // ones between. One take was 42% long gaps, another 18%.
     const gap = (Math.random() < 0.34 ? rnd(4.0, 9.0) : rnd(0.9, 3.2)) / S.pianoDensity;
@@ -832,53 +860,87 @@ export async function applyBedDetune() {
 // ---------- the arpeggio ----------
 // Robert's figure: the 3, the 4 and the octave above the root, an octave
 // above middle C (E5 F5 C6 against this piano's C), played fast and over and
-// over, 3 4 8 3 4 8. It starts in the left ear, and a delayed copy answers in
-// the right, a step and a half behind, so the echo falls between the notes
-// and reads almost as a second player. Now and then an answering line comes
+// over, 3 4 8 3 4 8. It sits on its pan, and a delayed copy answers to the
+// right of it, a step and a half behind, so the echo falls between the notes
+// and reads almost as a second player (each line's delay, lineVoice; it
+// used to start in the left ear, until spread became the delay's alone). Now and then an answering line comes
 // in over it, the same notes turned round, 8 4 3, starting on the right and
 // echoed to the left, while the main line eases back a little; after a while
 // it leaves and the main line comes forward again.
 //
-// It is a synth voice, not the piano: one oscillator per side that never
+// It is a synth voice, not the piano: one oscillator per line that never
 // stops, tuned to the piano's own root (rootSoundingHz in audio/piano/
 // manifest.json) so the two agree. The figure is played by the filter, not
 // the level: each note steps the pitch and opens a low-pass that then falls
-// shut again, the Attack and Decay dials setting how fast it opens and
+// shut again, each line's attack and decay setting how fast it opens and
 // closes, so the line is one smooth tone swelling and dimming rather than a
 // row of plucks. It has its own mixer channel ('arp' in mixgate.js: level,
-// mute, solo and meter) and shares the piano's room, fed the same way the
-// drone is. It runs only while the music is on and its switch is up.
+// mute, solo and meter), and each line has a room of its own (lineRoom)
+// whose output joins the piano room's at the shared Reverb level. It runs
+// only while the music is on and its switch is up.
 const ARP_A = [76, 77, 84], ARP_B = [84, 77, 76];
 
 // ---------- the sequencer ----------
-// The figure is no longer fixed: each step reads the playing pattern
-// (S.seqPatterns[S.seqSlot], edited in the sequencer window), up to 16 steps
-// long, a step holding a written note or -1 for a rest. A rest leaves the
-// filter shut, so the line breathes there instead of sounding. The grid's
-// rows are the scale over two octaves, from the 1 an octave above middle C
-// (the octave that holds the original 3 4 8) up to the 15, two octaves on.
+// The figure is no longer fixed, and no longer one line: eight lines
+// (S.seqs, edited in the sequencer window) play together. Each is up to 16
+// steps long, a step holding a written note or -1 for a rest, and a rest
+// leaves that line's filter shut, so the line breathes there instead of
+// sounding. All eight read the one step clock at the one Speed, starting
+// together, but each loops over its own length, so a line of 3 against a
+// line of 4 comes round together only every 12 steps. The grid's rows are
+// the scale over two octaves, from the 1 an octave above middle C (the
+// octave that holds the original 3 4 8) up to the 15, two octaves on.
 export const SEQ_ROWS = [96, 95, 93, 91, 89, 88, 86,          // 15 14 13 12 11 10 9
                          84, 83, 81, 79, 77, 76, 74, 72];    // 8 7 6 5 4 3 2 1, top to bottom
-export const SEQ_MAX = 16, SEQ_SLOTS = 4;
-const SEQ_DEFAULT = { len: 3, steps: ARP_A };   // read once per step: never rebuilt
-export function seqPattern() {
-  const pats = S.seqPatterns, p = pats && pats[S.seqSlot | 0];
-  if (!p || !Array.isArray(p.steps)) return SEQ_DEFAULT;
-  return p;
+export const SEQ_MAX = 16, SEQ_COUNT = 8;
+export const SEQ_WAVES = ['sine', 'triangle', 'sawtooth', 'square'];
+// The line at i, or null when S holds nothing usable there.
+const seqAt = i => { const a = S.seqs, q = a && a[i]; return q && Array.isArray(q.steps) ? q : null; };
+const seqLen = q => Math.max(1, Math.min(SEQ_MAX, q.len | 0));
+const clampPan = x => (x < -1 ? -1 : x > 1 ? 1 : x);
+const clamp01 = x => (x > 0 ? (x < 1 ? x : 1) : 0);
+
+// Mute and solo among the lines, by the mix gate's own rules (js/mixgate.js)
+// but kept inside the sequencer: a muted line is silent, and while any line
+// is soloed only the soloed lines sound. This gate multiplies with the 'arp'
+// channel's, which still holds the whole sequencer in the mix.
+export function seqAnySolo() {
+  for (let i = 0; i < SEQ_COUNT; i++) { const q = seqAt(i); if (q && q.solo) return true; }
+  return false;
 }
-// Where the playhead is: every scheduled step is noted with its time, and
-// the window asks which was the last one to sound.
+export function seqGate(q, anySolo) {
+  if (!q || q.mute) return 0;
+  return anySolo && !q.solo ? 0 : 1;
+}
+// Whether any step inside the line's length holds a note. A line with none
+// is held silent, so a cleared line does not go on humming its last pitch.
+export function seqHasNotes(q) {
+  const n = seqLen(q), st = q.steps;
+  for (let k = 0; k < n; k++) if (st[k] >= 0) return true;
+  return false;
+}
+
+// Where the playhead is: every scheduled step is noted with its time and
+// the step clock's count, and the window asks which was the last one to
+// sound. The count, not a step, so each line can find its own step in it.
 const MARKS = 32;
-const markT = new Float64Array(MARKS).fill(-1), markI = new Int8Array(MARKS).fill(-1);
+const markT = new Float64Array(MARKS).fill(-1), markC = new Float64Array(MARKS).fill(-1);
 let markN = 0;
-function seqMark(t, i) { markT[markN] = t; markI[markN] = i; markN = (markN + 1) % MARKS; }
-export function seqPlayhead() {
+function seqMark(t, c) { markT[markN] = t; markC[markN] = c; markN = (markN + 1) % MARKS; }
+// The count at the step that last sounded, -1 while nothing plays. A line's
+// step under it is the count modulo that line's length.
+export function seqClock() {
   const ctx = getContext();
   if (!arp || !ctx) return -1;
   const now = ctx.currentTime;
   let best = -1, bt = -1;
-  for (let k = 0; k < MARKS; k++) if (markT[k] <= now && markT[k] > bt) { bt = markT[k]; best = markI[k]; }
+  for (let k = 0; k < MARKS; k++) if (markT[k] <= now && markT[k] > bt) { bt = markT[k]; best = markC[k]; }
   return best;
+}
+// The active line's step, for the grid's playhead.
+export function seqPlayhead() {
+  const c = seqClock(), q = seqAt(S.seqSlot | 0);
+  return c < 0 || !q ? -1 : c % seqLen(q);
 }
 // A fresh pattern: a note on three steps in four, walking the scale more
 // often than leaping, the chord tones (1 3 5 8, and 10 12 15 above) three
@@ -900,6 +962,154 @@ export function seqRandomize(p) {
     p.steps[i] = SEQ_ROWS[row];
   }
 }
+
+// The lines as one row of numbers, the single way they travel in worker
+// mode (v1/core/audio-link.js packs, v1/core/audio-shell.js unpacks), so
+// both ends share this one layout: the active slot, then each line as
+// SEQ_STRIDE numbers, its length, its 16 steps, its wave (an index into
+// SEQ_WAVES) and octave mode (an index into SEQ_OCT_MODES), then the
+// switches in SEQ_PACK_BOOLS as 0 or 1 and the numbers in SEQ_PACK_NUMS, in
+// the tables' order. Both ends walk the same two tables, so a field added
+// to them travels without either end changing. Neither allocates.
+// The last two numbers are a line's waveform crossfade (see lineShape), set
+// only while a journey step ramps a line from one wave to another: never
+// saved, and 0 on a line nobody is morphing.
+export const SEQ_OCT_MODES = ['off', 'up', 'down', 'both'];
+const SEQ_PACK_BOOLS = ['mute', 'solo', 'dlyPing'];
+const SEQ_PACK_NUMS = ['vol', 'octaves', 'oct', 'pan', 'rev', 'spread',
+  'atk', 'atkVar', 'atkRate', 'dec', 'decVar', 'decRate', 'panMod', 'panRate',
+  'revTime', 'revVar', 'revRate', 'dlyTime', 'dlyFb', 'dlyFbVar', 'dlyFbRate',
+  'morphWave', 'morphMix'];
+const SEQ_TAIL = 2 + SEQ_PACK_BOOLS.length + SEQ_PACK_NUMS.length;
+export const SEQ_STRIDE = 1 + SEQ_MAX + SEQ_TAIL;
+export const SEQ_PACK = 1 + SEQ_COUNT * SEQ_STRIDE;
+export function packSeqs(out) {
+  out[0] = S.seqSlot | 0;
+  let k = 1;
+  for (let i = 0; i < SEQ_COUNT; i++) {
+    const q = seqAt(i);
+    if (!q) {
+      out[k++] = 0;
+      for (let j = 0; j < SEQ_MAX; j++) out[k++] = -1;
+      for (let j = 0; j < SEQ_TAIL; j++) out[k++] = 0;
+      continue;
+    }
+    out[k++] = q.len | 0;
+    for (let j = 0; j < SEQ_MAX; j++) { const v = q.steps[j]; out[k++] = v >= 0 ? v | 0 : -1; }
+    const w = SEQ_WAVES.indexOf(q.wave);
+    out[k++] = w < 0 ? 0 : w;
+    const m = SEQ_OCT_MODES.indexOf(q.octMode);
+    out[k++] = m < 0 ? 0 : m;
+    for (let j = 0; j < SEQ_PACK_BOOLS.length; j++) out[k++] = q[SEQ_PACK_BOOLS[j]] ? 1 : 0;
+    for (let j = 0; j < SEQ_PACK_NUMS.length; j++) {
+      const v = +q[SEQ_PACK_NUMS[j]];
+      out[k++] = v === v ? v : 0;
+    }
+  }
+}
+// Written in place, since the engine reads the lines at every step and the
+// next step plays the edit.
+export function unpackSeqs(p) {
+  S.seqSlot = Math.max(0, Math.min(SEQ_COUNT - 1, p[0] | 0));
+  let k = 1;
+  for (let i = 0; i < SEQ_COUNT; i++) {
+    const q = seqAt(i);
+    if (!q) { k += SEQ_STRIDE; continue; }
+    q.len = p[k++];
+    for (let j = 0; j < SEQ_MAX; j++) q.steps[j] = p[k++];
+    q.wave = SEQ_WAVES[p[k++]] || 'sine';
+    q.octMode = SEQ_OCT_MODES[p[k++]] || 'off';
+    for (let j = 0; j < SEQ_PACK_BOOLS.length; j++) q[SEQ_PACK_BOOLS[j]] = p[k++] !== 0;
+    for (let j = 0; j < SEQ_PACK_NUMS.length; j++) q[SEQ_PACK_NUMS[j]] = p[k++];
+  }
+}
+
+// The delay's time as the knob offers it, in steps, snapped to these
+// musical values: a quarter step up to four steps.
+export const SEQ_DLY_STEPS = [0.25, 1 / 3, 0.5, 2 / 3, 0.75, 1, 1.5, 2, 3, 4];
+
+// ---------- a line's slow swings ----------
+// Five settings on each line can swing on their own slow sine: the
+// envelope's attack and decay, the send into the line's room, the pan and
+// the delay's feedback. Each swing has its own phase and period (its RATE,
+// 1 to 120 s a cycle) and its own depth (its VAR, or MOD for the pan), and
+// every phase moves only on the step clock's pump, by the audio clock's time
+// since the last pump, so the swings hold still while the sequencer is
+// stopped and pick up where they were when it starts again. At depth 0 each
+// is exactly its set value.
+//
+// Attack, decay and the send swing down only, the house style: the value
+// sits at its setting at the top of the swing and dips to set * (1 - var)
+// at the trough, eff = set * (1 - var * 0.5 * (1 - cos)), so a full VAR
+// breathes it all the way down and back and never above where it was set. The feedback swings both
+// ways round its setting, eff = fb * (1 + var * sin), and the pan swings
+// symmetrically about its setting, never a one-sided drift.
+const TAU = Math.PI * 2;
+const phAtk = new Float64Array(SEQ_COUNT), phDec = new Float64Array(SEQ_COUNT);
+const phPan = new Float64Array(SEQ_COUNT), phRev = new Float64Array(SEQ_COUNT);
+const phFb = new Float64Array(SEQ_COUNT);
+// Each line's values as of the last pump or control change.
+const effAtk = new Float64Array(SEQ_COUNT).fill(0.01), effDec = new Float64Array(SEQ_COUNT).fill(0.25);
+const effPan = new Float64Array(SEQ_COUNT), effRev = new Float64Array(SEQ_COUNT).fill(1);
+const effFb = new Float64Array(SEQ_COUNT);
+// A finite value clamped into lo..hi, or def for anything else.
+const num = (v, lo, hi, def) => (v === v && typeof v === 'number' ? (v < lo ? lo : v > hi ? hi : v) : def);
+const swingRate = r => num(r, 1, 120, 20);
+const wrap1 = p => p - Math.floor(p);
+const dip = (set, depth, ph) => set * (1 - clamp01(depth) * 0.5 * (1 - Math.cos(TAU * ph)));
+function seqAdvance(dt) {
+  for (let i = 0; i < SEQ_COUNT; i++) {
+    const q = seqAt(i);
+    if (!q) continue;
+    phAtk[i] = wrap1(phAtk[i] + dt / swingRate(q.atkRate));
+    phDec[i] = wrap1(phDec[i] + dt / swingRate(q.decRate));
+    phPan[i] = wrap1(phPan[i] + dt / swingRate(q.panRate));
+    phRev[i] = wrap1(phRev[i] + dt / swingRate(q.revRate));
+    phFb[i]  = wrap1(phFb[i]  + dt / swingRate(q.dlyFbRate));
+  }
+}
+// The line's values at its phases now. Attack and decay keep the floors the
+// old global dials had, 1 ms and 20 ms, so a deep dip never asks the filter
+// for an instant move.
+const ARP_FB_MAX = 0.95;
+function seqEff(i, q) {
+  effAtk[i] = Math.max(0.001, dip(num(q.atk, 0.001, 0.5, 0.01), q.atkVar, phAtk[i]));
+  effDec[i] = Math.max(0.02, dip(num(q.dec, 0.02, 2, 0.25), q.decVar, phDec[i]));
+  effPan[i] = clampPan(num(q.pan, -1, 1, 0) + clamp01(q.panMod) * Math.sin(TAU * phPan[i]));
+  effRev[i] = dip(num(q.rev, 0, 1, 1), q.revVar, phRev[i]);
+  const f = num(q.dlyFb, 0, ARP_FB_MAX, 0) * (1 + clamp01(q.dlyFbVar) * Math.sin(TAU * phFb[i]));
+  effFb[i] = f < 0 ? 0 : f > ARP_FB_MAX ? ARP_FB_MAX : f;
+}
+
+// ---------- each line's own room ----------
+// Every line has a reverb of its own now, so each can have its own decay
+// (revTime). A room is two convolvers (createRoom in audio.js), built the
+// first time its line is heard with a send above 0 and kept for the rest of
+// the session, across the sequencer stopping and starting, so a line nobody
+// sends builds nothing. Its impulse comes off the main thread through
+// getIR, and a new decay crossfades in under the old tail. Its input
+// carries the pause gate as the shared room's does, and its output joins
+// the shared room's at the Reverb level and switch (wet).
+//
+// The cost: eight lines all sending is eight stereo convolutions of up to
+// 15 s, where one shared room used to carry them all, roughly eight times
+// the reverb's audio thread work. A room whose line has gone quiet costs
+// little once its tail has rung out, since the browser stops convolving
+// silence, but the lazy build is what keeps an unused line at nothing.
+const lineRooms = new Array(SEQ_COUNT).fill(null);
+const roomSec = new Float64Array(SEQ_COUNT);
+const lineRevTime = i => { const q = seqAt(i); return q ? num(q.revTime, 1, 15, 4.5) : 4.5; };
+function lineRoom(ctx, i) {
+  let r = lineRooms[i];
+  if (!r) {
+    r = lineRooms[i] = createRoom(ctx, () => lineRevTime(i), 2.0);
+    sourceGate(r.input.gain);
+    r.output.connect(wet);
+    roomSec[i] = lineRevTime(i);
+  }
+  return r;
+}
+
 const ARP_ECHO = 0.75;          // the answering copy's level
 const ARP_DIP = 0.65;           // the main line's level while the answer plays
 const ARP_ROOT_HZ = 79.5;                // the piano's sounding root
@@ -907,7 +1117,7 @@ const ARP_ROOT_HZ = 79.5;                // the piano's sounding root
 // change of colour rather than of level.
 const ARP_WAVE_GAIN = { sine: 1, triangle: 0.85, sawtooth: 0.42, square: 0.34 };
 let arp = null;
-const arpWave = () => (ARP_WAVE_GAIN[S.arpWave] ? S.arpWave : 'sine');
+const lineWave = q => (q && ARP_WAVE_GAIN[q.wave] ? q.wave : 'sine');
 // The volume sweep: the same slow motion as the drone's sweeps (sweep.js),
 // moving a gain of its own between the low and high shares of the set level,
 // so the arpeggio swells and recedes on its own schedule. Off, it glides
@@ -926,52 +1136,282 @@ const strobeHz = () => Math.max(0.1, (S.frameLock && S.achievedFreq) || S.effFre
 const strobeWave = () => (S.wave === 'sine' || S.wave === 'triangle' || S.wave === 'square' ? S.wave : 'sine');
 const arpAmDepth = () => Math.max(0, Math.min(1, S.arpStrobeAm || 0));
 const arpTargetRate = () => Math.max(2, Math.min(14, S.arpRate || 7));
-const arpStepS = () => 1 / arpTargetRate();
 
-// pan and echoPan are bare directions (-1 or 1); the Stereo spread dial
-// scales them, 0 folding everything to the centre and 100% panning hard.
-const arpSpread = () => Math.max(0, Math.min(1, S.arpSpread ?? 0.9));
-function arpVoice(ctx, pan, echoPan) {
+// One line's tone, in the old single line's shape: an oscillator that never
+// stops, played by its filter, then a dry copy on its own panner and the
+// line's delay, both into `into`.
+//
+// The delay is two delay lines, A and B, each one repeat long, with a loop
+// gain on every path between them (aa, ab, ba, bb). Ping pong feeds the
+// voice into A only and crosses the loop, A into B and B back into A, so
+// the repeats land on alternating sides: the first on A's side, the old
+// echo's, then B's, then A's again. In place feeds the voice into both
+// (inB opens) and loops each into itself, so the two run the same repeats
+// side by side at half level each, one either side of the pan; at spread 0
+// they sit on the pan together and add up to exactly one repeat there. The
+// feedback is the loop gain, so at 0 (the default) there is a single
+// repeat, a step and a half behind, at the old echo's level: today's echo.
+// panSign is the side the old dry copy leaned to (-1, left); A's repeats
+// lean the other way, right for a line, as the old echo did.
+const ARP_DLY_MAX = 2;          // four steps at the slowest Speed, 2 notes/s
+// m1 sits between the tone and its filter at 1, and is only ever moved by a
+// waveform crossfade (lineShape), when a second tone (o2, through m2) joins
+// it under the same filter. The last few pitches arpNote scheduled are kept
+// (sHz, sAt, a ring of SCHED_N), so a second tone started mid-phrase can be
+// handed the notes already queued ahead of it.
+const SCHED_N = 8;
+function lineVoice(ctx, q, panSign, into, dSec) {
+  const wave = lineWave(q);
   const o = ctx.createOscillator();
-  o.type = arpWave();
+  o.type = wave;
   o.frequency.value = ARP_ROOT_HZ * Math.pow(2, (ARP_A[0] - ROOT) / 12);
   const filt = ctx.createBiquadFilter();
   filt.type = 'lowpass';
   filt.frequency.value = 200;
   filt.Q.value = 1;
   const wg = ctx.createGain();
-  wg.gain.value = ARP_WAVE_GAIN[arpWave()];
-  o.connect(filt); filt.connect(wg);
+  wg.gain.value = ARP_WAVE_GAIN[wave];
+  const m1 = ctx.createGain();
+  o.connect(m1); m1.connect(filt); filt.connect(wg);
   o.start();
   const inG = ctx.createGain();
   wg.connect(inG);
-  const dryP = ctx.createStereoPanner(); dryP.pan.value = pan * arpSpread();
-  const d = ctx.createDelay(2); d.delayTime.value = arpStepS() * 1.5;
-  const eg = ctx.createGain(); eg.gain.value = ARP_ECHO;
-  const echoP = ctx.createStereoPanner(); echoP.pan.value = echoPan * arpSpread();
-  inG.connect(dryP); inG.connect(d); d.connect(eg); eg.connect(echoP);
-  return { o, filt, wg, inG, dryP, d, eg, echoP, panSign: pan, echoSign: echoPan };
+  const dryP = ctx.createStereoPanner();
+  const dA = ctx.createDelay(ARP_DLY_MAX), dB = ctx.createDelay(ARP_DLY_MAX);
+  dA.delayTime.value = dSec; dB.delayTime.value = dSec;
+  const inB = ctx.createGain(); inB.gain.value = 0;
+  const aa = ctx.createGain(), ab = ctx.createGain(), ba = ctx.createGain(), bb = ctx.createGain();
+  aa.gain.value = 0; ab.gain.value = 0; ba.gain.value = 0; bb.gain.value = 0;
+  const egA = ctx.createGain(), egB = ctx.createGain();
+  egA.gain.value = 0; egB.gain.value = 0;
+  const pA = ctx.createStereoPanner(), pB = ctx.createStereoPanner();
+  inG.connect(dryP); inG.connect(dA); inG.connect(inB); inB.connect(dB);
+  dA.connect(aa); aa.connect(dA); dA.connect(ab); ab.connect(dB);
+  dB.connect(bb); bb.connect(dB); dB.connect(ba); ba.connect(dA);
+  dA.connect(egA); egA.connect(pA); dB.connect(egB); egB.connect(pB);
+  dryP.connect(into); pA.connect(into); pB.connect(into);
+  const v = { o, filt, wg, inG, dryP, dA, dB, inB, aa, ab, ba, bb, egA, egB, pA, pB,
+              g: null, rv: null, rw: null, roomed: false, panSign,
+              live: false, gAt: NaN, dryAt: NaN, aAt: NaN, bAt: NaN, revAt: NaN,
+              fbAt: NaN, pingAt: null, dAt: dSec,
+              m1, o2: null, m2: null, m1At: 1, m2At: 0,
+              sHz: new Float64Array(SCHED_N), sAt: new Float64Array(SCHED_N).fill(-1), sN: 0 };
+  return v;
+}
+// A line's delay in seconds: its time in steps at the eased speed, so it
+// follows Speed as the old echo did.
+const lineDelay = q => Math.min(ARP_DLY_MAX, num(q && q.dlyTime, 0.25, 4, 1.5) / arp.rate);
+// A sequencer line's whole voice: the tone, then the line's own gain (its
+// level times its mute and solo gate) onto the dry bus, and from there its
+// reverb send (rv, the swung amount) through its share of the level chain
+// (rw, which the chain drives as it drives the dry bus) toward the line's
+// own room, plugged in by seqSync once the line is heard with a send. Built
+// the first time the line has a note and can be heard (seqSync), and kept
+// from then on, so a line nobody uses costs no oscillator at all.
+function seqVoice(ctx, i) {
+  const q = seqAt(i);
+  const g = ctx.createGain(); g.gain.value = 0;
+  const rv = ctx.createGain(); rv.gain.value = 0;
+  const rw = ctx.createGain(); rw.gain.value = 0;
+  g.connect(arp.busD); g.connect(rv); rv.connect(rw);
+  arp.chanG.connect(rw.gain);
+  const v = lineVoice(ctx, q, -1, g, lineDelay(q));
+  v.g = g; v.rv = rv; v.rw = rw;
+  lineShape(v, q, i);
+  return v;
+}
+// Wave, pan, spread and the delay's routing onto a tone, each written only
+// when it has moved: a param handed a fresh target it already has never
+// settles (see arpPump). i is the line whose swung values it reads.
+//
+// The dry voice, the line's core, sits exactly on the line's pan, swing
+// included; spread only moves the delay's repeats. This narrows the old
+// behaviour on purpose: spread used to push the dry voice one way and the
+// echo the other, so a wide line never sounded where its pan said. The
+// old seat is kept by the lines' seated default pans instead (seqSeat in
+// js/state.js).
+//
+// Ping pong bounces the repeats across the centre: the first lands at the
+// core's mirror image (-pan), the next back on the core's own side (+pan),
+// and on, each pushed out from the centre by spread. Which side is "away"
+// is taken from the SET pan, not the swung one, so a pan swing that
+// crosses the centre slides the repeats smoothly instead of flipping them;
+// a line set dead centre answers to the right first, as the old echo did.
+// In place, the repeats sit either side of the core's own pan by spread.
+function lineShape(v, q, i) {
+  if (!q) return;
+  const wave = lineWave(q);
+  if (v.o.type !== wave) { v.o.type = wave; glideParam(v.wg.gain, ARP_WAVE_GAIN[wave], 0.05); }
+  lineMorph(v, q, wave);
+  const pan = effPan[i], sp = clamp01(q.spread ?? 0.9);
+  const ping = q.dlyPing !== false;
+  let ap, bp;
+  if (ping) {
+    const set = +q.pan || 0, away = set > 0 ? -1 : set < 0 ? 1 : -v.panSign;
+    ap = clampPan(-pan + away * sp); bp = clampPan(pan - away * sp);
+  } else {
+    ap = clampPan(pan - v.panSign * sp); bp = clampPan(pan + v.panSign * sp);
+  }
+  if (pan !== v.dryAt) { v.dryAt = pan; glideParam(v.dryP.pan, pan, 0.1); }
+  if (ap !== v.aAt) { v.aAt = ap; glideParam(v.pA.pan, ap, 0.1); }
+  if (bp !== v.bAt) { v.bAt = bp; glideParam(v.pB.pan, bp, 0.1); }
+  if (ping !== v.pingAt) {
+    v.pingAt = ping;
+    const e = ping ? ARP_ECHO : ARP_ECHO / 2;
+    glideParam(v.inB.gain, ping ? 0 : 1, 0.05);
+    glideParam(v.egA.gain, e, 0.05);
+    glideParam(v.egB.gain, e, 0.05);
+    v.fbAt = NaN;              // the loop gains swap paths with the routing
+  }
+  const fb = effFb[i];
+  if (fb !== v.fbAt) {
+    v.fbAt = fb;
+    glideParam(v.aa.gain, ping ? 0 : fb, 0.1); glideParam(v.bb.gain, ping ? 0 : fb, 0.1);
+    glideParam(v.ab.gain, ping ? fb : 0, 0.1); glideParam(v.ba.gain, ping ? fb : 0, 0.1);
+  }
+}
+// A waveform crossfade: while a journey step ramps a line from one wave to
+// another (v1/core/journey.js), the line names the wave it is leaving
+// (morphWave, 1 + its index in SEQ_WAVES) and how far it has come (morphMix,
+// 0 to 1). The line's own tone is already the new wave; a second tone in the
+// old one plays beside it, at the same pitch and under the same filter, so
+// every note sounds both, and the two trade places on equal-power gains
+// (sin and cos of the quarter turn), each scaled by its wave's loudness
+// match, so the blend holds its level the whole way. As the second tone
+// starts, the new one is dropped to silence and the wave gain set to the new
+// wave's straight away, so the first instant sounds exactly as the old wave
+// did; it is handed the pitches already queued ahead (the voice's ring of
+// scheduled notes), so it is never out of tune with the phrase. With no morph
+// named (the ramp landed, stopped, or someone changed the wave by hand) the
+// second tone fades and stops, and the line's own tone is back at 1.
+function lineMorph(v, q, wave) {
+  const mw = q.morphWave | 0;
+  const from = mw > 0 && mw <= SEQ_WAVES.length ? SEQ_WAVES[mw - 1] : null;
+  const ctx = getContext();
+  if (!ctx) return;
+  if (from && from !== wave) {
+    const x = clamp01(+q.morphMix || 0);
+    const a = Math.sin(x * Math.PI / 2);
+    const b = Math.cos(x * Math.PI / 2) * ARP_WAVE_GAIN[from] / ARP_WAVE_GAIN[wave];
+    if (!v.o2) {
+      const now = ctx.currentTime;
+      const o2 = ctx.createOscillator(), m2 = ctx.createGain();
+      o2.type = from;
+      o2.frequency.value = v.o.frequency.value;
+      for (let k = 0; k < SCHED_N; k++) if (v.sAt[k] > now) o2.frequency.setTargetAtTime(v.sHz[k], v.sAt[k], 0.006);
+      m2.gain.value = b;
+      o2.connect(m2); m2.connect(v.filt);
+      o2.start();
+      v.o2 = o2; v.m2 = m2; v.m2At = b;
+      v.wg.gain.cancelScheduledValues(now); v.wg.gain.setValueAtTime(ARP_WAVE_GAIN[wave], now);
+      v.m1.gain.cancelScheduledValues(now); v.m1.gain.setValueAtTime(a, now);
+      v.m1At = a;
+      return;
+    }
+    if (v.o2.type !== from) v.o2.type = from;
+    if (a !== v.m1At) { v.m1At = a; glideParam(v.m1.gain, a, 0.03); }
+    if (b !== v.m2At) { v.m2At = b; glideParam(v.m2.gain, b, 0.03); }
+    return;
+  }
+  if (v.o2) {
+    const o2 = v.o2, m2 = v.m2;
+    v.o2 = null; v.m2 = null;
+    glideParam(m2.gain, 0, 0.03);
+    try { o2.stop(ctx.currentTime + 0.25); } catch (e) {}
+    o2.onended = () => { try { o2.disconnect(); m2.disconnect(); } catch (e) {} };
+  }
+  if (v.m1At !== 1) { v.m1At = 1; glideParam(v.m1.gain, 1, 0.03); }
+}
+// The delay's time onto a tone, when it has moved: the easing creeps toward
+// the dial for ever, so a change under a millionth (a fraction of a
+// microsecond of delay) counts as none.
+function lineDelayTo(ctx, v, q) {
+  const d = lineDelay(q);
+  if (Math.abs(d - v.dAt) <= d * 1e-6) return;
+  v.dAt = d;
+  v.dA.delayTime.setTargetAtTime(d, ctx.currentTime, 0.25);
+  v.dB.delayTime.setTargetAtTime(d, ctx.currentTime, 0.25);
+}
+// Every line's voice brought to its settings: built when it first has a note
+// and is heard, its gain glided to level times gate (0 with no notes), its
+// send, its room, its shape. Run from applyArp on a control change and from
+// every pump, which is how a grid edit (it only saves) reaches the sound
+// within a pump, and how the swings, which the pump advances, reach it.
+// live marks the lines the pump schedules notes for; a silent one schedules
+// nothing.
+function seqSync() {
+  const ctx = getContext();
+  if (!arp || !ctx) return;
+  const solo = seqAnySolo();
+  for (let i = 0; i < SEQ_COUNT; i++) {
+    const q = seqAt(i);
+    if (q) seqEff(i, q);
+    const vol = q ? clamp01(+q.vol || 0) : 0;
+    const live = !!q && vol > 0 && seqGate(q, solo) > 0 && seqHasNotes(q);
+    let v = arp.v[i];
+    if (!v) {
+      if (!live) continue;
+      v = arp.v[i] = seqVoice(ctx, i);
+    }
+    v.live = live;
+    const g = live ? vol : 0;
+    if (g !== v.gAt) { v.gAt = g; glideParam(v.g.gain, g, GATE_TC); }
+    if (!q) continue;
+    const r = effRev[i];
+    if (r !== v.revAt) { v.revAt = r; glideParam(v.rv.gain, r, 0.1); }
+    if (live && !v.roomed && num(q.rev, 0, 1, 1) > 0) { v.rw.connect(lineRoom(ctx, i).input); v.roomed = true; }
+    const room = lineRooms[i], sec = lineRevTime(i);
+    if (room && sec !== roomSec[i]) { roomSec[i] = sec; swapRoom(room, 200); }
+    lineShape(v, q, i);
+    if (i === 0 && arp.b) lineShape(arp.b, q, 0);
+  }
 }
 // One note: the pitch steps (a few ms of glide, so the tone never clicks)
-// and the filter opens toward the note's brightness over the Attack, then
-// falls back toward just above the fundamental over the Decay. Targets are
-// scheduled in order, so no cancel is ever needed; a fast figure simply
-// catches the filter wherever the last fall left it.
-function arpNote(written, vel, at, v) {
-  const oct = Math.round(S.arpOct || 0);
-  const hz = ARP_ROOT_HZ * Math.pow(2, (written - ROOT) / 12 + oct);
+// and the filter opens toward the note's brightness over the attack, then
+// falls back toward just above the fundamental over the decay, both the
+// line's own as swung this pump. Targets are scheduled in order, so no
+// cancel is ever needed; a fast figure simply catches the filter wherever
+// the last fall left it. shift is the line's own octave plus its octave
+// randomization, in whole octaves over the global Sequencer octave. The
+// pitch is held under 0.45 of the sample rate, since a line's octave, its
+// randomization and the global octave together can reach far past it.
+function arpNote(written, vel, at, v, shift, atk, dec) {
+  const oct = Math.round(S.arpOct || 0) + shift;
+  const hz = Math.min(getContext().sampleRate * 0.45, ARP_ROOT_HZ * Math.pow(2, (written - ROOT) / 12 + oct));
   v.o.frequency.setTargetAtTime(hz, at, 0.006);
+  // a waveform crossfade's second tone plays the same note (lineMorph), and
+  // the ring keeps the note for a second tone that starts after it is queued
+  if (v.o2) v.o2.frequency.setTargetAtTime(hz, at, 0.006);
+  const s = v.sN++ % SCHED_N;
+  v.sHz[s] = hz; v.sAt[s] = at;
   const open = Math.min(14000, hz * (5 + vel * 14));
-  const atk = Math.max(0.001, S.arpAtk || 0.01);
-  const dec = Math.max(0.02, S.arpDec || 0.25);
   v.filt.frequency.setTargetAtTime(open, at, atk / 3);
   v.filt.frequency.setTargetAtTime(hz * 1.4, at + atk, dec / 3);
+}
+// The octaves a note moves by: the line's own octave, then per note its
+// randomization, 'up' a lift of 0 to its count, 'down' a drop of 0 to its
+// count, 'both' anything from minus the count to plus it, each whole
+// octave equally likely.
+function noteShift(q) {
+  const base = Math.max(-3, Math.min(3, Math.round(+q.oct || 0)));
+  const m = q.octMode;
+  if (m !== 'up' && m !== 'down' && m !== 'both') return base;
+  const n = Math.max(1, Math.min(4, q.octaves | 0));
+  if (m === 'both') return base + Math.floor(Math.random() * (2 * n + 1)) - n;
+  const r = Math.floor(Math.random() * (n + 1));
+  return m === 'up' ? base + r : base - r;
 }
 function arpStart() {
   const ctx = getContext();
   if (arp || !ctx || !dry || !room) return;
-  // level, then the channel gate, then a meter tap feeding the piano's dry
-  // bus and room, as the drone's is
+  // The bus's level chain (master level, strobe pulse, sweep, the 'arp'
+  // channel gate) runs on a steady 1 rather than on the sound, and its output
+  // drives the gain of the dry bus every line feeds, and of each line's own
+  // way into its room (rw, seqVoice). So each line keeps its own reverb
+  // amount and room while one chain still scales everything, dry and wet
+  // alike, and the strobe pulse still lands before every room, not on its
+  // tail.
+  const ctrl = ctx.createConstantSource(); ctrl.offset.value = 1;
   const out = ctx.createGain(); out.gain.value = 0;
   // Vary with strobe: an oscillator at the flash rate swinging this gain
   // around 1 - depth/2 by depth/2, so at full depth the line pulses from full
@@ -984,28 +1424,38 @@ function arpStart() {
   amLfo.connect(amDepth); amDepth.connect(amG.gain); amLfo.start();
   const swG = ctx.createGain(); swG.gain.value = 1;   // the volume sweep's own hand
   const chanG = ctx.createGain(); chanG.gain.value = chanGate('arp');
-  // its own share of the piano's room, before the shared wet level
-  const revG = ctx.createGain(); revG.gain.value = Math.max(0, S.arpRev ?? 1);
-  const tap = meterTap(ctx, dry, revG);
-  revG.connect(room.input);
-  out.connect(amG); amG.connect(swG); swG.connect(chanG); chanG.connect(tap.analyser);
+  ctrl.connect(out); out.connect(amG); amG.connect(swG); swG.connect(chanG);
+  // the bus sits at 0 on its own, so the chain's output is its gain
+  const busD = ctx.createGain(); busD.gain.value = 0;
+  chanG.connect(busD.gain);
+  // a meter tap on the dry bus feeding the piano's dry bus, as the drone's
+  // is; the sends go into the lines' own rooms (lineRoom)
+  const tap = meterTap(ctx, dry);
+  busD.connect(tap.analyser);
+  ctrl.start();
   arpVolSweep.start(ctx, swG.gain, 1);
-  const a = arpVoice(ctx, -1, 1), b = arpVoice(ctx, 1, -1);
-  for (const v of [a, b]) { v.dryP.connect(out); v.echoP.connect(out); }
-  b.inG.gain.value = 0;
   const now = ctx.currentTime;
   markT.fill(-1);
-  // The 8 4 3 answer is parked for now (bNext never arrives): only the main
-  // 3 4 8 line plays. Restore the old schedule, now + 16 + Math.random() * 14,
-  // to bring the answering layer back.
-  arp = { out, amG, amLfo, amDepth, swG, chanG, revG, tap, a, b, rate: arpTargetRate(), next: now + 0.1, ia: 0, ib: 0,
-          bOn: false, bUntil: 0, bTail: 0, bNext: Infinity, timer: null, amHz: NaN, dAt: NaN };
+  // The 8 4 3 answer is parked for now (bNext never arrives): only the lines
+  // play. Restore the old schedule, now + 16 + Math.random() * 14, to bring
+  // the answering layer back; it answers line 1 and rides that line's gain.
+  arp = { ctrl, out, amG, amLfo, amDepth, swG, chanG, busD, tap,
+          v: new Array(SEQ_COUNT).fill(null), b: null,
+          rate: arpTargetRate(), next: now + 0.1, ia: 0, ib: 0,
+          bOn: false, bUntil: 0, bTail: 0, bNext: Infinity, timer: null, amHz: NaN, tickAt: now };
   glideParam(out.gain, S.arpVol, 1.0);
   arpPump();
 }
 function arpPump() {
   if (!arp) return;
   const ctx = getContext(), target = arpTargetRate();
+  // The swings move by the audio clock's own time since the last pump, so a
+  // suspended context holds them where they are, as a stopped sequencer does
+  // (no pump runs at all then).
+  const dt = ctx.currentTime - arp.tickAt;
+  arp.tickAt = ctx.currentTime;
+  if (dt > 0) seqAdvance(dt);
+  seqSync();
   while (arp.next < ctx.currentTime + 0.6) {
     const t = arp.next;
     // The speed eases toward the dial over about a second and a half, note
@@ -1014,24 +1464,37 @@ function arpPump() {
     const step = 1 / arp.rate;
     arp.rate += (target - arp.rate) * (1 - Math.exp(-step / 1.5));
     if (!arp.bOn && t >= arp.bNext) {
-      // the answer comes in and the main line eases back
+      // the answer comes in and line 1 eases back; the answer's tone is
+      // built the first time, into line 1's own gain
+      const a = arp.v[0] || (arp.v[0] = seqVoice(ctx, 0));
+      if (!arp.b) {
+        arp.b = lineVoice(ctx, seqAt(0), 1, a.g, lineDelay(seqAt(0)));
+        arp.b.inG.gain.value = 0;
+        lineShape(arp.b, seqAt(0), 0);
+      }
       arp.bOn = true; arp.bUntil = t + 8 + Math.random() * 8; arp.ib = 0;
-      arp.a.inG.gain.setTargetAtTime(ARP_DIP, t, 0.7);
+      a.inG.gain.setTargetAtTime(ARP_DIP, t, 0.7);
       arp.b.inG.gain.setTargetAtTime(1, t, 0.7);
     } else if (arp.bOn && t >= arp.bUntil) {
       arp.bOn = false; arp.bTail = t + 3; arp.bNext = t + 16 + Math.random() * 14;
-      arp.a.inG.gain.setTargetAtTime(1, t, 1.0);
+      arp.v[0].inG.gain.setTargetAtTime(1, t, 1.0);
       arp.b.inG.gain.setTargetAtTime(0, t, 1.0);
     }
-    const pat = seqPattern();
-    const len = Math.max(1, Math.min(SEQ_MAX, pat.len | 0));
-    const si = arp.ia++ % len;
-    const note = pat.steps[si];
-    if (note >= 0) arpNote(note, 0.46 + Math.random() * 0.08, t, arp.a);
-    seqMark(t, si);
-    if (arp.bOn || t < arp.bTail) {
+    // every live line reads its own step off the shared count
+    const c = arp.ia++;
+    for (let i = 0; i < SEQ_COUNT; i++) {
+      const v = arp.v[i];
+      if (!v || !v.live) continue;
+      const q = seqAt(i);
+      if (!q) continue;
+      const note = q.steps[c % seqLen(q)];
+      if (!(note >= 0)) continue;
+      arpNote(note, 0.46 + Math.random() * 0.08, t, v, noteShift(q), effAtk[i], effDec[i]);
+    }
+    seqMark(t, c);
+    if (arp.b && (arp.bOn || t < arp.bTail)) {
       // half a step off the main line, so the two interleave
-      arpNote(ARP_B[arp.ib++ % 3], 0.42 + Math.random() * 0.08, t + step * 0.5, arp.b);
+      arpNote(ARP_B[arp.ib++ % 3], 0.42 + Math.random() * 0.08, t + step * 0.5, arp.b, 0, effAtk[0], effDec[0]);
     }
     arp.next += step;
   }
@@ -1043,16 +1506,20 @@ function arpPump() {
   const hz = strobeHz();
   if (hz !== arp.amHz) { arp.amHz = hz; arp.amLfo.frequency.setTargetAtTime(hz, ctx.currentTime, 0.05); }
   if (arp.amLfo.type !== strobeWave()) arp.amLfo.type = strobeWave();
-  // the echoes ride the eased speed too, a step and a half behind it; the
-  // easing creeps toward the dial for ever, so a change under a millionth
-  // (a fraction of a microsecond of delay) counts as none
-  const d = 1.5 / arp.rate;
-  if (!(Math.abs(d - arp.dAt) <= d * 1e-6)) {
-    arp.dAt = d;
-    arp.a.d.delayTime.setTargetAtTime(d, ctx.currentTime, 0.25);
-    arp.b.d.delayTime.setTargetAtTime(d, ctx.currentTime, 0.25);
-  }
+  // every line's delay rides the eased speed too, its own count of steps
+  // behind the note
+  for (let i = 0; i < SEQ_COUNT; i++) if (arp.v[i]) lineDelayTo(ctx, arp.v[i], seqAt(i));
+  if (arp.b) lineDelayTo(ctx, arp.b, seqAt(0));
   arp.timer = setTimeout(arpPump, 200);
+}
+const VOICE_NODES = ['o', 'filt', 'wg', 'inG', 'dryP', 'dA', 'dB', 'inB', 'aa', 'ab', 'ba', 'bb',
+                     'egA', 'egB', 'pA', 'pB', 'g', 'rv', 'rw', 'm1', 'o2', 'm2'];
+function voiceOff(v) {
+  try { v.o.stop(); } catch (e) {}
+  if (v.o2) try { v.o2.stop(); } catch (e) {}
+  for (const k of VOICE_NODES) {
+    if (v[k]) try { v[k].disconnect(); } catch (e) {}
+  }
 }
 function arpStop() {
   if (!arp) return;
@@ -1062,37 +1529,34 @@ function arpStop() {
   glideParam(a.out.gain, 0, 0.8);
   setTimeout(() => {
     try { a.amLfo.stop(); a.amLfo.disconnect(); a.amDepth.disconnect(); a.amG.disconnect(); } catch (e) {}
-    try { a.out.disconnect(); a.swG.disconnect(); a.chanG.disconnect(); a.revG.disconnect(); a.tap.analyser.disconnect(); } catch (e) {}
-    for (const v of [a.a, a.b]) {
-      try { v.o.stop(); } catch (e) {}
-      for (const k of ['o', 'filt', 'wg', 'inG', 'dryP', 'd', 'eg', 'echoP']) {
-        try { v[k].disconnect(); } catch (e) {}
-      }
-    }
+    try { a.ctrl.stop(); a.ctrl.disconnect(); a.out.disconnect(); a.swG.disconnect(); a.chanG.disconnect(); } catch (e) {}
+    try { a.busD.disconnect(); a.tap.analyser.disconnect(); } catch (e) {}
+    for (const v of a.v) if (v) voiceOff(v);
+    if (a.b) voiceOff(a.b);
   }, 4000);
 }
-// The switch, level and speed. A new speed moves the echo with it, so the
-// answer stays a step and a half behind.
+// The switch, the master level (arpVol, over every line), the strobe pulse
+// and the sweep, then every line's own settings through seqSync. The speed
+// and the lines' delays ease from arpPump; nothing to jump here.
 export function applyArp() {
   const want = running && S.arpOn;
   if (want && !arp) arpStart();
   else if (!want && arp) arpStop();
   if (!arp) return;
   glideParam(arp.out.gain, S.arpVol, 0.2);
-  glideParam(arp.revG.gain, Math.max(0, S.arpRev ?? 1), 0.1);
   const amD = arpAmDepth();
   glideParam(arp.amG.gain, 1 - amD / 2, 0.05);
   glideParam(arp.amDepth.gain, amD / 2, 0.05);
   arpVolSweep.update();
-  // the speed and the echo delay ease from arpPump; nothing to jump here
-  const wave = arpWave();
-  const spread = arpSpread();
-  for (const v of [arp.a, arp.b]) {
-    glideParam(v.dryP.pan, v.panSign * spread, 0.1);
-    glideParam(v.echoP.pan, v.echoSign * spread, 0.1);
-    if (v.o.type !== wave) { v.o.type = wave; glideParam(v.wg.gain, ARP_WAVE_GAIN[wave], 0.05); }
-  }
+  seqSync();
 }
+
+// A line's own settings only (its level, mute, solo, wave, envelope, pan,
+// reverb and delay), for the sequencer window's per-line controls and
+// worker mode's packed row: the master chain has not moved, so it is left
+// alone. The envelope and the delay's time are read by the pump, so they
+// are heard from its next pass.
+export function applySeqs() { seqSync(); }
 
 // The drone's own switch: parked or woken without touching the piano. Off
 // mid-session fades it out through bedOff's ramp; on brings it back with its

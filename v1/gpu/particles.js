@@ -51,6 +51,7 @@
 
 import { S, Z_NEAR, Z_FAR } from '../../js/state.js';
 import { SIM_WGSL, RENDER_WGSL } from './particles.wgsl.js';
+import { motionStep } from '../core/motion.js';
 import { createFold, FOLD_CHAMBER_FORMAT } from './fold.js';
 import { particleBirthsPerSec, PARTICLE_MEAN_VZ, PARTICLE_SLOWEST } from '../core/schema-particles.js';
 // the sequencer channel's peak through the mirror, which reads it from the
@@ -336,7 +337,8 @@ export function createParticles(device, format, platform) {
     } else seqEnv = 0;
 
     // Stopped, the tunnel holds still: no births, no motion, still drawn.
-    const step = S.running ? (dt > 0 && dt < 0.25 ? dt : 0) : 0;
+    // After a pause it first coasts to that stop (core/motion.js).
+    const step = dt > 0 && dt < 0.25 ? motionStep(dt) : 0;
 
     // Everything in flight moves this frame's travel along its path.
     const stepTravel = step * speed;

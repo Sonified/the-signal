@@ -43,10 +43,14 @@ import { createUIRenderer } from './gpu/ui-renderer.js';
 import { createBlur } from './gpu/blur.js';
 
 import { stepStrobe, resetStrobeClock, resetRefreshMeasure, darkSlot } from './core/strobe.js';
+import { motionTick, motionHalt, winding } from './core/motion.js';
 import { initChores, choreRegister, choreRun, choreYield } from './core/chores.js';
 import { initWords, stepWords } from './core/words.js';
 import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame } from './core/store.js';
 import { replayLive, syncPresetsFromStorage } from './core/presets.js';
+import { initBroadcast, broadcastPoke } from './core/broadcast.js';
+import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
+import { stepJourney, syncJourneyFromStorage } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
 import { byId } from './core/schema.js';
@@ -63,11 +67,12 @@ import { createUI } from './ui/imgui.js';
 import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION } from './ui/theme.js';
-import { drawOverlay, overlayState } from './ui/screens/overlay.js';
+import { drawOverlay, overlayState, flashNotice } from './ui/screens/overlay.js';
 import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
+import { drawJourney, journey } from './ui/screens/journey.js';
 
 console.log('[boot] modules evaluated');
 // A boot that throws inside the worker is reported to the page (see
@@ -190,6 +195,9 @@ async function boot() {
     // In worker mode the page starts or stops the sound when the audio link
     // tells it S.running moved.
     if (!inWorker) audioToggleEffects(S);
+    // Run/stop is not a setting, so no save() announces it; the demo
+    // broadcast is told directly (a no-op unless this tab broadcasts).
+    broadcastPoke();
   }
   const lText = byId('lText'), colorQuick = byId('colorQuick');
   const app = {
@@ -211,8 +219,11 @@ async function boot() {
   };
   // A panel guard trip: stop exactly as the viewer's own stop does (audio and
   // all), then show the notice. Runs once, on the frame that trips.
+  // A safety stop skips the pause wind-down (core/motion.js): the flicker
+  // ends on this frame, as it always did.
   function guardPause() {
     if (S.running) toggleRun();
+    motionHalt();
     openGuardNotice(guardMessage());
     profNote('panel guard', guardSummary());
   }
@@ -243,6 +254,7 @@ async function boot() {
   // say what the panel is really showing.
   function clockPause() {
     if (S.running) toggleRun();
+    motionHalt();
     openGuardNotice(clockMessage());
     profNote('clock conflict', displaySummary(S.refreshHz, inWorker));
   }
@@ -262,8 +274,28 @@ async function boot() {
   // can never later save its older copy over it.
   platform.onStorage((key, value) => {
     if (syncFromStorage(key, value, replayLive)) return;
-    syncPresetsFromStorage(key);
+    if (syncPresetsFromStorage(key)) return;
+    syncJourneyFromStorage(key);
   });
+  // The demo broadcast (core/broadcast.js): the drawer's Broadcast section
+  // manages named session links, each a room this tab sends its settings to
+  // on every save; ?follow=<room> makes this tab a follower instead, taking
+  // the room's settings through the same live path a preset recall uses.
+  // Page thread only: in worker mode the store lives in the worker, which
+  // never sees the page's URL, so a normal load is what a demo runs on.
+  if (!inWorker) {
+    initBroadcast(
+      { intent: broadcastUrlIntent(), open: openBroadcastSocket, followUrl: makeFollowUrl },
+      {
+        notify: flashNotice,
+        isRunning: () => S.running,
+        setRunning: on => { if (on !== !!S.running) toggleRun(); },
+        copy: txt => platform.clipboardWrite(txt),
+        // the strobe clock's timebase: the same clock the frame loop's t is on
+        now: platform.now
+      }
+    );
+  }
 
   // ---- per-frame state, allocated once ----
   const renderArgs = { lum: 0, lit: false, overlayList, uiList, topList, glassVisible: false, sceneChanged: true };
@@ -271,7 +303,20 @@ async function boot() {
   let lastActivity = 0, audioWoken = false, lastCursor = '';
   // Whether the pointer rested on the UI (see chromeAwake) at the last build.
   let overUI = false, overWin = false;
-  let frontWin = 'mixer', seqWasOpen = false, mixerWasOpen = false;
+  // The floating windows' stacking, back to front: each entry is a window's
+  // state object (its open flag and last drawn rect) and its draw function.
+  // Opening a window, or a press inside it, moves it to the end, the front.
+  // Fixed arrays, reordered in place, so the frame allocates nothing.
+  const WIN_N = 3;
+  const zWin = [sequencer, mixer, journey];
+  const zDraw = [drawSequencer, drawMixer, drawJourney];
+  const zWasOpen = [false, false, false];
+  function toFront(k) {
+    if (k === WIN_N - 1) return;
+    const w = zWin[k], d = zDraw[k], o = zWasOpen[k];
+    for (let j = k; j < WIN_N - 1; j++) { zWin[j] = zWin[j + 1]; zDraw[j] = zDraw[j + 1]; zWasOpen[j] = zWasOpen[j + 1]; }
+    zWin[WIN_N - 1] = w; zDraw[WIN_N - 1] = d; zWasOpen[WIN_N - 1] = o;
+  }
   const inWin = (r, x, y) => r.rw > 0 && x >= r.rx && x < r.rx + r.rw && y >= r.ry && y < r.ry + r.rh;
   // What the last UI build left behind, for deciding whether this frame can
   // skip building one at all: the chrome's fade, and whether any spring,
@@ -280,24 +325,29 @@ async function boot() {
   // The platform's key events carry no repeat flag, so M remembers that it is
   // held and ignores the auto-repeats, as v0's !e.repeat did; otherwise a
   // held key would flap the window open and shut. Its keyup clears it.
-  let mixerKeyHeld = false, seqKeyHeld = false;
+  let mixerKeyHeld = false, seqKeyHeld = false, journeyKeyHeld = false;
 
   // Global keys, as v0 binds them. They are taken out of the toolkit's view
   // so a focused slider never also treats Space or Enter as "activate".
   function globalKey(e) {
+    // a paste with no field focused is not a keystroke (its text could be
+    // any single letter, and 'f' must not go fullscreen)
+    if (e.code === 'Paste') return false;
     const k = e.key, lk = k.length === 1 ? k.toLowerCase() : k;
     if (e.meta || e.ctrl) return false;
     if (e.code === 'Space') { toggleRun(); return true; }
     if (k === 'Enter' || lk === 'f') { platform.fullscreen.toggle(); return true; }
     if (k === '`' || k === '~' || lk === 'h') { app.toggleDrawer(); return true; }
-    // Escape shuts the mixer first when it is up and leaves the drawer alone,
-    // as v0's mixer took the key before the drawer could see it. The panel
-    // guard's notice, when it is up, goes before either.
+    // Escape shuts the front-most open floating window first and leaves the
+    // drawer alone, as v0's mixer took the key before the drawer could see
+    // it; with no window up, it puts the drawer away. The panel guard's
+    // notice, when it is up, goes before any of them.
     if (k === 'Escape') {
-      if (guard.noticeOpen) guard.noticeOpen = false;
-      else if (sequencer.open) sequencer.open = false;
-      else if (mixer.open) mixer.open = false;
-      else S.panelOpen = false;
+      if (guard.noticeOpen) { guard.noticeOpen = false; return true; }
+      for (let j = WIN_N - 1; j >= 0; j--) {
+        if (zWin[j].open) { zWin[j].open = false; return true; }
+      }
+      S.panelOpen = false;
       return true;
     }
     // M opens and shuts the mixer (v0's js/ambience-mixer.js shortcut). It
@@ -312,7 +362,17 @@ async function boot() {
       if (!seqKeyHeld) { seqKeyHeld = true; sequencer.open = !sequencer.open; }
       return true;
     }
-    if (lk === 't' && lText) { lText.set(S, lText.get(S) ? 0 : 1); return true; }
+    // J does the same for the journey window.
+    if (lk === 'j' && !e.alt) {
+      if (!journeyKeyHeld) { journeyKeyHeld = true; journey.open = !journey.open; }
+      return true;
+    }
+    if (lk === 't' && lText) {
+      lText.set(S, lText.get(S) ? 0 : 1);
+      // the toggle is invisible until a word next appears, so say what happened
+      flashNotice(lText.get(S) ? 'Text: On' : 'Text: Off');
+      return true;
+    }
     if (lk === 'c' && colorQuick) { runAction(colorQuick, S); return true; }
     return false;
   }
@@ -350,6 +410,7 @@ async function boot() {
       // since keys are routed before this frame's UI exists.
       if (e.type === 'keyup' && (e.key === 'm' || e.key === 'M')) mixerKeyHeld = false;
       if (e.type === 'keyup' && (e.key === 's' || e.key === 'S')) seqKeyHeld = false;
+      if (e.type === 'keyup' && (e.key === 'j' || e.key === 'J')) journeyKeyHeld = false;
       if (e.type === 'key' && !ui.textEditing && globalKey(e)) continue;
       uiEvents.push(e);
     }
@@ -362,6 +423,8 @@ async function boot() {
     // simulation. The mixer's meters are drawn this frame only while its
     // window is showing (open, or still fading out: the same spring
     // drawMixer reads), so only then are they stepped before the UI.
+    // The pause wind-down's scale for this frame, before anything moves.
+    motionTick(dt);
     const r = stepStrobe(t);
     // Worker mode: hold the engine's measured refresh against the page's.
     // While they disagree the guard judges by the slower one.
@@ -374,6 +437,8 @@ async function boot() {
     if (guardStep(t, r.lum)) guardPause();
     if (guard.noticeOpen && S.running) guard.noticeOpen = false;
     stepWords(t, dt);
+    // the journey's walk and its authoring diff (core/journey.js)
+    stepJourney(t);
     const metersShown = mixer.open || anim.value('mixer.open') >= 0.002;
     if (metersShown) stepAtmosphere(t, true);
     if (perfOn) t2 = platform.now();
@@ -397,7 +462,7 @@ async function boot() {
     // any of the UI floating over the picture holds the chrome up; one
     // resting on the bare picture lets the chrome alone fade.
     const chromeAwake = guard.noticeOpen || ui.activeId !== -1 || overUI || t - lastActivity < LAYOUT.idleMs;
-    const awake = chromeAwake || S.panelOpen || mixer.open || sequencer.open;
+    const awake = chromeAwake || S.panelOpen || mixer.open || sequencer.open || journey.open;
     const idle = !awake && events.length === 0 && !uiUnsettled && ui.activeId === -1 && lastChromeA < 0.01;
     if (idle) {
       // ui.begin normally hands the springs this frame's dt; the overlay's
@@ -414,23 +479,28 @@ async function boot() {
       stepDrawer(ui);   // the slide everything below reads this frame
 
       drawGuardNotice(ui, app);
-      // The two floating windows stack by last touch: a press inside one (or
-      // its opening) brings it to the front. The back one is built first with
-      // the front one's rect occluded, so it can neither show under nor take
-      // a press from it; the front one is built and drawn after, on top.
-      if (sequencer.open && !seqWasOpen) frontWin = 'seq';
-      if (mixer.open && !mixerWasOpen) frontWin = 'mixer';
-      seqWasOpen = sequencer.open; mixerWasOpen = mixer.open;
-      if (ui._downEvent) {
-        const inS = inWin(sequencer, ui._downX, ui._downY), inM = inWin(mixer, ui._downX, ui._downY);
-        if (inS && !(inM && frontWin === 'mixer')) frontWin = 'seq';
-        else if (inM && !(inS && frontWin === 'seq')) frontWin = 'mixer';
+      // The floating windows (mixer, sequencer, journey) stack by last
+      // touch: a press inside one, or its opening, brings it to the front,
+      // and a press where several overlap goes to the front-most of them.
+      // They are built back to front, each with the rects of every window in
+      // front of it occluded (as last drawn), so none can show under or take
+      // a press from one above it, and the front one is drawn last, on top.
+      for (let j = 0; j < WIN_N; j++) {
+        const w = zWin[j];
+        if (w.open && !zWasOpen[j]) { zWasOpen[j] = true; toFront(j); j--; continue; }
+        zWasOpen[j] = w.open;
       }
-      const front = frontWin === 'seq' ? sequencer : mixer;
-      ui.setOcclusion(front.rx, front.ry, front.rw, front.rh);
-      if (frontWin === 'seq') drawMixer(ui, app, 1); else drawSequencer(ui, app, 1);
+      if (ui._downEvent) {
+        for (let j = WIN_N - 1; j >= 0; j--) {
+          if (inWin(zWin[j], ui._downX, ui._downY)) { toFront(j); break; }
+        }
+      }
+      for (let j = 0; j < WIN_N; j++) {
+        ui.clearOcclusion();
+        for (let f = j + 1; f < WIN_N; f++) { const w = zWin[f]; ui.addOcclusion(w.rx, w.ry, w.rw, w.rh); }
+        zDraw[j](ui, app, 1);
+      }
       ui.clearOcclusion();
-      if (frontWin === 'seq') drawSequencer(ui, app, 1); else drawMixer(ui, app, 1);
       drawBurger(ui, app, chromeA, frost);
 
       ui.dl = uiList;
@@ -445,7 +515,7 @@ async function boot() {
         // sequencer (their widgets included) lets the rest of the chrome
         // fade, and only keeps the cursor alive below.
         const px = ui.pointerX, py = ui.pointerY;
-        overWin = px >= 0 && (inWin(mixer, px, py) || inWin(sequencer, px, py));
+        overWin = px >= 0 && (inWin(mixer, px, py) || inWin(sequencer, px, py) || inWin(journey, px, py));
         overUI = px >= 0 && !overWin && (ui.hotId !== -1 ||
                              (S.panelOpen && px < drawerEdge()));
       }
@@ -472,11 +542,15 @@ async function boot() {
     // safe blur capture, otherwise only lit frames are (ARCHITECTURE rule 1).
     // While stopped the scene only changes on input, as the drawer slides it
     // aside, or while the overlay fades, so only those mark the capture stale.
+    // Winding down after a pause (core/motion.js) the scene still moves and
+    // the flicker is still fading out, so until it ends it counts as running
+    // for both: a changed scene, and a capture only on a truly lit frame.
     const inset = S.edgeInset;
+    const wind = winding();
     renderArgs.lum = r.lum;
-    renderArgs.lit = r.lit || !S.running;
+    renderArgs.lit = r.lit || (!S.running && !wind);
     renderArgs.glassVisible = uiList.glassCount + topList.glassCount > 0;
-    renderArgs.sceneChanged = S.running || events.length > 0 || inset !== lastInset || overlayState.animating;
+    renderArgs.sceneChanged = S.running || wind || events.length > 0 || inset !== lastInset || overlayState.animating;
     lastInset = inset;
     engine.render(renderArgs);
     if (perfOn) t4 = platform.now();

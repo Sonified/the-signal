@@ -61,7 +61,7 @@ export function saveSettings() {
       ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod,
       edgeSpeedVar: S.edgeSpeedVar, edgeSpeedVarPeriod: S.edgeSpeedVarPeriod,
       edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
-      carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked,
+      carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked, amModOn: S.amModOn,
       toneOn: S.toneOn, clickOn: S.clickOn, toneVol: S.toneVol, clickVol: S.clickVol, pipMs: S.pipMs,
       harmOn: S.harmOn, harmVol: S.harmVol, harmCount: S.harmCount, harmBright: S.harmBright,
       harmSpread: S.harmSpread, harmPanRate: S.harmPanRate, harmReverb: S.harmReverb,
@@ -176,6 +176,7 @@ export function applySettings() {
   if (typeof s.carrierHz === 'number')    { S.carrierHz = s.carrierHz; $('carrier').value = S.carrierHz; $('carrVal').textContent = S.carrierHz; }
   if (typeof s.amRate === 'number')       { S.amRate = s.amRate; $('amRate').value = S.amRate; }
   if (typeof s.amLinked === 'boolean') S.amLinked = s.amLinked;
+  if (typeof s.amModOn === 'boolean') S.amModOn = s.amModOn;
   $('amRate').disabled = S.amLinked;
   $('amRate').closest('.ctl').classList.toggle('locked', S.amLinked);
   if (typeof s.volume === 'number')       { S.volume = s.volume; $('vol').value = Math.round(S.volume*100); $('volVal').textContent = Math.round(S.volume*100); }

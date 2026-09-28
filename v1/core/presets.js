@@ -61,12 +61,44 @@ function setBoolIfNeeded(id, want) {
 // Each one also bumps a counter, which the frame profiler (core/profiler.js)
 // reads once a frame to mark the frames a transition was running in. A
 // counter rather than a timestamp, because this module keeps no clock.
+//
+// Exported, with its window as an argument, for the journey
+// (core/journey.js): a step glides in over its own ramp time through this
+// same door, so the profiler's marks and the worker link's glide flag see a
+// step exactly as they see a preset. Every opening is closed with endGlide().
+//
+// Each opening also marks when its window ends, for the visual changes that
+// have no audio ramp to ride: the Edge layer crossfades one effect into the
+// next over whatever is left of it (gpu/scene.js reads transitionRemaining
+// the frame the effect changes, after the set() calls that changed it have
+// run and the scope has closed, so it is the window that is read, not the
+// scope). span is how long that window is when it differs from the audio's:
+// a journey step lands its segments inside a short glide as its ramp begins,
+// but the ramp itself is the change the eye should follow. A later opening
+// always sets it afresh, so a nested one (a snapshot recalled inside a
+// preset) or a quick second change is measured from its own start. The
+// clock is performance.now, which the page and the engine's worker both
+// have, and which keeps running while the scene is stopped, as a glide does.
 let transitionCount = 0;
+let windowEndMs = 0;
+let lastGlideSec = PRESET_GLIDE_S;
 export const presetTransitionCount = () => transitionCount;
-function beginTransition() {
+// The audio window of the latest opening, for the broadcast (core/
+// broadcast.js): a state message that carries a fresh recall also says how
+// long its glide was, so a follower can spend what the network left of it
+// and land at the same shared-clock moment as the broadcaster.
+export const lastTransitionSec = () => lastGlideSec;
+export function beginTransition(sec = PRESET_GLIDE_S, span = sec) {
   transitionCount++;
-  beginGlide(PRESET_GLIDE_S);
-  glideStrobeFreq(PRESET_GLIDE_S);
+  lastGlideSec = sec;
+  windowEndMs = performance.now() + Math.max(0, span) * 1000;
+  beginGlide(sec);
+  glideStrobeFreq(sec);
+}
+// Seconds left in the latest transition's window, 0 once it has passed.
+export function transitionRemaining() {
+  const left = windowEndMs - performance.now();
+  return left > 0 ? left / 1000 : 0;
 }
 
 export function applyPreset(name) {
@@ -88,13 +120,15 @@ function applyPresetNow(name) {
     clickButton(P.clickMode === 'click' ? 'cmClick' : 'cmChirp');
   }
 
+  // A control with no single set (a range, which sets each knob on its
+  // own) is passed over rather than called.
   for (const [id, val] of Object.entries(P.inputs || {})) {
     const control = byId(id);
-    if (control) control.set(S, val);
+    if (control && control.set) control.set(S, val);
   }
   for (const [id, val] of Object.entries(P.selects || {})) {
     const control = byId(id);
-    if (control) control.set(S, val);
+    if (control && control.set) control.set(S, val);
   }
   // Layer checkboxes (and, for a preset that mentions it, the audio layer)
   // are toggles: only clicked when they are not already where the preset
@@ -137,14 +171,20 @@ export const PRESET_LIST = [
 // value, and the multi-select word themes because their set() toggles one
 // key rather than assigning. A uiOnly control (a sub-drawer's open/close) is
 // how the drawer is arranged, not a setting, so a snapshot never moves it.
-// clickMode goes first, for the same reason it
-// does in applyPreset above: the five shared pip controls address the click
+// A range (widgets.js) is left out too: it has no single position to diff,
+// and its two values are plain state the snapshot's own apply puts back,
+// with no side effect a set() pass would add. clickMode goes first, for
+// the same reason it does in applyPreset above: the five shared pip controls address the click
 // or the chirp by S.clickMode, so the voice has to be settled before them.
 const REPLAY = CONTROLS.filter(c =>
   (c.kind === 'slider' || c.kind === 'segment' || c.kind === 'toggle' || c.kind === 'color') &&
   !c.multi && !c.uiOnly && c.get && c.set);
 REPLAY.sort((a, b) => (b.id === 'clickMode') - (a.id === 'clickMode'));
 const before = new Array(REPLAY.length);
+// The same list, read only, for the journey: a step records and replays
+// control positions, so it diffs exactly what a snapshot diffs, in the same
+// order. Shared rather than filtered again, so the two can never disagree.
+export const REPLAY_CONTROLS = REPLAY;
 
 // store.applySnapshot writes state and nothing else, which is all a boot
 // needs, but mid-session the audio graph, the edge particles and the rest
@@ -169,8 +209,11 @@ const before = new Array(REPLAY.length);
 //
 // The whole pass is a transition (see beginTransition above), so a snapshot
 // glides in exactly as a built-in does, and so does a change from another tab.
-export function replayLive(apply) {
-  beginTransition();
+// `sec` overrides the window (the broadcast's deadline alignment: a follower
+// runs what the network left of the broadcaster's glide); left out, the
+// preset glide as always.
+export function replayLive(apply, sec) {
+  beginTransition(sec);
   try {
     for (let i = 0; i < REPLAY.length; i++) before[i] = REPLAY[i].get(S);
     const layersBefore = S.ambLayers;

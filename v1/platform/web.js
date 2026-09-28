@@ -279,6 +279,16 @@ export function createPlatform(canvas) {
     if (!ownsKeys()) return;
     q.key('keyup', e);
   });
+  // Paste is its own DOM event, never keystrokes, so it is caught here and
+  // queued whole; the focused text field takes it, and with no field focused
+  // it falls on the floor (main.js's globalKey never treats it as a key).
+  window.addEventListener('paste', e => {
+    if (!ownsKeys()) return;
+    const t = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+    if (!t) return;
+    e.preventDefault();
+    q.paste(t, e.timeStamp);
+  });
 
   guardGestures(canvas);
 

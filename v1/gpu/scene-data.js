@@ -21,6 +21,7 @@
 import { S, layers, Z_NEAR } from '../../js/state.js';
 import { shape, smoothstep } from '../../js/util.js';
 import { radialFade } from '../core/fade.js';
+import { flickerLevel } from '../core/strobe.js';
 import { bandHue } from '../../js/color.js';
 
 export const LUT_N = 4096;                 // radial samples for the ring layer
@@ -53,6 +54,9 @@ export const CAP_FLOATS_PER_PARTICLE = 12;
 // Under per-element colour the scene converts a colour for every corner,
 // ring and particle every frame, and the v0 helper left an array and a
 // closure behind for each of them. Same maths and rounding, same colours.
+// Exported for the edge's other effects (edge-fx.js), which take their
+// per-element colours from the same particle hues; the result is this
+// scratch, good until the next call.
 const hslOut = [0, 0, 0];
 function hueChannel(p, q, t) {
   t = ((t % 1) + 1) % 1;
@@ -61,7 +65,7 @@ function hueChannel(p, q, t) {
   if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
   return p;
 }
-function hsl(h, s, l) {
+export function hsl(h, s, l) {
   if (s === 0) { const v = Math.round(l * 255); hslOut[0] = v; hslOut[1] = v; hslOut[2] = v; return hslOut; }
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;
@@ -107,11 +111,14 @@ export class SceneData {
   // pixelW/pixelH/dpr come from the last resize() call, not from S, so the
   // shader's pixel-space maths always matches the texture it draws into
   // regardless of what else in S might be stale on a given frame.
-  build(lum, pixelW, pixelH, dpr) {
+  // surf is the Surfing effect's share of the edge this frame, 1 when it is
+  // the edge's effect, 0 when another is, and in between while scene.js
+  // crossfades one into the other; at 0 nothing is built.
+  build(lum, pixelW, pixelH, dpr, surf = 1) {
     this.grew = false;
     buildUniform(this, lum, pixelW, pixelH, dpr);
-    if (layers.edge) {
-      buildEdge(this, dpr);
+    if (layers.edge && surf > 0) {
+      buildEdge(this, dpr, surf);
     } else {
       this.tailVertCount = 0;
       this.capInstCount = 0;
@@ -138,7 +145,16 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   u[9] = size * 0.5 * dpr;            // disc radius / panel half-extent
   u[10] = 18 * dpr;                   // panel corner radius, matches canvas2d's fixed r=18
   u[11] = (layers.field && level > 0.002) ? 1 : 0;
-  for (let i = 0; i < 4; i++) u[12 + i] = shape((S.phase + i / 4) % 1) * 0.5 * S.bright * S.effDepth;
+  // The corners strobe on their own quarter-offset phases, so they follow
+  // the flicker level the way the field follows flickerLum: paused (or
+  // winding down with Pause stops flicker on) they settle to the steady
+  // top-of-cycle look, all four equal, instead of flickering on or freezing
+  // mid-cycle.
+  const fl = flickerLevel();
+  for (let i = 0; i < 4; i++) {
+    const cs = 1 + (shape((S.phase + i / 4) % 1) - 1) * fl;
+    u[12 + i] = cs * 0.5 * S.bright * S.effDepth;
+  }
 
   // Corner colours: quantised the same way js/color.js's hueStr is, just
   // evaluated directly rather than through the CSS-string palette cache that
@@ -259,7 +275,7 @@ const MERGE_EPS = 1e-4;
 // swells up out of the screen edge and settles back into it with no corner
 // anywhere, where the wedge meets the edge at an angle.
 
-function buildEdge(sd, dpr) {
+function buildEdge(sd, dpr, surf) {
   const particles = S.particles;
   const n = particles.length;
   sd.ensureCapacity(n);
@@ -276,11 +292,23 @@ function buildEdge(sd, dpr) {
   cornerFrac[2] = (w + H) / per;
   cornerFrac[3] = (2 * w + H) / per;
 
+  // The edge particles breathe on the master clock, each offset so they
+  // shimmer, which is a flicker of their own; like the corners they follow
+  // the flicker level, settling to the steady top-of-cycle look the moment
+  // pause ends the flashing (core/strobe.js flickerLevel).
+  // Pulse with strobe (S.edgePulse) scales how deep that breathing goes:
+  // at 1 exactly as it always was, at 0 a steady edge at full strength.
+  const efl = flickerLevel();
+  const pulse = typeof S.edgePulse === 'number' ? Math.max(0, Math.min(1, S.edgePulse)) : 1;
   for (let pi = 0; pi < n; pi++) {
     const p = particles[pi];
-    // each particle breathes on the master clock, offset so they shimmer
-    const lp = shape((S.phase + p.off) % 1);
-    const a = (0.25 + 0.75 * lp) * 0.75 * S.bright * (S.edgeOpacity ?? 1);
+    const lp = 1 + (shape((S.phase + p.off) % 1) - 1) * efl;
+    const full = 0.25 + 0.75 * lp;
+    const breath = pulse === 1 ? full : 1 + (full - 1) * pulse;
+    // Edge opacity alone sets the edge's level: the Strobe section's
+    // Brightness is the field's, not the scene's, so the edge stopped
+    // riding it (it did in v0, and until early on in v1).
+    const a = breath * 0.75 * (S.edgeOpacity ?? 1) * surf;
     if (a < 0.004) continue;
 
     let r, g, b;

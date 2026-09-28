@@ -17,6 +17,7 @@ import { shape } from '../../js/util.js';
 import { bandHue } from '../../js/color.js';
 import { setAmRate, hasNode } from '../../js/audio.js';
 import { updateRings, updateParticles } from '../../js/sim.js';
+import { motionStep, motionScale, winding } from './motion.js';
 
 // Returned and mutated in place every call, so a frame that reads lum and lit
 // never makes stepStrobe allocate to hand them over.
@@ -115,9 +116,11 @@ export function glideStrobeFreq(sec) {
 // over the rest and steps straight across the band in a single frame. When a
 // preset's own start or target is inside the band, the glide is left as is,
 // since being there is then the preset's choice, not a side effect.
+// Exported for the journey (core/journey.js), whose ramps move the Frequency
+// slider itself over many seconds and take the same path, band cut out.
 const RISK_LO = 15, RISK_HI = 25;
 function inRiskBand(hz) { return hz >= RISK_LO && hz <= RISK_HI; }
-function glideSkippingRiskBand(from, to, f) {
+export function glideSkippingRiskBand(from, to, f) {
   const lo = Math.min(from, to), hi = Math.max(from, to);
   if (inRiskBand(from) || inRiskBand(to) || lo >= RISK_LO || hi <= RISK_HI) {
     return from + (to - from) * f;
@@ -128,6 +131,74 @@ function glideSkippingRiskBand(from, to, f) {
   const firstLeg = Math.abs(edgeNear - from);
   if (d < firstLeg) return from + dir * d;
   return (dir > 0 ? RISK_HI : RISK_LO) + dir * (d - firstLeg);
+}
+
+// ---------- broadcast phase sync ----------
+// A followed broadcast can align this screen's strobe with the broadcaster's
+// (core/broadcast.js): every couple of seconds a beacon arrives saying "at
+// shared-clock time `at` my phase was p, at frequency f, and the variability
+// phases were these". The shared clock is the relay room's own (both sides
+// measure their offset to it NTP-style; broadcast.js hands the offset in), so
+// the beacon can be extrapolated to this frame's own timestamp and compared
+// with where this tab actually is.
+//
+// Corrections are gentle, never jumps. Free-running, the phase error is bled
+// off at SYNC_RATE per second, which bends the effective frequency by at most
+// half the error rate, well under anything the eye reads as a tempo change.
+// Under frame lock the phase can only sit on whole frame indices, so the
+// correction is a whole-frame nudge of the counter, at most one every
+// NUDGE_CYCLES cycles, and only once the error is clearly more than half a
+// frame. The slow variability phases slew the same way; their targets run on
+// each one's own period, so a beacon stays a good target for seconds.
+//
+// A beacon older than SYNC_STALE_S is not chased (the broadcast paused, or
+// the link dropped): the strobe holds its own time until a fresh one lands.
+// The broadcaster itself never corrects; it is the reference.
+const SYNC_RATE = 0.8;
+const NUDGE_CYCLES = 3;
+const SYNC_STALE_S = 8;
+let syncOn = false;
+let clockOff = NaN;                      // shared-clock ms minus this tab's rAF ms
+let syncAt = 0;                          // shared-clock ms the beacon was true at
+let syncP = 0, syncF = 0;                // strobe phase and frequency then
+let syncDP = 0, syncVP = 0, syncBP = 0, syncRP = 0, syncSP = 0, syncZP = 0;
+let nudgeHold = 0;                       // frames until the next frame-lock nudge may run
+
+export function setStrobeClockOffset(off) { clockOff = off; }
+export function setStrobeSyncTarget(at, p, f, dp, vp, bp, rp, sp, zp) {
+  syncAt = at; syncP = p; syncF = f;
+  syncDP = dp; syncVP = vp; syncBP = bp; syncRP = rp; syncSP = sp; syncZP = zp;
+  syncOn = true;
+}
+export function clearStrobeSync() { syncOn = false; }
+
+const frac = x => x - Math.floor(x);
+// shortest way round the circle, in [-0.5, 0.5)
+function phaseErr(target, cur) { const e = (target - cur) % 1; return e - Math.round(e); }
+function slewTo(cur, target, k) { return frac(cur + phaseErr(target, cur) * k); }
+
+function applySync(t, dt) {
+  if (isNaN(clockOff)) return;
+  const el = (t + clockOff - syncAt) / 1000;   // seconds since the beacon was true
+  if (el < 0 || el > SYNC_STALE_S) return;
+  const k = Math.min(1, dt * SYNC_RATE);
+  S.driftPhase        = slewTo(S.driftPhase,        syncDP + el / S.driftPeriod, k);
+  S.varPhase          = slewTo(S.varPhase,          syncVP + el / S.varPeriod, k);
+  S.brightVarPhase    = slewTo(S.brightVarPhase,    syncBP + el / S.brightVarPeriod, k);
+  S.ringBrightPhase   = slewTo(S.ringBrightPhase,   syncRP + el / S.ringBrightPeriod, k);
+  S.edgeSpeedVarPhase = slewTo(S.edgeSpeedVarPhase, syncSP + el / S.edgeSpeedVarPeriod, k);
+  S.edgeSizeVarPhase  = slewTo(S.edgeSizeVarPhase,  syncZP + el / S.edgeSizeVarPeriod, k);
+  const pt = syncP + el * syncF;
+  if (S.frameLock && S.refreshHz > 0 && S.framesPerCycle >= 2) {
+    if (nudgeHold > 0) nudgeHold--;
+    const err = phaseErr(pt, S.phase);
+    if (nudgeHold <= 0 && Math.abs(err) > 0.75 / S.framesPerCycle) {
+      S.frameIdx = (S.frameIdx + (err > 0 ? 1 : S.framesPerCycle - 1)) % S.framesPerCycle;
+      nudgeHold = S.framesPerCycle * NUDGE_CYCLES;
+    }
+  } else {
+    S.phase = slewTo(S.phase, pt, k);
+  }
 }
 
 // How far past a count's halfway point the frame ratio has to go, as a
@@ -169,6 +240,36 @@ function freePhase(phase, freq, dt) {
   return phase - Math.floor(phase);
 }
 function isLit(lum) { return lum > 0.5; }
+// The level the flicker actually shows for a shape value. Running, the shape
+// itself. Winding down after a pause, the flicker keeps its frequency and
+// its phase keeps advancing at the normal rate, and only its depth eases
+// toward the paused look (a steady 1) with the motion scale. Slowing the
+// frequency instead would sweep the flicker down through the low Hz, which
+// is a photosensitivity risk; fading its depth never passes through any
+// rate it was not already at.
+function flickerLum(l) {
+  return S.running ? l : 1 + (l - 1) * motionScale();
+}
+
+// Whether any flicker shows at all. Running, yes. Paused, only while the
+// wind-down is coasting AND the viewer has not asked pause to stop the
+// flicker at once (S.pauseFlickerStop, on by default): someone who pauses
+// because the flashing is too much must see it end on that frame. The
+// checkbox gates only the flicker; the motion keeps coasting either way.
+function flickerShows() {
+  return S.running || (winding() && S.pauseFlickerStop === false);
+}
+
+// How much of the flicker shows this frame, 0 to 1, for anything that
+// strobes on its own phase rather than through lum (the corner glows in
+// gpu/scene-data.js). Running it is 1; winding down with Pause stops
+// flicker off it is the motion scale, the same fade flickerLum applies to
+// the field; otherwise 0, a steady level, so pausing quiets every strobing
+// element together.
+export function flickerLevel() {
+  if (S.running) return 1;
+  return winding() && S.pauseFlickerStop === false ? motionScale() : 0;
+}
 
 // The interval the next frame will most likely be shown after: the measured
 // refresh when there is one, else the last frame's own, else a 60 Hz guess.
@@ -207,8 +308,19 @@ export function stepStrobe(t) {
 
   if (dt > 0.25) dt = 0;          // tab-switch guard
 
+  // A followed broadcast's corrections land before this frame advances, on
+  // the accumulators as the last frame left them; the ordinary steps below
+  // then move everything forward as they always do.
+  if (syncOn && S.running && dt > 0) applySync(t, dt);
+
   S.lastPhase = S.phase;
-  if (S.running) { S.driftPhase += dt / S.driftPeriod; S.driftPhase -= Math.floor(S.driftPhase); }
+  // The pause wind-down (core/motion.js): flick is whether the flicker is
+  // still showing, running or winding down; md is this frame's step for
+  // everything that moves, dt while running and easing to 0 after a pause.
+  // The flicker's own phase always steps by the full dt (see flickerLum).
+  const flick = S.running || winding();
+  const md = motionStep(dt);
+  if (flick) { S.driftPhase += md / S.driftPeriod; S.driftPhase -= Math.floor(S.driftPhase); }
   // Each of the slow modulations below costs a cos or a sin per frame, and at
   // zero variance that trig computes a multiplier of exactly one. So each one
   // is skipped when its amount is zero; the accumulators still advance, so
@@ -229,7 +341,7 @@ export function stepStrobe(t) {
     setAmRate(S.effFreq); S.lastAmSet = S.effFreq;
   }
 
-  if (S.running) {
+  if (flick) {
     if (S.frameLock && S.refreshHz > 0) {
       // The frame count is the nearest whole number of frames per cycle, but
       // it only moves off the one it has once the ratio is clearly past the
@@ -261,24 +373,24 @@ export function stepStrobe(t) {
       S.phase = freePhase(S.phase, S.effFreq, dt);
     }
     S.phase -= Math.floor(S.phase);
-    S.varPhase += (dt / S.varPeriod); S.varPhase -= Math.floor(S.varPhase);
+    S.varPhase += (md / S.varPeriod); S.varPhase -= Math.floor(S.varPhase);
   }
   // 0 at the top of the cycle, so depth starts at its full set value
   S.effDepth = S.depthVarOn !== false && S.depthVar
     ? S.depth * (1 - S.depthVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.varPhase)))
     : S.depth;
 
-  if (S.running) {
-    S.brightVarPhase += (dt / S.brightVarPeriod); S.brightVarPhase -= Math.floor(S.brightVarPhase);
-    S.ringBrightPhase += (dt / S.ringBrightPeriod); S.ringBrightPhase -= Math.floor(S.ringBrightPhase);
+  if (flick) {
+    S.brightVarPhase += (md / S.brightVarPeriod); S.brightVarPhase -= Math.floor(S.brightVarPhase);
+    S.ringBrightPhase += (md / S.ringBrightPeriod); S.ringBrightPhase -= Math.floor(S.ringBrightPhase);
   }
   S.effBright = S.brightVarOn !== false && S.brightVar
     ? S.bright * (1 - S.brightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.brightVarPhase)))
     : S.bright;
 
-  if (S.running) {
-    S.edgeSpeedVarPhase += dt / S.edgeSpeedVarPeriod; S.edgeSpeedVarPhase -= Math.floor(S.edgeSpeedVarPhase);
-    S.edgeSizeVarPhase += dt / S.edgeSizeVarPeriod; S.edgeSizeVarPhase -= Math.floor(S.edgeSizeVarPhase);
+  if (flick) {
+    S.edgeSpeedVarPhase += md / S.edgeSpeedVarPeriod; S.edgeSpeedVarPhase -= Math.floor(S.edgeSpeedVarPhase);
+    S.edgeSizeVarPhase += md / S.edgeSizeVarPeriod; S.edgeSizeVarPhase -= Math.floor(S.edgeSizeVarPhase);
   }
   S.effEdgeSpeed = S.edgeSpeedVar
     ? S.edgeSpeedMul * (1 - S.edgeSpeedVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.edgeSpeedVarPhase)))
@@ -294,22 +406,22 @@ export function stepStrobe(t) {
     ? ringBase * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase)))
     : ringBase;
 
-  if (S.perElementColor && S.colorWalk > 0 && S.running) {
+  if (S.perElementColor && S.colorWalk > 0 && flick) {
     for (let i = 0; i < 4; i++) {
-      S.cornerHv[i] += (Math.random() - 0.5) * WALK_STEP * dt;
+      S.cornerHv[i] += (Math.random() - 0.5) * WALK_STEP * md;
       S.cornerHv[i] *= WALK_DAMP;
       if (S.cornerHv[i] > 1) S.cornerHv[i] = 1;
       if (S.cornerHv[i] < -1) S.cornerHv[i] = -1;
-      S.cornerHue[i] += (1 + S.cornerHv[i] * WALK_SWING) * S.colorWalk * dt / S.walkPeriod;
+      S.cornerHue[i] += (1 + S.cornerHv[i] * WALK_SWING) * S.colorWalk * md / S.walkPeriod;
       S.cornerHue[i] -= Math.floor(S.cornerHue[i]);
     }
   }
-  if (S.colorWalk > 0 && S.running) {
-    S.hueVel += (Math.random() - 0.5) * WALK_STEP * dt;
+  if (S.colorWalk > 0 && flick) {
+    S.hueVel += (Math.random() - 0.5) * WALK_STEP * md;
     S.hueVel *= WALK_DAMP;
     if (S.hueVel > 1) S.hueVel = 1;
     if (S.hueVel < -1) S.hueVel = -1;
-    S.hue += (1 + S.hueVel * WALK_SWING) * S.colorWalk * dt / S.walkPeriod;
+    S.hue += (1 + S.hueVel * WALK_SWING) * S.colorWalk * md / S.walkPeriod;
     S.hue -= Math.floor(S.hue);
     // lightness held, so apparent brightness is steady. Written into S.rgb in
     // place, as v0's strobe worker does; nothing holds S.rgb by identity.
@@ -318,14 +430,34 @@ export function stepStrobe(t) {
   // Paused, the field holds steady and lit rather than fading to black, so
   // pressing space shows the strobe layer at rest instead of hiding it. A
   // steady level is perfectly balanced, so the panel guard reads it as safe.
-  const lum = S.running ? shape(S.phase) : 1;
+  // Winding down with Pause stops flicker off, the flicker fades into that
+  // steady level (flickerLum); with it on (the default) the level is 1 from
+  // the first paused frame and only the motion coasts.
+  // The panel guard stops watching at the pause, as it always has (it resets
+  // its integrators the moment S.running goes false). That stays safe: the
+  // leftover flicker lasts at most the wind-down's five seconds with its
+  // depth falling as the square, a small fraction of the tens of seconds of
+  // imbalance the guard trips on, and a stop the guard itself makes skips
+  // the wind-down entirely (motionHalt in main.js). The lit log stays a
+  // record of running frames only.
+  const lum = flickerShows() ? flickerLum(shape(S.phase)) : 1;
   const lit = isLit(lum);
   if (S.running) pushWindow(S.litLog, lit ? 1 : 0, 120);
   lastDt = dt;
 
+  // The ring and edge sims (js/sim.js, shared with v0) return early unless
+  // S.running, so while winding down they are handed the scaled step with
+  // S.running raised for just the two calls and put straight back. Nothing
+  // else runs in between, so nothing else can see it.
   const ts = t / 1000;
-  updateRings(dt, ts);
-  updateParticles(dt);
+  if (S.running) {
+    updateRings(dt, ts);
+    updateParticles(dt);
+  } else if (md > 0) {
+    // finally, so a throw in either can never leave the strobe running
+    S.running = true;
+    try { updateRings(md, ts); updateParticles(md); } finally { S.running = false; }
+  }
 
   prevLit = result.lit;
   result.lum = lum;
@@ -342,18 +474,21 @@ export function stepStrobe(t) {
 // for the one call and the current one put straight back. Free-running, the
 // phase moves by effFreq over one expected frame interval, so a late frame
 // can land elsewhere; a wrong guess only mistimes a chore (core/chores.js).
-// Stopped, nothing is lit.
+// Stopped, nothing is lit. Winding down, the flicker still runs at its
+// rate, so it is predicted the same way at this frame's depth (flickerLum);
+// the next frame's depth is a touch shallower, which can only mistime a
+// chore, as a late frame can.
 export function nextFrameLit() {
-  if (!S.running) return false;
+  if (!flickerShows()) return false;
   if (S.frameLock && S.refreshHz > 0) {
     lockAdvance(S.framesPerCycle, S.frameIdx, S.phase, S.refreshHz / S.effFreq);
     const duty = S.duty;
     S.duty = lockDuty(lkFpc);
-    const lit = isLit(shape(lkIdx / lkFpc));
+    const lit = isLit(flickerLum(shape(lkIdx / lkFpc)));
     S.duty = duty;
     return lit;
   }
-  return isLit(shape(freePhase(S.phase, S.effFreq, nextDt())));
+  return isLit(flickerLum(shape(freePhase(S.phase, S.effFreq, nextDt()))));
 }
 
 // Whether the slot after this frame's submit is a safe place to stall, which
@@ -372,10 +507,12 @@ export function nextFrameLit() {
 // Stopped, there is no strobe to disturb, so every slot is safe. So is a
 // slow strobe: below CHORE_GUARD_HZ a flash spans many refreshes, and one
 // held a refresh longer is a sliver of it nobody sees, so the chores get
-// every slot rather than waiting for the dark ones.
+// every slot rather than waiting for the dark ones. Winding down after a
+// pause the flicker is still showing, so that counts as running until the
+// wind-down ends.
 const CHORE_GUARD_HZ = 20;
 export function darkSlot() {
-  if (!S.running) return true;
+  if (!flickerShows()) return true;
   if ((S.effFreq || S.freq) < CHORE_GUARD_HZ) return true;
   if (prevLit) return false;
   if (S.frameLock && S.refreshHz > 0) return true;

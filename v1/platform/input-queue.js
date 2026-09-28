@@ -104,6 +104,19 @@ export function createInputQueue() {
     o.time = e.timeStamp;
   }
 
+  // A paste rides the key path as one event: code 'Paste', the whole text in
+  // `key`, for the focused text field to take character by character. Capped,
+  // so a pasted essay cannot pin a pooled event to a huge string until the
+  // ring comes round again.
+  const PASTE_MAX = 512;
+  function paste(text, time) {
+    const o = pushEvent();
+    o.type = 'key';
+    o.key = String(text).slice(0, PASTE_MAX);
+    o.code = 'Paste';
+    o.time = time;
+  }
+
   function pollInput() {
     const out = queue;
     moveByPointer.clear();
@@ -112,5 +125,5 @@ export function createInputQueue() {
     return out;
   }
 
-  return { pointer, wheel, key, pollInput };
+  return { pointer, wheel, key, paste, pollInput };
 }

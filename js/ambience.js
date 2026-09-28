@@ -1,7 +1,8 @@
 // Each atmosphere recording has a fixed mixer channel on the main page.
 import { S } from './state.js';
 import {
-  getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, continueGlide, holdParam
+  getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, continueGlide, holdParam,
+  sourceGate
 } from './audio.js';
 import { layerGate, layerSoloChanged, onLayerGates } from './mixgate.js';
 
@@ -100,7 +101,12 @@ function ensureOut() {
   if (!ctx || !master) return null;
   out = ctx.createGain();
   out.gain.value = S.ambVol;
-  out.connect(master);
+  // The pause gate (audio.js) on the dry side, a gain of its own since the
+  // bus's is the atmosphere's level, and on the room's input below, so a
+  // pause stops the recordings at once and lets the room ring out.
+  const gate = ctx.createGain();
+  sourceGate(gate.gain);
+  out.connect(gate).connect(master);
   // A parallel send rather than an insert. The field recording stays whole and
   // the room is added behind it, so turning this up moves the place further
   // off rather than washing it out -- the ocean heard from inside a cavern,
@@ -108,6 +114,7 @@ function ensureOut() {
   room = createRoom(ctx, () => S.ambRevTime, 2.0);
   wet = ctx.createGain();
   wet.gain.value = S.ambReverb;
+  sourceGate(room.input.gain);
   out.connect(room.input);
   room.output.connect(wet).connect(master);
   return out;

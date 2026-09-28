@@ -116,6 +116,7 @@ const WIN_DEFAULT = 500, WIN_MIN = 440, RADIUS_WIN = 9;
 const BAR_H = 33;                 // 5 + 22 + 5 padding and close button, + 1 bottom border
 const BAR_PAD_L = 13, BAR_PAD_R = 8, BAR_GAP = 9;
 const BTN_H = 21, CLOSE_H = 22, BTN_PAD_X = 9, CLOSE_PAD_X = 7;
+const MAIN_MUTE_W = 23, MAIN_VOL_W = 70;
 const PAD_T = 5, PAD_B = 7;
 const SEC_LINE = 13.5, SEC_FIRST_H = 2 + SEC_LINE, SEC_H = 10 + 1 + 9 + SEC_LINE;
 const CHAN_FIRST_H = 32, CHAN_H = 29;   // a first master-row after a label, and the ones after it
@@ -139,6 +140,10 @@ const DRIFT_TIP = 'Drift: slowly crossfade from place to place on its own';
 // ---------- controls ----------
 const DRIFT = byId('ambMixerDrift');
 const COPY = byId('ambMixerCopy'), CLOSE = byId('ambMixerClose');
+// The bar's master mute and volume are second surfaces on the same 'vmute'
+// and 'vol' the top-right corner speaker drives, so the corner, the drawer
+// and this bar can never disagree.
+const MAIN_VOL = byId('vol'), MAIN_MUTE = byId('vmute');
 
 // One per fader: the schema control, the readout as last formatted (with the
 // unit taken off, since v0 prints the unit in the signal column or the column
@@ -676,6 +681,54 @@ export function drawMixer(ui, app, fade = 1) {
     dl.rect(lightX, cy - 3, 6, 6, 3, C.lightOff, 0, null, 0, 0);
   }
   ui.text.draw(dl, 'MIXER', lightX + 6 + BAR_GAP, baseline(ui, cy, 11), 11, W.semibold, C.title, 0, 0.13, 1);
+
+  // master mute and master volume, right of the title, claimed here before
+  // the title bar's drag so a press never moves the window. The mute is a
+  // channel row's M switch, stroke for stroke, lit red while it holds; only
+  // the interaction is the bar's own, since msButton's hit() clips to the
+  // scrolling body and this sits above it. The slider is the sequencer
+  // header's: a press jumps there and dragging follows. measure() knows
+  // nothing of tracking, so the title's letterspacing is added by hand.
+  const muteX = lightX + 6 + BAR_GAP + ui.text.measure('MIXER', 11, W.semibold)
+              + 0.13 * 11 * ('MIXER'.length - 1) + 10;
+  const muteY = cy - MS_H / 2;
+  const unmuted = MAIN_MUTE ? !!MAIN_MUTE.get(S) : true;
+  if (barHit(ui, 'mixer.vmute', muteX, muteY, MAIN_MUTE_W, MS_H) && MAIN_MUTE) MAIN_MUTE.set(S, unmuted ? 0 : 1);
+  if (btnHover) offerTip(ui.id('mixer.vmute'), muteX, muteY, MAIN_MUTE_W, MS_H, MAIN_MUTE ? MAIN_MUTE.label : 'mute / unmute');
+  if (unmuted) {
+    dl.rect(muteX, muteY, MAIN_MUTE_W, MS_H, 3, C.msBg, 1, C.msBorder, 2, 0.45);
+  } else {
+    dl.rect(muteX - 2, muteY - 2, MAIN_MUTE_W + 4, MS_H + 4, 5, C.muteGlow, 0, null, 0, 0);
+    dl.rect(muteX, muteY, MAIN_MUTE_W, MS_H, 3, C.muteBg, 1, C.muteBorder, 0, 0);
+  }
+  ui.text.draw(dl, 'M', muteX + MAIN_MUTE_W / 2, baseline(ui, cy, 10), 10, W.semibold,
+    unmuted ? C.msInk : C.muteInk, 1, 0, 1);
+
+  // the slider and its readout only when the bar has room for them, so a
+  // narrow window never runs them under the buttons on the right
+  const volX = muteX + MAIN_MUTE_W + 12;
+  if (volX + MAIN_VOL_W + 8 <= driftX) {
+    const vid = ui.id('mixer.vol');
+    ui.interact(vid, volX - 6, cy - 9, MAIN_VOL_W + 12, 18, false);
+    if (ui.hover || ui.pressed) { ui.setCursorHint('ew-resize'); overBtn = true; }
+    const vHover = ui.hover || ui.pressed;
+    if (ui.pressed && ui.activeId === vid && MAIN_VOL) {
+      const pos = Math.round(clamp01((ui.pointerX - volX) / MAIN_VOL_W) * 100);
+      if (pos !== MAIN_VOL.get(S)) MAIN_VOL.set(S, pos);
+    }
+    const vu = MAIN_VOL ? clamp01(MAIN_VOL.get(S) / 100) : 0;
+    dl.rect(volX, cy - 1.5, MAIN_VOL_W, 3, 1.5, C.btnBorder, 0, null, 0, 0);
+    if (!unmuted) dl.pushAlpha(0.35);   // muted dims the level, as the corner's track does
+    if (vu > 0) dl.rect(volX, cy - 1.5, MAIN_VOL_W * vu, 3, 1.5, C.btnInk, 0, null, 0, 0);
+    const kr = vHover ? 6 : 5;
+    dl.rect(volX + MAIN_VOL_W * vu - kr, cy - kr, kr * 2, kr * 2, kr, vHover ? C.masterInk : C.btnInk, 0, null, 0, 0);
+    if (!unmuted) dl.popAlpha();
+    if (MAIN_VOL) {
+      const pct = MAIN_VOL.format(S);
+      if (volX + MAIN_VOL_W + 10 + ui.text.measure(pct, 10, W.regular) <= driftX - 6)
+        ui.text.draw(dl, pct, volX + MAIN_VOL_W + 10, baseline(ui, cy, 10), 10, W.regular, C.valueInk, 0, 0, 1);
+    }
+  }
 
   // drift: lit blue while on, the label never changes (v0's own reasoning:
   // a button that rewrites itself changes width inside a drag handle)

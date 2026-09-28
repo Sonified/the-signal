@@ -22,6 +22,7 @@
 
 import { S } from '../../js/state.js';
 import { FIREWORKS_WGSL, PER_SHOW, MAX_SHOWS, SHOW_FLOATS, UNIFORM_FLOATS, LIFE_BASE } from './fireworks.wgsl.js';
+import { motionStep } from '../core/motion.js';
 
 const RECIPES = LIFE_BASE.length;
 // The first show after switching on.
@@ -218,7 +219,8 @@ export function createFireworks(device, format) {
     if (!made) make();
     if (!wasOn) { wasOn = true; nextAt = clock + FIRST_DELAY; }
 
-    const step = S.running && dt > 0 ? dt : 0;
+    // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
+    const step = dt > 0 ? motionStep(dt) : 0;
     clock += step;
 
     // The visible field, as the particles and the scene frame it: the drawer

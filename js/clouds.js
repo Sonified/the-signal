@@ -25,7 +25,7 @@
 // note on it was that it ran 25 to 50 percent busier than he wanted, so every
 // measured gap is stretched by CLOUD_SPARSE before anything else touches it.
 import { S } from './state.js';
-import { getContext, getMaster, createRoom, swapRoom, glideParam } from './audio.js';
+import { getContext, getMaster, createRoom, swapRoom, glideParam, sourceGate } from './audio.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 
@@ -164,6 +164,11 @@ function buildGraph() {
   wet  = ctx.createGain(); wet.gain.value = S.cloudReverb;
   dry.connect(master);
   room.output.connect(wet).connect(master);
+  // The pause gate (audio.js), on the dry bus and the room's input, so a
+  // pause stops the pads, the long ones still ringing too, and leaves the
+  // room its tail.
+  sourceGate(dry.gain);
+  sourceGate(room.input.gain);
   padTap = meterTap(ctx, dry, room.input); // the mixer's clouds meter
   // Every pad passes through this bus on its way in: the mix gate's mute and
   // solo (mixgate.js). S.cloudVol is baked into each pad as it starts, so the

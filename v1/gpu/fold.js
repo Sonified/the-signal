@@ -20,7 +20,10 @@
 // transparent), with premultiplied colour: alpha 0 for light that adds,
 // alpha 1 for something that covers. Then, inside the scene pass, call
 // draw(pass, params) where params is a reused object of the layer's own:
-// { folds, mirror, rotation, gain }. draw() writes the uniform block with
+// { folds, mirror, rotation, gain, colorGain }. gain scales the fold's output
+// whole, coverage and all; colorGain, optional and 1 when left out, clamped
+// to 0..1, scales its colour only and keeps the coverage, so it darkens
+// rather than fades (feedback.js's composite gain does the same). draw() writes the uniform block with
 // queue.writeBuffer, which lands before the command buffer holding the pass
 // is submitted, so it is safe to call mid encoding.
 //
@@ -38,7 +41,15 @@
 // that half diagonal; fit() lowers the texels per pixel a little to cover it
 // rather than reallocating while the drawer slides.
 //
-// No allocation in fit() or draw().
+// A layer can also fold a chamber image of its own making instead (the
+// Confetti layer's feedback, whose trails live in chamber space). It calls
+// ensureChamber with external set, which sizes the chamber and so frame
+// exactly as usual but makes no texture, draws a chamber-sized image of its
+// own by frame, and folds it with drawFrom(pass, params, view). drawFrom keeps
+// a bind group for each of the last two views it was given (a ping-pong
+// pair), so it makes one only when the image itself is remade.
+//
+// No allocation in fit(), draw() or drawFrom() in an ordinary frame.
 
 import { FOLD_WGSL } from './fold.wgsl.js';
 
@@ -121,6 +132,13 @@ export function createFold(device, format, opts) {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
   });
   const uni = new Float32Array(UNIFORM_FLOATS);
+  // The block as last uploaded, bit for bit, so drawWith writes only when
+  // something in it moved (a stopped scene's fold, or one with no spin,
+  // uploads nothing). Only drawWith writes uniBuf, and it is the one buffer
+  // for draw and drawFrom alike, so the last upload is what the GPU holds.
+  const uniBits = new Uint32Array(uni.buffer);
+  const upBits = new Uint32Array(UNIFORM_FLOATS);
+  let upValid = false;
   const sampler = device.createSampler({
     label: label + '.sampler',
     magFilter: 'linear', minFilter: 'linear',
@@ -128,6 +146,10 @@ export function createFold(device, format, opts) {
   });
 
   let chamber = null, view = null, bind = null;
+  // drawFrom's bind groups: the last two views it read, and which slot the
+  // next new one replaces.
+  const fromView = [null, null], fromBind = [null, null];
+  let fromNext = 0;
   let chamberW = 0, chamberH = 0, canvasW = 1, canvasH = 1, halfSin = WIDEST_HALF_SIN;
   let cxNow = 0, cyNow = 0;
   const frame = new Float32Array(8);
@@ -144,8 +166,10 @@ export function createFold(device, format, opts) {
   // Sizes the chamber for a canvas of pixelW x pixelH device px and the
   // domain params (the { folds, mirror } draw() will get) make, making it
   // only when that size differs from the one it has. Returns whether a
-  // chamber exists.
-  function ensureChamber(pixelW, pixelH, params) {
+  // chamber exists. With external set the size is kept but no texture is
+  // made (any the fold had is let go), for a layer that folds its own image
+  // with drawFrom.
+  function ensureChamber(pixelW, pixelH, params, external) {
     canvasW = Math.max(1, pixelW | 0);
     canvasH = Math.max(1, pixelH | 0);
     halfSin = domainHalfSin(params);
@@ -153,6 +177,11 @@ export function createFold(device, format, opts) {
     const ext = 0.5 * Math.hypot(canvasW, canvasH) * res;
     const wantH = Math.min(maxDim, Math.ceil(ext) + 2 * PAD);
     const wantW = Math.min(maxDim, 2 * (Math.ceil(ext * halfSin) + PAD));
+    if (external) {
+      if (chamber) releaseChamber();
+      chamberW = wantW; chamberH = wantH;
+      return true;
+    }
     if (chamber && chamberW === wantW && chamberH === wantH) return true;
     if (chamber) chamber.destroy();
     chamberW = wantW; chamberH = wantH;
@@ -193,23 +222,58 @@ export function createFold(device, format, opts) {
   }
 
   // The fold itself, inside the scene pass: one fullscreen triangle, one
-  // chamber read per pixel. params: { folds, mirror, rotation, gain }.
+  // chamber read per pixel. params: { folds, mirror, rotation, gain,
+  // colorGain }.
   function draw(pass, params) {
     if (!bind) return;
+    drawWith(pass, params, bind);
+  }
+
+  // The same fold of a chamber-sized image the layer made itself (see the
+  // top of this file), laid out by frame as the chamber would be.
+  function drawFrom(pass, params, fromV) {
+    if (!fromV || chamberW === 0) return;
+    let b = null;
+    for (let i = 0; i < 2; i++) if (fromView[i] === fromV) b = fromBind[i];
+    if (!b) {
+      b = device.createBindGroup({
+        label: label + '.bindFrom',
+        layout: bgl,
+        entries: [
+          { binding: 0, resource: { buffer: uniBuf } },
+          { binding: 1, resource: fromV },
+          { binding: 2, resource: sampler }
+        ]
+      });
+      fromView[fromNext] = fromV; fromBind[fromNext] = b;
+      fromNext = 1 - fromNext;
+    }
+    drawWith(pass, params, b);
+  }
+
+  function drawWith(pass, params, b) {
     const folds = foldsOf(params);
     const mirror = !(params && params.mirror === false);
     const rotation = params && typeof params.rotation === 'number' ? params.rotation % TAU : 0;
     const gain = params && typeof params.gain === 'number' ? params.gain : 1;
     if (!(gain > 0.001)) return;
+    let colorGain = params && typeof params.colorGain === 'number' && params.colorGain === params.colorGain ? params.colorGain : 1;
+    if (colorGain < 0) colorGain = 0; else if (colorGain > 1) colorGain = 1;
     const wedge = TAU / folds;
     const span = mirror ? wedge * 0.5 : wedge;
     uni[0] = frame[0]; uni[1] = frame[1]; uni[2] = frame[2]; uni[3] = frame[3];
     uni[4] = frame[4]; uni[5] = frame[5]; uni[6] = frame[6]; uni[7] = gain;
     uni[8] = cxNow; uni[9] = cyNow; uni[10] = wedge; uni[11] = rotation;
-    uni[12] = UP - span * 0.5; uni[13] = mirror ? 1 : 0; uni[14] = 0; uni[15] = 0;
-    device.queue.writeBuffer(uniBuf, 0, uni);
+    uni[12] = UP - span * 0.5; uni[13] = mirror ? 1 : 0; uni[14] = colorGain; uni[15] = 0;
+    let same = upValid;
+    for (let i = 0; same && i < UNIFORM_FLOATS; i++) if (uniBits[i] !== upBits[i]) same = false;
+    if (!same) {
+      device.queue.writeBuffer(uniBuf, 0, uni);
+      upBits.set(uniBits);
+      upValid = true;
+    }
     pass.setPipeline(pipe);
-    pass.setBindGroup(0, bind);
+    pass.setBindGroup(0, b);
     pass.draw(3);
   }
 
@@ -224,6 +288,7 @@ export function createFold(device, format, opts) {
 
   function destroy() {
     releaseChamber();
+    fromView[0] = fromView[1] = null; fromBind[0] = fromBind[1] = null;
     uniBuf.destroy();
   }
 
@@ -232,6 +297,6 @@ export function createFold(device, format, opts) {
     chamberPassDesc,
     frame,
     get chamberView() { return view; },
-    ensureChamber, fit, draw, releaseChamber, destroy
+    ensureChamber, fit, draw, drawFrom, releaseChamber, destroy
   };
 }

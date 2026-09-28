@@ -496,7 +496,13 @@ export function createText(device, platform) {
       // every line must fit inside; breaks fall only on spaces.
       const avail = (availW > 0 ? availW : 1e9) * lw;
       const lines = [];
+      // A forced break (a '/' in the Custom source's text, turned into '\n'
+      // as the pool is built, core/words.js) is honoured the same way: each
+      // segment starts its own line whatever the Line width or Smart breaks
+      // say, and a segment too wide wraps inside itself. Text with no '\n'
+      // takes the plain path, so words and affirmations lay out as before.
       if (pieces) for (const piece of pieces) wrapInto(piece, wi, scale, spacingPx, avail, lines);
+      else if (str.indexOf('\n') >= 0) for (const seg of str.split('\n')) wrapInto(seg, wi, scale, spacingPx, avail, lines);
       else wrapInto(str, wi, scale, spacingPx, avail, lines);
       let maxw = 0;
       for (const L of lines) maxw = Math.max(maxw, computeWidth(wi, scale, L, spacingPx));

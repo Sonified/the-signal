@@ -40,7 +40,7 @@ import { S } from '../../js/state.js';
 import {
   ensureAudioGraph, warmDevice, audioOn, setAmRate, hasNode, beginGlide, endGlide, PRESET_GLIDE_S
 } from '../../js/audio.js';
-import { arpPeak, seqPlayhead, SEQ_SLOTS, SEQ_MAX } from '../../js/piano.js';
+import { arpPeak, seqClock, unpackSeqs, applySeqs, pianoGesture } from '../../js/piano.js';
 import { ambDriftOn } from '../../js/ambience.js';
 import { CONTROLS } from './schema.js';
 import { audioToggleEffects } from './schema-audio.js';
@@ -98,20 +98,20 @@ export function createAudioShell(storage) {
         setAmRate(S.effFreq); S.lastAmSet = S.effFreq;
       }
     },
-    // The sequencer's slot and patterns, unpacked in place (the arp reads them
-    // at every step, so the next step plays the edit).
+    // The sequencer's active line and all eight lines, unpacked in place
+    // (the arp reads them at every step, so the next step plays the edit),
+    // then applied, so a level, mute, pan or send moves the sound at once
+    // rather than at the next pump. This row is the only way per-line
+    // settings arrive; the drawer's rows for them are never sent as sets.
     seq(p) {
-      S.seqSlot = p[0];
-      let k = 1;
-      for (let i = 0; i < SEQ_SLOTS; i++) {
-        const pat = S.seqPatterns[i];
-        const len = p[k++];
-        if (!pat) { k += SEQ_MAX; continue; }
-        pat.len = len;
-        for (let j = 0; j < SEQ_MAX; j++) pat.steps[j] = p[k++];
-      }
+      unpackSeqs(p);
+      applySeqs();
     },
-    watch(bits) { watch = bits; }
+    watch(bits) { watch = bits; },
+    // The journey's piano trigger (core/journey.js): whether the piano plays
+    // freely or waits for the words, and one gesture as a word appears.
+    pianoFree(on) { S.pianoFreePlay = !!on; },
+    pianoGesture() { pianoGesture(); }
   };
 
   let warned = false;
@@ -174,7 +174,7 @@ export function createAudioShell(storage) {
     readings[M_FLAGS] = flags;
     readings[M_DRIFT] = driftCode;
     readings[M_ARP] = (watch & W_ARP) ? arpPeak() : 0;
-    readings[M_HEAD] = (watch & W_PLAYHEAD) ? seqPlayhead() : -1;
+    readings[M_HEAD] = (watch & W_PLAYHEAD) ? seqClock() : -1;
     packAtmosphere(readings, M_ATMOS);
     lastFlags = flags; driftCode = 0; lastPost = t;
     return readings;

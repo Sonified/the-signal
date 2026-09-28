@@ -26,10 +26,21 @@
 //                           linked pulse rate and the arp's strobe pulse
 //                           follow it, as strobe.js's own link does in main
 //                           mode, with the same threshold.
-//   seq(packed)             the sequencer's slot or a pattern changed.
+//   seq(packed)             the sequencer's active line, or anything on any
+//                           of its eight lines, changed: the steps, the
+//                           length and every per-line setting travel only
+//                           this way, as one packed row (js/piano.js
+//                           packSeqs).
 //   watch(bits)             which live readings the worker is showing (the
 //                           mixer's meters, the sequencer's playhead, the
 //                           arp's peak), so the page reads and sends only those.
+//   pianoFree(on)           the journey let the piano play freely (1) or held
+//                           its clock for the words (0): S.pianoFreePlay,
+//                           which is never saved, so it only travels here.
+//   pianoGesture(n)         a word appeared on a step that plays the piano on
+//                           the words: one gesture, now. n is the worker's
+//                           running count (S.pianoGestureN), so several in
+//                           one frame still arrive as one call, never a burst.
 //
 // Finding the moves is a comparison, not a hook: every control's get(S)
 // against the position it had last frame, a few hundred cheap calls with no
@@ -52,7 +63,7 @@
 // stop the sound directly; here they keep only their state.
 
 import { S } from '../../js/state.js';
-import { SEQ_SLOTS, SEQ_MAX } from '../../js/piano.js';
+import { SEQ_PACK, packSeqs } from '../../js/piano.js';
 import { CONTROLS, byId } from './schema.js';
 import {
   ambLayerControls, AMB_LAYER_COUNT, setAtmosphereRemote, atmosphereMetersWanted,
@@ -69,9 +80,6 @@ import {
 const WATCH_FRAMES = 30;
 // A position's change must exceed this before the strobe rate is sent again.
 const STROBE_EPS = 0.01;
-// The sequencer as one packed row: the slot, then each pattern's length and
-// its steps.
-const SEQ_PACK = 1 + SEQ_SLOTS * (1 + SEQ_MAX);
 
 // post(calls) sends the outbox (a plain array the caller may clone and must
 // not keep; it is cleared straight after).
@@ -95,7 +103,9 @@ export function createAudioLink(post) {
   // S.clickMode, so the voice must be settled before them), then the mixer's
   // per-recording rows, which live outside CONTROLS. A uiOnly control (a
   // sub-drawer's open/close) belongs to the drawer, not the sound, so it
-  // is never sent.
+  // is never sent. A range (widgets.js) is left out by its kind: it has two
+  // values and no single position to diff, and none of the ranges so far
+  // (the confetti's variances) is anything the page's sound reads.
   const watched = CONTROLS.filter(c =>
     (c.kind === 'slider' || c.kind === 'segment' || c.kind === 'toggle') &&
     !c.multi && !c.uiOnly && c.get && c.set && c.id !== 'engineThread');
@@ -109,19 +119,12 @@ export function createAudioLink(post) {
   const n = watched.length;
   const shadow = new Array(n).fill(undefined);
 
-  const seqNow = new Int16Array(SEQ_PACK), seqSent = new Int16Array(SEQ_PACK);
-  function packSeq(out) {
-    out[0] = S.seqSlot | 0;
-    let k = 1;
-    const pats = S.seqPatterns;
-    for (let p = 0; p < SEQ_SLOTS; p++) {
-      const pat = pats && pats[p];
-      out[k++] = pat ? pat.len | 0 : 0;
-      for (let i = 0; i < SEQ_MAX; i++) out[k++] = pat && pat.steps ? pat.steps[i] | 0 : -1;
-    }
-  }
+  // Float32 rather than whole numbers now that levels, pans and sends ride
+  // in the row; both arrays are made once and packed in place every frame.
+  const seqNow = new Float32Array(SEQ_PACK), seqSent = new Float32Array(SEQ_PACK);
 
   let lastRunning = false, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
+  let lastFree = true, lastGesture = 0;
   let seeded = false;
   const outbox = [];
 
@@ -132,10 +135,12 @@ export function createAudioLink(post) {
   function seed() {
     seeded = true;
     for (let i = 0; i < n; i++) shadow[i] = watched[i].get(S);
-    packSeq(seqSent);
+    packSeqs(seqSent);
     lastRunning = false;
     lastEff = S.effFreq || 0; lastAch = S.achievedFreq || 0;
     lastTransition = presetTransitionCount();
+    lastFree = S.pianoFreePlay !== false;
+    lastGesture = S.pianoGestureN | 0;
   }
 
   // One call, CALL_SLOTS wide (core/audio-mirror.js).
@@ -168,7 +173,7 @@ export function createAudioLink(post) {
     // on drags, so this is rare and a few hundred cheap compares on the page.
     if (modeMoved) for (let i = 0; i < n; i++) call('set', watched[i].id, shadow[i], glide, 0);
 
-    packSeq(seqNow);
+    packSeqs(seqNow);
     for (let i = 0; i < SEQ_PACK; i++) {
       if (seqNow[i] !== seqSent[i]) {
         seqSent.set(seqNow);
@@ -181,6 +186,11 @@ export function createAudioLink(post) {
       lastRunning = S.running;
       call('run', lastRunning, 0, 0, 0);
     }
+
+    const free = S.pianoFreePlay !== false;
+    if (free !== lastFree) { lastFree = free; call('pianoFree', free ? 1 : 0, 0, 0, 0); }
+    const gn = S.pianoGestureN | 0;
+    if (gn !== lastGesture) { lastGesture = gn; call('pianoGesture', gn, 0, 0, 0); }
 
     const eff = S.effFreq || 0, ach = S.achievedFreq || 0;
     if (Math.abs(eff - lastEff) > STROBE_EPS || Math.abs(ach - lastAch) > STROBE_EPS) {
@@ -212,7 +222,7 @@ export function createAudioLink(post) {
     S.audioEnabled = !!(flags & F_AUDIO);
     S.workletReady = !!(flags & F_WORKLET);
     mirror.arpPeak = m[M_ARP];
-    mirror.seqPlayhead = m[M_HEAD];
+    mirror.seqClock = m[M_HEAD];
     const drifting = !!(flags & F_DRIFT);
     unpackAtmosphere(m, M_ATMOS, drifting);
     if (drifting) for (let i = 0; i < levelIdx.length; i++) shadow[levelIdx[i]] = watched[levelIdx[i]].get(S);

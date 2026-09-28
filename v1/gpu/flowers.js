@@ -23,6 +23,7 @@
 import { S, Z_NEAR, Z_FAR } from '../../js/state.js';
 import { FLOWERS_WGSL, MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade } from '../core/fade.js';
+import { motionStep } from '../core/motion.js';
 
 // Relative to the page base (v1/index.html sets <base href="../">), so this
 // resolves from the repo root.
@@ -271,13 +272,15 @@ export function createFlowers(device, format, platform) {
     const pulse = clampNum(S.flowerPulse, 0, 1, 0);
     mode = S.flowerMode === 'mandala' ? 1 : 0;
 
-    if (S.running && dt > 0) {
-      flow += dt * speed * rings / CROSS_SECONDS;
-      spin = (spin + dt * spinRate) % TAU;
-      bloom = (bloom + dt * BASE_FPS * bloomRate) % SEQ_STEPS;
-      zoomFrac += dt * speed * MANDALA_ZOOM_RATE;
+    // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
+    const md = dt > 0 ? motionStep(dt) : 0;
+    if (md > 0) {
+      flow += md * speed * rings / CROSS_SECONDS;
+      spin = (spin + md * spinRate) % TAU;
+      bloom = (bloom + md * BASE_FPS * bloomRate) % SEQ_STEPS;
+      zoomFrac += md * speed * MANDALA_ZOOM_RATE;
       if (zoomFrac >= 1) { const wz = Math.floor(zoomFrac); zoomWhole += wz; zoomFrac -= wz; }
-      breath = (breath + dt * 0.45) % TAU;
+      breath = (breath + md * 0.45) % TAU;
     }
 
     // Pulse 0 keeps the layer at steady brightness whatever the strobe does

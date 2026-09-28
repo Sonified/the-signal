@@ -22,7 +22,7 @@ import { chirpDurationMs } from '../../js/chirp.js';
 import {
   setParam, applyLevel, applyAudioShape, applyHarmonics, applyReverbMix,
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
-  warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf
+  warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn
 } from '../../js/audio.js';
 import { pianoOn, pianoOff, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune } from '../../js/piano.js';
 import { cloudsOn, cloudsOff, applyCloudReverb } from '../../js/clouds.js';
@@ -135,6 +135,7 @@ const PIP_KEYS = {
   modDep:  ['clickModDepth',  'chirpModDepth'],
   modPer:  ['clickModPeriod', 'chirpModPeriod']
 };
+
 const pipKey = (s, which) => PIP_KEYS[which][s.clickMode === 'chirp' ? 1 : 0];
 const pipGet = (s, which) => s[pipKey(s, which)];
 const pipSet = (s, which, v) => { s[pipKey(s, which)] = v; };
@@ -331,7 +332,36 @@ const audioControls = [
     format: s => Math.round(s.volume * 100) + '%'
   },
   {
+    // The pulse envelope on the tone and its harmonics. Off plays them
+    // steady (applyAmOn in js/audio.js takes the envelope's depth to zero);
+    // the rate below keeps tracking underneath, so the pips are untouched and
+    // switching back on picks the pulse up in step. Like a voice's switch it
+    // is drawn only on its sub-drawer's strip, never as a row, and the two
+    // rows inside slide away while it is off.
+    id: 'amMod', section: 'audio', label: 'Amplitude modulation', kind: 'toggle',
+    get: s => s.amModOn !== false,
+    set: (s, on) => { s.amModOn = !!on; applyAmOn(); save(); },
+    format: s => s.amModOn !== false ? 'On' : 'Off'
+  },
+  subDrawer('audioAmDrawer', 'Amplitude modulation', 'audio', ['amLinked', 'amRate'], 'amMod'),
+  {
+    // How the pulse rate is set: free, from Pulse rate below, or locked to
+    // the strobe's frequency. It comes first in the drawer, since it
+    // decides whether that slider is live.
+    id: 'amLinked', section: 'audio', label: 'Audio mode', kind: 'segment',
+    parent: 'audioAmDrawer',
+    options: [
+      { value: false, label: 'Free',            domId: 'aFree' },
+      { value: true,  label: 'Link to visual',  domId: 'aLink' }
+    ],
+    get: s => s.amLinked,
+    set: (s, v) => setAmLinked(s, !!v),
+    format: s => s.amLinked ? 'Link to visual' : 'Free',
+    visible: s => s.amModOn !== false
+  },
+  {
     id: 'amRate', section: 'audio', label: 'Pulse rate', kind: 'slider',
+    parent: 'audioAmDrawer',
     min: 0.5, max: 60, step: 0.5, def: 7.5,
     get: s => s.amLinked ? s.freq : s.amRate,
     set: (s, pos) => {
@@ -342,21 +372,8 @@ const audioControls = [
       save();
     },
     format: s => (s.amLinked ? s.freq : s.amRate).toFixed(1) + ' Hz',
-    enabled: s => !s.amLinked
-  },
-  {
-    // How the pulse rate is set: free, from Pulse rate above, or locked to
-    // the strobe's frequency. It sits with Pulse rate at the head of the
-    // section, since it decides whether that slider is live, and shows
-    // whatever voices are on.
-    id: 'amLinked', section: 'audio', label: 'Audio mode', kind: 'segment',
-    options: [
-      { value: false, label: 'Free',            domId: 'aFree' },
-      { value: true,  label: 'Link to visual',  domId: 'aLink' }
-    ],
-    get: s => s.amLinked,
-    set: (s, v) => setAmLinked(s, !!v),
-    format: s => s.amLinked ? 'Link to visual' : 'Free'
+    enabled: s => !s.amLinked,
+    visible: s => s.amModOn !== false
   },
   // ---- the four voices, each its own switch and then a sub-drawer whose
   // strip carries that switch (subDrawer in schema-visual.js, its switchId),
@@ -837,7 +854,9 @@ const musicControls = [
     visible: s => s.musicOn && s.arpOn
   },
   {
-    id: 'arpVol', section: 'music', label: 'Sequencer level', kind: 'slider',
+    // The master over all eight lines; each line's own level is in the
+    // sequencer window.
+    id: 'arpVol', section: 'music', label: 'Sequencer master volume', kind: 'slider',
     parent: 'musicArpDrawer',
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.arpVol * 100),
@@ -855,60 +874,15 @@ const musicControls = [
     visible: s => s.musicOn && s.arpOn
   },
   {
-    // The running oscillators switch shape at once, level-matched.
-    id: 'arpWave', section: 'music', label: 'Sequencer waveform', kind: 'segment', def: 'sine',
-    parent: 'musicArpDrawer',
-    options: [
-      { value: 'sine',     label: 'Sine' },
-      { value: 'triangle', label: 'Triangle' },
-      { value: 'sawtooth', label: 'Saw' },
-      { value: 'square',   label: 'Square' }
-    ],
-    get: s => s.arpWave,
-    set: (s, v) => { s.arpWave = v; applyArp(); save(); },
-    format: s => s.arpWave,
-    visible: s => s.musicOn && s.arpOn
-  },
-  {
-    // How fast each note's filter opens (the figure is played by the filter,
-    // so this is the swell into every note).
-    id: 'arpAtk', section: 'music', label: 'Sequencer attack', kind: 'slider',
-    parent: 'musicArpDrawer',
-    min: 1, max: 500, step: 1, def: 10, taper: 'log',
-    get: s => Math.round(s.arpAtk * 1000),
-    set: (s, pos) => { s.arpAtk = pos / 1000; save(); },
-    format: s => Math.round(s.arpAtk * 1000) + ' ms',
-    visible: s => s.musicOn && s.arpOn
-  },
-  {
-    id: 'arpDec', section: 'music', label: 'Sequencer decay', kind: 'slider',
-    parent: 'musicArpDrawer',
-    min: 20, max: 2000, step: 10, def: 250, taper: 'log',
-    get: s => Math.round(s.arpDec * 1000),
-    set: (s, pos) => { s.arpDec = pos / 1000; save(); },
-    format: s => Math.round(s.arpDec * 1000) + ' ms',
-    visible: s => s.musicOn && s.arpOn
-  },
-  {
-    // Whole octaves either side of the written figure; the next note lands
-    // in the new register.
+    // Whole octaves either side of the written figure, over every line
+    // (each line's own octave is in its PITCH row in the sequencer window);
+    // the next note lands in the new register.
     id: 'arpOct', section: 'music', label: 'Sequencer octave', kind: 'slider',
     parent: 'musicArpDrawer',
     min: -2, max: 2, step: 1, def: 0,
     get: s => s.arpOct,
     set: (s, pos) => { s.arpOct = pos; save(); },
     format: s => s.arpOct === 0 ? '0' : (s.arpOct > 0 ? '+' : '') + s.arpOct + ' oct',
-    visible: s => s.musicOn && s.arpOn
-  },
-  {
-    // How wide the two lines and their echoes sit: 0 folds everything to the
-    // centre, 100% pans hard left and right.
-    id: 'arpSpread', section: 'music', label: 'Sequencer stereo spread', kind: 'slider',
-    parent: 'musicArpDrawer',
-    min: 0, max: 100, step: 1, def: 90,
-    get: s => Math.round(s.arpSpread * 100),
-    set: (s, pos) => { s.arpSpread = pos / 100; applyArp(); save(); },
-    format: s => Math.round(s.arpSpread * 100) + '%',
     visible: s => s.musicOn && s.arpOn
   },
   {
@@ -966,16 +940,6 @@ const musicControls = [
     set: (s, pos) => { s.arpSwWander = pos / 100; applyArp(); save(); },
     format: s => Math.round(s.arpSwWander * 100) + '%',
     visible: s => s.musicOn && s.arpOn && s.arpSwOn
-  },
-  {
-    // Its share of the piano's room; the shared Reverb level still applies.
-    id: 'arpRev', section: 'music', label: 'Sequencer reverb', kind: 'slider',
-    parent: 'musicArpDrawer',
-    min: 0, max: 200, step: 1, def: 100,
-    get: s => Math.round(s.arpRev * 100),
-    set: (s, pos) => { s.arpRev = pos / 100; applyArp(); save(); },
-    format: s => Math.round(s.arpRev * 100) + '%',
-    visible: s => s.musicOn && s.arpOn
   },
   {
     id: 'bedOn', section: 'music', label: 'Ocean drone', kind: 'toggle',

@@ -46,19 +46,33 @@ export function linesTogether(leaving) {
   return !!S.textLinesTogether || (leaving ? !!S.textLinesTogetherOut : !!S.textLinesTogetherIn);
 }
 
-// Line pause: the rest between one line finishing and the next beginning,
-// as a share of a line's own transition. The lines always ran back to back
-// (0, the default); 1 rests as long as a line takes. The transition keeps
-// the fade time, so a block of n lines divides it into n + (n - 1) g equal
-// units, line k starting k (1 + g) units in. At g = 0 that is prog n - k,
-// exactly the old clock. The letters here and the smoke's shaders (which
-// get g in a uniform) all run this one sum.
-export function linePause() {
+// Line pause: the rest between one line visibly finishing and the next
+// visibly beginning. Each line owns a window of the fade, but the eased
+// ends of that window show nothing: an arrival's last letter spends the end
+// of its clock settling by amounts too small to see, a departure's first
+// letter the start of its clock barely stirring. The lines used to sit end
+// to end on their windows, so that dead tail read as a pause between every
+// pair of lines, longer the longer the fade and the harder the ease.
+// Now at 0 the windows overlap by exactly the tail, so the next line starts
+// as the last one lands; at 1 they rest a whole window apart.
+//
+// The tail, as a share of a line's window: its letters' own clocks fill
+// the (1 - st) left after the stagger (or the smoke's sweep) spreads their
+// starts, and a letter's d = u^k (or (1 - u)^k) is within LINE_TAIL_D of
+// done for the last (or first) LINE_TAIL_D^(1/k) of its clock.
+const LINE_TAIL_D = 0.1;
+export function lineStep(st, k) {
   const v = S.textLinePause;
-  return v > 0 ? (v < 1 ? v : 1) : 0;
+  const g = v > 0 ? (v < 1 ? v : 1) : 0;
+  const s = st > 0 ? (st < 0.9 ? st : 0.9) : 0;
+  return 1 - (1 - s) * Math.pow(LINE_TAIL_D, 1 / Math.max(1, k)) + g;
 }
-export function lineProgress(prog, k, n, g) {
-  return clamp01(prog * (n + (n - 1) * g) - k * (1 + g));
+// Line k's own progress, 0..1. a is lineStep: line starts sit a windows
+// apart, so n lines span 1 + (n - 1) a windows of the fade. a = 1 is the
+// old end-to-end clock, prog n - k. The smoke's shaders run the same sum
+// (word-smoke.wgsl.js, a in m8.w).
+export function lineProgress(prog, k, n, a) {
+  return clamp01(prog * (1 + (n - 1) * a) - k * a);
 }
 
 export function fxv(name, leaving) { return leaving && !S.textFxMirror ? S[name + 'Out'] : S[name]; }
@@ -73,6 +87,33 @@ export function fxv(name, leaving) { return leaving && !S.textFxMirror ? S[name 
 // both must agree within the same frame.
 export const smokeState = { readyText: '', readyDep: '', playing: false };
 let smokeLatchSeed = -1, smokeLatchPhase = -1;
+
+// The resting screen's hint, handed to the smoke on each start from it
+// (ui/screens/overlay.js). The overlay lays the hint's letters
+// out here itself, in the same 12-float layout as wordLetters, because only
+// it knows where the hint sits; a letter's slot 9 is its ink (0 the main
+// line's colour, 1 the sub-lines'). req is the handshake: the overlay sets it
+// and stops drawing the hint in the same frame, and gpu/word-smoke.js
+// clears it when it takes the letters into the live field. Sized to the
+// smoke's own letter buffer (SMOKE_LETTERS in gpu/word-smoke.wgsl.js),
+// which is larger than a word's because the hint runs to about 90 letters.
+export const smokeHint = {
+  req: false, count: 0, seed: 0, data: new Float32Array(128 * 12),
+  peak: 1, size: 19, cx: 0, cy: 0, colA: null, colB: null
+};
+
+// The hint's left-to-right front, shared by its smoke out (gpu/word-smoke.js)
+// and its sweep in (ui/screens/overlay.js) so the two feel related: the
+// share of the transition the front spends crossing the ink. Render > Hint
+// sweep (S.hintSweep) is a speed multiplier on the front the words' Leave
+// sweep draws at its default speed, where the front spends 0.49 of the fade
+// crossing (0.85 - 0.72 x 0.5, see word-smoke's update), so the hint's share
+// is that over the multiplier, and 2x crosses in half the time.
+const HINT_SWEEP_SHARE = 0.49;
+export function hintSweepShare() {
+  const mul = Math.max(0.1, S.hintSweep ?? 2);
+  return Math.max(0.1, Math.min(0.9, HINT_SWEEP_SHARE / mul));
+}
 
 // This frame's letters as drawn, 12 floats each (three vec4s, the layout the
 // cloud shader reads): cx cy hw hh (centre and half size, css px), u0 v0 u1 v1
@@ -136,11 +177,11 @@ export function letterFx(i, n, relX, relY, wordW, size, out) {
   else ord = n > 1 ? i / (n - 1) : 0;
   ord = clamp01(ord + (h3 - 0.5) * turb * 0.4);
 
-  let prog = wordState.progress;
-  if (lineCtx.n > 1 && !linesTogether(leaving)) prog = lineProgress(prog, lineCtx.k, lineCtx.n, linePause());
   const st = Math.min(0.9, fxv('textFxStagger', leaving));
-  const u = clamp01((prog - st * ord) / (1 - st));
   const k = 1 + 3 * fxv('textFxEase', leaving);
+  let prog = wordState.progress;
+  if (lineCtx.n > 1 && !linesTogether(leaving)) prog = lineProgress(prog, lineCtx.k, lineCtx.n, lineStep(st, k));
+  const u = clamp01((prog - st * ord) / (1 - st));
   const d = leaving ? Math.pow(u, k) : Math.pow(1 - u, k);
 
   // The whole-word effects own their letters for the ENTIRE phase and are

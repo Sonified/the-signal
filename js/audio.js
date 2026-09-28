@@ -641,10 +641,18 @@ export function applyAudioShape(lead = 0) {
     rampLevel(name, levelTargets[name](), lead ? 0.3 : 0.12, lead);
   }
   applyHarmonics();
+  applyAmOn();
 }
 
 export function setAudioRate(hz) { setParam('rate', hz, 0.03); }
 export const setAmRate = hz => setAudioRate(hz);
+
+// The Amplitude modulation switch. Off holds the tone and harmonics steady
+// at the pulse's peak by taking the envelope's depth to zero; the rate is
+// left alone, so the linked strobe and a free Pulse rate keep steering it
+// underneath and the pips, timed from the same phase, carry on exactly as
+// before. Glided both ways (and along a preset's window), so it never clicks.
+export function applyAmOn(tc = 0.05) { setParam('amDepth', S.amModOn === false ? 0 : 1, tc); }
 
 // The click on first play was never our gain ramp. Starting an AudioContext
 // engages the output device, and Chrome compiling a worklet module the first
@@ -677,7 +685,17 @@ export function ensureAudioGraph() {
       numberOfOutputs: 3,
       outputChannelCount: [2, 2, 1]   // 0: tone and pips, 1: harmonics, 2: pip reverb send
     });
-    node.connect(volGain, 0);
+    // Each output passes through a pause gate before anything else, ahead of
+    // the dry and wet splits, so a pause stops the worklet feeding its rooms
+    // as well as the speakers and the tails are left to ring out (see the
+    // pause gate, after applyAudioGain).
+    const srcGate = [0, 1, 2].map(i => {
+      const g = audioCtx.createGain();
+      sourceGate(g.gain);
+      node.connect(g, i);
+      return g;
+    });
+    srcGate[0].connect(volGain);
     if (!engineMetersOn) node.port.postMessage({ meters: false });
 
     // The processor reports which chirp table it is actually holding, so a lost
@@ -712,9 +730,9 @@ export function ensureAudioGraph() {
     // and handed over in an idle slot (see impulse responses, above); the
     // harmonics' wet side is simply silent until it lands.
     convolver = audioCtx.createConvolver();
-    getIR(audioCtx, 2.6, 2.5, buf => inSlot(() => { convolver.buffer = buf; }, assignCost(2.6)));
-    node.connect(harmDry, 1);
-    node.connect(convolver, 1);
+    getIR(audioCtx, HARM_IR_S, 2.5, buf => inSlot(() => { convolver.buffer = buf; }, assignCost(HARM_IR_S)));
+    srcGate[1].connect(harmDry);
+    srcGate[1].connect(convolver);
     convolver.connect(harmWet);
     harmDry.connect(volGain);
     harmWet.connect(volGain);
@@ -723,7 +741,7 @@ export function ensureAudioGraph() {
     // sharp; a pair of convolvers, so its impulse can change under a tail
     clickWet = audioCtx.createGain();
     clickRoom = createRoom(audioCtx, pipRevTime, 2.5);
-    node.connect(clickRoom.input, 2);
+    srcGate[2].connect(clickRoom.input);
     clickRoom.output.connect(clickWet);
     clickWet.connect(volGain);
 
@@ -735,6 +753,7 @@ export function ensureAudioGraph() {
     setParam('rate',    S.amLinked ? S.effFreq : S.amRate, 0.001);
     setParam('carrier', S.carrierHz, 0.001);
     setParam('pipMs',   S.pipMs,     0.001);
+    applyAmOn(0.001);
 
     S.workletReady = true;
     refreshChirp();
@@ -804,6 +823,8 @@ async function startAudio() {
   const firstStart = !audioHasPlayed;
   audioHasPlayed = true;
   const lead = firstStart ? 0.9 : 0;
+  closeAt = 0;   // this ramp replaces any tail the master was holding for
+  setSources(S.running);
   continueGlide(end, () => {
     applyAudioShape(lead);
     // The first fade matches the visual one: the field and the sound arrive
@@ -820,6 +841,7 @@ export function audioOff() {
   S.audioEnabled = false;
   if (!audioCtx) return;
   applyAudioShape();
+  closeAt = 0;   // muting the layer shuts the tails too, as it always has
   rampVol(0, 0.25);
 }
 
@@ -836,7 +858,94 @@ export function applyAudioGain() {
   // The very first time the volume actually comes up it takes the same two
   // seconds the field does. After that the space bar is an instant stop and
   // start, which is what a pause should feel like.
-  const dur = (S.running && !hasRisen) ? 2.0 : 0.12;
-  if (S.running) hasRisen = true;
-  rampVol(S.running ? S.volume : 0, dur);
+  //
+  // A pause is instant for the sources only. The gates below take every
+  // voice out, dry and send alike, over the same 0.12 s the master used to
+  // take, and the master stays open while the rooms ring out, then closes.
+  // A pause is told apart from a volume move while paused by the gates
+  // still being open: only the first starts a new tail.
+  const pausing = !S.running && srcOpen;
+  setSources(S.running);
+  if (S.running) {
+    closeAt = 0;
+    const dur = hasRisen ? 0.12 : 2.0;
+    hasRisen = true;
+    rampVol(S.volume, dur);
+    return;
+  }
+  const g = volGain.gain, now = audioCtx.currentTime;
+  if (pausing) {
+    closeAt = now + tailSeconds();
+    // A pause in the middle of the very first fade in holds the level the
+    // fade had reached rather than jumping the tail up to full volume.
+    holdMaster(Math.min(S.volume, g.value), closeAt);
+  } else if (closeAt > now + SRC_GATE_S) {
+    holdMaster(S.volume, closeAt);   // the volume moved under a ringing tail
+  } else {
+    closeAt = 0;
+    rampVol(0, SRC_GATE_S);
+  }
+}
+
+// ---------- the pause gate ----------
+// One gain on every path a sound source takes into the mix: the worklet's
+// three outputs (above), and the piano's, the clouds' and the atmosphere's
+// dry buses and room inputs (each registers its own). Each sits upstream of
+// every room, so closing them stops anything new reaching a reverb while
+// the reverb itself keeps ringing into an open master. They belong to the
+// pause alone: levels, mutes and solos all live on their own gains, so a
+// gate multiplies whatever those are doing and never has to know.
+const SRC_GATE_S = 0.12;
+const srcGates = [];
+let srcOpen = true;
+// Registered at build time, starting at whatever the transport says now, so
+// a bus built while paused comes up closed and opens with the next resume.
+export function sourceGate(prm) {
+  prm.value = srcOpen ? 1 : 0;
+  srcGates.push(prm);
+}
+function setSources(open) {
+  if (open === srcOpen || !audioCtx) return;
+  srcOpen = open;
+  const now = audioCtx.currentTime;
+  for (let i = 0; i < srcGates.length; i++) {
+    anchorParam(srcGates[i], now);
+    srcGates[i].linearRampToValueAtTime(open ? 1 : 0, now + SRC_GATE_S);
+  }
+}
+
+// How long the master waits after a pause. Every room here is a noise burst
+// shaped by (1 - t / length) to a power (fillIR), so it is exactly its
+// length long and then silent: nothing rings past the longest impulse in
+// play. That is the harmonics' fixed room, the live pip shape's room, the
+// piano's, the clouds' and the atmosphere's rooms at their current decay
+// settings, and each sequencer line's own room (js/piano.js lineRoom), all
+// counted whether or not they are sounding, since holding a silent master
+// open a few seconds longer costs nothing. On top
+// of that: the gates' own ramp, the last sound fed in on its way down, and
+// a little over for the audio clock running ahead of the page. Then a short
+// fade, so the close lands on a tail already near nothing and never clicks.
+// (The pause used to land on the master directly, which cut every tail.)
+const HARM_IR_S = 2.6;
+const TAIL_MARGIN_S = 0.25;
+const TAIL_CLOSE_S = 0.3;
+let closeAt = 0;   // audio clock time the master starts closing; 0 when none is pending
+function tailSeconds() {
+  const n = x => (typeof x === 'number' && x > 0) ? x : 0;
+  let t = Math.max(HARM_IR_S, n(pipRevTime()), n(S.pianoRevTime), n(S.cloudRevTime), n(S.ambRevTime));
+  const qs = S.seqs;
+  if (qs) for (let i = 0; i < qs.length; i++) if (qs[i]) t = Math.max(t, Math.min(15, n(qs[i].revTime)));
+  return t + SRC_GATE_S + TAIL_MARGIN_S;
+}
+// Holds the master at level until `until`, then closes it. Written straight
+// onto the parameter as rampVol writes outside a transition, and forgotten
+// as a transition's target the same way, so a resume's rampVol simply
+// cancels the close and ramps up from wherever the master is.
+function holdMaster(level, until) {
+  const g = volGain.gain, now = audioCtx.currentTime;
+  glideTarget.delete(g);
+  anchorParam(g, now);
+  g.linearRampToValueAtTime(level, now + SRC_GATE_S);
+  g.setValueAtTime(level, until);
+  g.linearRampToValueAtTime(0, until + TAIL_CLOSE_S);
 }

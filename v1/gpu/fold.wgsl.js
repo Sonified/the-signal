@@ -13,13 +13,20 @@
 // output is too, and the pipeline blends one / one-minus-src-alpha: a chamber
 // texel with alpha 0 simply adds its light, one with alpha 1 covers the
 // field, and everything between is the ordinary premultiplied over.
+//
+// Two gains scale the result. map.w, the layer gain, scales all four
+// channels, so it fades the fold out as a whole, coverage and all. dom.z,
+// the colour gain, scales the colour alone and keeps the coverage, so it
+// darkens what covers the field rather than letting the field show through
+// (a layer's feedback pulsing with the strobe). In 0..1 it keeps the output
+// a valid premultiplied colour.
 
 export const FOLD_WGSL = `
 struct FU {
   chamber: vec4f, // chamber texture width, height, 1/width, 1/height (texels)
   map: vec4f,     // the field centre's place in the chamber (texels), texels per device px, gain
   fold: vec4f,    // field centre x, y (device px), wedge angle, complete rotation (radians)
-  dom: vec4f,     // the domain's starting angle, mirror (0 or 1), unused, unused
+  dom: vec4f,     // the domain's starting angle, mirror (0 or 1), colour gain, unused
 };
 @group(0) @binding(0) var<uniform> u: FU;
 @group(0) @binding(1) var chamberTex: texture_2d<f32>;
@@ -52,6 +59,6 @@ fn fsFold(@builtin(position) p: vec4f) -> @location(0) vec4f {
   let ang = u.dom.x + m;
   let t = u.map.xy + vec2f(cos(ang), sin(ang)) * (r * u.map.z);
   let c = textureSampleLevel(chamberTex, chamberSamp, t * u.chamber.zw, 0.0);
-  return c * u.map.w;
+  return vec4f(c.rgb * u.dom.z, c.a) * u.map.w;
 }
 `;

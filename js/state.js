@@ -5,6 +5,41 @@
 // instead. It is a plain object touched from a handful of hot loops, so property
 // access stays monomorphic and nothing here allocates.
 
+// One sequencer line at its defaults. The rev and spread defaults are the
+// old global Sequencer reverb and stereo spread defaults (arpRev, arpSpread),
+// and the envelope's are the old global attack and decay (arpAtk, arpDec),
+// so a fresh line sounds the way the single line used to. The room time is
+// the shared piano room's default, the one the lines all played through
+// before each had its own, and the delay's 1.5 steps with no feedback and
+// ping pong on is exactly the old single echo. Every VAR (atkVar, decVar,
+// revVar, dlyFbVar) and the pan swing start at 0, where the set value holds
+// still, and every RATE is the swing's period in seconds. Called only while
+// S is built, never again.
+//
+// A line's core (dry) voice is seated off centre, as the old single line's
+// was: that line's dry copy sat at a bare -1 scaled by the old default
+// spread, 0.9, so it played at -0.9, nearly hard left, and its echo
+// answered from +0.9. Each fresh line takes that same seat, the lines
+// alternating sides (line 1 left, line 2 right, and on) so the eight stay
+// balanced as a whole, and ping pong answers each from the other side.
+export const SEQ_SEAT = 0.9;
+export const seqSeat = i => (i % 2 ? 1 : -1) * SEQ_SEAT;
+function seqLine(len, steps, i) {
+  return {
+    len, steps: steps || new Array(16).fill(-1),
+    wave: 'sine', vol: 0.8, mute: false, solo: false,
+    // octave randomization, per note: 'off', 'up' (a lift of 0..octaves),
+    // 'down' (a drop of 0..octaves) or 'both' (-octaves..+octaves)
+    octMode: 'off', octaves: 1,
+    oct: 0,                          // the line's own octave, -3..+3, over the global transpose
+    pan: seqSeat(i), rev: 1, spread: 0.9,
+    atk: 0.01, atkVar: 0, atkRate: 20, dec: 0.25, decVar: 0, decRate: 20,
+    panMod: 0, panRate: 20,
+    revTime: 4.5, revVar: 0, revRate: 20,
+    dlyTime: 1.5, dlyFb: 0, dlyFbVar: 0, dlyFbRate: 20, dlyPing: true
+  };
+}
+
 export const S = {
   // ---------- rendering surface ----------
   ctx: null,                  // 2d context, created lazily: a canvas can only ever
@@ -45,6 +80,12 @@ export const S = {
   // (1-lit-2-dark). Never alternate them: taking turns puts a line at half
   // the rate, and half of 40 is squarely in the photosensitive band.
   spareMode: 'lit',
+  pauseWindDown: 1,           // v1: seconds the visuals take to coast to a stop on pause, 0 a hard stop
+  pauseFlickerStop: true,     // v1: pause ends the flashing on that frame; off lets it fade through the wind-down
+  hintFadeMs: 5000,           // v1: ms the resting-screen hint takes to smoke out on start
+  hintSweep: 2,               // v1: the hint's left-to-right dissolve speed, x the words' default Leave sweep
+  hintFadeInMs: 2000,         // v1: ms the hint takes to appear (boot and every pause), 0 at once
+  hintArrive: 'sweep',        // v1: how the hint appears: 'sweep' left to right, 'all' at once
 
   // Slow drift applied to depth. Its own accumulator so it is independent of the
   // strobe rate. It only ever subtracts: effDepth swings from the set depth down
@@ -67,7 +108,23 @@ export const S = {
   // ---------- tunnel and edge ----------
   ringSpeedMul: 0.5, edgeCount: 60, edgeSize: 6, trailMul: 1, ringFade: 0.55, ringThick: 3, ringThickVar: 1,
   edgeOpacity: 1,             // v1: scales the edge particles' brightness
+  edgePulse: 1,               // v1: how much the edge breathes with the strobe's flicker, 0 steady
+  // v1: edge video feedback (v1/gpu/scene.js). edgeFb 0..1 softens the edge
+  // into trails, 0 off; edgeFbStream -2..2 streams them out (+) or in (-);
+  // edgeFbTwist -1..1 turns them about the centre, + clockwise;
+  // edgeFbOpacity 0..1 is how solidly that image lands on the scene.
+  edgeFb: 0, edgeFbStream: 0, edgeFbTwist: 0, edgeFbOpacity: 1,
   edgeCap: 'wedge',           // v1: the edge particle's head, 'wedge' (<>), 'round' or 'ball'
+  // v1: the edge's effect (v1/gpu/scene.js, edge-fx.js): 'surfing' (the
+  // tails above), 'particles', 'flame' or 'glow', and each new one's settings.
+  // Particles: births a second, spark radius px, drift -1..1 (+ out past the
+  // border, - in toward the centre), sparkle 0..1. Flame: reach px, speed x,
+  // turbulence 0..1. Glow: width px, softness 0..1, breathe 0..1 (how deep
+  // its slow swell dips) and seconds a breath.
+  edgeMode: 'surfing',
+  edgePartRate: 120, edgePartSize: 2, edgePartDrift: -0.35, edgePartSparkle: 0.5,
+  edgeFlameHeight: 56, edgeFlameSpeed: 1, edgeFlameTurb: 0.5,
+  edgeGlowWidth: 28, edgeGlowSoft: 0.6, edgeGlowBreathe: 0.4, edgeGlowBreatheRate: 8,
   edgeSpeedMul: 4, edgeDir: 'both',
   // Edge speed and size get the same dip-from-the-top variance the strobe uses,
   // each on its own accumulator and started at a different phase so the two
@@ -104,6 +161,7 @@ export const S = {
 
   // ---------- audio ----------
   carrierHz: 40, amRate: 7.5, volume: 0.50, amLinked: true, lastAmSet: 0,
+  amModOn: true,              // the pulse envelope on the tone; off plays it steady
   toneOn: true, clickOn: true,
   toneVol: 0.3, clickVol: 0.33,
   harmOn: true, harmVol: 0.4, harmCount: 9, harmBright: 0.45,
@@ -179,13 +237,15 @@ export const S = {
   textSmokeSweepOut: false, textSmokeSweepSpeedOut: 0.5,
   textGatherSweepOut: false,
   textThemes: {},             // empty means every theme is in play
-  textMode: 'words',          // 'words' shows the themed pool, 'affirmations' the phrases
+  textMode: 'words',          // 'words' shows the themed pool, 'affirmations' the phrases; v1 adds 'custom' (v0 ignores it)
+  textCustomText: '',         // v1: the Custom source's own phrases, separated by '|', shown in order; a '/' breaks a line
+  textPhraseGap: -1,          // v1: seconds between Custom phrases, one leaving to the next arriving; -1 Auto (the scheduler's roll)
   textLineWidth: 0.92,        // the wrap width, as a share of the view; phrases break to fit it
   textSmartBreaks: true,      // v1: a phrase with marked breaks (js/affirmations.js) takes a line per piece
   textLinesTogetherIn: false,  // v1: the Fade in block's own switch, arrivals only
   textLinesTogetherOut: false, // v1: the Fade out block's own switch, departures only
   textLinesTogether: false,   // false: a block's lines transition one after another, top first
-  textLinePause: 0,           // v1: the rest between those lines, 0..1 of a line's own transition; 0 back to back
+  textLinePause: 0,           // v1: the visible rest between those lines, 0..1 of a line's transition; 0 back to back
 
   // ---------- music ----------
   // A generative felt piano whose root sits two octaves under the 40 Hz carrier,
@@ -196,16 +256,23 @@ export const S = {
   pianoOn: true,              // the generative piano voice alone
   bedOn: true,                // the ocean drone's own switch
   musicRevOn: true,           // the shared music room's wet output
+  // arpVol is the sequencer's master level over all eight lines. arpWave,
+  // arpRev, arpSpread, arpAtk and arpDec each moved onto the lines (seqs
+  // below); these globals stay only because v0 shares the settings record
+  // that holds them, and an old v1 record's values seed the lines when it is
+  // migrated (v1/core/store.js applySeqState). Nothing else reads them.
   arpOn: false, arpVol: 0.5, arpRate: 7, arpWave: 'sine', arpAtk: 0.01, arpDec: 0.25, arpOct: 0, arpRev: 1, arpSpread: 0.9,
   arpStrobeAm: 0,             // 'Vary with strobe': depth of a volume pulse at the flash rate, 0..1
-  // The sequencer's patterns (js/piano.js, the sequencer section): four of
-  // them, each up to 16 steps, a step holding a written MIDI note or -1 for a
-  // rest. seqSlot is the one playing. Pattern 1 is the original 3 4 8 figure.
-  seqPatterns: [
-    { len: 3, steps: [76, 77, 84, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1] },
-    { len: 8, steps: new Array(16).fill(-1) },
-    { len: 8, steps: new Array(16).fill(-1) },
-    { len: 8, steps: new Array(16).fill(-1) }
+  // The sequencer's eight lines (js/piano.js, the sequencer section), all
+  // playing together off one step clock. Each has its own length of up to 16
+  // steps, a step holding a written MIDI note or -1 for a rest, and its own
+  // voice settings (seqLine below). seqSlot is the active one, the line the
+  // window's grid shows and edits; it no longer decides what plays. Line 1
+  // is the original 3 4 8 figure.
+  seqs: [
+    seqLine(3, [76, 77, 84, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], 0),
+    seqLine(8, null, 1), seqLine(8, null, 2), seqLine(8, null, 3),
+    seqLine(8, null, 4), seqLine(8, null, 5), seqLine(8, null, 6), seqLine(8, null, 7)
   ],
   seqSlot: 0,
   arpSwOn: false, arpSwLo: 0, arpSwHi: 1, arpSwPeriod: 120, arpSwWander: 0.3,   // the 3 4 8 arpeggio: switch, level, notes per second

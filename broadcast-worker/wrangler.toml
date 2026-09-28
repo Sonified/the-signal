@@ -1,0 +1,15 @@
+# The Signal's demo broadcast relay. Deploy with `npx wrangler deploy` from
+# this directory; see README.md for the two-command setup.
+name = "the-signal-broadcast"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+
+# SQLite-backed Durable Objects, which is what the free plan offers (and the
+# recommended kind on every plan).
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

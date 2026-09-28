@@ -70,6 +70,12 @@
 //       Called when the viewer opens or closes a group (click or keyboard),
 //       with the same string id and the new state, so the app can persist it.
 //       Never called for the initial state above, only for a real toggle.
+//   ui.headGlow = 0..1, ui.headGlowColor = rgba
+//       Set just before a group() or a labelled beginFold(), a soft wash and
+//       ring in that colour over the header or strip, at that strength, on
+//       top of its band and under its title, wherever it is drawn (pinned or
+//       not). Taken by the next group() or beginFold() and reset to 0 there,
+//       so it lights one header and never leaks into the next.
 //   ui.beginIndent() / ui.endIndent()
 //       One level of nesting inside a region: the rows laid out between the
 //       two calls sit LAYOUT.childIndent further in on the left, their right
@@ -210,6 +216,7 @@ function combine(a, b) {
 const ROOT_SCOPE = (0x9e3779b9 << 1) >> 1;   // folded to 31 bits like every id (see fnv1a)
 const DBLCLICK_MS = 380;
 const MAX_SCOPE_DEPTH = 32; // panel > group > scroll nesting never comes close
+const MAX_OCCLUSION = 4;       // occluding rects at once (setOcclusion): the floating windows, less the back one
 const MAX_FRAME_KEYS = 16;   // keydowns and keyups both count; fast typing can put several in one frame
 // How far a touch press travels before the toolkit decides whether it is a
 // drag on the widget under it or a scroll of the region around it. Small
@@ -323,7 +330,8 @@ function makeFoldState(open, hId) {
            label: '', x: 0, y: 0, w: 0, hh: 0, lx: 0, rEdge: 0, hoverA: 0, rot: 0,
            focused: false, pinned: false, pinA: 0, g: null,
            labelOf: '', labelW: 0, sumX: 0, sumSrc: '', sumOf: '', sumFit: -1, sumDraw: '', sumW: 0,
-           hasSwitch: false, swOn: false, swA: 1, swX: 0, swY: 0, swFocused: false, swDisabled: false };
+           hasSwitch: false, swOn: false, swA: 1, swX: 0, swY: 0, swFocused: false, swDisabled: false,
+           glowA: 0, glowCol: null };
 }
 
 // Per-group state, one per group id for the life of the app. Beyond whether
@@ -349,17 +357,20 @@ function makeGroupState(open, hId) {
            hasSwitch: false, swOn: false, focused: false, swFocused: false,
            pinned: false, pinA: 0,
            viewX: 0, viewW: 0,
-           paneKind: 0, paneX: 0, paneY: 0, paneW: 0, paneH: 0 };
+           paneKind: 0, paneX: 0, paneY: 0, paneW: 0, paneH: 0,
+           glowA: 0, glowCol: null };
 }
 
 class UI {
   constructor(text) {
     this.text = text;
-    // An occluding rect (setOcclusion): while set, no widget answers the
-    // pointer inside it. Floating windows use it to stack: the window behind
-    // is built with the front window's rect occluded, then the front one is
-    // built and drawn after it, so it is both on top and the one that answers.
-    this._occOn = false; this._occX = 0; this._occY = 0; this._occW = 0; this._occH = 0;
+    // Occluding rects (setOcclusion, addOcclusion): while any is set, no
+    // widget answers the pointer inside it. Floating windows use them to
+    // stack: each window is built with the rects of every window in front of
+    // it occluded, back to front, so the front one is both on top and the one
+    // that answers. A small fixed list, packed x y w h, so stacking three
+    // windows allocates nothing.
+    this._occN = 0; this._occ = new Float32Array(MAX_OCCLUSION * 4);
     this.dl = null;
     this.t = 0;
     this.dt = 0;
@@ -487,6 +498,13 @@ class UI {
     // the header's, written by every beginFold call (see beginFold)
     this.foldSwitch = false;
     this.foldSwitchChanged = false;
+    // a glow asked for on the next header or strip (see the header), and the
+    // two colours its wash and ring are mixed into, so drawing one allocates
+    // nothing
+    this.headGlow = 0;
+    this.headGlowColor = null;
+    this._glowFill = new Float32Array(4);
+    this._glowLine = new Float32Array(4);
     // pushInert's depth: above 0, no widget answers the pointer
     this._inert = 0;
     // whether each open fold level pushed a clip (see beginFold)
@@ -513,7 +531,7 @@ class UI {
   // ---------------- frame boundary ----------------
 
   begin(events, t, dt, width, height, dl) {
-    this._occOn = false;
+    this._occN = 0;
     this.dl = dl;
     this.t = t;
     this.dt = dt;
@@ -853,12 +871,26 @@ class UI {
   // like every hit rect here, so a clip shut to zero height catches nothing.
   // It reads the clip straight off the draw list's stack (see drawlist.js)
   // rather than keeping a second copy that could drift from what is drawn.
-  setOcclusion(x, y, w, h) { this._occOn = w > 0 && h > 0; this._occX = x; this._occY = y; this._occW = w; this._occH = h; }
-  clearOcclusion() { this._occOn = false; }
+  // setOcclusion replaces whatever is set with the one rect (an open menu's,
+  // widgets.js popupInput); addOcclusion adds one to the list, past
+  // MAX_OCCLUSION ignored; clearOcclusion lifts them all. An empty rect is
+  // never kept.
+  setOcclusion(x, y, w, h) { this._occN = 0; this.addOcclusion(x, y, w, h); }
+  addOcclusion(x, y, w, h) {
+    if (!(w > 0 && h > 0) || this._occN >= MAX_OCCLUSION) return;
+    const o = this._occ, j = this._occN++ * 4;
+    o[j] = x; o[j + 1] = y; o[j + 2] = w; o[j + 3] = h;
+  }
+  clearOcclusion() { this._occN = 0; }
   _pointerOccluded() {
-    if (!this._occOn) return false;
-    const px = this.pointerX, py = this.pointerY;
-    return px >= this._occX && px < this._occX + this._occW && py >= this._occY && py < this._occY + this._occH;
+    const n = this._occN;
+    if (n === 0) return false;
+    const px = this.pointerX, py = this.pointerY, o = this._occ;
+    for (let k = 0; k < n; k++) {
+      const j = k * 4;
+      if (px >= o[j] && px < o[j] + o[j + 2] && py >= o[j + 1] && py < o[j + 1] + o[j + 3]) return true;
+    }
+    return false;
   }
 
   _pointerInClip() {
@@ -1114,6 +1146,8 @@ class UI {
     g.rot = this.spring(combine(nid, 2), g.open ? Math.PI : 0, MOTION.panel);
     g.hasSwitch = hasSwitch; g.swOn = swOn; g.focused = focused; g.swFocused = swFocused;
     g.pinned = pinned;
+    g.glowA = this.headGlow; g.glowCol = this.headGlowColor;
+    this.headGlow = 0;
 
     if (pinned) {
       // Drawn in endGroup(), over the body. Its backing is a strip of the
@@ -1222,6 +1256,7 @@ class UI {
       this.scratch0[2] = COLOR.hover[2]; this.scratch0[3] = COLOR.hover[3] * g.hoverA;
       dl.rect(hx, hy, hw, hh, RADIUS.sm, this.scratch0, 0, null, 0, 0);
     }
+    if (g.glowA > 0.001 && g.glowCol) this._headGlow(hx, hy, hw, hh, g.glowCol, g.glowA);
     if (g.openA > 0.001) {
       this.scratch1[0] = COLOR.accent[0]; this.scratch1[1] = COLOR.accent[1];
       this.scratch1[2] = COLOR.accent[2]; this.scratch1[3] = COLOR.accent[3] * g.openA;
@@ -1246,6 +1281,18 @@ class UI {
     }
 
     if (g.focused && this.focusVisible) this._focusRing(hx, hy, hw, hh, RADIUS.sm);
+  }
+
+  // A header's or strip's glow (headGlow): a faint wash of the colour over
+  // the band and a ring of it just inside the edge, both at strength a. Two
+  // plain rects, no shadow (the shadow is always black), so it costs a
+  // header two instances and only while a glow is asked for.
+  _headGlow(x, y, w, h, col, a) {
+    const f = this._glowFill, l = this._glowLine;
+    f[0] = col[0]; f[1] = col[1]; f[2] = col[2]; f[3] = 0.13 * a;
+    l[0] = col[0]; l[1] = col[1]; l[2] = col[2]; l[3] = 0.7 * a;
+    this.dl.rect(x, y, w, h, RADIUS.sm, f, 0, null, 0, 0);
+    this.dl.rect(x + 0.5, y + 0.5, w - 1, h - 1, RADIUS.sm, COLOR.clear, 1.25, l, 0, 0);
   }
 
   // What sits behind a pinned header: a soft shadow cast downward onto the
@@ -1559,6 +1606,9 @@ class UI {
     this.foldToggled = false;
     this.foldSwitchChanged = false;
     this.foldSwitch = !!switchOn;
+    // a glow asked for is this strip's, and never outlives this call
+    f.glowA = label === null ? 0 : this.headGlow; f.glowCol = this.headGlowColor;
+    this.headGlow = 0;
     let y0 = reg.cursorY, pinned = false, hy = 0, hh = 0;
     if (label === null) {
       f.pinned = false; f.pinA = 0; f.g = null; f.hasSwitch = false;
@@ -1737,6 +1787,7 @@ class UI {
     dl.rect(f.x, f.y + f.hh / 2, f.w, f.hh / 2, RADIUS.sm, sc, 0, null, 0, 0);
     sc[3] = GROUP_BAND[3] * FOLD_EDGE;
     dl.rect(f.x + RADIUS.sm, f.y + f.hh - 1, f.w - RADIUS.sm * 2, 1, 0, sc, 0, null, 0, 0);
+    if (f.glowA > 0.001 && f.glowCol) this._headGlow(f.x, f.y, f.w, f.hh, f.glowCol, f.glowA);
     dl.rect(f.x + RADIUS.sm, f.y, f.w - RADIUS.sm * 2, 1, 0, COLOR.headHi, 0, null, 0, 0);
     this.text.lineMetrics(TYPE.sm, this._lm);
     const baseline = f.y + f.hh / 2 + (this._lm.ascent - this._lm.descent) / 2;

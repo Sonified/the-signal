@@ -39,7 +39,7 @@
 // keeps its state and marks it to be written again (see syncFromStorage).
 // load() at boot still takes whatever is stored, whoever wrote it.
 
-import { S, layers, STORE, SKIP_KEY } from '../../js/state.js';
+import { S, layers, STORE, SKIP_KEY, seqSeat } from '../../js/state.js';
 import { setColorFromPicker } from '../../js/color.js';
 import { applyEdgeDir } from '../../js/sim.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../../js/ambience.js';
@@ -110,6 +110,11 @@ function buildSettings() {
     color: rgbHex(S.rgb),
     ringSpeedMul: S.ringSpeedMul, ringRate: S.ringRate, ringOpacity: S.ringOpacity, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
+    edgeFb: S.edgeFb, edgeFbStream: S.edgeFbStream, edgeFbTwist: S.edgeFbTwist, edgeFbOpacity: S.edgeFbOpacity,
+    edgeMode: S.edgeMode, edgePulse: S.edgePulse,
+    edgePartRate: S.edgePartRate, edgePartSize: S.edgePartSize, edgePartDrift: S.edgePartDrift, edgePartSparkle: S.edgePartSparkle,
+    edgeFlameHeight: S.edgeFlameHeight, edgeFlameSpeed: S.edgeFlameSpeed, edgeFlameTurb: S.edgeFlameTurb,
+    edgeGlowWidth: S.edgeGlowWidth, edgeGlowSoft: S.edgeGlowSoft, edgeGlowBreathe: S.edgeGlowBreathe, edgeGlowBreatheRate: S.edgeGlowBreatheRate,
     edgeDir: S.edgeDir, layers: sharedLayers(),
     textLinked: S.textLinked, textRateHz: S.textRateHz, textFreq: S.textFreq,
     textRandom: S.textRandom, textDwellMs: S.textDwellMs,
@@ -146,13 +151,14 @@ function buildSettings() {
     textRestFreq: S.textRestFreq, textRestSec: S.textRestSec, textRestVar: S.textRestVar,
     depthVar: S.depthVar, depthVarOn: S.depthVarOn, varPeriod: S.varPeriod, panelOpen: S.panelOpen,
     freqDrift: S.freqDrift, freqDriftOn: S.freqDriftOn, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
-    frameLock: S.frameLock, spareMode: S.spareMode, walkPeriod: S.walkPeriod, brightVar: S.brightVar, brightVarOn: S.brightVarOn,
+    frameLock: S.frameLock, spareMode: S.spareMode, pauseWindDown: S.pauseWindDown, pauseFlickerStop: S.pauseFlickerStop !== false,
+    hintFadeMs: S.hintFadeMs, hintSweep: S.hintSweep, hintFadeInMs: S.hintFadeInMs, hintArrive: S.hintArrive, walkPeriod: S.walkPeriod, brightVar: S.brightVar, brightVarOn: S.brightVarOn,
     brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
     hueLo: S.hueLo, hueSpan: S.hueSpan,
     ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod,
     edgeSpeedVar: S.edgeSpeedVar, edgeSpeedVarPeriod: S.edgeSpeedVarPeriod,
     edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
-    carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked,
+    carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked, amModOn: S.amModOn,
     toneOn: S.toneOn, clickOn: S.clickOn, toneVol: S.toneVol, clickVol: S.clickVol, pipMs: S.pipMs,
     harmOn: S.harmOn, harmVol: S.harmVol, harmCount: S.harmCount, harmBright: S.harmBright,
     harmSpread: S.harmSpread, harmPanRate: S.harmPanRate, harmReverb: S.harmReverb,
@@ -188,7 +194,7 @@ function sharedLayers() {
 // this record too: v0 never shows them, so they stay out of the shared file
 // the same way the v1 layers do. Copied, not referenced, so a snapshot holds
 // still while the viewer keeps pressing buttons.
-function mixStateOf(s) {
+export function mixStateOf(s) {
   const m = {}, o = {};
   for (let i = 0; i < CHANNELS.length; i++) {
     const ch = CHANNELS[i];
@@ -215,26 +221,106 @@ function applyMixState(s, x) {
   if (moved) applyMixGates();
 }
 
-// The sequencer's patterns and which one plays (js/piano.js), v1 only, so
-// they ride here with the other v1 state. Copied, so a snapshot holds still.
-function seqStateOf(s) {
+// The sequencer's eight lines and which one is active (js/piano.js), v1
+// only, so they ride here with the other v1 state. Copied field by field,
+// steps included, so a snapshot holds still while the viewer keeps editing.
+// Exported, with applySeqState, SEQ_NUM_RANGE and mixStateOf above, for the
+// journey (core/journey.js): every step keeps its own full copy of the lines
+// and the mix in exactly these shapes, read back through the same checks.
+export function seqStateOf(s) {
   return {
     seqSlot: s.seqSlot | 0,
-    seqPatterns: s.seqPatterns.map(p => ({ len: p.len, steps: p.steps.slice() }))
+    seqs: s.seqs.map(q => {
+      const o = { len: q.len, steps: q.steps.slice(), wave: q.wave, mute: q.mute, solo: q.solo,
+                  octMode: q.octMode, dlyPing: q.dlyPing };
+      for (const k in SEQ_NUM_RANGE) o[k] = q[k];
+      return o;
+    })
   };
 }
-// Only well-formed patterns are taken; anything else keeps the default.
-function applySeqState(s, x) {
-  if (Array.isArray(x.seqPatterns)) {
-    for (let i = 0; i < s.seqPatterns.length && i < x.seqPatterns.length; i++) {
-      const p = x.seqPatterns[i];
-      if (!p || !Array.isArray(p.steps) || !Number.isFinite(p.len)) continue;
-      const steps = new Array(16).fill(-1);
-      for (let k = 0; k < 16; k++) if (Number.isFinite(p.steps[k])) steps[k] = p.steps[k];
-      s.seqPatterns[i] = { len: Math.max(1, Math.min(16, Math.round(p.len))), steps };
+const SEQ_WAVE_OK = { sine: 1, triangle: 1, sawtooth: 1, square: 1 };
+const SEQ_OCT_MODE_OK = { off: 1, up: 1, down: 1, both: 1 };
+// Every number on a line and the range it is clamped into on the way in
+// (the window's knobs and js/piano.js keep to the same ranges). The whole
+// ones (octaves, oct) are rounded as well.
+export const SEQ_NUM_RANGE = {
+  vol: [0, 1], octaves: [1, 4], oct: [-3, 3], pan: [-1, 1], rev: [0, 1], spread: [0, 1],
+  atk: [0.001, 0.5], atkVar: [0, 1], atkRate: [1, 120],
+  dec: [0.02, 2], decVar: [0, 1], decRate: [1, 120],
+  panMod: [0, 1], panRate: [1, 120],
+  revTime: [1, 15], revVar: [0, 1], revRate: [1, 120],
+  dlyTime: [0.25, 4], dlyFb: [0, 0.95], dlyFbVar: [0, 1], dlyFbRate: [1, 120]
+};
+const SEQ_WHOLE = { octaves: 1, oct: 1 };
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// A pattern's length and steps, taken only as a well-formed pair; anything
+// else keeps what the line has. Returns whether it was taken.
+function takePattern(q, p) {
+  if (!p || !Array.isArray(p.steps) || !Number.isFinite(p.len)) return false;
+  const steps = new Array(16).fill(-1);
+  for (let k = 0; k < 16; k++) if (Number.isFinite(p.steps[k])) steps[k] = p.steps[k];
+  q.len = clampN(Math.round(p.len), 1, 16);
+  q.steps = steps;
+  return true;
+}
+// Only well-formed values are taken, each clamped; anything else keeps the
+// default, so a record from before a field existed leaves it as it is.
+// Two older shapes are read too. A line from before the octave modes has an
+// octRand switch, which reads as 'up' when on and 'off' when not. A line
+// from before each had its own envelope has no atk or dec, and takes the
+// old global attack and decay (arpAtk, arpDec, which applySettings has
+// already put on s), so the lines keep the envelope the one dial pair gave
+// them; once a line carries its own, those globals are never read again.
+// A stored pan is always kept as it is; a line with none takes its seated
+// default (seqSeat in js/state.js), as a fresh line does.
+// A record from before the eight lines carries seqPatterns, the four
+// patterns of which one played: they fill lines 1 to 4, each starting from
+// the old global waveform, reverb, spread and envelope. The pattern that
+// was playing stays active, and the other three that hold notes start
+// muted, so the old session sounds as it did rather than four patterns
+// suddenly playing at once.
+const oldAtk = s => Number.isFinite(s.arpAtk) ? clampN(s.arpAtk, 0.001, 0.5) : 0.01;
+const oldDec = s => Number.isFinite(s.arpDec) ? clampN(s.arpDec, 0.02, 2) : 0.25;
+export function applySeqState(s, x) {
+  if (Array.isArray(x.seqs)) {
+    for (let i = 0; i < s.seqs.length && i < x.seqs.length; i++) {
+      const p = x.seqs[i], q = s.seqs[i];
+      if (!p || typeof p !== 'object') continue;
+      takePattern(q, p);
+      if (SEQ_WAVE_OK[p.wave]) q.wave = p.wave;
+      if (typeof p.mute === 'boolean') q.mute = p.mute;
+      if (typeof p.solo === 'boolean') q.solo = p.solo;
+      if (typeof p.dlyPing === 'boolean') q.dlyPing = p.dlyPing;
+      if (SEQ_OCT_MODE_OK[p.octMode]) q.octMode = p.octMode;
+      else if (typeof p.octRand === 'boolean') q.octMode = p.octRand ? 'up' : 'off';
+      for (const k in SEQ_NUM_RANGE) {
+        const v = p[k];
+        if (!Number.isFinite(v)) continue;
+        const r = SEQ_NUM_RANGE[k];
+        q[k] = clampN(SEQ_WHOLE[k] ? Math.round(v) : v, r[0], r[1]);
+      }
+      if (!Number.isFinite(p.atk)) q.atk = oldAtk(s);
+      if (!Number.isFinite(p.pan)) q.pan = seqSeat(i);
+      if (!Number.isFinite(p.dec)) q.dec = oldDec(s);
     }
+    if (Number.isFinite(x.seqSlot)) s.seqSlot = clampN(x.seqSlot | 0, 0, s.seqs.length - 1);
+  } else if (Array.isArray(x.seqPatterns)) {
+    const was = Number.isFinite(x.seqSlot) ? clampN(x.seqSlot | 0, 0, 3) : 0;
+    const wave = SEQ_WAVE_OK[s.arpWave] ? s.arpWave : 'sine';
+    const rev = Number.isFinite(s.arpRev) ? clampN(s.arpRev, 0, 1) : 1;
+    const spread = Number.isFinite(s.arpSpread) ? clampN(s.arpSpread, 0, 1) : 0.9;
+    const atk = oldAtk(s), dec = oldDec(s);
+    for (let i = 0; i < s.seqs.length; i++) { s.seqs[i].atk = atk; s.seqs[i].dec = dec; }
+    for (let i = 0; i < 4 && i < s.seqs.length; i++) {
+      const q = s.seqs[i];
+      q.wave = wave; q.rev = rev; q.spread = spread; q.pan = seqSeat(i);
+      if (!takePattern(q, x.seqPatterns[i])) continue;
+      let notes = false;
+      for (let k = 0; k < q.len; k++) if (q.steps[k] >= 0) notes = true;
+      q.mute = i !== was && notes;
+    }
+    s.seqSlot = was;
   }
-  if (Number.isFinite(x.seqSlot)) s.seqSlot = Math.max(0, Math.min(s.seqPatterns.length - 1, x.seqSlot | 0));
 }
 
 // The word transitions (core/word-fx.js): v1 only, since v0's word is a DOM
@@ -249,10 +335,16 @@ function wordFxStateOf(s) {
   const o = { textFxIn: s.textFxIn, textFxOut: s.textFxOut, textFxMirror: s.textFxMirror,
               textSmokeSweep: s.textSmokeSweep, textSmokeSweepOut: s.textSmokeSweepOut,
               textGatherSweep: s.textGatherSweep, textGatherSweepOut: s.textGatherSweepOut,
-              textFadeInOn: s.textFadeInOn, textFadeOutOn: s.textFadeOutOn };
+              textFadeInOn: s.textFadeInOn, textFadeOutOn: s.textFadeOutOn,
+              textCustomText: typeof s.textCustomText === 'string' ? s.textCustomText : '',
+              textPhraseGap: s.textPhraseGap };
   for (const k of WORD_FX_NUMS) o[k] = s[k];
   return o;
 }
+// The Custom source's phrases ride here too, not in the shared object: a v0
+// tab's fixed-list save would drop them there. Capped, so a pasted essay
+// cannot swell every save.
+const CUSTOM_TEXT_MAX = 2000;
 function applyWordFxState(s, x) {
   // The particle effect was first called Mist, which collided with the blur
   // slider's old name; both were renamed, and a record from then reads as now.
@@ -273,6 +365,9 @@ function applyWordFxState(s, x) {
   if (typeof x.textGatherSweepOut === 'boolean') s.textGatherSweepOut = x.textGatherSweepOut;
   if (typeof x.textFadeInOn === 'boolean') s.textFadeInOn = x.textFadeInOn;
   if (typeof x.textFadeOutOn === 'boolean') s.textFadeOutOn = x.textFadeOutOn;
+  if (typeof x.textCustomText === 'string') s.textCustomText = x.textCustomText.slice(0, CUSTOM_TEXT_MAX);
+  // Their Phrase gap too: seconds, 0 to 30, anything below 0 reading as Auto.
+  if (Number.isFinite(x.textPhraseGap)) s.textPhraseGap = x.textPhraseGap < 0 ? -1 : Math.min(30, x.textPhraseGap);
   for (const k of WORD_FX_SIDED) if (!Number.isFinite(x[k + 'Out']) && Number.isFinite(x[k])) s[k + 'Out'] = x[k];
   for (const k of WORD_FX_NUMS) if (Number.isFinite(x[k])) s[k] = x[k];
 }
@@ -345,9 +440,18 @@ export function save() {
   if (applyingRemote) return;
   dirtyShared = dirtyExtra = true;
   lastSaveCall = Date.now();
+  for (let i = 0; i < saveCbs.length; i++) saveCbs[i]();
   if (hidden) { clearTimeout(saveTimer); saveTimer = null; return; }
   if (!saveTimer) saveTimer = setTimeout(saveDue, SAVE_DELAY_MS);
 }
+
+// Listeners told that this tab's own settings just changed: every save()
+// that is not another tab's change being applied (those return above
+// first). The journey (core/journey.js) uses it to notice drawer edits
+// while a step is being authored. A listener must be cheap, since a slider
+// drag calls save() on every input event: mark something, never work.
+const saveCbs = [];
+export function onSave(fn) { saveCbs.push(fn); }
 
 // Writes whatever this tab has changed and not yet written, now. Nothing
 // pending means nothing written: a tab that is only being switched away from
@@ -578,6 +682,15 @@ export function load() {
   applyExtra(x);
 }
 
+// The edge's effects (v1/gpu/scene.js) and the new effects' numbers as
+// key, min, max, matching their rows in schema-visual.js.
+const EDGE_MODES = ['surfing', 'particles', 'flame', 'glow'];
+const EDGE_FX_NUM = [
+  ['edgePartRate', 5, 500], ['edgePartSize', 0.5, 8], ['edgePartDrift', -1, 0], ['edgePartSparkle', 0, 1],
+  ['edgeFlameHeight', 8, 240], ['edgeFlameSpeed', 0.1, 3], ['edgeFlameTurb', 0, 1],
+  ['edgeGlowWidth', 2, 200], ['edgeGlowSoft', 0, 1], ['edgeGlowBreathe', 0, 1], ['edgeGlowBreatheRate', 1, 60]
+];
+
 // The body of load(), shared with applySnapshot(). `live` is true when a
 // preset is being recalled mid-session rather than a saved session restored
 // at boot, and changes three things. The drawer's open state and the audio
@@ -599,13 +712,32 @@ function applySettings(s, live) {
   if (typeof s.fieldSoft === 'number')    S.fieldSoft = s.fieldSoft;
   if (typeof s.edgeCount === 'number')    S.edgeCount = s.edgeCount;
   if (typeof s.edgeOpacity === 'number')  S.edgeOpacity = s.edgeOpacity;
+  if (typeof s.edgePulse === 'number' && isFinite(s.edgePulse)) S.edgePulse = Math.max(0, Math.min(1, s.edgePulse));
+  if (typeof s.edgeFb === 'number' && isFinite(s.edgeFb)) S.edgeFb = Math.max(0, Math.min(1, s.edgeFb));
+  if (typeof s.edgeFbOpacity === 'number' && isFinite(s.edgeFbOpacity)) S.edgeFbOpacity = Math.max(0, Math.min(1, s.edgeFbOpacity));
+  if (typeof s.edgeFbStream === 'number' && isFinite(s.edgeFbStream)) S.edgeFbStream = Math.max(-2, Math.min(2, s.edgeFbStream));
+  if (typeof s.edgeFbTwist === 'number' && isFinite(s.edgeFbTwist)) S.edgeFbTwist = Math.max(-1, Math.min(1, s.edgeFbTwist));
   if (typeof s.edgeSize === 'number')     S.edgeSize = s.edgeSize;
   if (s.edgeCap === 'wedge' || s.edgeCap === 'round' || s.edgeCap === 'ball') S.edgeCap = s.edgeCap;
+  // The edge's effect and the three new effects' settings, each clamped to
+  // its row's range (schema-visual.js); a record from before them keeps the
+  // defaults, so it draws the Surfing edge it always did.
+  if (EDGE_MODES.indexOf(s.edgeMode) >= 0) S.edgeMode = s.edgeMode;
+  for (let i = 0; i < EDGE_FX_NUM.length; i++) {
+    const n = EDGE_FX_NUM[i], v = s[n[0]];
+    if (typeof v === 'number' && isFinite(v)) S[n[0]] = Math.max(n[1], Math.min(n[2], v));
+  }
   if (typeof s.trailMul === 'number')     S.trailMul = s.trailMul;
   if (typeof s.edgeSpeedMul === 'number') S.edgeSpeedMul = s.edgeSpeedMul;
   if (typeof s.frameLock === 'boolean') S.frameLock = s.frameLock;
   // Anything else saved here (an old 'alt') falls through to the default.
   if (s.spareMode === 'lit' || s.spareMode === 'dark') S.spareMode = s.spareMode;
+  if (typeof s.pauseWindDown === 'number') S.pauseWindDown = Math.max(0, Math.min(5, s.pauseWindDown));
+  if (typeof s.pauseFlickerStop === 'boolean') S.pauseFlickerStop = s.pauseFlickerStop;
+  if (typeof s.hintFadeMs === 'number') S.hintFadeMs = Math.max(0, Math.min(10000, s.hintFadeMs));
+  if (typeof s.hintSweep === 'number') S.hintSweep = Math.max(0.6, Math.min(4, s.hintSweep));
+  if (typeof s.hintFadeInMs === 'number') S.hintFadeInMs = Math.max(0, Math.min(10000, s.hintFadeInMs));
+  if (s.hintArrive === 'sweep' || s.hintArrive === 'all') S.hintArrive = s.hintArrive;
   if (typeof s.freqDrift === 'number')    S.freqDrift = s.freqDrift;
   if (typeof s.freqDriftOn === 'boolean') S.freqDriftOn = s.freqDriftOn;
   if (typeof s.driftPeriod === 'number')  S.driftPeriod = s.driftPeriod;
@@ -637,6 +769,7 @@ function applySettings(s, live) {
   if (typeof s.carrierHz === 'number')    S.carrierHz = s.carrierHz;
   if (typeof s.amRate === 'number')       S.amRate = s.amRate;
   if (typeof s.amLinked === 'boolean')    S.amLinked = s.amLinked;
+  if (typeof s.amModOn === 'boolean')     S.amModOn = s.amModOn;
   if (typeof s.volume === 'number')       S.volume = s.volume;
 
   if (s.wave) S.wave = s.wave;
@@ -672,7 +805,7 @@ function applySettings(s, live) {
   if (typeof s.textBrighten === 'number') S.textBrighten = s.textBrighten;
   if (s.textColorMode === 'white' || s.textColorMode === 'system') S.textColorMode = s.textColorMode;
   if (s.textThemes && typeof s.textThemes === 'object') S.textThemes = { ...s.textThemes };
-  if (s.textMode === 'words' || s.textMode === 'affirmations') S.textMode = s.textMode;
+  if (s.textMode === 'words' || s.textMode === 'affirmations' || s.textMode === 'custom') S.textMode = s.textMode;
   if (typeof s.textLineWidth === 'number') S.textLineWidth = s.textLineWidth;
   if (typeof s.textSmartBreaks === 'boolean') S.textSmartBreaks = s.textSmartBreaks;
   if (typeof s.textLinesTogether === 'boolean') S.textLinesTogether = s.textLinesTogether;

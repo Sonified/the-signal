@@ -25,6 +25,14 @@ class GenusProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       { name:'rate',       defaultValue:40,  minValue:0.05, maxValue:200,   automationRate:'k-rate' },
+      // How much the pulse envelope moves the tone and the harmonics: 1 is the
+      // full pulse, 0 a steady tone at the pulse's peak. It is the Amplitude
+      // modulation switch, glided rather than stepped, and it touches only the
+      // envelope, never the phase: the rate runs on underneath at either end,
+      // so the pips (timed from that same phase) never notice, and the pulse
+      // comes back in step when the switch returns. a-rate like the levels,
+      // so a glide moves the envelope sample by sample instead of per block.
+      { name:'amDepth',    defaultValue:1,   minValue:0,    maxValue:1,     automationRate:'a-rate' },
       { name:'carrier',    defaultValue:200, minValue:20,   maxValue:20000, automationRate:'k-rate' },
       { name:'pipMs',      defaultValue:5,   minValue:0.1,  maxValue:100,   automationRate:'k-rate' },
       { name:'toneLevel',  defaultValue:0,   minValue:0,    maxValue:1,     automationRate:'a-rate' },
@@ -285,6 +293,7 @@ class GenusProcessor extends AudioWorkletProcessor {
     // step at each block boundary that a k-rate gain produces.
     const TL = p.toneLevel, CL = p.clickLevel, HL2 = p.chirpLevel;
     const CS = p.clickSend, HS = p.chirpSend;
+    const AD = p.amDepth, adN = AD.length > 1;
     const tlN = TL.length > 1, clN = CL.length > 1, chlN = HL2.length > 1;
     const csN = CS.length > 1, hsN = HS.length > 1;
     const pipSec = p.pipMs[0] / 1000;
@@ -364,7 +373,10 @@ class GenusProcessor extends AudioWorkletProcessor {
       // the harmonics, so each is computed once a sample, and only if needed.
       let env = 0, sc = 0;
       if (tl > 0 || harmNow) {
-        env = 0.75 + 0.25 * Math.cos(TAU * this.phase);   // peaks with the pip
+        // peaks with the pip; the depth only ever pulls the troughs up toward
+        // the peak (at full depth this is 0.75 + 0.25 cos, as it always was)
+        const ad = adN ? AD[i] : AD[0];
+        env = ad > 0 ? 1 - 0.25 * ad * (1 - Math.cos(TAU * this.phase)) : 1;
         sc = Math.sin(TAU * this.cphase);
       }
       let v = 0;

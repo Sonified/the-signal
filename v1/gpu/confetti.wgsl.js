@@ -2,11 +2,14 @@
 //
 // The pieces live in a pool of N_MAX slots. The CPU writes a slot's record
 // once, when a piece is born into it (confetti.js): the moment of its birth
-// on the wrapped travel clock, its own speed and size factors, and its seed.
+// on the wrapped travel clock, its own speed and size factors, and its seed,
+// and a second part: where in the plane it starts, the spin clock at its
+// birth, its alignment and its outward kick, and a third: its own share of
+// the spin rate (see slots below).
 // Nothing about a piece changes after that, so where it is now is a closed
 // form of its record and the clocks: its age is T minus its birth, wrapped,
 // its flight so far is that age times its speed factor over FLIGHT, and
-// every random choice about it hashes its seed.
+// every other random choice about it hashes its seed.
 //
 // Which slots to draw, and in what order, is the CPU's list too: instance ii
 // draws slot order[ii], and the list runs from the farthest piece to the
@@ -37,6 +40,18 @@
 // in the chamber the centre's texel and the chamber's texels per device px.
 // The size cap is worked out in tunnel units from device px, before that
 // scale, so it shrinks with the piece in the chamber on its own.
+//
+// Folded, the pieces are born only into the fold's fundamental domain (lf.z
+// and lf.w), at that share of the rate, since the fold reads nothing else.
+// Flutter still carries a piece across the domain's edges, and in the
+// unfolded field as many came in from outside as went out, so a piece is
+// drawn where the fold would show it: its fluttered position is taken back
+// into the domain by the fold's own map (fold.wgsl.js), rotations and
+// mirrors, the whole card with it. The fold then shows it exactly where it
+// flew, and the density stays even right up to every seam. A card that
+// straddles an edge is drawn a second time across it, so both parts show;
+// each piece has two instances in a row for that, the second collapsing at
+// once unless it straddles.
 
 import { RADIAL_FADE_WGSL } from '../core/fade.js';
 
@@ -50,22 +65,44 @@ export const LETGO = 0.12;
 export const TUMBLE_PERIOD = 64;
 // The uniform block: eight vec4f.
 export const UNIFORM_FLOATS = 32;
+// A slot's record: three vec4f, side by side in the slots array (slot s at
+// entries 3s, 3s + 1 and 3s + 2), so the CPU's upload of a run of slots is
+// still one contiguous range. The third holds the piece's spin factor
+// (Rotation variance) and three spares for whatever a piece needs next.
+export const SLOT_VEC4 = 3;
+export const SLOT_FLOATS = SLOT_VEC4 * 4;
+// The base xy radius range, tunnel units, that the CPU draws a piece's start
+// from (bias toward the middle). Perspective alone spreads the pieces out
+// from the middle as they come.
+export const R_MIN = 0.08;
+export const R_MAX = 1.6;
+// The outward kick is packed as the fraction of the second record's w (its
+// whole part is the alignment in percent): the fraction times KICK_PACK is
+// how far out the kick carries the piece over its whole flight, tunnel
+// units. The CPU keeps the fraction below 1 (confetti.js).
+export const KICK_PACK = 8;
 
 export const CONFETTI_WGSL = /* wgsl */ `
 struct U {
   view: vec4f,   // origin xy (the field centre in the target: device px, or chamber texels), focal (device px), dpr
   tgt: vec4f,    // 1 / target width, 1 / target height, largest half size on screen (device px), brightness
   clk: vec4f,    // travel clock T (travel s, wrapped at W), W, unused, tumble clock (s, wrapped)
-  par: vec4f,    // unused, size multiplier, shine, palette (0 rainbow, 1 strobe, 2 gold and silver)
+  par: vec4f,    // shapes bitmask (1 square, 2 rectangle, 4 circle, 8 oval), size multiplier, shine, palette (0 rainbow, 1 strobe, 2 gold and silver)
   col: vec4f,    // strobe colour rgb (0..1), Z_FAR
   mot: vec4f,    // spread (0..1), flutter (0..1), target units per device px (1 on screen), opacity (0..1)
   fd: vec4f,     // centre fade in amount (0..1), Z_NEAR, spin clock (s, wrapped), tumble (0 flat to 1 full 3D)
-  lf: vec4f,     // life (share of the flight, 0..1), unused, unused, unused
+  lf: vec4f,     // life (share of the flight, 0..1), fold (0 off, 1 on, 2 on and mirrored), domain start angle, domain span (radians)
 };
 @group(0) @binding(0) var<uniform> u: U;
-// One record per slot, written at birth: birth time on the travel clock,
-// speed factor, seed (an exact integer below 2^24), size factor.
-@group(0) @binding(1) var<storage, read> slots: array<vec4f, ${N_MAX}>;
+// One record per slot, three vec4f, written at birth. Entry 3s: birth time
+// on the travel clock, speed factor, seed (an exact integer below 2^24), size
+// factor. Entry 3s + 1: the angle out from the centre it starts at
+// (radians), its base radius (tunnel units), the spin clock at its birth
+// (s, wrapped), and its alignment and kick packed together: the whole part
+// the alignment in percent (0..100), the fraction the kick over KICK_PACK.
+// Entry 3s + 2: its spin factor (Rotation variance, 1 for none), then three
+// spares the CPU writes as 0.
+@group(0) @binding(1) var<storage, read> slots: array<vec4f, ${SLOT_VEC4 * N_MAX}>;
 // The live slots, far to near.
 @group(0) @binding(2) var<storage, read> order: array<u32, ${N_MAX}>;
 ${RADIAL_FADE_WGSL}
@@ -81,10 +118,7 @@ const LETGO = ${LETGO};
 const FADE_Z = 0.2;
 const FADE_IN = 0.12;
 
-// The base xy radius range, tunnel units. Perspective alone spreads the
-// pieces out from the middle as they come.
-const R_MIN = 0.08;
-const R_MAX = 1.6;
+const KICK_PACK = ${KICK_PACK}.0;
 // Spread: how far out a piece drifts over its whole flight at Spread 100%,
 // tunnel units, before its own 0.5 to 1.5 share. The drift is steady, so a
 // path is a straight line angled out from the vanishing point, and on screen
@@ -107,6 +141,16 @@ const BASE_HALF = 0.0048;
 // How far the card's normal bends across its width, so a highlight sweeps
 // across a turning piece instead of the whole card blinking at once.
 const CURL = 0.35;
+// The fold: bounds on how far a card's corners reach from its centre in the
+// plane, its half diagonal. Before the size cap that is at most 1.51 of its
+// half size unit (the 0.8 by 1.28 rectangle's diagonal, the longest); after
+// it, at most 1.415 of its capped longest half side (the square's root 2).
+const DIAG_MAX = 1.51;
+const DIAG_CAP = 1.415;
+// And the chamber texels of slack past that, so a card whose outline stops
+// just short of a seam still draws its twin: the fold's bilinear read at the
+// seam reaches about a texel across it.
+const EDGE_SLACK = 2.0;
 
 // The lights, as directions toward them. The key comes from upper left and
 // in front (toward the viewer, negative z), the rim from behind the pieces
@@ -215,7 +259,17 @@ fn vsConf(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V
   // Its age wraps with the travel clock (the CPU only lists pieces younger
   // than their flight, far less than W), and a hair below 0 is a birth whose
   // time rounded just past the clock's, so just born. As confetti.js has it.
-  let rec = slots[order[ii]];
+  // Folded, each list entry has two instances in a row, the piece and its
+  // twin across the nearer edge, so the far to near order holds.
+  let folded = u.lf.y > 0.5;
+  let mirrored = u.lf.y > 1.5;
+  var li = ii;
+  var twin = 0u;
+  if (folded) { li = ii >> 1u; twin = ii & 1u; }
+  let si = order[li];
+  let rec = slots[(${SLOT_VEC4}u * si)];
+  let rec2 = slots[(${SLOT_VEC4}u * si) + 1u];
+  let rec3 = slots[(${SLOT_VEC4}u * si) + 2u];
   var age = u.clk.x - rec.x;
   if (age < -0.5 * u.clk.y) { age = age + u.clk.y; }
   age = max(age, 0.0);
@@ -236,16 +290,74 @@ fn vsConf(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V
   if (lifeFade <= 0.0) { return o; }
   let tc = u.clk.w;
 
-  // Where it flies: a base point in the plane, bias toward the middle of the
-  // radius range, plus a flutter. Frequencies are whole cycles per PERIOD.
-  let th = TAU * rnd(seed, 0u);
-  let rad = R_MIN + (R_MAX - R_MIN) * 0.5 * (rnd(seed, 1u) + rnd(seed, 2u))
-    + u.mot.x * SPREAD_REACH * mix(0.5, 1.5, rnd(seed, 16u)) * q;
+  // Where it flies: its base point in the plane, the angle and radius the CPU
+  // drew at birth (confetti.js, where Clump gathers a burst onto one ring),
+  // drifting straight out along that angle, plus a flutter. Frequencies are
+  // whole cycles per PERIOD. The drift is Spread's, live, and the burst's
+  // own kick, fixed at birth; both steady, so a path stays a straight line
+  // angled out from the vanishing point. Folded, the CPU keeps the angle
+  // inside the domain, which is all the fold reads, and the drift follows it
+  // outward, so it stays there too.
+  let th = rec2.x;
+  let alignPct = floor(rec2.w);
+  let kick = (rec2.w - alignPct) * KICK_PACK;
+  let rad = rec2.y
+    + (u.mot.x * SPREAD_REACH * mix(0.5, 1.5, rnd(seed, 16u)) + kick) * q;
   let fm = floor(mix(FLUTTER_LO, FLUTTER_HI, rnd(seed, 3u)) * PERIOD);
   let fa = TAU * fract(fm * tc / PERIOD) + TAU * rnd(seed, 4u);
   let famp = mix(FLUTTER_AMP_LO, FLUTTER_AMP_HI, rnd(seed, 5u)) * u.mot.y;
   let wob = famp * vec2f(sin(fa), 0.5 * sin(2.0 * fa + TAU * rnd(seed, 6u)));
   let centre = vec3f(vec2f(cos(th), sin(th)) * rad + wob, z);
+
+  // The size cap (used below), needed here for the twin's reach.
+  let focal = u.view.z;
+  let lim = min(u.tgt.z * z / focal, 0.5 * z);
+
+  // Folded: the element of the fold's symmetry that takes the fluttered
+  // centre back into the domain, as the fold itself turns a screen point in.
+  // It is kept as a turn phi after a flip of y when gsg is -1, so a point at
+  // angle a lands at phi + gsg * a. The twin then goes one step further,
+  // across the domain edge nearer that image: reflected across it with
+  // mirror, turned one span on without, which puts the part of the card
+  // hanging out past the edge where the fold will read it. The twin is kept
+  // only if the card reaches that edge, which, since projection keeps a
+  // point's angle, is r sin(gap) against the card's half diagonal in the
+  // plane; the gap is at most half the span, never past a right angle, and
+  // at r near 0 the test keeps it.
+  var gc = 1.0;
+  var gs = 0.0;
+  var gsg = 1.0;
+  if (folded) {
+    let dom0 = u.lf.z;
+    let span = u.lf.w;
+    let wdg = select(span, 2.0 * span, mirrored);
+    let r = length(centre.xy);
+    let a = select(dom0 + 0.5 * span, atan2(centre.y, centre.x), r > 1e-6);
+    let rel = a - dom0;
+    let kw = wdg * floor(rel / wdg);
+    var m = rel - kw;
+    var phi = -kw;
+    if (mirrored && m > span) {
+      m = wdg - m;
+      phi = 2.0 * dom0 + kw + wdg;
+      gsg = -1.0;
+    }
+    if (twin == 1u) {
+      let nearStart = m < 0.5 * span;
+      let gap = max(select(span - m, m, nearStart), 0.0);
+      let reach = min(DIAG_MAX * BASE_HALF * u.par.y * rec.w, DIAG_CAP * lim)
+        + EDGE_SLACK * z / (focal * max(u.mot.z, 1e-6));
+      if (r * sin(gap) > reach) { return o; }
+      if (mirrored) {
+        phi = 2.0 * select(dom0 + span, dom0, nearStart) - phi;
+        gsg = -gsg;
+      } else {
+        phi = phi + select(-span, span, nearStart);
+      }
+    }
+    gc = cos(phi);
+    gs = sin(phi);
+  }
 
   // The centre fade: the tunnel rings' own Fade in curve (core/fade.js), so
   // one setting means the same here as on the rings and the particles. kr is
@@ -263,30 +375,69 @@ fn vsConf(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V
   // full 3D tumble). The random axis is taken on the viewer's side first, so
   // the lean never passes through zero; turning about -a is only the same
   // turn run backward.
+  //
+  // Alignment: the turn starts from the piece's pose at birth, which is the
+  // aligned pose, the card face on with its own long axis (y) pointing
+  // straight out from the centre along its angle th, as the Kaleidoscope
+  // layer seats its shapes. The angle turned is counted from the spin clock
+  // at its birth (rec2.z), so a piece born this moment shows that pose
+  // exactly, plus a random phase that the alignment at birth takes away: at
+  // 100% every piece is born pointing straight out, at 0 the phase is fully
+  // random and the pose as random as ever. Since wn is a whole number of
+  // turns per PERIOD, the difference of two wrapped clocks gives the same
+  // angle as the unwrapped one. With Rotation speed 0 the clock stands and
+  // an aligned piece stays aligned.
+  //
+  // Rotation variance: the piece's own spin factor, drawn at birth (rec3.x),
+  // scales its turns per PERIOD and is rounded back to a whole number, never
+  // below 0, so the wrapped clocks still give a continuous angle. It changes
+  // only the rate: the angle is still 0 at the piece's birth, so alignment
+  // holds.
   var own = sphere(rnd(seed, 7u), rnd(seed, 8u));
   if (own.z < 0.0) { own = -own; }
   let axis = normalize(mix(vec3f(0.0, 0.0, 1.0), own, u.fd.w));
-  let wn = floor(mix(SPIN_LO, SPIN_HI, rnd(seed, 9u)) * PERIOD / TAU);
-  let ang = TAU * fract(wn * u.fd.z / PERIOD) + TAU * rnd(seed, 10u);
+  let wn0 = floor(mix(SPIN_LO, SPIN_HI, rnd(seed, 9u)) * PERIOD / TAU);
+  let wn = max(0.0, round(wn0 * rec3.x));
+  let align = alignPct * 0.01;
+  let ang = TAU * fract(wn * (u.fd.z - rec2.z) / PERIOD)
+    + (1.0 - align) * TAU * rnd(seed, 10u);
   let ca = cos(ang);
   let sa = sin(ang);
-  let ex = turn(vec3f(1.0, 0.0, 0.0), axis, ca, sa);
-  let ey = turn(vec3f(0.0, 1.0, 0.0), axis, ca, sa);
+  // The aligned pose: the card turned in the screen's plane so its y runs
+  // along (cos th, sin th) and its x a quarter turn clockwise of that, which
+  // keeps the normal x cross y pointing along +z as before.
+  let bx = vec3f(sin(th), -cos(th), 0.0);
+  let by = vec3f(cos(th), sin(th), 0.0);
+  let ex = turn(bx, axis, ca, sa);
+  let ey = turn(by, axis, ca, sa);
 
-  // The shape: rectangles 1 : 1.6, squares, and circles.
-  let hs = rnd(seed, 11u);
-  var half = vec2f(0.8, 1.28);
-  var circle = 0.0;
-  if (hs >= 0.65) { half = vec2f(1.0, 1.0); }
-  if (hs >= 0.85) { circle = 1.0; }
+  // The shape, one of those lit in the Shapes control: 0 square, 1 rectangle
+  // 1 : 1.6, 2 circle, 3 oval, sent as the bitmask par.x (bit i for shape i).
+  // Each piece picks evenly among the lit shapes from its own seed, so it
+  // keeps its shape all the way down, and a change to the set reshapes the
+  // pieces already flying too. An empty mask never arrives, but reads as all
+  // four so a piece always has something to be. The odd shapes are the long
+  // ones and the upper two the round ones; an oval is the circle's disc test
+  // on the rectangle's card, which the uv space stretches into an ellipse.
+  var mask = (u32(u.par.x + 0.5) & 15u);
+  if (mask == 0u) { mask = 15u; }
+  let lit = countOneBits(mask);
+  var pick = min(u32(rnd(seed, 11u) * f32(lit)), (lit - 1u));
+  var shape = 0u;
+  for (var i = 0u; i < 4u; i++) {
+    if (((mask >> i) & 1u) == 1u) {
+      if (pick == 0u) { shape = i; break; }
+      pick = pick - 1u;
+    }
+  }
+  let half = select(vec2f(1.0, 1.0), vec2f(0.8, 1.28), ((shape & 1u) == 1u));
+  let circle = select(0.0, 1.0, shape >= 2u);
   // The size factor was drawn at birth (the record's w), so Size variance
   // only reaches pieces born after it moves.
   var hxy = half * (BASE_HALF * u.par.y * rec.w);
   // Never larger on screen than the cap, and never so large near the viewer
   // that a corner could reach behind the eye.
-  let focal = u.view.z;
   let longest = max(hxy.x, hxy.y);
-  let lim = min(u.tgt.z * z / focal, 0.5 * z);
   hxy = hxy * min(1.0, lim / longest);
 
   var ks = array<vec2f, 6>(
@@ -295,7 +446,12 @@ fn vsConf(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V
   let k = ks[vi % 6u];
   let pc = centre + ex * (k.x * hxy.x) + ey * (k.y * hxy.y);
   let w = max(pc.z, 0.01);
-  let sp = u.view.xy + pc.xy * (focal / w * u.mot.z);
+  // Folded, the whole card goes through the fold's element, every corner
+  // alike; unfolded that is the identity. Only where it lands changes: it
+  // keeps its own normal and light, so the fold shows the piece where it
+  // flew exactly as it would look there, with no jump as it crosses a seam.
+  let pxy = vec2f(gc * pc.x - gs * gsg * pc.y, gs * pc.x + gc * gsg * pc.y);
+  let sp = u.view.xy + pxy * (focal / w * u.mot.z);
   let ndc = vec2f(sp.x * u.tgt.x * 2.0 - 1.0, 1.0 - sp.y * u.tgt.y * 2.0);
   o.pos = vec4f(ndc * w, 0.0, w);
 

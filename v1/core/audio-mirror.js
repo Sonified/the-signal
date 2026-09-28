@@ -1,7 +1,7 @@
 // Two live audio readings the drawn frame uses, read through here so they
 // work on either thread: the sequencer channel's peak (the particles pulse
-// with it) and the sequencer's playhead (its window lights the step that
-// last sounded).
+// with it) and the sequencer's step clock (its window lights the step that
+// last sounded, on the grid and on each line's row).
 //
 // On the main thread both come straight from js/piano.js, exactly as before.
 // In worker mode the audio lives on the page and the worker's copy of
@@ -11,7 +11,8 @@
 // notes the frame it happened on, which is how the worker tells the page
 // that someone is looking and the readings are worth sending at all.
 
-import { arpPeak, seqPlayhead } from '../../js/piano.js';
+import { S } from '../../js/state.js';
+import { arpPeak, seqPlayhead, seqClock } from '../../js/piano.js';
 
 // The layout of the Float32Array the page posts (core/audio-shell.js writes
 // it, core/audio-link.js reads it): a few fixed slots, then the atmosphere's
@@ -32,7 +33,7 @@ export const CALL_SLOTS = 5;
 export const mirror = {
   on: false,
   arpPeak: 0,
-  seqPlayhead: -1,
+  seqClock: -1,        // the page's step count, from which each line finds its own step
   frame: 0,            // advanced by the audio link once a frame
   arpReadAt: -1e9,     // the frame each reading was last asked for
   playheadReadAt: -1e9
@@ -44,8 +45,21 @@ export function arpPeakNow() {
   return mirror.arpPeak;
 }
 
+// The sequencer's step clock: the count at the step that last sounded, -1
+// while nothing plays. Each of the eight lines' steps is this count modulo
+// that line's own length, so the window can light every line's step from
+// the one number, and the page sends only that.
+export function seqClockNow() {
+  if (!mirror.on) return seqClock();
+  mirror.playheadReadAt = mirror.frame;
+  return mirror.seqClock;
+}
+
+// The active line's step, for the grid's playhead.
 export function seqPlayheadNow() {
   if (!mirror.on) return seqPlayhead();
   mirror.playheadReadAt = mirror.frame;
-  return mirror.seqPlayhead;
+  const c = mirror.seqClock, q = S.seqs && S.seqs[S.seqSlot | 0];
+  if (c < 0 || !q) return -1;
+  return c % Math.max(1, Math.min(16, q.len | 0));
 }

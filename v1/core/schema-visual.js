@@ -100,8 +100,20 @@ export function subDrawer(id, label, section = 'text', summary, switchId) {
   };
 }
 
+// The Edge section's effect (v1/gpu/scene.js), read safely: anything else
+// on S (a record from before effects) is Surfing, the edge as it was.
+const EDGE_MODES = ['surfing', 'particles', 'flame', 'glow'];
+const edgeMode = S => EDGE_MODES.indexOf(S.edgeMode) >= 0 ? S.edgeMode : 'surfing';
+const surfing = S => edgeMode(S) === 'surfing';
+// The edge's Pulse with strobe, 1 (the edge as it always was) when unset.
+const edgePulse = S => typeof S.edgePulse === 'number' ? S.edgePulse : 1;
+
 const fadeInOn = S => S.textFadeInOn !== false;
 const fadeOutOn = S => S.textFadeOutOn !== false;
+// Whole phrases, which can wrap to several lines: the affirmations, and the
+// Custom source's own phrases, so the rows about how a block's lines move
+// show for both.
+const phraseMode = S => S.textMode === 'affirmations' || S.textMode === 'custom';
 function fxRows(leaving) {
   const sfx = leaving ? 'Out' : '';
   // every row sits one level in under its side's effect row
@@ -629,9 +641,164 @@ export const VISUAL_CONTROLS = [
 
   // ---------- Edge ----------
   sectionToggle('edgeOn', 'edge', 'edge', 'On'),
-  // ---- two sub-drawers, Motion and Style (see subDrawer), each with its
-  // rows straight after it ----
-  subDrawer('edgeMotionDrawer', 'Motion', 'edge', ['edgeSpeed', 'edgeDir']),
+  {
+    // Scales the whole edge's brightness, whichever effect it shows.
+    id: 'edgeOpacity', section: 'edge', label: 'Edge opacity', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round(S.edgeOpacity * 100),
+    set: (S, pos) => { S.edgeOpacity = pos / 100; save(); },
+    format: S => Math.round(S.edgeOpacity * 100) + '%'
+  },
+  {
+    // How much the edge breathes with the strobe's flicker, whichever effect
+    // it shows: at 100% it dips with every flash as it always has, lower
+    // only part of the way, and at 0 it is a steady edge at full strength.
+    // It scales how far the brightness departs from steady, never the
+    // steady level itself, and pausing still settles it as before.
+    id: 'edgePulse', section: 'edge', label: 'Pulse with strobe', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round(edgePulse(S) * 100),
+    set: (S, pos) => { S.edgePulse = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => edgePulse(S) === 0 ? 'never flickers' : Math.round(edgePulse(S) * 100) + '%'
+  },
+  {
+    // The edge's effect (v1/gpu/scene.js). Surfing is the particles walking
+    // the perimeter with their tails, as the edge always was; Particles,
+    // Flame and Glow are the three in gpu/edge-fx.js. Each effect's own rows
+    // show only while it is chosen: Surfing's are the Motion and Style
+    // drawers below, the others' sit straight under this row. Opacity and
+    // Feedback belong to the layer, whichever effect it shows. A change
+    // crossfades (scene.js): over a preset's glide or a journey step's ramp
+    // when one is under way, else over a third of a second.
+    id: 'edgeMode', section: 'edge', label: 'Effect', kind: 'segment', def: 'surfing',
+    options: [
+      { value: 'surfing',   label: 'Surfing',   domId: null },
+      { value: 'particles', label: 'Particles', domId: null },
+      { value: 'flame',     label: 'Flame',     domId: null },
+      { value: 'glow',      label: 'Glow',      domId: null }
+    ],
+    get: S => edgeMode(S),
+    set: (S, v) => { S.edgeMode = EDGE_MODES.indexOf(v) >= 0 ? v : 'surfing'; save(); },
+    format: S => edgeMode(S)
+  },
+  // Particles: sparks born evenly along the border, fading over their short
+  // life.
+  {
+    // Sparks born a second, round the whole perimeter.
+    id: 'edgePartRate', section: 'edge', label: 'Rate', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'particles',
+    min: 5, max: 500, step: 5, def: 120,
+    get: S => S.edgePartRate,
+    set: (S, pos) => { S.edgePartRate = Math.max(5, Math.min(500, pos)); save(); },
+    format: S => S.edgePartRate + ' / s'
+  },
+  {
+    // A spark's radius, css px, before each one's own spread of it.
+    id: 'edgePartSize', section: 'edge', label: 'Size', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'particles',
+    min: 0.5, max: 8, step: 0.1, def: 2,
+    get: S => S.edgePartSize,
+    set: (S, pos) => { S.edgePartSize = Math.max(0.5, Math.min(8, pos)); save(); },
+    format: S => S.edgePartSize.toFixed(1) + ' px'
+  },
+  {
+    // How fast the sparks drift in toward the centre, alike on every side.
+    // At 0 they stay where they are born and only wander a little along
+    // the border. Outward went nowhere (a spark born on the border leaves
+    // the screen at once), so the slider only goes in; S keeps the sign
+    // convention the shader reads (negative is inward).
+    id: 'edgePartDrift', section: 'edge', label: 'Drift', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'particles',
+    min: 0, max: 100, step: 1, def: 35,
+    get: S => Math.round(-S.edgePartDrift * 100),
+    set: (S, pos) => { S.edgePartDrift = -Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => !S.edgePartDrift ? 'none' : Math.round(-S.edgePartDrift * 100) + '% in'
+  },
+  {
+    // Each spark twinkling on its own, as a firework's sparks crackle; 0 is
+    // a steady fade.
+    id: 'edgePartSparkle', section: 'edge', label: 'Sparkle', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'particles',
+    min: 0, max: 100, step: 1, def: 50,
+    get: S => Math.round(S.edgePartSparkle * 100),
+    set: (S, pos) => { S.edgePartSparkle = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round(S.edgePartSparkle * 100) + '%'
+  },
+  // Flame: licks rising in off all four borders, as if the frame were
+  // quietly burning.
+  {
+    // How far in the licks reach at most, css px.
+    id: 'edgeFlameHeight', section: 'edge', label: 'Height', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'flame',
+    min: 8, max: 240, step: 1, def: 56,
+    get: S => S.edgeFlameHeight,
+    set: (S, pos) => { S.edgeFlameHeight = Math.max(8, Math.min(240, pos)); save(); },
+    format: S => Math.round(S.edgeFlameHeight) + ' px'
+  },
+  {
+    // How fast the flames flicker and climb.
+    id: 'edgeFlameSpeed', section: 'edge', label: 'Speed', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'flame',
+    min: 0.1, max: 3, step: 0.05, def: 1,
+    get: S => S.edgeFlameSpeed,
+    set: (S, pos) => { S.edgeFlameSpeed = Math.max(0.1, Math.min(3, pos)); save(); },
+    format: S => S.edgeFlameSpeed.toFixed(2) + '×'
+  },
+  {
+    // How rough the flames are: at 0 smooth rounded tongues, at 100% ragged
+    // and broken, their noise warped sideways.
+    id: 'edgeFlameTurb', section: 'edge', label: 'Turbulence', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'flame',
+    min: 0, max: 100, step: 1, def: 50,
+    get: S => Math.round(S.edgeFlameTurb * 100),
+    set: (S, pos) => { S.edgeFlameTurb = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round(S.edgeFlameTurb * 100) + '%'
+  },
+  // Glow: a soft band of light hugging the border.
+  {
+    // How far in the band reaches, css px.
+    id: 'edgeGlowWidth', section: 'edge', label: 'Width', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'glow',
+    min: 2, max: 200, step: 1, def: 28,
+    get: S => S.edgeGlowWidth,
+    set: (S, pos) => { S.edgeGlowWidth = Math.max(2, Math.min(200, pos)); save(); },
+    format: S => Math.round(S.edgeGlowWidth) + ' px'
+  },
+  {
+    // How the light falls away inward from the screen's edge, where it is
+    // always at full: at 0 a crisp bright rim that drops fast, at 100% a
+    // long smooth decay across the whole width.
+    id: 'edgeGlowSoft', section: 'edge', label: 'Softness', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'glow',
+    min: 0, max: 100, step: 1, def: 60,
+    get: S => Math.round(S.edgeGlowSoft * 100),
+    set: (S, pos) => { S.edgeGlowSoft = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round(S.edgeGlowSoft * 100) + '%'
+  },
+  {
+    // A slow swell: once a Breathe rate the glow dims by this much and
+    // comes back, the same down-and-back as the variances. A breath, not a
+    // flash; the glow still flickers with the strobe as the edge does.
+    id: 'edgeGlowBreathe', section: 'edge', label: 'Breathe', kind: 'slider',
+    tip: 'A slow swell of the glow; 0 holds it steady.',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'glow',
+    min: 0, max: 100, step: 1, def: 40,
+    get: S => Math.round(S.edgeGlowBreathe * 100),
+    set: (S, pos) => { S.edgeGlowBreathe = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round(S.edgeGlowBreathe * 100) + '%'
+  },
+  {
+    id: 'edgeGlowBreatheRate', section: 'edge', label: 'Breathe rate', kind: 'slider',
+    parent: 'edgeMode', visible: S => edgeMode(S) === 'glow',
+    min: 1, max: 60, step: 1, def: 8,
+    get: S => S.edgeGlowBreatheRate,
+    set: (S, pos) => { S.edgeGlowBreatheRate = Math.max(1, Math.min(60, pos)); save(); },
+    format: S => S.edgeGlowBreatheRate + 's / cycle'
+  },
+  // ---- Surfing's two sub-drawers, Motion and Style (see subDrawer), each
+  // with its rows straight after it, shown only while Surfing is the effect
+  // (drawer.js hides a sub-drawer by its own visible rule, rows and all) ----
+  Object.assign(subDrawer('edgeMotionDrawer', 'Motion', 'edge', ['edgeSpeed', 'edgeDir']), { visible: surfing }),
   {
     id: 'edgeSpeed', section: 'edge', label: 'Edge speed', kind: 'slider',
     summaryLabel: 'Speed',
@@ -673,7 +840,7 @@ export const VISUAL_CONTROLS = [
     get: S => S.edgeDir,
     set: (S, v) => { S.edgeDir = v; applyEdgeDir(); save(); }
   },
-  subDrawer('edgeStyleDrawer', 'Style', 'edge', ['edgeCount', 'edgeSize']),
+  Object.assign(subDrawer('edgeStyleDrawer', 'Style', 'edge', ['edgeCount', 'edgeSize']), { visible: surfing }),
   {
     id: 'edgeCount', section: 'edge', label: 'Edge density', kind: 'slider',
     summaryLabel: 'Density',
@@ -733,14 +900,60 @@ export const VISUAL_CONTROLS = [
     set: (S, v) => { S.edgeCap = v === 'ball' || v === 'round' ? v : 'wedge'; save(); },
     format: S => S.edgeCap === 'ball' || S.edgeCap === 'round' ? S.edgeCap : 'wedge'
   },
+  // Video feedback on the edge (v1/gpu/scene.js), in a sub-drawer of its
+  // own as the Confetti layer's. Shut, its strip shows the amount and the
+  // Stream.
+  subDrawer('edgeFeedbackDrawer', 'Feedback', 'edge', ['edgeFb', 'edgeFbStream']),
   {
-    // Scales every edge particle's brightness, tail and head alike.
-    id: 'edgeOpacity', section: 'edge', label: 'Edge opacity', kind: 'slider',
-    parent: 'edgeStyleDrawer',
+    // How strongly the trails show: at 50% they are half as bright, at 0
+    // gone. It thins the trails only; the live edge never dims with it (the
+    // edge is drawn straight into the scene for the share the trails give
+    // up, v1/gpu/scene.js). It never changes the trails inside the image
+    // either, so they build and fade the same at any setting, and turning it
+    // back up shows them as they are now. 100% is the trails in full.
+    id: 'edgeFbOpacity', section: 'edge', label: 'Opacity', kind: 'slider',
+    parent: 'edgeFeedbackDrawer',
     min: 0, max: 100, step: 1, def: 100,
-    get: S => Math.round(S.edgeOpacity * 100),
-    set: (S, pos) => { S.edgeOpacity = pos / 100; save(); },
-    format: S => Math.round(S.edgeOpacity * 100) + '%'
+    get: S => Math.round((typeof S.edgeFbOpacity === 'number' ? S.edgeFbOpacity : 1) * 100),
+    set: (S, pos) => { S.edgeFbOpacity = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round((typeof S.edgeFbOpacity === 'number' ? S.edgeFbOpacity : 1) * 100) + '%'
+  },
+  {
+    // For softening the edge: each frame keeps a fading copy of the last,
+    // so every particle leaves a glowing trail behind it and the hard line
+    // of the edge melts into streaks of light. At 0 there is no trail, the
+    // edge as it always was; at 100% a trail takes about two seconds to fade
+    // to half, and in between the time grows with the square of the slider,
+    // so the low end is fine grained.
+    id: 'edgeFb', section: 'edge', label: 'Amount', kind: 'slider',
+    parent: 'edgeFeedbackDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.edgeFb || 0) * 100),
+    set: (S, pos) => { S.edgeFb = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round((S.edgeFb || 0) * 100) + '%'
+  },
+  {
+    // The trails' own motion: each frame's faded copy is taken a little
+    // larger or smaller about the field centre, so the trails stream out
+    // toward the screen's edges or in toward the centre, alike in every
+    // direction. Nothing moves at an Amount of 0, since there is no trail.
+    id: 'edgeFbStream', section: 'edge', label: 'Stream', kind: 'slider',
+    parent: 'edgeFeedbackDrawer',
+    min: -2, max: 2, step: 0.01, def: 0,
+    get: S => S.edgeFbStream || 0,
+    set: (S, pos) => { S.edgeFbStream = Math.max(-2, Math.min(2, pos)); save(); },
+    format: S => !S.edgeFbStream ? 'none'
+      : (S.edgeFbStream > 0 ? '+' + S.edgeFbStream.toFixed(2) + ' out' : S.edgeFbStream.toFixed(2) + ' in')
+  },
+  {
+    // And turned a little about the centre each frame, so the trails swirl.
+    id: 'edgeFbTwist', section: 'edge', label: 'Twist', kind: 'slider',
+    parent: 'edgeFeedbackDrawer',
+    min: -1, max: 1, step: 0.01, def: 0,
+    get: S => S.edgeFbTwist || 0,
+    set: (S, pos) => { S.edgeFbTwist = Math.max(-1, Math.min(1, pos)); save(); },
+    format: S => !S.edgeFbTwist ? 'none'
+      : (S.edgeFbTwist > 0 ? '+' + S.edgeFbTwist.toFixed(2) + ' clockwise' : S.edgeFbTwist.toFixed(2) + ' counter')
   },
 
   // ---------- Text ----------
@@ -763,14 +976,46 @@ export const VISUAL_CONTROLS = [
     // Individual words draw from the themed pool below; affirmations swap
     // in whole phrases (js/words.js's AFFIRMATIONS) and the themes step
     // aside, since that set is its own theme.
+    // Custom shows the viewer's own phrases (the row below), in the order
+    // typed; a journey step's text arrives through the same two controls.
     id: 'textMode', section: 'text', label: 'Text', kind: 'segment', def: 'words',
     options: [
       { value: 'words',        label: 'Words',        domId: 'txModeWords' },
-      { value: 'affirmations', label: 'Affirmations', domId: 'txModeAff' }
+      { value: 'affirmations', label: 'Affirmations', domId: 'txModeAff' },
+      { value: 'custom',       label: 'Custom',       domId: null }
     ],
     get: S => S.textMode,
     set: (S, v) => { S.textMode = v; rebuildWordPool(); save(); },
-    format: S => S.textMode === 'affirmations' ? 'affirmations' : 'individual words'
+    format: S => S.textMode === 'affirmations' ? 'affirmations'
+               : S.textMode === 'custom' ? 'custom phrases' : 'individual words'
+  },
+  {
+    // The Custom source's phrases, one line with a '|' between them, and a
+    // '/' inside a phrase breaking its line there (core/words.js). A text
+    // row (widgets.js), so it has no position a snapshot or the audio link
+    // diffs; it persists in v1's extra record (store.js) and a preset's
+    // replay rebuilds the pool from it at the end.
+    id: 'textCustomText', section: 'text', label: 'Phrases', kind: 'text',
+    parent: 'textMode',
+    placeholder: 'One phrase / on two lines | another phrase', maxLen: 2000,
+    tip: 'Phrases separated by "|", shown in order; "/" breaks a line',
+    visible: S => S.textMode === 'custom',
+    get: S => typeof S.textCustomText === 'string' ? S.textCustomText : '',
+    set: (S, v) => { S.textCustomText = String(v); rebuildWordPool(); save(); }
+  },
+  {
+    // The time between one Custom phrase leaving and the next arriving, in
+    // place of the Timing drawer's roll and rests (core/words.js). Far left
+    // is Auto, the roll as always; -0.5, which the half-second step can land
+    // on, is Auto too, taken to -1 so there is one Auto. A journey step can
+    // hold it like any slider (the Journey window's GAP line).
+    id: 'textPhraseGap', section: 'text', label: 'Phrase gap', kind: 'slider',
+    parent: 'textMode',
+    min: -1, max: 30, step: 0.5, def: -1,
+    visible: S => S.textMode === 'custom',
+    get: S => S.textPhraseGap >= 0 ? S.textPhraseGap : -1,
+    set: (S, pos) => { S.textPhraseGap = pos < 0 ? -1 : pos; save(); },
+    format: S => S.textPhraseGap >= 0 ? S.textPhraseGap + ' s' : 'auto'
   },
   // ---- three sub-drawers, Timing, Styling and Fades (see subDrawer), each
   // with its rows straight after it, then the themes at the section's level ----
@@ -976,17 +1221,17 @@ export const VISUAL_CONTROLS = [
   },
   subDrawer('textFadesDrawer', 'Fades', 'text', ['textFadeIn', 'textFadeOut']),
   {
-    // Affirmations only. When a block's lines arrive or leave one after
-    // another, the rest between one line finishing and the next beginning,
-    // as a share of a line's own transition: 0 back to back, 100% a rest as
-    // long as a line takes. The fade time stays the whole block's, so a
-    // longer pause gives each line a shorter share of it. Nothing to do
-    // when the lines fade together.
+    // Phrases only (affirmations or custom). When a block's lines arrive or leave one after
+    // another, the rest between one line visibly landing and the next
+    // visibly starting (core/word-fx.js lineStep): 0 back to back, 100% a
+    // rest as long as a line's transition. The fade time stays the whole
+    // block's, so a longer pause gives each line a shorter share of it.
+    // Nothing to do when the lines fade together.
     id: 'textLinePause', section: 'text', label: 'Line pause', kind: 'slider',
     summaryLabel: 'Pause',
     parent: 'textFadesDrawer',
     min: 0, max: 100, step: 1, def: 0,
-    visible: S => S.textMode === 'affirmations',
+    visible: S => phraseMode(S),
     get: S => Math.round((S.textLinePause || 0) * 100),
     set: (S, pos) => { S.textLinePause = pos / 100; save(); },
     format: S => Math.round((S.textLinePause || 0) * 100) + '%'
@@ -1023,11 +1268,11 @@ export const VISUAL_CONTROLS = [
     format: S => Math.round(S.textFadeInVar * 100) + '%'
   },
   {
-    // Affirmations only. On, a multi-line block arrives as one; off, line
+    // Phrases only (affirmations or custom). On, a multi-line block arrives as one; off, line
     // by line, the same switch Fade out has for departures.
     id: 'textLinesTogetherIn', section: 'text', label: 'Lines fade in together', kind: 'toggle', def: false,
     parent: 'textFadeInOn',
-    visible: S => fadeInOn(S) && S.textMode === 'affirmations',
+    visible: S => fadeInOn(S) && phraseMode(S),
     get: S => !!S.textLinesTogetherIn,
     set: (S, on) => { S.textLinesTogetherIn = !!on; save(); },
     format: S => S.textLinesTogetherIn ? 'On' : 'Off'
@@ -1079,12 +1324,12 @@ export const VISUAL_CONTROLS = [
     format: S => Math.round(S.textFadeOutVar * 100) + '%'
   },
   {
-    // Affirmations only (a single word is one line). On, a multi-line
+    // Phrases only (a single word is one line). On, a multi-line
     // phrase dissolves every line at once on its way out, rather than one
     // line after another.
     id: 'textLinesTogetherOut', section: 'text', label: 'Lines fade out together', kind: 'toggle', def: false,
     parent: 'textFadeOutOn',
-    visible: S => fadeOutOn(S) && S.textMode === 'affirmations',
+    visible: S => fadeOutOn(S) && phraseMode(S),
     get: S => !!S.textLinesTogetherOut,
     set: (S, on) => { S.textLinesTogetherOut = !!on; save(); },
     format: S => S.textLinesTogetherOut ? 'On' : 'Off'
@@ -1112,7 +1357,7 @@ export const VISUAL_CONTROLS = [
     // txAllOn/txAllOff, which write every key at once rather than toggling.
   {
     id: 'textThemes', section: 'text', label: 'Themes', kind: 'segment', multi: true,
-    visible: S => S.textMode !== 'affirmations',
+    visible: S => S.textMode !== 'affirmations' && S.textMode !== 'custom',
     options: Object.keys(THEMES).map(k => ({
       value: k, label: THEMES[k],
       // v0 builds these buttons from THEMES at runtime with no id attribute,
@@ -1137,7 +1382,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'txAllOn', section: 'text', label: 'All', kind: 'action',
-    visible: S => S.textMode !== 'affirmations',
+    visible: S => S.textMode !== 'affirmations' && S.textMode !== 'custom',
     set: S => {
       Object.keys(THEMES).forEach(k => { S.textThemes[k] = true; });
       rebuildWordPool();
@@ -1146,7 +1391,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'txAllOff', section: 'text', label: 'None', kind: 'action',
-    visible: S => S.textMode !== 'affirmations',
+    visible: S => S.textMode !== 'affirmations' && S.textMode !== 'custom',
     set: S => {
       Object.keys(THEMES).forEach(k => { S.textThemes[k] = false; });
       rebuildWordPool();
@@ -1172,6 +1417,76 @@ export const VISUAL_CONTROLS = [
     get: S => S.spareMode,
     set: (S, mode) => { S.spareMode = mode; save(); },
     format: S => S.spareMode
+  },
+  {
+    // How long the visuals take to coast to a stop when paused (core/motion.js).
+    // 0 is a hard stop, and resuming is always instant. What the flicker
+    // does meanwhile is the toggle below.
+    id: 'pauseWindDown', section: 'render', label: 'Pause wind-down', kind: 'slider',
+    min: 0, max: 5, step: 0.1, def: 1,
+    get: S => S.pauseWindDown ?? 1,
+    set: (S, v) => { S.pauseWindDown = v; save(); },
+    format: S => (S.pauseWindDown ?? 1).toFixed(1) + ' s'
+  },
+  {
+    // Whether pressing pause ends the flashing on that very frame. On (the
+    // default) the strobe holds steady at once and only the motion coasts
+    // through the wind-down; off, the flicker fades out over the wind-down
+    // at its own frequency, never slowing. Its own switch, apart from the
+    // time, so a viewer who pauses because the flashing is too much never
+    // waits on it.
+    id: 'pauseFlickerStop', section: 'render', label: 'Pause stops flicker', kind: 'toggle', def: true,
+    get: S => S.pauseFlickerStop !== false,
+    set: (S, on) => { S.pauseFlickerStop = !!on; save(); },
+    format: S => S.pauseFlickerStop !== false ? 'On' : 'Off'
+  },
+  {
+    // How long the hint takes to appear, at boot and on every pause
+    // (ui/screens/overlay.js). It replaces the fade spring's own pace for
+    // the appearance only; leaving is still the smoke on a start. 0 shows
+    // it at once.
+    id: 'hintFadeInMs', section: 'render', label: 'Hint fade in', kind: 'slider',
+    min: 0, max: 10000, step: 50, def: 2000,
+    get: S => S.hintFadeInMs ?? 2000,
+    set: (S, v) => { S.hintFadeInMs = v; save(); },
+    format: S => Math.round(S.hintFadeInMs ?? 2000) + ' ms'
+  },
+  {
+    // How long the resting screen's hint takes to smoke away on a start
+    // (gpu/word-smoke.js beginHint). Its own time, not the words' Leave
+    // fade, and fixed with no variance: the hint is chrome, not a word.
+    // Below the smoke's 0.3 s floor it simply runs at the floor.
+    id: 'hintFadeMs', section: 'render', label: 'Hint fade out', kind: 'slider',
+    min: 0, max: 10000, step: 50, def: 5000,
+    get: S => S.hintFadeMs ?? 5000,
+    set: (S, v) => { S.hintFadeMs = v; save(); },
+    format: S => Math.round(S.hintFadeMs ?? 5000) + ' ms'
+  },
+  {
+    // How fast the hint's dissolve crosses it left to right, as a multiple
+    // of the words' Leave sweep at its default speed. The default is twice
+    // that, so the hint clears briskly; at the top the front crosses in
+    // about an eighth of the fade, at the bottom most of it.
+    id: 'hintSweep', section: 'render', label: 'Hint sweep', kind: 'slider',
+    min: 0.6, max: 4, step: 0.05, def: 2,
+    get: S => S.hintSweep ?? 2,
+    set: (S, v) => { S.hintSweep = v; save(); },
+    format: S => (S.hintSweep ?? 2).toFixed(2) + '×'
+  },
+  {
+    // How the hint appears over its fade in. Left to right sends a soft
+    // front across the letters, at Hint sweep's speed and by the same
+    // front maths as its smoke out (core/word-fx.js hintSweepShare), so the
+    // arrival and the departure feel like one gesture. All at once fades
+    // the whole hint together.
+    id: 'hintArrive', section: 'render', label: 'Hint arrive', kind: 'segment', def: 'sweep',
+    options: [
+      { value: 'sweep', label: 'Left to right', domId: null },
+      { value: 'all',   label: 'All at once',   domId: null }
+    ],
+    get: S => S.hintArrive === 'all' ? 'all' : 'sweep',
+    set: (S, v) => { S.hintArrive = v === 'all' ? 'all' : 'sweep'; save(); },
+    format: S => S.hintArrive === 'all' ? 'All at once' : 'Left to right'
   },
   {
     // Where the engine runs: on the page's main thread, or in a worker where

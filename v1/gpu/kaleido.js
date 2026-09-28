@@ -66,6 +66,7 @@ import { S } from '../../js/state.js';
 import { KALEIDO_WGSL } from './kaleido.wgsl.js';
 import { MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade, radialFadeIn, RADIAL_FADE_OUT_K } from '../core/fade.js';
+import { motionStep } from '../core/motion.js';
 import { kaleidoscopeSet } from '../../assets/kaleidoscope/sets.mjs';
 
 const GRID = 8;                     // every atlas is an 8 x 8 tile sheet
@@ -1134,9 +1135,11 @@ export function createKaleido(device, format, platform) {
       }
     }
 
-    if (S.running && dt > 0) {
-      twistAng = (twistAng + dt * twist) % TAU;
-      advance(dt, travel, spinMax, spinVar, orbitMax, orbitVar, speedVar, speedPeriod);
+    // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
+    const md = dt > 0 ? motionStep(dt) : 0;
+    if (md > 0) {
+      twistAng = (twistAng + md * twist) % TAU;
+      advance(md, travel, spinMax, spinVar, orbitMax, orbitVar, speedVar, speedPeriod);
       // Births at the centre arrive at the rate that holds the live count at
       // its target (target objects per flight), at jittered intervals so
       // they come in a loose trickle rather than a metronome.
@@ -1150,7 +1153,7 @@ export function createKaleido(device, format, platform) {
       const deficit = (target - live) / (target > 1 ? target : 1);
       let steer = 1 + 2 * deficit;
       if (steer < 0) steer = 0; else if (steer > 3) steer = 3;
-      spawnAcc += dt * target * travel * steer;
+      spawnAcc += md * target * travel * steer;
       while (spawnAcc >= spawnGap) {
         spawnAcc -= spawnGap;
         spawnGap = 0.5 + Math.random();
