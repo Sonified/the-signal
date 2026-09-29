@@ -21,8 +21,10 @@ export const KIND = { RECT: 0, GLASS: 1, GLYPH: 2, ICON: 3 };
 export const ICON = {
   NONE: 0, CIRCLE: 1, RING: 2, PLAY: 3, PAUSE: 4, BURGER: 5, CLOSE: 6,
   CHEVRON: 7, CHECK: 8, EXPAND: 9, CONTRACT: 10, DOT: 11, PLUS: 12, MINUS: 13,
-  SPEAKER: 14, MUTE: 15, GRIP: 16, LOOP: 17
+  SPEAKER: 14, MUTE: 15, GRIP: 16, LOOP: 17, GEAR: 18, HEART: 19, LOCK: 20
 };
+// HEART and LOCK are drawn filled at stroke 0 and as an outline at any
+// stroke above it, so one id serves both the on and the off state.
 
 // Instance layout, 24 floats:
 //   0 kind

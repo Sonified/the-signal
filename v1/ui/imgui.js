@@ -1933,8 +1933,12 @@ class UI {
       st.dragStartOffset -= give;
     }
 
+    // Occlusion counts here as it does for any widget (interact): a window
+    // stacked in front covers this region, so a press there is that
+    // window's, never a drag of the scroll behind it.
     const downInRegion = this._downEvent && !this._downConsumed && this.activeId === -1 &&
-      this.pointerX >= x && this.pointerX < x + w && this.pointerY >= y && this.pointerY < y + h;
+      this.pointerX >= x && this.pointerX < x + w && this.pointerY >= y && this.pointerY < y + h &&
+      !this._pointerOccluded();
 
     const held = this.activeId === nid && this._pointerDown;
     if (!held) {
@@ -2031,7 +2035,9 @@ class UI {
     // touch fling) in with a jump; it only refuses to push further out.
     // The momentum step is skipped on a wheel frame so nothing fights the
     // wheel while it is moving.
-    const inRegion = this.pointerX >= viewX && this.pointerX < viewX + viewW && this.pointerY >= viewY && this.pointerY < viewY + viewH;
+    // and a wheel over a window stacked in front scrolls that window, not this
+    const inRegion = this.pointerX >= viewX && this.pointerX < viewX + viewW && this.pointerY >= viewY && this.pointerY < viewY + viewH &&
+      !this._pointerOccluded();
     let wheeled = false;
     if (this.activeId !== nid && inRegion && this.wheelDY !== 0 && !this._wheelConsumed) {
       const lo = st.offset < 0 ? st.offset : 0;

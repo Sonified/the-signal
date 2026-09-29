@@ -50,7 +50,7 @@ import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfter
 import { replayLive, syncPresetsFromStorage } from './core/presets.js';
 import { initBroadcast, broadcastPoke } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
-import { stepJourney, syncJourneyFromStorage } from './core/journey.js';
+import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
 import { byId } from './core/schema.js';
@@ -73,6 +73,10 @@ import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/scree
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
 import { drawJourney, journey } from './ui/screens/journey.js';
+import { drawPerformer, performer } from './ui/screens/performer.js';
+import { drawMusic, music } from './ui/screens/music.js';
+import { drawTextbank, textbank } from './ui/screens/textbank.js';
+import { perfTick } from './core/perform.js';
 
 console.log('[boot] modules evaluated');
 // A boot that throws inside the worker is reported to the page (see
@@ -199,7 +203,7 @@ async function boot() {
     // broadcast is told directly (a no-op unless this tab broadcasts).
     broadcastPoke();
   }
-  const lText = byId('lText'), colorQuick = byId('colorQuick');
+  const colorQuick = byId('colorQuick');
   const app = {
     width: 0, height: 0,
     toggleRun,
@@ -260,6 +264,7 @@ async function boot() {
   }
   let pageVisible = true;
   setToggleRun(toggleRun);
+  setJourneyRunning(on => { if (on !== !!S.running) toggleRun(); });
   setMixerOpen(open => { mixer.open = !!open; });
   setSeqOpen(() => { sequencer.open = true; });
   setCopyHandler(txt => platform.clipboardWrite(txt));
@@ -307,10 +312,10 @@ async function boot() {
   // state object (its open flag and last drawn rect) and its draw function.
   // Opening a window, or a press inside it, moves it to the end, the front.
   // Fixed arrays, reordered in place, so the frame allocates nothing.
-  const WIN_N = 3;
-  const zWin = [sequencer, mixer, journey];
-  const zDraw = [drawSequencer, drawMixer, drawJourney];
-  const zWasOpen = [false, false, false];
+  const WIN_N = 6;
+  const zWin = [sequencer, mixer, journey, performer, music, textbank];
+  const zDraw = [drawSequencer, drawMixer, drawJourney, drawPerformer, drawMusic, drawTextbank];
+  const zWasOpen = [false, false, false, false, false, false];
   function toFront(k) {
     if (k === WIN_N - 1) return;
     const w = zWin[k], d = zDraw[k], o = zWasOpen[k];
@@ -325,7 +330,7 @@ async function boot() {
   // The platform's key events carry no repeat flag, so M remembers that it is
   // held and ignores the auto-repeats, as v0's !e.repeat did; otherwise a
   // held key would flap the window open and shut. Its keyup clears it.
-  let mixerKeyHeld = false, seqKeyHeld = false, journeyKeyHeld = false;
+  let musicKeyHeld = false, levelsKeyHeld = false, seqKeyHeld = false, journeyKeyHeld = false, perfKeyHeld = false, textKeyHeld = false;
 
   // Global keys, as v0 binds them. They are taken out of the toolkit's view
   // so a focused slider never also treats Space or Enter as "activate".
@@ -335,7 +340,12 @@ async function boot() {
     if (e.code === 'Paste') return false;
     const k = e.key, lk = k.length === 1 ? k.toLowerCase() : k;
     if (e.meta || e.ctrl) return false;
-    if (e.code === 'Space') { toggleRun(); return true; }
+    // With the journey window open and journey mode ACTIVE, Space plays and
+    // pauses the walk (a resume carries on where it paused) and the left and
+    // right arrows step it; a journey with no steps leaves Space to the app.
+    const journeyKeys = journey.open && journey.active && journeyCount() > 0;
+    if (e.code === 'Space') { if (journeyKeys) journeyTogglePlay(); else toggleRun(); return true; }
+    if (journeyKeys && (k === 'ArrowLeft' || k === 'ArrowRight')) { journeyStepBy(k === 'ArrowLeft' ? -1 : 1); return true; }
     if (k === 'Enter' || lk === 'f') { platform.fullscreen.toggle(); return true; }
     if (k === '`' || k === '~' || lk === 'h') { app.toggleDrawer(); return true; }
     // Escape shuts the front-most open floating window first and leaves the
@@ -350,11 +360,17 @@ async function boot() {
       S.panelOpen = false;
       return true;
     }
-    // M opens and shuts the mixer (v0's js/ambience-mixer.js shortcut). It
-    // leaves the drawer as it is, as v0 did; the chip and the drawer button
-    // are the ones that put the drawer away.
+    // M opens and shuts the Music window, the sound's performance controls.
+    // It leaves the drawer as it is, as v0's mixer key did; the chip and the
+    // drawer button are the ones that put the drawer away.
     if (lk === 'm' && !e.alt) {
-      if (!mixerKeyHeld) { mixerKeyHeld = true; mixer.open = !mixer.open; }
+      if (!musicKeyHeld) { musicKeyHeld = true; music.open = !music.open; }
+      return true;
+    }
+    // L does the same for the Levels window, the atmosphere mixer that M
+    // used to open (v0's js/ambience-mixer.js shortcut).
+    if (lk === 'l' && !e.alt) {
+      if (!levelsKeyHeld) { levelsKeyHeld = true; mixer.open = !mixer.open; }
       return true;
     }
     // S does the same for the sequencer window.
@@ -367,10 +383,16 @@ async function boot() {
       if (!journeyKeyHeld) { journeyKeyHeld = true; journey.open = !journey.open; }
       return true;
     }
-    if (lk === 't' && lText) {
-      lText.set(S, lText.get(S) ? 0 : 1);
-      // the toggle is invisible until a word next appears, so say what happened
-      flashNotice(lText.get(S) ? 'Text: On' : 'Text: Off');
+    // P does the same for the performer window.
+    if (lk === 'p' && !e.alt) {
+      if (!perfKeyHeld) { perfKeyHeld = true; performer.open = !performer.open; }
+      return true;
+    }
+    // T opens and shuts the Text window, the performer's phrase bank. It
+    // used to switch the words layer on and off; that switch is the Text
+    // row's toggle in the Performance window and the drawer now.
+    if (lk === 't' && !e.alt) {
+      if (!textKeyHeld) { textKeyHeld = true; textbank.open = !textbank.open; }
       return true;
     }
     if (lk === 'c' && colorQuick) { runAction(colorQuick, S); return true; }
@@ -408,9 +430,12 @@ async function boot() {
       // Enter and Escape are typing and committing there, not shortcuts. The
       // flag is the one the last UI build left, which is the right one here,
       // since keys are routed before this frame's UI exists.
-      if (e.type === 'keyup' && (e.key === 'm' || e.key === 'M')) mixerKeyHeld = false;
+      if (e.type === 'keyup' && (e.key === 'm' || e.key === 'M')) musicKeyHeld = false;
+      if (e.type === 'keyup' && (e.key === 'l' || e.key === 'L')) levelsKeyHeld = false;
       if (e.type === 'keyup' && (e.key === 's' || e.key === 'S')) seqKeyHeld = false;
       if (e.type === 'keyup' && (e.key === 'j' || e.key === 'J')) journeyKeyHeld = false;
+      if (e.type === 'keyup' && (e.key === 'p' || e.key === 'P')) perfKeyHeld = false;
+      if (e.type === 'keyup' && (e.key === 't' || e.key === 'T')) textKeyHeld = false;
       if (e.type === 'key' && !ui.textEditing && globalKey(e)) continue;
       uiEvents.push(e);
     }
@@ -439,6 +464,9 @@ async function boot() {
     stepWords(t, dt);
     // the journey's walk and its authoring diff (core/journey.js)
     stepJourney(t);
+    // the performer window's ramps (core/perform.js): every glide it has
+    // in flight moves a little further, wherever the window itself is
+    perfTick(t);
     const metersShown = mixer.open || anim.value('mixer.open') >= 0.002;
     if (metersShown) stepAtmosphere(t, true);
     if (perfOn) t2 = platform.now();
@@ -462,7 +490,7 @@ async function boot() {
     // any of the UI floating over the picture holds the chrome up; one
     // resting on the bare picture lets the chrome alone fade.
     const chromeAwake = guard.noticeOpen || ui.activeId !== -1 || overUI || t - lastActivity < LAYOUT.idleMs;
-    const awake = chromeAwake || S.panelOpen || mixer.open || sequencer.open || journey.open;
+    const awake = chromeAwake || S.panelOpen || mixer.open || sequencer.open || journey.open || performer.open || music.open || textbank.open;
     const idle = !awake && events.length === 0 && !uiUnsettled && ui.activeId === -1 && lastChromeA < 0.01;
     if (idle) {
       // ui.begin normally hands the springs this frame's dt; the overlay's
@@ -515,7 +543,7 @@ async function boot() {
         // sequencer (their widgets included) lets the rest of the chrome
         // fade, and only keeps the cursor alive below.
         const px = ui.pointerX, py = ui.pointerY;
-        overWin = px >= 0 && (inWin(mixer, px, py) || inWin(sequencer, px, py) || inWin(journey, px, py));
+        overWin = px >= 0 && (inWin(mixer, px, py) || inWin(sequencer, px, py) || inWin(journey, px, py) || inWin(performer, px, py) || inWin(music, px, py) || inWin(textbank, px, py));
         overUI = px >= 0 && !overWin && (ui.hotId !== -1 ||
                              (S.panelOpen && px < drawerEdge()));
       }

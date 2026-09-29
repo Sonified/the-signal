@@ -26,7 +26,7 @@
 // moves rigidly with zero lag, and only a change of state ever animates.
 // segment()'s selection highlight is the worked example.
 //
-//   ui.slider(id, label, value01, formatted, step01, def01, disabled, readout) -> new value01 | -1
+//   ui.slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01) -> new value01 | -1
 //     value01/step01/def01 are all normalized 0..1; a schema slider (through
 //     ui.control) computes them from min/max/step/def, so the widget itself
 //     never has to know a control's real units. step01 sizes the Alt+wheel
@@ -151,6 +151,7 @@
 
 import { COLOR, SPACE, RADIUS, TYPE, TRACK, W, MOTION, HIT } from './theme.js';
 import { ICON } from './drawlist.js';
+import { journeyManualOverride } from '../core/journey.js';
 
 const TOOLTIP_DELAY_MS = 450;
 const TOOLTIP_MAX_W = 260;
@@ -211,7 +212,7 @@ export const RO_PLAIN = 0, RO_CLICK = 1, RO_HIDDEN = 2;
 // starts on the track can never land on the readout instead.
 const RO_PAD_X = 6, RO_PAD_Y = 3;
 
-function slider(id, label, value01, formatted, step01, def01, disabled, readout) {
+function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01) {
   const ui = this;
   const step = step01 === undefined ? 0.02 : step01;
   const nid = ui.id(id);
@@ -343,8 +344,24 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout)
 
   ui.dl.rect(rx, trackCY - trackH / 2, rw, trackH, trackH / 2, COLOR.well, 0, null, 0, 0);
   const shown = changed ? value : value01;
+  const hasEffective = typeof effective01 === 'number' && Number.isFinite(effective01);
   const fillW = Math.max(trackH, rw * shown);
-  ui.dl.rect(rx, trackCY - trackH / 2, fillW, trackH, trackH / 2, COLOR.accent, 0, null, disabled ? 0 : 6, 0.35);
+  ui.dl.rect(rx, trackCY - trackH / 2, fillW, trackH, trackH / 2,
+    hasEffective ? COLOR.accentGlow : COLOR.accent, 0, null, disabled ? 0 : 6, 0.35);
+  // A continuously varying control keeps its knob at the configured value
+  // while this lighter, softly breathing fill shows the value in use now.
+  // This is the same visual grammar as a performance interpolation: the
+  // fixed destination stays legible while the moving value glows beneath it.
+  if (hasEffective) {
+    const live = clamp01(effective01);
+    const beat = 0.5 - 0.5 * Math.cos(ui.t * 0.001 * 1.4 * 2 * Math.PI);
+    const k = 0.28 + 0.22 * beat, a = COLOR.accent;
+    ui.scratch1[0] = a[0] + (1 - a[0]) * k; ui.scratch1[1] = a[1] + (1 - a[1]) * k;
+    ui.scratch1[2] = a[2] + (1 - a[2]) * k; ui.scratch1[3] = a[3];
+    const liveW = Math.max(trackH, rw * live);
+    ui.dl.rect(rx, trackCY - trackH / 2, liveW, trackH, trackH / 2,
+      ui.scratch1, 0, null, disabled ? 0 : 9, 0.5);
+  }
 
   const pressA = disabled ? 0 : ui.spring(combine2(nid, 0), ui.pressed ? 1 : 0, MOTION.press);
   const hoverA = disabled ? 0 : ui.spring(combine2(nid, 1), hover ? 1 : 0, MOTION.hover);
@@ -948,7 +965,9 @@ function tooltipAt(id, x, y, w0, h0, hovered, str, instant) {
   const lineH = ui._lm.ascent + ui._lm.descent;
   const h = lineH + SPACE.sm * 2;
 
-  let tx = x + w0 / 2 - w / 2;
+  // An instant tip is a row label's: it starts at the word, left aligned,
+  // so it reads as that word's note. Others centre over what they label.
+  let tx = instant ? x : x + w0 / 2 - w / 2;
   let ty = y - h - SPACE.xs;
   if (ty < 0) ty = y + h0 + SPACE.xs;
   if (tx < SPACE.xs) tx = SPACE.xs;
@@ -1534,10 +1553,15 @@ function control(ctrl, S, shown) {
       if (pos !== cache.pos) { cache.pos = pos; cache.text = ctrl.format ? ctrl.format(S) : String(pos); }
       const log = isLogTaper(ctrl);
       const value01 = posToUnit(ctrl, pos, log);
+      let effective01;
+      if (typeof ctrl.effective === 'function') {
+        const effective = ctrl.effective(S);
+        if (typeof effective === 'number' && Number.isFinite(effective)) effective01 = posToUnit(ctrl, effective, log);
+      }
       const step01 = log ? LOG_STEP01 : ctrl.step ? (ctrl.step / ((ctrl.max - ctrl.min) || 1)) : 0.02;
       const def01 = ctrl.def !== undefined ? posToUnit(ctrl, ctrl.def, log) : undefined;
       const nv = ui.slider(ctrl.id, ctrl.label, value01, cache.text, step01, def01, !enabled,
-                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN);
+                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01);
       if (nv >= 0) {
         let newPos = snapPos(ctrl, unitToPos(ctrl, nv, log));
         if (newPos === pos && ui.sliderNudge !== 0 && ctrl.step) newPos = snapPos(ctrl, pos + ui.sliderNudge * ctrl.step);
@@ -1596,6 +1620,8 @@ function control(ctrl, S, shown) {
     ctrl.set(S, ctrl.def);
     changed = true;
   }
+
+  if (changed) journeyManualOverride(ctrl.id, ctrl.get(S));
 
   if (!enabled) ui.dl.popAlpha();
   return changed;

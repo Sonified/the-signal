@@ -27,13 +27,14 @@ import { S } from '../../../js/state.js';
 import { byId } from '../../core/schema.js';
 import {
   ambLayerControls, AMB_LAYER_COUNT, ambienceSourceName, meterCount, layerMeterCount,
-  layerStatus
+  layerStatus, toggleAmbLayer
 } from '../../core/atmosphere.js';
 import { runAction, makeTextState, TEXT_EDITING, TEXT_COMMIT } from '../widgets.js';
 import { ICON } from '../drawlist.js';
 import { W, MOTION } from '../theme.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { anySolo, chanSilenced } from '../../../js/mixgate.js';
+import { MUSIC_LAYERS, layerMixId } from '../../../js/layer-defs.js';
 
 // ---------- v0's colours ----------
 // Every one of these is a value from css/style.css, alpha included (a CSS
@@ -113,6 +114,9 @@ for (let b = 0; b + 1 < THUMB_EDGES.length; b++) {
 // set their own font and so their own normal line. Rows are border-box: the
 // hairline on top is inside the height.
 const WIN_DEFAULT = 500, WIN_MIN = 440, RADIUS_WIN = 9;
+// the resize grab bands, as the Performance window's: how far into and past
+// the window an edge takes a press, and the corner's square
+const GRAB_IN = 7, GRAB_OUT = 7, CORNER_GRAB = 16;
 const BAR_H = 33;                 // 5 + 22 + 5 padding and close button, + 1 bottom border
 const BAR_PAD_L = 13, BAR_PAD_R = 8, BAR_GAP = 9;
 const BTN_H = 21, CLOSE_H = 22, BTN_PAD_X = 9, CLOSE_PAD_X = 7;
@@ -153,11 +157,15 @@ function makeFader(ctrl) {
   return { ctrl, pos: NaN, text: '', mode: DRAG_NONE, anchorX: 0, base: 0, wasPressed: false };
 }
 const TONE = [makeFader(byId('mixFund')), makeFader(byId('mixHarm')), makeFader(byId('mixPulse'))];
-const MUSIC = [makeFader(byId('mixPiano')), makeFader(byId('mixClouds')), makeFader(byId('mixDrone')), makeFader(byId('mixArp'))];
-const TONE_IDS = ['mixFund', 'mixHarm', 'mixPulse'], MUSIC_IDS = ['mixPiano', 'mixClouds', 'mixDrone', 'mixArp'];
+// The music layers (js/layer-defs.js) follow the choir, one strip each.
+const MUSIC = [makeFader(byId('mixPiano')), makeFader(byId('mixClouds')), makeFader(byId('mixDrone')), makeFader(byId('mixArp')), makeFader(byId('mixChoir')),
+  ...MUSIC_LAYERS.map(L => makeFader(byId(layerMixId(L))))];
+const TONE_IDS = ['mixFund', 'mixHarm', 'mixPulse'], MUSIC_IDS = ['mixPiano', 'mixClouds', 'mixDrone', 'mixArp', 'mixChoir',
+  ...MUSIC_LAYERS.map(layerMixId)];
 // Each channel's key in the mix gate (js/mixgate.js), and its mute and solo
 // controls from schema-audio.js, the same M and S pair a recording row has.
-const TONE_CH = ['fund', 'harm', 'pulse'], MUSIC_CH = ['piano', 'clouds', 'drone', 'arp'];
+const TONE_CH = ['fund', 'harm', 'pulse'], MUSIC_CH = ['piano', 'clouds', 'drone', 'arp', 'choir',
+  ...MUSIC_LAYERS.map(L => L.id)];
 const TONE_MUTE = TONE_IDS.map(id => byId(id + 'Mute')), TONE_SOLO = TONE_IDS.map(id => byId(id + 'Solo'));
 const MUSIC_MUTE = MUSIC_IDS.map(id => byId(id + 'Mute')), MUSIC_SOLO = MUSIC_IDS.map(id => byId(id + 'Solo'));
 // v0 sets master-row labels in capitals through CSS; here they are set once.
@@ -174,7 +182,7 @@ export const mixer = {
   open: false, placed: false, x: 0, y: 80, w: WIN_DEFAULT,
   h: 0,             // the height the viewer dragged it to; 0 fits the content
   rx: 0, ry: 0, rw: 0, rh: 0,   // where it was drawn last frame (rw 0: not showing), for stacking
-  grabX: 0, grabY: 0, grabW: 0, grabH: 0, dragging: false, resizing: false, resizingH: false
+  grabX: 0, grabY: 0, grabW: 0, grabH: 0, dragging: false, resizing: false, resizingH: false, resizingC: false
 };
 
 // ---------- persistence ----------
@@ -184,22 +192,23 @@ export const mixer = {
 // frame, since store.js only has its storage once main.js has booted, and
 // written whenever it changes, except mid-drag, when the release writes it.
 //
-// Unlike v0, a page load always starts with the mixer shut, first visit or
-// not, on every platform: the page opens on the field, and the mixer comes up
-// only when asked for (M, the Open mixer chip, the drawer). Where it was and
-// how big it was are still restored, so it reopens in the same place.
+// A first visit starts with the mixer shut: the page opens on the field, and
+// the mixer comes up only when asked for (M, the Open mixer chip, the
+// drawer). After that a reload brings it back as it was left, open or shut,
+// in the same place and at the same size, as every floating window does.
 let restored = false;
 const saved = { open: false, placed: false, x: 0, y: 0, w: 0, h: 0 };
 function restore() {
   restored = true;
   const all = loadUiState();
   const m = all && all.mixer && typeof all.mixer === 'object' ? all.mixer : null;
+  mixer.open = false;
   if (m) {
+    mixer.open = m.open === true;
     if (m.placed && Number.isFinite(m.x) && Number.isFinite(m.y)) { mixer.placed = true; mixer.x = m.x; mixer.y = m.y; }
     if (Number.isFinite(m.width)) mixer.w = m.width;
     if (Number.isFinite(m.height)) mixer.h = m.height;
   }
-  mixer.open = false;
   remember();
 }
 function remember() {
@@ -208,7 +217,7 @@ function remember() {
   saved.h = Math.round(mixer.h);
 }
 function persist() {
-  if (mixer.dragging || mixer.resizing || mixer.resizingH) return;
+  if (mixer.dragging || mixer.resizing || mixer.resizingH || mixer.resizingC) return;
   if (saved.open === mixer.open && saved.placed === mixer.placed && saved.x === Math.round(mixer.x) &&
       saved.y === Math.round(mixer.y) && saved.w === Math.round(mixer.w) && saved.h === Math.round(mixer.h)) return;
   remember();
@@ -453,11 +462,10 @@ function sectionLabel(ui, str, first) {
   const top = ui.cursorY, h = first ? SEC_FIRST_H : SEC_H;
   ui.spacer(h);
   if (off(top, h)) return;
+  // No divider above a later section: its title already separates the
+  // groups, and a rule there read as a stray line under the last row above.
   let ty = top + 2;
-  if (!first) {
-    ui.dl.rect(bodyX + 8, top + 10, bodyW - 16, 1, 0, C.faintLine, 0, null, 0, 0);
-    ty = top + 20;
-  }
+  if (!first) ty = top + 20;
   ui.text.draw(ui.dl, str, x1, baseline(ui, ty + SEC_LINE / 2, 9), 9, W.semibold, C.sectionInk, 0, 0.16, 1);
 }
 
@@ -508,17 +516,6 @@ function masterRow(ui, f, first, label, unit, meterCountOrNone, muteCtrl, soloCt
   } else {
     ui.text.draw(dl, unit, x6 + c6 / 2, ub, 8, W.regular, C.unitInk, 1, 0.18, 1);
   }
-}
-
-function columnHeads(ui) {
-  const top = ui.cursorY;
-  ui.spacer(COLS_H);
-  if (off(top, COLS_H)) return;
-  const b = baseline(ui, top + 2 + 6, 8), dl = ui.dl;
-  ui.text.draw(dl, 'SOURCE', x1, b, 8, W.regular, C.columnInk, 0, 0.16, 1);
-  ui.text.draw(dl, 'LEVEL', x4, b, 8, W.regular, C.columnInk, 0, 0.16, 1);
-  ui.text.draw(dl, '%', x5 + c5, b, 8, W.regular, C.columnInk, 2, 0.16, 1);
-  ui.text.draw(dl, 'SIGNAL', x6, b, 8, W.regular, C.columnInk, 0, 0.16, 1);
 }
 
 // Source names cut to the label column with an ellipsis, as v0's
@@ -583,7 +580,13 @@ function layerRow(ui, i, soloing) {
   const size = narrow ? 10 : 11;
   const ink = error ? C.layerError : pending ? C.layerLoading : active ? C.layerActive : C.layerInk;
   const alpha = silenced ? 0.45 : 1;
-  ui.text.draw(dl, fittedName(ui, i), x1, baseline(ui, cy, size), size, W.regular, ink, 0, 0.01, alpha);
+  // The name is a switch: a click fades the recording in to its max, or out
+  // if it is up, over the drift's crossfade time (a manual turn of the drift).
+  ui.interact(ui.idx('mixer.layerName', i), x1 - 4, top, c1 + 4, LAYER_H, false);
+  const nameHover = ui.hover;
+  if (nameHover) ui.setCursorHint('pointer');
+  if (ui.clicked) toggleAmbLayer(i);
+  ui.text.draw(dl, fittedName(ui, i), x1, baseline(ui, cy, size), size, nameHover ? W.semibold : W.regular, ink, 0, 0.01, alpha);
   if ((pending || error) && pointerIn(ui, x1, top, c1, LAYER_H)) offerTip(ui.idx('mixer.layerTip', i), x1, top, c1, LAYER_H, status);
 
   const lc = ambLayerControls(i);
@@ -680,7 +683,7 @@ export function drawMixer(ui, app, fade = 1) {
   } else {
     dl.rect(lightX, cy - 3, 6, 6, 3, C.lightOff, 0, null, 0, 0);
   }
-  ui.text.draw(dl, 'MIXER', lightX + 6 + BAR_GAP, baseline(ui, cy, 11), 11, W.semibold, C.title, 0, 0.13, 1);
+  ui.text.draw(dl, 'LEVELS', lightX + 6 + BAR_GAP, baseline(ui, cy, 11), 11, W.semibold, C.title, 0, 0.13, 1);
 
   // master mute and master volume, right of the title, claimed here before
   // the title bar's drag so a press never moves the window. The mute is a
@@ -689,8 +692,8 @@ export function drawMixer(ui, app, fade = 1) {
   // scrolling body and this sits above it. The slider is the sequencer
   // header's: a press jumps there and dragging follows. measure() knows
   // nothing of tracking, so the title's letterspacing is added by hand.
-  const muteX = lightX + 6 + BAR_GAP + ui.text.measure('MIXER', 11, W.semibold)
-              + 0.13 * 11 * ('MIXER'.length - 1) + 10;
+  const muteX = lightX + 6 + BAR_GAP + ui.text.measure('LEVELS', 11, W.semibold)
+              + 0.13 * 11 * ('LEVELS'.length - 1) + 10;
   const muteY = cy - MS_H / 2;
   const unmuted = MAIN_MUTE ? !!MAIN_MUTE.get(S) : true;
   if (barHit(ui, 'mixer.vmute', muteX, muteY, MAIN_MUTE_W, MS_H) && MAIN_MUTE) MAIN_MUTE.set(S, unmuted ? 0 : 1);
@@ -762,8 +765,34 @@ export function drawMixer(ui, app, fade = 1) {
   barButton(ui, closeX, cy, closeW, CLOSE_H, C.btnBg, btnHover ? C.closeHoverBorder : C.btnBorder,
     btnHover ? C.closeHoverInk : C.btnInk, '×', 18);
 
+  // ---- lower right corner: both at once ----
+  // Run first, so where it overlaps the two edges below it wins the press.
+  ui.interact(ui.id('mixer.resizeC'), x + winW - CORNER_GRAB, y + h - CORNER_GRAB,
+    CORNER_GRAB + GRAB_OUT, CORNER_GRAB + GRAB_OUT, false);
+  if (ui.pressed) {
+    if (!mixer.resizingC) {
+      mixer.resizingC = true;
+      mixer.grabW = ui.pointerX - (x + winW); mixer.grabH = ui.pointerY - (y + h);
+    }
+    mixer.w = Math.max(minW, Math.min(ui.pointerX - mixer.grabW - x, maxW));
+    mixer.h = Math.max(minH, Math.min(ui.pointerY - mixer.grabH - y, maxH));
+    ui.setCursorHint('nwse-resize');
+  } else {
+    if (mixer.resizingC) { mixer.w = winW; mixer.h = h; }
+    mixer.resizingC = false;
+    if (ui.hover) { ui.setCursorHint('nwse-resize'); overBtn = true; }
+  }
+  // The edges' bands overlap the corner's square, and the last cursor hint
+  // set wins, so over the corner the edges below leave the cursor alone.
+  const cornerHot = ui.hover || mixer.resizingC;
+  // the grip: three dots on the diagonal, so the corner says it can be pulled
+  for (let g = 0; g < 3; g++) {
+    const gx = x + winW - 6 - g * 4, gy = y + h - 6;
+    for (let h2 = 0; h2 <= g; h2++) dl.rect(gx + h2 * 4 - 1, gy - h2 * 4 - 1, 2, 2, 1, C.columnInk, 0, null, 0, 0);
+  }
+
   // ---- right edge: horizontal resize, v0's resize:horizontal ----
-  ui.interact(ui.id('mixer.resize'), x + winW - 4, y, 8, h, false);
+  ui.interact(ui.id('mixer.resize'), x + winW - GRAB_IN, y, GRAB_IN + GRAB_OUT, h, false);
   if (ui.pressed) {
     if (!mixer.resizing) { mixer.resizing = true; mixer.grabW = ui.pointerX - (x + winW); }
     mixer.w = Math.max(minW, Math.min(ui.pointerX - mixer.grabW - x, maxW));
@@ -771,11 +800,11 @@ export function drawMixer(ui, app, fade = 1) {
   } else {
     if (mixer.resizing) mixer.w = winW;
     mixer.resizing = false;
-    if (ui.hover) { ui.setCursorHint('ew-resize'); overBtn = true; }
+    if (ui.hover && !cornerHot) { ui.setCursorHint('ew-resize'); overBtn = true; }
   }
 
   // ---- bottom edge: vertical resize, down to fit everything or up to scroll ----
-  ui.interact(ui.id('mixer.resizeH'), x, y + h - 4, winW, 8, false);
+  ui.interact(ui.id('mixer.resizeH'), x, y + h - GRAB_IN, winW, GRAB_IN + GRAB_OUT, false);
   if (ui.pressed) {
     if (!mixer.resizingH) { mixer.resizingH = true; mixer.grabH = ui.pointerY - (y + h); }
     mixer.h = Math.max(minH, Math.min(ui.pointerY - mixer.grabH - y, maxH));
@@ -783,7 +812,7 @@ export function drawMixer(ui, app, fade = 1) {
   } else {
     if (mixer.resizingH) mixer.h = h;
     mixer.resizingH = false;
-    if (ui.hover) { ui.setCursorHint('ns-resize'); overBtn = true; }
+    if (ui.hover && !cornerHot) { ui.setCursorHint('ns-resize'); overBtn = true; }
   }
 
   // ---- title bar drag: the offset is taken on press so the window does not jump ----
@@ -823,7 +852,6 @@ export function drawMixer(ui, app, fade = 1) {
 
   sectionLabel(ui, 'ATMOSPHERE', false);
   ui.spacer(2);
-  columnHeads(ui);
   // Solo is mix-wide: a soloed channel above silences the recordings too.
   const soloing = anySolo();
   for (let i = 0; i < AMB_LAYER_COUNT; i++) layerRow(ui, i, soloing);

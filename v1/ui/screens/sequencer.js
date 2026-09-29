@@ -527,7 +527,7 @@ export function drawSequencer(ui, app, fade = 1) {
   dl.icon(playing ? ICON.PAUSE : ICON.PLAY, playX + (PLAY_BOX - PLAY_ICON) / 2, cy - PLAY_ICON / 2, PLAY_ICON, PLAY_ICON,
     btnHover ? C.valueInk : playing ? C.powerInk : C.btnInk, 2.2, 0);
 
-  // the arpeggio's volume, a small slider right of the play button; a
+  // the sequencer's volume, a small slider right of the play button; a
   // press jumps it there and dragging follows. The window's opacity has no
   // slider any more and rests at its 90% default.
   const ax = playX + PLAY_BOX + 12, aw = 70;
@@ -535,7 +535,7 @@ export function drawSequencer(ui, app, fade = 1) {
   if (ui.hover || ui.pressed) { ui.setCursorHint('ew-resize'); overBtn = true; }
   const aHover = ui.hover || ui.pressed;
   // The slider's whole travel covers only the bottom third of the level:
-  // the arpeggio at full is far past useful, so the top of this knob is 33
+  // the sequencer at full is far past useful, so the top of this knob is 33
   // and the working range gets the whole sweep. A drawer setting above 33
   // just shows as full here.
   const VOL_TOP = 33;

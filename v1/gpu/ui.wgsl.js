@@ -475,6 +475,43 @@ fn iconSDF(id: i32, pIn: vec2f, strokeQ: f32) -> f32 {
       d = min(d, sdSegment(p, pt(4.0, 19.0), pt(7.0, 22.0)) - hs);
       return d;
     }
+    case 18: { // GEAR: a filled wheel of eight teeth round a hole
+      let sector = 6.2831853 / 8.0;
+      let a = atan2(p.y, p.x);
+      let aa = (fract(a / sector + 0.5) - 0.5) * sector;
+      let q = length(p) * vec2f(cos(aa), sin(aa));
+      let tooth = sdRoundBox(q - vec2f(0.30, 0.0), vec2f(0.075, 0.06), 0.02);
+      let body = length(p) - 0.27;
+      return max(min(body, tooth), -(length(p) - 0.11));
+    }
+    case 19: { // HEART: two lobes and a rounded point, filled at stroke 0, an outline above it
+      // The point's two sides run from its tip tangent to lobes 0.4 smaller,
+      // and its rounding gives that 0.4 back, so each side meets its lobe
+      // without a kink; its top edge sits over the gap where the lobes part.
+      let lobes = min(sdCircle(p - pt(8.4, 9.0), 4.6 / 24.0), sdCircle(p - pt(15.6, 9.0), 4.6 / 24.0));
+      let tip = sdTriangleRounded(p, pt(5.29, 11.83), pt(18.71, 11.83), pt(12.0, 19.2), 0.4 / 24.0);
+      let d = min(lobes, tip);
+      if (strokeQ > 0.0) {
+        return abs(d) - hs;
+      }
+      return d;
+    }
+    case 20: { // LOCK: a rounded body under an arched shackle, the body filled at stroke 0, an outline above it
+      let body = sdRoundBox(p - pt(12.0, 15.5), vec2f(6.5 / 24.0, 4.5 / 24.0), 1.5 / 24.0);
+      // the shackle is always a line: the stroke's own width outlined, a
+      // fixed one filled
+      let sh = select(0.045, hs, strokeQ > 0.0);
+      let c = pt(12.0, 8.5);
+      // sdArc opens toward +y; flipped, so the arch stands above its centre
+      let q = vec2f(p.x - c.x, c.y - p.y);
+      var d = sdArc(q, vec2f(1.0, 0.0), 3.8 / 24.0, sh);
+      d = min(d, sdSegment(p, pt(8.2, 8.5), pt(8.2, 11.5)) - sh);
+      d = min(d, sdSegment(p, pt(15.8, 8.5), pt(15.8, 11.5)) - sh);
+      if (strokeQ > 0.0) {
+        return min(d, abs(body) - hs);
+      }
+      return min(d, body);
+    }
     default: {
       return 1e5;
     }

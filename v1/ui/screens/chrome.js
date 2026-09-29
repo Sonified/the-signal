@@ -31,6 +31,7 @@ import { runAction, actionLabel } from '../widgets.js';
 import { ICON } from '../drawlist.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, GLASS } from '../theme.js';
 import { mixColor } from '../anim.js';
+import { strobeLum } from '../../core/strobe.js';
 
 const QUICK = [   // right to left after the full-screen button, with v0's min widths
   ['colorQuick', 118], ['textQuick', 86], ['clickQuick', 112], ['toneQuick', 86],
@@ -89,9 +90,12 @@ function glassIcon(ui, key, icon, x, y, size, round, frost) {
 // glass: both are steady ink, which never strobes.
 const VOL_W = 120, VOL_H = 7, VOL_HIT = 27, VOL_GAP = 10, SPK = 34;
 const VOL_CTRL = byId('vol'), MUTE_CTRL = byId('vmute');
+const STROBE_SCALE_CTRL = byId('strobeScale');
+const SCALE_W = 210, SCALE_H = 38, SCALE_PAD = 12, SCALE_GAP = 10;
 const spkInk = new Float32Array([0.949, 0.949, 0.949, 1]);
 const volWell = new Float32Array([1, 1, 1, 0.15]);
 const volFill = new Float32Array(4);
+const scaleFill = new Float32Array(4);
 
 function drawVolume(ui, spkX, trackX, cy) {
   const dl = ui.dl;
@@ -134,6 +138,50 @@ function drawVolume(ui, spkX, trackX, cy) {
   dl.popAlpha();
 }
 
+// The always-visible emergency control. It scales the depth reaching every
+// visual and audio strobe without disturbing any layer's own saved setting.
+function drawStrobeScale(ui, x, y, frost) {
+  if (!STROBE_SCALE_CTRL) return;
+  // one row: the label at the left, the track between, the percentage at the
+  // right, its room sized for "100%" so the track never shifts as it changes
+  const labelW = ui.text.measure('STROBE', TYPE.micro, W.semibold) + 6 * TRACK.label * TYPE.micro;
+  const pctW = ui.text.measure('100%', TYPE.micro, W.semibold) + 4 * TRACK.label * TYPE.micro;
+  const tx = x + SCALE_PAD + labelW + SCALE_GAP;
+  const tw = SCALE_W - SCALE_PAD * 2 - labelW - pctW - SCALE_GAP * 2;
+  const cy = y + SCALE_H / 2;
+
+  const id = ui.id('chrome.strobeScale');
+  ui.interact(id, x, y, SCALE_W, SCALE_H, false);
+  const active = ui.pressed && ui.activeId === id;
+  if (ui.hover || active) ui.setCursorHint('ew-resize');
+  if (active && ui.pointerX >= 0) {
+    const pos = Math.round(Math.min(1, Math.max(0, (ui.pointerX - tx) / tw)) * 100);
+    if (pos !== STROBE_SCALE_CTRL.get(S)) STROBE_SCALE_CTRL.set(S, pos);
+  }
+
+  const hv = ui.spring(ui.idx('chrome.strobeScale', 1), ui.hover || active ? 1 : 0, MOTION.hover);
+  const dl = ui.dl;
+  dl.glass(x, y, SCALE_W, SCALE_H, RADIUS.md, COLOR.glassTint, frost, 1,
+    hv > 0.5 ? COLOR.lineStrong : COLOR.line, 0, 0);
+  const value = STROBE_SCALE_CTRL.get(S);
+  mixColor(ink, COLOR.inkDim, COLOR.ink, hv);
+  // baseline sits half a cap height below the row's centre
+  const base = cy + TYPE.micro * 0.36;
+  ui.text.draw(dl, 'STROBE', x + SCALE_PAD, base, TYPE.micro, W.semibold, ink, 0, TRACK.label, 1);
+  ui.text.draw(dl, value + '%', x + SCALE_W - SCALE_PAD, base, TYPE.micro, W.semibold, ink, 2, TRACK.label, 1);
+
+  // the volume track's plain white well and grey fill, no knob; the fill sits
+  // at 75% and pulses with the field's own level, so it flashes as deep as
+  // the strobe does at this setting and holds steady when stopped
+  const ty = cy - VOL_H / 2, u = value / 100, fw = tw * u;
+  dl.rect(tx, ty, tw, VOL_H, 2, volWell, 0, null, 0, 0);
+  if (fw > 0.5) {
+    const c = 0.839 + 0.11 * u * 0.5;
+    scaleFill[0] = c; scaleFill[1] = c; scaleFill[2] = c; scaleFill[3] = 0.75 * strobeLum();
+    dl.rect(tx, ty, fw, VOL_H, Math.min(2, fw / 2), scaleFill, 0, null, 0, 0);
+  }
+}
+
 // The burger lives on the top layer so it stays above the open drawer. It
 // holds the top left corner of the VIEW, not the screen: locked to the
 // drawer's own edge (this frame's, see stepDrawer) once that edge is on
@@ -155,8 +203,15 @@ export function drawChrome(ui, app, alpha, frost) {
   // then the volume track at the far right
   const ts = 38, ty = EDGE;
   const trackX = width - EDGE - VOL_W, spkX = trackX - VOL_GAP - SPK;
-  if (glassIcon(ui, 'chrome.play', S.running ? ICON.PAUSE : ICON.PLAY, spkX - 14 - ts, ty, ts, true, frost)) app.toggleRun();
+  const playX = spkX - 14 - ts;
+  if (glassIcon(ui, 'chrome.play', S.running ? ICON.PAUSE : ICON.PLAY, playX, ty, ts, true, frost)) app.toggleRun();
   drawVolume(ui, spkX, trackX, ty + ts / 2);
+  let scaleX = playX - 24 - SCALE_W, scaleY = ty;
+  if (scaleX < (S.edgeInset || 0) + EDGE) {
+    scaleX = width - EDGE - SCALE_W - 12;
+    scaleY = ty + ts + 8;
+  }
+  drawStrobeScale(ui, scaleX, scaleY, frost);
 
   // quick bar, bottom right, read right to left
   const y = height - EDGE - CHIP_H;
