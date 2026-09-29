@@ -14,8 +14,8 @@
 //
 // The layer keeps its own clock, which runs only while the strobe runs, so a
 // stopped scene holds every show exactly where it is. Switching the layer
-// off clears the sky; switching it back on brings the first show in half a
-// second later.
+// off closes the launcher while every show already in the sky finishes;
+// switching it back on brings the next show in half a second later.
 //
 // Nothing is made until the layer is first switched on, and nothing is
 // allocated per frame after that.
@@ -54,7 +54,7 @@ export function createFireworks(device, format) {
   const endAge = new Float64Array(MAX_SHOWS);
   const data = new Float32Array(MAX_SHOWS * SHOW_FLOATS);
 
-  let clock = 0, nextAt = 0, wasOn = false, lastCorner = -1, drawCount = 0;
+  let clock = 0, scheduleClock = 0, nextAt = 0, wasOn = false, lastCorner = -1, drawCount = 0;
 
   function make() {
     made = true;
@@ -212,16 +212,20 @@ export function createFireworks(device, format) {
 
   function update(t, dt) {
     drawCount = 0;
-    if (!S.layers || !S.layers.fireworks) {
-      if (wasOn) { live.fill(0); wasOn = false; }
-      return;
+    const on = !!(S.layers && S.layers.fireworks);
+    if (!on && !wasOn) {
+      let any = false;
+      for (let i = 0; i < MAX_SHOWS; i++) if (live[i]) { any = true; break; }
+      if (!any) return;
     }
     if (!made) make();
-    if (!wasOn) { wasOn = true; nextAt = clock + FIRST_DELAY; }
+    if (on && !wasOn) { wasOn = true; nextAt = scheduleClock + FIRST_DELAY; }
+    else if (!on) wasOn = false;
 
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
     const step = dt > 0 ? motionStep(dt) : 0;
-    clock += step;
+    scheduleClock += step;
+    clock += step * clampNum(S.fwSpeed, 0.25, 3, 1);
 
     // The visible field, as the particles and the scene frame it: the drawer
     // covers the left, and a field unit is half the shorter side of the rest.
@@ -232,12 +236,12 @@ export function createFireworks(device, format) {
 
     for (let i = 0; i < MAX_SHOWS; i++) if (live[i] && clock - launchAt[i] > endAge[i]) live[i] = 0;
     // One launch at most per frame, so a long stall never fires a salvo.
-    if (step > 0 && clock >= nextAt) {
+    if (on && step > 0 && scheduleClock >= nextAt) {
       const hx = visW * 0.5 / unit, hy = cssH * 0.5 / unit;
       if (S.fwMode === 'corners') launchCorners(hx, hy);
       else if (S.fwMode === 'centre') launchCentre();
       else launchScatter(hx, hy);
-      nextAt = clock + gap();
+      nextAt = scheduleClock + gap();
     }
 
     const rgb = S.rgb;

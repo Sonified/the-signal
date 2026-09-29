@@ -99,7 +99,10 @@ let smokeLatchSeed = -1, smokeLatchPhase = -1;
 // which is larger than a word's because the hint runs to about 90 letters.
 export const smokeHint = {
   req: false, count: 0, seed: 0, data: new Float32Array(128 * 12),
-  peak: 1, size: 19, cx: 0, cy: 0, colA: null, colB: null
+  peak: 1, size: 19, cx: 0, cy: 0, colA: null, colB: null,
+  // the release: word-smoke drives the front while the overlay keeps the
+  // letters ahead of it crisp; finishReq (overlay) asks for the rest at once
+  releasing: false, frontX: 0, finishReq: false
 };
 
 // The hint's left-to-right front, shared by its smoke out (gpu/word-smoke.js)

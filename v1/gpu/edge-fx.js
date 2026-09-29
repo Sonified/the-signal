@@ -25,6 +25,7 @@
 // time an effect other than Surfing is asked for.
 
 import { S } from '../../js/state.js';
+import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { shape } from '../../js/util.js';
 import { bandHue } from '../../js/color.js';
 import { flickerLevel } from '../core/strobe.js';
@@ -188,7 +189,7 @@ export function createEdgeFx(device, format, fbFormat) {
     // is steady at the top. Pulse with strobe (S.edgePulse) scales how far
     // each departs from that steady top, as it does the Surfing edge's.
     const fl = flickerLevel();
-    const pulse = clampNum(S.edgePulse, 0, 1, 1);
+    const pulse = scaledStrobeDepth(clampNum(S.edgePulse, 0, 1, 1));
     for (let k = 0; k < 8; k++) {
       const lp = 1 + (shape((S.phase + k / 8) % 1) - 1) * fl;
       const full = SHIMMER_FLOOR + (1 - SHIMMER_FLOOR) * lp;

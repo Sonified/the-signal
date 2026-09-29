@@ -21,6 +21,7 @@
 // update() or draw().
 
 import { S, Z_NEAR, Z_FAR } from '../../js/state.js';
+import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { FLOWERS_WGSL, MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade } from '../core/fade.js';
 import { motionStep } from '../core/motion.js';
@@ -269,7 +270,7 @@ export function createFlowers(device, format, platform) {
     const opacity = clampNum(S.flowerOpacity, 0, 1, 0.85);
     const fade = clampNum(S.flowerFade, 0, 1, 0.55);
     const tintAmt = clampNum(S.flowerTint, 0, 1, 0);
-    const pulse = clampNum(S.flowerPulse, 0, 1, 0);
+    const pulse = scaledStrobeDepth(clampNum(S.effFlowerPulse ?? S.flowerPulse, 0, 1, 0));
     mode = S.flowerMode === 'mandala' ? 1 : 0;
 
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).

@@ -32,6 +32,19 @@ const DEF_COLOUR = 'strobe';
 const DEF_KALEIDO = false;
 const DEF_MIRROR = true;
 const DEF_SEQ_ON = false;
+// Where the feedback sits while folded, as v1/gpu/particles.js reads
+// S.partFbWhere: after the kaleidoscope, trails across the whole pattern, or
+// before it, trails inside the wedge that every copy repeats. The same pair
+// as the Confetti layer's.
+const FB_WHERES = ['after', 'before'];
+const DEF_FB_WHERE = 'after';
+// How this frame's light goes into the trail image, as v1/gpu/particles.js
+// reads S.partFbBlend: 'add' lays it onto the fading trails, so overlapping
+// paths build and a long half-life blooms toward white; 'max' keeps each
+// texel at the brightest light that recently passed, bounded however slow
+// the fade.
+const FB_BLENDS = ['add', 'max'];
+const DEF_FB_BLEND = 'add';
 const NUM = [
   // key,            min,  max, def,  integer
   ['partRate',        0,   1,   0.5,  false],
@@ -54,7 +67,27 @@ const NUM = [
   ['partSeqSens',     0.5, 20,  4,    false],
   ['partSeqAtk',      0.001, 0.3, 0.01, false],
   ['partSeqRel',      0.02, 2,  0.25, false],
-  ['partFoldSpin',   -1,   1,   0.05, false]
+  ['partFoldSpin',   -1,   1,   0.05, false],
+  // Video feedback, the Confetti layer's own, with its ranges and defaults.
+  ['partFeedback',    0,   1,   0,    false],   // how long each particle leaves a trail where it passed
+  ['partFbOpacity',   0,   1,   1,    false],   // how brightly the trails land; the live particles draw on their own
+  ['partFbStream',   -2,   2,   0,    false],   // the trails stream outward (+) or inward (-), signed
+  ['partFbTwist',    -1,   1,   0,    false],   // the trails turn about the centre, + clockwise, signed
+  // Each of Amount, Stream and Twist swings over time about its setting: down
+  // as far as its Lo, up as far as its Hi, both in the owner's own units and
+  // each at most the owner's whole span, once every Rate seconds.
+  ['partFbAmtVarLo', -1,   0,   0,    false],
+  ['partFbAmtVarHi',  0,   1,   0,    false],
+  ['partFbAmtVarRate', 1,  120, 20,   true ],
+  ['partFbStreamVarLo', -4, 0,  0,    false],
+  ['partFbStreamVarHi', 0,  4,  0,    false],
+  ['partFbStreamVarRate', 1, 120, 20, true ],
+  ['partFbTwistVarLo', -2,  0,  0,    false],
+  ['partFbTwistVarHi', 0,   2,  0,    false],
+  ['partFbTwistVarRate', 1, 120, 20,  true ],
+  ['partFbPulse',     0,   1,   0,    false],   // how far the whole feedback image brightens and darkens with the strobe
+  ['partFbPulseVar',  0,   1,   0,    false],   // how far that pulse amount swings down from its setting and back
+  ['partFbPulseRate', 1,   60,  10,   true ]    // seconds for one swing of the pulse variance
 ];
 
 // A slider's rounded position can come back as 1.1500000000000001; this
@@ -83,6 +116,9 @@ export function initParticleState(S) {
   if (typeof S.partKaleido !== 'boolean') S.partKaleido = DEF_KALEIDO;
   if (typeof S.partMirror !== 'boolean') S.partMirror = DEF_MIRROR;
   if (typeof S.partSeqOn !== 'boolean') S.partSeqOn = DEF_SEQ_ON;
+  if (FB_WHERES.indexOf(S.partFbWhere) < 0) S.partFbWhere = DEF_FB_WHERE;
+  if (FB_BLENDS.indexOf(S.partFbBlend) < 0) S.partFbBlend = DEF_FB_BLEND;
+  if (typeof S.partFbTwistVarOn !== 'boolean') S.partFbTwistVarOn = true;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -101,7 +137,10 @@ export function particleStateOf(S) {
     partColor: S.partColor,
     partKaleido: !!S.partKaleido,
     partMirror: !!S.partMirror,
-    partSeqOn: !!S.partSeqOn
+    partSeqOn: !!S.partSeqOn,
+    partFbWhere: S.partFbWhere,
+    partFbBlend: S.partFbBlend,
+    partFbTwistVarOn: S.partFbTwistVarOn !== false
   };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
@@ -121,6 +160,9 @@ export function applyParticleState(S, o) {
   if (typeof o.partKaleido === 'boolean') S.partKaleido = o.partKaleido;
   if (typeof o.partMirror === 'boolean') S.partMirror = o.partMirror;
   if (typeof o.partSeqOn === 'boolean') S.partSeqOn = o.partSeqOn;
+  if (FB_WHERES.indexOf(o.partFbWhere) >= 0) S.partFbWhere = o.partFbWhere;
+  if (FB_BLENDS.indexOf(o.partFbBlend) >= 0) S.partFbBlend = o.partFbBlend;
+  if (typeof o.partFbTwistVarOn === 'boolean') S.partFbTwistVarOn = o.partFbTwistVarOn;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -248,6 +290,56 @@ const speedText = S => S.partSpeed.toFixed(2) + '× · ' + (S.partSpeed > 0.001 
 // direction is plain without a second label.
 const signed = key => S => S[key] === 0 ? 'none' : (S[key] > 0 ? '+' : '') + S[key].toFixed(2);
 
+// A range row's readout (widgets.js range), as the Confetti layer's: 'none'
+// while both knobs sit on the centre, else how far down, then how far up,
+// each with its sign and a side left at 0 shown plainly. pct reads a
+// fraction as whole percent; otherwise it is the owner's own units to two
+// places. Built only when a knob moves (the widget caches it).
+function sideText(v, pct) {
+  const a = Math.abs(v);
+  const num = pct ? Math.round(a * 100) + '%' : a.toFixed(2);
+  if (v === 0) return num;
+  return (v < 0 ? '−' : '+') + num;
+}
+function rangeText(lo, hi, pct) {
+  return lo === 0 && hi === 0 ? 'none' : sideText(lo, pct) + ' / ' + sideText(hi, pct);
+}
+
+// The variance fold under one of the feedback's own settings (Amount, Stream
+// or Twist), schema-confetti.js's own: how far it swings each way, and how
+// long one swing takes, folding out from under their owner by its chevron
+// (drawer.js, varianceOf). key is the NUM prefix; span the owner's whole
+// slider span in its own units, so either knob can carry it from any setting
+// to either end. v1/gpu/particles.js does the swinging, on the layer's own
+// clock, and clamps the result to the owner's range.
+function fbVariance(owner, key, span, pct, switchId) {
+  const lo = key + 'Lo', hi = key + 'Hi', rate = key + 'Rate';
+  const visible = switchId ? S => S[switchId] !== false : undefined;
+  return [
+    {
+      id: key, section: 'particles', label: 'Variance', kind: 'range',
+      varianceOf: owner,
+      min: -span, max: span, step: 0.01, defLo: 0, defHi: 0,
+      getLo: S => S[lo],
+      getHi: S => S[hi],
+      setLo: (S, v) => { S[lo] = fit(v, -span, 0); save(); },
+      setHi: (S, v) => { S[hi] = fit(v, 0, span); save(); },
+      format: S => rangeText(S[lo], S[hi], pct),
+      enabled: layerOn, parent: switchId || 'partFeedbackDrawer', visible
+    },
+    {
+      // Seconds for one swing, as the strobe's Variance rate.
+      id: rate, section: 'particles', label: 'Variance rate', kind: 'slider',
+      varianceOf: owner,
+      min: 1, max: 120, step: 1, def: spec(rate)[3],
+      get: S => S[rate],
+      set: (S, pos) => { S[rate] = fit(pos, 1, 120, true); save(); },
+      format: S => S[rate] + 's / cycle',
+      enabled: layerOn, parent: switchId || 'partFeedbackDrawer', visible
+    }
+  ];
+}
+
 export const PARTICLE_CONTROLS = [
   // Sits in the drawer's Layers group straight after the Kaleidoscope toggle.
   // Off by default: a first visit looks exactly as it did before.
@@ -279,7 +371,7 @@ export const PARTICLE_CONTROLS = [
   // which way the stream bends. Swirl is signed: it curls one way or the
   // other, and 0 sends the particles straight out.
   subDrawer('partMotionDrawer', 'Motion', 'particles', ['partRate', 'partSpeed']),
-  under('partMotionDrawer', percent('partRate', 'partRate', 'Rate', rateText)),
+  under('partMotionDrawer', percent('partRate', 'partRate', 'Birth rate', rateText)),
   under('partMotionDrawer', direct('partSpeed', 'partSpeed', 'Speed', 0.01, speedText)),
   under('partMotionDrawer', percent('partSpread', 'partSpread', 'Spread (toward screen edge)')),
   under('partMotionDrawer', direct('partSwirl', 'partSwirl', 'Swirl', 0.01, signed('partSwirl'))),
@@ -309,6 +401,108 @@ export const PARTICLE_CONTROLS = [
   // the readout spells out what 0 means.
   under('partColorDrawer', percent('partPulse', 'partPulse', 'Pulse with strobe',
     S => S.partPulse === 0 ? 'never flickers' : Math.round(S.partPulse * 100) + '%')),
+
+  // Video feedback, the Confetti layer's, in a sub-drawer of its own that the
+  // viewer opens and shuts, so no rows come and go as a slider moves. Shut,
+  // its strip shows the amount and the Stream.
+  subDrawer('partFeedbackDrawer', 'Feedback', 'particles', ['partFeedback', 'partFbStream']),
+  // How brightly the trail image lands on the scene. The live particles are
+  // drawn on their own, over the trails, so this dims only the trails: at 0
+  // the particles stand alone. It only changes how the image is laid over,
+  // never the trails inside it, so they build and fade the same at any
+  // setting and turning it back up shows them as they are now.
+  under('partFeedbackDrawer', percent('partFbOpacity', 'partFbOpacity', 'Opacity')),
+  // Each frame keeps a fading copy of the last, so every particle leaves a
+  // trail that stays where it was drawn and dies away. At 0 there is no
+  // trail, the particles as they are; at 100% a trail takes about two
+  // seconds to fade to half, and in between the time grows with the square
+  // of the slider, so the low end is fine grained. Labelled Amount since the
+  // drawer carries the Feedback name. While a variance is set the knob shows
+  // the swung value as it moves.
+  {
+    ...under('partFeedbackDrawer', percent('partFeedback', 'partFeedback', 'Amount')),
+    effective: S => (S.partFbAmtVarLo !== 0 || S.partFbAmtVarHi !== 0)
+      ? (typeof S.effPartFeedback === 'number' ? S.effPartFeedback : S.partFeedback) * 100 : undefined
+  },
+  // Amount's swing, in the Amount's own share, so its readout is percent to
+  // match the row above. Swinging down to 0 clears the image just as the
+  // slider at 0 does; the shut strip's summary still shows the setting.
+  ...fbVariance('partFeedback', 'partFbAmtVar', 1, true),
+  // How this frame's light goes into the trails. Additive piles it onto
+  // what is already there, so overlapping paths build and a long Amount
+  // blooms toward white; Max holds each point at the brightest light that
+  // recently passed it, so the trails never outshine the particles however
+  // long they last.
+  under('partFeedbackDrawer', choice('partFbBlend', 'partFbBlend', 'Blend', FB_BLENDS, ['Additive', 'Max'], DEF_FB_BLEND)),
+  // The trails' own motion, always in the drawer; at an Amount of 0 there is
+  // no trail, so they simply have nothing to move. Each frame's faded copy
+  // is taken a little larger or smaller about the field centre (Stream) and
+  // turned a little about it (Twist), so the trails stream out toward the
+  // edges or in to the centre, and swirl, the same way in every direction.
+  // Both read 'none' at 0 and carry their sign and direction otherwise.
+  {
+    ...under('partFeedbackDrawer', direct('partFbStream', 'partFbStream', 'Stream', 0.01,
+      S => S.partFbStream === 0 ? 'none'
+        : (S.partFbStream > 0 ? '+' + S.partFbStream.toFixed(2) + ' out' : S.partFbStream.toFixed(2) + ' in'))),
+    effective: S => (S.partFbStreamVarLo !== 0 || S.partFbStreamVarHi !== 0)
+      ? (typeof S.effPartFbStream === 'number' ? S.effPartFbStream : S.partFbStream) : undefined
+  },
+  // Stream's swing, in Stream's units: a span of 4 lets either knob carry it
+  // from any setting to either end, out or in, so a swing can breathe the
+  // trails outward and back through still.
+  ...fbVariance('partFbStream', 'partFbStreamVar', 4, false),
+  {
+    ...under('partFeedbackDrawer', direct('partFbTwist', 'partFbTwist', 'Twist', 0.01,
+      S => S.partFbTwist === 0 ? 'none'
+        : (S.partFbTwist > 0 ? '+' + S.partFbTwist.toFixed(2) + ' clockwise' : S.partFbTwist.toFixed(2) + ' counter'))),
+    effective: S => S.partFbTwistVarOn !== false && (S.partFbTwistVarLo !== 0 || S.partFbTwistVarHi !== 0)
+      ? (typeof S.effPartFbTwist === 'number' ? S.effPartFbTwist : S.partFbTwist) : undefined
+  },
+  {
+    id: 'partFbTwistVarOn', section: 'particles', label: 'Twist variance', kind: 'toggle', def: true,
+    varianceOf: 'partFbTwist',
+    // As the Confetti layer's: the performance window can crossfade this
+    // switch through S.partFbTwistVarMix, 0 the plain Twist and 1 the full
+    // swing; runtime only, never saved, 1 when unset.
+    mixKey: 'partFbTwistVarMix',
+    get: S => S.partFbTwistVarOn !== false,
+    set: (S, on) => { S.partFbTwistVarOn = !!on; save(); },
+    format: S => S.partFbTwistVarOn !== false ? 'On' : 'Off',
+    enabled: layerOn, parent: 'partFeedbackDrawer'
+  },
+  // Twist's swing, in Twist's units, a span of 2 for the same reason.
+  ...fbVariance('partFbTwist', 'partFbTwistVar', 2, false, 'partFbTwistVarOn'),
+  // The trail image brightens and darkens with the strobe's flicker by this
+  // much; the live particles keep the Color drawer's own Pulse with strobe.
+  // At 0 the trails never flicker.
+  {
+    ...under('partFeedbackDrawer', percent('partFbPulse', 'partFbPulse', 'Pulse with strobe',
+      S => S.partFbPulse === 0 ? 'never flickers' : Math.round(S.partFbPulse * 100) + '%')),
+    effective: S => S.partFbPulseVar > 0
+      ? (typeof S.effPartFbPulse === 'number' ? S.effPartFbPulse : S.partFbPulse) * 100 : undefined
+  },
+  // How far the pulse amount swings, as every variance in the app does:
+  // over one Variance rate cycle it eases from the setting down by this
+  // share and back, so at 100% from the full setting to nothing and back.
+  // At 0 the pulse stays where it is set.
+  under('partFeedbackDrawer', varianceOf('partFbPulse', percent('partFbPulseVar', 'partFbPulseVar', 'Pulse variance'))),
+  // Seconds for one swing of the pulse variance, as the strobe's Variance
+  // rate.
+  under('partFeedbackDrawer', varianceOf('partFbPulse',
+    direct('partFbPulseRate', 'partFbPulseRate', 'Variance rate', 1, S => S.partFbPulseRate + 's / cycle'))),
+  // Only means something folded, so it shows only while the Kaleidoscope is
+  // on: after the kaleidoscope the trails stream and turn across the whole
+  // pattern about its centre; before it they live inside the one wedge the
+  // fold repeats, so every copy trails alike, and Twist shears the wedge's
+  // content out through its edges.
+  {
+    ...under('partFeedbackDrawer', choice('partFbWhere', 'partFbWhere', 'Where', FB_WHERES,
+      ['After kaleidoscope', 'Before kaleidoscope'], DEF_FB_WHERE)),
+    visible: isFolded,
+    // with the feedback off it does nothing, so it greys out rather than
+    // coming and going as the feedback is switched
+    enabled: S => layerOn(S) && (S.partFeedback > 0 || S.partFbAmtVarHi > 0)
+  },
 
   // An optional fold of the whole particle field into wedges, like the
   // Kaleidoscope layer's own. The three rows under the switch only show

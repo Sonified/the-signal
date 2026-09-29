@@ -118,6 +118,7 @@ export function initConfettiState(S) {
   if (FB_WHERES.indexOf(S.confFbWhere) < 0) S.confFbWhere = DEF_FB_WHERE;
   if (typeof S.confKaleido !== 'boolean') S.confKaleido = DEF_KALEIDO;
   if (typeof S.confMirror !== 'boolean') S.confMirror = DEF_MIRROR;
+  if (typeof S.confFbTwistVarOn !== 'boolean') S.confFbTwistVarOn = true;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -134,7 +135,8 @@ export function confettiStateOf(S) {
     confPalette: S.confPalette,
     confFbWhere: S.confFbWhere,
     confKaleido: !!S.confKaleido,
-    confMirror: !!S.confMirror
+    confMirror: !!S.confMirror,
+    confFbTwistVarOn: S.confFbTwistVarOn !== false
   };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   // Copied, so the record never aliases S.
@@ -151,6 +153,7 @@ export function applyConfettiState(S, o) {
   if (FB_WHERES.indexOf(o.confFbWhere) >= 0) S.confFbWhere = o.confFbWhere;
   if (typeof o.confKaleido === 'boolean') S.confKaleido = o.confKaleido;
   if (typeof o.confMirror === 'boolean') S.confMirror = o.confMirror;
+  if (typeof o.confFbTwistVarOn === 'boolean') S.confFbTwistVarOn = o.confFbTwistVarOn;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -185,8 +188,9 @@ function rangeText(lo, hi, pct) {
 // owner's whole slider span in its own units, so either knob can carry it
 // from any setting to either end. v1/gpu/confetti.js does the swinging, on
 // the layer's own clock, and clamps the result to the owner's range.
-function fbVariance(owner, key, span, pct) {
+function fbVariance(owner, key, span, pct, switchId) {
   const lo = key + 'Lo', hi = key + 'Hi', rate = key + 'Rate';
+  const visible = switchId ? S => S[switchId] !== false : undefined;
   return [
     {
       id: key, section: 'confetti', label: 'Variance', kind: 'range',
@@ -197,7 +201,7 @@ function fbVariance(owner, key, span, pct) {
       setLo: (S, v) => { S[lo] = fit(v, -span, 0); save(); },
       setHi: (S, v) => { S[hi] = fit(v, 0, span); save(); },
       format: S => rangeText(S[lo], S[hi], pct),
-      enabled: layerOn, parent: 'confFeedbackDrawer'
+      enabled: layerOn, parent: switchId || 'confFeedbackDrawer', visible
     },
     {
       // Seconds for one swing, as the strobe's Variance rate.
@@ -207,7 +211,7 @@ function fbVariance(owner, key, span, pct) {
       get: S => S[rate],
       set: (S, pos) => { S[rate] = fit(pos, 1, 120, true); save(); },
       format: S => S[rate] + 's / cycle',
-      enabled: layerOn, parent: 'confFeedbackDrawer'
+      enabled: layerOn, parent: switchId || 'confFeedbackDrawer', visible
     }
   ];
 }
@@ -482,6 +486,8 @@ export const CONFETTI_CONTROLS = [
     id: 'confFeedback', section: 'confetti', label: 'Amount', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(spec('confFeedback')[3] * 100),
     get: S => Math.round(S.confFeedback * 100),
+    effective: S => (S.confFbAmtVarLo !== 0 || S.confFbAmtVarHi !== 0)
+      ? (typeof S.effConfFeedback === 'number' ? S.effConfFeedback : S.confFeedback) * 100 : undefined,
     set: (S, pos) => { S.confFeedback = fit(pos / 100, 0, 1); save(); },
     format: S => Math.round(S.confFeedback * 100) + '%',
     enabled: layerOn, parent: 'confFeedbackDrawer'
@@ -500,6 +506,8 @@ export const CONFETTI_CONTROLS = [
     id: 'confFbStream', section: 'confetti', label: 'Stream', kind: 'slider',
     min: -2, max: 2, step: 0.01, def: spec('confFbStream')[3],
     get: S => S.confFbStream,
+    effective: S => (S.confFbStreamVarLo !== 0 || S.confFbStreamVarHi !== 0)
+      ? (typeof S.effConfFbStream === 'number' ? S.effConfFbStream : S.confFbStream) : undefined,
     set: (S, pos) => { S.confFbStream = fit(pos, -2, 2); save(); },
     format: S => S.confFbStream === 0 ? 'none'
       : (S.confFbStream > 0 ? '+' + S.confFbStream.toFixed(2) + ' out' : S.confFbStream.toFixed(2) + ' in'),
@@ -513,13 +521,27 @@ export const CONFETTI_CONTROLS = [
     id: 'confFbTwist', section: 'confetti', label: 'Twist', kind: 'slider',
     min: -1, max: 1, step: 0.01, def: spec('confFbTwist')[3],
     get: S => S.confFbTwist,
+    effective: S => S.confFbTwistVarOn !== false && (S.confFbTwistVarLo !== 0 || S.confFbTwistVarHi !== 0)
+      ? (typeof S.effConfFbTwist === 'number' ? S.effConfFbTwist : S.confFbTwist) : undefined,
     set: (S, pos) => { S.confFbTwist = fit(pos, -1, 1); save(); },
     format: S => S.confFbTwist === 0 ? 'none'
       : (S.confFbTwist > 0 ? '+' + S.confFbTwist.toFixed(2) + ' clockwise' : S.confFbTwist.toFixed(2) + ' counter'),
     enabled: layerOn, parent: 'confFeedbackDrawer'
   },
+  {
+    id: 'confFbTwistVarOn', section: 'confetti', label: 'Twist variance', kind: 'toggle', def: true,
+    varianceOf: 'confFbTwist',
+    // The performance window crossfades this switch over its ramp time
+    // (perform.js startMix) through S.confFbTwistVarMix, 0 the plain Twist
+    // and 1 the full swing; runtime only, never saved, 1 when unset.
+    mixKey: 'confFbTwistVarMix',
+    get: S => S.confFbTwistVarOn !== false,
+    set: (S, on) => { S.confFbTwistVarOn = !!on; save(); },
+    format: S => S.confFbTwistVarOn !== false ? 'On' : 'Off',
+    enabled: layerOn, parent: 'confFeedbackDrawer'
+  },
   // Twist's swing, in Twist's units, a span of 2 for the same reason.
-  ...fbVariance('confFbTwist', 'confFbTwistVar', 2, false),
+  ...fbVariance('confFbTwist', 'confFbTwistVar', 2, false, 'confFbTwistVarOn'),
   // The whole feedback image, trails and the live pieces alike, brightens
   // and darkens with the strobe's flicker by this much. Only its colour
   // changes, never its coverage, so the trails darken rather than turning
@@ -528,6 +550,8 @@ export const CONFETTI_CONTROLS = [
     id: 'confFbPulse', section: 'confetti', label: 'Pulse with strobe', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(spec('confFbPulse')[3] * 100),
     get: S => Math.round(S.confFbPulse * 100),
+    effective: S => S.confFbPulseVar > 0
+      ? (typeof S.effConfFbPulse === 'number' ? S.effConfFbPulse : S.confFbPulse) * 100 : undefined,
     set: (S, pos) => { S.confFbPulse = fit(pos / 100, 0, 1); save(); },
     format: S => S.confFbPulse === 0 ? 'never flickers' : Math.round(S.confFbPulse * 100) + '%',
     enabled: layerOn, parent: 'confFeedbackDrawer'
@@ -569,7 +593,9 @@ export const CONFETTI_CONTROLS = [
     ],
     get: S => S.confFbWhere,
     set: (S, v) => { S.confFbWhere = FB_WHERES.indexOf(v) >= 0 ? v : DEF_FB_WHERE; save(); },
-    enabled: layerOn,
+    // with the feedback off it does nothing, so it greys out rather than
+    // coming and going as the feedback is switched
+    enabled: S => layerOn(S) && (S.confFeedback > 0 || S.confFbAmtVarHi > 0),
     visible: isFolded, parent: 'confFeedbackDrawer'
   },
   // An optional fold of the whole confetti field into wedges, exactly as the

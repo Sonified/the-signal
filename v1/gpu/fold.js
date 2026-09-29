@@ -87,11 +87,14 @@ export const FOLD_CHAMBER_FORMAT = 'rgba8unorm';
 
 // opts (read once): label, for the pipeline and texture names in console
 // errors; res, chamber texels per device pixel; blend, 'over' (premultiplied,
-// the default) or 'add' (pure light, the chamber's alpha ignored).
+// the default), 'add' (pure light, the chamber's alpha ignored) or 'max'
+// (light into a video feedback image, which must not accumulate: each texel
+// keeps the brighter of what it held and what the fold lays down, so the
+// image is bounded by the brightest single frame however slowly it fades).
 export function createFold(device, format, opts) {
   const label = (opts && opts.label) || 'fold';
   const res = (opts && opts.res > 0 && opts.res <= 1) ? opts.res : DEFAULT_RES;
-  const blendMode = opts && opts.blend === 'add' ? 'add' : 'over';
+  const blendMode = opts && (opts.blend === 'add' || opts.blend === 'max') ? opts.blend : 'over';
 
   const bgl = device.createBindGroupLayout({
     label: label + '.bgl',
@@ -109,7 +112,14 @@ export function createFold(device, format, opts) {
       }
     });
   }
-  const blend = blendMode === 'add'
+  // For 'max' WebGPU ignores the factors but still validates them; 'one' is
+  // the conventional stand-in.
+  const blend = blendMode === 'max'
+    ? {
+        color: { srcFactor: 'one', dstFactor: 'one', operation: 'max' },
+        alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'max' }
+      }
+    : blendMode === 'add'
     ? {
         color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
         alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' }

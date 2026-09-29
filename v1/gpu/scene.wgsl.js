@@ -36,6 +36,7 @@ struct U {
   cornerCol: array<vec4f, 4>,   // per-corner glow colour, same order
   misc: vec4f,                  // corner glow radius, ring outer radius, LUT_N, ringsOn
   misc2: vec4f,                  // cornersOn, left inset in device px, field fade radius, fade softness
+  cornerP: vec4f,                // corner look (0 glow, 1 beam, 2 bracket, 3 arc), unused x3
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read> lut: array<f32>;   // rgb triples, one per radial sample
@@ -44,6 +45,34 @@ ${RADIAL_FADE_WGSL}
 fn sdRoundBox(p: vec2f, b: f32, r: f32) -> f32 {
   let q = abs(p) - vec2f(b - r);
   return length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+// One corner's light at offset d from its corner point, R its reach, dir the
+// unit direction in toward the centre. Glow is the soft radial bloom; Beam a
+// cone widening in along the diagonal; Bracket a glowing L just inside the
+// corner, one arm along each screen edge; Arc a quarter ring around it.
+fn cornerShape(d: vec2f, dir: vec2f, R: f32, kind: f32) -> f32 {
+  if (kind < 0.5) { return max(0.0, 1.0 - length(d) / R); }
+  if (kind < 1.5) {
+    let along = dot(d, dir);
+    if (along <= 0.0) { return 0.0; }
+    let perp = abs(d.x * dir.y - d.y * dir.x);
+    let halfW = R * 0.04 + along * 0.16;
+    let across = max(0.0, 1.0 - perp / halfW);
+    return max(0.0, 1.0 - along / (R * 1.6)) * across * across;
+  }
+  if (kind < 2.5) {
+    let q = d * sign(dir);
+    let m = R * 0.1;
+    let len = R * 0.7;
+    let e1 = vec2f(clamp(q.x, m, m + len), m);
+    let e2 = vec2f(m, clamp(q.y, m, m + len));
+    let dist = min(length(q - e1), length(q - e2));
+    let k = max(0.0, 1.0 - dist / (R * 0.08));
+    return k * k * k;
+  }
+  let k = max(0.0, 1.0 - abs(length(d) - R * 0.6) / (R * 0.08));
+  return k * k * k;
 }
 
 @vertex
@@ -110,10 +139,20 @@ fn fsFull(@builtin(position) fc: vec4f) -> @location(0) vec4f {
     let c1 = vec2f(Wp, 0.0);
     let c2 = vec2f(Wp, Hp);
     let c3 = vec2f(insetPx, Hp);
-    rgb = rgb + u.cornerCol[0].rgb * (u.cornerA.x * max(0.0, 1.0 - length(p - c0) / R));
-    rgb = rgb + u.cornerCol[1].rgb * (u.cornerA.y * max(0.0, 1.0 - length(p - c1) / R));
-    rgb = rgb + u.cornerCol[2].rgb * (u.cornerA.z * max(0.0, 1.0 - length(p - c2) / R));
-    rgb = rgb + u.cornerCol[3].rgb * (u.cornerA.w * max(0.0, 1.0 - length(p - c3) / R));
+    let kind = u.cornerP.x;
+    // Each corner is laid over what is beneath it (rgb * (1 - a) + col * a)
+    // rather than added to it. Over black the two are the same; over a lit
+    // field an added glow clipped into the field's own light and vanished,
+    // so fading the field seemed to fade the corners. Laid over, a corner
+    // keeps its own level whatever the field is doing.
+    let a0 = min(u.cornerA.x * cornerShape(p - c0, normalize(ctr - c0), R, kind), 1.0);
+    rgb = rgb * (1.0 - a0) + u.cornerCol[0].rgb * a0;
+    let a1 = min(u.cornerA.y * cornerShape(p - c1, normalize(ctr - c1), R, kind), 1.0);
+    rgb = rgb * (1.0 - a1) + u.cornerCol[1].rgb * a1;
+    let a2 = min(u.cornerA.z * cornerShape(p - c2, normalize(ctr - c2), R, kind), 1.0);
+    rgb = rgb * (1.0 - a2) + u.cornerCol[2].rgb * a2;
+    let a3 = min(u.cornerA.w * cornerShape(p - c3, normalize(ctr - c3), R, kind), 1.0);
+    rgb = rgb * (1.0 - a3) + u.cornerCol[3].rgb * a3;
   }
 
   return vec4f(min(rgb, vec3f(1.0)), 1.0);

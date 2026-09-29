@@ -25,7 +25,9 @@
 // over a module-level import: these are pure functions of whatever state
 // object the toolkit hands them, and state.js's S is passed in that way by
 // every caller, so there is no need to import it here at all.
+import { byId } from './schema.js';
 import { setColorFromPicker } from '../../js/color.js';
+import { CORNER_TYPES } from '../../js/state.js';
 import { setAmRate } from '../../js/audio.js';
 import { seedParticles, applyEdgeDir } from '../../js/sim.js';
 import { THEMES, WORDS } from '../../js/words.js';
@@ -282,9 +284,63 @@ export const VISUAL_CONTROLS = [
 
   // ---------- Strobe ----------
   sectionToggle('fieldOn',   'field',   'strobe', 'On'),
+  {
+    // The chrome's upper-right STROBE dial, again here at the head of the
+    // section: both read and write the one S.strobeScale (the emergency
+    // master over every visual and audio strobe depth, see the transport
+    // control in schema-audio.js), so they can never disagree. Not gated
+    // by the field layer: it is a master, live whatever is on.
+    id: 'masterStrobe', section: 'strobe', label: 'Master strobe', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round((typeof S.strobeScale === 'number' ? S.strobeScale : 1) * 100),
+    set: (S, pos) => { const c = byId('strobeScale'); if (c) c.set(S, pos); },
+    format: S => Math.round((typeof S.strobeScale === 'number' ? S.strobeScale : 1) * 100) + '%'
+  },
   // Corners are their own layer with their own section (below Strobe), so
   // the Strobe switch never touches them.
   sectionToggle('cornersOn', 'corners', 'corners', 'On'),
+  // Their own controls, apart from the strobe's brightness and depth. Speed runs the corners' chase on its own
+  // clock, stepped by the strobe's each frame, so 1x is today's lock-step.
+  // Pulse is how much they flash with it, 0 a steady glow.
+  {
+    id: 'cornerOpacity', section: 'corners', label: 'Opacity', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.cornerOpacity ?? 1) * 100),
+    set: (S, pos) => { S.cornerOpacity = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round((S.cornerOpacity ?? 1) * 100) + '%'
+  },
+  {
+    id: 'cornerSpeed', section: 'corners', label: 'Speed', kind: 'slider',
+    min: 0, max: 4, step: 0.05, def: 1,
+    get: S => S.cornerSpeed ?? 1,
+    set: (S, pos) => { S.cornerSpeed = Math.max(0, Math.min(4, pos)); save(); },
+    format: S => (S.cornerSpeed ?? 1).toFixed(2) + '×'
+  },
+  {
+    id: 'cornerPulse', section: 'corners', label: 'Pulse with strobe', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.cornerPulse ?? 1) * 100),
+    set: (S, pos) => { S.cornerPulse = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => (S.cornerPulse ?? 1) === 0 ? 'never flickers' : Math.round(S.cornerPulse * 100) + '%'
+  },
+  {
+    id: 'cornerSize', section: 'corners', label: 'Size', kind: 'slider',
+    min: 5, max: 100, step: 1, def: 46,
+    get: S => Math.round((S.cornerSize ?? 0.46) * 100),
+    set: (S, pos) => { S.cornerSize = Math.max(0.05, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round((S.cornerSize ?? 0.46) * 100) + '%'
+  },
+  {
+    id: 'cornerType', section: 'corners', label: 'Type', kind: 'segment', def: 'glow',
+    options: [
+      { value: 'glow',    label: 'Glow' },
+      { value: 'beam',    label: 'Beam' },
+      { value: 'bracket', label: 'Bracket' },
+      { value: 'arc',     label: 'Arc' }
+    ],
+    get: S => S.cornerType || 'glow',
+    set: (S, v) => { if (CORNER_TYPES.indexOf(v) >= 0) { S.cornerType = v; save(); } }
+  },
   // ---- three sub-drawers, Timing, Brightness and Color (see subDrawer),
   // each with its rows straight after it ----
   subDrawer('strobeTimingDrawer', 'Timing', 'strobe', ['freq', 'wave']),
@@ -294,6 +350,7 @@ export const VISUAL_CONTROLS = [
     parent: 'strobeTimingDrawer',
     min: 0.5, max: 45, step: 0.5, def: 7.5,
     get: S => S.freq,
+    effective: S => S.freqDriftOn !== false && S.freqDrift > 0 ? S.effFreq : undefined,
     set: (S, pos) => {
       S.freq = pos;
       // Pulse rate follows the strobe whenever the two are linked; the
@@ -373,6 +430,7 @@ export const VISUAL_CONTROLS = [
     parent: 'strobeBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 80,
     get: S => Math.round(S.depth * 100),
+    effective: S => S.depthVarOn !== false && S.depthVar > 0 ? S.effDepth * 100 : undefined,
     set: (S, pos) => { S.depth = pos / 100; save(); },
     format: S => Math.round(S.depth * 100) + '%'
   },
@@ -411,6 +469,7 @@ export const VISUAL_CONTROLS = [
     parent: 'strobeBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.bright * 100),
+    effective: S => S.brightVarOn !== false && S.brightVar > 0 ? S.effBright * 100 : undefined,
     set: (S, pos) => { S.bright = pos / 100; save(); },
     format: S => Math.round(S.bright * 100) + '%'
   },
@@ -442,6 +501,18 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.brightVarPeriod = pos; save(); },
     format: S => S.brightVarPeriod + 's / cycle',
     visible: S => S.brightVarOn !== false
+  },
+  {
+    // The field's own opacity: it dims the strobe field and nothing else.
+    // Brightness above is the whole flash signal, which the rings, the
+    // corners and every layer's pulse follow; this fades just the field.
+    id: 'fieldOpacity', section: 'strobe', label: 'Field opacity', kind: 'slider',
+    summaryLabel: 'Opacity',
+    parent: 'strobeBrightnessDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.fieldOpacity ?? 1) * 100),
+    set: (S, pos) => { S.fieldOpacity = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => Math.round((S.fieldOpacity ?? 1) * 100) + '%'
   },
   {
     id: 'fieldShape', section: 'strobe', label: 'Field shape', kind: 'segment', def: 'full',
@@ -582,13 +653,16 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.ringRate = pos; save(); },
     format: S => S.ringRate.toFixed(1) + ' / s'
   },
-  subDrawer('tunnelBrightnessDrawer', 'Brightness', 'tunnel', ['ringOpacity', 'ringFade']),
+  subDrawer('tunnelBrightnessDrawer', 'Brightness', 'tunnel', ['ringOpacity', 'ringFade', 'ringPulse']),
   {
     id: 'ringOpacity', section: 'tunnel', label: 'Ring opacity', kind: 'slider',
     summaryLabel: 'Opacity',
     parent: 'tunnelBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((S.ringOpacity ?? 1) * 100),
+    effective: S => S.ringBrightVar > 0
+      ? (S.ringOpacity ?? 1) * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase))) * 100
+      : undefined,
     set: (S, pos) => { S.ringOpacity = pos / 100; save(); },
     format: S => Math.round((S.ringOpacity ?? 1) * 100) + '%'
   },
@@ -616,6 +690,15 @@ export const VISUAL_CONTROLS = [
     get: S => Math.round(S.ringFade * 100),
     set: (S, pos) => { S.ringFade = pos / 100; save(); },
     format: S => Math.round(S.ringFade * 100) + '%'
+  },
+  {
+    id: 'ringPulse', section: 'tunnel', label: 'Pulse with strobe', kind: 'slider',
+    summaryLabel: 'Pulse',
+    parent: 'tunnelBrightnessDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.ringPulse || 0) * 100),
+    set: (S, pos) => { S.ringPulse = Math.max(0, Math.min(1, pos / 100)); save(); },
+    format: S => (S.ringPulse || 0) === 0 ? 'never flickers' : Math.round(S.ringPulse * 100) + '%'
   },
   subDrawer('tunnelStyleDrawer', 'Style', 'tunnel', ['ringThick']),
   {
@@ -805,6 +888,7 @@ export const VISUAL_CONTROLS = [
     parent: 'edgeMotionDrawer',
     min: 0, max: 6, step: 0.1, def: 4,
     get: S => S.edgeSpeedMul,
+    effective: S => S.edgeSpeedVar > 0 ? S.effEdgeSpeed : undefined,
     set: (S, pos) => { S.edgeSpeedMul = pos; save(); },
     format: S => S.edgeSpeedMul.toFixed(1) + '×'
   },
@@ -859,6 +943,7 @@ export const VISUAL_CONTROLS = [
     parent: 'edgeStyleDrawer',
     min: 0.1, max: 20, step: 0.1, def: 3,
     get: S => S.edgeSize / 2,
+    effective: S => S.edgeSizeVar > 0 ? S.effEdgeSize / 2 : undefined,
     set: (S, pos) => { S.edgeSize = pos * 2; save(); },
     format: S => (S.edgeSize / 2).toFixed(1) + '×'
   },
@@ -1115,13 +1200,24 @@ export const VISUAL_CONTROLS = [
     format: S => Math.round(S.textRestVar * 100) + '%'
   },
   {
+    // 0 is no hold at all: the word starts fading out the moment it has
+    // faded in (core/words.js). Up to 10 s, the fades' own reach.
     id: 'textDwell', section: 'text', label: 'Time on screen', kind: 'slider',
     summaryLabel: 'Dwell',
     parent: 'textRateDrawer',
-    min: 0, max: 4000, step: 10, def: 80,
+    min: 0, max: 10000, step: 10, def: 80,
     get: S => S.textDwellMs,
     set: (S, pos) => { S.textDwellMs = pos; save(); },
     format: S => S.textDwellMs + ' ms'
+  },
+  {
+    id: 'textDwellVar', section: 'text', label: 'Duration variance', kind: 'slider',
+    varianceOf: 'textDwell',
+    parent: 'textRateDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round(S.textDwellVar * 100),
+    set: (S, pos) => { S.textDwellVar = pos / 100; save(); },
+    format: S => Math.round(S.textDwellVar * 100) + '%'
   },
   subDrawer('textStylingDrawer', 'Styling', 'text', ['textSize', 'textOpacity']),
   {
@@ -1165,6 +1261,9 @@ export const VISUAL_CONTROLS = [
     parent: 'textStylingDrawer',
     min: 0, max: 100, step: 1, def: 95,
     get: S => Math.round(S.textOpacity * 100),
+    effective: S => S.textOpacityVar > 0
+      ? S.textOpacity * (1 - S.textOpacityVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.textOpacityPhase))) * 100
+      : undefined,
     set: (S, pos) => { S.textOpacity = pos / 100; save(); },
     format: S => Math.round(S.textOpacity * 100) + '%'
   },

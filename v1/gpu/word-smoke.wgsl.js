@@ -42,7 +42,7 @@ struct U {
   m2: vec4f,   // prep: word size, recording length s, diffusion 1/s, decay scale.
                // playback: slot base layer, SNAPS-1, raw progress, peak
   m3: vec4f,   // viewport css w, h, prep: turbulence, flow seed. playback: unused, firm ramp
-  m4: vec4f,   // playback: colour rgb, wind speed px/s. prep: wind speed in x, letter count in w
+  m4: vec4f,   // playback: colour rgb, wind speed px/s. prep: wind speed in x, raster over the old (live) in y, letter count in w
   m5: vec4f,   // playback: turbulence, flow seed, sweep share (0 off), 0.
                // live sim: sweep share, 1 (the live flag), 0, tail position 0..1
   m6: vec4f,   // word ink x0, x1 (css px), direction (+1 leave, -1 arrive), ease exponent
@@ -126,6 +126,9 @@ export const PREP_WGSL = COMMON + /* wgsl */ `
 // letter's slot 9, 0 for every word, 1 for the hint's sub-lines), stored
 // premultiplied by the density so the two ride the physics together and
 // their ratio stays the ink wherever the vapour goes.
+// With m4.y set (the live field, while smoke from before is still in it)
+// the letters go in over what is there, as paint over paint, instead of
+// replacing it: one field, the old smoke carrying on around the new word.
 @compute @workgroup_size(8, 8)
 fn rasterMain(@builtin(global_invocation_id) gid: vec3u) {
   let texel = 1.0 / P.m1.xy;
@@ -139,6 +142,10 @@ fn rasterMain(@builtin(global_invocation_id) gid: vec3u) {
   let n = i32(P.m4.w);
   for (var j = 0; j < n; j++) {
     let A = LT.v[j * 3];
+    // the live band: only the letters whose centre the front has crossed
+    // this frame enter the field (each exactly once); a word passes a
+    // whole-line band
+    if (P.m4.y > 0.5 && (A.x < P.m5.x || A.x >= P.m5.z)) { continue; }
     let B = LT.v[j * 3 + 1];
     let local = (pos - A.xy) / max(A.zw, vec2f(0.001));
     if (abs(local.x) >= 1.0 || abs(local.y) >= 1.0) { continue; }
@@ -150,7 +157,17 @@ fn rasterMain(@builtin(global_invocation_id) gid: vec3u) {
   }
   // g, b: this spot's own coordinates, carried with the material from here
   let o = (pos - P.m7.zw) / max(P.m2.x, 1.0);
-  textureStore(next, vec2i(gid.xy), vec4f(cov, o.x, o.y, cov * ink));
+  var outv = vec4f(cov, o.x, o.y, cov * ink);
+  if (P.m4.y > 0.5 && P.m5.w > 0.5) {
+    // over what the field holds (the hint dropping into live smoke): the
+    // ink lands over the old density, and the material coordinates go by
+    // each one's share, so the old vapour's grain rides on undisturbed
+    let old = textureLoad(prev, vec2i(gid.xy), 0);
+    let r = cov + old.r * (1.0 - cov);
+    let w = select(0.0, cov / max(r, 0.00001), cov > 0.0);
+    outv = vec4f(r, mix(old.gb, o, w), cov * ink + old.a * (1.0 - cov));
+  }
+  textureStore(next, vec2i(gid.xy), outv);
 }
 
 // One fixed step of the dissolution: midpoint-backtraced advection through

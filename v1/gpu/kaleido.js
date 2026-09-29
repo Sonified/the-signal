@@ -63,6 +63,7 @@
 // allocation in update(), encodeChamber() or draw().
 
 import { S } from '../../js/state.js';
+import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { KALEIDO_WGSL } from './kaleido.wgsl.js';
 import { MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade, radialFadeIn, RADIAL_FADE_OUT_K } from '../core/fade.js';
@@ -1082,7 +1083,7 @@ export function createKaleido(device, format, platform) {
     const scatter = clampNum(S.kaleidoScatter ?? 0, 0, 1, 0);
     const opacity = clampNum(S.kaleidoOpacity, 0, 1, 0.9);
     const tintAmt = clampNum(S.kaleidoTint, 0, 1, 0);
-    const pulse = clampNum(S.kaleidoPulse, 0, 1, 0);
+    const pulse = scaledStrobeDepth(clampNum(S.kaleidoPulse, 0, 1, 0));
     // With the Color switch off the grade is the identity, whatever the
     // sliders hold.
     const graded = S.kaleidoGrade === true;

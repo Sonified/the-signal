@@ -38,7 +38,9 @@ const NUM = [
   ['flowerOpacity',      0,   1,   0.85, false],
   ['flowerFade',         0,   1,   0.55, false],
   ['flowerTint',         0,   1,   0,    false],
-  ['flowerPulse',        0,   1,   0,    false]
+  ['flowerPulse',        0,   1,   0,    false],
+  ['flowerPulseVar',     0,   1,   0,    false],
+  ['flowerPulsePeriod',  1,   60,  10,   true ]
 ];
 
 // A slider's rounded position can come back as 1.1500000000000001; this
@@ -210,8 +212,21 @@ export const FLOWER_CONTROLS = [
   // whether 0 means "no pulse" or "no flowers". They sat under a "With the
   // strobe" heading before the sub-drawers; a heading inside a sub-drawer
   // would end its run, and the two names already say it.
-  under('flowersBrightnessDrawer', percent('flowerPulse', 'flowerPulse', 'Pulse with strobe',
-    S => S.flowerPulse === 0 ? 'never flickers' : Math.round(S.flowerPulse * 100) + '%')),
+  under('flowersBrightnessDrawer', Object.assign(
+    percent('flowerPulse', 'flowerPulse', 'Pulse with strobe',
+      S => S.flowerPulse === 0 ? 'never flickers' : Math.round(S.flowerPulse * 100) + '%'),
+    // the glowing bar: the pulse as the variance is playing it, the same
+    // shape core/strobe.js computes into S.effFlowerPulse each frame
+    { effective: S => S.flowerPulseVar > 0
+        ? S.flowerPulse * (1 - S.flowerPulseVar * 0.5 * (1 - Math.cos(2 * Math.PI * (S.flowerPulsePhase || 0)))) * 100
+        : undefined })),
+  under('flowersBrightnessDrawer', Object.assign(
+    percent('flowerPulseVar', 'flowerPulseVar', 'Pulse variance'),
+    { varianceOf: 'flowerPulse' })),
+  under('flowersBrightnessDrawer', Object.assign(
+    direct('flowerPulsePeriod', 'flowerPulsePeriod', 'Pulse variance rate', 1,
+      S => S.flowerPulsePeriod + 's / cycle'),
+    { varianceOf: 'flowerPulse' })),
   under('flowersBrightnessDrawer', percent('flowerTint', 'flowerTint', 'Tint to strobe colour',
     S => S.flowerTint === 0 ? 'own colour' : Math.round(S.flowerTint * 100) + '%'))
 ];

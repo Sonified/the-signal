@@ -103,6 +103,7 @@
 // image go and makes it again.
 
 import { S, Z_NEAR, Z_FAR } from '../../js/state.js';
+import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { CONFETTI_WGSL, N_MAX, FLIGHT, LETGO, TUMBLE_PERIOD, UNIFORM_FLOATS, SLOT_FLOATS, R_MIN, R_MAX, KICK_PACK } from './confetti.wgsl.js';
 import { createFold, FOLD_CHAMBER_FORMAT } from './fold.js';
 import { createFeedback, FEEDBACK_FORMAT } from './feedback.js';
@@ -802,8 +803,16 @@ export function createConfetti(device, format) {
     const fbS = swing(fbBase, clampNum(S.confFbAmtVarLo, -1, 0, 0), amtHi, amtPhase, 0, 1);
     const fbStream = swing(clampNum(S.confFbStream, -2, 2, 0),
       clampNum(S.confFbStreamVarLo, -4, 0, 0), clampNum(S.confFbStreamVarHi, 0, 4, 0), streamPhase, -2, 2);
-    const fbTwist = swing(clampNum(S.confFbTwist, -1, 1, 0),
-      clampNum(S.confFbTwistVarLo, -2, 0, 0), clampNum(S.confFbTwistVarHi, 0, 2, 0), twistPhase, -1, 1);
+    const fbTwistBase = clampNum(S.confFbTwist, -1, 1, 0);
+    // confFbTwistVarMix crossfades the plain setting into the swing while
+    // the performance window brings the variance in or out (1 when unset)
+    const twistMix = clampNum(S.confFbTwistVarMix, 0, 1, 1);
+    const fbTwist = S.confFbTwistVarOn === false ? fbTwistBase
+      : fbTwistBase + (swing(fbTwistBase, clampNum(S.confFbTwistVarLo, -2, 0, 0),
+        clampNum(S.confFbTwistVarHi, 0, 2, 0), twistPhase, -1, 1) - fbTwistBase) * twistMix;
+    S.effConfFeedback = fbS;
+    S.effConfFbStream = fbStream;
+    S.effConfFbTwist = fbTwist;
     const fbInUse = fbBase > 0 || amtHi > 0;
     before = kaleidoNow && fbInUse && S.confFbWhere === 'before';
     fbParams.keepHalfLife = HL_MAX * fbS * fbS;
@@ -822,6 +831,8 @@ export function createConfetti(device, format) {
     let pulse = clampNum(S.confFbPulse, 0, 1, 0);
     const pulseVar = clampNum(S.confFbPulseVar, 0, 1, 0);
     if (pulseVar > 0) pulse *= 1 - pulseVar * 0.5 * (1 - Math.cos(TAU * pulsePhase));
+    pulse = scaledStrobeDepth(pulse);
+    S.effConfFbPulse = pulse;
     const l = lum > 0 ? (lum < 1 ? lum : 1) : 0;
     fbGain = 1 - pulse + pulse * l;
     fbOpacity = clampNum(S.confFbOpacity, 0, 1, 1);
@@ -954,7 +965,8 @@ export function createConfetti(device, format) {
     // After the fold, or unfolded: folded, the pieces into the fold's own
     // chamber first, and the fold draws that into fbScreen; unfolded, the
     // pieces straight into fbScreen.
-    if (fbScreen.holds(fbParams)) return;
+    // Held, begin only carries the image with the field (feedback.js).
+    if (fbScreen.holds(fbParams)) { fbScreen.begin(encoder, fbParams, false); return; }
     const folded = drawOn && kaleidoNow && fold.chamberView;
     if (folded) {
       const cp = encoder.beginRenderPass(fold.chamberPassDesc);

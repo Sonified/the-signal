@@ -36,6 +36,7 @@ import { PREP_WGSL, PLAY_WGSL, WIND_WGSL, SMOKE_LETTERS } from './word-smoke.wgs
 import { smokeState, smokeHint, hintSweepShare, fxv, linesTogether, lineStep } from '../core/word-fx.js';
 import { wordState, fadeOutMs } from '../core/words.js';
 import { W, TRACK } from '../ui/theme.js';
+import { motionStep } from '../core/motion.js';
 
 const TEX_W = 640, TEX_H = 320;
 // The live departure's field is the viewport at three quarters of its css
@@ -109,12 +110,18 @@ export function createWordSmoke(device, format, text) {
     lines: 1, lineH: 0,
     // the hint (smokeHint) rather than the word: its own clock, anchor,
     // peak and two inks instead of wordState's
-    hint: false, peak: 1, sws: 0
+    hint: false, peak: 1, sws: 0,
+    // where on the live clock this batch began: merging batches share the
+    // field and its clock, each keeping its own start
+    batchT0: 0
   };
   // liveMode: 0 idle, 1 the word is fading out, 2 the tail — the word is
   // gone and its vapour keeps flowing until dilution finishes it
   let liveMode = 0, liveT = 0, liveAcc = 0, liveParity = 0, liveSteps = 0, needLiveRaster = false;
   let heldPeak = 0, drawLive = false;
+  // the hint's release: its front, softness, ink end, letters, and whether
+  // it is still crossing (word-fx's smokeHint carries it to the overlay)
+  let relCount = 0, relSoft = 0, relPrev = 0, relShown = 0, relEnd = 0, relActive = false;
   let letterBufBusy = false;
 
   // the preparation state machine
@@ -300,7 +307,11 @@ export function createWordSmoke(device, format, text) {
       { binding: 5, resource: { buffer: letterBuf } },
       { binding: 6, resource: windLiveV }
     ];
-    liveRasterBind = device.createBindGroup({ label: 'wordsmoke.live.raster.bind', layout: prepBgl, entries: liveEntries(liveRasterBuf, 1) });
+    // the raster reads the field's current texture (to go in over it) and
+    // writes the other, so one bind per parity
+    liveRasterBind = [0, 1].map(p => device.createBindGroup({
+      label: 'wordsmoke.live.raster.bind.' + p, layout: prepBgl, entries: liveEntries(liveRasterBuf, p)
+    }));
     liveSimBinds = [];
     for (let r = 0; r < MAX_LIVE_STEPS; r++) {
       liveSimBinds.push([0, 1].map(p => device.createBindGroup({
@@ -372,6 +383,7 @@ export function createWordSmoke(device, format, text) {
     if (!laid || !layout.count) return false;
     live.lines = ph.lines.length; live.lineH = ph.lineH;
     live.hint = false;
+    if (relActive) { relActive = false; smokeHint.releasing = false; }
     armLive(layout.data, layout.count, size, cx, y, LIVE_SCALE, Math.max(0.3, (fadeOutMs() || 1000) / 1000));
     live.text = word;
     return true;
@@ -393,6 +405,27 @@ export function createWordSmoke(device, format, text) {
     live.peak = smokeHint.peak;
     heldPeak = smokeHint.peak;
     armLive(smokeHint.data, n, smokeHint.size, smokeHint.cx, smokeHint.cy, HINT_SCALE, Math.max(0.3, ms / 1000));
+    // The release: the front starts left of the ink and update feeds the
+    // raster the band it crosses each frame; until a letter is taken the
+    // overlay draws it crisp (screens/overlay.js), so nothing shows twice.
+    // The hint's vapour mixes away harder than a word's: with little else
+    // on screen it was reaching the view's edge and artifacting against
+    // the clamped rim; dying a little sooner keeps it clear of the edge.
+    // (1 is the word's own Linger-derived decay; raise to fade sooner.)
+    live.decayMul *= 1.6;
+    relCount = n;
+    relSoft = smokeHint.size * 0.9;
+    relPrev = relShown = live.wx0 - relSoft;
+    relEnd = live.wx1 + relSoft;
+    relActive = live.sws > 0.001;
+    smokeHint.releasing = relActive;
+    smokeHint.frontX = relPrev;
+    if (relActive) {
+      // frame one enters nothing: an empty band over the field just
+      // cleared or carried; the letters follow the front from here on
+      uni[20] = relPrev; uni[22] = relPrev;
+      device.queue.writeBuffer(liveRasterBuf, 0, uni);
+    }
     // no word is ever this, so a word's departure still takes the field
     live.text = '';
     liveMode = 1;
@@ -416,7 +449,10 @@ export function createWordSmoke(device, format, text) {
     const linger = Math.max(0, Math.min(1, fxv('textSmokeLinger', true) ?? 0.5));
     const radialC = Math.max(0, Math.min(1, fxv('textSmokeRadial', true) ?? 0.75));
 
-    sizeLive(scale);
+    // Merging is the HINT dropping into live smoke (play/pause cycles);
+    // a word departing is the original takeover: fresh clock, fresh field.
+    const merge = live.hint && liveMode > 0;
+    if (!(merge && liveA)) sizeLive(scale);
     live.fadeS = fadeS;
     // The live field is the WHOLE viewport: it costs almost nothing (two
     // textures, no snapshots), and it means the smoke simply keeps smoking
@@ -433,7 +469,8 @@ export function createWordSmoke(device, format, text) {
     live.radial = Math.max(0, Math.min(1, fxv('textSmokeRadial', true) ?? 0.75));
     live.eq = Math.max(0, Math.min(1, fxv('textSmokeEq', true) ?? 0.5));
     live.accel = Math.max(0, Math.min(1, fxv('textSmokeAccel', true) ?? 0.7));
-    live.seed = Math.random() * 100;
+    // merging keeps the air, so the old vapour's wind never jumps
+    if (!merge) live.seed = Math.random() * 100;
     // Linger is the tail: how long the vapour may outlive the word,
     // flowing and diluting, before the layer sleeps
     live.tailS = 2 + 10 * linger;
@@ -446,11 +483,17 @@ export function createWordSmoke(device, format, text) {
     device.queue.writeBuffer(letterBuf, 0, L, 0, count * 12);
     letterBufBusy = true;
     fillLiveUni(0, 0, 0, 0);
+    // The live raster always lands over what the field holds (a fresh
+    // field reads as empty air, m5.w): one smoke field, anything drops in.
+    // The band (m5.x..m5.z) says which letters enter now: a word whole,
+    // the hint letter by letter as its front crosses (the release, update).
+    uni[17] = 1;
     uni[19] = count;                   // the raster wants the letter count
+    uni[20] = -1e9; uni[22] = 1e9;
+    uni[23] = merge ? 1 : 0;
     device.queue.writeBuffer(liveRasterBuf, 0, uni);
-    liveT = 0;
-    liveAcc = 0;
-    liveParity = 0;
+    if (!merge) { liveT = 0; liveAcc = 0; }
+    live.batchT0 = merge ? liveT : 0;
     needLiveRaster = true;
   }
 
@@ -599,33 +642,63 @@ export function createWordSmoke(device, format, text) {
     // and diluting until its bounded time is up (Linger sets the room), or
     // until a new departure takes the field over.
     // The hint has no word phase to follow: its fade is its own clock.
-    if (liveMode === 1 && (live.hint ? liveT >= live.fadeS : !(smokeNow && phase === 2))) liveMode = 2;
-    if (liveMode === 2 && liveT > live.fadeS + live.tailS) { liveMode = 0; live.text = ''; }
+    if (liveMode === 1 && (live.hint ? liveT - live.batchT0 >= live.fadeS : !(smokeNow && phase === 2))) liveMode = 2;
+    if (liveMode === 2 && liveT - live.batchT0 > live.fadeS + live.tailS) { liveMode = 0; live.text = ''; }
 
     if (liveMode > 0) {
       // fixed-step substeps of the live field, remainder banked; the tail
       // position lets the shader raise the mixing gently, never a cliff
-      if (dt > 0 && dt < 0.25) liveAcc += dt;
+      // The hint's smoke is part of the scene, so it coasts to a stop with
+      // everything on a pause and carries on from there (core/motion.js).
+      const step = live.hint ? motionStep(dt) : dt;
+      if (step > 0 && step < 0.25) liveAcc += step;
       if (liveAcc > MAX_LIVE_STEPS * LIVE_DT) liveAcc = MAX_LIVE_STEPS * LIVE_DT;
       const swSpdL = Math.max(0, Math.min(1, fxv('textSmokeSweepSpeed', true) ?? 0.5));
-      let swsL = live.hint ? live.sws : fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpdL : 0;
+      // the hint's sweep is the release itself (letters enter behind the
+      // front); its field runs ungated, one mature smoke
+      let swsL = live.hint ? 0 : fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpdL : 0;
       // lines running one after another read left to right within each
       // line, whether or not the sweep is switched on
       if (!linesTogether(true) && live.lines > 1 && !swsL) swsL = 0.5;
       while (liveAcc >= LIVE_DT && liveSteps < MAX_LIVE_STEPS) {
         liveAcc -= LIVE_DT;
-        const tailN = Math.max(0, Math.min(1, (liveT - live.fadeS) / live.tailS));
+        const tailN = Math.max(0, Math.min(1, (liveT - live.batchT0 - live.fadeS) / live.tailS));
         fillLiveUni(LIVE_DT, liveT, swsL, tailN);
         device.queue.writeBuffer(liveUni[liveSteps], 0, uni);
         liveT += LIVE_DT;
         liveSteps++;
+      }
+      // The hint's release: the front crosses the ink on this batch's
+      // clock and each letter behind it drops into the field, once. A
+      // pause mid-release (overlay's finishReq) lets the rest go at once.
+      if (relActive && live.hint) {
+        const fin = smokeHint.finishReq;
+        if (fin) smokeHint.finishReq = false;
+        // Exactly one frame behind the overlay: it drew this frame with the
+        // front published last frame (relShown), hiding the letters left of
+        // it, and only those enter the field now. Every letter is drawn by
+        // exactly one of the two on every frame, never both.
+        if (relShown > relPrev) {
+          fillLiveUni(0, 0, 0, 0);
+          uni[17] = 1;
+          uni[19] = relCount;
+          uni[20] = relPrev; uni[22] = relShown; uni[23] = 1;
+          device.queue.writeBuffer(liveRasterBuf, 0, uni);
+          needLiveRaster = true;
+          relPrev = relShown;
+        }
+        const f0 = live.wx0 - relSoft;
+        const fr = (liveT - live.batchT0) / Math.max(live.sws * live.fadeS, 0.001);
+        relShown = fin ? relEnd : Math.min(relEnd, f0 + fr * (relEnd - f0));
+        smokeHint.frontX = relShown;
+        if (relPrev >= relEnd) { relActive = false; smokeHint.releasing = false; }
       }
       drawLive = true;
     }
 
     // Record the coming word's arrival, but never on a frame that just
     // wrote the live departure's layout into the shared letter buffer.
-    if (inFx === 'smoke' && wordState.nextText && !letterBufBusy &&
+    if (inFx === 'smoke' && wordState.nextText && !letterBufBusy && !relActive &&
         !(rec[ARR].ready && rec[ARR].text === wordState.nextText) &&
         playSlot !== ARR &&
         !(prepSlot === ARR && prepText === wordState.nextText)) {
@@ -676,11 +749,13 @@ export function createWordSmoke(device, format, text) {
     // from its last frame) and dilution alone carries the vapour out.
     if (drawLive) {
       const k = 1 + 0.8 * fxv('textFxEase', true);
-      const p = liveMode !== 1 ? 1.001 : live.hint ? Math.min(1, liveT / live.fadeS) : wordState.progress;
-      const sharp = 1 - smooth01(p / 0.08);
+      const p = liveMode !== 1 ? 1.001 : live.hint ? Math.min(1, (liveT - live.batchT0) / live.fadeS) : wordState.progress;
+      // the hint's field is pure smoke (the overlay owns the crisp
+      // letters), so nothing in it is ever drawn firm
+      const sharp = live.hint ? 0 : 1 - smooth01(p / 0.08);
       const swSpd = Math.max(0, Math.min(1, fxv('textSmokeSweepSpeed', true) ?? 0.5));
       const seqN = !linesTogether(true) && live.lines > 1 ? live.lines : 1;
-      let sws = live.hint ? live.sws : fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpd : 0;
+      let sws = live.hint ? 0 : fxv('textSmokeSweep', true) ? 0.85 - 0.72 * swSpd : 0;
       if (seqN > 1 && !sws) sws = 0.5;
       // the hint anchors on the view's middle, the word on its own baseline
       const ox = ax - live.cx, oy = (live.hint ? cssH / 2 : anchorY(live.size)) - live.cy;
@@ -714,9 +789,9 @@ export function createWordSmoke(device, format, text) {
       if (needLiveRaster) {
         needLiveRaster = false;
         lp.setPipeline(rasterPipe);
-        lp.setBindGroup(0, liveRasterBind);
+        lp.setBindGroup(0, liveRasterBind[liveParity]);
         lp.dispatchWorkgroups(lgw, lgh);
-        liveParity = 0;                // the raster wrote texture A
+        liveParity = 1 - liveParity;   // the raster wrote the other texture
       }
       if (liveSteps > 0) {
         const wgw = Math.ceil(wlW / 8), wgh = Math.ceil(wlH / 8);

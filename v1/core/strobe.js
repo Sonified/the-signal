@@ -13,6 +13,7 @@
 // from the drawer's DOM geometry, and in v1 that becomes the toolkit's job.
 
 import { S, WALK_STEP, WALK_DAMP, WALK_SWING } from '../../js/state.js';
+import { strobeScale } from '../../js/strobe-scale.js';
 import { shape } from '../../js/util.js';
 import { bandHue } from '../../js/color.js';
 import { setAmRate, hasNode } from '../../js/audio.js';
@@ -379,6 +380,7 @@ export function stepStrobe(t) {
   S.effDepth = S.depthVarOn !== false && S.depthVar
     ? S.depth * (1 - S.depthVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.varPhase)))
     : S.depth;
+  S.effDepth *= strobeScale();
 
   if (flick) {
     S.brightVarPhase += (md / S.brightVarPeriod); S.brightVarPhase -= Math.floor(S.brightVarPhase);
@@ -405,6 +407,16 @@ export function stepStrobe(t) {
   S.effRingBright = S.ringBrightVar
     ? ringBase * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase)))
     : ringBase;
+
+  // The flowers' Pulse with strobe breathes the same way (gpu/flowers.js
+  // reads effFlowerPulse in place of the dial while the variance is up).
+  if (flick) {
+    S.flowerPulsePhase = (S.flowerPulsePhase || 0) + md / (S.flowerPulsePeriod || 10);
+    S.flowerPulsePhase -= Math.floor(S.flowerPulsePhase);
+  }
+  S.effFlowerPulse = S.flowerPulseVar
+    ? S.flowerPulse * (1 - S.flowerPulseVar * 0.5 * (1 - Math.cos(2 * Math.PI * (S.flowerPulsePhase || 0))))
+    : S.flowerPulse;
 
   if (S.perElementColor && S.colorWalk > 0 && flick) {
     for (let i = 0; i < 4; i++) {
@@ -463,6 +475,15 @@ export function stepStrobe(t) {
   result.lum = lum;
   result.lit = lit;
   return result;
+}
+
+// This frame's field level from the last stepStrobe, 0 to 1, for chrome that
+// pulses along with the field (the Strobe scale's bar). lum is the raw wave
+// shape; the depth, which carries the Strobe scale, is applied the same way
+// gpu/scene-data.js lights the field. Steady 1 while stopped.
+export function strobeLum() {
+  const l = Math.min(1, Math.max(0, result.lum)), d = S.effDepth || 0;
+  return 1 - d + d * l;
 }
 
 // Whether the frame after the one stepStrobe just produced will be lit, asked

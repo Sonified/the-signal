@@ -60,6 +60,10 @@ const hintLay = { count: 0, seed: 0, data: new Float32Array(128 * 12) };
 let hintInAt = -1;               // t the current appearance began, -1 while none is on
 let hintEx0 = 0, hintEx1 = 0;    // the first and last letter centres, from the view's middle
 let hintP = 1, hintSws = 0.25;   // this frame's fade in progress and front share, for hintFx
+// The smoke's release of the hint (word-smoke drives smokeHint.frontX): the
+// letters still ahead of the front stay drawn here, crisp at the level the
+// hint had, and each drops from this drawing as its ink enters the field.
+let relOn = false, relPeak = 1, relP = 1, relWait = 0, relFront = -1e9;
 
 function smooth01(x) { return x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x); }
 
@@ -81,6 +85,19 @@ function letterIn(relX) {
 function hintFx(i, n, relX, relY, wordW, size, out) {
   out[0] = 0; out[1] = 0; out[2] = 1; out[3] = 0;
   out[4] = letterIn(relX); out[5] = 0; out[6] = 0; out[7] = 0;
+}
+
+// its counterpart during the release: gone once the front has taken a
+// letter, else the arrival level it had when the smoke began, frozen
+function relFx(i, n, relX, relY, wordW, size, out) {
+  out[0] = 0; out[1] = 0; out[2] = 1; out[3] = 0;
+  let a = relX < relFront ? 0 : 1;
+  if (a > 0 && relP < 1) {
+    const span = hintEx1 - hintEx0;
+    const f = span > 0 ? Math.min(1, Math.max(0, (relX - hintEx0) / span)) : 0;
+    a = smooth01((relP - f * hintSws) / (1 - hintSws));
+  }
+  out[4] = a; out[5] = 0; out[6] = 0; out[7] = 0;
 }
 
 // Starts an appearance. Glyphs still rasterising (the first frames after
@@ -114,6 +131,7 @@ function beginHintIn(text, cx, cy, t) {
 // whole hint at the level it reached; left to right, only the letters the
 // front had brought more than halfway in.
 function hintToSmoke(text, cx, cy, t) {
+  if (relOn) return;   // a release in flight carries on; nothing new to send
   const h = anim.value('overlay.hint');
   if (h <= 0.002 || hintInAt < 0) return;
   hintP = hintInProgress(t); hintSws = hintSweepShare();
@@ -143,6 +161,10 @@ function hintToSmoke(text, cx, cy, t) {
   rec.cx = cx; rec.cy = cy;
   rec.colA = HINT_MAIN; rec.colB = COLOR.inkFaint;
   rec.req = true;
+  relOn = true;
+  relWait = 3;
+  relPeak = peak;
+  relP = all ? 1 : hintP;
   anim.reset('overlay.hint', 0);
 }
 
@@ -191,7 +213,10 @@ export function drawOverlay(dl, text, t, width, height) {
   // An appearance starts only once the last one has fully gone, and the
   // spring then only carries the yielding (and a return mid-yield).
   const want = !S.running && !guard.noticeOpen;
-  if (want && hintInAt < 0 && anim.value('overlay.hint') <= 0.002) beginHintIn(text, cx, cy, t);
+  // paused mid-release: the rest of the hint puffs off at once and a fresh
+  // hint fades in over the smoke (one field, nothing waits)
+  if (want && relOn) smokeHint.finishReq = true;
+  if (want && !relOn && hintInAt < 0 && anim.value('overlay.hint') <= 0.002) beginHintIn(text, cx, cy, t);
   const h = anim.spring('overlay.hint', want && hintInAt >= 0 ? 1 : 0, MOTION.fade);
   if (!want && h <= 0.002) hintInAt = -1;
   hintP = hintInProgress(t); hintSws = hintSweepShare();
@@ -210,8 +235,18 @@ export function drawOverlay(dl, text, t, width, height) {
     }
   }
 
-  overlayState.animating = (veil > 0.001 && veil < 1) || !anim.settled('overlay.hint') || noticeLive || hintIn;
-  if (h > 0.002 && hintInAt >= 0) {
+  overlayState.animating = (veil > 0.001 && veil < 1) || !anim.settled('overlay.hint') || noticeLive || hintIn || relOn;
+  if (relOn) {
+    if (smokeHint.releasing) relWait = 0;
+    else if (relWait > 0) relWait--;
+    else relOn = false;
+    if (relOn) {
+      relFront = smokeHint.releasing ? smokeHint.frontX - smokeHint.cx : -1e9;
+      text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, relPeak, relFx, null);
+      text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
+      text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
+    }
+  } else if (h > 0.002 && hintInAt >= 0) {
     if (hintIn && S.hintArrive !== 'all') {
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, h, hintFx, null);
       text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);

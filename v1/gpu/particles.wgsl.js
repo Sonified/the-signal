@@ -59,6 +59,13 @@ struct R {
 // One step of an 8-bit target. Light below it cannot change a pixel.
 const VIS: f32 = 0.0039215686;
 
+// The shallowest any particle lives, as a fraction of Z_NEAR. A particle
+// leaves at its own exit depth |xy| * Z_NEAR, where it crosses the rim; this
+// floor stops a near-axis one (|xy| near 0) flying toward z = 0 for ever and
+// racing across the screen as z collapses. It must match EXIT_FLOOR in
+// particles.js, whose birth-rate bound covers lives down to it.
+const EXIT_FLOOR: f32 = 0.05;
+
 // Hue rotation about the grey axis (Rodrigues), so 'strobe' colour can vary
 // per particle without leaving the strobe's family.
 fn hueRotate(c: vec3f, a: f32) -> vec3f {
@@ -97,7 +104,7 @@ fn footprint(p: P) -> Quad {
   var q: Quad;   // zeroed, so alpha 0 until it earns more
   let z = p.pos.z;
   let zNear = r.z.y;
-  if (p.pos.w < 0.5 || z <= zNear) { return q; }
+  if (p.pos.w < 0.5 || z <= (zNear * EXIT_FLOOR)) { return q; }
 
   let focal = r.view.w;
   let head = p.pos.xy * (focal / z);                 // device px from the field centre
@@ -107,9 +114,15 @@ fn footprint(p: P) -> Quad {
   // paths; in the chamber that centre is the fold's own, so the folded
   // pattern fades from its middle too.
   let kr = length(head) * r.fade.y;
-  // fade out as it passes the viewer, whatever its radius (0 from Z_NEAR in,
-  // which is where the simulation lets it go)
-  let fout = smoothstep(zNear, zNear * 2.5, z);
+  // Fade out on the approach to its own exit. kr = |xy| * Z_NEAR / z (the
+  // rim is maxR and focal = maxR * Z_NEAR in both paths), so it crosses the
+  // rim, past the screen's corners, at zExit = |xy| * Z_NEAR. The fade runs
+  // over [zExit, 2.5 zExit] and is finished exactly there, so nothing ever
+  // dims out mid-screen. The floor catches the rare near-axis straggler,
+  // which fades as a small dim dot near the centre instead. The simulation
+  // lets it go at the same depth, where this is already 0.
+  let zExit = max(length(p.pos.xy) * zNear, zNear * EXIT_FLOOR);
+  let fout = smoothstep(zExit, zExit * 2.5, z);
   // and by age as well, so a newborn never switches on at part brightness
   let born = min(p.info.x / 0.4, 1.0);
   let alpha = radialFade(r.fade.x, kr) * fout * born * r.misc.x;
@@ -290,11 +303,14 @@ fn emitParticle(i: u32, tBirth: f32) -> P {
     lat = dir * ((h1 - 0.5) * 0.04);
   } else if (emitter == 2u) {
     // spiral: three arms whose birth angle turns with time, so the tunnel
-    // fills with a slowly rotating helix
+    // fills with a rotating helix. The helix lives in the correlation of
+    // angle with depth, so the arms are kept crisp: little angular jitter,
+    // a narrow radius band, and (below) a near-uniform flight speed --
+    // scatter in any of them smears the arms into a fuzzy ring.
     let arm = floor(h2 * 3.0);
-    let a = tBirth * 1.3 + arm * 2.0943951 + (h1 - 0.5) * 0.35;
+    let a = tBirth * 2.0 + arm * 2.0943951 + (h1 - 0.5) * 0.04;
     let d = vec2f(cos(a), sin(a));
-    xy = d * (0.03 + spread * 0.6 * (0.3 + 0.7 * h3));
+    xy = d * (0.03 + spread * 0.6 * (0.85 + 0.15 * h3));
     lat = d * (spread * 0.05);
   } else {
     // centre: a small disc at the vanishing point, fanning outward
@@ -307,7 +323,11 @@ fn emitParticle(i: u32, tBirth: f32) -> P {
   // Velocity and size are stored at Speed 1 and Size 1; the live Speed and
   // Size multiply them every frame, so moving either slider changes every
   // particle already in flight, not just the ones born after.
-  p.vel = vec4f(lat, -(0.6 + 0.8 * h4) * 0.8, 0.0);
+  // spiral flies at a near-uniform speed (see above); the others keep
+  // their wide per-particle scatter
+  var vz = -(0.6 + 0.8 * h4) * 0.8;
+  if (emitter == 2u) { vz = -(0.95 + 0.1 * h4) * 0.8; }
+  p.vel = vec4f(lat, vz, 0.0);
   p.info = vec4f(0.0, (1.0 - sim.c.z * h6) * BASE_SIZE, h8, h7);
   return p;
 }
@@ -429,10 +449,11 @@ fn simMain(@builtin(global_invocation_id) gid: vec3u) {
   p.pos = vec4f(q + v * (dt * spd), p.pos.z + p.vel.z * (dt * spd), p.pos.w);
   p.vel = vec4f(v, p.vel.z, p.vel.w);
   p.info.x = p.info.x + dt;
-  // Gone once it reaches the viewer: from Z_NEAR in its pass-the-viewer
-  // fade is exactly 0, so it could only cost fill (at its largest) without
-  // ever showing.
-  if (p.pos.z <= sim.d.y) { p.pos.w = 0.0; }
+  // Gone once it is out of sight: past its own exit depth |xy| * Z_NEAR it is
+  // beyond the rim (kr >= 1, off past the screen's corners), or past the
+  // floor, and either way its exit fade in footprint is already exactly 0,
+  // so it is only ever let go while showing nothing.
+  if (p.pos.z <= max(length(p.pos.xy) * sim.d.y, sim.d.y * EXIT_FLOOR)) { p.pos.w = 0.0; }
   parts[i] = p;
 
   // Onto this frame's draw list only if some of it would show.
@@ -471,8 +492,8 @@ fn prewarmMain(@builtin(global_invocation_id) gid: vec3u) {
   if (p.pos.w > 0.5) {
     p = carry(p, age * sim.b.z, sim.c.x * 1.5 * age);
     p.info.x = age;
-    // already past the viewer: gone, as simMain would have let it go
-    if (p.pos.z <= sim.d.y) { p.pos.w = 0.0; }
+    // already past its exit: gone, as simMain would have let it go
+    if (p.pos.z <= max(length(p.pos.xy) * sim.d.y, sim.d.y * EXIT_FLOOR)) { p.pos.w = 0.0; }
   }
   parts[i] = p;
 }

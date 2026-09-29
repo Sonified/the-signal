@@ -39,9 +39,10 @@ const REVEAL_MS = 2000;
 // Each time dips from its slider by its variance on its own cycle, the shape
 // a fresh roll for every word: taken once as the word appears, so a
 // transition already under way never changes speed.
-let fadeInMul = 1, fadeOutMul = 1;
+let fadeInMul = 1, fadeOutMul = 1, dwellMul = 1;
 export function fadeInMs()  { return S.textFadeInOn  === false ? 0 : Math.max(0, S.textFadeInMs) * fadeInMul; }
 export function fadeOutMs() { return S.textFadeOutOn === false ? 0 : Math.max(0, S.textFadeOutMs) * fadeOutMul; }
+function dwellMs() { return Math.max(0, S.textDwellMs) * dwellMul; }
 // The variance is a per-word roll, not an oscillation: the set duration is
 // the cap, and each word's fade lands anywhere from (1 - variance) of it up
 // to the full value.
@@ -56,6 +57,10 @@ export const wordState = {
   progress: 1,
   age: 0,
   seed: 0,
+  // this word's fade rolls, mirrored here for the broadcast (core/
+  // broadcast.js sends them with the word, so a follower's fades match)
+  fadeInMul: 1,
+  fadeOutMul: 1,
   color: new Float32Array(4),
   visible: false,
 };
@@ -77,6 +82,11 @@ let schedPhase = 0;      // deterministic slot accumulator
 let lastIdx = -1;
 let revealStart = -1;
 let goneAt = -1;         // ms timestamp the last word finished leaving (-1: none yet), for the Phrase gap
+// -1 is the ordinary repeating scheduler. A Journey sets this to the number
+// of phrases in its step; each shown phrase consumes one, and zero leaves the
+// scheduler silent until another step starts a sequence or the user changes
+// the Text source.
+let oneShotRemaining = -1;
 
 // The Phrase gap (Custom only): a set number of seconds between one phrase
 // leaving and the next arriving, in place of the scheduler's roll and rests.
@@ -142,6 +152,7 @@ export function rebuildWordPool() {
       });
   lastIdx = -1;
   order.length = 0;   // a fresh pool deals a fresh cycle
+  oneShotRemaining = -1;
   nextPick = pick();
   wordState.nextText = nextPick;
 }
@@ -256,8 +267,37 @@ let forceNext = false, lastT = 0;
 export function wordNow() {
   forceNext = true;
   restUntil = 0;
+  cutShort();
+}
+
+// A Journey step's Custom text, from its first phrase through its last,
+// exactly once. Re-entering the step deals the Custom pool from the start.
+export function wordSequenceOnce() {
+  oneShotRemaining = pool.length;
+  order.length = 0;
+  orderAt = 0;
+  nextPick = oneShotRemaining > 0 ? pick() : '';
+  wordState.nextText = nextPick;
+  forceNext = oneShotRemaining > 0;
+  restUntil = 0;
+  goneAt = -1;
+  cutShort();
+}
+
+// Moving to another Journey step cancels any phrases the previous step had
+// not reached yet. A phrase already visible completes its own fade.
+export function cancelWordSequenceOnce() {
+  oneShotRemaining = 0;
+  forceNext = false;
+  nextPick = '';
+  wordState.nextText = '';
+}
+// A word already up starts leaving at once: it enters its fade-out at the
+// opacity it already has, so nothing pops. Shared by wordNow and the
+// broadcast's remote word below.
+function cutShort() {
   if (!showing) return;
-  const fin = fadeInMs(), fout = fadeOutMs(), hold = Math.max(0, S.textDwellMs);
+  const fin = fadeInMs(), fout = fadeOutMs(), hold = dwellMs();
   const age = lastT - shownAt;
   if (age < fin + hold) {
     const o = age < fin ? (fin > 0 ? age / fin : 1) : 1;
@@ -265,18 +305,117 @@ export function wordNow() {
   }
 }
 
+// ---------- following a broadcast's words ----------
+// A follower shows the broadcaster's exact words: the first remote word to
+// arrive (core/broadcast.js) switches this scheduler to remote, where it
+// stops picking from its own pool and shows only what it is handed, each
+// word with the broadcaster's own seed and fade rolls, so the transitions
+// dissolve the same way on every screen. The fade and opacity machinery in
+// stepWords runs unchanged; only the choosing is remote. setWordsRemote(
+// false) hands the scheduler back when the broadcast ends or dies.
+let remote = false;
+const pendingRemote = { has: false, w: '', seed: 0, fi: 1, fo: 1 };
+export function setWordsRemote(on) {
+  remote = !!on;
+  if (!remote) pendingRemote.has = false;
+}
+export function remoteWord(w, seed, fi, fo) {
+  if (typeof w !== 'string' || !w) return;
+  remote = true;
+  pendingRemote.w = w.slice(0, STEP_MAX_REMOTE);
+  pendingRemote.seed = Number.isFinite(seed) ? seed : Math.random() * 1000;
+  pendingRemote.fi = Number.isFinite(fi) && fi > 0 && fi <= 1 ? fi : 1;
+  pendingRemote.fo = Number.isFinite(fo) && fo > 0 && fo <= 1 ? fo : 1;
+  pendingRemote.has = true;
+  restUntil = 0;
+  cutShort();
+}
+const STEP_MAX_REMOTE = 300;
+
+// ---------- the performer's phrase ----------
+// The live-performance menu (core/perform.js) fires one exact phrase now, a
+// LOCAL one-shot: no pool, no roll, and the scheduler is never flipped to
+// remote. Like wordNow, any rest is waived and the word already up starts
+// leaving through its fade at once; like the Custom source, a '/' inside the
+// phrase is a forced line break, the same transform customRows runs, so the
+// text layout (gpu/text-atlas.js) takes the '\n' as a hard break. The phrase
+// shows whatever the Text source is set to, since it never touches the pool,
+// and once it has had its dwell and fade the ordinary scheduler carries on
+// as though it had picked it.
+const pendingLocal = { has: false, w: '' };
+export function triggerPhrase(text) {
+  if (typeof text !== 'string') return;
+  const segs = text.slice(0, STEP_MAX_REMOTE).split('/');
+  let w = '';
+  for (let j = 0; j < segs.length; j++) {
+    const s = segs[j].replace(/\s+/g, ' ').trim();
+    if (s) w = w ? w + '\n' + s : s;
+  }
+  if (!w) return;
+  pendingLocal.w = w;
+  pendingLocal.has = true;
+  restUntil = 0;
+  cutShort();
+}
+
+// The performer's phrase goes up the moment the screen is clear, exactly as
+// a picked word does: a fresh seed and fresh fade rolls of its own, and the
+// appear listeners fire (the journey's piano, and the broadcast, which
+// mirrors it to followers through that hook). nextPick is left alone: the
+// scheduler's next word is still the next word.
+function showLocal(t) {
+  const p = pendingLocal;
+  p.has = false;
+  current = p.w; shownAt = t; showing = true;
+  fadeInMul = fadeRoll(S.textFadeInVar);
+  fadeOutMul = fadeRoll(S.textFadeOutVar);
+  dwellMul = fadeRoll(S.textDwellVar);
+  wordState.text = p.w;
+  wordState.visible = true;
+  wordState.seed = Math.random() * 1000;
+  wordState.fadeInMul = fadeInMul;
+  wordState.fadeOutMul = fadeOutMul;
+  forceNext = false;
+  for (let k = 0; k < appearCbs.length; k++) appearCbs[k](p.w);
+}
+
+// The remote word goes up the moment the screen is clear, as a forced local
+// word does. No pool, no roll: the broadcaster's scheduler already decided.
+function showRemote(t) {
+  const p = pendingRemote;
+  p.has = false;
+  current = p.w; shownAt = t; showing = true;
+  fadeInMul = p.fi; fadeOutMul = p.fo; dwellMul = 1;
+  wordState.text = p.w;
+  wordState.visible = true;
+  wordState.seed = p.seed;
+  wordState.fadeInMul = p.fi;
+  wordState.fadeOutMul = p.fo;
+  nextPick = '';
+  wordState.nextText = '';
+  forceNext = false;
+  for (let k = 0; k < appearCbs.length; k++) appearCbs[k](p.w);
+}
+
 // Puts the next word up at t: the body of the tick loop's show, shared with
 // the forced show above. Returns whether a word was there to show.
 function showWord(t) {
+  if (oneShotRemaining === 0) return false;
   const w = nextPick || pick();
   if (!w) return false;
   current = w; shownAt = t; showing = true;
   fadeInMul = fadeRoll(S.textFadeInVar);
   fadeOutMul = fadeRoll(S.textFadeOutVar);
+  dwellMul = fadeRoll(S.textDwellVar);
   wordState.text = w;
   wordState.visible = true;
   wordState.seed = Math.random() * 1000;
-  nextPick = pick();
+  wordState.fadeInMul = fadeInMul;
+  wordState.fadeOutMul = fadeOutMul;
+  if (oneShotRemaining > 0) {
+    oneShotRemaining--;
+    nextPick = oneShotRemaining > 0 ? pick() : '';
+  } else nextPick = pick();
   wordState.nextText = nextPick;
   forceNext = false;
   for (let k = 0; k < appearCbs.length; k++) appearCbs[k](w);
@@ -297,36 +436,48 @@ export function stepWords(t, dt) {
   // instant the pause ends.
   if (revealStart < 0) revealStart = t;
 
-  // A word asked for by wordNow shows on the first tick the screen is clear,
-  // whatever the roll would have said: the word it cut short has finished
-  // leaving (or there was none), and no rest is taken in between.
-  if (forceNext && !showing) { restUntil = 0; showWord(t); }
-  const resting = t < restUntil;
-
-  // Tick source. Linked to the strobe by default, so words land on the pulse
-  // rather than beside it; otherwise a free-running rate of its own.
-  let ticks = 0;
-  if (S.textLinked) {
-    if (S.phase < S.lastPhase) ticks = 1; // the cycle just wrapped
-  } else {
-    rateAcc += dt * S.textRateHz;
-    while (rateAcc >= 1) { rateAcc -= 1; ticks++; }
-    if (ticks > 4) ticks = 4; // a long stall is not a burst
-  }
-
-  // With a Phrase gap set, the roll and the rests are out of it: the next
-  // phrase arrives exactly the gap after the last one finished leaving (at
-  // 0, the frame after it has gone), and the first, with none gone before
-  // it, on the next tick. On Auto the roll decides, as it always has.
+  // The Phrase gap is read outside the branches: the leave logic further
+  // down (maybeRest) checks it whichever way the word was chosen.
   const gap = phraseGapMs();
-  if (gap >= 0) {
-    if (!showing && (goneAt < 0 ? ticks > 0 : t - goneAt >= gap)) showWord(t);
+  // The performer's phrase, ahead of the pool pick and outside the remote
+  // switch: it shows the moment the screen is clear, no rest in between,
+  // whichever way this scheduler is running.
+  if (pendingLocal.has && !showing) { restUntil = 0; showLocal(t); }
+  if (remote) {
+    // Following a broadcast: the choosing is the broadcaster's. The word it
+    // sent goes up the moment the screen is clear; no roll, no rests.
+    if (pendingRemote.has && !showing) showRemote(t);
   } else {
-    for (let i = 0; i < ticks && !resting; i++) {
-      const want = fires();
-      // A word still on screen holds its slot. The next one waits for a later
-      // tick rather than cutting this one short, so nothing ever half-appears.
-      if (want && !showing) showWord(t);
+    // A word asked for by wordNow shows on the first tick the screen is clear,
+    // whatever the roll would have said: the word it cut short has finished
+    // leaving (or there was none), and no rest is taken in between.
+    if (forceNext && !showing) { restUntil = 0; showWord(t); }
+    const resting = t < restUntil;
+
+    // Tick source. Linked to the strobe by default, so words land on the pulse
+    // rather than beside it; otherwise a free-running rate of its own.
+    let ticks = 0;
+    if (S.textLinked) {
+      if (S.phase < S.lastPhase) ticks = 1; // the cycle just wrapped
+    } else {
+      rateAcc += dt * S.textRateHz;
+      while (rateAcc >= 1) { rateAcc -= 1; ticks++; }
+      if (ticks > 4) ticks = 4; // a long stall is not a burst
+    }
+
+    // With a Phrase gap set, the roll and the rests are out of it: the next
+    // phrase arrives exactly the gap after the last one finished leaving (at
+    // 0, the frame after it has gone), and the first, with none gone before
+    // it, on the next tick. On Auto the roll decides, as it always has.
+    if (gap >= 0) {
+      if (!showing && (goneAt < 0 ? ticks > 0 : t - goneAt >= gap)) showWord(t);
+    } else {
+      for (let i = 0; i < ticks && !resting; i++) {
+        const want = fires();
+        // A word still on screen holds its slot. The next one waits for a later
+        // tick rather than cutting this one short, so nothing ever half-appears.
+        if (want && !showing) showWord(t);
+      }
     }
   }
 
@@ -360,7 +511,7 @@ export function stepWords(t, dt) {
   // The two times add rather than compete: fade up, hold for the set time,
   // fade back down. Folding the fades inside the hold would mean a 1s fade
   // could never happen at a 100ms hold, the opposite of what the sliders say.
-  const hold = Math.max(0, S.textDwellMs);
+  const hold = dwellMs();
   const fin = fadeInMs();
   const fout = fadeOutMs();
   const total = fin + hold + fout;

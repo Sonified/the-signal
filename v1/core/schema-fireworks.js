@@ -21,6 +21,7 @@ const DEF_MODE = 'scatter';
 const NUM = [
   // key,       min, max, def
   ['fwRate',    1,   60,  10  ],   // shows per minute, on average
+  ['fwSpeed',   0.25, 3,  1   ],   // animation speed; launch scheduling remains at fwRate
   ['fwSize',    0.4, 2,   1   ],   // how far a burst reaches
   ['fwBright',  0,   1,   0.9 ]
 ];
@@ -103,6 +104,14 @@ export const FIREWORK_CONTROLS = [
     get: S => S.fwRate,
     set: (S, pos) => { S.fwRate = fit(pos, 1, 60); save(); },
     format: S => Math.round(S.fwRate) + ' / min',
+    enabled: layerOn
+  },
+  {
+    id: 'fwSpeed', section: 'fireworks', label: 'Speed', kind: 'slider',
+    min: 0.25, max: 3, step: 0.05, def: spec('fwSpeed')[3],
+    get: S => S.fwSpeed,
+    set: (S, pos) => { S.fwSpeed = fit(pos, 0.25, 3); save(); },
+    format: S => S.fwSpeed.toFixed(2) + '×',
     enabled: layerOn
   },
   {

@@ -187,26 +187,22 @@ fn seedMain(@builtin(global_invocation_id) gid: vec3u) {
   var d = cov;
 
   if (P.m2.z < 0.0) {
-    // Born OUT THERE, at the Distance setting, not hugging the word: a
-    // ring of soft clumps around the region (whose margins are built from
-    // Distance, so the ring scales with the dial), roughed up by noise so
-    // they read as torn vapour rather than dabs. Between them and the
-    // word: empty air the journey will cross. Nothing is seeded on the
-    // strokes; whatever the word condenses from must visibly travel in.
+    // A loose, word-shaped halo torn to rags: vapour already hanging in
+    // the word's own air, thickest just off the strokes and thinning
+    // outward, never a ring tracing the region's rectangle. The Distance
+    // dial widens how far the rags reach. Nothing is seeded ON the
+    // strokes themselves, so the guide still has to carry material home
+    // and the word condenses instead of fading up in place.
     let pos = P.m0.xy + uv * P.m0.zw;
     let size = P.m5.y;
     let si = i32(P.m5.w) + 13;
-    d = 0.0;
-    for (var i = 0; i < 14; i++) {
-      let ang = lhash(vec2i(i, si)) * 6.2831853;
-      let rr = 0.62 + 0.30 * lhash(vec2i(i + 40, si));
-      let cuv = vec2f(0.5) + vec2f(cos(ang) * 0.5, sin(ang) * 0.5) * rr;
-      let sg = size * (0.4 + 0.55 * lhash(vec2i(i + 80, si)));
-      let oc = (uv - cuv) * P.m0.zw;
-      d += 0.9 * exp(-dot(oc, oc) / (2.0 * sg * sg));
-    }
-    let tear = 0.55 + 0.45 * vnoise(pos / (size * 0.9) + vec2f(f32(si) * 0.31, f32(si) * 0.17));
-    d = clamp(d * tear, 0.0, 1.1);
+    let reach = max(P.m3.w, size * 0.6);
+    let near = wordPotential(uv, vec2f(size * 0.35) / P.m0.zw);
+    let far  = wordPotential(uv, vec2f(reach * 0.8) / P.m0.zw);
+    let halo = clamp(near * 1.2 + far * 2.6, 0.0, 1.0);
+    let q = pos / (size * 0.8) + vec2f(f32(si) * 0.31, f32(si) * 0.17);
+    let tear = 0.6 * vnoise(q) + 0.4 * vnoise(q * 2.3 + vec2f(9.1, 3.7));
+    d = halo * (1.0 - 0.8 * cov) * smoothstep(0.22, 0.85, tear) * 0.85;
   }
 
   textureStore(next, vec2i(gid.xy), vec4f(d, 0.0, 0.0, 0.0));
@@ -336,8 +332,11 @@ fn fsCloud(in: VOut) -> @location(0) vec4f {
   var material = d;
   if (dir < 0.0) {
     let p = eased(P.m2.x, P.m5.x, dir);
+    // the vapour breathes in over the first stretch rather than popping
+    // on whole in a single frame
+    let born = smoothstep(0.0, 0.15, p);
     let resolve = smoothstep(0.88, 1.0, p);
-    material = mix(d, textureSample(mask, samp, in.uv).r, resolve);
+    material = mix(d * born, textureSample(mask, samp, in.uv).r, resolve);
   }
   let a = (1.0 - exp(-3.2 * material)) * P.m2.w;
   return vec4f(P.m4.rgb * a, a);

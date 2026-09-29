@@ -39,10 +39,12 @@
 //      makes that texture current. drawing says whether the layer has
 //      anything to draw into it this frame (left out, it counts as yes). It
 //      returns null instead when the image is held: stopped with trails,
-//      where the image stays exactly as it is and nothing should be drawn
+//      where the image stays as it is and nothing should be drawn
 //      (drawing the held content again over itself would thicken anything
-//      see-through). holds(params) says the same beforehand, for a layer
-//      with other work to skip. It also returns null when the image is
+//      see-through); a held image whose centre or unit moved (the drawer
+//      sliding while stopped) is carried to them first, so it keeps up.
+//      holds(params) says the same beforehand, for a layer with other work
+//      to skip. It also returns null when the image is
 //      already exactly transparent black and nothing is to be drawn: the
 //      fade of an empty image is empty, so the frame would change nothing,
 //      and the image, the composite and view all skip it (see maxLevel in createFeedback).
@@ -296,8 +298,41 @@ export function createFeedback(device, sceneFormat, opts) {
     return live && p.keepHalfLife > 0 && !(p.dt > 0);
   }
 
+  // A held image still follows the field. Stopped, the drawer can slide and
+  // move the centre and unit; the image is then carried to them (no fade,
+  // no stream or twist, nothing drawn), so the trails stay with the scene
+  // instead of being left where the pause found them. Still, it is left
+  // exactly as it is.
+  function carry(encoder, p) {
+    const unit = p.unit > 0 ? p.unit : 1;
+    if (p.cx === lastCx && p.cy === lastCy && unit === lastUnit) return;
+    uni[0] = 1;
+    uni[1] = FLOOR;
+    uni[2] = lastUnit / unit;
+    uni[3] = 0;
+    uni[4] = p.cx; uni[5] = p.cy; uni[6] = 1; uni[7] = 0;
+    uni[8] = w; uni[9] = h; uni[10] = 1 / w; uni[11] = 1 / h;
+    uni[GAIN_AT + 1] = lastCx; uni[GAIN_AT + 2] = lastCy;
+    device.queue.writeBuffer(uniBuf, 0, uni);
+    lastCx = p.cx; lastCy = p.cy; lastUnit = unit;
+    // Every reader clamps to 1, so the bound can too (see maxLevel).
+    const level = Math.min(1, fadeTop(maxLevel, 1));
+    next = 1 - cur;
+    passDesc.colorAttachments[0].view = views[next];
+    const pass = encoder.beginRenderPass(passDesc);
+    pass.setPipeline(sh.decayPipe);
+    pass.setBindGroup(0, binds[cur]);
+    pass.draw(3);
+    pass.end();
+    cur = next;
+    maxLevel = level;
+  }
+
+  // Held, the image is only carried (see carry) and null comes back: the
+  // layer draws nothing into a held image.
   function begin(encoder, p, drawing) {
-    if (!tex[0] || holds(p)) return null;
+    if (!tex[0]) return null;
+    if (holds(p)) { if (maxLevel > 0) carry(encoder, p); return null; }
     const draws = drawing !== false;
     const decay = live && p.keepHalfLife > 0;
     const unit = p.unit > 0 ? p.unit : 1;

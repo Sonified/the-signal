@@ -18,14 +18,15 @@
 // frame, always in the same order, and never grows anything unless the live
 // particle count has actually outrun the current capacity.
 
-import { S, layers, Z_NEAR } from '../../js/state.js';
+import { S, layers, Z_NEAR, CORNER_TYPES } from '../../js/state.js';
+import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { shape, smoothstep } from '../../js/util.js';
 import { radialFade } from '../core/fade.js';
 import { flickerLevel } from '../core/strobe.js';
 import { bandHue } from '../../js/color.js';
 
 export const LUT_N = 4096;                 // radial samples for the ring layer
-export const UNIFORM_FLOATS = 40;          // see scene.wgsl.js's struct U
+export const UNIFORM_FLOATS = 44;          // see scene.wgsl.js's struct U
 
 // A tail is sampled at 25 evenly spaced points along the perimeter plus one
 // extra sample at every screen corner it passes, so each corner gets its own
@@ -126,6 +127,10 @@ export class SceneData {
   }
 }
 
+// The corners' own chase clock (see buildUniform), and the strobe phase it
+// was last stepped from; NaN until the first frame seeds it from the strobe.
+let cornerPhase = NaN, lastStrobePhase = 0;
+
 function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   const u = sd.uniform;
   const cssW = S.W, cssH = S.H, inset = S.edgeInset;
@@ -135,7 +140,10 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   const visWcss = Math.max(0, cssW - inset);
   const size = Math.min(visWcss, cssH) * 0.62;
   const maxR = Math.hypot(visWcss, cssH) * 0.62;
-  const level = S.effBright * (1 - S.effDepth + S.effDepth * lum);
+  // fieldOpacity dims the field alone. Brightness is the whole flash signal
+  // the rings, corners and every layer's pulse ride; this one is only the
+  // field's, so it can fade without taking the others with it.
+  const level = S.effBright * (1 - S.effDepth + S.effDepth * lum) * (S.fieldOpacity ?? 1);
   const rgb = S.rgb;
 
   u[0] = pixelW; u[1] = pixelH;
@@ -150,10 +158,24 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   // winding down with Pause stops flicker on) they settle to the steady
   // top-of-cycle look, all four equal, instead of flickering on or freezing
   // mid-cycle.
+  // Their chase runs on its own clock, stepped each frame by however far the
+  // strobe's phase moved times cornerSpeed, so 1x stays in step with the
+  // strobe and 0 holds the corners where they are. Pulse scales the flicker,
+  // 0 leaving them at the steady top-of-cycle look, and goes through the
+  // strobe's safety scale as the rings' pulse does. Opacity is theirs alone,
+  // apart from the strobe's brightness and depth; full is the old default's
+  // peak (0.5 x the default depth 0.8).
   const fl = flickerLevel();
+  let dPh = S.phase - lastStrobePhase;
+  if (dPh < 0) dPh += 1;
+  lastStrobePhase = S.phase;
+  if (!(cornerPhase >= 0)) cornerPhase = S.phase;
+  else cornerPhase = (cornerPhase + dPh * (S.cornerSpeed ?? 1)) % 1;
+  const cPulse = scaledStrobeDepth(Math.max(0, Math.min(1, S.cornerPulse ?? 1)));
+  const cPeak = 0.4 * (S.cornerOpacity ?? 1);
   for (let i = 0; i < 4; i++) {
-    const cs = 1 + (shape((S.phase + i / 4) % 1) - 1) * fl;
-    u[12 + i] = cs * 0.5 * S.bright * S.effDepth;
+    const cs = 1 + (shape((cornerPhase + i / 4) % 1) - 1) * fl * cPulse;
+    u[12 + i] = cs * cPeak;
   }
 
   // Corner colours: quantised the same way js/color.js's hueStr is, just
@@ -170,7 +192,7 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
     }
   }
 
-  u[32] = Math.min(visWcss, cssH) * 0.46 * dpr;   // corner glow radius
+  u[32] = Math.min(visWcss, cssH) * (S.cornerSize ?? 0.46) * dpr;   // corner reach
   u[33] = maxR * dpr;                             // outer radius of the ring LUT
   u[34] = LUT_N;
   // u[35] (rings) is written after the lookup is filled, below. Corners
@@ -181,11 +203,24 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   u[37] = inset * dpr;                            // left edge, device px
   u[38] = S.fieldFade || 0;                        // the field's radial fade in
   u[39] = S.fieldSoft ?? 1;                        // and how soft its edge is
+  u[40] = Math.max(0, CORNER_TYPES.indexOf(S.cornerType));   // corners' look
+  u[41] = 0; u[42] = 0; u[43] = 0;
 
   let ringsAny = false;
   if (layers.rings) {
     sd.lut.fill(0);
     const rings = S.rings, lut = sd.lut;
+    const ringPulse = scaledStrobeDepth(typeof S.ringPulse === 'number' ? Math.max(0, Math.min(1, S.ringPulse)) : 0);
+    const ringPulseGain = 1 - ringPulse + ringPulse * (lum < 0 ? 0 : lum > 1 ? 1 : lum);
+    // The layer's brightness, from S as it is NOW rather than the strobe
+    // step's cached S.effRingBright (same formula, core/strobe.js): the
+    // cache is computed at the top of the frame, so a switch or ramp moved
+    // mid-frame (the performance window fading a layer in through its
+    // opacity) would render one frame at the old level -- a flash.
+    const ringBase = S.bright * (S.ringOpacity ?? 1);
+    const effRingBright = S.ringBrightVar
+      ? ringBase * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase)))
+      : ringBase;
     const FOCAL = maxR * Z_NEAR;
     const step = (maxR * dpr) / LUT_N, inv = step > 0 ? 1 / step : 0;
     for (let i = 0; i < rings.length; i++) {
@@ -193,7 +228,7 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
       const r = FOCAL / ring.z;
       const k = r / maxR;                       // 0 at the vanishing point, 1 at the rim
       if (k > 1) continue;
-      const a = radialFade(S.ringFade, k) * 0.62 * S.effRingBright;
+      const a = radialFade(S.ringFade, k) * 0.62 * effRingBright * ringPulseGain;
       if (a <= 0.003) continue;
 
       let rr, gg, bb;
@@ -299,7 +334,7 @@ function buildEdge(sd, dpr, surf) {
   // Pulse with strobe (S.edgePulse) scales how deep that breathing goes:
   // at 1 exactly as it always was, at 0 a steady edge at full strength.
   const efl = flickerLevel();
-  const pulse = typeof S.edgePulse === 'number' ? Math.max(0, Math.min(1, S.edgePulse)) : 1;
+  const pulse = scaledStrobeDepth(typeof S.edgePulse === 'number' ? Math.max(0, Math.min(1, S.edgePulse)) : 1);
   for (let pi = 0; pi < n; pi++) {
     const p = particles[pi];
     const lp = 1 + (shape((S.phase + p.off) % 1) - 1) * efl;
