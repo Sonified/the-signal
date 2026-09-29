@@ -1213,25 +1213,26 @@ function snapshotAllOverrides(st) {
   }
 }
 
-// Step 1's explicit Snapshot button: replace its control state with the
+// A step's explicit Snapshot button: replace its control state with the
 // complete scene as it exists at this instant. Its own text, timing and
 // interaction fields remain Step fields; the sequencer and mixer are full
-// snapshots alongside every replayable control.
+// snapshots alongside every replayable control. This is deliberately manual:
+// ordinary Journey editing continues to record individual changes.
 export function journeySnapshotStep(i) {
   ensureLoaded();
-  if (i !== 0 || !data.steps[0]) return;
+  if (!data.steps[i]) return;
   flushDiff();
-  const st = data.steps[0];
+  const st = data.steps[i];
   st.overrides = {};
   snapshotAllOverrides(st);
   st.seq = Array.isArray(S.seqs) ? seqStateOf(S) : null;
   st.mix = newMixBlock();
-  data.fullStart = true;
+  if (i === 0) data.fullStart = true;
   if (data.sizeLock && data.sizeRestore && SIZE) {
     const value = validValue(SIZE, SIZE.get(S));
-    if (value !== undefined) data.sizeRestore[0] = { own: true, value };
+    if (value !== undefined) data.sizeRestore[i] = { own: true, value };
   }
-  if (sel === 0) {
+  if (sel === i) {
     rebuildOverSet();
     captureBaseline();
     diffPending = false;

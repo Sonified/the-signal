@@ -210,6 +210,7 @@ function baseline(ui, cy, size) {
 // off a row's own press.
 let btnHover = false, overBtn = false;
 let snapshotAt = -1e9;
+let snapshotStep = -1;
 const SNAPSHOT_OK_MS = 1400;
 // Transport clicks land after the fold has drawn. A text field therefore
 // commits its outside click before the step begins and its words are read.
@@ -755,27 +756,26 @@ function drawSteps(ui, x, y, n, sel, playing, playIdx) {
 
     ui.text.draw(dl, stepLabels[i], x0 + STEP_X, baseline(ui, cyr, 12), 12, W.semibold,
       lit || selected ? C.rowLabelOn : C.rowInk, 0, 0.08, 1);
-    const snapW = i === 0 ? measureBtn(ui, 'snapshot', 10) : 0;
-    const sx = x0 + SUM_X, sw = CONTENT_W - SUM_X - DEL_W - 8 - (snapW ? snapW + 6 : 0);
+    const snapW = measureBtn(ui, 'snapshot', 10);
+    const sx = x0 + SUM_X, sw = CONTENT_W - SUM_X - DEL_W - 8 - snapW - 6;
     dl.pushClip(sx, ry, sw, ROW_H);
     ui.text.draw(dl, summaries[i], sx, baseline(ui, cyr, 12), 12, W.regular, C.rowSummaryInk, 0, 0, 1);
     dl.popClip();
 
-    // Step 1 can be explicitly replaced with the complete scene as it is
+    // Any step can be explicitly replaced with the complete scene as it is
     // now. Keeping this beside delete makes the snapshot action unambiguous.
     const dx = x0 + CONTENT_W - DEL_W;
-    if (i === 0) {
-      const bx = dx - 6 - snapW;
-      if (btnAt(ui, ui.idx('jr.snapshot', i), bx, cyr - BTN_H / 2, snapW, BTN_H)) {
-        journeySnapshotStep(i);
-        snapshotAt = ui.t;
-      }
-      if (ui.t - snapshotAt < SNAPSHOT_OK_MS) {
-        dl.rect(bx, cyr - BTN_H / 2, snapW, BTN_H, 6, C.snapshotBg, 1, C.snapshotBorder, 0, 0);
-        const is = 13;
-        dl.icon(ICON.CHECK, bx + (snapW - is) / 2, cyr - is / 2, is, is, C.snapshotInk, 1.7, 0);
-      } else drawBtn(ui, bx, cyr, snapW, BTN_H, false, 'snapshot', 10);
+    const bx = dx - 6 - snapW;
+    if (btnAt(ui, ui.idx('jr.snapshot', i), bx, cyr - BTN_H / 2, snapW, BTN_H)) {
+      journeySnapshotStep(i);
+      snapshotStep = i;
+      snapshotAt = ui.t;
     }
+    if (snapshotStep === i && ui.t - snapshotAt < SNAPSHOT_OK_MS) {
+      dl.rect(bx, cyr - BTN_H / 2, snapW, BTN_H, 6, C.snapshotBg, 1, C.snapshotBorder, 0, 0);
+      const is = 13;
+      dl.icon(ICON.CHECK, bx + (snapW - is) / 2, cyr - is / 2, is, is, C.snapshotInk, 1.7, 0);
+    } else drawBtn(ui, bx, cyr, snapW, BTN_H, false, 'snapshot', 10);
 
     // the ×, which deletes the step outright
     if (btnAt(ui, ui.idx('jr.rowDel', i), dx, cyr - DEL_W / 2, DEL_W, DEL_W)) { journeyDeleteStep(i); changed = true; }
