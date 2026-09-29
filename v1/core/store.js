@@ -39,11 +39,12 @@
 // keeps its state and marks it to be written again (see syncFromStorage).
 // load() at boot still takes whatever is stored, whoever wrote it.
 
-import { S, layers, STORE, SKIP_KEY, seqSeat } from '../../js/state.js';
+import { S, layers, STORE, SKIP_KEY, seqSeat, CORNER_TYPES } from '../../js/state.js';
 import { setColorFromPicker } from '../../js/color.js';
 import { applyEdgeDir } from '../../js/sim.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../../js/ambience.js';
 import { CHANNELS, applyMixGates } from '../../js/mixgate.js';
+import { MUSIC_LAYERS, layerOnKey, layerVolKey } from '../../js/layer-defs.js';
 // A cycle (schema-flowers.js and schema-kaleido.js import save() from here),
 // but a harmless one: neither side calls into the other while it is being
 // evaluated, only later, from load() and from a control's set().
@@ -103,12 +104,20 @@ let writeCount = 0;
 // console.info once per session when a v0 write is ignored, not on each one.
 let v0Noted = false;
 
+// The music layers' switches and levels (js/layer-defs.js): <id>On, <id>Vol.
+function layerSettings() {
+  const o = {};
+  for (const L of MUSIC_LAYERS) { o[layerOnKey(L)] = S[layerOnKey(L)]; o[layerVolKey(L)] = S[layerVolKey(L)]; }
+  return o;
+}
+
 function buildSettings() {
   return {
-    freq: S.freq, depth: S.depth, bright: S.bright, wave: S.wave, fieldShape: S.fieldShape,
-    fieldFade: S.fieldFade, fieldSoft: S.fieldSoft,
+    freq: S.freq, depth: S.depth, bright: S.bright, strobeScale: S.strobeScale, wave: S.wave, fieldShape: S.fieldShape,
+    fieldOpacity: S.fieldOpacity, fieldFade: S.fieldFade, fieldSoft: S.fieldSoft,
     color: rgbHex(S.rgb),
-    ringSpeedMul: S.ringSpeedMul, ringRate: S.ringRate, ringOpacity: S.ringOpacity, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
+    cornerOpacity: S.cornerOpacity, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
+    ringSpeedMul: S.ringSpeedMul, ringRate: S.ringRate, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
     edgeFb: S.edgeFb, edgeFbStream: S.edgeFbStream, edgeFbTwist: S.edgeFbTwist, edgeFbOpacity: S.edgeFbOpacity,
     edgeMode: S.edgeMode, edgePulse: S.edgePulse,
@@ -117,7 +126,7 @@ function buildSettings() {
     edgeGlowWidth: S.edgeGlowWidth, edgeGlowSoft: S.edgeGlowSoft, edgeGlowBreathe: S.edgeGlowBreathe, edgeGlowBreatheRate: S.edgeGlowBreatheRate,
     edgeDir: S.edgeDir, layers: sharedLayers(),
     textLinked: S.textLinked, textRateHz: S.textRateHz, textFreq: S.textFreq,
-    textRandom: S.textRandom, textDwellMs: S.textDwellMs,
+    textRandom: S.textRandom, textDwellMs: S.textDwellMs, textDwellVar: S.textDwellVar,
     textFadeInMs: S.textFadeInMs, textFadeOutMs: S.textFadeOutMs,
     textAppearMode: S.textAppearMode, textAppearPerMin: S.textAppearPerMin,
     textFadeInVar: S.textFadeInVar, textFadeOutVar: S.textFadeOutVar,
@@ -133,6 +142,15 @@ function buildSettings() {
     bedLpfQ: S.bedLpfQ, bedLpfWander: S.bedLpfWander, bedLpfSlope: S.bedLpfSlope, bedDetune: S.bedDetune,
     bedRevOn: S.bedRevOn, bedRevLevel: S.bedRevLevel, bedVerbOn: S.bedVerbOn, bedVerbLo: S.bedVerbLo, bedVerbHi: S.bedVerbHi, bedVerbPeriod: S.bedVerbPeriod,
     bedVerbWander: S.bedVerbWander,
+    choirOn: S.choirOn, choirVol: S.choirVol, choirStack: S.choirStack, choirDensity: S.choirDensity,
+    choirBrightness: S.choirBrightness, choirFocus: S.choirFocus,
+    choirStackVar: S.choirStackVar, choirStackPeriod: S.choirStackPeriod,
+    choirDensityVar: S.choirDensityVar, choirDensityPeriod: S.choirDensityPeriod,
+    choirVolVar: S.choirVolVar, choirVolPeriod: S.choirVolPeriod,
+    ...layerSettings(),
+    bedStrobeAm: S.bedStrobeAm, choirStrobeAm: S.choirStrobeAm, cloudStrobeAm: S.cloudStrobeAm,
+    choirStrobeAmVar: S.choirStrobeAmVar, choirStrobeAmPeriod: S.choirStrobeAmPeriod,
+    bedStrobeAmVar: S.bedStrobeAmVar, bedStrobeAmPeriod: S.bedStrobeAmPeriod,
     pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP, musicRevOn: S.musicRevOn, bedOn: S.bedOn, pianoOn: S.pianoOn, arpOn: S.arpOn, arpVol: S.arpVol, arpRate: S.arpRate, arpWave: S.arpWave, arpAtk: S.arpAtk, arpDec: S.arpDec, arpOct: S.arpOct, arpRev: S.arpRev, arpSpread: S.arpSpread, arpStrobeAm: S.arpStrobeAm,
       arpSwOn: S.arpSwOn, arpSwLo: S.arpSwLo, arpSwHi: S.arpSwHi, arpSwPeriod: S.arpSwPeriod, arpSwWander: S.arpSwWander,
     pianoDensity: S.pianoDensity, pianoCentre: S.pianoCentre,
@@ -160,6 +178,9 @@ function buildSettings() {
     edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
     carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked, amModOn: S.amModOn,
     toneOn: S.toneOn, clickOn: S.clickOn, toneVol: S.toneVol, clickVol: S.clickVol, pipMs: S.pipMs,
+    // the Music window's trims over those levels (state.js)
+    musTone: S.musTone, musPulse: S.musPulse, musPiano: S.musPiano, musClouds: S.musClouds,
+    musDrone: S.musDrone, musArp: S.musArp, musChoir: S.musChoir, musAmb: S.musAmb,
     harmOn: S.harmOn, harmVol: S.harmVol, harmCount: S.harmCount, harmBright: S.harmBright,
     harmSpread: S.harmSpread, harmPanRate: S.harmPanRate, harmReverb: S.harmReverb,
     shimDepth: S.shimDepth, shimRate: S.shimRate, clickReverb: S.clickReverb,
@@ -703,11 +724,19 @@ function applySettings(s, live) {
   if (typeof s.freq === 'number')   S.freq = s.freq;
   if (typeof s.depth === 'number')  S.depth = s.depth;
   if (typeof s.bright === 'number') S.bright = s.bright;
+  if (typeof s.strobeScale === 'number' && isFinite(s.strobeScale)) S.strobeScale = Math.max(0, Math.min(1, s.strobeScale));
   if (s.color) setColorFromPicker(s.color);
   if (typeof s.ringSpeedMul === 'number') S.ringSpeedMul = s.ringSpeedMul;
+  if (typeof s.cornerOpacity === 'number' && isFinite(s.cornerOpacity)) S.cornerOpacity = Math.max(0, Math.min(1, s.cornerOpacity));
+  if (typeof s.cornerSpeed === 'number' && isFinite(s.cornerSpeed)) S.cornerSpeed = Math.max(0, Math.min(4, s.cornerSpeed));
+  if (typeof s.cornerPulse === 'number' && isFinite(s.cornerPulse)) S.cornerPulse = Math.max(0, Math.min(1, s.cornerPulse));
+  if (typeof s.cornerSize === 'number' && isFinite(s.cornerSize)) S.cornerSize = Math.max(0.05, Math.min(1, s.cornerSize));
+  if (CORNER_TYPES.indexOf(s.cornerType) >= 0) S.cornerType = s.cornerType;
   if (typeof s.ringRate === 'number') S.ringRate = Math.max(0.2, Math.min(20, s.ringRate));
   if (typeof s.ringOpacity === 'number') S.ringOpacity = Math.max(0, Math.min(1, s.ringOpacity));
+  if (typeof s.ringPulse === 'number') S.ringPulse = Math.max(0, Math.min(1, s.ringPulse));
   if (typeof s.ringFade === 'number')     S.ringFade = s.ringFade;
+  if (typeof s.fieldOpacity === 'number') S.fieldOpacity = Math.max(0, Math.min(1, s.fieldOpacity));
   if (typeof s.fieldFade === 'number')    S.fieldFade = s.fieldFade;
   if (typeof s.fieldSoft === 'number')    S.fieldSoft = s.fieldSoft;
   if (typeof s.edgeCount === 'number')    S.edgeCount = s.edgeCount;
@@ -771,6 +800,10 @@ function applySettings(s, live) {
   if (typeof s.amLinked === 'boolean')    S.amLinked = s.amLinked;
   if (typeof s.amModOn === 'boolean')     S.amModOn = s.amModOn;
   if (typeof s.volume === 'number')       S.volume = s.volume;
+  // the Music window's trims, each a share of its voice's level, 0 to 1
+  for (const k of ['musTone', 'musPulse', 'musPiano', 'musClouds', 'musDrone', 'musArp', 'musChoir', 'musAmb']) {
+    if (typeof s[k] === 'number' && isFinite(s[k])) S[k] = Math.max(0, Math.min(1, s[k]));
+  }
 
   if (s.wave) S.wave = s.wave;
   if (s.fieldShape) S.fieldShape = s.fieldShape;
@@ -792,7 +825,7 @@ function applySettings(s, live) {
   if (typeof s.textFadeOutMs === 'number') S.textFadeOutMs = s.textFadeOutMs;
   if (s.textAppearMode === 'frame' || s.textAppearMode === 'time') S.textAppearMode = s.textAppearMode;
   if (typeof s.textAppearPerMin === 'number') S.textAppearPerMin = Math.max(1, Math.min(60, s.textAppearPerMin));
-  for (const k of ['textFadeInVar', 'textFadeOutVar']) {
+  for (const k of ['textFadeInVar', 'textFadeOutVar', 'textDwellVar']) {
     if (typeof s[k] === 'number') S[k] = s[k];
   }
   if (typeof s.textSize === 'number')    S.textSize = s.textSize;
@@ -864,6 +897,23 @@ function applySettings(s, live) {
   if (typeof s.bedOn === 'boolean') S.bedOn = s.bedOn;
   if (typeof s.pianoOn === 'boolean') S.pianoOn = s.pianoOn;
   if (typeof s.arpSwOn === 'boolean') S.arpSwOn = s.arpSwOn;
+  // The choir (js/choir.js), each number held to its slider's range.
+  if (typeof s.choirOn === 'boolean') S.choirOn = s.choirOn;
+  for (const [k, lo, hi] of [['choirVol', 0, 2], ['choirStack', 0, 100], ['choirDensity', 0, 100],
+                             ['choirBrightness', -100, 100], ['choirFocus', 0, 100],
+                             ['choirStackVar', 0, 1], ['choirStackPeriod', 0, 120],
+                             ['choirDensityVar', 0, 1], ['choirDensityPeriod', 0, 120],
+                             ['choirVolVar', 0, 1], ['choirVolPeriod', 0, 120],
+                             ['bedStrobeAm', 0, 1], ['choirStrobeAm', 0, 1], ['cloudStrobeAm', 0, 1],
+                             ['choirStrobeAmVar', 0, 1], ['choirStrobeAmPeriod', 0, 120],
+                             ['bedStrobeAmVar', 0, 1], ['bedStrobeAmPeriod', 0, 120]])
+    if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = Math.max(lo, Math.min(hi, s[k]));
+  // The music layers (js/layer-defs.js), each level held to its slider's range.
+  for (const L of MUSIC_LAYERS) {
+    const on = layerOnKey(L), vol = layerVolKey(L);
+    if (typeof s[on] === 'boolean') S[on] = s[on];
+    if (typeof s[vol] === 'number' && Number.isFinite(s[vol])) S[vol] = Math.max(0, Math.min(2, s[vol]));
+  }
   if (['sine', 'triangle', 'sawtooth', 'square'].includes(s.arpWave)) S.arpWave = s.arpWave;
   if (typeof s.bedRevLevel === 'number') S.bedRevLevel = s.bedRevLevel;
   for (const k of ['bedLpfLo','bedLpfHi','bedLpfPeriod','bedLpfQ','bedLpfWander','bedLpfSlope','bedDetune',

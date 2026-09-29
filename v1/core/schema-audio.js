@@ -16,6 +16,7 @@
 // nowhere else to put. format() below folds that unit back in, so a widget
 // can print format(S) alone and match what v0 showed on screen.
 import { S } from '../../js/state.js';
+import { refreshStrobeAm } from '../../js/strobe-am.js';
 import { posToAmp, ampToPos, ampToDb, LEVEL_RANGE_DB } from '../../js/util.js';
 import { setColorFromPicker } from '../../js/color.js';
 import { chirpDurationMs } from '../../js/chirp.js';
@@ -24,10 +25,16 @@ import {
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn
 } from '../../js/audio.js';
-import { pianoOn, pianoOff, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune } from '../../js/piano.js';
-import { cloudsOn, cloudsOff, applyCloudReverb } from '../../js/clouds.js';
+import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm } from '../../js/piano.js';
+import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm } from '../../js/clouds.js';
+import {
+  applyChoir, applyChoirVol, applyChoirOn, applyChoirAm, choirEffectiveAm,
+  choirEffectiveLevel, choirEffectiveStack, choirEffectiveDensity
+} from '../../js/choir.js';
 import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, AMBIENCE_SOURCES } from '../../js/ambience.js';
 import { applyMixGates } from '../../js/mixgate.js';
+import { MUSIC_LAYERS, applyLayerOn, applyLayerVol } from '../../js/layers.js';
+import { layerOnKey, layerVolKey, layerMixId, layerDrawerId } from '../../js/layer-defs.js';
 import { startDrift, stopDrift } from './atmosphere.js';
 import { save } from './store.js';
 import { subDrawer } from './schema-visual.js';
@@ -53,6 +60,9 @@ const fmtSweep = sec => sec < 90 ? Math.round(sec) + 's'
 // default for the checkbox is checked, so undefined reads as on here rather
 // than off, the same default a fresh <input checked> would give.
 const audioLayerOn = s => s.audioOnBoot !== false;
+// A Music window trim from its slider's 0..100 position: a share of the
+// voice's level, 0 to 1 (see musTone below).
+const trimOf = pos => Math.max(0, Math.min(1, (Number(pos) || 0) / 100));
 
 function setAudioLayer(s, on) {
   s.audioOnBoot = on;
@@ -91,6 +101,9 @@ function setMusicOn(s, on) {
 function setCloudsOn(s, on) {
   s.cloudsOn = on;
   if (on && s.musicOn && s.running) cloudsOn(); else cloudsOff();
+  // the bus holds its trim while the clouds are off (clouds.js); on picks
+  // the trim up again
+  if (on) applyCloudTrim();
   save();
 }
 function setAmbOn(s, on) {
@@ -330,6 +343,28 @@ const audioControls = [
     get: s => Math.round(s.volume * 100),
     set: (s, pos) => { s.volume = pos / 100; applyAudioGain(); save(); },
     format: s => Math.round(s.volume * 100) + '%'
+  },
+  // The Music window's trims for the tone and the pulse (v1/ui/screens/
+  // music.js). Each is how much of the voice's own level plays, 0 to 100%,
+  // where 100% is exactly what the drawer and the Levels window set: the
+  // tone's trim takes the fundamental and its harmonics together, the
+  // pulse's the pips dry and their room, click or chirp. Never drawer rows
+  // (visible false, as musicOn is); the Music window is their only face.
+  {
+    id: 'musTone', section: 'audio', label: 'Tone trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musTone ?? 1) * 100),
+    set: (s, pos) => { s.musTone = trimOf(pos); applyLevel('toneLevel'); applyLevel('harmLevel'); save(); },
+    format: s => Math.round((s.musTone ?? 1) * 100) + '%',
+    visible: () => false
+  },
+  {
+    id: 'musPulse', section: 'audio', label: 'Pulse trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musPulse ?? 1) * 100),
+    set: (s, pos) => { s.musPulse = trimOf(pos); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
+    format: s => Math.round((s.musPulse ?? 1) * 100) + '%',
+    visible: () => false
   },
   {
     // The pulse envelope on the tone and its harmonics. Off plays them
@@ -724,6 +759,41 @@ const audioControls = [
 ];
 
 // ---------- Music section ----------
+// The choir's Density readout, the performer's own: the degree last added
+// and the one coming next, until every degree is in.
+const CHOIR_DENSITY_NAMES = ['1', '+ 8', '+ 5', '+ 3', '+ 2', '+ 7', '+ 9'];
+function choirDensityText(density) {
+  const names = CHOIR_DENSITY_NAMES;
+  const position = density / 100 * (names.length - 1);
+  const index = Math.min(names.length - 1, Math.floor(position + 0.00001));
+  const next = names[Math.min(names.length - 1, index + 1)];
+  return index === names.length - 1 ? 'all degrees' : names[index] + ' → ' + next;
+}
+// One music layer (js/layers.js, table in js/layer-defs.js): its switch, a
+// sub-drawer that switch heads, and its level inside. 100% is the table's
+// level, about 2 dB under the drone at its default; up to 200% for headroom.
+function musicLayerControls(L) {
+  const on = layerOnKey(L), vol = layerVolKey(L), drawer = layerDrawerId(L);
+  return [
+    {
+      id: on, section: 'music', label: L.label, kind: 'toggle',
+      get: s => !!s[on],
+      set: (s, v) => { s[on] = !!v; applyLayerOn(L.id); save(); },
+      format: s => s[on] ? 'On' : 'Off',
+      visible: s => s.musicOn
+    },
+    subDrawer(drawer, L.label, 'music', [vol], on),
+    {
+      id: vol, section: 'music', label: L.label + ' level', kind: 'slider',
+      parent: drawer, summaryLabel: 'Level',
+      min: 0, max: 200, step: 1, def: 100,
+      get: s => Math.round(s[vol] * 100),
+      set: (s, pos) => { s[vol] = pos / 100; applyLayerVol(L.id); save(); },
+      format: s => Math.round(s[vol] * 100) + '%',
+      visible: s => s.musicOn && s[on]
+    }
+  ];
+}
 const musicControls = [
   {
     // The whole music engine's switch. The section header's own On/Off is
@@ -739,16 +809,18 @@ const musicControls = [
     format: s => s.musicOn ? 'on' : 'off',
     visible: () => false
   },
-  // ---- the five voices, Piano, Arpeggio, Drone, Clouds and the shared
+  // ---- the five voices, Piano, Sequencer, Drone, Clouds and the shared
   // Reverb, each its own switch then a sub-drawer whose strip carries it, as
   // the Audio section's voices are. A strip hides with its switch's own
   // rule, so with the music off the section is empty as it always was ----
   {
-    // The generative piano voice alone; the drone, arpeggio and clouds keep
+    // The generative piano voice alone; the drone, sequencer and clouds keep
     // playing. Read by the player as each gesture is chosen (js/piano.js).
     id: 'pianoOn', section: 'music', label: 'Piano', kind: 'toggle',
     get: s => s.pianoOn !== false,
-    set: (s, on) => { s.pianoOn = !!on; save(); },
+    // the channel holds its trim while the piano is off (piano.js); on
+    // picks the trim up again
+    set: (s, on) => { s.pianoOn = !!on; if (on) applyPianoTrim(); save(); },
     format: s => s.pianoOn !== false ? 'On' : 'Off',
     visible: s => s.musicOn
   },
@@ -836,7 +908,7 @@ const musicControls = [
     visible: s => s.musicOn && s.pianoOn !== false
   },
   {
-    // The sequencer (js/piano.js, the arpeggio and sequencer sections), whose
+    // The sequencer (js/piano.js, its arp and sequencer sections), whose
     // first pattern is the original 3 4 8 figure: off by default.
     id: 'arpOn', section: 'music', label: 'Sequencer', kind: 'toggle',
     get: s => !!s.arpOn,
@@ -844,7 +916,7 @@ const musicControls = [
     format: s => s.arpOn ? 'On' : 'Off',
     visible: s => s.musicOn
   },
-  subDrawer('musicArpDrawer', 'Arpeggio', 'music', ['arpVol', 'arpRate'], 'arpOn'),
+  subDrawer('musicArpDrawer', 'Sequencer', 'music', ['arpVol', 'arpRate'], 'arpOn'),
   {
     // The step grid, in its own floating window (ui/screens/sequencer.js).
     id: 'seqOpen', section: 'music', label: 'Open sequencer', kind: 'action',
@@ -972,6 +1044,37 @@ const musicControls = [
     get: s => s.bedDetune,
     set: (s, v) => { s.bedDetune = v; applyBedDetune(); save(); },
     format: s => '.' + s.bedDetune,
+    visible: s => s.musicOn && s.bedOn !== false
+  },
+  {
+    // The sequencer's Vary with strobe (js/strobe-am.js): a volume pulse at
+    // the strobe's flash rate and in its waveform; 0 is none, 100% swings
+    // the voice from full down to silence on every flash.
+    id: 'bedStrobeAm', section: 'music', label: 'Vary with strobe', kind: 'slider',
+    parent: 'musicDroneDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round((s.bedStrobeAm || 0) * 100),
+    effective: s => s.bedStrobeAmVar > 0 ? bedEffectiveAm() * 100 : undefined,
+    set: (s, pos) => { s.bedStrobeAm = pos / 100; applyBedAm(); save(); },
+    format: s => Math.round((s.bedStrobeAm || 0) * 100) + '%',
+    visible: s => s.musicOn && s.bedOn !== false
+  },
+  {
+    id: 'bedStrobeAmVar', section: 'music', label: 'Pulse variance', kind: 'slider',
+    parent: 'musicDroneDrawer', varianceOf: 'bedStrobeAm',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round((s.bedStrobeAmVar || 0) * 100),
+    set: (s, pos) => { s.bedStrobeAmVar = pos / 100; applyBedAm(); save(); },
+    format: s => Math.round((s.bedStrobeAmVar || 0) * 100) + '%',
+    visible: s => s.musicOn && s.bedOn !== false
+  },
+  {
+    id: 'bedStrobeAmPeriod', section: 'music', label: 'Pulse variance speed', kind: 'slider',
+    parent: 'musicDroneDrawer', varianceOf: 'bedStrobeAm',
+    min: 0, max: 120, step: 1, def: 20,
+    get: s => s.bedStrobeAmPeriod,
+    set: (s, pos) => { s.bedStrobeAmPeriod = pos; applyBedAm(); save(); },
+    format: s => s.bedStrobeAmPeriod + 's',
     visible: s => s.musicOn && s.bedOn !== false
   },
   // The drone's filter sweep: the click train's set above, on the drone's own
@@ -1111,6 +1214,162 @@ const musicControls = [
     format: s => Math.round(s.bedVerbWander * 100) + '%',
     visible: s => s.musicOn && s.bedOn !== false && s.bedRevOn && s.bedVerbOn
   },
+  // ---- the choir (js/choir.js): the sandbox's Choir Performer, seven Lah
+  // voices looping together, its four controls exactly as the performer has
+  // them, with a variance under Level, Stack and Density. The variance takes
+  // the value below the set one (the cap) by up to its amount, wandering on
+  // a new cosine leg every speed-many seconds; the slider shows the set
+  // value. Every change glides the voices' gains; nothing retriggers ----
+  {
+    id: 'choirOn', section: 'music', label: 'Choir', kind: 'toggle',
+    get: s => !!s.choirOn,
+    set: (s, on) => { s.choirOn = !!on; applyChoirOn(); save(); },
+    format: s => s.choirOn ? 'On' : 'Off',
+    visible: s => s.musicOn
+  },
+  subDrawer('musicChoirDrawer', 'Choir', 'music', ['choirStack', 'choirDensity'], 'choirOn'),
+  {
+    // 100% is the performer's own level, about 2 dB under the drone at its
+    // default; up to 200% for headroom.
+    id: 'choirVol', section: 'music', label: 'Choir level', kind: 'slider',
+    parent: 'musicChoirDrawer',
+    min: 0, max: 200, step: 1, def: 100,
+    get: s => Math.round(s.choirVol * 100),
+    effective: s => s.choirVolVar > 0 ? choirEffectiveLevel() * 100 : undefined,
+    set: (s, pos) => { s.choirVol = pos / 100; applyChoirVol(); save(); },
+    format: s => Math.round(s.choirVol * 100) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    id: 'choirVolVar', section: 'music', label: 'Level variance', kind: 'slider',
+    parent: 'musicChoirDrawer', varianceOf: 'choirVol',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round(s.choirVolVar * 100),
+    set: (s, pos) => { s.choirVolVar = pos / 100; applyChoirVol(); save(); },
+    format: s => Math.round(s.choirVolVar * 100) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    id: 'choirVolPeriod', section: 'music', label: 'Level variance speed', kind: 'slider',
+    parent: 'musicChoirDrawer', varianceOf: 'choirVol',
+    min: 0, max: 120, step: 1, def: 20,
+    get: s => s.choirVolPeriod,
+    set: (s, pos) => { s.choirVolPeriod = pos; applyChoirVol(); save(); },
+    format: s => s.choirVolPeriod + 's',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    // The sequencer's Vary with strobe (js/strobe-am.js): a volume pulse at
+    // the strobe's flash rate and in its waveform; 0 is none, 100% swings
+    // the voice from full down to silence on every flash.
+    id: 'choirStrobeAm', section: 'music', label: 'Vary with strobe', kind: 'slider',
+    parent: 'musicChoirDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round((s.choirStrobeAm || 0) * 100),
+    effective: s => s.choirStrobeAmVar > 0 ? choirEffectiveAm() * 100 : undefined,
+    set: (s, pos) => { s.choirStrobeAm = pos / 100; applyChoirAm(); save(); },
+    format: s => Math.round((s.choirStrobeAm || 0) * 100) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    id: 'choirStrobeAmVar', section: 'music', label: 'Pulse variance', kind: 'slider',
+    parent: 'musicChoirDrawer', varianceOf: 'choirStrobeAm',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round((s.choirStrobeAmVar || 0) * 100),
+    set: (s, pos) => { s.choirStrobeAmVar = pos / 100; applyChoirAm(); save(); },
+    format: s => Math.round((s.choirStrobeAmVar || 0) * 100) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    id: 'choirStrobeAmPeriod', section: 'music', label: 'Pulse variance speed', kind: 'slider',
+    parent: 'musicChoirDrawer', varianceOf: 'choirStrobeAm',
+    min: 0, max: 120, step: 1, def: 20,
+    get: s => s.choirStrobeAmPeriod,
+    set: (s, pos) => { s.choirStrobeAmPeriod = pos; applyChoirAm(); save(); },
+    format: s => s.choirStrobeAmPeriod + 's',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    // Fills upward through the choir from the low voice.
+    id: 'choirStack', section: 'music', label: 'Stack', kind: 'slider',
+    parent: 'musicChoirDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => s.choirStack,
+    effective: s => s.choirStackVar > 0 ? choirEffectiveStack() : undefined,
+    set: (s, pos) => { s.choirStack = pos; applyChoir(); save(); },
+    format: s => s.choirStack < 1 ? 'low voice' : Math.round(s.choirStack) + '% filled',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    id: 'choirStackVar', section: 'music', label: 'Stack variance', kind: 'slider',
+    parent: 'musicChoirDrawer', varianceOf: 'choirStack',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round(s.choirStackVar * 100),
+    set: (s, pos) => { s.choirStackVar = pos / 100; applyChoir(); save(); },
+    format: s => Math.round(s.choirStackVar * 100) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    id: 'choirStackPeriod', section: 'music', label: 'Stack variance speed', kind: 'slider',
+    parent: 'musicChoirDrawer', varianceOf: 'choirStack',
+    min: 0, max: 120, step: 1, def: 20,
+    get: s => s.choirStackPeriod,
+    set: (s, pos) => { s.choirStackPeriod = pos; applyChoir(); save(); },
+    format: s => s.choirStackPeriod + 's',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    // Adds the harmonic degrees one at a time: 1, then 8, 5, 3, 2, 7 and 9.
+    id: 'choirDensity', section: 'music', label: 'Density', kind: 'slider',
+    parent: 'musicChoirDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => s.choirDensity,
+    effective: s => s.choirDensityVar > 0 ? choirEffectiveDensity() : undefined,
+    set: (s, pos) => { s.choirDensity = pos; applyChoir(); save(); },
+    format: s => choirDensityText(s.choirDensity),
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    id: 'choirDensityVar', section: 'music', label: 'Density variance', kind: 'slider',
+    parent: 'musicChoirDrawer', varianceOf: 'choirDensity',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round(s.choirDensityVar * 100),
+    set: (s, pos) => { s.choirDensityVar = pos / 100; applyChoir(); save(); },
+    format: s => Math.round(s.choirDensityVar * 100) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    id: 'choirDensityPeriod', section: 'music', label: 'Density variance speed', kind: 'slider',
+    parent: 'musicChoirDrawer', varianceOf: 'choirDensity',
+    min: 0, max: 120, step: 1, def: 20,
+    get: s => s.choirDensityPeriod,
+    set: (s, pos) => { s.choirDensityPeriod = pos; applyChoir(); save(); },
+    format: s => s.choirDensityPeriod + 's',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    // From the low voices to the high; at 0 the choir is even.
+    id: 'choirBrightness', section: 'music', label: 'Brightness', kind: 'slider',
+    parent: 'musicChoirDrawer',
+    min: -100, max: 100, step: 1, def: 0,
+    get: s => s.choirBrightness,
+    set: (s, pos) => { s.choirBrightness = pos; applyChoir(); save(); },
+    format: s => s.choirBrightness === 0 ? 'even'
+      : (s.choirBrightness < 0 ? 'low +' : 'high +') + Math.abs(Math.round(s.choirBrightness)) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    // Narrows Brightness's balance into a moving spotlight.
+    id: 'choirFocus', section: 'music', label: 'Focus', kind: 'slider',
+    parent: 'musicChoirDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => s.choirFocus,
+    set: (s, pos) => { s.choirFocus = pos; applyChoir(); save(); },
+    format: s => s.choirFocus < 1 ? 'broad' : s.choirFocus > 99 ? 'single voice' : Math.round(s.choirFocus) + '% narrow',
+    visible: s => s.musicOn && s.choirOn
+  },
+  // ---- the music layers (js/layers.js): Majestic voice, Bright fifth ----
+  ...MUSIC_LAYERS.flatMap(musicLayerControls),
   {
     id: 'cloudsOn', section: 'music', label: 'Clouds', kind: 'segment',
     options: [
@@ -1160,9 +1419,71 @@ const musicControls = [
     visible: s => s.musicOn && s.cloudsOn
   },
   {
+    // The sequencer's Vary with strobe (js/strobe-am.js): a volume pulse at
+    // the strobe's flash rate and in its waveform; 0 is none, 100% swings
+    // the voice from full down to silence on every flash.
+    id: 'cloudStrobeAm', section: 'music', label: 'Vary with strobe', kind: 'slider',
+    parent: 'musicCloudsDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round((s.cloudStrobeAm || 0) * 100),
+    set: (s, pos) => { s.cloudStrobeAm = pos / 100; applyCloudAm(); save(); },
+    format: s => Math.round((s.cloudStrobeAm || 0) * 100) + '%',
+    visible: s => s.musicOn && s.cloudsOn
+  },
+  // The Music window's trims for the five voices (v1/ui/screens/music.js),
+  // as musTone's are for the tone: each how much of its voice's level plays,
+  // where 100% is exactly the level the drawer and the Levels window set.
+  // Out of the drawer, as musicOn is. Listed after every voice's switch on
+  // purpose: in worker mode the page replays a frame's changes in this
+  // order, and a fade out lands as the switch going off and then the trim
+  // going back to its level, which only holds (piano.js, clouds.js) if the
+  // switch is heard first. Kept below the clouds sub-drawer's rows too:
+  // hidden or not, a row between a sub-drawer's children breaks their run
+  // and the drawer draws the rest unindented (ui/screens/drawer.js).
+  {
+    id: 'musPiano', section: 'music', label: 'Piano trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musPiano ?? 1) * 100),
+    set: (s, pos) => { s.musPiano = trimOf(pos); applyPianoTrim(); save(); },
+    format: s => Math.round((s.musPiano ?? 1) * 100) + '%',
+    visible: () => false
+  },
+  {
+    id: 'musClouds', section: 'music', label: 'Clouds trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musClouds ?? 1) * 100),
+    set: (s, pos) => { s.musClouds = trimOf(pos); applyCloudTrim(); save(); },
+    format: s => Math.round((s.musClouds ?? 1) * 100) + '%',
+    visible: () => false
+  },
+  {
+    id: 'musDrone', section: 'music', label: 'Drone trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musDrone ?? 1) * 100),
+    set: (s, pos) => { s.musDrone = trimOf(pos); applyBedVol(); save(); },
+    format: s => Math.round((s.musDrone ?? 1) * 100) + '%',
+    visible: () => false
+  },
+  {
+    id: 'musArp', section: 'music', label: 'Sequencer trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musArp ?? 1) * 100),
+    set: (s, pos) => { s.musArp = trimOf(pos); applyArp(); save(); },
+    format: s => Math.round((s.musArp ?? 1) * 100) + '%',
+    visible: () => false
+  },
+  {
+    id: 'musChoir', section: 'music', label: 'Choir trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musChoir ?? 1) * 100),
+    set: (s, pos) => { s.musChoir = trimOf(pos); applyChoirVol(); save(); },
+    format: s => Math.round((s.musChoir ?? 1) * 100) + '%',
+    visible: () => false
+  },
+  {
     // The room every music voice shares: the piano, the drone and the
-    // arpeggio all feed this one reverb, and the per-voice rows (Drone
-    // reverb level, Arpeggio reverb) only set each voice's share of it.
+    // sequencer all feed this one reverb, and the per-voice rows (Drone
+    // reverb level, Sequencer reverb) only set each voice's share of it.
     id: 'musicRevOn', section: 'music', label: 'Master reverb', kind: 'toggle',
     get: s => s.musicRevOn !== false,
     set: (s, on) => { s.musicRevOn = !!on; applyPianoReverb(); save(); },
@@ -1211,18 +1532,28 @@ const atmosphereControls = [
     format: s => Math.round(s.ambVol * 100) + '%',
     visible: s => s.ambOn
   },
+  // The Music window's trim for the atmosphere, as musTone's is for the
+  // tone: 100% plays exactly the level above. Out of the drawer.
+  {
+    id: 'musAmb', section: 'atmosphere', label: 'Ambience trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musAmb ?? 1) * 100),
+    set: (s, pos) => { s.musAmb = trimOf(pos); applyAmbVol(); save(); },
+    format: s => Math.round((s.musAmb ?? 1) * 100) + '%',
+    visible: () => false
+  },
   // Opens the mixer overlay. v0's handler also closes the drawer
   // (togglePanel(false)) before dispatching the open event; the drawer's
   // open flag is plain S state, so it is set directly here rather than
   // routed through a visual-side helper.
   {
-    id: 'ambMixerOpen', section: 'atmosphere', label: 'Open atmosphere mixer', kind: 'action',
+    id: 'ambMixerOpen', section: 'atmosphere', label: 'Open levels', kind: 'action',
     act: s => { s.panelOpen = false; mixerOpenHook(true); },
     visible: s => s.ambOn
   },
   {
     id: 'ambReverb', section: 'atmosphere', label: 'Reverb', kind: 'slider',
-    min: 0, max: 150, step: 1, def: 0,
+    min: 0, max: 150, step: 1, def: 100,
     get: s => Math.round(s.ambReverb * 100),
     set: (s, pos) => { s.ambReverb = pos / 100; applyAmbReverb(); save(); },
     format: s => Math.round(s.ambReverb * 100) + '%',
@@ -1276,8 +1607,10 @@ const quickVisual = prefixed('visual: '), quickClick = prefixed('click: '), quic
 
 const quickControls = [
   {
-    id: 'ambQuick', section: 'quick', label: 'Open mixer', kind: 'action',
-    act: s => { s.panelOpen = false; mixerOpenHook(true); },
+    // Toggles the ambience, as the music chip toggles the music; the mixer
+    // is M, the drawer's Open mixer, or the mixer's own button.
+    id: 'ambQuick', section: 'quick', label: 'Ambience on or off', kind: 'action',
+    act: s => setAmbOn(s, !s.ambOn),
     format: s => s.ambOn ? 'ambience: on' : 'ambience: off'
   },
   {
@@ -1321,6 +1654,18 @@ const quickControls = [
 // entry here: a transport screen reads and drives byId('vol') for the fader
 // and uses vmute below for the speaker glyph.
 const transportControls = [
+  {
+    id: 'strobeScale', section: 'transport', label: 'Strobe scale', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((typeof s.strobeScale === 'number' ? s.strobeScale : 1) * 100),
+    set: (s, pos) => {
+      s.strobeScale = Math.max(0, Math.min(1, pos / 100));
+      refreshStrobeAm();
+      applyArp();
+      save();
+    },
+    format: s => Math.round((typeof s.strobeScale === 'number' ? s.strobeScale : 1) * 100) + '%'
+  },
   {
     id: 'tpPlay', section: 'transport', label: 'start / stop', kind: 'action',
     // Starting or stopping a session also resets the strobe clock and seeds
@@ -1373,6 +1718,8 @@ const mixerControls = [
   ...gateControls('mixClouds', 'clouds', 'Clouds'),
   ...gateControls('mixDrone', 'drone', 'Ocean drone'),
   ...gateControls('mixArp', 'arp', 'Sequencer'),
+  ...gateControls('mixChoir', 'choir', 'Choir'),
+  ...MUSIC_LAYERS.flatMap(L => gateControls(layerMixId(L), L.id, L.label)),
   {
     id: 'mixFund', section: 'mixer', label: 'Fundamental', kind: 'slider',
     min: 0, max: 100, step: 1, def: 83,
@@ -1426,6 +1773,24 @@ const mixerControls = [
     format: s => Math.round(s.arpVol * 100) + '%'
   },
   {
+    id: 'mixChoir', section: 'mixer', label: 'Choir', kind: 'slider',
+    min: 0, max: 200, step: 1, def: 100,
+    get: s => Math.round(s.choirVol * 100),
+    set: (s, pos) => { s.choirVol = pos / 100; applyChoirVol(); save(); },
+    format: s => Math.round(s.choirVol * 100) + '%'
+  },
+  // the music layers' faders, second surfaces on their drawer levels
+  ...MUSIC_LAYERS.map(L => {
+    const vol = layerVolKey(L);
+    return {
+      id: layerMixId(L), section: 'mixer', label: L.label, kind: 'slider',
+      min: 0, max: 200, step: 1, def: 100,
+      get: s => Math.round(s[vol] * 100),
+      set: (s, pos) => { s[vol] = pos / 100; applyLayerVol(L.id); save(); },
+      format: s => Math.round(s[vol] * 100) + '%'
+    };
+  }),
+  {
     id: 'ambMixerMaster', section: 'mixer', label: 'Ambience', kind: 'slider',
     min: 0, max: 100, step: 1, def: 18,
     get: s => Math.round(s.ambVol * 100),
@@ -1434,7 +1799,7 @@ const mixerControls = [
   },
   {
     id: 'ambMixerReverb', section: 'mixer', label: 'Reverb', kind: 'slider',
-    min: 0, max: 150, step: 1, def: 0,
+    min: 0, max: 150, step: 1, def: 100,
     get: s => Math.round(s.ambReverb * 100),
     set: (s, pos) => { s.ambReverb = pos / 100; applyAmbReverb(); save(); },
     format: s => Math.round(s.ambReverb * 100) + '%'
@@ -1499,6 +1864,6 @@ export const AUDIO_CONTROLS = [
 // voice's own name or say nothing ('Bilateral 60%', 'How 9'). Set once here
 // rather than on each entry above.
 const AUDIO_SHORT = { biDepth: 'Depth', biRate: 'Rate', harmCount: 'Count', pianoStyle: 'Style',
-  pianoVol: 'Level', arpVol: 'Level', arpRate: 'Speed', bedVol: 'Level', bedDetune: 'Detune',
+  pianoVol: 'Level', arpVol: 'Level', arpRate: 'Speed', bedVol: 'Level', bedDetune: 'Detune', choirVol: 'Level',
   cloudVol: 'Level', cloudDensity: 'Density', pianoReverb: 'Level', pianoRevTime: 'Decay' };
 for (const c of AUDIO_CONTROLS) if (AUDIO_SHORT[c.id]) c.summaryLabel = AUDIO_SHORT[c.id];

@@ -12,10 +12,13 @@
 import { S } from '../../js/state.js';
 import {
   AMBIENCE_SOURCES, normalizeAmbLayers, syncAmbLayers, ambLayerStatus, ambLayerPeak,
-  startAmbDrift, stopAmbDrift, ambDriftTick, setAmbLayerLevel
+  startAmbDrift, stopAmbDrift, ambDriftTick, setAmbLayerLevel, toggleAmbLayerFade, advanceAmbGlides
 } from '../../js/ambience.js';
 import { enginePeaks, setEngineMeters } from '../../js/audio.js';
 import { pianoPeak, bedPeak, arpPeak } from '../../js/piano.js';
+import { choirPeak } from '../../js/choir.js';
+import { MUSIC_LAYERS, layerPeak } from '../../js/layers.js';
+import { layerMixId } from '../../js/layer-defs.js';
 import { cloudPeak } from '../../js/clouds.js';
 import { layerGate, applyMixGates } from '../../js/mixgate.js';
 import { save, flush } from './store.js';
@@ -103,6 +106,18 @@ export function mixerStatusText(s = S) {
 // expects the same identity back, the same way schema-audio.js's static
 // array is only ever built once.
 const layerControlCache = [];
+// The mixer's click on a recording's name: fades it in to its max or out to
+// silence (js/ambience.js toggleAmbLayerFade), a manual turn of the drift.
+// Saved as it starts and again once it has landed.
+export function toggleAmbLayer(i) {
+  const layer = ensureLayers(S)[i];
+  if (!layer) return;
+  const sec = toggleAmbLayerFade(layer);
+  syncAmbLayers();
+  save();
+  setTimeout(() => { advanceAmbGlides(); save(); }, (sec + 0.25) * 1000);
+}
+
 export function ambLayerControls(i) {
   const cached = layerControlCache[i];
   if (cached) return cached;
@@ -157,8 +172,11 @@ const CHANNEL_PEAK_FNS = {
   mixPiano:  pianoPeak,
   mixClouds: cloudPeak,
   mixDrone:  bedPeak,
-  mixArp:    arpPeak
+  mixArp:    arpPeak,
+  mixChoir:  choirPeak
 };
+// the music layers (js/layers.js), one meter each under its fader's id
+for (const L of MUSIC_LAYERS) CHANNEL_PEAK_FNS[layerMixId(L)] = () => layerPeak(L.id);
 const channelMeters = {};
 // Listed once so the per-frame meter step walks a fixed array instead of
 // building one from Object.keys every frame.
@@ -280,6 +298,8 @@ export function stepAtmosphere(t, meters = true) {
   }
   const frameMs = lastStepT ? t - lastStepT : 0;
   lastStepT = t;
+  // a hand-started fade moves the faders even with the drift off
+  advanceAmbGlides();
   if (meters && (!lastMeterT || t - lastMeterT + frameMs > METER_SPAN_MS)) {
     const dt = lastMeterT ? Math.min(200, t - lastMeterT) : 16;
     lastMeterT = t;

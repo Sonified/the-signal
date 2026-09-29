@@ -33,10 +33,17 @@ import { rebuildWordPool } from './words.js';
 // id (harmToggle, biToggle, the two audio sources) there is no option to
 // read a value from, so it flips, matching what clicking that one button in
 // v0 actually does.
-function clickButton(domId) {
+//
+// This and the two helpers below take two optional extras for a preset
+// loaded into a journey step (recallPresetForStep): `hold`, a set of control
+// ids to leave exactly where they are, and `named`, a list every control the
+// preset names is pushed onto, held or not. A drawer click passes neither.
+function clickButton(domId, hold, named) {
   const hit = byDomId(domId);
   if (!hit) return;
   const { control, option } = hit;
+  if (named) named.push(control.id);
+  if (hold && hold.has(control.id)) return;
   control.set(S, option ? option.value : !control.get(S));
 }
 
@@ -44,10 +51,22 @@ function clickButton(domId) {
 // when it is not already there. Mirrors v0's own guard on every one of these
 // (the layer checkboxes, bilateral, harmonics, the two audio sources): a
 // preset that does not mention a switch must not toggle it by accident.
-function setBoolIfNeeded(id, want) {
+function setBoolIfNeeded(id, want, hold, named) {
   if (typeof want !== 'boolean') return;
   const control = byId(id);
-  if (control && !!control.get(S) !== want) control.set(S, want);
+  if (!control) return;
+  if (named) named.push(control.id);
+  if (hold && hold.has(control.id)) return;
+  if (!!control.get(S) !== want) control.set(S, want);
+}
+
+// A named control set to a preset's value, the same hold and named rules.
+function setNamed(id, val, hold, named) {
+  const control = byId(id);
+  if (!control || !control.set) return;
+  if (named) named.push(control.id);
+  if (hold && hold.has(control.id)) return;
+  control.set(S, val);
 }
 
 // A preset recall is a transition, not a jump. Everything a preset moves
@@ -106,7 +125,10 @@ export function applyPreset(name) {
   try { applyPresetNow(name); } finally { endGlide(); }
 }
 
-function applyPresetNow(name) {
+// hold and named are recallPresetForStep's (see clickButton above); a
+// drawer click passes neither, and a built-in saved over is always recalled
+// from its snapshot, so they only ever reach the v0 recipe below.
+function applyPresetNow(name, hold = null, named = null) {
   ensureLoaded();
   const over = data.overrides[name];
   if (over) { applySnapshotLive(over); return; }
@@ -115,30 +137,28 @@ function applyPresetNow(name) {
 
   // The click and chirp pip controls share five state keys. Selecting the
   // requested voice has to happen before P.inputs is applied, or a Gamma
-  // click level lands in the chirp slot instead.
+  // click level lands in the chirp slot instead. (A step names the voice
+  // whether or not it has to move, since it may play after one that moved it.)
   if (P.clickMode && P.clickMode !== S.clickMode) {
-    clickButton(P.clickMode === 'click' ? 'cmClick' : 'cmChirp');
+    clickButton(P.clickMode === 'click' ? 'cmClick' : 'cmChirp', hold, named);
+  } else if (P.clickMode && named) {
+    const hit = byDomId(P.clickMode === 'click' ? 'cmClick' : 'cmChirp');
+    if (hit) named.push(hit.control.id);
   }
 
   // A control with no single set (a range, which sets each knob on its
   // own) is passed over rather than called.
-  for (const [id, val] of Object.entries(P.inputs || {})) {
-    const control = byId(id);
-    if (control && control.set) control.set(S, val);
-  }
-  for (const [id, val] of Object.entries(P.selects || {})) {
-    const control = byId(id);
-    if (control && control.set) control.set(S, val);
-  }
+  for (const [id, val] of Object.entries(P.inputs || {})) setNamed(id, val, hold, named);
+  for (const [id, val] of Object.entries(P.selects || {})) setNamed(id, val, hold, named);
   // Layer checkboxes (and, for a preset that mentions it, the audio layer)
   // are toggles: only clicked when they are not already where the preset
   // wants them, same guard v0 used on el.checked.
   for (const [id, want] of Object.entries(P.layers || {})) {
-    setBoolIfNeeded(id, want);
+    setBoolIfNeeded(id, want, hold, named);
   }
-  (P.buttons || []).forEach(domId => clickButton(domId));
-  setBoolIfNeeded('biToggle', P.bilateral);
-  setBoolIfNeeded('harmToggle', P.harmonics);
+  (P.buttons || []).forEach(domId => clickButton(domId, hold, named));
+  setBoolIfNeeded('biToggle', P.bilateral, hold, named);
+  setBoolIfNeeded('harmToggle', P.harmonics, hold, named);
   // The corner cycle derives its own label from colorWalk/perElementColor
   // everywhere else in the schema; a preset is the one place v0 wrote
   // S.colorMode directly rather than driving it from those two, so this
@@ -146,8 +166,8 @@ function applyPresetNow(name) {
   // ever sets by hand.
   if (P.colorMode) S.colorMode = P.colorMode;
   if (P.sources) {
-    setBoolIfNeeded('aTone', P.sources.tone);
-    setBoolIfNeeded('aClick', P.sources.click);
+    setBoolIfNeeded('aTone', P.sources.tone, hold, named);
+    setBoolIfNeeded('aClick', P.sources.click, hold, named);
   }
   if (P.state) Object.assign(S, P.state);
   save();
@@ -263,9 +283,17 @@ function applySnapshotLive(snap) {
 // ---------- the viewer's own presets ----------
 
 // { overrides: { [builtinName]: snapshot }, user: [ { name, snapshot } ],
-//   order: ['b:<builtin name>' | 'u:<user name>', ...], hidden: [builtinName] },
+//   order: ['b:<builtin name>' | 'u:<user name>', ...], hidden: [builtinName],
+//   active: key | null, hearts: [key, ...] },
 // read lazily on first use (store.js receives its storage at boot, after
 // this module has loaded) and written back through store.saveKey.
+//
+// `hearts` is the presets the viewer has hearted, by the same lasting key
+// the order and the active preset use, so one short list covers built-ins
+// (which have no record of their own to carry a flag) and the viewer's
+// presets alike, and a record from before hearts simply has none. A rename
+// carries its key along, and a delete drops it. Each row entry also keeps
+// the flag as `h`, so the drawer's per-frame reads stay a property lookup.
 //
 // The drawer's row is `row`, rebuilt from that record: each entry is either a
 // built-in (b, its index in PRESET_LIST) or one of the viewer's (u, the
@@ -283,7 +311,7 @@ let row = [];
 
 function ensureLoaded() {
   if (data) return;
-  data = { overrides: {}, user: [], order: null, hidden: [], active: null };
+  data = { overrides: {}, user: [], order: null, hidden: [], active: null, hearts: [], rampS: 0 };
   let raw = null;
   try { raw = JSON.parse(readKey(PRESETS_KEY) || 'null'); } catch (e) { raw = null; }
   if (raw && typeof raw === 'object') readRecord(raw);
@@ -291,9 +319,13 @@ function ensureLoaded() {
 }
 
 function readRecord(raw) {
+  if (typeof raw.rampS === 'number' && isFinite(raw.rampS)) data.rampS = Math.max(0, Math.min(60, raw.rampS));
   if (Array.isArray(raw.order)) data.order = raw.order.filter(k => typeof k === 'string');
   if (Array.isArray(raw.hidden)) data.hidden = raw.hidden.filter(k => typeof k === 'string');
   if (typeof raw.active === 'string') data.active = raw.active;
+  if (Array.isArray(raw.hearts)) {
+    for (const k of raw.hearts) if (typeof k === 'string' && !data.hearts.includes(k)) data.hearts.push(k);
+  }
   if (raw.overrides && typeof raw.overrides === 'object') {
     for (const p of PRESET_LIST) {
       const snap = raw.overrides[p.name];
@@ -327,6 +359,7 @@ function rebuildRow() {
   }
   PRESET_LIST.forEach((p, i) => { if (!usedB.has(i) && !hidden.has(p.name)) next.push({ b: i, u: null }); });
   for (const u of data.user) if (!usedU.has(u)) next.push({ b: -1, u });
+  for (const e of next) e.h = data.hearts.includes(entryKey(e));
   row = next;
 }
 
@@ -375,6 +408,19 @@ function uniqueName(raw, skipUser) {
 // accessor here is allocation-free, since the drawer calls them each frame;
 // presetsVersion() changes whenever the list, its order or a label does, so
 // the drawer knows when to remeasure its chips.
+// The drawer's Ramp time: how long a recall glides the sliders and the
+// colour to the preset's positions (core/perform.js perfRecallPreset). It
+// lives in this record, beside the presets it paces, and 0 keeps a recall
+// the cut it always was.
+export function presetRampS() { ensureLoaded(); return data.rampS || 0; }
+export function setPresetRampS(v) {
+  ensureLoaded();
+  v = Math.max(0, Math.min(60, +v || 0));
+  if (v === data.rampS) return;
+  data.rampS = v;
+  persist();
+}
+
 export function presetsVersion() { ensureLoaded(); return version; }
 export function presetCount() { ensureLoaded(); return row.length; }
 export function presetIsUser(i) { ensureLoaded(); return !!(row[i] && row[i].u); }
@@ -405,6 +451,46 @@ export function presetHasOverride(i) {
   return !!e && !e.u && !!data.overrides[PRESET_LIST[e.b].name];
 }
 
+// ---------- hearts ----------
+// The drawer's heart button hearts or unhearts the active preset, and the
+// journey's preset picker lists the hearted ones first. Hearting never
+// moves a chip: the row stays in the viewer's own order.
+
+// Whether row entry e is the one `k` names, compared without building its
+// key, so the per-frame reads below allocate nothing.
+function keyIs(e, k) {
+  if (k === null || !e) return false;
+  const nm = e.u ? e.u.name : PRESET_LIST[e.b].name;
+  return k.length === nm.length + 2 && k.startsWith(e.u ? 'u:' : 'b:') && k.startsWith(nm, 2);
+}
+function dropHeart(k) {
+  const i = data.hearts.indexOf(k);
+  if (i >= 0) data.hearts.splice(i, 1);
+}
+
+export function presetIsHearted(i) {
+  ensureLoaded();
+  const e = row[i];
+  return !!e && e.h === true;
+}
+// The row index of the active preset, or -1 when none is lit.
+export function presetActiveIndex() {
+  ensureLoaded();
+  if (data.active === null) return -1;
+  for (let i = 0; i < row.length; i++) if (keyIs(row[i], data.active)) return i;
+  return -1;
+}
+export function togglePresetHeartAt(i) {
+  ensureLoaded();
+  const e = row[i];
+  if (!e) return;
+  const k = entryKey(e);
+  e.h = !e.h;
+  if (e.h) { if (!data.hearts.includes(k)) data.hearts.push(k); }
+  else dropHeart(k);
+  persist();
+}
+
 export function applyPresetAt(i) {
   ensureLoaded();
   const e = row[i];
@@ -412,6 +498,55 @@ export function applyPresetAt(i) {
   if (e.u) applySnapshotLive(e.u.snapshot);
   else applyPreset(PRESET_LIST[e.b].name);
   setActive(e);
+}
+
+// ---------- a preset loaded into a journey step ----------
+// The journey's preset picker (core/journey.js journeyLoadPreset) recalls
+// preset i live, exactly as a click on its chip does, only over the
+// journey's own window of `sec` seconds rather than the preset glide, and
+// without lighting its chip, since what the viewer made is a step, not a
+// recall. The journey then reads the controls' positions back from S: what
+// the preset put there is, by definition, the preset's control positions,
+// read through the same get()s a step records by, so none of v0's recipe
+// (its button clicks, its raw state writes, the voice it selects first)
+// has to be translated a second way.
+//
+// hold (a Set of control ids, or null) leaves those controls exactly where
+// they are: the journey's text lock. A built-in's own set() calls simply
+// skip them. A snapshot writes every field at once, so after it lands each
+// held control that it moved is set back to where it was, inside the
+// replay's own state pass, so the replay sees nothing of it to redo.
+//
+// Returns the ids of the controls the preset names, for a built-in (which
+// leaves every other control as it is), or null for a snapshot (which names
+// them all), or undefined when there is no preset at i.
+let heldIds = [], heldVals = [];
+function applyHolding(snap) {
+  applySnapshot(snap);
+  for (let k = 0; k < heldIds.length; k++) {
+    const c = byId(heldIds[k]);
+    if (c && c.get && c.set && c.get(S) !== heldVals[k]) c.set(S, heldVals[k]);
+  }
+}
+export function recallPresetForStep(i, sec, hold) {
+  ensureLoaded();
+  const e = row[i];
+  if (!e) return undefined;
+  const snap = e.u ? e.u.snapshot : data.overrides[PRESET_LIST[e.b].name];
+  if (snap) {
+    heldIds = []; heldVals = [];
+    if (hold) for (const id of hold) {
+      const c = byId(id);
+      if (c && c.get) { heldIds.push(id); heldVals.push(c.get(S)); }
+    }
+    replayLive(() => applyHolding(snap), sec);
+    save();
+    return null;
+  }
+  const named = [];
+  beginTransition(sec);
+  try { applyPresetNow(PRESET_LIST[e.b].name, hold, named); } finally { endGlide(); }
+  return named;
 }
 
 export function savePresetOverAt(i) {
@@ -429,6 +564,7 @@ export function deletePresetAt(i) {
   const e = row[i];
   if (!e) return;
   if (entryKey(e) === data.active) data.active = null;
+  dropHeart(entryKey(e));
   if (e.u) {
     const j = data.user.indexOf(e.u);
     if (j >= 0) data.user.splice(j, 1);
@@ -474,7 +610,9 @@ export function addUserPreset(name) {
   if (!clean) return -1;
   const u = { name: clean, snapshot: snapshot() };
   data.user.push(u);
-  row.push({ b: -1, u });
+  // (a name once hearted and since deleted left no heart behind, so a new
+  // preset starts unhearted whatever it is called)
+  row.push({ b: -1, u, h: false });
   data.active = 'u:' + u.name;        // it holds the settings on screen now
   persist();
   return row.length - 1;
@@ -498,6 +636,8 @@ export function renameUserPreset(userIndex, name) {
   const clean = uniqueName(name, userIndex);
   if (!clean) return false;
   if (data.active === 'u:' + u.name) data.active = 'u:' + clean;
+  const hi = data.hearts.indexOf('u:' + u.name);
+  if (hi >= 0) data.hearts[hi] = 'u:' + clean;
   u.name = clean;
   persist();
   return true;

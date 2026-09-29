@@ -50,8 +50,20 @@
 // waves at once and trades them over the ramp, mutes and solos turn at the
 // ramp's midpoint, and the rest lands as the ramp begins.
 //
-// The record is { ver: 1, steps: [step, ...], autoPlay, loop }, a step being
-//   { overrides: { [controlId]: value }, text: '', appear: 'start',
+// The viewer keeps a library of journeys, one open at a time: the Journey
+// window's row of chips (ui/screens/journey.js). Everything above is about
+// the open one; everything the window edits is saved into it as it happens,
+// as a document is, so there is no separate save. Opening another, making a
+// new one, or deleting the open one ends the walk and lets any selected step
+// go (what the drawer had changed recorded first, into the journey it
+// belonged to). The library's index, { ver: 1, cur: id, items: [{ id, title }] },
+// lives under LIB_KEY, and each journey's own record under its own key
+// (keyOf), so an edit writes only the journey it touches. The first read with
+// no index takes the one journey the app kept before (under JOURNEY_KEY,
+// which is left as it was) as the library's first.
+//
+// A journey's record is { ver: 1, steps: [step, ...], autoPlay, loop, name }, a step being
+//   { overrides: { [controlId]: value }, text: '', appear: 'start', textLock: false,
 //     rampS: 3, holdS: 60, piano: 'free', interaction: 'none',
 //     seq: { seqSlot, seqs: [line x 8] } | null,
 //     mix: { chanMute, chanSolo, layers: [{ source, level, peak, muted, solo }] } | null },
@@ -66,15 +78,21 @@ import { pianoGesture, applySeqs, SEQ_WAVES, SEQ_COUNT } from '../../js/piano.js
 import { CHANNELS, applyMixGates } from '../../js/mixgate.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../../js/ambience.js';
 import { byId } from './schema.js';
-import { REPLAY_CONTROLS, beginTransition } from './presets.js';
+import { REPLAY_CONTROLS, beginTransition, recallPresetForStep } from './presets.js';
 import { readKey, saveKey, onSave, save, seqStateOf, applySeqState, mixStateOf, SEQ_NUM_RANGE } from './store.js';
-import { onWordAppear, wordNow } from './words.js';
+import { onWordAppear, wordSequenceOnce, cancelWordSequenceOnce } from './words.js';
 import { glideSkippingRiskBand } from './strobe.js';
 
 const JOURNEY_KEY = 'signal.journey.v1';
 export const RAMP_MIN = 0, RAMP_MAX = 30, HOLD_MIN = 5, HOLD_MAX = 600;
 const RAMP_DEF = 3, HOLD_DEF = 60;
 export const STEP_TEXT_MAX = 2000;
+// The journey's one name (the window's gear): every step's text says it
+// wherever it says NAME, so it is typed once for the whole walk.
+export const NAME_MAX = 60;
+// A journey's title, the label on its chip, and how many the library holds.
+export const TITLE_MAX = 32;
+const LIB_MAX = 64;
 const STEPS_MAX = 99;
 // Selecting a step to edit it glides it in over this, short, so what the
 // drawer shows is the step and the change is still no jump.
@@ -97,6 +115,10 @@ const APPEAR_OK = { start: 1, mid: 1, end: 1 };
 // Where in the ramp each appearance falls, as a fraction of it.
 const APPEAR_AT = { start: 0, mid: 0.5, end: 1 };
 const INTERACTION_OK = { none: 1 };
+// Journey text fades and time on screen are composed in half-second beats
+// even though the drawer offers finer timing. Values entering a Journey from its own UI,
+// the drawer, a preset, or an older saved record all land on that grid.
+const HALF_SECOND_FADE = new Set(['textFadeIn', 'textFadeOut', 'textDwell']);
 
 // The controls a step can hold: exactly the ones a snapshot replays
 // (presets.js), in its order, clickMode first. The engine's thread is left
@@ -113,9 +135,18 @@ const baseline = new Array(R.length);
 const MODE = byId('textMode'), CUSTOM = byId('textCustomText');
 const COLOR_I = idxOf.has('color') ? idxOf.get('color') : -1;
 const COLOR = COLOR_I >= 0 ? R[COLOR_I] : null;
+const SIZE_I = idxOf.has('textSize') ? idxOf.get('textSize') : -1;
+const SIZE = SIZE_I >= 0 ? R[SIZE_I] : null;
 
 let data = null;
 let version = 0;
+// The library's index, and every journey read so far by id (the open one's
+// record is `data`), kept so going back to one never reads storage that a
+// write still pending has yet to reach.
+const LIB_KEY = 'signal.journeys.v1';
+const keyOf = id => JOURNEY_KEY + '.' + id;
+let lib = null;
+const cache = new Map();
 
 // The step whose fold is open (-1 for none), whether the window is showing,
 // whether that step is being edited (armed: drawer changes are recorded into
@@ -125,6 +156,13 @@ let sel = -1, winOpen = false, armed = false;
 const overSet = new Set();
 let diffPending = false, lastDiffT = -1e9, nowT = 0;
 
+// Controls the viewer has taken over during this walk. A manual move owns
+// that control until the walk is stopped, including through later steps and
+// a loop back to the beginning. Without this, a step that records a layer as
+// on can switch it straight back on after the viewer has deliberately turned
+// it off.
+const manual = new Set();
+
 // The walk: whether it is playing, which step it is on (kept while paused,
 // -1 when stopped), the auto-play clock that step's ramp and hold are counted
 // on, when the step was entered, when a pause began (so a resume carries on
@@ -132,8 +170,21 @@ let diffPending = false, lastDiffT = -1e9, nowT = 0;
 // shown, or when there is none to show).
 const play = { playing: false, stepIdx: -1, phaseStartT: 0, enterT: 0, pausedAt: 0, appearAt: -1 };
 
+// Temporary, intentionally loud diagnostics while the Journey authoring
+// path is being verified in the browser console.
+const JOURNEY_DIAG = true;
+function journeyDiag(event, extra = null) {
+  if (!JOURNEY_DIAG) return;
+  console.log('[journey diagnostic]', event, {
+    selected: sel, armed, windowOpen: winOpen,
+    playing: play.playing, playStep: play.stepIdx,
+    particles: !!(S.layers && S.layers.particles),
+    ...(extra || {})
+  });
+}
+
 function makeStep() {
-  return { overrides: {}, text: '', appear: 'start', rampS: RAMP_DEF, holdS: HOLD_DEF, piano: 'free', interaction: 'none',
+  return { overrides: {}, text: '', appear: 'start', textLock: false, rampS: RAMP_DEF, holdS: HOLD_DEF, piano: 'free', interaction: 'none',
            seq: null, mix: null };
 }
 
@@ -152,6 +203,7 @@ function validValue(c, v) {
   if (c.kind === 'toggle') return typeof v === 'boolean' || (typeof v === 'number' && (v === 0 || v === 1)) ? v : undefined;
   if (c.kind === 'slider') {
     if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+    if (HALF_SECOND_FADE.has(c.id)) v = Math.round(v / 500) * 500;
     return Number.isFinite(c.min) && Number.isFinite(c.max) ? Math.max(c.min, Math.min(c.max, v)) : v;
   }
   if (c.kind === 'color') return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : undefined;
@@ -172,6 +224,7 @@ function readStep(raw) {
   }
   if (typeof raw.text === 'string') st.text = raw.text.slice(0, STEP_TEXT_MAX);
   if (APPEAR_OK[raw.appear]) st.appear = raw.appear;
+  st.textLock = raw.textLock === true;
   st.rampS = clampN(raw.rampS, RAMP_MIN, RAMP_MAX, RAMP_DEF);
   st.holdS = clampN(raw.holdS, HOLD_MIN, HOLD_MAX, HOLD_DEF);
   if (PIANO_OK[raw.piano]) st.piano = raw.piano;
@@ -181,19 +234,81 @@ function readStep(raw) {
   return st;
 }
 
-function ensureLoaded() {
-  if (data) return;
-  data = { ver: 1, steps: [], autoPlay: false, loop: false };
-  let raw = null;
-  try { raw = JSON.parse(readKey(JOURNEY_KEY) || 'null'); } catch (e) { raw = null; }
+function readRaw(key) {
+  try { return JSON.parse(readKey(key) || 'null'); } catch (e) { return null; }
+}
+
+function readJourney(raw) {
+  const d = { ver: 1, steps: [], autoPlay: false, loop: false, name: '', fullStart: false,
+              sizeLock: false, sizeLockValue: null, sizeRestore: null };
   if (raw && typeof raw === 'object') {
     if (Array.isArray(raw.steps)) {
-      for (let i = 0; i < raw.steps.length && i < STEPS_MAX; i++) data.steps.push(readStep(raw.steps[i]));
+      for (let i = 0; i < raw.steps.length && i < STEPS_MAX; i++) d.steps.push(readStep(raw.steps[i]));
     }
-    data.autoPlay = raw.autoPlay === true;
-    data.loop = raw.loop === true;
+    d.autoPlay = raw.autoPlay === true;
+    d.loop = raw.loop === true;
+    d.name = typeof raw.name === 'string' ? raw.name.slice(0, NAME_MAX) : '';
+    d.fullStart = raw.fullStart === true;
+    const lockValue = SIZE ? validValue(SIZE, raw.sizeLockValue) : undefined;
+    if (raw.sizeLock === true && lockValue !== undefined && Array.isArray(raw.sizeRestore) && raw.sizeRestore.length === d.steps.length) {
+      const restore = [];
+      let valid = true;
+      for (let i = 0; i < raw.sizeRestore.length; i++) {
+        const entry = raw.sizeRestore[i], value = entry && SIZE ? validValue(SIZE, entry.value) : undefined;
+        if (!entry || typeof entry !== 'object' || value === undefined) { valid = false; break; }
+        restore.push({ own: entry.own === true, value });
+      }
+      if (valid) {
+        d.sizeLock = true;
+        d.sizeLockValue = lockValue;
+        d.sizeRestore = restore;
+        for (let i = 0; i < d.steps.length; i++) d.steps[i].overrides.textSize = lockValue;
+      }
+    }
   }
+  return d;
+}
+
+function journeyById(id) {
+  let d = cache.get(id);
+  if (!d) { d = readJourney(readRaw(keyOf(id))); cache.set(id, d); }
+  return d;
+}
+
+const cleanTitle = v => String(v || '').replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX);
+const libIndex = id => { for (let i = 0; i < lib.items.length; i++) if (lib.items[i].id === id) return i; return -1; };
+
+// The index, read once. Items with a malformed or repeated id are dropped;
+// an index with none left (or none at all) starts the library afresh with
+// the journey kept before it as Journey 1.
+function ensureLib() {
+  if (lib) return;
+  lib = { ver: 1, cur: '', items: [] };
+  const raw = readRaw(LIB_KEY);
+  if (raw && typeof raw === 'object' && Array.isArray(raw.items)) {
+    for (let i = 0; i < raw.items.length && lib.items.length < LIB_MAX; i++) {
+      const it = raw.items[i];
+      if (!it || typeof it.id !== 'string' || !/^j\d+$/.test(it.id) || libIndex(it.id) >= 0) continue;
+      lib.items.push({ id: it.id, title: cleanTitle(it.title) || 'Journey' });
+    }
+    if (typeof raw.cur === 'string') lib.cur = raw.cur;
+  }
+  if (!lib.items.length) {
+    lib.items.push({ id: 'j1', title: 'Journey 1' });
+    lib.cur = 'j1';
+    cache.set('j1', readJourney(readRaw(JOURNEY_KEY)));
+    saveKey(keyOf('j1'), cache.get('j1'));
+    saveKey(LIB_KEY, lib);
+  }
+  if (libIndex(lib.cur) < 0) lib.cur = lib.items[0].id;
+}
+
+function ensureLoaded() {
+  if (data) return;
+  ensureLib();
+  data = journeyById(lib.cur);
   reconcile();
+  ensureStartSnapshot();
 }
 
 // After a fresh read (another tab's write), the step being edited or played
@@ -203,23 +318,43 @@ function reconcile() {
   const n = data.steps.length;
   if (sel >= n) { sel = -1; armed = false; overSet.clear(); }
   else if (sel >= 0) rebuildOverSet();
-  if (play.stepIdx >= n) stopWalk();
+  if (play.stepIdx >= n) stopWalk(false);
 }
 
 function persist() {
   version++;
-  saveKey(JOURNEY_KEY, data);
+  saveKey(keyOf(lib.cur), data);
+}
+function persistLib() {
+  version++;
+  saveKey(LIB_KEY, lib);
 }
 
-// Another tab changed the journey. The in-memory copy is dropped and read
-// afresh on next use, and the version moves so the window rebuilds its
-// readouts; otherwise this tab would keep showing the old steps and its next
-// edit would write them back over the new ones. Returns true when the key
-// was the journey's.
+// Another tab changed a journey or the library. A journey's in-memory copy
+// is dropped and read afresh on next use, and the version moves so the
+// window rebuilds its readouts; otherwise this tab would keep showing the
+// old steps and its next edit would write them back over the new ones. The
+// index is read again at once, and should the other tab have opened another
+// journey, this one follows it, its walk and its selection let go. Returns
+// true when the key was the journeys'.
 export function syncJourneyFromStorage(key) {
-  if (key !== JOURNEY_KEY) return false;
-  if (data) { data = null; version++; }
-  return true;
+  if (typeof key !== 'string') return false;
+  if (key === LIB_KEY) {
+    const was = lib ? lib.cur : '';
+    lib = null; data = null;
+    ensureLib();
+    if (lib.cur !== was) { stopWalk(false); sel = -1; armed = false; overSet.clear(); diffPending = false; }
+    version++;
+    return true;
+  }
+  if (key.startsWith(JOURNEY_KEY + '.')) {
+    const id = key.slice(JOURNEY_KEY.length + 1);
+    cache.delete(id);
+    if (lib && id === lib.cur && data) data = null;
+    version++;
+    return true;
+  }
+  return key === JOURNEY_KEY;
 }
 
 // ---------- applying a step ----------
@@ -228,10 +363,20 @@ export function syncJourneyFromStorage(key) {
 // shows it, through the two controls, so the word pool rebuilds and it is
 // saved like any setting the viewer makes. An empty text touches nothing,
 // and the words carry on as the interface has them.
+// A step's text as it shows: every whole word NAME said as the journey's
+// name, once one is set (until then NAME shows as written, so a missing
+// name is seen in rehearsal).
+const NAME_RE = /\bNAME\b/g;
+function withName(text) {
+  const name = data && data.name;
+  return name && text.indexOf('NAME') >= 0 ? text.replace(NAME_RE, () => name) : text;
+}
+
 function applyText(text) {
   if (!text || !MODE || !CUSTOM) return;
-  if (CUSTOM.get(S) !== text) CUSTOM.set(S, text);
-  if (MODE.get(S) !== 'custom') MODE.set(S, 'custom');
+  text = withName(text);
+  if (!manual.has(CUSTOM.id) && CUSTOM.get(S) !== text) CUSTOM.set(S, text);
+  if (!manual.has(MODE.id) && MODE.get(S) !== 'custom') MODE.set(S, 'custom');
 }
 
 // Every control the step names, set through its own set() in the replay's
@@ -246,7 +391,7 @@ function applyStep(st, sec) {
     for (let i = 0; i < R.length; i++) {
       const c = R[i];
       const v = o[c.id];
-      if (v === undefined || skip[i] || (mixOwned && inMix[i])) continue;
+      if (v === undefined || skip[i] || manual.has(c.id) || (mixOwned && inMix[i])) continue;
       if (c.get(S) !== v) c.set(S, v);
     }
     applyText(st.text);
@@ -763,7 +908,7 @@ function startRamp(st, withText) {
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i], v = o[c.id];
-      if (v === undefined || skip[i] || c.kind === 'slider' || c.kind === 'color' || (mixOwned && inMix[i])) continue;
+      if (v === undefined || skip[i] || manual.has(c.id) || c.kind === 'slider' || c.kind === 'color' || (mixOwned && inMix[i])) continue;
       if (c.get(S) !== v) c.set(S, v);
     }
     if (withText) applyText(st.text);
@@ -773,7 +918,7 @@ function startRamp(st, withText) {
   }
   for (let i = 0; i < R.length; i++) {
     const c = R[i], v = o[c.id];
-    if (v === undefined || skip[i]) continue;
+    if (v === undefined || skip[i] || manual.has(c.id)) continue;
     if (c.kind === 'slider') addSlider(i, c, v);
     else if (c.kind === 'color') addColor(c, v);
   }
@@ -844,11 +989,30 @@ function rebuildOverSet() {
   for (const id in st.overrides) overSet.add(id);
 }
 
-// A drawer change while a step is being edited: marked here, diffed by
-// stepJourney once the throttle allows. Changes applied from another tab
-// never reach this (store.js keeps them from save's listeners), and nothing
-// is marked while the walk plays, which is never while a step is armed.
-onSave(() => { if (armed && sel >= 0 && winOpen) diffPending = true; });
+// Record authoring changes after the setter that called save() returns. This
+// microtask is the transaction boundary: it coalesces all writes from one UI
+// action, but does not depend on another animation frame arriving. The old
+// frame throttle could leave a step at "0 settings" when the scene stopped
+// scheduling frames immediately after a click.
+let diffQueued = false;
+function queueDiff() {
+  if (diffQueued) return;
+  diffQueued = true;
+  queueMicrotask(() => {
+    if (diffPending) runDiff();
+    diffQueued = false;
+    // A normalising set() inside runDiff can save once more.
+    if (diffPending) queueDiff();
+  });
+}
+onSave(() => {
+  if (!armed || sel < 0 || !winOpen) {
+    return;
+  }
+  if (!diffPending) journeyDiag('save observed; queueing diff');
+  diffPending = true;
+  queueDiff();
+});
 
 // Records every control that moved off the baseline, and keeps every
 // control already recorded following its control. Two kinds of move are not
@@ -861,22 +1025,33 @@ onSave(() => { if (armed && sel >= 0 && winOpen) diffPending = true; });
 // for the neighbour's move.
 function runDiff() {
   diffPending = false;
-  if (!armed) return;
+  if (!armed) { journeyDiag('DIFF REJECTED', { reason: 'not armed' }); return; }
   ensureLoaded();
   const st = data.steps[sel];
-  if (!st) return;
+  if (!st) { journeyDiag('DIFF REJECTED', { reason: 'selected step missing' }); return; }
   const o = st.overrides;
-  let moved = false;
+  let moved = false, changed = JOURNEY_DIAG ? [] : null;
   for (let i = 0; i < R.length; i++) {
     if (skip[i] || inMix[i]) continue;
     if (i === COLOR_I && S.colorWalk > 0) { baseline[i] = R[i].get(S); continue; }
-    const c = R[i], v = c.get(S);
-    if (v !== v) continue;
+    const c = R[i], raw = c.get(S);
+    let v = HALF_SECOND_FADE.has(c.id) ? validValue(c, raw) : raw;
+    if (v === undefined || v !== v) continue;
+    // While authoring, the drawer follows the Journey's half-second grid as
+    // soon as its finer fade control is released.
+    if (v !== raw) c.set(S, v);
     const had = o[c.id] !== undefined;
     if (!had && c.enabled && !c.enabled(S)) continue;
     if (had ? o[c.id] !== v : v !== baseline[i]) {
-      o[c.id] = v;
-      if (!had) overSet.add(c.id);
+      if (c.id === 'textSize' && data.sizeLock) {
+        data.sizeLockValue = v;
+        for (let j = 0; j < data.steps.length; j++) data.steps[j].overrides.textSize = v;
+        overSet.add(c.id);
+      } else {
+        o[c.id] = v;
+        if (!had) overSet.add(c.id);
+      }
+      if (changed) changed.push(c.id + '=' + String(v));
       moved = true;
     }
   }
@@ -885,7 +1060,12 @@ function runDiff() {
   if (snapSeq(st)) moved = true;
   if (snapMix(st)) moved = true;
   if (dropMixOverrides(st)) moved = true;
-  if (moved) persist();
+  if (moved) {
+    persist();
+    journeyDiag('RECORDED STEP ' + (sel + 1), { changed, settingCount: Object.keys(o).length });
+  } else journeyDiag('diff found no changed settings', {
+    lParticles: o.lParticles, particlesOn: o.particlesOn
+  });
 }
 
 function flushDiff() { if (diffPending) runDiff(); }
@@ -919,6 +1099,15 @@ function disarm() {
 export function journeySetWindowOpen(open) {
   if (winOpen && !open) deselect();
   winOpen = !!open;
+  // Self-heal an idle open fold left disarmed by any transport path. An open
+  // selected step is an editor whenever no Journey step is running.
+  if (winOpen && sel >= 0 && play.stepIdx < 0 && !armed) {
+    armed = true;
+    rebuildOverSet();
+    captureBaseline();
+    diffPending = false;
+    version++;
+  }
 }
 
 // A click on step i's row (a second click on the selected one lets it go).
@@ -929,24 +1118,57 @@ export function journeySetWindowOpen(open) {
 // taken from there.
 export function journeySelect(i) {
   ensureLoaded();
-  if (i === sel) { deselect(); return; }
+  journeyDiag('row clicked', { requestedStep: i, sameStep: i === sel });
+  if (i === sel && armed) { deselect(); journeyDiag('step deselected'); return; }
   if (!data.steps[i]) return;
   flushDiff();
   sel = i;
   rebuildOverSet();
   diffPending = false;
   version++;
-  if (play.playing) { armed = false; return; }
-  stopWalk();
+  // During a walk, a row is direct navigation: keep the transport running
+  // and enter that step now. Live control changes are recorded into the
+  // playing step by journeyManualOverride(), so it stays editable in place
+  // without using the stopped-walk authoring arm.
+  if (play.playing) {
+    armed = false;
+    enterStep(i);
+    journeyDiag('JUMPED TO STEP ' + (i + 1), {
+      settingCount: Object.keys(data.steps[i].overrides).length,
+      particlesAfterApply: !!S.layers.particles
+    });
+    return;
+  }
+  stopWalk(false);
   armed = true;
   applyStep(data.steps[i], EDIT_GLIDE_S);
+  cancelWordSequenceOnce();
   captureBaseline();
+  journeyDiag('EDITING STEP ' + (i + 1), {
+    settingCount: Object.keys(data.steps[i].overrides).length,
+    lParticles: data.steps[i].overrides.lParticles,
+    particlesOn: data.steps[i].overrides.particlesOn,
+    text: data.steps[i].text
+  });
 }
 export function journeyDeselect() { deselect(); }
 
 // The drawer's accessors, called every frame, so each is a read.
 export const journeyEditing = () => armed && sel >= 0 && winOpen;
 export const journeyOverridden = id => overSet.has(id);
+
+// Journey mode, for the drawer's preset Ramp time: the window open with the
+// mode on, or a walk playing. While it is, a preset recalled from the drawer
+// glides over the journey's own ramp rather than the drawer's: the step
+// being edited, else the step the walk is on, else the step whose fold is
+// open. With no step in play there is no journey ramp, and the recall cuts.
+export const journeyModeOn = () => winOpen || play.playing;
+export function journeyRampS() {
+  if (!data) return 0;
+  const i = armed ? sel : play.stepIdx >= 0 ? play.stepIdx : sel;
+  const st = i >= 0 ? data.steps[i] : null;
+  return st ? st.rampS : 0;
+}
 
 // The drawer's dot: the control is taken out of the step. It stays where it
 // is on screen; the baseline moves to it, so it is not recorded again until
@@ -956,6 +1178,7 @@ export function journeyClearOverride(id) {
   const st = data.steps[sel];
   if (!st) return;
   flushDiff();
+  if (id === 'textSize' && data.sizeLock) return;
   if (st.overrides[id] === undefined) return;
   delete st.overrides[id];
   overSet.delete(id);
@@ -969,19 +1192,83 @@ export function journeyClearOverrides(i) {
   ensureLoaded();
   const st = data.steps[i];
   if (!st) return;
-  st.overrides = {};
-  if (i === sel) { overSet.clear(); captureBaseline(); diffPending = false; }
+  st.overrides = data.sizeLock ? { textSize: data.sizeLockValue } : {};
+  if (i === sel) { rebuildOverSet(); captureBaseline(); diffPending = false; }
   persist();
 }
 
 // ---------- the list ----------
 
+// Step 1 is the Journey's complete starting scene. Capture every control the
+// Journey can replay, including settings whose layer is currently off or
+// whose drawer row is hidden. Mixer switches and atmosphere recordings live
+// in the step's full mix block instead, so their duplicate schema controls
+// stay out of overrides.
+function snapshotAllOverrides(st) {
+  const o = st.overrides;
+  for (let i = 0; i < R.length; i++) {
+    if (skip[i] || inMix[i]) continue;
+    const c = R[i], v = validValue(c, c.get(S));
+    if (v !== undefined) o[c.id] = v;
+  }
+}
+
+// Step 1's explicit Snapshot button: replace its control state with the
+// complete scene as it exists at this instant. Its own text, timing and
+// interaction fields remain Step fields; the sequencer and mixer are full
+// snapshots alongside every replayable control.
+export function journeySnapshotStep(i) {
+  ensureLoaded();
+  if (i !== 0 || !data.steps[0]) return;
+  flushDiff();
+  const st = data.steps[0];
+  st.overrides = {};
+  snapshotAllOverrides(st);
+  st.seq = Array.isArray(S.seqs) ? seqStateOf(S) : null;
+  st.mix = newMixBlock();
+  data.fullStart = true;
+  if (data.sizeLock && data.sizeRestore && SIZE) {
+    const value = validValue(SIZE, SIZE.get(S));
+    if (value !== undefined) data.sizeRestore[0] = { own: true, value };
+  }
+  if (sel === 0) {
+    rebuildOverSet();
+    captureBaseline();
+    diffPending = false;
+  }
+  persist();
+}
+
+// Journeys made before Step 1 became a full scene only have their old sparse
+// overrides. Upgrade them once by keeping those explicit values and filling
+// every missing replayable control from the current saved scene. The marker
+// prevents later loads from silently rewriting an intentional Step 1 edit.
+function ensureStartSnapshot() {
+  if (!data || data.fullStart || !data.steps.length) return;
+  const st = data.steps[0], o = st.overrides;
+  for (let i = 0; i < R.length; i++) {
+    if (skip[i] || inMix[i] || o[R[i].id] !== undefined) continue;
+    const v = validValue(R[i], R[i].get(S));
+    if (v !== undefined) o[R[i].id] = v;
+  }
+  if (!st.seq && Array.isArray(S.seqs)) st.seq = seqStateOf(S);
+  if (!st.mix) st.mix = newMixBlock();
+  data.fullStart = true;
+  persist();
+}
+
 // A new step at the end, selected straight away (for editing, unless the
-// walk is playing, when its fold just opens).
+// walk is playing, when its fold just opens). The first step is born as a
+// complete snapshot; later steps start as diffs and record only what moves.
 export function journeyAddStep() {
   ensureLoaded();
   if (data.steps.length >= STEPS_MAX) return -1;
   const st = makeStep();
+  if (data.steps.length === 0) { snapshotAllOverrides(st); data.fullStart = true; }
+  if (data.sizeLock && SIZE) {
+    st.overrides.textSize = data.sizeLockValue;
+    data.sizeRestore.push({ own: false, value: data.sizeLockValue });
+  }
   // born holding the sequencer and the mix as they are
   if (Array.isArray(S.seqs)) st.seq = seqStateOf(S);
   st.mix = newMixBlock();
@@ -996,10 +1283,11 @@ export function journeyDeleteStep(i) {
   ensureLoaded();
   if (!data.steps[i]) return;
   if (i === sel) deselect();
-  if (play.stepIdx === i) stopWalk();
+  if (play.stepIdx === i) stopWalk(false);
   else if (play.stepIdx > i) play.stepIdx--;
   if (sel > i) sel--;
   data.steps.splice(i, 1);
+  if (data.sizeLock && data.sizeRestore) data.sizeRestore.splice(i, 1);
   persist();
 }
 
@@ -1013,6 +1301,10 @@ export function journeyMoveStep(from, to) {
   const selStep = sel >= 0 ? steps[sel] : null, playStep = play.stepIdx >= 0 ? steps[play.stepIdx] : null;
   const st = steps.splice(from, 1)[0];
   steps.splice(to, 0, st);
+  if (data.sizeLock && data.sizeRestore) {
+    const restore = data.sizeRestore.splice(from, 1)[0];
+    data.sizeRestore.splice(to, 0, restore);
+  }
   if (selStep) sel = steps.indexOf(selStep);
   if (playStep) play.stepIdx = steps.indexOf(playStep);
   persist();
@@ -1056,10 +1348,44 @@ export function journeySetText(i, text) {
   const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, STEP_TEXT_MAX);
   if (clean === st.text) return;
   st.text = clean;
-  if (i === sel && armed) { flushDiff(); applyText(clean); captureBaseline(); diffPending = false; }
-  else if (play.playing && i === play.stepIdx && clean) { play.appearAt = -1; applyText(clean); wordNow(); }
+  if (i === sel && armed) {
+    flushDiff();
+    applyText(clean);
+    cancelWordSequenceOnce();
+    captureBaseline();
+    diffPending = false;
+  }
+  else if (play.playing && i === play.stepIdx) {
+    play.appearAt = -1;
+    if (clean) { applyText(clean); wordSequenceOnce(); }
+    else cancelWordSequenceOnce();
+  }
   persist();
 }
+
+// The journey's name. A step on screen whose text says NAME takes the new
+// one at once (the step being edited, or the step playing once its text has
+// appeared); the phrase showing finishes as it was.
+export function journeySetName(v) {
+  ensureLoaded();
+  const clean = String(v || '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
+  if (clean === data.name) return;
+  data.name = clean;
+  const i = armed && sel >= 0 ? sel : play.playing && play.appearAt < 0 ? play.stepIdx : -1;
+  const st = i >= 0 ? data.steps[i] : null;
+  if (st && st.text.indexOf('NAME') >= 0) {
+    if (i === sel && armed) {
+      flushDiff();
+      applyText(st.text);
+      cancelWordSequenceOnce();
+      captureBaseline();
+      diffPending = false;
+    }
+    else applyText(st.text);
+  }
+  persist();
+}
+export function journeyName() { ensureLoaded(); return data.name; }
 
 // When in its ramp the step's text first shows: 'start' as the step begins,
 // 'mid' halfway through the ramp, 'end' as the ramp lands. On the step
@@ -1110,6 +1436,153 @@ export function journeySetOverride(i, id, v) {
   persist();
 }
 
+// SIZE can be linked across the whole Journey. The first lock click keeps a
+// private copy of every step's own/inherited size. Moving SIZE while linked
+// changes every step; unlocking puts those exact per-step states back.
+export function journeySizeLocked() { ensureLoaded(); return data.sizeLock; }
+
+export function journeySetTextSize(i, v) {
+  ensureLoaded();
+  if (!data.sizeLock) { journeySetOverride(i, 'textSize', v); return; }
+  if (!data.steps[i] || !SIZE) return;
+  v = validValue(SIZE, v);
+  if (v === undefined) return;
+  if (SIZE.get(S) !== v) SIZE.set(S, v);
+  v = SIZE.get(S);
+  data.sizeLockValue = v;
+  for (let j = 0; j < data.steps.length; j++) data.steps[j].overrides.textSize = v;
+  if (sel >= 0) overSet.add('textSize');
+  if (armed && SIZE_I >= 0) baseline[SIZE_I] = v;
+  persist();
+}
+
+export function journeySetSizeLock(i, on) {
+  ensureLoaded();
+  on = !!on;
+  if (!SIZE || !data.steps[i] || data.sizeLock === on) return;
+  flushDiff();
+  if (on) {
+    const fallback = validValue(SIZE, SIZE.get(S));
+    let value = data.steps[i].overrides.textSize;
+    if (value === undefined) value = fallback;
+    value = validValue(SIZE, value);
+    if (value === undefined) return;
+    data.sizeRestore = data.steps.map(st => {
+      const own = st.overrides.textSize !== undefined;
+      return { own, value: own ? st.overrides.textSize : fallback };
+    });
+    data.sizeLock = true;
+    data.sizeLockValue = value;
+    for (let j = 0; j < data.steps.length; j++) data.steps[j].overrides.textSize = value;
+    SIZE.set(S, value);
+    if (sel >= 0) overSet.add('textSize');
+    if (armed && SIZE_I >= 0) baseline[SIZE_I] = SIZE.get(S);
+  } else {
+    const restore = data.sizeRestore || [];
+    for (let j = 0; j < data.steps.length; j++) {
+      const entry = restore[j];
+      if (entry && entry.own) data.steps[j].overrides.textSize = entry.value;
+      else delete data.steps[j].overrides.textSize;
+    }
+    const live = play.stepIdx >= 0 ? play.stepIdx : armed ? sel : -1;
+    const entry = live >= 0 ? restore[live] : null;
+    if (entry) SIZE.set(S, entry.value);
+    data.sizeLock = false;
+    data.sizeLockValue = null;
+    data.sizeRestore = null;
+    rebuildOverSet();
+    if (armed && SIZE_I >= 0) baseline[SIZE_I] = SIZE.get(S);
+  }
+  diffPending = false;
+  persist();
+}
+
+// ---------- a preset loaded into a step ----------
+//
+// The step's text world: the controls behind the fold's TEXT line (the
+// step's text lands through the Text source and the Custom phrases,
+// applyText above), its FADE IN and FADE OUT, and its GAP. The text itself
+// and when it appears are the step's own fields beside them.
+const TEXT_LOCK_IDS = ['textMode', 'textCustomText', 'textDwell', 'textFadeIn', 'textFadeOut', 'textPhraseGap', 'textSize'];
+const TEXT_LOCK = new Set(TEXT_LOCK_IDS);
+const SIZE_LOCK = new Set(['textSize']);
+const prior = new Array(R.length);
+
+// The window's preset picker: preset k (its index in the drawer's row) is
+// loaded into the step being edited. Authoring only, so it does nothing
+// while the walk plays, and it never touches the walk.
+//
+// It replaces rather than merges: the step's overrides become the preset's
+// control positions and nothing else. The preset is recalled live, over the
+// same short glide selecting a step uses (EDIT_GLIDE_S), and its positions
+// are read back from the controls (presets.js recallPresetForStep says
+// why): every control, for a preset saved as a snapshot; for a built-in,
+// the controls it names, and any its raw state writes moved. Controls the
+// step could never hold are passed over as the diff passes them (the
+// engine's thread, the mixer's own switches), and so is a locked control a
+// snapshot did not name on purpose (its enabled rule says no; it shows a
+// neighbour's position). The sequencer and the mix stay the step's, since a
+// preset carries neither: applyStep puts them back over whatever the preset
+// moved, so what is on screen and in the speakers is what the step now
+// holds. The baseline is taken afresh from there.
+//
+// With the step's text locked, its text world is left exactly as it is: the
+// preset never moves those controls, its own positions for them are not
+// taken, the step's own recorded ones are kept, and its text and appearance
+// stay. Unlocked, the preset's positions for them come in like any other,
+// and the step's text is cleared, so its words follow the preset's own text
+// settings.
+export function journeyLoadPreset(k) {
+  ensureLoaded();
+  if (!armed || sel < 0 || !winOpen || play.playing) return;
+  const st = data.steps[sel];
+  if (!st) return;
+  flushDiff();
+  const locked = st.textLock === true;
+  for (let i = 0; i < R.length; i++) prior[i] = R[i].get(S);
+  const held = locked ? TEXT_LOCK : data.sizeLock ? SIZE_LOCK : null;
+  const named = recallPresetForStep(k, EDIT_GLIDE_S, held);
+  if (named === undefined) return;
+  const names = named ? new Set(named) : null;
+  const next = {};
+  for (let i = 0; i < R.length; i++) {
+    const c = R[i];
+    if (skip[i] || inMix[i] || (held && held.has(c.id))) continue;
+    const v = c.get(S);
+    if (v !== v) continue;
+    const off = !!c.enabled && !c.enabled(S);
+    const take = names ? names.has(c.id) || (v !== prior[i] && !off) : !off;
+    if (!take) continue;
+    const ok = validValue(c, v);
+    if (ok !== undefined) next[c.id] = ok;
+  }
+  if (locked) {
+    for (let j = 0; j < TEXT_LOCK_IDS.length; j++) {
+      const id = TEXT_LOCK_IDS[j];
+      if (st.overrides[id] !== undefined) next[id] = st.overrides[id];
+    }
+  } else st.text = '';
+  if (data.sizeLock) next.textSize = data.sizeLockValue;
+  st.overrides = next;
+  if (sel === 0) snapshotAllOverrides(st);
+  rebuildOverSet();
+  applyStep(st, EDIT_GLIDE_S);
+  captureBaseline();
+  diffPending = false;
+  persist();
+}
+
+// The TEXT line's lock: whether loading a preset into step i leaves its text
+// world alone. It changes nothing on screen, only what a later load does.
+export function journeySetTextLock(i, on) {
+  ensureLoaded();
+  const st = data.steps[i];
+  on = !!on;
+  if (!st || st.textLock === on) return;
+  st.textLock = on;
+  persist();
+}
+
 // AUTO. Switching it never touches the step playing: its settings, its ramp
 // and its clock carry on exactly as they were, and switching it off leaves
 // the step playing until the arrows or the transport move the walk. Only
@@ -1138,6 +1611,102 @@ export function journeySetLoop(on) {
   data.loop = on;
   persist();
 }
+
+// ---------- the library ----------
+
+// Keeps every title distinct, counting up ("Evening", "Evening 2"), compared
+// without case, as the presets' names are; skip lets a rename keep its own.
+function uniqueTitle(t, skip) {
+  const taken = c => {
+    const l = c.toLowerCase();
+    for (let j = 0; j < lib.items.length; j++) if (j !== skip && lib.items[j].title.toLowerCase() === l) return true;
+    return false;
+  };
+  if (!taken(t)) return t;
+  for (let n = 2; ; n++) if (!taken(t + ' ' + n)) return t + ' ' + n;
+}
+
+// Leaving the open journey: what the drawer changed in the selected step is
+// recorded into it first, then the walk ends and the step is let go.
+function leaveOpen() {
+  flushDiff();
+  stopWalk(false);
+  sel = -1; armed = false; overSet.clear(); diffPending = false;
+}
+
+function openId(id) {
+  lib.cur = id;
+  data = journeyById(id);
+  persistLib();
+}
+
+// Opens the journey at chip i (the open one's own chip does nothing).
+export function journeyOpenAt(i) {
+  ensureLoaded();
+  const it = lib.items[i];
+  if (!it || it.id === lib.cur) return;
+  leaveOpen();
+  openId(it.id);
+}
+
+// A new, empty journey at the end of the row, opened. An empty title is a
+// cancel. Returns its index, or -1.
+export function journeyNew(title) {
+  ensureLoaded();
+  const t = cleanTitle(title);
+  if (!t || lib.items.length >= LIB_MAX) return -1;
+  leaveOpen();
+  let n = 0;
+  for (const it of lib.items) n = Math.max(n, parseInt(it.id.slice(1), 10) || 0);
+  const id = 'j' + (n + 1);
+  lib.items.push({ id, title: uniqueTitle(t, -1) });
+  cache.set(id, readJourney(null));
+  openId(id);
+  persist();
+  return lib.items.length - 1;
+}
+
+// Deletes the journey at chip i; the open one hands over to its right-hand
+// neighbour (else its left). The library always keeps one.
+export function journeyDeleteAt(i) {
+  ensureLoaded();
+  const it = lib.items[i];
+  if (!it || lib.items.length <= 1) return;
+  if (it.id === lib.cur) {
+    leaveOpen();
+    const next = lib.items[i + 1] || lib.items[i - 1];
+    lib.cur = next.id;
+    data = journeyById(next.id);
+  }
+  lib.items.splice(i, 1);
+  cache.delete(it.id);
+  saveKey(keyOf(it.id), null);
+  persistLib();
+}
+
+// An empty title leaves the chip as it was.
+export function journeyRenameAt(i, title) {
+  ensureLoaded();
+  const it = lib.items[i], t = cleanTitle(title);
+  if (!it || !t) return;
+  const u = uniqueTitle(t, i);
+  if (u === it.title) return;
+  it.title = u;
+  persistLib();
+}
+
+export function journeyMoveAt(from, to) {
+  ensureLoaded();
+  const n = lib.items.length;
+  if (from < 0 || from >= n || to < 0 || to >= n || from === to) return;
+  const it = lib.items.splice(from, 1)[0];
+  lib.items.splice(to, 0, it);
+  persistLib();
+}
+
+export function journeyLibCount() { ensureLoaded(); return lib.items.length; }
+export function journeyLibTitle(i) { ensureLoaded(); return lib.items[i] ? lib.items[i].title : ''; }
+export function journeyLibOpen() { ensureLoaded(); return libIndex(lib.cur); }
 
 // ---------- the walk ----------
 
@@ -1168,26 +1737,128 @@ onWordAppear(() => {
 // up straight away (stepJourney).
 function enterStep(i) {
   const st = data.steps[i];
+  // The open/highlighted row follows the transport. Previously playStep
+  // moved independently from sel, leaving the old row yellow while another
+  // step was actually running.
+  if (sel !== i) {
+    sel = i;
+    rebuildOverSet();
+    version++;
+  }
+  armed = false;
   play.stepIdx = i;
   play.phaseStartT = play.enterT = nowT;
   play.appearAt = -1;
+  cancelWordSequenceOnce();
   endTween();
   const ramped = st.rampS >= TWEEN_MIN_S;
   const at = APPEAR_AT[st.appear] || 0;
   const textNow = !!st.text && (!ramped || at === 0);
   if (ramped) startRamp(st, textNow);
   else applyStep(st, st.rampS);
-  if (textNow) wordNow();
+  if (textNow) wordSequenceOnce();
   else if (st.text) play.appearAt = nowT + at * st.rampS * 1000;
   setPianoFree(st.piano !== 'text');
 }
 
-function stopWalk() {
+// The app's own run switch (main.js's toggleRun, handed in as setRunning):
+// the journey's transport carries the whole experience with it, so playing
+// a step starts the app and pausing the walk pauses the app.
+let setRunning = null;
+export function setJourneyRunning(fn) { setRunning = fn; }
+const runApp = on => { if (setRunning) setRunning(on); };
+
+function stopWalk(rearm = true) {
+  const edit = play.stepIdx;
   play.playing = false;
   play.stepIdx = -1;
   play.appearAt = -1;
   endTween();
+  cancelWordSequenceOnce();
+  manual.clear();
   setPianoFree(true);
+  // A naturally completed/stopped walk must not leave a fold that looks
+  // editable while silently discarding its changes. Keep the last played
+  // step open and immediately make it the authoring step.
+  if (rearm && winOpen && data && data.steps[edit]) {
+    sel = edit;
+    armed = true;
+    rebuildOverSet();
+    captureBaseline();
+    diffPending = false;
+    version++;
+  }
+}
+
+// Called by live UI controls when the viewer deliberately changes a value.
+// The current Journey tween releases it immediately, and every later step in
+// this same walk leaves it alone. A paused walk still counts as the same
+// session, so a change made while paused remains authoritative on resume.
+export function journeyManualOverride(id, requested) {
+  if (id === 'lParticles' || id === 'particlesOn') journeyDiag('particle control changed', { id });
+  if (armed && sel >= 0 && winOpen) { diffPending = true; queueDiff(); }
+  if (play.stepIdx < 0 || typeof id !== 'string') return;
+  // With Journey visible, performing a control while a step plays is an
+  // edit of that step. Capture the requested position after the UI setter
+  // completes, and release only the current ramp. It must not enter the
+  // walk-wide manual set, or the next step would be forbidden from restoring
+  // its own snapshot (the Particles-on / Step-1-off failure).
+  if (winOpen) {
+    const target = play.stepIdx;
+    queueMicrotask(() => recordLiveControl(target, id, requested));
+    releaseJourneyControl(id);
+    if (id === 'lParticles') releaseJourneyControl('particlesOn');
+    else if (id === 'particlesOn') releaseJourneyControl('lParticles');
+    return;
+  }
+  manual.add(id);
+  // These are two UI doors onto the same Particles switch. Taking either by
+  // hand must protect both ids from a later Journey step.
+  if (id === 'lParticles') manual.add('particlesOn');
+  else if (id === 'particlesOn') manual.add('lParticles');
+  const i = idxOf.get(id);
+  if (i !== undefined) {
+    for (let k = 0; k < tw.n; k++) if (twIdx[k] === i) twIdx[k] = -1;
+  }
+  if (COLOR && id === COLOR.id) tw.colorOn = false;
+  rampIds.delete(id);
+}
+
+function releaseJourneyControl(id) {
+  const i = idxOf.get(id);
+  if (i !== undefined) {
+    for (let k = 0; k < tw.n; k++) if (twIdx[k] === i) twIdx[k] = -1;
+  }
+  if (COLOR && id === COLOR.id) tw.colorOn = false;
+  rampIds.delete(id);
+}
+
+function recordLiveControl(stepIdx, id, requested) {
+  if (!data || !winOpen) return;
+  const st = data.steps[stepIdx], ids = id === 'lParticles' ? ['lParticles', 'particlesOn'] :
+    id === 'particlesOn' ? ['particlesOn', 'lParticles'] : [id];
+  if (!st) return;
+  let moved = false;
+  const changed = [];
+  for (let n = 0; n < ids.length; n++) {
+    const cid = ids[n], k = idxOf.get(cid);
+    if (k === undefined || skip[k] || inMix[k]) continue;
+    const c = R[k];
+    let v = n === 0 && requested !== undefined ? requested : c.get(S);
+    v = validValue(c, v);
+    if (v === undefined || st.overrides[cid] === v) continue;
+    st.overrides[cid] = v;
+    changed.push(cid + '=' + String(v));
+    moved = true;
+    if (stepIdx === sel) overSet.add(cid);
+  }
+  if (snapSeq(st)) moved = true;
+  if (snapMix(st)) moved = true;
+  if (!moved) return;
+  persist();
+  journeyDiag('LIVE RECORDED STEP ' + (stepIdx + 1), {
+    changed, settingCount: Object.keys(st.overrides).length
+  });
 }
 
 // Starts the walk at step i, entering it over its own ramp. A step being
@@ -1199,7 +1870,15 @@ export function journeyPlayFrom(i) {
   i = Math.max(0, Math.min(n - 1, i | 0));
   disarm();
   play.playing = true;
+  runApp(true);
+  journeyDiag('PLAY STEP ' + (i + 1), {
+    settingCount: Object.keys(data.steps[i].overrides).length,
+    lParticles: data.steps[i].overrides.lParticles,
+    particlesOn: data.steps[i].overrides.particlesOn,
+    text: data.steps[i].text
+  });
   enterStep(i);
+  journeyDiag('STEP ' + (i + 1) + ' APPLIED', { particlesAfterApply: !!S.layers.particles });
 }
 
 // A pause holds the walk where it is, ramp and all: the sliders stop where
@@ -1209,6 +1888,7 @@ export function journeyPause() {
   play.playing = false;
   play.pausedAt = nowT;
   setPianoFree(true);
+  runApp(false);
 }
 
 export function journeyStop() { stopWalk(); }
@@ -1227,6 +1907,7 @@ export function journeyTogglePlay() {
     if (play.appearAt >= 0) play.appearAt += d;
     if (tw.active) tw.t0 += d;
     play.playing = true;
+    runApp(true);
     setPianoFree(st.piano !== 'text');
     return;
   }
@@ -1258,7 +1939,7 @@ export function stepJourney(t) {
   if (tw.active) stepTween(t);
   if (play.appearAt >= 0 && t >= play.appearAt) {
     play.appearAt = -1;
-    if (st.text) { applyText(st.text); wordNow(); }
+    if (st.text) { applyText(st.text); wordSequenceOnce(); }
   }
   if (data.autoPlay && t - play.phaseStartT >= (st.rampS + st.holdS) * 1000) {
     const next = play.stepIdx + 1;

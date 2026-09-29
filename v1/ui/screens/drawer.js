@@ -14,8 +14,10 @@ import { S } from '../../../js/state.js';
 import { CONTROLS, SECTIONS, byId } from '../../core/schema.js';
 import {
   presetsVersion, presetCount, presetLabel, presetHasOverride, presetIsActive,
-  applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset, renamePresetAt, presetIsUser
+  applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset, renamePresetAt, presetIsUser,
+  presetIsHearted, presetActiveIndex, togglePresetHeartAt, presetRampS, setPresetRampS
 } from '../../core/presets.js';
+import { perfRecallPreset } from '../../core/perform.js';
 import { ICON } from '../drawlist.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { prof, profToggle, profSave, profCopy } from '../../core/profiler.js';
@@ -27,12 +29,13 @@ import {
 } from '../../core/broadcast.js';
 import {
   journeyEditing, journeyOverridden, journeyClearOverride,
-  journeyRampGlow, journeyRampingControl, journeyRampingSection, journeyRampingSub
+  journeyRampGlow, journeyRampingControl, journeyRampingSection, journeyRampingSub,
+  journeyManualOverride, journeyModeOn, journeyRampS
 } from '../../core/journey.js';
 import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 
-const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'corners', 'tunnel', 'edge', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'render'];
+const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'render'];
 
 // The control each section's header switch stands for: the layer's own on/off,
 // the same one the section holds as its first row, so the header and the row
@@ -338,8 +341,9 @@ function childRuns(items, sectionId) {
 // the section's own row would run (audio starting, the store saving) runs
 // here too. A toggle gets 1 or 0, exactly as ui.control hands it one.
 function setSwitch(sw, on) {
-  if (sw.ctrl.kind === 'toggle') sw.ctrl.set(S, on ? 1 : 0);
-  else sw.ctrl.set(S, on ? sw.onValue : sw.offValue);
+  const value = sw.ctrl.kind === 'toggle' ? (on ? 1 : 0) : (on ? sw.onValue : sw.offValue);
+  journeyManualOverride(sw.ctrl.id, value);
+  sw.ctrl.set(S, value);
 }
 
 // Which sections the viewer left open, restored at the next load. Every
@@ -409,10 +413,35 @@ let renameK = -1;
 // takes an accent wash for SAVED_MS, springing in and out on that state.
 const SAVED_MS = 1200;
 let savedIdx = -1, savedUntil = 0;
+// Ramp time, at the top of the presets: how long a recall glides every
+// slider and the colour to the preset's positions, the performer's engine
+// driving (core/perform.js perfRecallPreset). At 0 a recall lands as the
+// cut it always was. An ad-hoc control, since the presets block is drawn
+// loose above the schema sections. Greyed out in journey mode, when a
+// recall takes the journey's ramp instead (core/journey.js journeyRampS).
+const rampCtrl = {
+  id: 'presetRampS', label: 'Ramp time', kind: 'slider',
+  min: 0, max: 60, step: 0.5, def: 0,
+  get: () => presetRampS(),
+  set: (s, v) => setPresetRampS(v),
+  format: () => presetRampS() < 0.25 ? 'cut' : presetRampS().toFixed(1) + 's',
+  enabled: () => !journeyModeOn()
+};
+const recallRampS = () => journeyModeOn() ? journeyRampS() : presetRampS();
+
 const TIP_PRESET = 'Click to load  ·  Shift-click to save over';
 const TIP_ADD = 'Save the current settings as a new preset';
 const TIP_EDIT = 'Delete or reorder presets';
 const TIP_EDITING = 'Drag to move  ·  click to rename  ·  × to delete';
+const TIP_HEART = 'Heart the lit preset', TIP_UNHEART = 'Unheart the lit preset';
+
+// Hearts. One button at the right of the PRESETS heading hearts or unhearts
+// whichever preset is lit (the one last loaded or saved): filled while that
+// one is hearted, an outline while it is not, and dim and deaf while none is
+// lit. It sits up there, well away from the chips and their edit-mode ×, so
+// a press meant for one can never land on the other. A hearted chip wears a
+// small heart in its left pad, and stays exactly where the viewer put it.
+const HEART_W = 10, HEART_CHIP_S = 9, HEART_S = 13, HEART_HIT_W = 22;
 
 // Edit mode: the chip right of + turns it on and off. While on, every chip
 // wears an × in its upper right corner that deletes it, a click no longer
@@ -430,6 +459,7 @@ let editLabelW = 0;
 // would be cut by the scroll clip. The hovered chip is noted here and its
 // tooltip drawn once the pane is closed off, clear of every clip.
 const tip = { id: -1, x: 0, y: 0, w: 0, h: 0, hover: false, str: '', instant: false };
+const tipLm = { ascent: 0, descent: 0 };
 
 const W_DRAWER = LAYOUT.drawerW, PAD_X = LAYOUT.drawerPadX, TOP = LAYOUT.drawerPadTop;
 const BLEED = 24;   // the pane runs past the screen's left, top and bottom so only its right edge shows
@@ -636,7 +666,9 @@ function measurePresets(ui) {
   const v = presetsVersion(), n = presetCount();
   if (v === widthsVersion && presetW.length >= n) return;
   if (presetW.length < n) presetW = new Float32Array(n + 8);
-  for (let i = 0; i < n; i++) presetW[i] = ui.text.measure(presetLabel(i), TYPE.xs, W.regular) + CHIP_PAD * 2;
+  for (let i = 0; i < n; i++) {
+    presetW[i] = ui.text.measure(presetLabel(i), TYPE.xs, W.regular) + CHIP_PAD * 2 + (presetIsHearted(i) ? HEART_W : 0);
+  }
   widthsVersion = v;
 }
 
@@ -739,7 +771,9 @@ function drawDrag(ui, n) {
   const x = ui.pointerX - drag.ox, y = ui.pointerY - drag.oy;
   ui.dl.pushAlpha(0.85);
   ui.dl.rect(x, y, w, PRESET_H, RADIUS.pill, COLOR.wellHi, 1, COLOR.accent, 8, 0.4);
-  ui.text.draw(ui.dl, presetLabel(k), x + (w - EDIT_PAD) / 2, y + PRESET_H / 2 + 4, TYPE.xs, W.regular, COLOR.ink, 1, TRACK.ui, 1);
+  const hw = presetIsHearted(k) ? HEART_W : 0;
+  if (hw) chipHeart(ui, x, y);
+  ui.text.draw(ui.dl, presetLabel(k), x + hw + (w - EDIT_PAD - hw) / 2, y + PRESET_H / 2 + 4, TYPE.xs, W.regular, COLOR.ink, 1, TRACK.ui, 1);
   ui.dl.popAlpha();
 }
 
@@ -790,7 +824,7 @@ function presetChip(ui, k, px, py, w, t) {
     if (hover) { ui.setCursorHint('pointer'); noteTip(id, px, py, w, TIP_PRESET); }
     if (ui.clicked) {
       if (ui.pointerShift) { savePresetOverAt(k); savedIdx = k; savedUntil = t + SAVED_MS; }
-      else applyPresetAt(k);
+      else perfRecallPreset(k, recallRampS());
     }
   }
   const lifted = drag.k === k && drag.moved;
@@ -802,8 +836,10 @@ function presetChip(ui, k, px, py, w, t) {
   const fl = ui.spring(ui.idx('drawer.presetSaved', k), saved || act ? 1 : 0, MOTION.fade);
   mix4(ui.scratch0, hv > 0.5 ? COLOR.wellHi : COLOR.well, COLOR.accentSoft, fl);
   ui.dl.rect(px, py, w, PRESET_H, RADIUS.pill, ui.scratch0, 1, fl > 0.5 ? COLOR.accent : COLOR.lineSoft, 0, 0);
-  const tw = presetEditing ? w - EDIT_PAD : w;
-  ui.text.draw(ui.dl, saved ? 'Saved' : presetLabel(k), px + tw / 2, py + PRESET_H / 2 + 4, TYPE.xs, W.regular,
+  const hw = presetIsHearted(k) ? HEART_W : 0;
+  const tw = (presetEditing ? w - EDIT_PAD : w) - hw;
+  if (hw) chipHeart(ui, px, py);
+  ui.text.draw(ui.dl, saved ? 'Saved' : presetLabel(k), px + hw + tw / 2, py + PRESET_H / 2 + 4, TYPE.xs, W.regular,
                saved || act ? COLOR.accent : hv > 0.5 ? COLOR.ink : COLOR.inkDim, 1, TRACK.ui, 1);
   // a built-in the viewer has saved over wears a small dot in its right pad
   if (presetHasOverride(k) && !presetEditing) ui.dl.rect(px + w - 7.5, py + PRESET_H / 2 - 1.5, 3, 3, 1.5, COLOR.accent, 0, null, 0, 0);
@@ -814,6 +850,31 @@ function presetChip(ui, k, px, py, w, t) {
     ui.dl.icon(ICON.CLOSE, dcx - is / 2, dcy - is / 2, is, is, COLOR.ink, 1.6, 0);
   }
   if (lifted) ui.dl.popAlpha();
+}
+
+// A hearted chip's small heart, filled, in its left pad.
+function chipHeart(ui, px, py) {
+  ui.dl.icon(ICON.HEART, px + 7, py + (PRESET_H - HEART_CHIP_S) / 2, HEART_CHIP_S, HEART_CHIP_S, COLOR.accent, 0, 0);
+}
+
+// The heading's heart button, on the right of the heading's line (x, y, w,
+// h, where subHeading placed it). Drawn after the chips so its tooltip is
+// the one left standing when it is hovered (drawPresets clears the tip as
+// it starts); its hit box stops short of the chips' line, so the two never
+// share a press.
+function presetHeart(ui, x, y, w, h) {
+  const k = presetActiveIndex(), live = k >= 0;
+  const bx = x + w - HEART_HIT_W + 4, by = y - 6, bh = h + 8;
+  const id = ui.id('drawer.presetHeart');
+  ui.interact(id, bx, by, HEART_HIT_W, bh, !live);
+  const hover = live && ui.hover;
+  if (hover) { ui.setCursorHint('pointer'); noteTip(id, bx, by, HEART_HIT_W, presetIsHearted(k) ? TIP_UNHEART : TIP_HEART, bh); }
+  if (live && ui.clicked) togglePresetHeartAt(k);
+  const on = live && presetIsHearted(k);
+  const ix = bx + (HEART_HIT_W - HEART_S) / 2, iy = y + h / 2 - HEART_S / 2;
+  if (!live) ui.dl.pushAlpha(0.35);
+  ui.dl.icon(ICON.HEART, ix, iy, HEART_S, HEART_S, on ? COLOR.accent : hover ? COLOR.ink : COLOR.inkDim, on ? 0 : 1.4, 0);
+  if (!live) ui.dl.popAlpha();
 }
 
 function addChip(ui, px, py) {
@@ -1098,7 +1159,10 @@ export function drawDrawer(ui, app) {
 
   // presets, a wrapped row of chips at the head of the drawer
   subHeading(ui, 'PRESETS', false);
+  const hx = ui.rx, hy = ui.ry, hw = ui.rw, hh = ui.rh;
+  ui.control(rampCtrl, S);
   drawPresets(ui);
+  presetHeart(ui, hx, hy, hw, hh);
   // a wider gap than between sections, so the presets read as a block of
   // their own above the list rather than as the first section's contents
   ui.spacer(SPACE.lg);
@@ -1212,11 +1276,17 @@ export function drawDrawer(ui, app) {
             if (slot >= 0) ui.endLineChevron();
             // a control can carry a hover tip (schema `tip`), shown like the chips'
             if (it.tip && ui._lastHover) {
-              // Anchored over the row's LABEL, not the whole row, so the
-              // tip sits above the word it explains rather than the slider.
+              // A row's tip belongs to its LABEL: it shows only while the
+              // pointer is on the word itself, and sits left aligned just
+              // above it (tooltipAt's instant form), never over the slider.
               // Measured only on hovered frames, so steady frames pay nothing.
               const lw = it.label ? ui.text.measure(it.label, TYPE.sm, W.regular) : ui._lastW;
-              noteTip(ui._lastId, ui._lastX, ui._lastY, lw, it.tip, ui._lastH, true);
+              ui.text.lineMetrics(TYPE.sm, tipLm);
+              const lh = tipLm.ascent + tipLm.descent;
+              const px = ui.pointerX, py = ui.pointerY;
+              if (px >= ui._lastX && px < ui._lastX + lw && py >= ui._lastY && py < ui._lastY + lh) {
+                noteTip(ui._lastId, ui._lastX, ui._lastY, lw, it.tip, lh, true);
+              }
             }
           }
           if (varFold[i] >= 0) {
