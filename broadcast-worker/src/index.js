@@ -92,9 +92,10 @@ export class Room {
       await this.ctx.storage.delete('snap');
     } else if (msg.t === 'state') {
       await this.ctx.storage.put('snap', message);
-    } else if (msg.t !== 'phase') return;
-    // A phase beacon is relayed but never stored: it says where the strobe is
-    // NOW, and a copy served minutes later would be worse than none.
+    } else if (msg.t !== 'phase' && msg.t !== 'word') return;
+    // A phase beacon or a word is relayed but never stored: each says what
+    // is on screen NOW, and a copy served minutes later would be worse than
+    // none.
     for (const peer of this.followers()) {
       try { peer.send(message); } catch (e) { /* a peer mid-close; it will reconnect or is gone */ }
     }

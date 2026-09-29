@@ -38,6 +38,7 @@ import { S } from '../../js/state.js';
 import { onSave, snapshot, applySnapshot, readKey, saveKey } from './store.js';
 import { replayLive, presetTransitionCount, lastTransitionSec } from './presets.js';
 import { setStrobeClockOffset, setStrobeSyncTarget, clearStrobeSync } from './strobe.js';
+import { onWordAppear, wordState, remoteWord, setWordsRemote } from './words.js';
 
 const REC_KEY = 'signal.broadcast.v1';
 const SEND_DELAY_MS = 250;
@@ -396,17 +397,30 @@ export function initBroadcast(bits_, hooks_) {
           if (typeof msg.run === 'boolean' && hooks.setRunning) hooks.setRunning(msg.run);
         } else if (msg.t === 'phase') {
           takeBeacon(msg);
+        } else if (msg.t === 'word') {
+          // The broadcaster's exact word, with its seed and fade rolls, so
+          // the same word dissolves the same way here. The first one hands
+          // the word scheduler to the broadcast (words.js goes remote).
+          if (typeof msg.w === 'string') remoteWord(msg.w, msg.seed, msg.fi, msg.fo);
         } else if (msg.t === 'time' && Number.isFinite(msg.c) && Number.isFinite(msg.s)) {
           takeTime(msg.c, msg.s);
         } else if (msg.t === 'end') {
           clearStrobeSync();
+          setWordsRemote(false);
           hooks.notify('The broadcast has ended');
         }
       },
       onStatus: st => {
-        if (st === 'open') { hooks.notify('Following: ' + room); probeBurst(); }
+        if (st === 'open') {
+          hooks.notify('Following: ' + room);
+          probeBurst();
+          // The word scheduler is the broadcaster's from the first moment,
+          // not from the first word: otherwise this side would deal its own
+          // words into the gap before the broadcaster's first one arrives.
+          setWordsRemote(true);
+        }
         else if (st === 'lost') hooks.notify('Broadcast link lost, reconnecting…');
-        else if (st === 'dead') { clearStrobeSync(); hooks.notify('Broadcast failed: could not reach the relay'); }
+        else if (st === 'dead') { clearStrobeSync(); setWordsRemote(false); hooks.notify('Broadcast failed: could not reach the relay'); }
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);
@@ -430,6 +444,16 @@ export function initBroadcast(bits_, hooks_) {
   onSave(queueSend);
   probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);
   beaconTimer = setInterval(sendBeacon, BEACON_MS);
+
+  // Each word this tab's scheduler picks goes out the moment it appears,
+  // with its seed and fade rolls, so every follower shows the same word
+  // arriving and leaving the same way. Words are occasional (seconds
+  // apart), so the message is built on the spot.
+  onWordAppear(w => {
+    if (!liveCount()) return;
+    const msg = JSON.stringify({ t: 'word', w, seed: wordState.seed, fi: wordState.fadeInMul, fo: wordState.fadeOutMul });
+    for (const s of sessions) if (s.sock && s.status === 'live') s.sock.send(msg);
+  });
 
   // Sessions left active last time come back up on their own.
   for (const s of sessions) if (s.active) openSession(s);
