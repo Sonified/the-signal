@@ -3,8 +3,8 @@
 // the edge layer's tail and head-cap passes, which are new for v1.
 //
 // The full-screen pass widens past the old struct U in one way: cornerCol
-// and the ring lookup table both went from a single shared tint to their own
-// colour, so S.perElementColor can give rings and corners their own hue the
+// and the rings both went from a single shared tint to their own colour, so
+// S.perElementColor can give rings and corners their own hue the
 // way js/renderers/canvas2d.js already does. Field stays a single global
 // colour, same as canvas2d's drawField, which never branches on
 // perElementColor either. The 'full' field mode also now checks the left
@@ -12,6 +12,19 @@
 // fillRect(S.edgeInset, 0, visW(), H); the old WebGPU port never bounded it
 // and painted straight across, which only looked right because v0's DOM
 // drawer physically covered the gap.
+//
+// The rings are no longer read from a radial lookup table around the field
+// centre. Each ring is a record of its own (centre, radius, half-width,
+// colour; see scene-data.js's RING_FLOATS) and a pixel is measured against
+// a ring directly, with the same coverage formula the lookup used to be
+// filled with. That gives each ring its own centre, which is what
+// head-tracked parallax needs. A pixel does not measure every ring, though:
+// scene-data.js also builds a radial index (RING_BINS), the span from the
+// field centre to the rim cut into equal bins, each listing in ring order
+// the rings whose stroke could reach it. A pixel finds its bin from its
+// distance to the field centre and measures only those, usually one or two
+// rings rather than the whole tunnel's worth, and since every ring it skips
+// would have added exactly nothing, the sum is the same as measuring all.
 //
 // Everything downstream is one additive sum, clamped once at the very end
 // rather than after every layer. That is equivalent to canvas2d's per-draw
@@ -34,12 +47,21 @@ struct U {
   fieldP: vec4f,              // mode (0 disc, 1 panel, 2 full), radius/half-extent, panel corner radius, fieldOn
   cornerA: vec4f,              // per-corner glow alpha, order matches canvas2d: TL(inset), TR, BR, BL(inset)
   cornerCol: array<vec4f, 4>,   // per-corner glow colour, same order
-  misc: vec4f,                  // corner glow radius, ring outer radius, LUT_N, ringsOn
+  misc: vec4f,                  // corner glow radius, ring outer rim, ring count (lookup: its samples), rings (0 off, 1 records, 2 old lookup)
   misc2: vec4f,                  // cornersOn, left inset in device px, field fade radius, fade softness
-  cornerP: vec4f,                // corner look (0 glow, 1 beam, 2 bracket, 3 arc), unused x3
+  cornerP: vec4f,                // corner look (0 glow, 1 beam, 2 bracket, 3 arc), ring bin count, ring bins per device px, unused
 };
 @group(0) @binding(0) var<uniform> u: U;
-@group(0) @binding(1) var<storage, read> lut: array<f32>;   // rgb triples, one per radial sample
+// Two vec4f per ring: (centre x, centre y, radius, half-width) in device px,
+// then (rgb already times the ring's alpha, spare).
+@group(0) @binding(1) var<storage, read> rings: array<vec4f>;
+// The records' radial bin index: bin count + 1 offsets, then ring numbers.
+// Bin b's rings are entries ringBins[b] up to ringBins[b + 1], counted from
+// the start of this array (scene-data.js's RING_BINS).
+@group(0) @binding(3) var<storage, read> ringBins: array<u32>;
+// TEMPORARY A/B: the old radial lookup, rgb triples, one per radial sample,
+// read only when misc.w is 2 (S.ringDraw, the Render section's Ring draw). Goes when that does.
+@group(0) @binding(2) var<storage, read> lut: array<f32>;
 ${RADIAL_FADE_WGSL}
 
 fn sdRoundBox(p: vec2f, b: f32, r: f32) -> f32 {
@@ -121,7 +143,41 @@ fn fsFull(@builtin(position) fc: vec4f) -> @location(0) vec4f {
     rgb = rgb + u.col.rgb * (u.col.w * a);
   }
 
-  if (u.misc.w > 0.5) {
+  if (u.misc.w > 0.5 && u.misc.w < 1.5) {
+    // Each ring's coverage at this pixel's distance from the ring's own
+    // centre: full inside the stroke, a one-pixel ramp at each edge, nothing
+    // beyond, exactly the formula scene-data.js used to splat into the
+    // lookup, now evaluated at this pixel rather than at the nearest of 4096
+    // radii. The lookup ended at the rim (u.misc.y), so the outer half of a
+    // thick ring straddling it was cut off there; the d < rim test keeps
+    // that edge where it was.
+    //
+    // Only the rings listed in this pixel's radial bin are measured, the
+    // bin found from the distance to the FIELD centre the index is built
+    // around. Each ring's own d < rim clip stays inside the loop rather than
+    // one clip on that field-centre distance up front: with every ring on
+    // the field centre the two are the same, but once parallax gives a ring
+    // its own centre they are not, and a pixel past the rim then reads the
+    // last bin, where scene-data.js lists every ring reaching past it.
+    // (Nothing on screen is past the rim anyway, bar a wide drawer's strip:
+    // the rim is 0.62 of the visible diagonal and the corners 0.5.) The min
+    // comes before the conversion so a far pixel never overflows the u32.
+    let rim = u.misc.y;
+    let bin = u32(min(length(p - ctr) * u.cornerP.z, u.cornerP.y - 1.0));
+    let end = ringBins[bin + 1u];
+    for (var j = ringBins[bin]; j < end; j = j + 1u) {
+      let i = ringBins[j];
+      let g = rings[i * 2u];
+      let d = length(p - g.xy);
+      let cov = clamp(g.w + 0.5 - abs(d - g.z), 0.0, 1.0);
+      if (d < rim) {
+        rgb = rgb + rings[i * 2u + 1u].rgb * cov;
+      }
+    }
+  }
+
+  // TEMPORARY A/B: the old radial lookup read, kept only to compare against.
+  if (u.misc.w > 1.5) {
     let n = u.misc.z;
     let x = length(p - ctr) / u.misc.y * n - 0.5;
     if (x > -1.0 && x < n) {

@@ -15,8 +15,11 @@
 //
 // GPU resources are created once. Only the edge layer's vertex buffers ever
 // grow, and only on the rare frame the live particle count outruns the
-// current capacity (see SceneData.ensureCapacity); the uniform and ring
-// lookup buffers are fixed size and never touched again after creation.
+// current capacity (see SceneData.ensureCapacity); the uniform, ring record
+// and ring bin index buffers are fixed size and never recreated. The records
+// have room for MAX_RINGS rings and the index for its worst case, every ring
+// listed in every radial bin (scene-data.js's RING_BINS), and each frame
+// uploads only the live part of each.
 //
 // The edge can leave trails through video feedback (feedback.js), which
 // softens it into streaks of light. With Edge > Feedback > Amount above 0,
@@ -57,9 +60,9 @@
 // This lives here, beside the drawing, so it runs wherever the engine does,
 // worker or page.
 
-import { S, Z_NEAR } from '../../js/state.js';
+import { S, Z_NEAR, MAX_RINGS } from '../../js/state.js';
 import { SCENE_WGSL } from './scene.wgsl.js';
-import { SceneData, LUT_N, UNIFORM_FLOATS } from './scene-data.js';
+import { SceneData, LUT_N, UNIFORM_FLOATS, RING_FLOATS, RING_BIN_WORDS } from './scene-data.js';
 import { createFeedback } from './feedback.js';
 import { createEdgeFx } from './edge-fx.js';
 import { motionStep } from '../core/motion.js';
@@ -98,16 +101,27 @@ export function createScene(device, format) {
   const bgl = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-      { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      // TEMPORARY A/B: the old ring lookup (S.ringDraw, the Render section's Ring draw).
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      // The ring records' radial bin index.
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
     ]
   });
   const layout = device.createPipelineLayout({ bindGroupLayouts: [bgl] });
 
   const uniBuf = device.createBuffer({ size: UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  const lutBuf = device.createBuffer({ size: LUT_N * 3 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const ringBuf = device.createBuffer({ size: MAX_RINGS * RING_FLOATS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const binBuf = device.createBuffer({ size: RING_BIN_WORDS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const lutBuf = device.createBuffer({ size: LUT_N * 3 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });   // temporary A/B
   const bind = device.createBindGroup({
     layout: bgl,
-    entries: [{ binding: 0, resource: { buffer: uniBuf } }, { binding: 1, resource: { buffer: lutBuf } }]
+    entries: [
+      { binding: 0, resource: { buffer: uniBuf } },
+      { binding: 1, resource: { buffer: ringBuf } },
+      { binding: 2, resource: { buffer: lutBuf } },
+      { binding: 3, resource: { buffer: binBuf } }
+    ]
   });
 
   const pipeFull = device.createRenderPipeline({
@@ -253,7 +267,13 @@ export function createScene(device, format) {
     }
     const q = device.queue;
     q.writeBuffer(uniBuf, 0, data.uniform);
-    if (data.ringsAny) q.writeBuffer(lutBuf, 0, data.lut);
+    if (data.ringsAny) {
+      if (data.ringsLut) q.writeBuffer(lutBuf, 0, data.lut);   // temporary A/B
+      else {
+        q.writeBuffer(ringBuf, 0, data.rings, 0, data.ringCount * RING_FLOATS);
+        q.writeBuffer(binBuf, 0, data.ringBins, 0, data.ringBinsLen);
+      }
+    }
     if (data.tailVertCount) q.writeBuffer(tailBuf, 0, data.tailVerts, 0, data.tailVertCount * 8);
     if (data.capInstCount) q.writeBuffer(capBuf, 0, data.capInsts, 0, data.capInstCount * 12);
 

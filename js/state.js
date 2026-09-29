@@ -89,6 +89,9 @@ export const S = {
   hintSweep: 2,               // v1: the hint's left-to-right dissolve speed, x the words' default Leave sweep
   hintFadeInMs: 2000,         // v1: ms the hint takes to appear (boot and every pause), 0 at once
   hintArrive: 'sweep',        // v1: how the hint appears: 'sweep' left to right, 'all' at once
+  parallaxSim: false,         // v1: simulated head sway for parallax (v1/core/eye.js); never saved, off every load
+  parallaxAmount: 0.1,        // v1: the sway's peak eye offset, tunnel units (0.1 is 10% of the tunnel's radius)
+  parallaxSpeed: 0.25,        // v1: the sway's frequency, Hz (one side to the other and back)
 
   // Slow drift applied to depth. Its own accumulator so it is independent of the
   // strobe rate. It only ever subtracts: effDepth swings from the set depth down
@@ -138,6 +141,8 @@ export const S = {
 
   rings: [], particles: [], lastRingEmit: -1,
   ringRate: 5,                // v1: rings born per second (Ring density)
+  ringOrigin: 1,              // v1: where rings are born, 1 the far plane, lower nearer (Ring origin)
+  ringFadeInMs: 1000,         // v1: ms a new ring takes to fade up from nothing, 0 at once (Ring fade in)
 
   // ---------- color ----------
   // Hue wanders via a damped random walk on its velocity rather than on the hue

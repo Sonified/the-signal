@@ -87,7 +87,7 @@
 // pass under the pointer made the list impossible to scroll, so the wheel
 // always belongs to the enclosing ui.scroll. The one exception is the
 // slider's fine nudge, which needs Alt/Option held (see slider()).
-//   ui.segment(id, labels, index, disabled) -> new index
+//   ui.segment(id, labels, index, disabled, label?) -> new index
 //   ui.select(id, label, labels, index, readout, disabled) -> new index
 //     a dropdown whose open menu floats over the rows below it; a screen
 //     with selects calls ui.popupInput() before its rows and ui.popupDraw()
@@ -581,7 +581,10 @@ function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi0
 
 const segWidest = new WeakMap();   // label array -> width of its widest label
 
-function segment(id, labels, index, disabled) {
+// label is optional: given, the segment carries its name on a line of its own
+// above the pill, as a dropdown does, for choices whose options do not say
+// what they choose between (a schema segment with labelAbove: true).
+function segment(id, labels, index, disabled, label) {
   const ui = this;
   const nid = ui.id(id);
   const focused = disabled ? false : ui.registerFocusable(nid);
@@ -608,9 +611,16 @@ function segment(id, labels, index, disabled) {
   const rows = wrap ? 2 : 1;
   const rh = touchAware(ui, SEG_H);
   const totalH = rows * rh + (rows - 1) * SPACE.xxs;
+  const labelH = label ? ui._lm.ascent + ui._lm.descent : 0;
+  const head = label ? labelH + SPACE.xxs : 0;
 
-  ui.nextRect(totalH);
-  const rx = ui.rx, ry = ui.ry, rw = ui.rw;
+  ui.nextRect(head + totalH);
+  const rx = ui.rx, top = ui.ry, rw = ui.rw, ry = top + head;
+
+  if (label) {
+    labelHit(ui, nid, label, rx, top, labelH, rw, disabled);
+    ui.text.draw(ui.dl, label, rx, top + ui._lm.ascent, TYPE.sm, W.regular, disabled ? COLOR.inkFaint : COLOR.inkDim, 0, TRACK.ui, 1);
+  }
 
   ui.dl.rect(rx, ry, rw, totalH, RADIUS.pill, COLOR.well, 0, null, 0, 0);
 
@@ -663,8 +673,8 @@ function segment(id, labels, index, disabled) {
 
   if (focused && ui.focusVisible) ui._focusRing(rx, ry, rw, totalH, RADIUS.pill);
 
-  ui._lastId = nid; ui._lastX = rx; ui._lastY = ry; ui._lastW = rw; ui._lastH = totalH;
-  ui._lastHover = ui.pointerX >= rx && ui.pointerX < rx + rw && ui.pointerY >= ry && ui.pointerY < ry + totalH;
+  ui._lastId = nid; ui._lastX = rx; ui._lastY = top; ui._lastW = rw; ui._lastH = head + totalH;
+  ui._lastHover = ui.pointerX >= rx && ui.pointerX < rx + rw && ui.pointerY >= top && ui.pointerY < ry + totalH;
 
   return newIndex;
 }
@@ -1587,7 +1597,7 @@ function control(ctrl, S, shown) {
         if (!cache) { cache = { pos: NaN, text: '', at: -1e9 }; formatCache.set(ctrl.id, cache); }
         if (ctrl.format && ui.t - cache.at > 250) { cache.at = ui.t; cache.text = ctrl.format(S); }
         ni = ui.select(ctrl.id, ctrl.label, labels, idx, cache.text, !enabled);
-      } else ni = ui.segment(ctrl.id, labels, idx, !enabled);
+      } else ni = ui.segment(ctrl.id, labels, idx, !enabled, ctrl.labelAbove ? ctrl.label : undefined);
       if (ni !== idx) { ctrl.set(S, ctrl.options[ni].value); changed = true; }
       break;
     }

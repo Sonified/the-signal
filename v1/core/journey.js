@@ -123,13 +123,15 @@ const HALF_SECOND_FADE = new Set(['textFadeIn', 'textFadeOut', 'textDwell']);
 // The controls a step can hold: exactly the ones a snapshot replays
 // (presets.js), in its order, clickMode first. The engine's thread is left
 // out: which thread runs the app is how this machine runs it, not a state of
-// the session, and moving it restarts the engine.
+// the session, and moving it restarts the engine. So is the parallax sim's
+// switch (core/eye.js): a viewing aid standing in for head tracking, never
+// part of what a journey shows.
 const R = REPLAY_CONTROLS;
 const idxOf = new Map();
 const skip = new Uint8Array(R.length);
 for (let i = 0; i < R.length; i++) {
   idxOf.set(R[i].id, i);
-  if (R[i].id === 'engineThread') skip[i] = 1;
+  if (R[i].id === 'engineThread' || R[i].id === 'parallaxSim') skip[i] = 1;
 }
 const baseline = new Array(R.length);
 const MODE = byId('textMode'), CUSTOM = byId('textCustomText');

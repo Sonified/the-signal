@@ -63,8 +63,8 @@ export const FLIGHT = 9;
 // CPU works out each piece's depth with it to sort the draw order.
 export const LETGO = 0.12;
 export const TUMBLE_PERIOD = 64;
-// The uniform block: eight vec4f.
-export const UNIFORM_FLOATS = 32;
+// The uniform block: nine vec4f.
+export const UNIFORM_FLOATS = 36;
 // A slot's record: three vec4f, side by side in the slots array (slot s at
 // entries 3s, 3s + 1 and 3s + 2), so the CPU's upload of a run of slots is
 // still one contiguous range. The third holds the piece's spin factor
@@ -92,6 +92,7 @@ struct U {
   mot: vec4f,    // spread (0..1), flutter (0..1), target units per device px (1 on screen), opacity (0..1)
   fd: vec4f,     // centre fade in amount (0..1), Z_NEAR, spin clock (s, wrapped), tumble (0 flat to 1 full 3D)
   lf: vec4f,     // life (share of the flight, 0..1), fold (0 off, 1 on, 2 on and mirrored), domain start angle, domain span (radians)
+  eye: vec4f,    // the viewer's eye x, y (tunnel units, core/eye.js), unused, unused
 };
 @group(0) @binding(0) var<uniform> u: U;
 // One record per slot, three vec4f, written at birth. Entry 3s: birth time
@@ -308,6 +309,14 @@ fn vsConf(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V
   let famp = mix(FLUTTER_AMP_LO, FLUTTER_AMP_HI, rnd(seed, 5u)) * u.mot.y;
   let wob = famp * vec2f(sin(fa), 0.5 * sin(2.0 * fa + TAU * rnd(seed, 6u)));
   let centre = vec3f(vec2f(cos(th), sin(th)) * rad + wob, z);
+  // The same centre as the viewer's eye sees it (core/eye.js): the eye's
+  // sideways offset comes off in the plane before the perspective divide,
+  // so a far piece barely moves and a near one moves a lot. Everything that
+  // decides where it lands on screen (the fold's element and twin below,
+  // the corners' projection) goes by this; its fades and its light stay on
+  // its own position, since they belong to the piece and must ride with it.
+  // With the eye at 0 it is centre.xy, bit for bit.
+  let seen = centre.xy - u.eye.xy;
 
   // The size cap (used below), needed here for the twin's reach.
   let focal = u.view.z;
@@ -331,8 +340,8 @@ fn vsConf(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V
     let dom0 = u.lf.z;
     let span = u.lf.w;
     let wdg = select(span, 2.0 * span, mirrored);
-    let r = length(centre.xy);
-    let a = select(dom0 + 0.5 * span, atan2(centre.y, centre.x), r > 1e-6);
+    let r = length(seen);
+    let a = select(dom0 + 0.5 * span, atan2(seen.y, seen.x), r > 1e-6);
     let rel = a - dom0;
     let kw = wdg * floor(rel / wdg);
     var m = rel - kw;
@@ -450,7 +459,11 @@ fn vsConf(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V
   // alike; unfolded that is the identity. Only where it lands changes: it
   // keeps its own normal and light, so the fold shows the piece where it
   // flew exactly as it would look there, with no jump as it crosses a seam.
-  let pxy = vec2f(gc * pc.x - gs * gsg * pc.y, gs * pc.x + gc * gsg * pc.y);
+  // Each corner is first moved by the eye, the same shift in the plane for
+  // all four, then divided by its own depth; the fold comes after, so the
+  // kaleidoscope folds the scene as the moved eye sees it.
+  let ps = pc.xy - u.eye.xy;
+  let pxy = vec2f(gc * ps.x - gs * gsg * ps.y, gs * ps.x + gc * gsg * ps.y);
   let sp = u.view.xy + pxy * (focal / w * u.mot.z);
   let ndc = vec2f(sp.x * u.tgt.x * 2.0 - 1.0, 1.0 - sp.y * u.tgt.y * 2.0);
   o.pos = vec4f(ndc * w, 0.0, w);

@@ -108,6 +108,7 @@ import { CONFETTI_WGSL, N_MAX, FLIGHT, LETGO, TUMBLE_PERIOD, UNIFORM_FLOATS, SLO
 import { createFold, FOLD_CHAMBER_FORMAT } from './fold.js';
 import { createFeedback, FEEDBACK_FORMAT } from './feedback.js';
 import { motionStep } from '../core/motion.js';
+import { eye } from '../core/eye.js';
 
 // The travel clock wraps at W travel-seconds, so it and the birth times
 // stay precise in the shader's f32 (a step of about 0.0005 s near the top).
@@ -273,8 +274,8 @@ export function createConfetti(device, format) {
   // The uniform block as last uploaded, bit for bit, and whether there has
   // been an upload. update writes only when this frame's block differs, so a
   // stopped scene with nothing moving uploads nothing, and any change at all,
-  // to any of the 32 floats, however it came about, is a differing bit and
-  // goes up. Nothing else writes uniBuf.
+  // to any of its floats, however it came about (a swaying eye on a stopped
+  // scene too), is a differing bit and goes up. Nothing else writes uniBuf.
   const uniBits = new Uint32Array(uni.buffer);
   const upBits = new Uint32Array(UNIFORM_FLOATS);
   let upValid = false;
@@ -915,6 +916,11 @@ export function createConfetti(device, format) {
     uni[24] = clampNum(S.confFade, 0, 1, 0.55); uni[25] = Z_NEAR; uni[26] = spin; uni[27] = clampNum(S.confTumble, 0, 1, 1);
     uni[28] = clampNum(S.confLife, 0.05, 1, 1);
     uni[29] = kaleidoNow ? (mirror ? 2 : 1) : 0; uni[30] = UP - span * 0.5; uni[31] = span;
+    // The viewer's eye, tunnel units (core/eye.js). It needs no overscan: no
+    // piece is trimmed to the visible field (each flies its whole flight,
+    // on screen or off, and the rasteriser does the clipping), so whatever
+    // leaning brings in from past the edge is already there to be drawn.
+    uni[32] = eye.x; uni[33] = eye.y; uni[34] = 0; uni[35] = 0;
     let same = upValid;
     for (let i = 0; same && i < UNIFORM_FLOATS; i++) if (uniBits[i] !== upBits[i]) same = false;
     if (!same) {

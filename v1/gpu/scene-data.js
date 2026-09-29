@@ -1,14 +1,14 @@
 // Per-frame CPU data for the scene: the uniform block field/rings/corners
-// read, the ring layer's radial colour lookup, and the edge layer's vertex
+// read, the ring layer's list of ring records, and the edge layer's vertex
 // and instance buffers. Nothing here touches the GPU directly; scene.js owns
 // the device and just uploads whatever this module last wrote.
 //
 // Two things widen past what js/framedata.js did for the old WebGPU path.
 // First, rings and corners can now carry their own colour per element
 // (S.perElementColor), which the old single-tint full-screen shader never
-// needed, so the ring lookup table went from one float per radial sample to
-// three (its colour, already weighted by coverage, rather than a bare
-// coverage number multiplied by one shared tint later). Second, the ring
+// needed, so each ring carries its own colour, already weighted by its
+// alpha, rather than a bare coverage number multiplied by one shared tint
+// later. Second, the ring
 // stroke width now includes S.ringThick and the ring's own tw the way
 // js/renderers/canvas2d.js draws it; the old WebGPU port dropped both and
 // drew every ring at a fixed width, which is a real parity gap, not a
@@ -18,15 +18,69 @@
 // frame, always in the same order, and never grows anything unless the live
 // particle count has actually outrun the current capacity.
 
-import { S, layers, Z_NEAR, CORNER_TYPES } from '../../js/state.js';
+import { S, layers, Z_NEAR, CORNER_TYPES, MAX_RINGS } from '../../js/state.js';
 import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { shape, smoothstep } from '../../js/util.js';
 import { radialFade } from '../core/fade.js';
 import { flickerLevel } from '../core/strobe.js';
+import { eye } from '../core/eye.js';
 import { bandHue } from '../../js/color.js';
 
-export const LUT_N = 4096;                 // radial samples for the ring layer
 export const UNIFORM_FLOATS = 44;          // see scene.wgsl.js's struct U
+
+// Rings used to be splatted into a 4096-sample radial lookup around the one
+// field centre, which the shader read by distance from that centre. A lookup
+// can only describe rings that all share a centre, and head-tracked parallax
+// needs each ring to sit at its own (a near ring shifts further than a far
+// one). So each ring that survives culling is now one record the shader
+// measures a pixel against directly: its centre, radius, half-width and
+// colour (which pixels measure which rings is the index below). It is the same coverage formula the lookup was filled with,
+// evaluated exactly at each pixel's own radius instead of sampled at 4096
+// radii and interpolated, so the picture is the same, if anything a touch
+// crisper. Eight floats a ring: centre x, centre y (device px), radius,
+// half-width, colour rgb already times the ring's alpha, and one spare.
+export const RING_FLOATS = 8;
+
+// Measuring every pixel against every ring is up to MAX_RINGS measurements a
+// pixel, and any one pixel is only ever touched by the one or two rings whose
+// stroke passes near it. So the records come with a radial index: the span
+// from the field centre out to the rim is cut into RING_BINS equal bins, each
+// ring is listed in every bin its stroke could reach, and a pixel works out
+// its bin from its own distance to the field centre and measures only the
+// rings listed there, in ring order, so it sums exactly the same terms in
+// exactly the same order as before and the picture is unchanged.
+//
+// 256 bins make a bin about ten device px wide on a typical screen (the rim
+// is some 2,700 px at 1080p and 2x), about the width of the thickest ring's
+// stroke plus its antialiasing, so most rings land in one or two bins. Finer
+// bins would barely shorten any pixel's list, since a ring still spans at
+// least one, and would only add bins to fill; coarser ones would start
+// lumping neighbouring rings together again.
+//
+// The index is one Uint32Array: RING_BINS + 1 offsets, then the ring numbers.
+// Bin b's rings are the entries from offsets[b] to offsets[b + 1], counted
+// from the start of the whole array, so the shader reads it with no base to
+// add. It is sized for the worst case, every ring in every bin, so it never
+// grows; ringBinsLen of it is live.
+export const RING_BINS = 256;
+export const RING_BIN_WORDS = RING_BINS + 1 + MAX_RINGS * RING_BINS;
+// Scratch for building the index, one set, reused every frame: a count (then
+// a write cursor) per bin, and each record's first and last bin.
+const binCursor = new Uint32Array(RING_BINS);
+const binLo = new Int32Array(MAX_RINGS), binHi = new Int32Array(MAX_RINGS);
+
+// TEMPORARY A/B switch, to be removed once the ring records are signed off.
+// With S.ringDraw 'lookup' the rings go back to being splatted into the old
+// radial lookup and read through it, so the two can be compared by eye, live.
+// It is the Render section's Ring draw control (core/schema-visual.js).
+// Removing it means deleting that control, LUT_N, SceneData.lut, the splat
+// branch in buildUniform, the lookup's buffer in scene.js and its binding and
+// branch in scene.wgsl.js.
+// How many rings the last frame actually drew: the ones past the cull (not
+// yet beyond the rim, bright enough to move a pixel), out of all S.rings.
+// The drawer's Rings header shows it beside the total.
+export const ringStats = { drawn: 0 };
+export const LUT_N = 4096;                 // radial samples, old lookup (temporary)
 
 // A tail is sampled at 25 evenly spaced points along the perimeter plus one
 // extra sample at every screen corner it passes, so each corner gets its own
@@ -84,12 +138,20 @@ export class SceneData {
     this.tailVertCount = 0;    // vertices actually written this frame
     this.capInstCount = 0;     // cap instances actually written this frame
     this.uniform = new Float32Array(UNIFORM_FLOATS);
-    this.lut = new Float32Array(LUT_N * 3);   // rgb per radial sample
+    // One record per ring drawn this frame, sized for every ring the tunnel
+    // can hold (MAX_RINGS), so it never grows; ringCount of them are live.
+    this.rings = new Float32Array(MAX_RINGS * RING_FLOATS);
+    this.ringCount = 0;
+    // The records' radial bin index (see RING_BINS), ringBinsLen words live.
+    this.ringBins = new Uint32Array(RING_BIN_WORDS);
+    this.ringBinsLen = 0;
+    this.lut = new Float32Array(LUT_N * 3);   // old lookup, rgb per radial sample (temporary A/B)
+    this.ringsLut = false;                    // this frame's rings went into lut, not rings (temporary A/B)
     // Whether the full-screen field/rings/corners pass has anything to add
-    // this frame, and whether the ring lookup holds any ring at all. With
-    // every term off the pass would write opaque black over a target already
+    // this frame, and whether there is any ring to draw at all. With every
+    // term off the pass would write opaque black over a target already
     // cleared to opaque black, a whole screen of fragment work for nothing,
-    // so scene.js skips the draw (and the lookup's 48 KB upload) instead.
+    // so scene.js skips the draw (and the ring upload) instead.
     this.fullActive = true;
     this.ringsAny = false;
     // Set by ensureCapacity when a frame needed more room than last frame,
@@ -193,23 +255,33 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   }
 
   u[32] = Math.min(visWcss, cssH) * (S.cornerSize ?? 0.46) * dpr;   // corner reach
-  u[33] = maxR * dpr;                             // outer radius of the ring LUT
-  u[34] = LUT_N;
-  // u[35] (rings) is written after the lookup is filled, below. Corners
-  // whose four glows are all exactly zero (bright or depth at zero) add
-  // nothing, so they count as off.
+  u[33] = maxR * dpr;                             // the rings' outer rim, device px
+  // u[34] (how many ring records) and u[35] (rings on) are written once the
+  // rings are gathered, below. Corners whose four glows are all exactly zero
+  // (bright or depth at zero) add nothing, so they count as off.
   const cornersOn = layers.corners && (u[12] + u[13] + u[14] + u[15]) > 0;
   u[36] = cornersOn ? 1 : 0;
   u[37] = inset * dpr;                            // left edge, device px
   u[38] = S.fieldFade || 0;                        // the field's radial fade in
   u[39] = S.fieldSoft ?? 1;                        // and how soft its edge is
   u[40] = Math.max(0, CORNER_TYPES.indexOf(S.cornerType));   // corners' look
-  u[41] = 0; u[42] = 0; u[43] = 0;
+  // The ring records' radial bins: how many, and how many to a device px
+  // (RING_BINS over the rim), which the index below is built from as the
+  // shader will read it back, rounded to f32 the same.
+  u[41] = RING_BINS;
+  u[42] = u[33] > 0 ? RING_BINS / u[33] : 0;
+  u[43] = 0;
 
-  let ringsAny = false;
+  let ringsAny = false, nr = 0, drawn = 0;
+  const useLut = S.ringDraw === 'lookup';   // temporary A/B, see LUT_N
   if (layers.rings) {
-    sd.lut.fill(0);
-    const rings = S.rings, lut = sd.lut;
+    if (useLut) sd.lut.fill(0);
+    const rings = S.rings, lut = sd.lut, rec = sd.rings;
+    // Every ring is centred where the shader centres the field, inside the
+    // area the drawer leaves visible: (inset + width) / 2 across, half the
+    // height down, from the very uniform values fsFull reads (u[37] the
+    // inset and u[0] the width, device px) so the two cannot disagree.
+    const cx = (u[37] + u[0]) * 0.5, cy = u[1] * 0.5;
     const ringPulse = scaledStrobeDepth(typeof S.ringPulse === 'number' ? Math.max(0, Math.min(1, S.ringPulse)) : 0);
     const ringPulseGain = 1 - ringPulse + ringPulse * (lum < 0 ? 0 : lum > 1 ? 1 : lum);
     // The layer's brightness, from S as it is NOW rather than the strobe
@@ -221,6 +293,7 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
     const effRingBright = S.ringBrightVar
       ? ringBase * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase)))
       : ringBase;
+    const fadeInS = (S.ringFadeInMs ?? 1000) / 1000;
     const FOCAL = maxR * Z_NEAR;
     const step = (maxR * dpr) / LUT_N, inv = step > 0 ? 1 / step : 0;
     for (let i = 0; i < rings.length; i++) {
@@ -228,8 +301,12 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
       const r = FOCAL / ring.z;
       const k = r / maxR;                       // 0 at the vanishing point, 1 at the rim
       if (k > 1) continue;
-      const a = radialFade(S.ringFade, k) * 0.62 * effRingBright * ringPulseGain;
+      // Ring fade in: a new ring ramps up from nothing over its first
+      // ringFadeInMs, linear in opacity; 0 shows it at once.
+      const fadeIn = fadeInS > 0 && ring.age < fadeInS ? ring.age / fadeInS : 1;
+      const a = radialFade(S.ringFade, k) * 0.62 * effRingBright * ringPulseGain * fadeIn;
       if (a <= 0.003) continue;
+      drawn++;
 
       let rr, gg, bb;
       if (S.perElementColor) {
@@ -244,6 +321,21 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
       // apply here exactly as they do in canvas2d's ctx.lineWidth, which the
       // original WebGPU port left out entirely.
       const hw = (0.7 + k * 3.4) * S.ringThick * ring.tw * dpr * 0.5;
+      if (!useLut) {
+        if (nr >= MAX_RINGS) break;
+        // Each ring's centre moves with the eye (core/eye.js, parallax):
+        // centre - eye * FOCAL / ring.z, in device px. FOCAL / ring.z is the
+        // ring's own radius r, so the shift is simply eye times rd: nearer
+        // rings, being larger, slide further than the far ones and the tunnel
+        // gains depth. Its fade and cull above stay on the ring's own radius,
+        // as the particles' and confetti's do. At eye 0 every ring sits on
+        // the field centre, as it always did. The old lookup cannot shift.
+        const o = nr * RING_FLOATS;
+        rec[o] = cx - eye.x * rd; rec[o + 1] = cy - eye.y * rd; rec[o + 2] = rd; rec[o + 3] = hw;
+        rec[o + 4] = rr * a; rec[o + 5] = gg * a; rec[o + 6] = bb * a; rec[o + 7] = 0;
+        nr++;
+        continue;
+      }
       let lo = Math.floor((rd - hw - 1) * inv - 0.5);
       let hi = Math.ceil((rd + hw + 1) * inv - 0.5);
       if (lo < 0) lo = 0;
@@ -258,11 +350,72 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
       }
     }
   }
-  // A lookup with no ring in it is all zeros, which the shader would read
-  // and add for nothing; off is the same picture without the reads.
-  u[35] = ringsAny ? 1 : 0;
+  // With no ring to draw the shader would loop over nothing (or read an
+  // all-zero lookup) for nothing; off is the same picture without the work.
+  // u[35] is 1 for the ring records (read through their bin index), 2 for
+  // the old lookup (temporary A/B), and u[34] how many records, or the
+  // lookup's sample count.
+  if (!useLut) ringsAny = nr > 0;
+  sd.ringCount = nr;
+  sd.ringBinsLen = !useLut && nr > 0 ? buildRingBins(sd, nr, u) : 0;
+  ringStats.drawn = drawn;
+  sd.ringsLut = useLut;
+  u[34] = useLut ? LUT_N : nr;
+  u[35] = ringsAny ? (useLut ? 2 : 1) : 0;
   sd.ringsAny = ringsAny;
   sd.fullActive = u[11] > 0 || ringsAny || cornersOn;
+}
+
+// Fills sd.ringBins, the radial index over this frame's nr ring records (see
+// RING_BINS), and returns how many words of it are live.
+//
+// A ring touches a pixel only where its coverage, hw + 0.5 - |d - rd|, is
+// above zero, d being the pixel's distance from the ring's OWN centre. The
+// bins are measured from the FIELD centre, and the two are s apart, so by
+// the triangle inequality the pixel's field-centre distance is within s of
+// d: every pixel the ring touches lies between rd - hw - 0.5 - s and
+// rd + hw + 0.5 + s of the field centre. s is 0 today, every ring sharing
+// the field's centre; it is what keeps the index right once head-tracked
+// parallax moves each ring's centre on its own. The band listed here is a
+// half pixel wider again each side (hw + 1), which covers the shader's f32
+// rounding of the distances and of the bin maths with hundreds of times to
+// spare (those errors are thousandths of a pixel at these sizes), so no
+// extra bin is needed either side. Both ends clamp into the bins that exist:
+// a pixel past the rim reads the last bin, so a ring reaching past the rim
+// is listed there too.
+//
+// The rings go in in ring order, so each bin's list, and each pixel's sum,
+// keeps the order the shader summed every ring in before.
+function buildRingBins(sd, nr, u) {
+  const rec = sd.rings, out = sd.ringBins, last = RING_BINS - 1;
+  // The field centre and the bin scale exactly as fsFull reads them, from
+  // the same f32 uniform values.
+  const cx = (u[37] + u[0]) * 0.5, cy = u[1] * 0.5, scale = u[42];
+  binCursor.fill(0);
+  for (let i = 0; i < nr; i++) {
+    const o = i * RING_FLOATS;
+    const s = Math.hypot(rec[o] - cx, rec[o + 1] - cy);
+    const rd = rec[o + 2], hw = rec[o + 3];
+    let lo = Math.floor((rd - hw - 1 - s) * scale);
+    let hi = Math.floor((rd + hw + 1 + s) * scale);
+    lo = lo < 0 ? 0 : lo > last ? last : lo;
+    hi = hi < 0 ? 0 : hi > last ? last : hi;
+    // Stored first and counted from what was stored, so the count and the
+    // fill below can never disagree, whatever the maths gave.
+    binLo[i] = lo; binHi[i] = hi;
+    for (let b = binLo[i]; b <= binHi[i]; b++) binCursor[b]++;
+  }
+  // Counts to offsets, each bin's cursor starting at its own offset.
+  let at = RING_BINS + 1;
+  for (let b = 0; b < RING_BINS; b++) {
+    const c = binCursor[b];
+    out[b] = at; binCursor[b] = at; at += c;
+  }
+  out[RING_BINS] = at;
+  for (let i = 0; i < nr; i++) {
+    for (let b = binLo[i]; b <= binHi[i]; b++) out[binCursor[b]++] = i;
+  }
+  return at;
 }
 
 // ---- perimeter walk for the edge layer ----

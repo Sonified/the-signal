@@ -11,6 +11,7 @@
 // scene recentres on the visible field from it, the same as v0's rendered
 // panel edge, so the composition slides aside rather than being covered.
 import { S } from '../../../js/state.js';
+import { ringStats } from '../../gpu/scene-data.js';
 import { CONTROLS, SECTIONS, byId } from '../../core/schema.js';
 import {
   presetsVersion, presetCount, presetLabel, presetHasOverride, presetIsActive,
@@ -218,6 +219,18 @@ function makeSummary(ctrls) {
   return { ctrls, names: ctrls.map(c => c.summaryLabel !== undefined ? c.summaryLabel : c.label.split(' ')[0]),
            key: new Array(ctrls.length).fill(UNSET), text: new Array(ctrls.length).fill(''),
            shown: new Uint8Array(ctrls.length), line: '' };
+}
+// The Rings header carries how many rings the last frame drew out of how
+// many are in the tunnel right now, the far ones too: 'Rings (9 / 14)'. The
+// string is rebuilt only when either count changes, not every frame.
+let ringsTitleD = -1, ringsTitleN = -1, ringsTitleText = '';
+function ringsTitle(title) {
+  const d = ringStats.drawn, n = S.rings ? S.rings.length : 0;
+  if (d !== ringsTitleD || n !== ringsTitleN) {
+    ringsTitleD = d; ringsTitleN = n;
+    ringsTitleText = title + ' (' + d + ' / ' + n + ')';
+  }
+  return ringsTitleText;
 }
 function partText(c, v) {
   if (c.format) return c.format(S);
@@ -1176,7 +1189,7 @@ export function drawDrawer(ui, app) {
     const grp = GROUPS[g];
     const sw = grp.sw;
     if (rampGlow > 0 && journeyRampingSection(grp.sec)) { ui.headGlow = rampGlow; ui.headGlowColor = JOURNEY_ACCENT; }
-    const open = ui.group(grp.gid, grp.title, sw ? !!sw.ctrl.get(S) : undefined);
+    const open = ui.group(grp.gid, grp.sec === 'tunnel' ? ringsTitle(grp.title) : grp.title, sw ? !!sw.ctrl.get(S) : undefined);
     if (sw && ui.groupSwitchChanged) setSwitch(sw, ui.groupSwitch);
     // Keep drawing through the whole closing animation, until the toolkit
     // says the height spring has come to rest shut; from then on the body is

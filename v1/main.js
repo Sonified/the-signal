@@ -44,6 +44,7 @@ import { createBlur } from './gpu/blur.js';
 
 import { stepStrobe, resetStrobeClock, resetRefreshMeasure, darkSlot } from './core/strobe.js';
 import { motionTick, motionHalt, winding } from './core/motion.js';
+import { eye, stepEye } from './core/eye.js';
 import { initChores, choreRegister, choreRun, choreYield } from './core/chores.js';
 import { initWords, stepWords } from './core/words.js';
 import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame } from './core/store.js';
@@ -346,6 +347,7 @@ async function boot() {
   // skip building one at all: the chrome's fade, and whether any spring,
   // momentum scroll or tooltip was still moving.
   let lastChromeA = 1, uiUnsettled = true, lastInset = -1;
+  let lastEyeX = 0, lastEyeY = 0;
   // The platform's key events carry no repeat flag, so M remembers that it is
   // held and ignores the auto-repeats, as v0's !e.repeat did; otherwise a
   // held key would flap the window open and shut. Its keyup clears it.
@@ -469,6 +471,10 @@ async function boot() {
     // drawMixer reads), so only then are they stepped before the UI.
     // The pause wind-down's scale for this frame, before anything moves.
     motionTick(dt);
+    // The viewer's eye for parallax (core/eye.js), on wall-clock time so a
+    // simulated head keeps swaying while the scene is paused. Before any
+    // layer's update, which all read it.
+    stepEye(dt);
     const r = stepStrobe(t);
     // Worker mode: hold the engine's measured refresh against the page's.
     // While they disagree the guard judges by the slower one.
@@ -592,13 +598,16 @@ async function boot() {
     // Winding down after a pause (core/motion.js) the scene still moves and
     // the flicker is still fading out, so until it ends it counts as running
     // for both: a changed scene, and a capture only on a truly lit frame.
+    // A moving eye (core/eye.js) moves the stopped scene too.
     const inset = S.edgeInset;
     const wind = winding();
+    const eyeMoved = eye.x !== lastEyeX || eye.y !== lastEyeY;
     renderArgs.lum = r.lum;
     renderArgs.lit = r.lit || (!S.running && !wind);
     renderArgs.glassVisible = uiList.glassCount + topList.glassCount > 0;
-    renderArgs.sceneChanged = S.running || wind || events.length > 0 || inset !== lastInset || overlayState.animating;
+    renderArgs.sceneChanged = S.running || wind || events.length > 0 || inset !== lastInset || overlayState.animating || eyeMoved;
     lastInset = inset;
+    lastEyeX = eye.x; lastEyeY = eye.y;
     engine.render(renderArgs);
     if (perfOn) t4 = platform.now();
 

@@ -631,7 +631,7 @@ export const VISUAL_CONTROLS = [
   // ---- three sub-drawers, Motion, Brightness and Style (see subDrawer),
   // each with its rows straight after it. Motion's id still says Timing, its
   // first name, so an open or shut state saved under it carries over ----
-  subDrawer('tunnelTimingDrawer', 'Motion', 'tunnel', ['ringSpeed', 'ringDensity']),
+  subDrawer('tunnelTimingDrawer', 'Motion', 'tunnel', ['ringSpeed', 'ringDensity', 'ringOrigin', 'ringFadeInMs']),
   {
     id: 'ringSpeed', section: 'tunnel', label: 'Ring speed', kind: 'slider',
     summaryLabel: 'Speed',
@@ -652,6 +652,31 @@ export const VISUAL_CONTROLS = [
     get: S => S.ringRate,
     set: (S, pos) => { S.ringRate = pos; save(); },
     format: S => S.ringRate.toFixed(1) + ' / s'
+  },
+  {
+    // Where a new ring is born, as a share of the tunnel's depth: 100% is
+    // the far plane (the vanishing point, where they always started), lower
+    // births them nearer the viewer (js/sim.js ringBirthZ). Rings already in
+    // flight carry on from where they are.
+    id: 'ringOrigin', section: 'tunnel', label: 'Ring origin', kind: 'slider',
+    summaryLabel: 'Origin',
+    parent: 'tunnelTimingDrawer',
+    min: 5, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.ringOrigin ?? 1) * 100),
+    set: (S, pos) => { S.ringOrigin = pos / 100; save(); },
+    format: S => Math.round((S.ringOrigin ?? 1) * 100) + '%'
+  },
+  {
+    // How long a new ring takes to fade up from nothing when it is born,
+    // linear in opacity (v1/gpu/scene-data.js); 0 shows it at once, as it
+    // always did. The tunnel seeded at the start is there already, not faded.
+    id: 'ringFadeInMs', section: 'tunnel', label: 'Ring fade in', kind: 'slider',
+    summaryLabel: 'Fade in',
+    parent: 'tunnelTimingDrawer',
+    min: 0, max: 3000, step: 50, def: 1000,
+    get: S => S.ringFadeInMs ?? 1000,
+    set: (S, v) => { S.ringFadeInMs = v; save(); },
+    format: S => Math.round(S.ringFadeInMs ?? 1000) + ' ms'
   },
   subDrawer('tunnelBrightnessDrawer', 'Brightness', 'tunnel', ['ringOpacity', 'ringFade', 'ringPulse']),
   {
@@ -1578,7 +1603,7 @@ export const VISUAL_CONTROLS = [
     // front maths as its smoke out (core/word-fx.js hintSweepShare), so the
     // arrival and the departure feel like one gesture. All at once fades
     // the whole hint together.
-    id: 'hintArrive', section: 'render', label: 'Hint arrive', kind: 'segment', def: 'sweep',
+    id: 'hintArrive', section: 'render', label: 'Hint arrive', kind: 'segment', def: 'sweep', labelAbove: true,
     options: [
       { value: 'sweep', label: 'Left to right', domId: null },
       { value: 'all',   label: 'All at once',   domId: null }
@@ -1586,6 +1611,56 @@ export const VISUAL_CONTROLS = [
     get: S => S.hintArrive === 'all' ? 'all' : 'sweep',
     set: (S, v) => { S.hintArrive = v === 'all' ? 'all' : 'sweep'; save(); },
     format: S => S.hintArrive === 'all' ? 'All at once' : 'Left to right'
+  },
+  {
+    // TEMPORARY A/B for the tunnel rings, to go once the per-ring records
+    // are signed off (gpu/scene-data.js, see LUT_N). Records draws each ring
+    // from its own centre, radius and width, the way parallax will need, a
+    // pixel measuring only the rings its radial bin lists (RING_BINS);
+    // Lookup is the old shared radial table, kept only for comparing by eye.
+    id: 'ringDraw', section: 'render', label: 'Ring draw', kind: 'segment', def: 'records', labelAbove: true,
+    options: [
+      { value: 'records', label: 'Records', domId: null },
+      { value: 'lookup',  label: 'Lookup',  domId: null }
+    ],
+    get: S => S.ringDraw === 'lookup' ? 'lookup' : 'records',
+    set: (S, v) => { S.ringDraw = v === 'lookup' ? 'lookup' : 'records'; save(); },
+    format: S => S.ringDraw === 'lookup' ? 'Lookup' : 'Records'
+  },
+  {
+    // A stand-in for head tracking: the viewer's eye (core/eye.js) sways
+    // slowly side to side, so the near layers slide against the far ones and
+    // the tunnel shows its depth. It runs on wall-clock time, so it keeps
+    // swaying while the scene is paused, the easiest way to look at it. A
+    // viewing aid, not a setting: never saved, so every load starts still,
+    // and journeys leave it be (core/journey.js).
+    id: 'parallaxSim', section: 'render', label: 'Parallax sim', kind: 'toggle', def: false,
+    get: S => S.parallaxSim === true,
+    set: (S, on) => { S.parallaxSim = !!on; },
+    format: S => S.parallaxSim === true ? 'On' : 'Off'
+  },
+  {
+    // How far the head sways each way, as a share of the tunnel's radius:
+    // at 100% the nearest things would shift by a whole rim radius, so the
+    // default 10% moves them a tenth of one and the far end hardly at all.
+    id: 'parallaxAmount', section: 'render', label: 'Parallax amount', kind: 'slider',
+    parent: 'parallaxSim',
+    min: 0, max: 30, step: 1, def: 10,
+    get: S => Math.round((S.parallaxAmount ?? 0.1) * 100),
+    set: (S, pos) => { S.parallaxAmount = pos / 100; save(); },
+    format: S => Math.round((S.parallaxAmount ?? 0.1) * 100) + '%',
+    visible: S => S.parallaxSim === true
+  },
+  {
+    // How often the head sways, one side to the other and back: 0.25 Hz is
+    // a slow four seconds a sway.
+    id: 'parallaxSpeed', section: 'render', label: 'Head speed', kind: 'slider',
+    parent: 'parallaxSim',
+    min: 0.05, max: 2, step: 0.05, def: 0.25,
+    get: S => S.parallaxSpeed ?? 0.25,
+    set: (S, v) => { S.parallaxSpeed = v; save(); },
+    format: S => (S.parallaxSpeed ?? 0.25).toFixed(2) + ' Hz',
+    visible: S => S.parallaxSim === true
   },
   {
     // Where the engine runs: on the page's main thread, or in a worker where

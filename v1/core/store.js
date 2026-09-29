@@ -117,7 +117,7 @@ function buildSettings() {
     fieldOpacity: S.fieldOpacity, fieldFade: S.fieldFade, fieldSoft: S.fieldSoft,
     color: rgbHex(S.rgb),
     cornerOpacity: S.cornerOpacity, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
-    ringSpeedMul: S.ringSpeedMul, ringRate: S.ringRate, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
+    ringSpeedMul: S.ringSpeedMul, ringRate: S.ringRate, ringOrigin: S.ringOrigin, ringFadeInMs: S.ringFadeInMs, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
     edgeFb: S.edgeFb, edgeFbStream: S.edgeFbStream, edgeFbTwist: S.edgeFbTwist, edgeFbOpacity: S.edgeFbOpacity,
     edgeMode: S.edgeMode, edgePulse: S.edgePulse,
@@ -170,7 +170,8 @@ function buildSettings() {
     depthVar: S.depthVar, depthVarOn: S.depthVarOn, varPeriod: S.varPeriod, panelOpen: S.panelOpen,
     freqDrift: S.freqDrift, freqDriftOn: S.freqDriftOn, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
     frameLock: S.frameLock, spareMode: S.spareMode, pauseWindDown: S.pauseWindDown, pauseFlickerStop: S.pauseFlickerStop !== false,
-    hintFadeMs: S.hintFadeMs, hintSweep: S.hintSweep, hintFadeInMs: S.hintFadeInMs, hintArrive: S.hintArrive, walkPeriod: S.walkPeriod, brightVar: S.brightVar, brightVarOn: S.brightVarOn,
+    hintFadeMs: S.hintFadeMs, hintSweep: S.hintSweep, hintFadeInMs: S.hintFadeInMs, hintArrive: S.hintArrive,
+    parallaxAmount: S.parallaxAmount, parallaxSpeed: S.parallaxSpeed, walkPeriod: S.walkPeriod, brightVar: S.brightVar, brightVarOn: S.brightVarOn,
     brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
     hueLo: S.hueLo, hueSpan: S.hueSpan,
     ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod,
@@ -733,6 +734,8 @@ function applySettings(s, live) {
   if (typeof s.cornerSize === 'number' && isFinite(s.cornerSize)) S.cornerSize = Math.max(0.05, Math.min(1, s.cornerSize));
   if (CORNER_TYPES.indexOf(s.cornerType) >= 0) S.cornerType = s.cornerType;
   if (typeof s.ringRate === 'number') S.ringRate = Math.max(0.2, Math.min(20, s.ringRate));
+  if (typeof s.ringOrigin === 'number') S.ringOrigin = Math.max(0.05, Math.min(1, s.ringOrigin));
+  if (typeof s.ringFadeInMs === 'number' && isFinite(s.ringFadeInMs)) S.ringFadeInMs = Math.max(0, Math.min(3000, s.ringFadeInMs));
   if (typeof s.ringOpacity === 'number') S.ringOpacity = Math.max(0, Math.min(1, s.ringOpacity));
   if (typeof s.ringPulse === 'number') S.ringPulse = Math.max(0, Math.min(1, s.ringPulse));
   if (typeof s.ringFade === 'number')     S.ringFade = s.ringFade;
@@ -767,6 +770,10 @@ function applySettings(s, live) {
   if (typeof s.hintSweep === 'number') S.hintSweep = Math.max(0.6, Math.min(4, s.hintSweep));
   if (typeof s.hintFadeInMs === 'number') S.hintFadeInMs = Math.max(0, Math.min(10000, s.hintFadeInMs));
   if (s.hintArrive === 'sweep' || s.hintArrive === 'all') S.hintArrive = s.hintArrive;
+  // The parallax sim's sway (core/eye.js). Its switch is never saved, so a
+  // load always starts with the head still.
+  if (typeof s.parallaxAmount === 'number' && isFinite(s.parallaxAmount)) S.parallaxAmount = Math.max(0, Math.min(0.3, s.parallaxAmount));
+  if (typeof s.parallaxSpeed === 'number' && isFinite(s.parallaxSpeed)) S.parallaxSpeed = Math.max(0.05, Math.min(2, s.parallaxSpeed));
   if (typeof s.freqDrift === 'number')    S.freqDrift = s.freqDrift;
   if (typeof s.freqDriftOn === 'boolean') S.freqDriftOn = s.freqDriftOn;
   if (typeof s.driftPeriod === 'number')  S.driftPeriod = s.driftPeriod;

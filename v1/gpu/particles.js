@@ -78,6 +78,7 @@ import { S, Z_NEAR, Z_FAR } from '../../js/state.js';
 import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { SIM_WGSL, RENDER_WGSL } from './particles.wgsl.js';
 import { motionStep } from '../core/motion.js';
+import { eye } from '../core/eye.js';
 import { createFold, FOLD_CHAMBER_FORMAT } from './fold.js';
 import { createFeedback, FEEDBACK_FORMAT } from './feedback.js';
 import { particleBirthsPerSec, PARTICLE_MEAN_VZ, PARTICLE_SLOWEST } from '../core/schema-particles.js';
@@ -678,8 +679,13 @@ export function createParticles(device, format, platform) {
     // The radial fade: the Fade in amount, and one over the rings' rim in
     // device px, so the shader's k is the rings' k for the same radius. The
     // rim is maxR in both paths, since the chamber keeps the screen's own
-    // device-px radius about the field centre.
-    ren[20] = fadeIn; ren[21] = 1 / maxR; ren[22] = 0; ren[23] = 0;
+    // device-px radius about the field centre. Then the viewer's eye, tunnel
+    // units (core/eye.js), which footprint takes off each particle's xy
+    // before projecting it. It needs no overscan here: the simulation's cull
+    // is footprint's own quad against the target, shifted with the rest, and
+    // the fades that decide where a particle is born and let go ride with
+    // the particle, so leaning never shows an edge the stream stops at.
+    ren[20] = fadeIn; ren[21] = 1 / maxR; ren[22] = eye.x; ren[23] = eye.y;
     device.queue.writeBuffer(renBuf, 0, ren);
 
     // The draw's arguments, with the instance count back at 0 for the

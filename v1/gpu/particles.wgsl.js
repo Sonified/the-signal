@@ -53,7 +53,7 @@ struct R {
   col: vec4f,   // strobe colour rgb (0..1), colour mode
   misc: vec4f,  // brightness (opacity x pulse), hue variation, time, trail
   z: vec4f,     // Z_FAR, Z_NEAR, live size multiplier, live speed
-  fade: vec4f,  // radial fade in amount (0..1), 1 / the rings' rim (device px), unused, unused
+  fade: vec4f,  // radial fade in amount (0..1), 1 / the rings' rim (device px), eye x, eye y (tunnel units, core/eye.js)
 };
 
 // One step of an 8-bit target. Light below it cannot change a pixel.
@@ -107,13 +107,23 @@ fn footprint(p: P) -> Quad {
   if (p.pos.w < 0.5 || z <= (zNear * EXIT_FLOOR)) { return q; }
 
   let focal = r.view.w;
-  let head = p.pos.xy * (focal / z);                 // device px from the field centre
+  // Where it lands, in device px from the field centre, seen from the eye
+  // (core/eye.js): the eye's sideways offset comes off before the
+  // perspective divide, so a far particle barely moves and a near one moves
+  // a lot. The fades below stay on the particle's own position (own), not
+  // the shifted one: they are properties of the particle, so they ride with
+  // it as the head moves, and the simulation lets it go at its own exit
+  // depth, where its own fade has already reached 0. With the eye at 0 the
+  // two are the same bits. In the chamber the shift comes before the fold,
+  // so the kaleidoscope folds the scene as the moved eye sees it.
+  let own = p.pos.xy * (focal / z);
+  let head = (p.pos.xy - r.fade.zw) * (focal / z);
   // Fade in from the centre on the rings' own curve, by how far out the
-  // particle sits on screen: kr is 0 at the vanishing point and 1 at the
-  // rings' rim. head is measured from the field centre in device px in both
-  // paths; in the chamber that centre is the fold's own, so the folded
-  // pattern fades from its middle too.
-  let kr = length(head) * r.fade.y;
+  // particle sits: kr is 0 at the vanishing point and 1 at the rings' rim.
+  // own is measured from the field centre in device px in both paths; in
+  // the chamber that centre is the fold's own, so the folded pattern fades
+  // from its middle too.
+  let kr = length(own) * r.fade.y;
   // Fade out on the approach to its own exit. kr = |xy| * Z_NEAR / z (the
   // rim is maxR and focal = maxR * Z_NEAR in both paths), so it crosses the
   // rim, past the screen's corners, at zExit = |xy| * Z_NEAR. The fade runs
@@ -152,7 +162,8 @@ fn footprint(p: P) -> Quad {
     if (l < VIS) { return q; }
     let tail3 = p.pos.xyz - p.vel.xyz * (r.z.w * (0.05 + r.misc.w * 0.45));
     let tz = max(tail3.z, zNear * 0.6);
-    let tail = tail3.xy * (focal / tz);
+    // seen from the same eye as the head, at the tail's own depth
+    let tail = (tail3.xy - r.fade.zw) * (focal / tz);
     let d = head - tail;
     let len = length(d);
     var dir = vec2f(0.0, 1.0);
