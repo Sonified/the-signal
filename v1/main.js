@@ -78,6 +78,25 @@ import { drawMusic, music } from './ui/screens/music.js';
 import { drawTextbank, textbank } from './ui/screens/textbank.js';
 import { perfTick } from './core/perform.js';
 
+// Mobile browsers require a user gesture before audio can leave a suspended
+// AudioContext. A broadcast follower must keep running while it waits, so the
+// temporary DOM gate consumes only this tap, wakes audio, and fades away; it
+// never reaches the canvas's run/pause field.
+if (!host.worker && typeof document !== 'undefined') {
+  const followAudioGate = document.getElementById('follow-audio-gate');
+  if (followAudioGate) {
+    const unlockFollowerAudio = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      followAudioGate.classList.add('done');
+      warmDevice();
+      audioOn();
+      setTimeout(() => followAudioGate.remove(), 650);
+    };
+    followAudioGate.addEventListener('pointerdown', unlockFollowerAudio, { once: true });
+  }
+}
+
 console.log('[boot] modules evaluated');
 // A boot that throws inside the worker is reported to the page (see
 // worker-entry.js); on the page it surfaces as it always has.

@@ -10,16 +10,37 @@
      resolve exactly as they do for v0. Module imports are unaffected: they
      resolve against their own file, not the page. -->
 <base href="../">
-<!-- One element. Everything visible is drawn by the GPU into this canvas; see
-     ARCHITECTURE.md for why nothing may ever sit on top of it. -->
+<!-- The experience is drawn by the GPU. The only temporary DOM overlay is
+     the mobile broadcast receiver's audio-unlock gesture below. -->
 <style>
   html, body { margin:0; height:100%; background:#000; overflow:hidden; }
   canvas { display:block; position:fixed; inset:0; width:100vw; height:100vh;
            touch-action:none; outline:none; -webkit-user-select:none; user-select:none; }
+  #follow-audio-gate {
+    display:none; position:fixed; inset:0; z-index:1000; align-items:center;
+    justify-content:center; padding:28px; box-sizing:border-box; background:rgba(0,0,0,.42);
+    color:#fff; font:600 20px/1.25 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    letter-spacing:.01em; text-align:center; text-shadow:0 1px 12px #000;
+    opacity:1; transition:opacity .55s ease; touch-action:manipulation;
+    -webkit-user-select:none; user-select:none; cursor:pointer;
+  }
+  #follow-audio-gate.show { display:flex; }
+  #follow-audio-gate.done { opacity:0; pointer-events:none; }
 </style>
 </head>
 <body>
 <canvas id="v1" tabindex="0"></canvas>
+<div id="follow-audio-gate" role="button" aria-label="Tap to play audio">Tap to play audio</div>
+<script>
+  (() => {
+    const gate = document.getElementById('follow-audio-gate');
+    const follow = new URLSearchParams(location.search).get('follow');
+    const phone = matchMedia('(pointer: coarse)').matches &&
+      Math.min(screen.width || innerWidth, screen.height || innerHeight) <= 900;
+    if (follow && phone) gate.classList.add('show');
+    else gate.remove();
+  })();
+</script>
 <!-- Temporary boot tracing: brackets the module-import phase, so a hang
      before the first [boot] line means an import never finished. -->
 <script>console.log('[boot] html parsed, loading main.js modules');</script>
