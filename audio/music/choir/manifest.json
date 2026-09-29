@@ -1,0 +1,15 @@
+{
+  "note": "the seven Lah voices of the Choir Performer, degrees 1 2 3 5 7 8 9 as sung; encoded straight from audio/source/julia_vox/tuned with nothing retuned, trimmed or normalised. All seven play together, each looping its own crossfaded steady portion (js/choir.js); the per-voice trims are applied at runtime, not baked in",
+  "encodings": {
+    "opus": "128k VBR, 48 kHz"
+  },
+  "choir": [
+    { "name": "1", "file": "choir-1", "seconds": 11.47, "hz": 322, "source": "Julia_Lah_1_322Hz.wav" },
+    { "name": "2", "file": "choir-2", "seconds": 11.69, "hz": 359, "source": "Julia_Lah_2_359Hz.wav" },
+    { "name": "3", "file": "choir-3", "seconds": 11.97, "hz": 401, "source": "Julia_Lah_3_401Hz.wav" },
+    { "name": "5", "file": "choir-5", "seconds": 11.91, "hz": 474, "source": "Julia_Lah_5_474Hz.wav" },
+    { "name": "7", "file": "choir-7", "seconds": 12.03, "hz": 604, "source": "Julia_Lah_7_604Hz.wav" },
+    { "name": "8", "file": "choir-8", "seconds": 11.63, "hz": 649, "source": "Julia_Lah_8_649Hz.wav" },
+    { "name": "9", "file": "choir-9", "seconds": 12.01, "hz": 723, "source": "Julia_Lah_9_723Hz.wav" }
+  ]
+}

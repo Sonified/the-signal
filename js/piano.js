@@ -10,6 +10,11 @@ import { getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, sour
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 import { createSweep } from './sweep.js';
+import { setChoirBus, choirSession } from './choir.js';
+import { setLayerBus, layersSession } from './layers.js';
+import { strobeHz, strobeWave, strobeAm, strobeAmEffective } from './strobe-am.js';
+import { scaledStrobeDepth } from './strobe-scale.js';
+import { inTurn, TURN } from './load-order.js';
 
 const SEMIS = [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40];
 const RELEASES = 18;
@@ -24,6 +29,9 @@ const DEG_W = { 0: 22, 2: 7, 4: 10, 7: 11, 11: 10 };
 const notes = new Map();
 const lifts = [];
 let bed = null, bedGain = null, bedMeta = null;
+// The drone's Vary with strobe, just after bedGain: everything bedGain
+// feeds downstream now takes its signal from this stage's node instead.
+let bedAm = null;
 let bedTakes = [], bedNextAt = 0, bedTimer = null, bedRunning = false;
 // The drone comes in several renders, one per detune amount (manifest.json's
 // versions). Each is decoded the first time it is chosen and kept. bedRun is
@@ -37,37 +45,66 @@ let noteTap = null, bedTap = null;
 let bedCut = null, bedChains = null, bedSend = null, bedRev = null;
 let running = false, clock = 0, elapsed = 0, drift = 0, lastDyad = 0, timer = null;
 
+// v1's Music window trims each voice on top of its level: the level (the
+// drawer, v1's Levels window) is the ceiling, and the trim, 0 to 1, is how
+// much of it plays, so 1 is exactly the level. v0 never sets the trims, so an
+// unset one reads as 1. The piano's trim rides its channel gain (chan, below)
+// rather than each note, so a fade reaches the notes already ringing.
+const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+const bedLevel = () => S.bedVol * perfTrim(S.musDrone ?? 1);
+const arpLevel = () => S.arpVol * perfTrim(S.musArp ?? 1);
+
 const canOpus = (() => {
   const a = new Audio();
   return a.canPlayType('audio/ogg; codecs=opus') !== ''
       || a.canPlayType('audio/webm; codecs=opus') !== '';
 })();
 
-// Loaded on demand rather than at boot: four megabytes should not be fetched by
-// someone who never turns the music on.
+// The samples the player can reach. Every note a gesture strikes is a mode
+// note (DEG) between LO and HI: each is built from mode degrees or snapped to
+// one, then clamped to the range, whose two ends are themselves mode notes.
+// Each maps to its nearest sample, so only those are fetched: 18 of the 24,
+// the six on the 4 and the 6 are never struck. Derived from the same ladder
+// the gestures climb, so a change to the mode or the range follows here; a
+// new gesture that strikes outside the mode must widen this by hand (see
+// known-ussues.md).
+const reachableSamples = () => [...new Set(SCALE.map(n => nearest(n - ROOT)))];
+
+// Loaded on demand rather than at boot: three megabytes should not be fetched
+// by someone who never turns the music on. The drone's file downloads first,
+// then the notes (js/load-order.js); nothing is ready, and nothing plays,
+// until both are in.
 export function loadPiano() {
   if (loading) return loading;
   const ctx = getContext();
   if (!ctx || !canOpus) return Promise.resolve(false);
   loading = (async () => {
-    const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
-    await Promise.all([
-      ...SEMIS.map(async s =>
-        notes.set(s, await get(`audio/piano/lekko-${String(s).padStart(2,'0')}.opus`))),
-      ...Array.from({ length: RELEASES }, async (_, i) => {
-        lifts[i] = await get(`audio/piano/releases/release-${String(i).padStart(2,'0')}.opus`);
-      })
-    ]);
+    const drone = loadDrone();
+    await inTurn(TURN.piano, async () => {
+      const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
+      await Promise.all([
+        ...reachableSamples().map(async s =>
+          notes.set(s, await get(`audio/piano/lekko-${String(s).padStart(2,'0')}.opus`))),
+        ...Array.from({ length: RELEASES }, async (_, i) => {
+          lifts[i] = await get(`audio/piano/releases/release-${String(i).padStart(2,'0')}.opus`);
+        })
+      ]);
+    });
     buildGraph();
-    // the ocean drone, loaded alongside; its loop points come from the manifest
-    try {
-      bedMeta = await (await fetch('audio/music/manifest.json')).json();
-      bed = await bedBuffer(S.bedDetune);
-    } catch (e) { bed = null; }
+    await drone;
     ready = true;
     return true;
   })().catch(err => { console.warn('piano failed to load', err); loading = null; return false; });
   return loading;
+}
+
+// The ocean drone's file, first in the download queue; its loop points come
+// from the manifest. A failed drone leaves bed empty, as it always has.
+function loadDrone() {
+  return inTurn(TURN.drone, async () => {
+    bedMeta = await (await fetch('audio/music/manifest.json')).json();
+    bed = await bedBuffer(S.bedDetune);
+  }).catch(() => { bed = null; });
 }
 
 function buildGraph() {
@@ -99,7 +136,7 @@ function buildGraph() {
   // gate there would only reach notes not yet played; here it closes on the
   // notes already ringing too, and on their feed into the room.
   chan = ctx.createGain();
-  chan.gain.value = chanGate('piano');
+  chan.gain.value = chanLevel();
   hp.connect(chan);
   // The notes and the drone share this room, so each gets its own tap on the
   // way in. Post-fader, post-gate and pre-reverb, the same point the
@@ -107,6 +144,10 @@ function buildGraph() {
   // and a muted channel's meter falls silent with it.
   noteTap = meterTap(ctx, dry, room.input);
   chan.connect(noteTap.analyser);
+  // The choir (js/choir.js) sings into the same dry bus and room as the drone.
+  setChoirBus(dry, room.input);
+  // So do the music layers (js/layers.js).
+  setLayerBus(dry, room.input);
 }
 
 // Gated on the transport rather than on the graph: a suspended context keeps
@@ -130,6 +171,20 @@ export function applyPianoHP() {
   if (hp) glideParam(hp.frequency, S.pianoHP, 0.05);
 }
 
+// The piano's channel: its mix gate times the Music window's trim. While
+// the piano's own switch is off the trim it last had is held, so a fade out
+// that lands (perform.js puts the trim back to its level once the switch is
+// off) never brings the notes still ringing back up; switching the piano on
+// picks the trim up again (applyPianoTrim, from the switch).
+let chanTrim = 1;
+function chanLevel() {
+  if (S.pianoOn !== false) chanTrim = perfTrim(S.musPiano ?? 1);
+  return chanGate('piano') * chanTrim;
+}
+export function applyPianoTrim() {
+  if (chan) glideParam(chan.gain, chanLevel(), 0.2);
+}
+
 // Mute and solo, for the notes and for the drone, which has its own channel
 // in the mix and so its own gate on bedGain. A short glide rather than a
 // step, so a gate closing mid-note never clicks.
@@ -137,8 +192,8 @@ const GATE_TC = 0.03;
 onChannelGates(() => {
   const ctx = getContext();
   if (!ctx) return;
-  if (chan) glideParam(chan.gain, chanGate('piano'), GATE_TC);
-  if (bedGain) glideParam(bedGain.gain, S.bedVol * chanGate('drone'), GATE_TC);
+  if (chan) glideParam(chan.gain, chanLevel(), GATE_TC);
+  if (bedGain) glideParam(bedGain.gain, bedLevel() * chanGate('drone'), GATE_TC);
   if (arp) glideParam(arp.chanG.gain, chanGate('arp'), GATE_TC);
 });
 // Crossfaded into the room rather than swapped under a ringing tail.
@@ -211,7 +266,8 @@ function strike(written, vel, at) {
   const g = ctx.createGain();
   g.gain.value = vel * vel * S.pianoVol * sampleTrim(src);
   s.connect(g); g.connect(hp);
-  s.start(at);
+  // never in the past: a start before the clock's zero throws
+  s.start(Math.max(at, ctx.currentTime));
 }
 function keyLift(at) {
   if (!lifts.length || !dry) return;
@@ -220,7 +276,8 @@ function keyLift(at) {
   s.buffer = pick(lifts);
   const g = ctx.createGain(); g.gain.value = 0.35 * S.pianoVol;
   s.connect(g); g.connect(hp);
-  s.start(at);
+  // never in the past: a start before the clock's zero throws
+  s.start(Math.max(at, ctx.currentTime));
 }
 
 function weighted(obj) {
@@ -305,9 +362,14 @@ function gCallSnip(t, c) {
   while (base + 19 > HI) base -= 12;     // room for the top call, always in the mode
   while (base < LO) base += 12;
   const slow = 1 + 0.45 * Math.min(1.6, elapsed / 90);
-  let at = t - rub(6.0, 7.6);            // so the first phrase lands on t
+  // The first phrase lands on t and each later one a gap after the last.
+  // (This used to back off one random gap and add a different one, so the
+  // first phrase could land up to 1.6 s before t, and before the audio
+  // clock's zero right after the context started.)
+  let at = t, firstPhrase = true;
   const phrase = (notes, lo, hi) => {
-    at += rub(6.0, 7.6);                 // the gap between phrases
+    if (!firstPhrase) at += rub(6.0, 7.6);   // the gap between phrases
+    firstPhrase = false;
     notes.forEach((d, i) => {
       if (i) at += rub(1.3, 3.0) * slow;
       strike(clampN(base + d), rnd(lo, hi), at);
@@ -372,9 +434,14 @@ function gCall(t, c) {
   while (base + 26 > HI) base -= 12;     // room to climb twice
   while (base < LO) base += 12;
   const slow = 1 + 0.45 * Math.min(1.6, elapsed / 90);
-  let at = t - rub(6.0, 7.6);            // so the first phrase lands on t
+  // The first phrase lands on t and each later one a gap after the last.
+  // (This used to back off one random gap and add a different one, so the
+  // first phrase could land up to 1.6 s before t, and before the audio
+  // clock's zero right after the context started.)
+  let at = t, firstPhrase = true;
   const phrase = (notes, lo, hi) => {
-    at += rub(6.0, 7.6);                 // the gap between phrases
+    if (!firstPhrase) at += rub(6.0, 7.6);   // the gap between phrases
+    firstPhrase = false;
     notes.forEach((n, i) => {
       if (i) at += rub(1.3, 3.0) * slow;
       strike(clampN(n), rnd(lo, hi), at);
@@ -589,6 +656,8 @@ function bedOn() {
   bedRunning = true;
   bedGain = ctx.createGain();
   bedGain.gain.value = 0;
+  bedAm = strobeAm(ctx, () => S.bedStrobeAm, () => S.bedStrobeAmVar, () => S.bedStrobeAmPeriod);
+  bedGain.connect(bedAm.node);
   // The drone's own low-pass, ahead of its tap so the dry path, the room and
   // the meter all hear the same filtered drone, and its own feed into the
   // piano's room in place of the tap feeding the room directly. Both start
@@ -657,13 +726,14 @@ function bedOn() {
   bedPump();
   bedTimer = setInterval(bedPump, 10000);
 
-  glideParam(bedGain.gain, S.bedVol * chanGate('drone'), 1.2);
+  glideParam(bedGain.gain, bedLevel() * chanGate('drone'), 1.2);
 }
 
 function bedOff() {
   if (!bedRunning) return;
-  const ctx = getContext(), g = bedGain, takes = bedTakes, tap = bedTap;
+  const ctx = getContext(), g = bedGain, takes = bedTakes, tap = bedTap, am = bedAm;
   bedRunning = false;
+  bedAm = null;
   clearInterval(bedTimer); bedTimer = null;
   bedLpfSweep.stop(); bedVerbSweep.stop();
   const cut = bedCut, chains = bedChains, send = bedSend, rev = bedRev;
@@ -674,6 +744,7 @@ function bedOff() {
   setTimeout(() => {
     for (const s of takes) { try { s.onended = null; s.stop(); } catch (e) {} }
     try { g.disconnect(); } catch (e) {}
+    if (am) am.stop();
     // The drone's tap is built with it, so it is torn down with it rather than
     // left hanging off the room for every on and off in the session.
     if (tap) { try { tap.analyser.disconnect(); } catch (e) {} }
@@ -758,14 +829,16 @@ const BED_XF_TC = 0.08;
 function chainFeed(c, on) {
   if (on) {
     if (c.idle) { clearTimeout(c.idle); c.idle = null; }
-    if (!c.live) { bedGain.connect(c.stages[0]); c.live = true; }
+    if (!c.live) { bedAm.node.connect(c.stages[0]); c.live = true; }
   } else if (c.live && !c.idle) {
-    const ctx = getContext(), g = bedGain;
+    // The chains hang off the strobe stage, so that is what is unplugged, the
+    // one alive now: a later drone brings its own.
+    const ctx = getContext(), am = bedAm;
     const wait = Math.max(0, glideEnd() - ctx.currentTime) + 10 * BED_XF_TC;
     c.idle = setTimeout(() => {
       c.idle = null;
-      if (!c.live || bedGain !== g) return;       // the drone was rebuilt meanwhile
-      try { g.disconnect(c.stages[0]); } catch (e) {}
+      if (!c.live || bedAm !== am) return;        // the drone was rebuilt meanwhile
+      try { am.node.disconnect(c.stages[0]); } catch (e) {}
       c.live = false;
     }, wait * 1000);
   }
@@ -790,8 +863,14 @@ export function applyBedVerb() {
 }
 
 export function applyBedVol() {
-  if (bedGain) glideParam(bedGain.gain, S.bedVol * chanGate('drone'), 0.2);
+  if (bedGain) glideParam(bedGain.gain, bedLevel() * chanGate('drone'), 0.2);
 }
+// Vary with strobe on the drone: its depth has moved.
+export function applyBedAm() {
+  if (bedAm) bedAm.apply();
+}
+// the depth as it plays, wander included, for the slider's glow
+export const bedEffectiveAm = () => strobeAmEffective(bedAm);
 
 // ---------- the drone's renders ----------
 function bedVersion(id) {
@@ -857,7 +936,7 @@ export async function applyBedDetune() {
   bedPump();
 }
 
-// ---------- the arpeggio ----------
+// ---------- the sequencer ----------
 // Robert's figure: the 3, the 4 and the octave above the root, an octave
 // above middle C (E5 F5 C6 against this piano's C), played fast and over and
 // over, 3 4 8 3 4 8. It sits on its pan, and a delayed copy answers to the
@@ -1120,7 +1199,7 @@ let arp = null;
 const lineWave = q => (q && ARP_WAVE_GAIN[q.wave] ? q.wave : 'sine');
 // The volume sweep: the same slow motion as the drone's sweeps (sweep.js),
 // moving a gain of its own between the low and high shares of the set level,
-// so the arpeggio swells and recedes on its own schedule. Off, it glides
+// so the sequencer swells and recedes on its own schedule. Off, it glides
 // back to full and stays there.
 const arpVolSweep = createSweep({
   domain: 'lin',
@@ -1129,12 +1208,9 @@ const arpVolSweep = createSweep({
     c.period = S.arpSwPeriod; c.wander = S.arpSwWander;
   }
 });
-// The strobe's flash rate as it is actually shown (the frame-locked rate
-// when locked, drift included otherwise) and its waveform, for Vary with
-// strobe.
-const strobeHz = () => Math.max(0.1, (S.frameLock && S.achievedFreq) || S.effFreq || S.freq || 7.5);
-const strobeWave = () => (S.wave === 'sine' || S.wave === 'triangle' || S.wave === 'square' ? S.wave : 'sine');
-const arpAmDepth = () => Math.max(0, Math.min(1, S.arpStrobeAm || 0));
+// The strobe's flash rate and waveform (strobeHz, strobeWave) come from
+// strobe-am.js, shared with the drone's stage.
+const arpAmDepth = () => scaledStrobeDepth(S.arpStrobeAm || 0);
 const arpTargetRate = () => Math.max(2, Math.min(14, S.arpRate || 7));
 
 // One line's tone, in the old single line's shape: an oscillator that never
@@ -1443,7 +1519,7 @@ function arpStart() {
           v: new Array(SEQ_COUNT).fill(null), b: null,
           rate: arpTargetRate(), next: now + 0.1, ia: 0, ib: 0,
           bOn: false, bUntil: 0, bTail: 0, bNext: Infinity, timer: null, amHz: NaN, tickAt: now };
-  glideParam(out.gain, S.arpVol, 1.0);
+  glideParam(out.gain, arpLevel(), 1.0);
   arpPump();
 }
 function arpPump() {
@@ -1543,7 +1619,7 @@ export function applyArp() {
   if (want && !arp) arpStart();
   else if (!want && arp) arpStop();
   if (!arp) return;
-  glideParam(arp.out.gain, S.arpVol, 0.2);
+  glideParam(arp.out.gain, arpLevel(), 0.2);
   const amD = arpAmDepth();
   glideParam(arp.amG.gain, 1 - amD / 2, 0.05);
   glideParam(arp.amDepth.gain, amD / 2, 0.05);
@@ -1576,8 +1652,10 @@ export async function pianoOn() {
   step();
   if (S.bedOn !== false) bedOn();
   if (S.arpOn) arpStart();
+  choirSession(true);
+  layersSession(true);
   return true;
 }
-export function pianoOff() { running = false; clearTimeout(timer); bedOff(); arpStop(); }
+export function pianoOff() { running = false; clearTimeout(timer); bedOff(); arpStop(); choirSession(false); layersSession(false); }
 export const pianoReady = () => ready;
 export const pianoAvailable = () => canOpus;

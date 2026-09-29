@@ -4,6 +4,7 @@
 // An ES module cannot export a writable binding, so they all live on one object
 // instead. It is a plain object touched from a handful of hot loops, so property
 // access stays monomorphic and nothing here allocates.
+import { layerDefaults, layerChannelFlags } from './layer-defs.js';
 
 // One sequencer line at its defaults. The rev and spread defaults are the
 // old global Sequencer reverb and stereo spread defaults (arpRev, arpSpread),
@@ -53,9 +54,11 @@ export const S = {
   rendererPref: 'canvas2d',   // auto | webgpu | webgl2 | canvas2d
 
   // ---------- strobe ----------
+  strobeScale: 1,            // emergency master over every visual/audio strobe depth
   freq: 7.5, depth: 0.80, bright: 1.0, wave: 'square', duty: 0.5,
   rgb: [212, 0, 255],
   fieldShape: 'full',
+  fieldOpacity: 1,            // v1: the strobe field's own opacity, 0..1; Brightness still drives every layer
   fieldFade: 0,               // v1: the field's radial fade in, 0..1, the tunnel layers' curve
   fieldSoft: 1,               // v1: how soft that fade's edge is, 1 the full ease, 0 a hard circle
   running: false,
@@ -103,6 +106,7 @@ export const S = {
   // half a cycle out, so the centre and the tunnel breathe against each other
   // rather than dimming together.
   ringOpacity: 1,             // v1: the ring layer's own level under the variance
+  ringPulse: 0,               // v1: how much rings brighten and darken with the strobe
   ringBrightVar: 0.55, ringBrightPeriod: 10, ringBrightPhase: 0.5, effRingBright: 0.70,
 
   // ---------- tunnel and edge ----------
@@ -142,6 +146,10 @@ export const S = {
   colorMode: 'rotating', hue: 0, hueSat: 0.6, hueLight: 0.75, hueVel: 0,
   perElementColor: false,
   cornerHue: [0, 0.25, 0.5, 0.75], cornerHv: [0, 0, 0, 0],
+  // The corners' own controls (v1): opacity, their chase clock against the
+  // strobe's (1 = in step), how much they flash with it, their reach as a
+  // share of the shorter side, and their look.
+  cornerOpacity: 1, cornerSpeed: 1, cornerPulse: 1, cornerSize: 0.46, cornerType: 'glow',
   // The walk can be confined to an arc of the wheel. Full turn by default;
   // warm is roughly magenta-red through amber, which is the half of the
   // spectrum that does not suppress melatonin.
@@ -160,6 +168,15 @@ export const S = {
   litLog: [],                 // per-frame lit/dark, so the diagnostics show the real pattern
 
   // ---------- audio ----------
+  // Two stages set each voice's loudness. Its level (toneVol, harmVol, the
+  // pip level, pianoVol, cloudVol, bedVol, arpVol, choirVol, ambVol: the
+  // drawer and v1's Levels window) is the backstage pre-mix, the ceiling.
+  // The mus* trims below are v1's Music window, played live on top of it:
+  // 0 to 1, how much of that level plays, so 1 is exactly the level and 0.5
+  // is half of it. musTone takes the fundamental and the harmonics together,
+  // musPulse the pips dry and their room. v0 never sets them, so everything
+  // that reads one falls back to 1 when it is missing.
+  musTone: 1, musPulse: 1, musPiano: 1, musClouds: 1, musDrone: 1, musArp: 1, musChoir: 1, musAmb: 1,
   carrierHz: 40, amRate: 7.5, volume: 0.50, amLinked: true, lastAmSet: 0,
   amModOn: true,              // the pulse envelope on the tone; off plays it steady
   toneOn: true, clickOn: true,
@@ -207,6 +224,7 @@ export const S = {
   textAppearPerMin: 10,
   textFadeInVar: 0,           // v1: each word's fade-in rolls between (1-var)x and 1x the set time
   textFadeOutVar: 0,
+  textDwellVar: 0,            // v1: each word's time on screen rolls the same way
   textOpacity: 0.95, textOpacityVar: 0.1, textOpacityVarPeriod: 20, textOpacityPhase: 0,
   textColorMode: 'system',    // white | system, where system follows the strobe hue
   textBrighten: 0,            // system mode only: 0 is the strobe colour, 1 is white
@@ -275,7 +293,7 @@ export const S = {
     seqLine(8, null, 4), seqLine(8, null, 5), seqLine(8, null, 6), seqLine(8, null, 7)
   ],
   seqSlot: 0,
-  arpSwOn: false, arpSwLo: 0, arpSwHi: 1, arpSwPeriod: 120, arpSwWander: 0.3,   // the 3 4 8 arpeggio: switch, level, notes per second
+  arpSwOn: false, arpSwLo: 0, arpSwHi: 1, arpSwPeriod: 120, arpSwWander: 0.3,   // the sequencer, first the 3 4 8 figure: switch, level, notes per second
   pianoHP: 20,                // high-pass on the notes, Hz; 20 is the floor and reads as off
   pianoDensity: 1.0, pianoCentre: 72, pianoSpread: 0.55, pianoHold: 1.0,
   pianoRubato: 0.5,
@@ -290,6 +308,24 @@ export const S = {
   pianoStyle: 'generative',
   pianoLifts: true,
   bedVol: 0.30,
+  // The choir (js/choir.js): the sandbox's Choir Performer, seven Lah voices
+  // looping together. Off by default so no saved session or preset suddenly
+  // sings. choirVol 1 is the performer's own level (CHOIR_LEVEL), about 2 dB
+  // under the drone at its default. Stack, Density and Focus are 0-100,
+  // Brightness -100..100, as the performer's sliders. The three variances are
+  // 0..1 of the set value, wandered below it; their periods are seconds a leg.
+  choirOn: false, choirVol: 1.0,
+  choirStack: 100, choirDensity: 100, choirBrightness: 0, choirFocus: 0,
+  choirStackVar: 0, choirStackPeriod: 20, choirDensityVar: 0, choirDensityPeriod: 20,
+  // The music layers (js/layers.js, table in js/layer-defs.js): majesticOn,
+  // majesticVol, fifthOn, fifthVol and any added later. Off, and 100 %.
+  ...layerDefaults(),
+  choirVolVar: 0, choirVolPeriod: 20,
+  // 'Vary with strobe' on the drone, choir and clouds, as arpStrobeAm (js/strobe-am.js)
+  bedStrobeAm: 0, choirStrobeAm: 0, cloudStrobeAm: 0,
+  // the AM depth's own wander: each pulse depth roams 0..var of its slider
+  choirStrobeAmVar: 0, choirStrobeAmPeriod: 20,
+  bedStrobeAmVar: 0, bedStrobeAmPeriod: 20,
   bedDetune: 152,             // which render of the drone plays (audio/music/manifest.json)
   // The drone's two slow sweeps (js/piano.js), the click train's filter sweep
   // again with the drone's own settings. Both off by default, which leaves the
@@ -326,15 +362,15 @@ export const S = {
   ambDrift: false,
   ambKidsFreq: 2 / 3, // share of the time the children are there while drift runs (js/ambience.js)
   ambDriftFadeS: 12,   // seconds one drift crossfade between places takes
-  // Dry by default: these are real places, recorded in the room they were in.
-  ambReverb: 0, ambRevTime: 4.5,
+  // The ambience room at full by default (100%), as it was dialled in by ear.
+  ambReverb: 1.0, ambRevTime: 4.5,
 
   // ---------- mix gate ----------
   // Mute and solo for the six fixed channels (see mixgate.js). The atmosphere
   // recordings keep their own flags on their layer objects. Nothing is muted
   // or soloed by default, and v0 never changes these, so v0 sounds as before.
-  chanMute: { fund: false, harm: false, pulse: false, piano: false, clouds: false, drone: false, arp: false },
-  chanSolo: { fund: false, harm: false, pulse: false, piano: false, clouds: false, drone: false, arp: false },
+  chanMute: { fund: false, harm: false, pulse: false, piano: false, clouds: false, drone: false, arp: false, choir: false, ...layerChannelFlags() },
+  chanSolo: { fund: false, harm: false, pulse: false, piano: false, clouds: false, drone: false, arp: false, choir: false, ...layerChannelFlags() },
 
   // ---------- layers ----------
   layers: { field: true, rings: true, corners: true, edge: true, text: true }
@@ -342,6 +378,9 @@ export const S = {
 
 // convenience alias: the layer set is read in several hot paths
 export const layers = S.layers;
+// The corners' looks, in the order the Type control lists them; the scene
+// shader takes the index.
+export const CORNER_TYPES = ['glow', 'beam', 'bracket', 'arc'];
 
 // ---------- constants ----------
 export const HUE_STEPS = 96;

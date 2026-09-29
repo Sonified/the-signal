@@ -570,16 +570,24 @@ function rampLevel(name, target, dur = 0.25, lead = 0) {
 // The click and the chirp are two voices in the worklet with a level and a
 // send each. Only the live shape's pair is ever above zero, so a change of
 // shape is the one pair ramping down while the other ramps up.
-const shapeVol  = chirp => Math.min(1, (chirp ? S.chirpVol : S.clickVol) * trimGain());
+//
+// Each level is two stages multiplied: the voice's own level (the drawer and
+// v1's Levels window, the backstage pre-mix, which sets its ceiling) times
+// the Music window's performance trim for it, S.musTone for the tone and its
+// harmonics together and S.musPulse for the pulse, dry and send, click or
+// chirp. A trim of 1 plays exactly what the level says. v0 never sets the
+// trims, so an unset one reads as 1.
+const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+const shapeVol  = chirp => Math.min(1, (chirp ? S.chirpVol : S.clickVol) * trimGain()) * perfTrim(S.musPulse ?? 1);
 const shapeLive = chirp => S.audioEnabled && S.clickOn && (S.clickMode === 'chirp') === chirp;
 const levelTargets = {
-  toneLevel:  () => S.audioEnabled && S.toneOn  ? S.toneVol * chanGate('fund') : 0,
+  toneLevel:  () => S.audioEnabled && S.toneOn  ? S.toneVol * perfTrim(S.musTone ?? 1) * chanGate('fund') : 0,
   clickLevel: () => shapeLive(false) ? shapeVol(false) * chanGate('pulse') : 0,
   chirpLevel: () => shapeLive(true)  ? shapeVol(true)  * chanGate('pulse') : 0,
   // Harmonics are the tone's own overtones, not a source of their own. With the
   // sine tone off they have nothing to be harmonics of, so they follow it down.
   // The harmonics switch keeps its own state and comes back with the tone.
-  harmLevel:  () => S.audioEnabled && S.harmOn && S.toneOn ? S.harmVol * chanGate('harm') : 0,
+  harmLevel:  () => S.audioEnabled && S.harmOn && S.toneOn ? S.harmVol * perfTrim(S.musTone ?? 1) * chanGate('harm') : 0,
   clickSend:  () => shapeLive(false) ? shapeVol(false) * S.clickReverb * chanGate('pulse') : 0,
   chirpSend:  () => shapeLive(true)  ? shapeVol(true)  * S.chirpReverb * chanGate('pulse') : 0
 };

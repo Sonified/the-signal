@@ -28,6 +28,8 @@ import { S } from './state.js';
 import { getContext, getMaster, createRoom, swapRoom, glideParam, sourceGate } from './audio.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
+import { strobeAm } from './strobe-am.js';
+import { inTurn, TURN } from './load-order.js';
 
 const ROOT = 48;                       // written C3; sounds ~79.5 Hz
 const DEG  = [0, 2, 4, 7, 11];         // 1 2 3 5 7, the 8 is the next octave's 1
@@ -102,6 +104,7 @@ const CLOUD_SPARSE = 1.6;
 const pads = new Map();                // semitone offset -> AudioBuffer
 let ready = false, loading = null;
 let dry = null, room = null, wet = null, padTap = null, bus = null;
+let cloudAm = null;                    // vary with strobe (strobe-am.js)
 let running = false, clock = 0, timer = null;
 // walk state: where the line is, which way it is going, how much of this run is left
 let idx = 0, dir = 1, run = 0;
@@ -125,14 +128,13 @@ const nearest = semi => PADS.reduce((a, b) => Math.abs(b - semi) < Math.abs(a - 
 
 // ---- diagnostics ------------------------------------------------------------
 // One line per pad, in the same note naming the sandbox trim strip uses, so a
-// note that comes out wrong can be read back instead of guessed at. On by
-// default while this is being chased; localStorage.signal_cloudlog = '0' to
-// silence it.
+// note that comes out wrong can be read back instead of guessed at. Off by
+// default; localStorage.signal_cloudlog = '1' turns it on.
 const NOTE_LETTERS = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const noteName = semi =>
   NOTE_LETTERS[((semi % 12) + 12) % 12] + (3 + Math.floor(semi / 12));
 const LOG = (() => {
-  try { return localStorage.getItem('signal_cloudlog') !== '0'; } catch (e) { return true; }
+  try { return localStorage.getItem('signal_cloudlog') === '1'; } catch (e) { return false; }
 })();
 // How many pads are sounding at this instant: a note that reads as one loud
 // note may be several landing together.
@@ -140,18 +142,19 @@ let voices = 0;
 
 // Loaded on demand rather than at boot, for the same reason the piano is: two
 // megabytes should not be fetched by someone who never turns the music on.
+// In its turn, after the drone and the piano (js/load-order.js).
 export function loadClouds() {
   if (loading) return loading;
   const ctx = getContext();
   if (!ctx || !canOpus) return Promise.resolve(false);
-  loading = (async () => {
+  loading = inTurn(TURN.clouds, async () => {
     const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
     await Promise.all(PADS.map(async sm =>
       pads.set(sm, await get(`audio/music/clouds/clouds-${NAMES[sm]}.opus`))));
     buildGraph();
     ready = true;
     return true;
-  })().catch(err => { console.warn('clouds failed to load', err); loading = null; return false; });
+  }).catch(err => { console.warn('clouds failed to load', err); loading = null; return false; });
   return loading;
 }
 
@@ -175,14 +178,36 @@ function buildGraph() {
   // gate lives here instead, where it also reaches the pads already sounding.
   // Ahead of the meter, so a muted channel reads silent.
   bus = ctx.createGain();
-  bus.gain.value = chanGate('clouds');
-  bus.connect(padTap.analyser);
+  bus.gain.value = busLevel();
+  // Vary with strobe: the bus on to a gain swung at the flash rate, so every
+  // pad, the ones already sounding too, pulses with the strobe. Ahead of the
+  // meter, so the meter shows the pulse. Built once and never torn down.
+  cloudAm = strobeAm(ctx, () => S.cloudStrobeAm);
+  bus.connect(cloudAm.node);
+  cloudAm.node.connect(padTap.analyser);
+}
+
+// The bus's gain: the mix gate times v1's Music window trim (S.musClouds, 0
+// to 1, where 1 plays exactly the level; v0 never sets it, so unset reads as
+// 1). The trim rides the bus rather than each pad, so a fade reaches the
+// long pads already sounding. While the clouds' switch is off the trim they
+// last had is held, so a fade out that lands (perform.js puts the trim back
+// to its level once the switch is off) never brings a ringing pad back up;
+// switching the clouds on picks it up again (applyCloudTrim, from the switch).
+const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+let busTrim = 1;
+function busLevel() {
+  if (S.cloudsOn !== false) busTrim = perfTrim(S.musClouds ?? 1);
+  return chanGate('clouds') * busTrim;
+}
+export function applyCloudTrim() {
+  if (bus) glideParam(bus.gain, busLevel(), 0.2);
 }
 
 // A short glide rather than a step, so a gate closing mid-pad never clicks;
 // a preset's transition stretches it over its window (glideParam, audio.js).
 onChannelGates(() => {
-  if (bus) glideParam(bus.gain, chanGate('clouds'), 0.03);
+  if (bus) glideParam(bus.gain, busLevel(), 0.03);
 });
 
 // A suspended context keeps returning the last block it rendered, so the
@@ -192,6 +217,9 @@ export const cloudPeak = () =>
 
 export function applyCloudReverb() {
   if (wet) glideParam(wet.gain, S.cloudReverb, 0.08);
+}
+export function applyCloudAm() {
+  if (cloudAm) cloudAm.apply();
 }
 // Crossfaded into the room rather than swapped under a ringing tail.
 export function rebuildCloudIR() {

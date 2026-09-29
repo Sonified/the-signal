@@ -1,0 +1,33 @@
+{
+  "note": "music layers, each a seamless loop baked into the file: the output is exactly the loop region [loopStart, loopEnd) of the source at 48 kHz, and its last crossfadeSeconds are an equal-power (cos/sin) crossfade of the region's own tail into the audio leading up to loopStart, so the wrap from end to start lands on material already fading in. Nothing retuned, levelled or EQd. Played with AudioBufferSourceNode.loop, loopStart 0 and loopEnd samples/48000 (js/layers.js)",
+  "encodings": {
+    "opus": "128k VBR, 48 kHz"
+  },
+  "sampleRate": 48000,
+  "resampler": "soxr VHQ, 44.1 to 48 kHz before the loop was cut",
+  "crossfadeSeconds": 2.0,
+  "layers": [
+    {
+      "name": "majestic",
+      "label": "Majestic voice",
+      "file": "majestic",
+      "source": "Majestic_voice.wav",
+      "sourceSampleRate": 44100,
+      "loopStart": 3.0,
+      "loopEnd": 15.0,
+      "samples": 576000,
+      "seconds": 12.0
+    },
+    {
+      "name": "fifth",
+      "label": "Bright fifth",
+      "file": "fifth",
+      "source": "Bright_Fifth_Synth.wav",
+      "sourceSampleRate": 44100,
+      "loopStart": 5.0,
+      "loopEnd": 15.0,
+      "samples": 480000,
+      "seconds": 10.0
+    }
+  ]
+}

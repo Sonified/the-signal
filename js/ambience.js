@@ -47,7 +47,12 @@ export function normalizeAmbLayers(layers) {
       muted: saved?.muted === true, solo: saved?.solo === true };
   });
 }
+// The maxes a fresh setup starts from, where one has been dialled in by ear
+// (the rest take the drift's own levels below). A max the viewer has set by
+// hand is saved with the layer and always wins over these.
+const DEFAULT_PEAKS = { morning: 0.40, 'kids-playground': 0.57 };
 function defaultPeak(id) {
+  if (DEFAULT_PEAKS[id] !== undefined) return DEFAULT_PEAKS[id];
   return id.startsWith('kids-') ? KIDS_LEVEL : DRIFT_LEVEL;
 }
 // A fader moved by hand. Any level above zero also becomes the sound's peak,
@@ -95,12 +100,18 @@ async function buf(url) {
   return job;
 }
 
+// The bus's gain is the atmosphere's level times v1's Music window trim
+// (S.musAmb, 0 to 1, where 1 plays exactly the level; v0 never sets it, so
+// unset reads as 1). The mixer's own master fader shows the level alone.
+const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+const outLevel = () => S.ambVol * perfTrim(S.musAmb ?? 1);
+
 function ensureOut() {
   if (out) return out;
   const ctx = getContext(), master = getMaster();
   if (!ctx || !master) return null;
   out = ctx.createGain();
-  out.gain.value = S.ambVol;
+  out.gain.value = outLevel();
   // The pause gate (audio.js) on the dry side, a gain of its own since the
   // bus's is the atmosphere's level, and on the room's input below, so a
   // pause stops the recordings at once and lets the room ring out.
@@ -122,7 +133,7 @@ function ensureOut() {
 // Both glide: a straight line over a preset's transition, the usual short
 // approach for a fader (see glideParam in audio.js).
 export function applyAmbVol() {
-  if (out) glideParam(out.gain, S.ambVol, 0.2);
+  if (out) glideParam(out.gain, outLevel(), 0.2);
 }
 export function applyAmbReverb() {
   if (wet) glideParam(wet.gain, S.ambReverb, 0.12);
@@ -250,6 +261,31 @@ export function glideAmbLayer(layer, to, seconds) {
   glides.set(layer, { from: layer.level, to, t0, t1: t0 + seconds, shown: layer.level });
 }
 export const ambLayerGliding = layer => glides.has(layer);
+
+// Moves every glide's shown level along to now, so faders follow a fade
+// with the drift off too (the drift's tick does this while it runs). Costs
+// nothing when no glide is running.
+export function advanceAmbGlides() {
+  if (!glides.size) return;
+  const ctx = getContext();
+  if (!ctx) return;
+  for (const layer of Array.from(glides.keys())) advanceGlide(layer, ctx.currentTime);
+}
+
+// A hand on the drift: fades one recording in to its max, or, if it is up
+// or already on its way up, back out to silence, over the drift's own
+// crossfade time. Where a fade is heading counts, not only where it is, so
+// a second click mid-fade turns it round. Returns the fade's length.
+export function toggleAmbLayerFade(layer) {
+  if (!layer) return 0;
+  const ctx = getContext();
+  if (ctx) advanceGlide(layer, ctx.currentTime);
+  const g = glides.get(layer);
+  const heading = g ? g.to : layer.level;
+  const sec = driftFadeS();
+  glideAmbLayer(layer, heading > 1e-4 ? 0 : peakOf(layer), sec);
+  return sec;
+}
 
 // Stops every glide where it has got to; the levels stay put.
 export function haltAmbGlides() {

@@ -21,8 +21,11 @@
 // The gate is read on control changes only, never per frame, and allocates
 // nothing when it is.
 import { S } from './state.js';
+import { MUSIC_LAYERS } from './layer-defs.js';
 
-export const CHANNELS = ['fund', 'harm', 'pulse', 'piano', 'clouds', 'drone', 'arp'];
+// The music layers (js/layer-defs.js) each have a channel of their own id.
+export const CHANNELS = ['fund', 'harm', 'pulse', 'piano', 'clouds', 'drone', 'arp', 'choir',
+  ...MUSIC_LAYERS.map(L => L.id)];
 
 function flag(obj, ch) { return !!(obj && obj[ch]); }
 

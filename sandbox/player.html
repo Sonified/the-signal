@@ -117,6 +117,13 @@
              box-shadow:0 22px 60px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.04);
              overflow:hidden; resize:both; }
   #envWrap.show { display:flex; }
+  #choirWrap { position:fixed; z-index:41; display:none; flex-direction:column;
+               width:min(470px, calc(100vw - 28px)); min-width:340px; min-height:350px;
+               max-height:calc(100vh - 28px);
+               background:#0f141b; border:1px solid #2c3742; border-radius:10px;
+               box-shadow:0 22px 60px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.04);
+               overflow:hidden; resize:both; }
+  #choirWrap.show { display:flex; }
   .winbar { display:flex; align-items:center; gap:9px; flex:none;
             padding:7px 7px 7px 12px; background:linear-gradient(#1b222b, #141a22);
             border-bottom:1px solid #212932; cursor:grab; user-select:none;
@@ -138,6 +145,34 @@
                     background:linear-gradient(135deg, transparent 50%, #3a4551 50%,
                                #3a4551 62%, transparent 62%, transparent 74%,
                                #3a4551 74%, #3a4551 86%, transparent 86%); }
+  #choirWrap::after { content:''; position:absolute; right:2px; bottom:2px;
+                      width:11px; height:11px; pointer-events:none;
+                      background:linear-gradient(135deg, transparent 50%, #3a4551 50%,
+                                 #3a4551 62%, transparent 62%, transparent 74%,
+                                 #3a4551 74%, #3a4551 86%, transparent 86%); }
+  .choirTransport { display:flex; align-items:center; gap:10px; }
+  #choirPlay { min-width:76px; }
+  #choirState { color:var(--dim); font-size:11px; }
+  .choirControl { display:grid; grid-template-columns:72px minmax(120px, 1fr) 92px;
+                  align-items:center; gap:10px; color:var(--dim); font-size:11.5px; }
+  .choirControl input { width:100%; }
+  .choirControl span { cursor:pointer; user-select:none; }
+  .choirControl span:hover { color:var(--ink, #e6edf5); }
+  .choirControl output { color:#aebdcd; text-align:right; font-size:10.5px;
+                         font-variant-numeric:tabular-nums; }
+  #choirMeters { min-height:156px; display:grid; grid-template-columns:repeat(7, minmax(28px, 1fr));
+                 gap:8px; padding:10px; background:#0d1218; border:1px solid var(--line);
+                 border-radius:8px; }
+  .choirVoice { min-width:0; display:flex; flex-direction:column; align-items:center; gap:5px; }
+  .choirLevel { height:12px; color:#778494; font-size:8.5px; line-height:12px;
+                font-variant-numeric:tabular-nums; }
+  .choirMeter { position:relative; flex:1; width:8px; min-height:94px; overflow:hidden;
+                border-radius:2px; background:#111923; border:1px solid #25303b; }
+  .choirFill { position:absolute; left:0; right:0; bottom:0; height:0;
+               background:#a665df; }
+  .choirDegree { color:#a9b5c3; font-size:10px; font-weight:600; }
+  .choirPitch { color:#5f6c7b; font-size:8px; white-space:nowrap; }
+  .choirNote { color:var(--dim); font-size:10.5px; line-height:1.5; }
   /* One column. Always one column, at any window width -- a vertical stack
      rather than a wrapping row, so narrowing the window never rearranges it. */
   #envCols { display:flex; flex-direction:column; gap:14px; align-items:stretch; }
@@ -192,6 +227,7 @@
   <button id="scale" class="on">scale: 1 2 3 5 7 8</button>
   <button id="lift" class="on">key lift</button>
   <button id="envBtn">envelopes</button>
+  <button id="choirBtn">choir performer</button>
   <button id="fmt">format: &mdash;</button>
 </div>
 
@@ -218,6 +254,39 @@
   </div>
   <div class="winbody">
     <div id="envCols"></div>
+  </div>
+</div>
+
+<div id="choirWrap">
+  <div class="winbar" id="choirBar">
+    <span class="windot" style="background:var(--pit);box-shadow:0 0 7px var(--pit)"></span>
+    <span class="wintitle">Choir Performer</span>
+    <span style="flex:1"></span>
+    <button class="winx" id="choirClose" title="close">&times;</button>
+  </div>
+  <div class="winbody">
+    <div class="choirTransport">
+      <button id="choirPlay">&#9654; play</button>
+      <span id="choirState">seven Lah voices</span>
+    </div>
+    <label class="choirControl">
+      <span>stack</span><input id="choirStack" type="range" min="0" max="100" step="1" value="100">
+      <output id="choirStackV">all voices</output>
+    </label>
+    <label class="choirControl">
+      <span>density</span><input id="choirDensity" type="range" min="0" max="100" step="1" value="100">
+      <output id="choirDensityV">1 2 3 5 7 8 9</output>
+    </label>
+    <label class="choirControl">
+      <span>brightness</span><input id="choirBrightness" type="range" min="-100" max="100" step="1" value="0">
+      <output id="choirBrightnessV">even</output>
+    </label>
+    <label class="choirControl">
+      <span>focus</span><input id="choirFocus" type="range" min="0" max="100" step="1" value="0">
+      <output id="choirFocusV">broad</output>
+    </label>
+    <div id="choirMeters" aria-label="Choir voice loudness"></div>
+    <div class="choirNote">Stack fills upward through the choir. Density adds harmonic degrees. Brightness moves from low to high; Focus narrows that balance into a moving spotlight.</div>
   </div>
 </div>
 
@@ -341,15 +410,52 @@ const juliaVox = vowel => ({
   fade: 1.5,                    // a sung note lets go like a breath, not a damper
   perKey: true,                 // eight loops across 32 keys: same deal as the clouds
   formats: ['wav'],             // local renders, never committed, so never encoded
-  manifest: 'manifest.json',
-  levels: () => ({}),
   names: JULIA_NAMES,
   // These are seamless loops, so a held key holds: the buffer cycles instead of
   // running off its end sixteen seconds in.
-  loop: true
+  loop: true,
+  // A sung note lets go when the finger does, pedal or not. The pedal is for a
+  // recording whose own ending is the point (a struck string, a cloud's wash);
+  // under it a voice's envelope never reaches its release, so a loop rang
+  // forever and the playhead parked at the top of the release.
+  pedal: false
 });
 INSTRUMENTS.ooo = juliaVox('Ooo');
 INSTRUMENTS.aah = juliaVox('Aah');
+
+// The boys' choir Lah notes, spliced from the Logic bounce and tuned onto the
+// same slots as the vowels' deg2 through deg8 (seven held notes, about
+// eleven seconds each, ascending the mode as sung). Unlike the vowel loops
+// these keep their natural 'L' attack and decay, so they play as long
+// one-shots rather than cycling.
+// Named by the sung ladder itself, 1 2 3 5 7 8 9 ascending from the root,
+// with each note's own pitch as recorded; nothing was retuned.
+const LAH = { 24:'1_322Hz', 26:'2_359Hz', 28:'3_401Hz', 31:'5_474Hz',
+              35:'7_604Hz', 36:'8_649Hz', 38:'9_723Hz' };
+INSTRUMENTS.lah = {
+  label: 'choir lah',
+  title: 'Choir',
+  dir: '../audio/source/julia_vox/tuned',
+  semis: Object.keys(LAH).map(Number),
+  note: sm => `Julia_Lah_${LAH[sm]}`,
+  lifts: 0,
+  lift: null,
+  // an octave under the lowest note up to a fifth over the highest, the same
+  // rule as the vowels
+  lo: 12, hi: 45,
+  fade: 1.5,
+  perKey: true,
+  formats: ['wav'],
+  names: Object.fromEntries(Object.entries(LAH).map(([sm, f]) => [sm, f.split('_')[0]])),
+  // One-shots, so the pedal holds a click through the whole sung note: the
+  // ring-out in release() schedules the fade to land at the sample's natural
+  // end instead of letting the buffer stop dead at full sustain.
+  loop: false,
+  // The loop button: with it on, a held note cycles a crossfaded loop of the
+  // steady middle of the recording (loopBuffer) instead of running out.
+  loopable: true,
+  tuneCents: true               // sung notes drift; every column gets a cents slider
+};
 
 // ---- format: Opus where the browser will take it, mp3 where it will not ----
 const probe = new Audio();
@@ -407,8 +513,10 @@ const url = (kind, n) => `${I.dir}/${kind === 'note' ? I.note(n) : I.lift(n)}.${
 const ENV_SPEC = {
   amp: { title: 'volume envelope', rows: [
     ['vol', 'volume', 0, 100, 1, '%'],
-    // Zero holds the note until key-up; otherwise it ends after this duration.
-    ['len', 'length', 0, 20, 0.1, 's'],
+    // Shortest note at the left, "held" (len 0) all the way at the right. The
+    // max is rewritten per instrument after its samples load: the longest note
+    // the keyboard can actually make (updateLenMax), not an arbitrary 20.
+    ['len', 'length', 0.1, 20, 0.1, 's'],
     ['aA', 'attack',   0, 8,   0.01, 's'],
     ['aD', 'decay',    0, 8,   0.01, 's'],
     ['aS', 'sustain',  0, 100, 1,    '%'],
@@ -455,6 +563,12 @@ ENV_DEFAULTS.ooo = { on: true, aA: 0.5, aD: 1.0, aS: 90, aR: 2.2,
                      // a sung phrase length is the default instead
                      len: 6 };
 ENV_DEFAULTS.aah = { ...ENV_DEFAULTS.ooo };
+// The Lah notes carry their own attack and an eleven-second natural decay, so
+// the envelope stays out of the way more than the loops' does. "Held" (len 0)
+// means the note sounds while the key is down, up to the recording's own
+// length, or forever with the loop button on (a crossfaded loop of its steady
+// middle).
+ENV_DEFAULTS.lah = { ...ENV_DEFAULTS.ooo, aA: 0.05, len: 0 };
 
 const allEnv = (() => {
   const src = preload.env || {};
@@ -470,11 +584,16 @@ let env = allEnv[INST];
 const TICKS = 1000;
 function toSlider(r, v) {
   const [, , min, max, , , log] = r;
+  // "held" is length zero, and it lives at the far RIGHT of the length slider:
+  // past the longest real note, not before the shortest one.
+  if (r[0] === 'len' && v === 0) return TICKS;
   const f = log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
-  return Math.round(Math.max(0, Math.min(1, f)) * TICKS);
+  const cap = r[0] === 'len' ? TICKS - 1 : TICKS;
+  return Math.round(Math.max(0, Math.min(1, f)) * cap);
 }
 function fromSlider(r, t) {
   const [, , min, max, step, , log] = r;
+  if (r[0] === 'len' && t >= TICKS) return 0;     // the top notch means held
   const f = t / TICKS;
   const v = log ? min * Math.pow(max / min, f) : min + f * (max - min);
   if (log) return v < 1000 ? Math.round(v) : Math.round(v / 10) * 10;
@@ -552,13 +671,15 @@ async function loadSamples() {
     })
   ]);
   // The manifest is read alongside the audio it describes, so the numbers and
-  // the files can never be out of step with each other.
+  // the files can never be out of step with each other. Only the sets that
+  // ship one declare one; the voices have no default levels to fetch.
   manifestLevels = {};
-  try {
+  if (I.manifest) try {
     const m = await (await fetch(`${I.dir}/${I.manifest}`)).json();
     manifestLevels = I.levels(m) || {};
   } catch (err) { /* a set without a manifest simply has nothing to say */ }
   buildTrims();
+  updateLenMax();
 
   const n = Object.keys(manifestLevels).length;
   st.textContent = `${I.label} · ${SEMIS.length} samples`
@@ -575,7 +696,10 @@ async function load() {
   master.connect(ctx.destination);
   verb = ctx.createConvolver(); verb.buffer = impulse(3.6, 2.2);
   wet = ctx.createGain(); wet.gain.value = (+document.getElementById('rev').value)/100;
-  verb.connect(wet).connect(ctx.destination);
+  // Reverb is the wet side of the instrument mix, so its return passes
+  // through the same master gain as the dry signal. Volume zero now silences
+  // both paths while the reverb slider still controls their wet/dry balance.
+  verb.connect(wet).connect(master);
   await loadSamples();
 }
 
@@ -584,6 +708,33 @@ function nearest(semi) {
   let best = SEMIS[0], d = 1e9;
   for (const s of SEMIS) { const v = Math.abs(s - semi); if (v < d) { d = v; best = s; } }
   return best;
+}
+
+// The longest note this instrument's keyboard can actually make: every key's
+// nearest sample stretched by its resampling ratio, so a low key playing a
+// twelve-second recording at half speed counts as the twenty-four seconds it
+// really is. A loop has no natural end, so those keep the old twenty.
+function maxNoteSeconds() {
+  if (I.loop || !notes.size) return 20;
+  let m = 0;
+  for (let w = LO; w <= HI; w++) {
+    const semi = w - ROOT_WRITTEN, src = nearest(semi), buf = notes.get(src);
+    if (buf) m = Math.max(m, buf.duration / Math.pow(2, (semi - src) / 12));
+  }
+  return Math.max(1, Math.ceil(m * 10) / 10);
+}
+
+// Rewrites the length slider's range to fit the loaded samples and repaints
+// the row, since the same slider position now means a different number.
+function updateLenMax() {
+  const r = ENV_ROW.len;
+  r[3] = maxNoteSeconds();
+  if (env.len > r[3]) env.len = r[3];
+  const row = document.querySelector('#envCols .es[data-id="len"]');
+  if (row) {
+    row.querySelector('input').value = toSlider(r, env.len);
+    row.querySelector('.vl').textContent = envFmt(r, env.len);
+  }
 }
 
 // Sustained piano notes ring for ten seconds or more, so with the pedal down a
@@ -664,7 +815,11 @@ function play(written, vel = 0.85, capture = true) {
   const buf = notes.get(src);
   if (!buf) return;
   const s = ctx.createBufferSource();
-  s.buffer = buf;
+  // Loop button on a one-shot: the crossfaded copy, whose seam is baked in, so
+  // the note sounds the same until the finger (or the pedal) lets go.
+  const xl = I.loopable && loopOn && !(env.on && env.len > 0) ? loopBuffer(buf) : null;
+  s.buffer = xl ? xl.buf : buf;
+  if (xl) { s.loop = true; s.loopStart = xl.a; s.loopEnd = xl.b; }
   if (I.loop) s.loop = true;    // a seamless loop holds as long as the key does
   // Piano is trimmed per SAMPLE (several keys share one recording and its
   // correction); clouds is trimmed per KEY (every key is its own slider, since
@@ -762,7 +917,7 @@ function play(written, vel = 0.85, capture = true) {
   }
 
   g.connect(master); g.connect(verb);
-  const v = { s, g, filt, hp, lpDry, lpWet, hpDry, hpWet,
+  const v = { s, g, filt, hp, lpDry, lpWet, hpDry, hpWet, peak,
               env: e, stopped: false, ended: false, src, trimKey, timer: null, t0, len: LEN };
   s.onended = () => {
     v.ended = true;
@@ -798,9 +953,10 @@ function stopVoice(v, dur) {
   const t = ctx.currentTime;
   const e = v.env;
   const aR = dur != null ? dur : (e && e.on ? Math.max(0.005, e.aR) : I.fade);
-  // Only this voice's playhead enters release; the others keep moving.
+  // Only this voice's playhead enters release; the others keep moving. A
+  // ring-out release still parked in the future is overtaken by this real one.
   const cursor = cursors.get(v);
-  if (cursor && cursor.relAt == null) {
+  if (cursor && (cursor.relAt == null || cursor.relAt > t)) {
     cursor.relAt = t;
     cursor.relDur = aR;
     startCursor();
@@ -846,8 +1002,316 @@ function release(written) {
   }
   // The envelope's own release when there is one, otherwise a damper on the
   // piano and a long breath on the clouds. The pedal lets a note ring out its
-  // natural decay, but a looping voice has none, so key-up always releases it.
-  if (!sustain || I.loop) stopVoice(v);
+  // natural decay; a voice whose note ends with the finger opts out
+  // (pedal: false, the vowels). A pedalled one-shot cannot ring past its
+  // buffer, so instead of sitting at full sustain and stopping dead when the
+  // samples run out, its release is scheduled to LAND at the sample's natural
+  // end — the note plays through and lets go like a breath. A looping one
+  // (the loop button) has no end to land on: the pedal holds it forever, until
+  // the pedal comes up.
+  if (!sustain || I.pedal === false) { stopVoice(v); return; }
+  if (!I.loop && !v.len && !v.s.loop) ringToEnd(v);
+}
+
+// A crossfade loop of a sung one-shot's steady middle, cached per decoded
+// buffer. Web Audio's own loop only jumps, so the seam is baked into a copy:
+// the last X seconds before the loop end are faded (equal power) into the X
+// seconds that lead up to the loop start, so arriving at the end already
+// sounds like the start and the jump back is inaudible.
+//   start: attack settled (0.75 s) plus the crossfade, so what fades in is
+//          already steady singing
+//   end:   the last point still within 6 dB of the note's typical level,
+//          less a quarter second, found per recording
+const loopBufs = new WeakMap();
+function loopBuffer(buf) {
+  let L = loopBufs.get(buf);
+  if (L) return L;
+  const sr = buf.sampleRate, n = buf.length, ch0 = buf.getChannelData(0);
+  const w = Math.round(sr * 0.05), lv = [];
+  for (let i = 0; i + w <= n; i += w) {
+    let s = 0;
+    for (let j = i; j < i + w; j++) s += ch0[j] * ch0[j];
+    lv.push(Math.sqrt(s / w));
+  }
+  const body = lv.slice(Math.round(1 / 0.05)).sort((x, y) => x - y);
+  const ref = body.length ? body[body.length >> 1] : 0;
+  let last = lv.length - 1;
+  while (last > 0 && lv[last] < ref * 0.5) last--;
+  const X = 0.75, a = 0.75 + X;
+  const b = Math.min(n / sr, Math.max(a + 2 * X, last * 0.05 - 0.25));
+  const A = Math.round(a * sr), B = Math.round(b * sr), XN = Math.round(X * sr);
+  const out = ctx.createBuffer(buf.numberOfChannels, n, sr);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const src = buf.getChannelData(c), dst = out.getChannelData(c);
+    dst.set(src);
+    for (let i = 0; i < XN; i++) {
+      const f = (i / XN) * Math.PI / 2;
+      dst[B - XN + i] = src[B - XN + i] * Math.cos(f) + src[A - XN + i] * Math.sin(f);
+    }
+  }
+  L = { buf: out, a: A / sr, b: B / sr };
+  loopBufs.set(buf, L);
+  return L;
+}
+
+// ---- Choir Performer -------------------------------------------------------
+// A separate seven-voice Lah instrument. It owns its sources so it can keep
+// singing while the keyboard changes instrument. Every source starts together
+// and loops the crossfaded steady portion; Stack, Density and Brightness only
+// move their gains, which means changing the chord never retriggers an attack.
+const CHOIR_PARTS = Object.entries(LAH).map(([semi, file]) => ({
+  semi: Number(semi), degree: file.split('_')[0], file: `Julia_Lah_${file}.wav`,
+}));
+const CHOIR_LEVEL = 0.22;
+const CHOIR_DENSITY_RANK = { '1': 0, '8': 1, '5': 2, '3': 3, '2': 4, '7': 5, '9': 6 };
+const choirBuffers = new Map();
+const choirVisual = CHOIR_PARTS.map(() => ({ from: 0, to: 0, at: 0, dur: 0, value: 0 }));
+let choirLoad = null, choirVoices = [], choirWanted = false, choirPlaying = false;
+let choirToken = 0, choirMeterRaf = 0;
+const choirMeterEls = [];
+
+function choirTrim(part) {
+  const set = allTrim.lah || {};
+  const value = set[part.semi] || {};
+  return {
+    vol: typeof value.vol === 'number' ? value.vol : 100,
+    cents: typeof value.cents === 'number' ? value.cents : 0,
+  };
+}
+
+const cosine01 = value => {
+  const x = Math.max(0, Math.min(1, value));
+  return 0.5 - 0.5 * Math.cos(Math.PI * x);
+};
+
+function choirTargets() {
+  const stack = choirPerf.stack / 100;
+  const density = choirPerf.density / 100;
+  const brightness = choirPerf.brightness / 100;
+  // Give the centre of the fader much more resolution without changing its
+  // endpoints. A signed square keeps zero and both extremes fixed, while a
+  // half-scale move produces only one quarter of the full spectral tilt.
+  const tilt = Math.sign(brightness) * brightness * brightness;
+  const focus = cosine01(choirPerf.focus / 100);
+  // Stack and Density are continuous low-pass fields over their respective
+  // voice orderings. Stack expands exponentially. Density gives each added
+  // harmonic exactly one sixth of the slider, using a raised-cosine fade so
+  // every handoff has zero slope at both ends and never steps.
+  const stackWidth = 0.05 * Math.pow(400, stack);
+  // The field alone never quite goes flat (the top voice sat at 99.6% with the
+  // slider at the top), so the last tenth of the slider eases its falloff to
+  // nothing: a full Stack is exactly every voice at full level.
+  const stackReach = cosine01((1 - stack) * 10);
+  const densityPhase = density * 6;
+  const centre = (tilt + 1) * 0.5 * (CHOIR_PARTS.length - 1);
+  // Focus exponentially tightens a Gaussian from an effectively flat field
+  // to a one-voice spotlight. Between voice centres, adjacent voices crossfade
+  // continuously. At zero Focus, Brightness is a broad exponential tilt.
+  const focusWidth = 24 * Math.pow(0.42 / 24, focus);
+  return CHOIR_PARTS.map((part, index) => {
+    const tr = choirTrim(part);
+    const stackGain = Math.exp(-0.5 * Math.pow(index / stackWidth, 4) * stackReach);
+    const rank = CHOIR_DENSITY_RANK[part.degree];
+    const densityGain = rank === 0 ? 1 : cosine01(densityPhase - (rank - 1));
+    const pitch = index / (CHOIR_PARTS.length - 1);
+    const tiltLog = 2.4 * tilt * (2 * pitch - 1) - 2.4 * Math.abs(tilt);
+    const distance = (index - centre) / focusWidth;
+    const spotlightLog = -0.5 * distance * distance;
+    // Log-domain morph: Focus=0 is the original broad tilt; Focus=1 is the
+    // narrow sweep. This remains smooth through every intermediate setting.
+    const brightGain = Math.exp((1 - focus) * tiltLog + focus * spotlightLog);
+    return stackGain * densityGain * brightGain * (tr.vol / 100);
+  });
+}
+
+function choirVisualAt(state, now) {
+  if (now <= state.at) return state.from;
+  if (!state.dur || now >= state.at + state.dur) return state.to;
+  return state.from + (state.to - state.from) * cosine01((now - state.at) / state.dur);
+}
+
+function cosineParam(param, target, duration, delay) {
+  const now = ctx.currentTime;
+  let from = param.value;
+  try {
+    param.cancelAndHoldAtTime(now);
+    from = param.value;
+  } catch (err) {
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(from, now);
+  }
+  const start = now + delay;
+  param.setValueAtTime(from, start);
+  if (duration <= 0.005) { param.setValueAtTime(target, start); return; }
+  const curve = new Float32Array(48);
+  for (let i = 0; i < curve.length; i++) {
+    const u = i / (curve.length - 1);
+    curve[i] = from + (target - from) * cosine01(u);
+  }
+  param.setValueCurveAtTime(curve, start + 0.001, duration);
+}
+
+function setChoirVisualTargets(targets, duration = 0.7) {
+  const now = performance.now();
+  for (let i = 0; i < choirVisual.length; i++) {
+    const state = choirVisual[i];
+    const current = choirVisualAt(state, now);
+    state.from = current; state.value = current; state.to = targets[i];
+    state.at = now; state.dur = duration * 1000;
+  }
+  startChoirMeters();
+}
+
+function applyChoirTargets(duration = 0.7) {
+  const targets = choirTargets();
+  setChoirVisualTargets(targets, duration);
+  if (!ctx) return;
+  for (let i = 0; i < choirVoices.length; i++) {
+    const voice = choirVoices[i];
+    const param = voice.gain.gain;
+    const now = ctx.currentTime;
+    // setTargetAtTime begins at the AudioParam's exact current scheduled value,
+    // so repeated pointer input remains continuous without restarting a long
+    // curve or waiting for pointer release.
+    try { param.cancelAndHoldAtTime(now); }
+    catch (err) { param.cancelScheduledValues(now); param.setValueAtTime(param.value, now); }
+    param.setTargetAtTime(targets[i] * CHOIR_LEVEL, now, Math.max(0.008, duration / 4));
+  }
+}
+
+function updateChoirTrim(semi, changed = 'both') {
+  const index = CHOIR_PARTS.findIndex(part => part.semi === Number(semi));
+  if (index < 0) return;
+  if (changed === 'vol' || changed === 'both') applyChoirTargets(0.075);
+  if (!ctx || (changed !== 'cents' && changed !== 'both')) return;
+  const voice = choirVoices[index];
+  if (!voice) return;
+  const target = Math.pow(2, choirTrim(CHOIR_PARTS[index]).cents / 1200);
+  const param = voice.source.playbackRate;
+  const now = ctx.currentTime;
+  try { param.cancelAndHoldAtTime(now); }
+  catch (err) { param.cancelScheduledValues(now); param.setValueAtTime(param.value, now); }
+  param.setTargetAtTime(target, now, 0.018);
+}
+
+function updateAllChoirTrims() {
+  applyChoirTargets(0.075);
+  for (const part of CHOIR_PARTS) updateChoirTrim(part.semi, 'cents');
+}
+
+async function loadChoirBuffers() {
+  if (choirBuffers.size === CHOIR_PARTS.length) return;
+  if (choirLoad) return choirLoad;
+  choirLoad = Promise.all(CHOIR_PARTS.map(async part => {
+    const url = `${INSTRUMENTS.lah.dir}/${part.file}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${part.file}: ${response.status}`);
+    choirBuffers.set(part.semi, await ctx.decodeAudioData(await response.arrayBuffer()));
+  })).finally(() => { choirLoad = null; });
+  return choirLoad;
+}
+
+function paintChoirTransport(message) {
+  const button = document.getElementById('choirPlay');
+  button.classList.toggle('on', choirWanted);
+  button.innerHTML = choirWanted ? '&#9632; stop' : '&#9654; play';
+  button.disabled = choirWanted && !choirPlaying && !!choirLoad;
+  document.getElementById('choirState').textContent = message || (choirPlaying ? 'voices looping' : 'seven Lah voices');
+}
+
+async function startChoirPerformer() {
+  if (choirWanted) return;
+  choirWanted = true;
+  const token = ++choirToken;
+  paintChoirTransport('loading Lah voices…');
+  if (!ctx) { choirWanted = false; paintChoirTransport('audio is not ready'); return; }
+  await ctx.resume();
+  try { await loadChoirBuffers(); }
+  catch (err) {
+    if (token === choirToken) { choirWanted = false; paintChoirTransport('could not load: ' + err.message); }
+    return;
+  }
+  if (!choirWanted || token !== choirToken) return;
+  choirVoices = CHOIR_PARTS.map(part => {
+    const loop = loopBuffer(choirBuffers.get(part.semi));
+    const source = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    source.buffer = loop.buf; source.loop = true; source.loopStart = loop.a; source.loopEnd = loop.b;
+    source.playbackRate.value = Math.pow(2, choirTrim(part).cents / 1200);
+    gain.gain.value = 0;
+    source.connect(gain); gain.connect(master); gain.connect(verb);
+    source.start();
+    return { source, gain, part };
+  });
+  choirPlaying = true;
+  for (const state of choirVisual) state.from = state.to = state.value = 0;
+  applyChoirTargets(1.6);
+  paintChoirTransport();
+}
+
+function stopChoirPerformer(immediate = false) {
+  choirWanted = false;
+  choirPlaying = false;
+  ++choirToken;
+  const voices = choirVoices;
+  choirVoices = [];
+  const duration = immediate ? 0.01 : 1.1;
+  setChoirVisualTargets(new Array(CHOIR_PARTS.length).fill(0), duration);
+  if (ctx) for (let i = 0; i < voices.length; i++) {
+    const voice = voices[i];
+    cosineParam(voice.gain.gain, 0, duration, i * (immediate ? 0 : 0.02));
+    setTimeout(() => { try { voice.source.stop(); } catch (err) {} }, (duration + 0.2) * 1000);
+  }
+  paintChoirTransport();
+}
+
+function startChoirMeters() {
+  if (!choirMeterRaf) choirMeterRaf = requestAnimationFrame(drawChoirMeters);
+}
+
+function drawChoirMeters(now) {
+  choirMeterRaf = 0;
+  let moving = false;
+  for (let i = 0; i < choirVisual.length; i++) {
+    const state = choirVisual[i];
+    state.value = choirVisualAt(state, now);
+    if (now < state.at + state.dur) moving = true;
+    const meter = choirMeterEls[i];
+    if (!meter) continue;
+    const pct = Math.max(0, Math.min(1, state.value));
+    meter.fill.style.height = (pct * 100).toFixed(1) + '%';
+    meter.level.textContent = Math.round(pct * 100) + '%';
+  }
+  if (moving || choirPlaying) choirMeterRaf = requestAnimationFrame(drawChoirMeters);
+}
+
+// A pedalled one-shot: schedule the envelope's release so it finishes exactly
+// where the buffer does. Everything is appended to the existing schedule (no
+// cancel), so a note still in its attack or decay completes them first; a
+// later stopVoice (pedal up, retrigger, steal) still cancels all of this and
+// releases from wherever the gain actually is.
+function ringToEnd(v) {
+  if (v.stopped || v.ended) return;
+  const t = ctx.currentTime;
+  const e = v.env;
+  const on = e && e.on;
+  const aR = on ? Math.max(0.005, e.aR) : I.fade;
+  const tEnd = v.t0 + v.s.buffer.duration / v.s.playbackRate.value;
+  // never before the sustain plateau starts, and never in the past
+  const tSus = on ? v.t0 + Math.max(0.002, e.aA) + Math.max(0.02, e.aD) : v.t0;
+  const tR = Math.max(t, tSus, tEnd - aR);
+  const S = on ? v.peak * (e.aS / 100) : v.peak;
+  v.g.gain.setValueAtTime(S, tR);
+  v.g.gain.linearRampToValueAtTime(0, tR + aR);
+  if (on && e.fOn && v.filt) {
+    const fR = Math.max(0.005, e.fR);
+    const base = clampFilterHz(e.cut);
+    v.filt.frequency.setValueAtTime(liveLowpassHz(e), Math.max(t, tEnd - fR));
+    v.filt.frequency.exponentialRampToValueAtTime(base, Math.max(t, tEnd - fR) + fR);
+  }
+  // the playhead parks on the plateau as usual, then rides this release down
+  const cursor = cursors.get(v);
+  if (cursor && cursor.relAt == null) { cursor.relAt = tR; cursor.relDur = aR; startCursor(); }
 }
 
 // A window onto the live state. This is a sandbox instrument, and being able to
@@ -916,11 +1380,21 @@ function litSample(sm, on) {
 const STORE = 'lekko.player.v1';
 const saved = (() => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; }
                        catch (e) { return {}; } })();
+const choirSaved = saved.choirPerf || {};
+const CHOIR_PERF_DEFAULTS = { stack: 100, density: 100, brightness: 0, focus: 0 };
+const choirPerf = {
+  stack: typeof choirSaved.stack === 'number' ? Math.max(0, Math.min(100, choirSaved.stack)) : CHOIR_PERF_DEFAULTS.stack,
+  density: typeof choirSaved.density === 'number' ? Math.max(0, Math.min(100, choirSaved.density)) : CHOIR_PERF_DEFAULTS.density,
+  brightness: typeof choirSaved.brightness === 'number' ? Math.max(-100, Math.min(100, choirSaved.brightness)) : CHOIR_PERF_DEFAULTS.brightness,
+  focus: typeof choirSaved.focus === 'number' ? Math.max(0, Math.min(100, choirSaved.focus)) : CHOIR_PERF_DEFAULTS.focus,
+};
+const choirWin = Object.assign({ open: false, x: null, y: null, w: 0, h: 0 }, choirSaved.win || {});
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
-      octave, sustain, scaleOn, liftOn, fmt: FMT, inst: INST,
+      octave, sustain, scaleOn, liftOn, loopOn, fmt: FMT, inst: INST,
       trims: allTrim, trimGen: TRIM_GEN, env: allEnv, envWin,
+      choirPerf: { ...choirPerf, win: choirWin },
       vol: +document.getElementById('vol').value,
       rev: +document.getElementById('rev').value,
     }));
@@ -974,6 +1448,7 @@ let octave  = typeof saved.octave  === 'number'  ? saved.octave  : 4;
 let sustain = typeof saved.sustain === 'boolean' ? saved.sustain : true;
 let scaleOn = typeof saved.scaleOn === 'boolean' ? saved.scaleOn : true;
 let liftOn  = typeof saved.liftOn  === 'boolean' ? saved.liftOn  : true;
+let loopOn  = typeof saved.loopOn  === 'boolean' ? saved.loopOn  : false;
 const CHROM = { a:0, w:1, s:2, e:3, d:4, f:5, t:6, g:7, y:8, h:9, u:10, j:11, k:12, o:13, l:14, p:15,
                 ';':16, "'":17 };
 // eleven scale steps, which is two full octaves of the mode plus the root on top
@@ -1014,7 +1489,7 @@ addEventListener('keydown', e => {
   // whichever button happens to have focus.
   if (e.key === ' ' || e.code === 'Space') {
     e.preventDefault();
-    if (!e.repeat) allNotesOff();
+    if (!e.repeat) allNotesOff(0.12, true);
     return;
   }
   if (e.repeat) return;
@@ -1043,7 +1518,15 @@ addEventListener('blur', () => {
 function setOct(v) { octave = Math.max(1, Math.min(5, v)); document.getElementById('octV').textContent = octave; save(); }
 document.getElementById('oDn').onclick = () => setOct(octave - 1);
 document.getElementById('oUp').onclick = () => setOct(octave + 1);
-document.getElementById('sus').onclick = e => { sustain = !sustain; e.target.classList.toggle('on', sustain); e.target.blur(); save(); };
+document.getElementById('sus').onclick = e => {
+  sustain = !sustain; e.target.classList.toggle('on', sustain); e.target.blur(); save();
+  // Pedal up: a pedalled loop has no end of its own, so it lets go here.
+  // Keys still held keep sounding; one-shots keep ringing out as they were.
+  if (!sustain) {
+    const down = new Set(held.values());
+    for (const v of ringing.slice()) if (v.s.loop && !down.has(v)) stopVoice(v);
+  }
+};
 document.getElementById('lift').onclick = e => { liftOn = !liftOn; e.target.classList.toggle('on', liftOn); e.target.blur(); save(); };
 document.getElementById('scale').onclick = e => {
   scaleOn = !scaleOn;
@@ -1071,13 +1554,14 @@ document.getElementById('fmt').onclick = async e => {
 // that is most of the wash — sweeping `held` alone left the whole thing ringing.
 // `ringing` is copied first because stopping a voice splices it out of that
 // array from its own onended.
-function allNotesOff(fade = 0.12) {
+function allNotesOff(fade = 0.12, includePerformer = false) {
   for (const m of held.keys()) paint(m, false);
   for (const v of ringing.slice()) stopVoice(v, fade);
   for (const v of held.values()) stopVoice(v, fade);
   held.clear(); downKeys.clear(); litCount.clear();
   for (const c of document.querySelectorAll('.tc.lit')) c.classList.remove('lit');
   cursors.clear();
+  if (includePerformer) stopChoirPerformer(true);
 }
 
 let switching = false;
@@ -1112,8 +1596,170 @@ function paintInstRow() {
     b.className = key === INST ? 'on' : '';
     b.onclick = () => { b.blur(); setInstrument(key); };
     row.appendChild(b);
+    // the loop toggle sits right of the instrument it belongs to, while it is
+    // the one playing
+    if (key === INST && inst.loopable) {
+      const l = document.createElement('button');
+      l.textContent = 'loop';
+      l.className = loopOn ? 'on' : '';
+      l.onclick = () => { loopOn = !loopOn; l.classList.toggle('on', loopOn); l.blur(); save(); };
+      row.appendChild(l);
+    }
   }
 }
+
+// ---- Choir Performer window -----------------------------------------------
+function buildChoirMeters() {
+  const wrap = document.getElementById('choirMeters');
+  wrap.textContent = '';
+  choirMeterEls.length = 0;
+  for (const part of CHOIR_PARTS) {
+    const voice = document.createElement('div');
+    voice.className = 'choirVoice';
+    voice.innerHTML = `<div class="choirLevel">0%</div>
+      <div class="choirMeter"><div class="choirFill"></div></div>
+      <div class="choirDegree">${part.degree}</div>
+      <div class="choirPitch">${LAH[part.semi].split('_')[1]}</div>`;
+    wrap.appendChild(voice);
+    choirMeterEls.push({ level: voice.querySelector('.choirLevel'), fill: voice.querySelector('.choirFill') });
+  }
+}
+
+function paintChoirControls(syncSliders = true) {
+  const stack = document.getElementById('choirStack');
+  const density = document.getElementById('choirDensity');
+  const brightness = document.getElementById('choirBrightness');
+  const focus = document.getElementById('choirFocus');
+  if (syncSliders) {
+    stack.value = choirPerf.stack;
+    density.value = choirPerf.density;
+    brightness.value = choirPerf.brightness;
+    focus.value = choirPerf.focus;
+  }
+  document.getElementById('choirStackV').textContent = choirPerf.stack < 1
+    ? 'low voice' : Math.round(choirPerf.stack) + '% filled';
+  const densityNames = ['1', '+ 8', '+ 5', '+ 3', '+ 2', '+ 7', '+ 9'];
+  const densityPosition = choirPerf.density / 100 * (densityNames.length - 1);
+  const densityIndex = Math.min(densityNames.length - 1, Math.floor(densityPosition + 0.00001));
+  const nextDensity = densityNames[Math.min(densityNames.length - 1, densityIndex + 1)];
+  document.getElementById('choirDensityV').textContent = densityIndex === densityNames.length - 1
+    ? 'all degrees' : densityNames[densityIndex] + ' → ' + nextDensity;
+  document.getElementById('choirBrightnessV').textContent = choirPerf.brightness === 0
+    ? 'even'
+    : (choirPerf.brightness < 0 ? 'low +' : 'high +') + Math.abs(Math.round(choirPerf.brightness)) + '%';
+  document.getElementById('choirFocusV').textContent = choirPerf.focus < 1
+    ? 'broad' : choirPerf.focus > 99 ? 'single voice' : Math.round(choirPerf.focus) + '% narrow';
+}
+
+let choirControlSaveTimer = 0;
+for (const [id, key] of [['choirStack', 'stack'], ['choirDensity', 'density'], ['choirBrightness', 'brightness'], ['choirFocus', 'focus']]) {
+  const slider = document.getElementById(id);
+  slider.addEventListener('input', () => {
+    choirPerf[key] = +slider.value;
+    paintChoirControls(false);
+    applyChoirTargets(0.075);
+    clearTimeout(choirControlSaveTimer);
+    choirControlSaveTimer = setTimeout(save, 180);
+  });
+  slider.addEventListener('change', save);
+  slider.addEventListener('pointerup', () => { save(); slider.blur(); });
+  slider.addEventListener('pointercancel', () => slider.blur());
+  // The word beside a slider puts it back to its default. preventDefault keeps
+  // the label from also focusing the slider, where the arrow keys would nudge it.
+  const word = slider.closest('.choirControl').querySelector('span');
+  word.title = 'reset to default';
+  word.addEventListener('click', e => {
+    e.preventDefault();
+    choirPerf[key] = CHOIR_PERF_DEFAULTS[key];
+    slider.value = choirPerf[key];
+    paintChoirControls(false);
+    applyChoirTargets(0.075);
+    save();
+  });
+}
+
+document.getElementById('choirPlay').onclick = e => {
+  e.target.blur();
+  choirWanted ? stopChoirPerformer() : startChoirPerformer();
+};
+
+const choirWinEl = document.getElementById('choirWrap');
+function clampChoirWin() {
+  const r = choirWinEl.getBoundingClientRect();
+  const maxX = Math.max(8, innerWidth - r.width - 8);
+  const maxY = Math.max(8, innerHeight - r.height - 8);
+  choirWin.x = Math.min(Math.max(8, choirWin.x), maxX);
+  choirWin.y = Math.min(Math.max(8, choirWin.y), maxY);
+  choirWinEl.style.left = choirWin.x + 'px';
+  choirWinEl.style.top = choirWin.y + 'px';
+}
+
+function placeChoirWin() {
+  if (choirWin.w) choirWinEl.style.width = choirWin.w + 'px';
+  if (choirWin.h) choirWinEl.style.height = choirWin.h + 'px';
+  if (choirWin.x == null || choirWin.y == null) {
+    const r = choirWinEl.getBoundingClientRect();
+    choirWin.x = Math.max(8, innerWidth - r.width - 36);
+    choirWin.y = 36;
+  }
+  clampChoirWin();
+}
+
+function setChoirOpen(open, persist = true) {
+  choirWin.open = open;
+  choirWinEl.classList.toggle('show', open);
+  document.getElementById('choirBtn').classList.toggle('on', open);
+  if (open) { placeChoirWin(); startChoirMeters(); }
+  if (persist) save();
+}
+
+(() => {
+  const bar = document.getElementById('choirBar');
+  let from = null;
+  bar.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    from = { px: e.clientX, py: e.clientY, x: choirWin.x, y: choirWin.y };
+    bar.classList.add('drag');
+    bar.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  bar.addEventListener('pointermove', e => {
+    if (!from) return;
+    choirWin.x = from.x + (e.clientX - from.px);
+    choirWin.y = from.y + (e.clientY - from.py);
+    clampChoirWin();
+  });
+  const end = e => {
+    if (!from) return;
+    from = null;
+    bar.classList.remove('drag');
+    try { bar.releasePointerCapture(e.pointerId); } catch (err) {}
+    save();
+  };
+  bar.addEventListener('pointerup', end);
+  bar.addEventListener('pointercancel', end);
+})();
+
+if (window.ResizeObserver) {
+  let choirSaveTimer = 0;
+  new ResizeObserver(() => {
+    if (!choirWinEl.classList.contains('show')) return;
+    choirWin.w = Math.round(choirWinEl.getBoundingClientRect().width);
+    choirWin.h = Math.round(choirWinEl.getBoundingClientRect().height);
+    clearTimeout(choirSaveTimer);
+    choirSaveTimer = setTimeout(save, 400);
+  }).observe(choirWinEl);
+}
+
+document.getElementById('choirBtn').onclick = e => { e.target.blur(); setChoirOpen(!choirWin.open); };
+document.getElementById('choirClose').onclick = e => { e.target.blur(); setChoirOpen(false); };
+addEventListener('resize', () => { if (choirWinEl.classList.contains('show')) clampChoirWin(); });
+
+buildChoirMeters();
+paintChoirControls();
+paintChoirTransport();
+applyChoirTargets(0);
+if (choirWin.open) setChoirOpen(true, false);
 
 // ---- envelope panel --------------------------------------------------------
 // Built from ENV_SPEC rather than written out, so a parameter is added in one
@@ -1241,7 +1887,8 @@ function drawEnv() {
     const now = ctx.currentTime;
     for (const [voice, cursor] of cursors) {
       const age = now - cursor.t0;
-      const released = cursor.relAt !== null;
+      // a ring-out schedules its release in the future; not released until then
+      const released = cursor.relAt !== null && now >= cursor.relAt;
       const releaseAge = released ? now - cursor.relAt : 0;
       if ((released && releaseAge > cursor.relDur)
           || (!released && cursor.len && age > cursor.len)) {
@@ -1595,7 +2242,9 @@ document.getElementById('envCopy').onclick = async e => {
 addEventListener('resize', () => { if (winEl.classList.contains('show')) { clampWin(); drawEnv(); } });
 // escape closes it, the way a plugin window does
 addEventListener('keydown', e => {
-  if (e.key === 'Escape' && winEl.classList.contains('show')) setEnvOpen(false);
+  if (e.key !== 'Escape') return;
+  if (choirWinEl.classList.contains('show')) setChoirOpen(false);
+  else if (winEl.classList.contains('show')) setEnvOpen(false);
 });
 document.getElementById('vol').addEventListener('input', e => {
   document.getElementById('volV').textContent = e.target.value;
@@ -1889,7 +2538,7 @@ function onMidi(e) {
   resume();
   if (cmd === 0x90 && vel > 0) play(note, Math.max(0.08, vel / 127));
   else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) release(note);
-  else if (cmd === 0xb0 && note === 123) { for (const m of [...held.keys()]) release(m); }
+  else if (cmd === 0xb0 && note === 123) allNotesOff(0.12, true);
 }
 
 // Paint every control from the restored state. Doing it here, once, rather than
@@ -1929,8 +2578,10 @@ function buildTrims() {
     // One slider per column on an instrument trimmed per key: every clouds
     // column is volume only, uniformly, none of them getting a second slider
     // the others do not have. The piano is trimmed per sample instead, and
-    // keeps the cents slider it always had on every one of its columns.
-    const showCents = !I.perKey;
+    // keeps the cents slider it always had on every one of its columns. A
+    // voice can ask for cents anyway (tuneCents): a singer drifts in a way a
+    // resampled cloud cannot, so the choir is tunable per key.
+    const showCents = !I.perKey || I.tuneCents;
     c.innerHTML =
       `<div class="nm">${NOTE_NAME(sm)}</div>
        <div class="mf">${mf != null ? mf : ''}</div>
@@ -1948,11 +2599,13 @@ function buildTrims() {
     v.addEventListener('input', e => {
       trim[sm].vol = +e.target.value;
       c.querySelector('.rv').textContent = trim[sm].vol;
+      if (INST === 'lah') updateChoirTrim(sm, 'vol');
       mark(); save(); preview(sm);
     });
     if (t) t.addEventListener('input', e => {
       trim[sm].cents = +e.target.value;
       c.querySelector('.rt').textContent = (trim[sm].cents > 0 ? '+' : '') + trim[sm].cents;
+      if (INST === 'lah') updateChoirTrim(sm, 'cents');
       mark(); save(); preview(sm);
     });
     // A click that lands on the current value fires no input event, so the
@@ -2022,6 +2675,7 @@ document.getElementById('copyTrim').onclick = async e => {
 };
 document.getElementById('trimReset').onclick = e => {
   for (const sm of TRIM_RANGE) { trim[sm].vol = 100; trim[sm].cents = 0; }
+  if (INST === 'lah') updateAllChoirTrims();
   buildTrims(); save(); e.target.blur();
 };
 // Pull the repo's levels into the live sliders. Whether they belong there is a
@@ -2039,6 +2693,7 @@ document.getElementById('trimSaved').onclick = e => {
     if (typeof t.vol === 'number') { trim[sm].vol = t.vol; n++; }
     if (typeof t.cents === 'number') trim[sm].cents = t.cents;
   }
+  if (INST === 'lah') updateAllChoirTrims();
   buildTrims(); save(); e.target.blur();
   flash(e.target, n ? `${n} restored` : 'nothing for ' + I.label);
 };
@@ -2046,6 +2701,7 @@ document.getElementById('trimLoad').onclick = e => {
   const n = Object.keys(manifestLevels).length;
   if (!n) return flash(e.target, 'no defaults');
   for (const sm of TRIM_RANGE) if (manifestLevels[sm] != null) trim[sm].vol = manifestLevels[sm];
+  if (INST === 'lah') updateAllChoirTrims();
   buildTrims(); save(); e.target.blur();
   flash(e.target, `${n} loaded`);
 };
