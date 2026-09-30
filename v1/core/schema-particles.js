@@ -57,6 +57,8 @@ const NUM = [
   ['partHueVar',      0,   1,   0.15, false],
   ['partOpacity',     0,   1,   0.9,  false],
   ['partFade',        0,   1,   0.55, false],   // the rings' radial fade in, same curve (core/fade.js)
+  ['partFadeVar',     0,   1,   0,    false],   // how far that radius swings down from its setting and back
+  ['partFadeRate',    1,   60,  10,   true ],   // seconds for one swing of the radius variance
   ['partPulse',       0,   1,   0,    false],
   ['partFolds',       3,   16,  8,    true ],
   // Pulse with sequencer: how far the sequencer's live output level lifts
@@ -247,6 +249,9 @@ const times2 = key => S => S[key].toFixed(2) + '×';
 // Marks a control as a child row of the toggle, segment or sub-drawer
 // straight above it (the schema's `parent`), so the drawer nests it there.
 const under = (parent, c) => { c.parent = parent; return c; };
+// Marks a segment whose options say what it chooses between, so the drawer
+// draws its pills without its name above them (the schema's hideLabel).
+const noLabel = c => { c.hideLabel = true; return c; };
 // Tags a control as part of the variance of the row straight above it (the
 // schema's varianceOf), so the drawer folds it out from under that row.
 const varianceOf = (owner, c) => { c.varianceOf = owner; return c; };
@@ -360,7 +365,7 @@ export const PARTICLE_CONTROLS = [
 
   // Where the particles are born, above the drawers, since it decides the
   // shape of the whole stream.
-  choice('partEmitter', 'partEmitter', 'Emitter', EMITTERS, ['Centre', 'Ring', 'Spiral'], DEF_EMITTER),
+  noLabel(choice('partEmitter', 'partEmitter', 'Emitter', EMITTERS, ['Centre', 'Ring', 'Spiral'], DEF_EMITTER)),
 
   // ---- three sub-drawers, Motion, Shape and Color (see subDrawer in
   // schema-visual.js), each with its rows straight after it. Their rows sat
@@ -380,7 +385,7 @@ export const PARTICLE_CONTROLS = [
   // variance spreads them between that and small. Trail only exists for the
   // streak style.
   subDrawer('partShapeDrawer', 'Shape', 'particles', ['partStyle', 'partSize']),
-  under('partShapeDrawer', choice('partStyle', 'partStyle', 'Style', STYLES, ['Glow', 'Streak', 'Spark', 'Bokeh', 'Dust'], DEF_STYLE)),
+  under('partShapeDrawer', noLabel(choice('partStyle', 'partStyle', 'Style', STYLES, ['Glow', 'Streak', 'Spark', 'Bokeh', 'Dust'], DEF_STYLE))),
   under('partShapeDrawer', direct('partSize', 'partSize', 'Size', 0.05, times2('partSize'))),
   // (the variance folds out from under Size; drawer.js, the schema's varianceOf)
   varianceOf('partSize', percent('partSizeVar', 'partSizeVar', 'Size variance')),
@@ -390,13 +395,27 @@ export const PARTICLE_CONTROLS = [
   // solid the layer is, how it fades in from the centre, and how far it
   // flickers with the strobe.
   subDrawer('partColorDrawer', 'Color', 'particles', ['partColor', 'partOpacity']),
-  under('partColorDrawer', choice('partColor', 'partColor', 'Colour', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR)),
+  under('partColorDrawer', noLabel(choice('partColor', 'partColor', 'Colour', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR))),
   under('partColorDrawer', percent('partHueVar', 'partHueVar', 'Hue variation')),
   under('partColorDrawer', percent('partOpacity', 'partOpacity', 'Opacity')),
   // How far out from the centre the particles take to come up to full
   // brightness, the tunnel rings' own 'Ring fade in' curve (core/fade.js),
   // so the two layers fade alike at the same setting. 0 is no fade at all.
-  under('partColorDrawer', percent('partFade', 'partFade', 'Center fade radius')),
+  // While a variance is set the knob shows the swung radius as it moves.
+  {
+    ...under('partColorDrawer', percent('partFade', 'partFade', 'Center fade radius')),
+    effective: S => S.partFadeVar > 0
+      ? (typeof S.effPartFade === 'number' ? S.effPartFade : S.partFade) * 100 : undefined
+  },
+  // How far the radius swings, as the feedback's Pulse variance does: over
+  // one Variance rate cycle it eases from the setting down by this share and
+  // back, so at 100% the particles breathe from the set radius in to no fade
+  // at all and out again. At 0 the radius stays where it is set.
+  under('partColorDrawer', varianceOf('partFade', percent('partFadeVar', 'partFadeVar', 'Radius variance'))),
+  // Seconds for one swing of the radius variance, as the strobe's Variance
+  // rate.
+  under('partColorDrawer', varianceOf('partFade',
+    direct('partFadeRate', 'partFadeRate', 'Variance rate', 1, S => S.partFadeRate + 's / cycle'))),
   // It defaults to 0, a steady layer of its own on top of the flicker, and
   // the readout spells out what 0 means.
   under('partColorDrawer', percent('partPulse', 'partPulse', 'Pulse with strobe',
@@ -433,7 +452,7 @@ export const PARTICLE_CONTROLS = [
   // blooms toward white; Max holds each point at the brightest light that
   // recently passed it, so the trails never outshine the particles however
   // long they last.
-  under('partFeedbackDrawer', choice('partFbBlend', 'partFbBlend', 'Blend', FB_BLENDS, ['Additive', 'Max'], DEF_FB_BLEND)),
+  under('partFeedbackDrawer', noLabel(choice('partFbBlend', 'partFbBlend', 'Blend', FB_BLENDS, ['Additive', 'Max'], DEF_FB_BLEND))),
   // The trails' own motion, always in the drawer; at an Amount of 0 there is
   // no trail, so they simply have nothing to move. Each frame's faded copy
   // is taken a little larger or smaller about the field centre (Stream) and
@@ -490,20 +509,6 @@ export const PARTICLE_CONTROLS = [
   // rate.
   under('partFeedbackDrawer', varianceOf('partFbPulse',
     direct('partFbPulseRate', 'partFbPulseRate', 'Variance rate', 1, S => S.partFbPulseRate + 's / cycle'))),
-  // Only means something folded, so it shows only while the Kaleidoscope is
-  // on: after the kaleidoscope the trails stream and turn across the whole
-  // pattern about its centre; before it they live inside the one wedge the
-  // fold repeats, so every copy trails alike, and Twist shears the wedge's
-  // content out through its edges.
-  {
-    ...under('partFeedbackDrawer', choice('partFbWhere', 'partFbWhere', 'Where', FB_WHERES,
-      ['After kaleidoscope', 'Before kaleidoscope'], DEF_FB_WHERE)),
-    visible: isFolded,
-    // with the feedback off it does nothing, so it greys out rather than
-    // coming and going as the feedback is switched
-    enabled: S => layerOn(S) && (S.partFeedback > 0 || S.partFbAmtVarHi > 0)
-  },
-
   // An optional fold of the whole particle field into wedges, like the
   // Kaleidoscope layer's own. The three rows under the switch only show
   // while it is on. The fold count reads with the number first, so clicking
@@ -512,6 +517,20 @@ export const PARTICLE_CONTROLS = [
   under('partKaleido', direct('partFolds', 'partFolds', 'Symmetry', 1, S => S.partFolds + '-fold', 'Kaleidoscope', isFolded)),
   under('partKaleido', toggle('partMirror', 'partMirror', 'Mirror', DEF_MIRROR, 'Kaleidoscope', isFolded)),
   under('partKaleido', direct('partFoldSpin', 'partFoldSpin', 'Rotation', 0.01, signed('partFoldSpin'), 'Kaleidoscope', isFolded)),
+  // Where the feedback sits, the last row under the Kaleidoscope switch
+  // (it only means something folded, so it shows only while that is on):
+  // after the kaleidoscope the trails stream and turn across the whole
+  // pattern about its centre; before it they live inside the one wedge the
+  // fold repeats, so every copy trails alike, and Twist shears the wedge's
+  // content out through its edges.
+  {
+    ...under('partKaleido', choice('partFbWhere', 'partFbWhere', 'Feedback:', FB_WHERES,
+      ['After kaleidoscope', 'Before kaleidoscope'], DEF_FB_WHERE, 'Kaleidoscope')),
+    visible: isFolded,
+    // with the feedback off it does nothing, so it greys out rather than
+    // coming and going as the feedback is switched
+    enabled: S => layerOn(S) && (S.partFeedback > 0 || S.partFbAmtVarHi > 0)
+  },
 
   // Pulse with the sequencer, behind its own switch: off, its five dials
   // hide and the particles ignore the sequencer. On, they follow the

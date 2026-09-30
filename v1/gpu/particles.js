@@ -234,9 +234,9 @@ export function createParticles(device, format, platform) {
   // The trail image's pulse (its colour gain this frame) and opacity over
   // the scene, whether the Blend setting holds peaks (max) rather than
   // adding, and the phases (0 to 1) of the pulse, Amount, Stream and Twist
-  // variances' cycles, each its own.
+  // variances' cycles, each its own, and the Center fade radius's beside them.
   let fbGain = 1, fbOpacity = 1, fbMax = false;
-  let pulsePhase = 0, amtPhase = 0, streamPhase = 0, twistPhase = 0;
+  let pulsePhase = 0, amtPhase = 0, streamPhase = 0, twistPhase = 0, fadePhase = 0;
 
   let cursor = 0, spawned = 0, spawnAcc = 0, frameSeed = 1;
   let foldRot = 0;
@@ -436,7 +436,6 @@ export function createParticles(device, format, platform) {
     const hueVar = clampNum(S.partHueVar, 0, 1, 0.15);
     const opacity = clampNum(S.partOpacity, 0, 1, 0.9);
     const pulse = scaledStrobeDepth(clampNum(S.partPulse, 0, 1, 0));
-    const fadeIn = clampNum(S.partFade, 0, 1, 0.55);
     kaleidoNow = !!S.partKaleido;
 
     // Pulse with sequencer: the sequencer channel's peak this frame, scaled
@@ -456,6 +455,20 @@ export function createParticles(device, format, platform) {
     // Stopped, the tunnel holds still: no births, no motion, still drawn.
     // After a pause it first coasts to that stop (core/motion.js).
     const step = dt > 0 && dt < 0.25 ? motionStep(dt) : 0;
+
+    // The Center fade radius, swung by its variance the way the feedback's
+    // pulse is below: its phase advances by the frame's step over its rate,
+    // so a stopped scene holds the radius where it is, and over one cycle it
+    // eases from the setting down by the variance's share and back. At 0 it
+    // is the setting exactly. Everything after reads the swung radius, so
+    // where births first show follows it too, and travelHold covers the
+    // particles born before it moved.
+    fadePhase += step / clampNum(S.partFadeRate, 1, 60, 10);
+    fadePhase -= Math.floor(fadePhase);
+    let fadeIn = clampNum(S.partFade, 0, 1, 0.55);
+    const fadeVar = clampNum(S.partFadeVar, 0, 1, 0);
+    if (fadeVar > 0) fadeIn *= 1 - fadeVar * 0.5 * (1 - Math.cos(TAU * fadePhase));
+    S.effPartFade = fadeIn;
 
     // Everything in flight moves this frame's travel along its path.
     const stepTravel = step * speed;
