@@ -30,6 +30,13 @@
 // the broadcaster's. Sound still needs the follower's own first gesture, as
 // it always does; the usual Space to start covers both.
 //
+// Each session is Open (the default) or an Event, and the state message
+// says which (see "Open and Event" below). Open leaves a follower free to
+// start and stop on its own, the broadcaster's run flag landing only when it
+// actually changes. An Event holds every follower to the broadcaster's run
+// until an unlock moment on the shared room clock, or for as long as it
+// lasts when no moment is set; past that moment it is Open.
+//
 // A follower's viewer can take the strobe for their own by moving any of its
 // controls (see "the follower's own strobe" below): from then on the strobe
 // keeps their settings and its own time while everything else still follows,
@@ -61,7 +68,11 @@ const ROOM_MAX = 24;
 // and cached strings: nothing here allocates outside a click or a relay
 // message. `version` moves whenever anything the drawer shows changes (the
 // list, a status, a watcher count), so it knows when to remeasure.
-let sessions = [];   // { name, room, active, sock, status:'off'|'wait'|'live'|'doze'|'dead', watchers, label }
+// A session also carries its mode (event: false is Open), its unlock moment
+// (unlock, wall-clock ms, 0 for none) with that countdown's cached label and
+// the whole second it was built for (unLabel, unSec), and stale: a change
+// was skipped for this room while nobody watched it (see dozing).
+let sessions = [];   // { name, room, active, sock, status:'off'|'wait'|'live'|'doze'|'dead', watchers, label, event, unlock, unLabel, unSec, stale }
 let key = '';
 let linkTarget = 'live';
 let version = 0;
@@ -86,7 +97,11 @@ function ensureLoaded() {
     for (const s of raw.sessions) {
       if (!s || typeof s.name !== 'string' || typeof s.room !== 'string') continue;
       if (!/^[\w-]{1,64}$/.test(s.room)) continue;
-      sessions.push(makeSession(s.name.slice(0, NAME_MAX), s.room, !!s.active));
+      const one = makeSession(s.name.slice(0, NAME_MAX), s.room, !!s.active);
+      // a record from before the modes has neither, and is Open
+      one.event = s.mode === 'event';
+      one.unlock = Number.isFinite(s.unlock) && s.unlock > 0 ? s.unlock : 0;
+      sessions.push(one);
     }
   }
 }
@@ -95,12 +110,16 @@ function persist() {
   version++;
   syncWalkRoom();
   const out = { key, linkTarget, sessions: [] };
-  for (const s of sessions) out.sessions.push({ name: s.name, room: s.room, active: s.active });
+  for (const s of sessions) {
+    out.sessions.push({ name: s.name, room: s.room, active: s.active,
+                        mode: s.event ? 'event' : 'open', unlock: s.unlock });
+  }
   saveKey(REC_KEY, out);
 }
 
 function makeSession(name, room, active) {
-  return { name, room, active, sock: null, status: 'off', watchers: 0, label: '' };
+  return { name, room, active, sock: null, status: 'off', watchers: 0, label: '',
+           event: false, unlock: 0, unLabel: '', unSec: -1, stale: false };
 }
 
 // The room a viewer's link names, made from the session's name: readable, so
@@ -139,6 +158,19 @@ function liveCount() {
 // and the silence after it, stay the broadcaster's alone: its phrases reach
 // followers as relayed words, and nothing is dealt in between. The relay
 // stores the whole state message, so a follower arriving late reads it too.
+//
+// `ev` is the session's mode (1 an Event, 0 Open), so the one message differs
+// room to room by that tail alone: the body is built once and each session
+// closes it with its own. An Event with an unlock moment adds `un`, that
+// moment on the shared clock. The session keeps it as wall-clock ms, since
+// it has to survive a reload and the page's own clock starts again at every
+// load; at send it is carried onto this tab's timeline (how far off it is by
+// Date.now, from hooks.now) and then onto the shared one by clockOff, the
+// same step that stamps `at`. Followers compare their own shared now against
+// it, so the unlock itself needs no message: every screen frees at the same
+// instant even while the room sleeps. Until this tab's clock has settled
+// there is no shared moment to give, so the Event goes out without one and
+// the send is made again the moment the clock settles (takeTime).
 let lastTransSeq = -1;
 let sentRepeating = true;
 function sendNow() {
@@ -150,15 +182,33 @@ function sendNow() {
     if (lastTransSeq >= 0) glide = lastTransitionSec();
     lastTransSeq = seq;
   }
+  const body = stateBody(glide);
+  let sent = 0;
+  for (const s of sessions) {
+    if (!s.sock || s.status !== 'live') continue;
+    if (!s.watchers) { s.stale = true; continue; }
+    s.sock.send(stateFor(s, body));
+    s.stale = false;
+    sent++;
+  }
+  if (sent) lastActivityMs = Date.now();
+}
+
+// The state message without its closing brace, for stateFor to finish.
+function stateBody(glide) {
   sentRepeating = wordsRepeating();
   const msg = JSON.stringify({
     t: 'state', run: !!hooks.isRunning(), snap: snapshot(),
     at: isNaN(clockOff) ? undefined : hooks.now() + clockOff, glide,
     wk: sentRepeating ? 1 : 0
   });
-  let sent = 0;
-  for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) { s.sock.send(msg); sent++; }
-  if (sent) lastActivityMs = Date.now();
+  return msg.slice(0, -1);
+}
+
+function stateFor(s, body) {
+  if (!s.event) return body + ',"ev":0}';
+  if (!s.unlock || isNaN(clockOff)) return body + ',"ev":1}';
+  return body + ',"ev":1,"un":' + Math.round(s.unlock - Date.now() + hooks.now() + clockOff) + '}';
 }
 
 // Every send this tab starts comes through here (store.onSave, and
@@ -220,11 +270,24 @@ function syncWalkRoom() {
   setRoomClockRoom(room !== '');
 }
 
+// A room nobody is watching is sent nothing (see the beacons below), so a
+// change made then never reaches its stored snapshot: the first watcher to
+// arrive while this tab is connected is handed the fresh state by the count
+// message, but one arriving after the room has dozed would read the stale
+// copy, an Event set in an empty room among what it missed. So a session
+// that skipped a change (stale) sends the state once, just before it hangs
+// up: one message per doze, and the room sleeps on what is current.
 function checkDoze() {
   // a send already armed is activity about to happen; let it land first
   if (sendTimer || Date.now() - lastActivityMs <= IDLE_DOZE_MS) return;
+  let body = null;
   for (const s of sessions) {
     if (s.status !== 'live' || !s.sock) continue;
+    if (s.stale) {
+      if (body === null) body = stateBody(0);
+      s.sock.send(stateFor(s, body));
+      s.stale = false;
+    }
     s.sock.close();
     s.sock = null;
     s.status = 'doze';
@@ -307,12 +370,21 @@ function takeTime(c, s) {
   const rtt = r - c;
   if (!(rtt >= 0) || rtt > 2000) return;
   if (rtt <= clockRtt) {
+    const first = isNaN(clockOff);
     clockRtt = rtt;
     clockOff = s - (c + r) / 2;
     setStrobeClockOffset(clockOff);
     setWordWalkClock(clockOff);
     setRoomClockOffset(clockOff);
+    // an Event sent before the clock settled went out with no unlock moment
+    // (stateFor); now there is one to give
+    if (first && available && unlockPending()) queueSend();
   }
+}
+
+function unlockPending() {
+  for (const s of sessions) if (s.active && s.event && s.unlock) return true;
+  return false;
 }
 
 function sendBeacon() {
@@ -429,8 +501,79 @@ export function followStrobeSync() {
   if (lastSnap) applyFollowed(lastSnap);
 }
 
+// ---------- Open and Event ----------
+// The run flag arrives on every state message, and a state message goes out
+// on every settings change, so applying it each time undid a follower's own
+// start on the broadcaster's next change: the scene began and snapped back.
+// In Open (and in an Event once it unlocks) the flag is therefore applied on
+// its edges only. followRun remembers the last one received, and a message
+// whose flag matches it leaves the follower's own choice alone; a different
+// flag means the broadcaster really did start or stop, and that lands. The
+// first message after the page joins has nothing to compare with, so it
+// lands outright and the joiner starts in the room's true state.
+//
+// While an Event holds, the hold guards a PAUSED stream against free play:
+// with the broadcaster stopped, a follower's start is refused before it
+// happens (main.js's toggleRun asks followMayStart), so nothing blips. With
+// the stream running, a follower's tap is simply a rejoin and is always
+// allowed: pausing a live stream and coming back in is watching, not free
+// play. A stop is never refused, and it sticks: the broadcaster's unchanged
+// run riding the next settings message must not start them again, so a start
+// lands on its edge only, as in Open, and a stopped follower stays stopped
+// until they tap back into the still running stream, the broadcaster really
+// stops and starts again, or the event unlocks. A stop still lands on every
+// message while the Event holds, since stopping is always safe.
+// It holds while the message says ev 1 and either no unlock moment is set,
+// or this side's shared now has not reached it. With the clock not yet
+// settled there is no shared now to compare, so it holds until the clock
+// settles or a message says Open. None of this is saved: it is rebuilt from
+// the next message, and let go when the broadcast ends or the link gives up,
+// so a viewer is never left locked out by a room that is no longer there.
+let followEv = false, followUn = NaN;
+let followRun = -1;   // the last run flag received: -1 none yet, else 0 or 1
+
+function eventHolds() {
+  if (!followEv) return false;
+  if (isNaN(clockOff) || isNaN(followUn)) return true;
+  return hooks.now() + clockOff < followUn;
+}
+
+function takeRun(run) {
+  const r = run ? 1 : 0;
+  if (hooks.setRunning && (followRun < 0 || r !== followRun || (!run && eventHolds()))) hooks.setRunning(run);
+  followRun = r;
+}
+
+function releaseEvent() {
+  followEv = false;
+  followUn = NaN;
+  followRun = -1;
+}
+
+// Asked by main.js before any start of this tab's own (a tap, Space, the
+// transport). True everywhere but on a follower an Event is holding, where
+// it flashes why instead; the string is built here, on the tap, never per
+// frame.
+export function followMayStart() {
+  if (!followSock || !eventHolds()) return true;
+  // A running stream can always be rejoined; the hold only refuses starting
+  // a paused one before the unlock.
+  if (followRun === 1) return true;
+  if (isNaN(clockOff) || isNaN(followUn)) hooks.notify('The stream is paused');
+  else hooks.notify('Free play unlocks in ' + clockText(Math.ceil((followUn - hooks.now() - clockOff) / 1000)));
+  return false;
+}
+
+// Whole seconds as m:ss under an hour, h:mm:ss from an hour on.
+function clockText(sec) {
+  if (!(sec > 0)) sec = 0;
+  const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+  const ss = (s < 10 ? ':0' : ':') + s;
+  return h ? h + (m < 10 ? ':0' : ':') + m + ss : m + ss;
+}
+
 function setLabel(s) {
-  s.label = s.status === 'live' ? s.watchers + ' watching' : s.status === 'doze' ? 'resting' : '';
+  s.label =s.status === 'live' ? s.watchers + ' watching' : s.status === 'doze' ? 'resting' : '';
   version++;
 }
 
@@ -574,6 +717,80 @@ export function broadcastCopyLink(i) {
   hooks.notify('Link copied: ?follow=' + sessions[i].room);
 }
 
+// Row i's mode: true an Event, false Open.
+export function broadcastEvent(i) { const s = sessions[i]; return !!s && s.event; }
+
+// Every mode or unlock change goes through queueSend, as a settings change
+// does, so a dozing session wakes and its reconnect carries the new state,
+// and one already live sends it within SEND_DELAY_MS.
+export function broadcastSetEvent(i, on) {
+  const s = sessions[i];
+  if (!s || s.event === !!on) return;
+  s.event = !!on;
+  persist();
+  queueSend();
+}
+
+export function broadcastHasUnlock(i) { const s = sessions[i]; return !!s && s.unlock > 0; }
+
+// Row i's unlock as the drawer shows it: 'Not set', 'in 12:40' counting
+// down, or 'Unlocked' once passed. Read every frame, so the countdown is
+// rebuilt only when its whole second moves, and kept on the session.
+const UNLOCK_UNSET = 'Not set', UNLOCK_DONE = 'Unlocked';
+export function broadcastUnlockLabel(i) {
+  const s = sessions[i];
+  if (!s || !s.unlock) return UNLOCK_UNSET;
+  const left = s.unlock - Date.now();
+  const sec = left > 0 ? Math.ceil(left / 1000) : 0;
+  if (sec !== s.unSec || !s.unLabel) {
+    s.unSec = sec;
+    s.unLabel = sec > 0 ? 'in ' + clockText(sec) : UNLOCK_DONE;
+  }
+  return s.unLabel;
+}
+
+// The unlock row's typed entry, on its commit: a wall-clock time today
+// ("21:30", "9:30pm"; one already past means tomorrow's), or a wait from now
+// ("45m", "1h30m", "1.5h", a bare "45" read as minutes), or "none" to clear
+// it. Anything else leaves the unlock as it was and says so.
+export function broadcastSetUnlock(i, text) {
+  const s = sessions[i];
+  if (!s) return;
+  const at = parseUnlock(text);
+  if (isNaN(at)) { hooks.notify('Try a time like 21:30, or a wait like 45m or 1h30m'); return; }
+  if (at === s.unlock) return;
+  s.unlock = at;
+  s.unLabel = '';
+  persist();
+  queueSend();
+}
+
+// Wall-clock ms, 0 for cleared, NaN for text it cannot read.
+function parseUnlock(text) {
+  const t = String(text || '').toLowerCase().replace(/\s+/g, '');
+  if (t === 'none' || t === 'off' || t === 'clear') return 0;
+  let m = /^(\d{1,2})(?::(\d{2}))?(am|pm)?$/.exec(t);
+  if (m && (m[2] !== undefined || m[3])) {
+    let h = +m[1];
+    const min = m[2] !== undefined ? +m[2] : 0;
+    if (m[3]) {
+      if (h < 1 || h > 12) return NaN;
+      h = h % 12 + (m[3] === 'pm' ? 12 : 0);
+    }
+    if (h > 23 || min > 59) return NaN;
+    const d = new Date();
+    d.setHours(h, min, 0, 0);
+    // stepped by the calendar, not by 24 hours, so a clock change overnight
+    // still lands on the time typed
+    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  m = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m?)?$/.exec(t);
+  if (!m || (m[1] === undefined && m[2] === undefined)) return NaN;
+  const ms = ((m[1] !== undefined ? +m[1] : 0) * 60 + (m[2] !== undefined ? +m[2] : 0)) * 60000;
+  return Date.now() + Math.round(ms);
+}
+
 // ---------- boot ----------
 
 // bits_ (from v1/platform/broadcast-socket.js, handed in by main.js):
@@ -618,7 +835,12 @@ export function initBroadcast(bits_, hooks_) {
           // it); the rest lands as always. Kept for the sync chip.
           lastSnap = msg.snap;
           applyFollowed(msg.snap, sec);
-          if (typeof msg.run === 'boolean' && hooks.setRunning) hooks.setRunning(msg.run);
+          // The mode first, so the run flag is judged by this message's own
+          // (see Open and Event). A broadcaster from before the modes sends
+          // no ev, and its followers are Open.
+          followEv = msg.ev === 1;
+          followUn = followEv && Number.isFinite(msg.un) ? msg.un : NaN;
+          if (typeof msg.run === 'boolean') takeRun(msg.run);
           // The shared walk runs here only while the broadcaster's own
           // scheduler is dealing (wk, see sendNow). A broadcaster from
           // before the walk sends no wk, and its followers keep showing only
@@ -648,6 +870,7 @@ export function initBroadcast(bits_, hooks_) {
         } else if (msg.t === 'end') {
           clearStrobeSync();
           releaseStrobe();
+          releaseEvent();
           setWordsRemote(false);
           setWordWalk('');
           setRoomClockRoom(false);
@@ -664,7 +887,7 @@ export function initBroadcast(bits_, hooks_) {
           setWordsRemote(true);
         }
         else if (st === 'lost') hooks.notify('Broadcast link lost, reconnecting…');
-        else if (st === 'dead') { clearStrobeSync(); releaseStrobe(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
+        else if (st === 'dead') { clearStrobeSync(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);

@@ -26,7 +26,8 @@ import { makeTextState, TEXT_COMMIT, TEXT_CANCEL, touchAware } from '../widgets.
 import {
   broadcastAvailable, broadcastVersion, broadcastCount, broadcastName, broadcastActive, broadcastStatus,
   broadcastWatchLabel, broadcastToggle, broadcastAdd, broadcastRemove, broadcastCopyLink,
-  broadcastHasKey, broadcastSetKey, broadcastLinkTarget, broadcastSetLinkTarget
+  broadcastHasKey, broadcastSetKey, broadcastLinkTarget, broadcastSetLinkTarget,
+  broadcastEvent, broadcastSetEvent, broadcastHasUnlock, broadcastUnlockLabel, broadcastSetUnlock
 } from '../../core/broadcast.js';
 import {
   journeyEditing, journeyOverridden, journeyClearOverride,
@@ -922,7 +923,18 @@ function addChip(ui, px, py) {
 // and the key row opens one where its value was. Every string drawn is a
 // literal or one the core keeps cached, and the widths are measured when
 // broadcastVersion moves, as the preset chips' are on presetsVersion.
+//
+// Under each session, one indent in as a child row hangs under its parent,
+// is its mode: an Open | Event segment, and while Event is chosen an Unlocks
+// row built the way the key row is. Its value, right-aligned, is the
+// countdown the core keeps cached ('in 12:40', rebuilt once a second), or
+// Unlocked once passed, or Not set; a click opens a field where it was,
+// taking a time ("21:30") or a wait ("45m", "1h30m"), and "none" clears it.
 const BC_ROW_H = 30, BC_SWITCH_W = 34;   // a toggle row's height and its switch's width (widgets.js toggle)
+const BC_MODES = ['Open', 'Event'];
+const BC_UNLOCK_LABEL = 'Unlocks';
+const TIP_BC_MODE = 'Open: viewers start and stop freely. Event: they run with you until it unlocks';
+const TIP_BC_UNLOCK = 'When viewers may play on their own: 21:30, 45m or 1h30m; none clears it';
 const BC_PLUS = 9, BC_PLUS_GAP = 6;      // the + chip's plus, and the gap before its label
 const BC_ADD_LABEL = 'New session', BC_LINK_LABEL = 'Link', BC_KEY_LABEL = 'Key';
 const BC_LINK_TARGETS = ['Live page', 'Localhost'];
@@ -941,18 +953,22 @@ const TIP_BC_KEY = 'Set the key the relay asks for';
 // 32) and the key, which is typed fresh each time rather than shown.
 const sessionEdit = makeTextState(32, 'Session name');
 const keyEdit = makeTextState(128, 'Broadcast key');
+// The unlock field, one for the whole list, and the row it is open on.
+const unlockEdit = makeTextState(16, '21:30 or 45m');
+let bcUnlockRow = -1;
 let bcEditing = false;
 // which row's Link chip is showing its copied check, and until when
 let bcLinkFlashRow = -1, bcLinkFlashUntil = 0;
 let bcNameW = new Float32Array(8), bcWatchW = new Float32Array(8);
 let bcVersion = -1;
-let bcLinkW = 0, bcAddW = 0, bcKeyLabelW = 0;
+let bcLinkW = 0, bcAddW = 0, bcKeyLabelW = 0, bcUnlockLabelW = 0;
 
 function measureBroadcast(ui) {
   if (!bcLinkW) {
     bcLinkW = ui.text.measure(BC_LINK_LABEL, TYPE.xs, W.regular) + CHIP_PAD * 2;
     bcAddW = ui.text.measure(BC_ADD_LABEL, TYPE.xs, W.regular) + CHIP_PAD * 2 + BC_PLUS + BC_PLUS_GAP;
     bcKeyLabelW = ui.text.measure(BC_KEY_LABEL, TYPE.sm, W.regular);
+    bcUnlockLabelW = ui.text.measure(BC_UNLOCK_LABEL, TYPE.sm, W.regular);
     if (!editLabelW) editLabelW = Math.max(ui.text.measure('Edit', TYPE.xs, W.regular), ui.text.measure('Done', TYPE.xs, W.regular)) + CHIP_PAD * 2;
   }
   const v = broadcastVersion(), n = broadcastCount();
@@ -1061,8 +1077,49 @@ function sessionRow(ui, i) {
   ui.text.draw(ui.dl, broadcastName(i), nx, base, TYPE.sm, W.regular, COLOR.inkDim, 0, TRACK.ui, 1);
   if (cut) ui.dl.popClip();
   if (ww > 0) ui.text.draw(ui.dl, broadcastWatchLabel(i), chipX - SPACE.sm, base, TYPE.xs, W.regular, COLOR.inkDim, 2, TRACK.ui, 1);
+  sessionMode(ui, i);
   ui.popScope();
   return del;
+}
+
+// The session's mode, one indent in under its row, inside the row's scope so
+// its ids repeat safely. Edit mode leaves it inert, as it does the switch.
+function sessionMode(ui, i) {
+  ui.beginIndent();
+  const ev = broadcastEvent(i) ? 1 : 0;
+  const next = ui.segment('drawer.bcMode', BC_MODES, ev, bcEditing);
+  if (!bcEditing && ui._lastHover) noteTip(ui.id('drawer.bcModeTip'), ui._lastX, ui._lastY, ui._lastW, TIP_BC_MODE, ui._lastH);
+  if (next !== ev) broadcastSetEvent(i, next === 1);
+  if (next === 1) unlockRow(ui, i);
+  ui.endIndent();
+}
+
+// The key row's pattern (keyRow), for the Event's unlock: the label on the
+// left, the countdown right-aligned, and a click opens the field in its place,
+// empty. Enter or a click elsewhere hands the text to the core to read; an
+// empty field (or Escape) leaves the unlock as it was.
+function unlockRow(ui, i) {
+  const h = touchAware(ui, BC_ROW_H);
+  ui.nextRect(h);
+  const x = ui.rx, y = ui.ry, w = ui.rw;
+  ui.text.lineMetrics(TYPE.sm, ui._lm);
+  const base = y + h / 2 + (ui._lm.ascent - ui._lm.descent) / 2;
+  ui.text.draw(ui.dl, BC_UNLOCK_LABEL, x, base, TYPE.sm, W.regular, COLOR.inkDim, 0, TRACK.ui, 1);
+  if (unlockEdit.active && bcUnlockRow === i) {
+    const fx = x + bcUnlockLabelW + SPACE.md;
+    const res = ui.textField('drawer.bcUnlock', fx, y + (h - PRESET_H) / 2, x + w - fx, PRESET_H, unlockEdit, TYPE.xs, 2);
+    if (res === TEXT_COMMIT && unlockEdit.text.trim()) broadcastSetUnlock(i, unlockEdit.text);
+    return;
+  }
+  const id = ui.id('drawer.bcUnlockRow');
+  ui.interact(id, x, y, w, h, bcEditing);
+  const hover = ui.hover;
+  if (hover) { ui.setCursorHint('pointer'); noteTip(id, x, y, w, TIP_BC_UNLOCK, h); }
+  if (ui.clicked) { bcUnlockRow = i; ui.textBegin(unlockEdit, '', false, false); }
+  const has = broadcastHasUnlock(i);
+  const hv = ui.spring(id, hover ? 1 : 0, MOTION.hover);
+  ui.text.draw(ui.dl, broadcastUnlockLabel(i), x + w, base, TYPE.xs, W.regular,
+               hv > 0.5 ? COLOR.ink : has ? COLOR.inkDim : COLOR.inkFaint, 2, TRACK.ui, 1);
 }
 
 // The + chip, or while a name is being typed the field that grows as it
