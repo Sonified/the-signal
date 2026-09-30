@@ -88,6 +88,18 @@ export function fxv(name, leaving) { return leaving && !S.textFxMirror ? S[name 
 export const smokeState = { readyText: '', readyDep: '', playing: false };
 let smokeLatchSeed = -1, smokeLatchPhase = -1;
 
+// Whether the smoke or the cloud is drawing the word this frame rather than
+// its letters, which letterFx then leaves at opacity 0 (the whole-word
+// branches below). Text > Panel (ui/screens/overlay.js) asks, to know which
+// letters count as shown. Read it after the frame's first letterFx call, so
+// the smoke's latch already speaks for this phase.
+export function wordFxWhole() {
+  const ph = wordState.phase;
+  if (ph === 1) return false;
+  const fx = ph === 2 ? (S.textFxMirror ? S.textFxIn : S.textFxOut) : S.textFxIn;
+  return fx === 'cloud' || (fx === 'smoke' && smokeState.playing);
+}
+
 // The resting screen's hint, handed to the smoke on each start from it
 // (ui/screens/overlay.js). The overlay lays the hint's letters
 // out here itself, in the same 12-float layout as wordLetters, because only

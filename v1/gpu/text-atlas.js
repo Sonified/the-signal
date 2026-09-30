@@ -42,6 +42,30 @@ const ATLAS_SIZE = 2048;
 const BASE_SIZE = 64;
 const SDF_RANGE = 6;           // atlas px the field is valid for on either side of an edge
 const PAD = 8;                 // atlas px of background kept around each glyph's ink
+// The word's shadow (Text > Shadow, ui/screens/overlay.js) grows each
+// letter's outline outward by up to 0.3 em and blurs the grown edge by up to
+// 0.3 em more, so it needs the field to reach about 0.6 em (38 atlas px) past
+// the ink, where every glyph's own field stops at 6. Spreading one 8-bit
+// field over that range would coarsen the edge every other label depends
+// on, and a wider texture format would double the atlas for the sake of one
+// word. So the shadow gets copies of its own: a far copy of a glyph is the
+// same letter rasterised again into its own cell, FAR_PAD of background
+// around the ink and the field encoded over FAR_RANGE, in the same texture
+// with the same encode, only the range differs, and the glyph shader already
+// takes the range per instance. They are made only when the shadow first
+// draws a letter, and only for the letters it draws (the centre word's, at
+// one weight), so the rest of the atlas, and every glyph anything else
+// draws, is exactly what it was. The far step is 88/255 of an atlas px per
+// code, fine for an edge that is always at least 1.5 px soft. 0.9 of the
+// range, 39.6 px, is what the shader lets dilation and softness use
+// together; the rest is room for the anti-aliasing ramp.
+const FAR_RANGE = 44;
+const FAR_PAD = 44;
+// A far copy's weight slot is its glyph's plus FAR (see the tables below).
+const FAR = 4;
+// Atlas rows a far copy may never take, so that however many letters the
+// shadow is asked for, the glyphs the rest of the app draws still find room.
+const FAR_RESERVE = 256;
 const GUTTER = 1;               // atlas px left between packed cells, against filtering bleed
 const INF = 1e6;                // a large finite stand-in for "no seed here"; real Infinity
                                  // would turn into NaN the moment two of them are subtracted
@@ -54,6 +78,9 @@ const WEIGHT_FONT = WEIGHT_CSS.map(w => w + ' ' + BASE_SIZE + 'px ' + FONT);
 
 // drawWord's per-letter transform, filled by the fx callback for each letter.
 const WORD_XF = new Float32Array(8);
+// A far copy's cell (readBox's layout: u0 v0 u1 v1 ox oy qw qh), read into
+// here by drawWord's shadow pass.
+const FAR_BOX = new Float32Array(8);
 
 function weightIndex(weight) {
   if (weight === W.light) return 0;
@@ -116,12 +143,17 @@ export function createText(device, platform) {
   // whatever shows up beyond it. status: 0 untouched, 1 known width but not
   // yet rasterised, 2 ready (which may still mean "no ink", for space and
   // its kin: those are ready immediately, with qw 0, and draw() skips them).
-  const advanceTab = [new Float32Array(256), new Float32Array(256), new Float32Array(256), new Float32Array(256)];
-  const statusTab = [new Uint8Array(256), new Uint8Array(256), new Uint8Array(256), new Uint8Array(256)];
+  // Slots 0 to 3 are the four weights; 4 to 7 are their far copies (FAR),
+  // untouched until the word's shadow asks for one.
+  const advanceTab = [], statusTab = [], boxTab = [], mapTab = [];
   // 8 floats per code: u0 v0 u1 v1, ox oy (quad top-left offset from the pen,
   // base px), qw qh (quad size, atlas/base px).
-  const boxTab = [new Float32Array(256 * 8), new Float32Array(256 * 8), new Float32Array(256 * 8), new Float32Array(256 * 8)];
-  const mapTab = [new Map(), new Map(), new Map(), new Map()];
+  for (let k = 0; k < FAR * 2; k++) {
+    advanceTab.push(new Float32Array(256));
+    statusTab.push(new Uint8Array(256));
+    boxTab.push(new Float32Array(256 * 8));
+    mapTab.push(new Map());
+  }
 
   function readAdvance(wi, code) {
     if (code < 256) return advanceTab[wi][code];
@@ -148,12 +180,24 @@ export function createText(device, platform) {
       rec.ox = ox; rec.oy = oy; rec.qw = qw; rec.qh = qh;
     }
   }
+  function readBox(wi, code, out) {
+    if (code < 256) {
+      const arr = boxTab[wi], b = code * 8;
+      for (let k = 0; k < 8; k++) out[k] = arr[b + k];
+    } else {
+      const rec = mapTab[wi].get(code);
+      out[0] = rec.u0; out[1] = rec.v0; out[2] = rec.u1; out[3] = rec.v1;
+      out[4] = rec.ox; out[5] = rec.oy; out[6] = rec.qw; out[7] = rec.qh;
+    }
+  }
 
   // ---- the shelf packer ----
-  let packX = 0, packY = 0, packRowH = 0, warnedFull = false;
-  function allocRegion(w, h) {
+  // reserve is atlas rows at the bottom this cell may not reach into (a far
+  // copy's FAR_RESERVE; 0 for every glyph's own cell).
+  let packX = 0, packY = 0, packRowH = 0, warnedFull = false, warnedFar = false;
+  function allocRegion(w, h, reserve) {
     if (packX + w > ATLAS_SIZE) { packX = 0; packY += packRowH + GUTTER; packRowH = 0; }
-    if (packY + h > ATLAS_SIZE) return null;
+    if (packY + h > ATLAS_SIZE - reserve) return null;
     const x = packX, y = packY;
     packX += w + GUTTER;
     if (h > packRowH) packRowH = h;
@@ -218,8 +262,9 @@ export function createText(device, platform) {
   // crosses gets the TinySDF seed: its coverage says how far past the half
   // way mark the edge lies, so its own distance starts at that fraction
   // rather than at zero. The signed result is positive inside, which is the
-  // encoding ui.wgsl.js's shadeGlyph decodes: texel = 0.5 + d / (2 * range).
-  function computeSDF(img, w, h) {
+  // encoding ui.wgsl.js's shadeGlyph decodes: texel = 0.5 + d / (2 * range),
+  // range SDF_RANGE for a glyph's own cell and FAR_RANGE for a far copy.
+  function computeSDF(img, w, h, range) {
     const n = w * h;
     for (let i = 0; i < n; i++) {
       const a = img[i * 4 + 3] / 255;
@@ -235,7 +280,7 @@ export function createText(device, platform) {
     edt2d(fIn, w, h, distInSq);
     for (let i = 0; i < n; i++) {
       const sd = Math.sqrt(distInSq[i]) - Math.sqrt(distOutSq[i]);
-      let t = 0.5 + sd / (2 * SDF_RANGE);
+      let t = 0.5 + sd / (2 * range);
       if (t < 0) t = 0; else if (t > 1) t = 1;
       sdfOut[i] = (t * 255 + 0.5) | 0;
     }
@@ -260,7 +305,7 @@ export function createText(device, platform) {
   // exist for a few more frames.
   function touchGlyph(wi, code) {
     if (readStatus(wi, code) !== 0) return;
-    measureCtx.font = WEIGHT_FONT[wi];
+    measureCtx.font = WEIGHT_FONT[wi % FAR];
     measureCtx.textAlign = 'left';
     measureCtx.textBaseline = 'alphabetic';
     const ch = String.fromCodePoint(code);
@@ -300,9 +345,13 @@ export function createText(device, platform) {
 
   // The expensive half: draw the glyph to the scratch canvas, seed the two
   // grids from its coverage, run the distance transform twice, pack it,
-  // upload it.
+  // upload it. A far copy (wi FAR and up) is the same letter at the same
+  // sub-pixel offset in a cell with FAR_PAD round it, its field over
+  // FAR_RANGE; its ink box, and so its cell's centre, is the plain glyph's.
   function rasterizeFull(wi, code) {
-    const weightFont = WEIGHT_FONT[wi];
+    const far = wi >= FAR;
+    const pad = far ? FAR_PAD : PAD;
+    const weightFont = WEIGHT_FONT[wi % FAR];
     measureCtx.font = weightFont;
     measureCtx.textAlign = 'left';
     measureCtx.textBaseline = 'alphabetic';
@@ -312,7 +361,7 @@ export function createText(device, platform) {
     const left = m.actualBoundingBoxLeft, ascent = m.actualBoundingBoxAscent;
     const boxW = Math.ceil(left + m.actualBoundingBoxRight);
     const boxH = Math.ceil(ascent + m.actualBoundingBoxDescent);
-    const cellW = boxW + PAD * 2, cellH = boxH + PAD * 2;
+    const cellW = boxW + pad * 2, cellH = boxH + pad * 2;
 
     ensureRasterCanvas(cellW, cellH);
     if (!rasterCtx) return; // no OffscreenCanvas available; already warned
@@ -321,16 +370,18 @@ export function createText(device, platform) {
     rasterCtx.textAlign = 'left';
     rasterCtx.textBaseline = 'alphabetic';
     rasterCtx.fillStyle = '#fff';
-    rasterCtx.fillText(ch, PAD + left, PAD + ascent);
+    rasterCtx.fillText(ch, pad + left, pad + ascent);
 
     const img = rasterCtx.getImageData(0, 0, cellW, cellH).data;
     ensureEdtScratch(cellW, cellH);
     const n = cellW * cellH;
-    computeSDF(img, cellW, cellH);
+    computeSDF(img, cellW, cellH, far ? FAR_RANGE : SDF_RANGE);
 
-    const region = allocRegion(cellW, cellH);
+    const region = allocRegion(cellW, cellH, far ? FAR_RESERVE : 0);
     if (!region) {
-      if (!warnedFull) { console.warn('text-atlas: atlas is full, some glyphs will not appear'); warnedFull = true; }
+      if (far) {
+        if (!warnedFar) { console.warn('text-atlas: no room left for shadow letters, some will not appear'); warnedFar = true; }
+      } else if (!warnedFull) { console.warn('text-atlas: atlas is full, some glyphs will not appear'); warnedFull = true; }
       return; // advance already stored and correct; this glyph just never draws
     }
     device.queue.writeTexture(
@@ -342,7 +393,7 @@ export function createText(device, platform) {
 
     const u0 = region.x / ATLAS_SIZE, v0 = region.y / ATLAS_SIZE;
     const u1 = (region.x + cellW) / ATLAS_SIZE, v1 = (region.y + cellH) / ATLAS_SIZE;
-    const ox = -left - PAD, oy = -ascent - PAD;
+    const ox = -left - pad, oy = -ascent - pad;
     storeResult(wi, code, advance, 2, u0, v0, u1, v1, ox, oy, cellW, cellH);
   }
 
@@ -596,7 +647,27 @@ export function createText(device, platform) {
     // other label in the app pays nothing for it. rec, when given, is
     // word-fx's wordLetters: each letter's final quad goes into it for the
     // cloud layer, which seeds its particles on the same ink.
-    drawWord(dl, str, x, y, size, weight, color, letterSpacing, alpha, fx, rec) {
+    //
+    // shade, when given, makes this walk one of the word's backing passes
+    // (Text > Shadow, ui/screens/overlay.js) instead of the word itself. The
+    // letters go through the same fx with the same arguments, so a backing
+    // follows every transition exactly, but nothing is recorded into rec and
+    // no ink is drawn. With shade.alpha above 0 each letter is drawn once in
+    // color (the shadow's black) at its own fx opacity times shade.alpha,
+    // from its far copy (FAR_RANGE above), centred exactly where the letter
+    // is: its outline grown outward by shade.dilate css px (scaled with the
+    // letter), and that grown edge widened by shade.soft css px on top of
+    // the fx's own blur. The halo copy is left out, the shadow is only the
+    // letter's own shape. A letter whose far copy is still being made has
+    // no shadow for the few frames that takes.
+    // With shade.measure set, each letter's resting ink box (its quad less
+    // the atlas padding, where it lands once the transition is done) widens
+    // one of two bounds: a*, the letters this pass would show (fx opacity
+    // above nothing), and d*, the letters the smoke or cloud still holds
+    // (dissolve short of 1), for the whole-word effects that draw the ink
+    // themselves and leave every letter here at opacity 0. The caller seeds
+    // both to an empty box and decides which one the frame's effect means.
+    drawWord(dl, str, x, y, size, weight, color, letterSpacing, alpha, fx, rec, shade) {
       if (!str) return;
       const wi = weightIndex(weight);
       const scale = size / BASE_SIZE;
@@ -639,30 +710,62 @@ export function createText(device, platform) {
             const gcx = sgx + gw / 2, gcy = sgy + gh / 2;
             fx(li, len, gcx - x, gcy - midY, wordW, size, xf);
             const cx = gcx + xf[0], cy = gcy + xf[1], s = xf[2];
-            if (rec && rec.count * 12 < rec.data.length) {
-              const r = rec.data, o = rec.count * 12;
-              r[o] = cx; r[o + 1] = cy; r[o + 2] = gw * s / 2; r[o + 3] = gh * s / 2;
-              r[o + 4] = u0; r[o + 5] = v0; r[o + 6] = u1; r[o + 7] = v1;
-              r[o + 8] = xf[3]; r[o + 9] = xf[7]; r[o + 10] = 0; r[o + 11] = 0;
-              rec.count++;
-            }
-            if (xf[4] > 0.002 && s > 0.01) {
-              // the halo first, so the letter sits on top of its own haze
-              if (xf[6] > 0.01) {
-                const hs = s * (1 + 0.9 * xf[6]);
-                dl.pushAlpha(xf[4] * 0.35 * xf[6]);
-                dl.glyph(cx - gw * hs / 2, cy - gh * hs / 2, gw * hs, gh * hs,
-                         u0, v0, u1, v1, color, SDF_RANGE, xf[3], size);
+            if (shade) {
+              if (shade.measure) {
+                const pad = PAD * scale;
+                const ix0 = sgx + pad, iy0 = sgy + pad, ix1 = sgx + gw - pad, iy1 = sgy + gh - pad;
+                if (xf[4] > 0.002) {
+                  if (ix0 < shade.ax0) shade.ax0 = ix0;
+                  if (iy0 < shade.ay0) shade.ay0 = iy0;
+                  if (ix1 > shade.ax1) shade.ax1 = ix1;
+                  if (iy1 > shade.ay1) shade.ay1 = iy1;
+                }
+                if (xf[7] < 0.999) {
+                  if (ix0 < shade.dx0) shade.dx0 = ix0;
+                  if (iy0 < shade.dy0) shade.dy0 = iy0;
+                  if (ix1 > shade.dx1) shade.dx1 = ix1;
+                  if (iy1 > shade.dy1) shade.dy1 = iy1;
+                }
+              }
+              if (shade.alpha > 0 && xf[4] > 0.002 && s > 0.01 && needGlyph(wi + FAR, code) === 2) {
+                // the far cell shares the letter's centre (both are the ink
+                // box padded evenly), so it sits on the drawn letter's cx, cy
+                const fb = FAR_BOX;
+                readBox(wi + FAR, code, fb);
+                if (fb[6] > 0) {
+                  const fw = fb[6] * scale * s, fh = fb[7] * scale * s;
+                  dl.pushAlpha(xf[4] * shade.alpha);
+                  dl.glyph(cx - fw / 2, cy - fh / 2, fw, fh, fb[0], fb[1], fb[2], fb[3],
+                           color, FAR_RANGE, xf[3], xf[5] + shade.soft, shade.dilate * s);
+                  dl.popAlpha();
+                }
+              }
+            } else {
+              if (rec && rec.count * 12 < rec.data.length) {
+                const r = rec.data, o = rec.count * 12;
+                r[o] = cx; r[o + 1] = cy; r[o + 2] = gw * s / 2; r[o + 3] = gh * s / 2;
+                r[o + 4] = u0; r[o + 5] = v0; r[o + 6] = u1; r[o + 7] = v1;
+                r[o + 8] = xf[3]; r[o + 9] = xf[7]; r[o + 10] = 0; r[o + 11] = 0;
+                rec.count++;
+              }
+              if (xf[4] > 0.002 && s > 0.01) {
+                // the halo first, so the letter sits on top of its own haze
+                if (xf[6] > 0.01) {
+                  const hs = s * (1 + 0.9 * xf[6]);
+                  dl.pushAlpha(xf[4] * 0.35 * xf[6]);
+                  dl.glyph(cx - gw * hs / 2, cy - gh * hs / 2, gw * hs, gh * hs,
+                           u0, v0, u1, v1, color, SDF_RANGE, xf[3], size);
+                  dl.popAlpha();
+                }
+                dl.pushAlpha(xf[4]);
+                if (s === 1 && xf[0] === 0 && xf[1] === 0 && xf[3] === 0 && xf[5] === 0) {
+                  dl.glyph(sgx, sgy, gw, gh, u0, v0, u1, v1, color, SDF_RANGE);
+                } else {
+                  dl.glyph(cx - gw * s / 2, cy - gh * s / 2, gw * s, gh * s,
+                           u0, v0, u1, v1, color, SDF_RANGE, xf[3], xf[5]);
+                }
                 dl.popAlpha();
               }
-              dl.pushAlpha(xf[4]);
-              if (s === 1 && xf[0] === 0 && xf[1] === 0 && xf[3] === 0 && xf[5] === 0) {
-                dl.glyph(sgx, sgy, gw, gh, u0, v0, u1, v1, color, SDF_RANGE);
-              } else {
-                dl.glyph(cx - gw * s / 2, cy - gh * s / 2, gw * s, gh * s,
-                         u0, v0, u1, v1, color, SDF_RANGE, xf[3], xf[5]);
-              }
-              dl.popAlpha();
             }
           }
         }

@@ -71,6 +71,9 @@ export const wordState = {
   // (the broadcast tags its word message with it, so a follower dealing the
   // same walk knows the word is one it already has)
   step: -1,
+  // the words layer's first two-second rise, 0..1, already inside peak; kept
+  // apart for Text > Panel (ui/screens/overlay.js), which has no peak of its own
+  reveal: 0,
   color: new Float32Array(4),
   visible: false,
 };
@@ -543,6 +546,54 @@ export function setWordWalk(room) {
 export function setWordWalkClock(off) { walkClock = Number.isFinite(off) ? off : NaN; }
 export function wordWalkRunning() { return walkRoom !== '' && walkClock === walkClock; }
 
+// The Opacity var rate's standing offset, the word's own copy of what
+// core/room-clock.js's retimeRoomPhase does for the visual layers' swings.
+// While the walk runs, the opacity dip's phase is derived off the room's
+// clock (stepWords), and epoch zero alone at a new period lands somewhere
+// else in the cycle entirely. So the rate's set() (schema-visual.js) calls
+// this first, with the period before the write and the one being written,
+// in seconds, and it chooses S.textOpacityVarPeriodOff (0 to 1, saved and
+// sent with the text settings) so the derived phase at this instant is the
+// one the old period gave:
+//
+//   offNew = (shared / oldPeriod + offOld) - (shared / newPeriod), mod 1
+//
+// It lives here rather than in room-clock.js because the dip reads the
+// walk's clock and the walk's gate, not the room clock's: the same offset
+// value, but the walk decides when a room is running for the words, and
+// the retime has to agree with the derivation on that. The shared ms is
+// performance.now plus walkClock, the timeline the frame's rAF t is on, so
+// the moment this derives at and the frames that follow read the one clock.
+// A drag retimes on every step and the steps telescope. Outside a running
+// walk it does nothing: the accumulator carries the dip there and never
+// jumps. A follower's replay calls the rate's set() with the new rate
+// already on S, so this sees no change and the offset stays as it arrived;
+// a glide the broadcast hands a follower (perform.js perfFollowGlide) does
+// step the rate here, and retiming each step keeps the follower's dip
+// smooth through it, with the landing state then truing the offset to the
+// broadcaster's.
+export function retimeWordOpacity(S, oldPeriodS, newPeriodS) {
+  if (oldPeriodS === newPeriodS) return;
+  carryWordOpacity(S, 'textOpacityVarPeriodOff', oldPeriodS, S.textOpacityVarPeriodOff, newPeriodS);
+}
+
+// The same fold with the old pair named outright, the words' twin of
+// room-clock.js's carryRoomPhase and shaped like it (offKey is always
+// textOpacityVarPeriodOff), so a snapshot recall (core/presets.js
+// recallSnapshot) can hand in the period and offset from before the recall
+// wrote the preset's own over them. An unchanged period still writes, which
+// puts back the offset the dip was running on in place of the preset's stale
+// one. Outside a running walk it does nothing and the offset stays as loaded.
+export function carryWordOpacity(S, offKey, oldPeriodS, oldOff, newPeriodS) {
+  if (!wordWalkRunning()) return;
+  if (!(oldPeriodS > 0) || !(newPeriodS > 0)) return;
+  const ms = performance.now() + walkClock;
+  const oldMs = oldPeriodS * 1000, newMs = newPeriodS * 1000;
+  let o = (ms % oldMs) / oldMs + (typeof oldOff === 'number' && oldOff === oldOff ? oldOff : 0) - (ms % newMs) / newMs;
+  o -= Math.floor(o);
+  S[offKey] = o;
+}
+
 // ---- the plan: step length from the settings ----
 // Recomputed every frame the walk runs, since a setting can move at any
 // time; it is a dozen reads and some arithmetic.
@@ -816,11 +867,17 @@ export function stepWords(t, dt) {
   // Peak opacity dips from the set value and back, the same shape every other
   // variance in the app uses, so a word never reads brighter than the slider.
   // In a room the dip's phase is read off the shared clock instead of
-  // accumulated, so every screen's word dims together; a change to the
-  // period jumps it to where the new period puts it.
+  // accumulated, so every screen's word dims together: the shared ms over
+  // the period plus the rate's standing offset, which a change of rate is
+  // folded into (retimeWordOpacity, with the walk above) so the dip carries on from where
+  // it is rather than jumping to where the new period alone would put it.
   if (S.textOpacityVarPeriod > 0) {
-    if (wordWalkRunning()) S.textOpacityPhase = (t + walkClock) / 1000 / S.textOpacityVarPeriod;
-    else S.textOpacityPhase += dt / S.textOpacityVarPeriod;
+    if (wordWalkRunning()) {
+      const pMs = S.textOpacityVarPeriod * 1000;
+      S.textOpacityPhase = ((t + walkClock) % pMs) / pMs + (S.textOpacityVarPeriodOff || 0);
+    } else {
+      S.textOpacityPhase += dt / S.textOpacityVarPeriod;
+    }
     S.textOpacityPhase -= Math.floor(S.textOpacityPhase);
   }
   const opDip = 0.5 * (1 - Math.cos(2 * Math.PI * S.textOpacityPhase));
@@ -851,5 +908,6 @@ export function stepWords(t, dt) {
 
   wordState.age = age;
   wordState.peak = peak;
+  wordState.reveal = reveal;
   wordState.opacity = o * peak;
 }

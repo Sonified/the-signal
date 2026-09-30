@@ -9,7 +9,7 @@
 // move with the drawer exactly as the scene's own recentring does.
 import { S } from '../../../js/state.js';
 import { wordState } from '../../core/words.js';
-import { letterFx, wordLetters, lineCtx, smokeHint, hintSweepShare } from '../../core/word-fx.js';
+import { letterFx, wordLetters, lineCtx, smokeHint, hintSweepShare, wordFxWhole } from '../../core/word-fx.js';
 import { guard } from '../../../js/panel-guard.js';
 import { COLOR, TYPE, TRACK, W, MOTION } from '../theme.js';
 import * as anim from '../anim.js';
@@ -39,6 +39,105 @@ const HINT_3 = 'T for words  ·  C for color';
 // screen for most frames of a session.
 const lm = { ascent: 0, descent: 0 };
 let lmSize = -1;
+
+// The word's backing (Text > Shadow, Shadow blur, Panel), for letters that
+// have to hold their own over a busy scene. Both are black, both sit under
+// the letters, and both are off at 0, so a first visit looks as it always
+// has. The shadow is each letter again, directly behind itself: it darkens
+// what shows through a soft or faint letter and haloes its edge. The panel is
+// a rounded block filled in behind the letters as they arrive. Each is its
+// own pass of text-atlas's drawWord with this record as its shade, through
+// the very letterFx the word itself goes through, so neither can drift from
+// a transition; the record is reused every frame, never rebuilt.
+const SHADE_INK = new Float32Array([0, 0, 0, 1]);
+const PANEL_FILL = new Float32Array([0, 0, 0, 1]);
+const shade = {
+  alpha: 0, soft: 0, dilate: 0, measure: false,
+  ax0: 0, ay0: 0, ax1: 0, ay1: 0,
+  dx0: 0, dy0: 0, dx1: 0, dy1: 0
+};
+// Softness the shadow always carries, so even behind an opaque letter it
+// reaches past the glyph's edge. The shadow is drawn from the atlas's far
+// copies (gpu/text-atlas.js FAR_RANGE), whose field reaches 44 of 64 atlas
+// px past the ink; the glyph shader lets dilation and softness together use
+// 0.9 of that, about 0.62 em at any size, dilation first. Shadow size grows
+// the outline by up to SHADOW_SIZE_EM, and Shadow blur softens the grown
+// edge by up to SHADOW_SOFT_CAP_EM, both at once inside that reach, so
+// neither slider ever runs into the other's share. The blur's travel is
+// spread from the spread to its cap, so every step of it softens the shadow
+// further; a word too small to have any headroom past the spread gets none,
+// never a negative.
+const SHADOW_SPREAD = 1.5;
+const SHADOW_SOFT_CAP_EM = 0.3;
+const SHADOW_SIZE_EM = 0.3;
+// The panel's margin past the letters: Panel size runs it from a sliver to
+// the full pad; the corner radius rides the pad so a small panel squares
+// off rather than swallowing itself in its own corners. Soft edges swap the
+// hard rect for the shader's Gaussian of the same box (shadeRect's
+// erf shadow, already black), up to half an em of blur; the pad grows by
+// half the blur so the softened edge stays centred where the hard one was.
+const PANEL_PAD_EM = 0.6, PANEL_PAD_MIN_EM = 0.08, PANEL_RADIUS_EM = 0.35;
+const PANEL_SOFT_MAX_EM = 1.5;
+
+function unit(v) { return v > 0 ? (v < 1 ? v : 1) : 0; }
+
+// The panel's box: every line's shown letters, where each one comes to rest,
+// widened by the pad. Shown means the letter's own opacity is above nothing,
+// or, while the smoke or the cloud draws the word, that its dissolve has
+// begun to give it back; so the panel spreads with the arrival, draws in
+// with the leaving, and is gone with the last letter. Its strength rides the
+// word's fade and the layer's first rise, never the Opacity slider, which is
+// the letters' own.
+// One panel box: the hard rect, or the slab once the blur is real.
+function panelBox(dl, x0, y0, x1, y1, padX, padY, radius, blur) {
+  if (blur >= 1) {
+    dl.slab(x0 - padX, y0 - padY, x1 - x0 + 2 * padX, y1 - y0 + 2 * padY, radius, blur, 1);
+  } else {
+    dl.rect(x0 - padX, y0 - padY, x1 - x0 + 2 * padX, y1 - y0 + 2 * padY, radius, PANEL_FILL, 0, null, 0, 0);
+  }
+}
+// Vary per line keeps a box per drawn line rather than the one union
+// (captured in drawOverlay's measure loop): a pill per line, each as wide
+// as its own letters ask.
+const LINE_BOX_MAX = 16;
+const LINE_BOXES = new Float32Array(LINE_BOX_MAX * 4);
+let lineBoxN = 0;
+function drawPanel(dl, size, strength, sizeAmt, soft, perLine, lineH) {
+  const f = wordState.peak > 0 ? wordState.opacity / wordState.peak : 0;
+  const a = strength * f * wordState.reveal;
+  if (a <= 0.002) return;
+  const blur = soft * PANEL_SOFT_MAX_EM * size;
+  const pad = (PANEL_PAD_MIN_EM + sizeAmt * (PANEL_PAD_EM - PANEL_PAD_MIN_EM)) * size + blur * 0.5;
+  const radius = pad * (PANEL_RADIUS_EM / PANEL_PAD_EM);
+  dl.pushAlpha(a);
+  if (perLine) {
+    for (let i = 0; i < lineBoxN; i++) {
+      const o = i * 4;
+      const x0 = LINE_BOXES[o], y0 = LINE_BOXES[o + 1], x1 = LINE_BOXES[o + 2], y1 = LINE_BOXES[o + 3];
+      if (!(x1 > x0) || !(y1 > y0)) continue;
+      // With neighbours above or below, the vertical pad stops at the
+      // line's own slot, so the pills stay apart instead of stacking dark
+      // on dark where they'd overlap.
+      const padY = lineBoxN > 1 ? Math.min(pad, Math.max(1, (lineH - (y1 - y0)) * 0.5)) : pad;
+      panelBox(dl, x0, y0, x1, y1, pad, padY, Math.min(radius, (y1 - y0) * 0.5 + padY), blur);
+    }
+  } else {
+    let x0 = shade.ax0, y0 = shade.ay0, x1 = shade.ax1, y1 = shade.ay1;
+    if (!(x1 > x0) && wordFxWhole()) { x0 = shade.dx0; y0 = shade.dy0; x1 = shade.dx1; y1 = shade.dy1; }
+    if (x1 > x0 && y1 > y0) panelBox(dl, x0, y0, x1, y1, pad, pad, radius, blur);
+  }
+  dl.popAlpha();
+}
+
+// The backing's fade envelopes (see their block in drawOverlay), and the
+// last frame's clock for their step.
+let envShadow = 0, envPanel = 0, envLastT = -1;
+function stepEnv(env, onStage, dt, inMs, outMs) {
+  if (!onStage) return 0;
+  if (wordState.phase === 2 && outMs > 0) return Math.max(0, env - dt / outMs);
+  return inMs > 0 ? Math.min(1, env + dt / inMs) : 1;
+}
+
 let revealAt = -1;
 let wasRunning = false;
 
@@ -210,6 +309,20 @@ export function drawOverlay(dl, text, t, width, height) {
   // cloud layer reads is cleared every frame, so no word means no cloud.
   wordLetters.count = 0;
   wordLetters.seed = wordState.seed;
+  // The backing's own fades, an envelope per effect: it rises over the Fade
+  // in as a word arrives and, with a Fade out set, sinks over it from the
+  // moment the word starts leaving (wordState.phase 2). At 0 either simply
+  // follows the word as before. An empty stage resets both, so the next
+  // word's backing fades in from nothing.
+  {
+    const dt = envLastT < 0 ? 0 : Math.min(100, t - envLastT);
+    envLastT = t;
+    const wordUp = wordState.visible && wordState.peak > 0.002 && !!wordState.text;
+    envShadow = stepEnv(envShadow, S.textShadowOn !== false && wordUp, dt,
+      S.textShadowFadeInMs || 0, S.textShadowFadeOutMs || 0);
+    envPanel = stepEnv(envPanel, S.textPanelOn !== false && wordUp, dt,
+      S.textPanelFadeInMs || 0, S.textPanelFadeOutMs || 0);
+  }
   if (wordState.visible && wordState.peak > 0.002 && wordState.text) {
     // An affirmation wraps into balanced lines around the middle (see
     // phrase in text-atlas); a single word is simply one line of it. The
@@ -221,6 +334,53 @@ export function drawOverlay(dl, text, t, width, height) {
     const baseY = cy + (lm.ascent - lm.descent) / 2;
     const n = ph.lines.length;
     lineCtx.n = n;
+    // The backing first, panel under shadow, the word over both. Each pass
+    // walks every line with lineCtx set just as the word's own pass does,
+    // so a block's lines keep their own clocks in all three.
+    // Each effect's own switch: off, its pass simply skips, the sliders
+    // keeping their settings for the A back.
+    const panelO = S.textPanelOn !== false ? unit(S.textPanelO || 0) * envPanel : 0;
+    const shadowO = S.textShadowOn !== false ? unit(S.textShadowO || 0) * envShadow : 0;
+    if (panelO > 0.002) {
+      shade.alpha = 0; shade.soft = 0; shade.dilate = 0; shade.measure = true;
+      // Vary per line remeasures per line, a box each; otherwise the one
+      // union across the block. Either way each line takes its dissolve
+      // box when the smoke or the cloud holds all its letters at nothing.
+      const perLine = S.textPanelPerLine === true;
+      lineBoxN = 0;
+      shade.ax0 = shade.ay0 = shade.dx0 = shade.dy0 = Infinity;
+      shade.ax1 = shade.ay1 = shade.dx1 = shade.dy1 = -Infinity;
+      for (let k = 0; k < n; k++) {
+        if (perLine) {
+          shade.ax0 = shade.ay0 = shade.dx0 = shade.dy0 = Infinity;
+          shade.ax1 = shade.ay1 = shade.dx1 = shade.dy1 = -Infinity;
+        }
+        lineCtx.k = k;
+        text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
+                      SHADE_INK, TRACK.word, wordState.peak, letterFx, null, shade);
+        if (perLine && lineBoxN < LINE_BOX_MAX) {
+          let bx0 = shade.ax0, by0 = shade.ay0, bx1 = shade.ax1, by1 = shade.ay1;
+          if (!(bx1 > bx0) && wordFxWhole()) { bx0 = shade.dx0; by0 = shade.dy0; bx1 = shade.dx1; by1 = shade.dy1; }
+          const o = lineBoxN * 4;
+          LINE_BOXES[o] = bx0; LINE_BOXES[o + 1] = by0; LINE_BOXES[o + 2] = bx1; LINE_BOXES[o + 3] = by1;
+          lineBoxN++;
+        }
+      }
+      drawPanel(dl, size, panelO, unit(S.textPanelSize ?? 1), unit(S.textPanelSoft || 0), perLine, ph.lineH);
+    }
+    if (shadowO > 0.002) {
+      shade.alpha = shadowO; shade.measure = false;
+      const blur = unit(S.textShadowBlur || 0);
+      shade.soft = SHADOW_SPREAD + blur * Math.max(0, SHADOW_SOFT_CAP_EM * size - SHADOW_SPREAD);
+      // Shadow size grows each dark letter's outline outward, the same
+      // distance past every edge, and the blur then softens that grown edge.
+      shade.dilate = unit(S.textShadowSize || 0) * SHADOW_SIZE_EM * size;
+      for (let k = 0; k < n; k++) {
+        lineCtx.k = k;
+        text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
+                      SHADE_INK, TRACK.word, wordState.peak, letterFx, null, shade);
+      }
+    }
     for (let k = 0; k < n; k++) {
       lineCtx.k = k;
       text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
