@@ -70,7 +70,8 @@ export async function startWorkerShell(canvas) {
 
   const longTasks = watchLongTasks();
   const env = () => ({ userAgent: navigator.userAgent, screenW: screen.width, screenH: screen.height,
-                       longTasks: longTasks() });
+                       longTasks: longTasks(),
+                       coarse: matchMedia('(pointer: coarse)').matches });
   const cssW = canvas.clientWidth || window.innerWidth;
   const cssH = canvas.clientHeight || window.innerHeight;
   const dpr0 = window.devicePixelRatio || 1;

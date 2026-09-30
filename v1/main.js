@@ -68,7 +68,7 @@ import { createUI } from './ui/imgui.js';
 import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION } from './ui/theme.js';
-import { drawOverlay, overlayState, flashNotice } from './ui/screens/overlay.js';
+import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow } from './ui/screens/overlay.js';
 import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
@@ -114,6 +114,7 @@ async function boot() {
   console.log('[boot] engine stays on this thread');
   const platform = inWorker ? await host.platform : createPlatform(canvas);
   console.log('[boot] platform ready');
+  setOverlayTouch(!!platform.coarse);
 
   // State first: v0 and v1 share one saved settings object.
   initStore(platform.storage);
@@ -309,8 +310,10 @@ async function boot() {
   // Page thread only: in worker mode the store lives in the worker, which
   // never sees the page's URL, so a normal load is what a demo runs on.
   if (!inWorker) {
+    const bIntent = broadcastUrlIntent();
+    if (bIntent && bIntent.follow) setOverlayFollow();
     initBroadcast(
-      { intent: broadcastUrlIntent(), open: openBroadcastSocket, followUrl: makeFollowUrl },
+      { intent: bIntent, open: openBroadcastSocket, followUrl: makeFollowUrl },
       {
         notify: flashNotice,
         isRunning: () => S.running,

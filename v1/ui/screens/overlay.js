@@ -18,7 +18,13 @@ const VEIL = new Float32Array([0, 0, 0, 1]);
 const HINT_MAIN = new Float32Array([185 / 255, 198 / 255, 212 / 255, 1]);   // v0 #hint .hmain
 const REVEAL_MS = 2000;
 
-const HINT_1 = 'Press the space bar to begin';
+// On a touch device the space bar does not exist; main.js tells us once at
+// boot (platform.coarse) and the opening line becomes a tap. A follower tab
+// says the join line instead, the same words as the DOM gate over it, so the
+// two layers read as one prompt (index.html shows the gate on follow loads).
+let HINT_1 = 'Press the space bar to begin';
+export function setOverlayTouch(coarse) { if (coarse) HINT_1 = 'Tap to begin'; }
+export function setOverlayFollow() { HINT_1 = 'Tap to join the live stream'; }
 const HINT_2 = 'press the “~” key for settings  ·  press ENTER for full screen';
 const HINT_3 = 'T for words  ·  C for color';
 

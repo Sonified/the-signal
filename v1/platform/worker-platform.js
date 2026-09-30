@@ -103,6 +103,9 @@ export function createWorkerPlatform(init, post) {
       return Object.assign({}, envCache, { nowISO: new Date().toISOString(), frameSource: 'worker' });
     },
     dpr: init.dpr || 1, width: init.width || 0, height: init.height || 0,
+    // The page's pointer coarseness, from the hello's env snapshot: the
+    // overlay words its opening hint as a tap on a touch screen.
+    coarse: !!(init.env && init.env.coarse),
     onResize(fn) { resizeCbs.push(fn); },
     pollInput() { framesStarted = true; return q.pollInput(); },
     pollDisplay() {

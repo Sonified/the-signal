@@ -362,6 +362,9 @@ export function createPlatform(canvas) {
     // reads navigator or screen itself.
     env: () => ({ userAgent: navigator.userAgent, screenW: screen.width, screenH: screen.height,
                   nowISO: new Date().toISOString(), longTasks: longTaskSummary() }),
+    // A coarse primary pointer means a touch screen: the overlay words its
+    // opening hint as a tap instead of the space bar.
+    coarse: matchMedia('(pointer: coarse)').matches,
     dpr: 1, width: 0, height: 0,
     onResize(fn) { resizeCbs.push(fn); },
     pollInput,

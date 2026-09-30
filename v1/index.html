@@ -30,14 +30,15 @@
 </head>
 <body>
 <canvas id="v1" tabindex="0"></canvas>
-<div id="follow-audio-gate" role="button" aria-label="Tap to play audio">Tap to play audio</div>
+<div id="follow-audio-gate" role="button" aria-label="Tap to join the live stream">Tap to join the live stream</div>
 <script>
   (() => {
+    // One prompt, one tap. A stream link is a join, on every device: the
+    // same gesture that reveals the session also wakes the audio, so there
+    // is no separate audio toll booth and nothing plays before the tap.
     const gate = document.getElementById('follow-audio-gate');
     const follow = new URLSearchParams(location.search).get('follow');
-    const phone = matchMedia('(pointer: coarse)').matches &&
-      Math.min(screen.width || innerWidth, screen.height || innerHeight) <= 900;
-    if (follow && phone) gate.classList.add('show');
+    if (follow) gate.classList.add('show');
     else gate.remove();
   })();
 </script>
