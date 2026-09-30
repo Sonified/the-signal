@@ -24,7 +24,8 @@ import { beginGlide, endGlide, PRESET_GLIDE_S } from '../../js/audio.js';
 import { glideStrobeFreq } from './strobe.js';
 import { byId, byDomId, CONTROLS } from './schema.js';
 import { save, snapshot, applySnapshot, readKey, saveKey } from './store.js';
-import { rebuildWordPool } from './words.js';
+import { rebuildWordPool, carryWordOpacity } from './words.js';
+import { carryRoomPhase } from './room-clock.js';
 
 // A "click" on a v0 button, resolved through byDomId. For a segment option
 // (cmChirp, aLink, biHard, and every visual per-mode button) this sets the
@@ -38,10 +39,15 @@ import { rebuildWordPool } from './words.js';
 // loaded into a journey step (recallPresetForStep): `hold`, a set of control
 // ids to leave exactly where they are, and `named`, a list every control the
 // preset names is pushed onto, held or not. A drawer click passes neither.
+//
+// None of the three ever moves one of this machine's own controls (see
+// machineControl below), so a v0 recipe that clicks spLit leaves the spare
+// frame as this screen has it, and a step never records it as named.
 function clickButton(domId, hold, named) {
   const hit = byDomId(domId);
   if (!hit) return;
   const { control, option } = hit;
+  if (machineControl(control)) return;
   if (named) named.push(control.id);
   if (hold && hold.has(control.id)) return;
   control.set(S, option ? option.value : !control.get(S));
@@ -54,7 +60,7 @@ function clickButton(domId, hold, named) {
 function setBoolIfNeeded(id, want, hold, named) {
   if (typeof want !== 'boolean') return;
   const control = byId(id);
-  if (!control) return;
+  if (!control || machineControl(control)) return;
   if (named) named.push(control.id);
   if (hold && hold.has(control.id)) return;
   if (!!control.get(S) !== want) control.set(S, want);
@@ -63,7 +69,7 @@ function setBoolIfNeeded(id, want, hold, named) {
 // A named control set to a preset's value, the same hold and named rules.
 function setNamed(id, val, hold, named) {
   const control = byId(id);
-  if (!control || !control.set) return;
+  if (!control || !control.set || machineControl(control)) return;
   if (named) named.push(control.id);
   if (hold && hold.has(control.id)) return;
   control.set(S, val);
@@ -206,6 +212,19 @@ const before = new Array(REPLAY.length);
 // order. Shared rather than filtered again, so the two can never disagree.
 export const REPLAY_CONTROLS = REPLAY;
 
+// This machine's own controls: the drawer's Render section (schema-visual.js),
+// how this screen draws, pauses and shows its hint, the parallax sim, the
+// engine's thread. Plumbing, not part of the scene an audience is shown, so
+// no recall, step or followed broadcast moves one. They stay in REPLAY, so
+// another tab of this same machine still carries them over (store.js
+// syncFromStorage); a snapshot never moves them in the first place, since
+// store.js applySnapshot passes their fields over, which is the half that
+// keeps presets saved before this, and a broadcaster's state, from landing
+// them. The v0 recipe's helpers above pass them over, the journey leaves them
+// out of every step (its skip), and a followed glide refuses them
+// (perform.js perfFollowGlide).
+export function machineControl(c) { return c.section === 'render'; }
+
 // store.applySnapshot writes state and nothing else, which is all a boot
 // needs, but mid-session the audio graph, the edge particles and the rest
 // only change when a control's set() tells them to. So every control's
@@ -276,8 +295,63 @@ function keepLayerObjects(prev) {
 }
 
 function applySnapshotLive(snap) {
-  replayLive(() => applySnapshot(snap));
+  recallSnapshot(snap);
   save();
+}
+
+// ---------- a snapshot recalled here keeps its swings' phase ----------
+// Every slow swing clocked off a shared timeline in a room derives its phase
+// from its rate and a standing offset beside it (core/room-clock.js for the
+// layers, core/words.js for the words' opacity dip), and a snapshot carries
+// both. The offset it carries is whatever the screen it was saved on had at
+// the time, which continues nothing here: recalled as it stands, the derived
+// phase lands elsewhere in the cycle and, once the settle window has passed,
+// the swing is pulled across to it. So a recall on this screen, and only
+// one, keeps each swing's rate and offset from before the snapshot lands
+// and, once it has, folds the change into the offset afresh from that pair,
+// exactly as dragging the rate there would have. A follower's applied state
+// and another tab's write never come through here (broadcast.js
+// applyFollowed and store.js syncFromStorage call replayHolding and
+// replayLive directly): what they carry is the broadcaster's own offsets,
+// already folded, and those are data to take as they come. A broadcaster's
+// recall folds here first, and its state message, sent on a timer after the
+// save below, carries the folded offsets on to the room.
+//
+// Each row is the rate's key on S, its offset's key, and the fold for the
+// clock that swing derives on. Outside a room (or with the walk not running,
+// for the words) the fold does nothing and the snapshot's offset stays: it
+// is dormant there, and the accumulator carries the swing.
+const SWINGS = [
+  ['partFadeRate',          'partFadeRateOff',          carryRoomPhase],
+  ['partFbOpVarRate',       'partFbOpVarRateOff',       carryRoomPhase],
+  ['partFbStreamVarRate',   'partFbStreamVarRateOff',   carryRoomPhase],
+  ['partFbTwistVarRate',    'partFbTwistVarRateOff',    carryRoomPhase],
+  ['partFbPulseRate',       'partFbPulseRateOff',       carryRoomPhase],
+  ['confOpacityVarRate',    'confOpacityVarRateOff',    carryRoomPhase],
+  ['confFbAmtVarRate',      'confFbAmtVarRateOff',      carryRoomPhase],
+  ['confFbStreamVarRate',   'confFbStreamVarRateOff',   carryRoomPhase],
+  ['confFbTwistVarRate',    'confFbTwistVarRateOff',    carryRoomPhase],
+  ['confFbPulseRate',       'confFbPulseRateOff',       carryRoomPhase],
+  ['flowerOpacityPeriod',   'flowerOpacityPeriodOff',   carryRoomPhase],
+  ['flowerPulsePeriod',     'flowerPulsePeriodOff',     carryRoomPhase],
+  ['textOpacityVarPeriod',  'textOpacityVarPeriodOff',  carryWordOpacity]
+];
+const swingRate = new Array(SWINGS.length);
+const swingOff = new Array(SWINGS.length);
+
+// The one door for a snapshot recalled on this screen: a chip's click (or a
+// built-in saved over) and a journey step loading one. sec and hold are
+// replayHolding's.
+function recallSnapshot(snap, sec, hold) {
+  for (let i = 0; i < SWINGS.length; i++) {
+    swingRate[i] = S[SWINGS[i][0]];
+    swingOff[i] = S[SWINGS[i][1]];
+  }
+  replayHolding(snap, sec, hold);
+  for (let i = 0; i < SWINGS.length; i++) {
+    const w = SWINGS[i];
+    w[2](S, w[1], swingRate[i], swingOff[i], S[w[0]]);
+  }
 }
 
 // ---------- the viewer's own presets ----------
@@ -547,7 +621,7 @@ export function recallPresetForStep(i, sec, hold) {
   if (!e) return undefined;
   const snap = e.u ? e.u.snapshot : data.overrides[PRESET_LIST[e.b].name];
   if (snap) {
-    replayHolding(snap, sec, hold);
+    recallSnapshot(snap, sec, hold);
     save();
     return null;
   }

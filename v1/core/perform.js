@@ -35,7 +35,7 @@
 import { S } from '../../js/state.js';
 import { endGlide } from '../../js/audio.js';
 import { byId } from './schema.js';
-import { beginTransition, applyPresetAt, REPLAY_CONTROLS } from './presets.js';
+import { beginTransition, applyPresetAt, REPLAY_CONTROLS, machineControl } from './presets.js';
 import { readKey, saveKey } from './store.js';
 import { triggerPhrase } from './words.js';
 import { glideSkippingRiskBand } from './strobe.js';
@@ -109,6 +109,63 @@ export function setRampS(v) {
 // the same Map as its own record, three channels each way.
 const tweens = new Map();
 let nowT = 0;
+
+// ---------- the broadcast's view ----------
+// A broadcaster's followers run these glides themselves (core/broadcast.js).
+// Each one starting, or retargeted mid-flight, asks for a state message
+// (glideStart), which names every glide on its way, where to and how long
+// is left (perfEachGlide); a follower hands each to perfFollowGlide and its
+// own engine takes it from there. A glide's per-frame writes are marked
+// while they run (glideWriting, read by the broadcast's save listener), so
+// the broadcast holds them instead of streaming a message every quarter
+// second, and the Map emptying (perfTick) asks for the one send that trues
+// every screen up (glideLand). A glide let go because a hand took the
+// control counts as landed; the hand's own change was sent anyway. The hooks
+// are handed in by broadcast.js, as main.js hands the journey setRunning,
+// since the broadcast depends on this module and not the other way round;
+// on a follower, in worker mode or with no broadcast they are never set.
+// glideWriting is 1 for this tab's own glide and 2 for one a follower was
+// handed, which the follower's strobe watch passes over: the broadcaster's
+// glide arriving is not the viewer taking the strobe. A plain number, so a
+// frame allocates nothing.
+let glideWriting = 0;
+let gliding = false;
+let glideStart = null, glideLand = null;
+export function setPerfGlideHooks(start, land) { glideStart = start; glideLand = land; }
+export const perfGlideWriting = () => glideWriting;
+// fn(control, target, secondsLeft) for each slider or colour glide in flight:
+// a slider's snapped target, the colour's hex. A variance switch's crossfade
+// moves no control's position, so it is not named.
+export function perfEachGlide(fn) {
+  if (!tweens.size) return;
+  for (const tw of tweens.values()) {
+    if (tw.kind !== 'slider' && tw.kind !== 'color') continue;
+    const left = (tw.t0 + tw.durMs - nowT) / 1000;
+    fn(tw.c, tw.kind === 'color' ? tw.hex : tw.to, left > 0 ? left : 0);
+  }
+}
+// A follower's side: a glide the broadcast named, run over what is left of
+// it. Not perfSet, whose ask is a hand on the control (it releases a journey
+// ramp's hold on it, takes over a layer fade); this only sets the engine
+// going. Refused for anything a snapshot would not move (a sub-drawer's
+// switch, a control with no get or set) or that is this machine's own
+// (presets.js machineControl); startSlider and startColor type-check the
+// target. Left under the cut length, it lands at once, which is right for a
+// glide whose time ran out on the way here.
+export function perfFollowGlide(id, to, sec) {
+  const c = byId(id);
+  if (!c || c.uiOnly || !c.get || !c.set || machineControl(c)) return false;
+  if (!(sec > 0)) sec = 0;
+  if (c.kind === 'slider') return startSlider(c, to, sec, true);
+  if (c.kind === 'color') return startColor(c, to, sec, true);
+  return false;
+}
+// A follower's viewer taking the strobe for their own: a glide the broadcast
+// handed in on one of its controls stops where it is. Their own glides stay.
+export function perfFollowDrop(id) {
+  const tw = tweens.get(id);
+  if (tw && tw.fol) tweens.delete(id);
+}
 
 // Two hex digits for each channel value, made once, so a colour on its way
 // is one string a frame at most (journey.js does the same).
@@ -372,7 +429,9 @@ function stepMix(tw, u, e) {
   return false;
 }
 
-function startSlider(c, to, sec) {
+// fol marks a glide a broadcast's follower started (perfFollowGlide below);
+// any other ask of the same control makes it this tab's own again.
+function startSlider(c, to, sec, fol) {
   if (typeof to !== 'number' || !Number.isFinite(to)) return false;
   if (Number.isFinite(c.min) && Number.isFinite(c.max)) to = Math.max(c.min, Math.min(c.max, to));
   const step = c.step > 0 ? c.step : 0;
@@ -393,7 +452,7 @@ function startSlider(c, to, sec) {
   // retargeting reuses the record: the glide picks up from where it is
   let tw = tweens.get(c.id);
   const warm = !!tw && tw.kind === 'slider';
-  if (!warm) { tw = { kind: 'slider', c, t0: 0, durMs: 0, from: 0, to: 0, sent: 0, last: 0, step: 0, p: 1, band: 0, log: 0, warm: false }; tweens.set(c.id, tw); }
+  if (!warm) { tw = { kind: 'slider', c, t0: 0, durMs: 0, from: 0, to: 0, sent: 0, last: 0, step: 0, p: 1, band: 0, log: 0, warm: false, fol: 0 }; tweens.set(c.id, tw); }
   tw.warm = warm;
   // A glide already under way picks up from its own exact position (sent)
   // rather than the readout's, which can be rounded: a percent control reads
@@ -406,10 +465,13 @@ function startSlider(c, to, sec) {
   tw.step = step; tw.p = p;
   tw.band = c.id === 'freq' ? 1 : 0;
   tw.log = !tw.band && isLog(c) && from > 0 && to > 0 ? 1 : 0;
+  tw.fol = fol ? 1 : 0;
+  // the broadcast's glide-start message (see "the broadcast's view" below)
+  if (glideStart) glideStart();
   return true;
 }
 
-function startColor(c, hex, sec) {
+function startColor(c, hex, sec, fol) {
   if (typeof hex !== 'string' || !/^#[0-9a-f]{6}$/i.test(hex)) return false;
   const rgb = S.rgb;
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
@@ -422,12 +484,14 @@ function startColor(c, hex, sec) {
   }
   let tw = tweens.get(c.id);
   const warm = !!tw && tw.kind === 'color';
-  if (!warm) { tw = { kind: 'color', c, t0: 0, durMs: 0, hex: '', f: [0, 0, 0], t: [0, 0, 0], l: [0, 0, 0], warm: false }; tweens.set(c.id, tw); }
+  if (!warm) { tw = { kind: 'color', c, t0: 0, durMs: 0, hex: '', f: [0, 0, 0], t: [0, 0, 0], l: [0, 0, 0], warm: false, fol: 0 }; tweens.set(c.id, tw); }
   tw.warm = warm;
   tw.t0 = nowT; tw.durMs = rampS * 1000; tw.hex = hex;
   tw.f[0] = rgb[0]; tw.f[1] = rgb[1]; tw.f[2] = rgb[2];
   tw.t[0] = r; tw.t[1] = g; tw.t[2] = b;
   tw.l[0] = rgb[0]; tw.l[1] = rgb[1]; tw.l[2] = rgb[2];
+  tw.fol = fol ? 1 : 0;
+  if (glideStart) glideStart();
   return true;
 }
 
@@ -452,7 +516,12 @@ function stepSlider(tw, u, e) {
     if (from < to) { if (v < from) v = from; else if (v > to) v = to; }
     else if (v < to) v = to; else if (v > from) v = from;
   }
-  if (v !== tw.sent) { tw.sent = v; c.set(S, v); tw.last = c.get(S); }
+  if (v !== tw.sent) {
+    tw.sent = v;
+    glideWriting = tw.fol ? 2 : 1;
+    try { c.set(S, v); } finally { glideWriting = 0; }
+    tw.last = c.get(S);
+  }
   return u < 1;
 }
 
@@ -472,7 +541,8 @@ function stepColorTw(tw, u, e) {
     b = Math.round(tw.f[2] + (tw.t[2] - tw.f[2]) * e);
   }
   if (r !== tw.l[0] || g !== tw.l[1] || b !== tw.l[2]) {
-    tw.c.set(S, u < 1 ? '#' + HEX2[r] + HEX2[g] + HEX2[b] : tw.hex);
+    glideWriting = tw.fol ? 2 : 1;
+    try { tw.c.set(S, u < 1 ? '#' + HEX2[r] + HEX2[g] + HEX2[b] : tw.hex); } finally { glideWriting = 0; }
     const now = S.rgb;
     tw.l[0] = now[0]; tw.l[1] = now[1]; tw.l[2] = now[2];
   }
@@ -519,6 +589,11 @@ export function perfTick(t) {
     }
   }
   if (layerFades.size) landLayerFades();
+  // Every glide gone, landed or let go, this frame or since the last one:
+  // the final writes above have all been made, so the broadcast's landing
+  // send carries them.
+  if (gliding && !tweens.size && glideLand) glideLand();
+  gliding = tweens.size > 0;
 }
 
 // A trigger pad: row i's phrase goes up now, through the words' own one-shot

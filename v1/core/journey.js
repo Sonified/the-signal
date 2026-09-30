@@ -78,7 +78,7 @@ import { pianoGesture, applySeqs, SEQ_WAVES, SEQ_COUNT } from '../../js/piano.js
 import { CHANNELS, applyMixGates } from '../../js/mixgate.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../../js/ambience.js';
 import { byId } from './schema.js';
-import { REPLAY_CONTROLS, beginTransition, recallPresetForStep } from './presets.js';
+import { REPLAY_CONTROLS, beginTransition, recallPresetForStep, machineControl } from './presets.js';
 import { readKey, saveKey, onSave, save, seqStateOf, applySeqState, mixStateOf, SEQ_NUM_RANGE } from './store.js';
 import { onWordAppear, wordSequenceOnce, cancelWordSequenceOnce } from './words.js';
 import { glideSkippingRiskBand } from './strobe.js';
@@ -121,17 +121,22 @@ const INTERACTION_OK = { none: 1 };
 const HALF_SECOND_FADE = new Set(['textFadeIn', 'textFadeOut', 'textDwell']);
 
 // The controls a step can hold: exactly the ones a snapshot replays
-// (presets.js), in its order, clickMode first. The engine's thread is left
-// out: which thread runs the app is how this machine runs it, not a state of
-// the session, and moving it restarts the engine. So is the parallax sim's
-// switch (core/eye.js): a viewing aid standing in for head tracking, never
-// part of what a journey shows.
+// (presets.js), in its order, clickMode first. This machine's own controls
+// are left out (presets.js machineControl, the drawer's Render section): how
+// this screen draws, pauses and shows its hint, the parallax sim (a viewing
+// aid standing in for head tracking), and which thread runs the app, which
+// restarts the engine besides. None of that is a state of the session, and
+// a step saved before they were left out has them dropped as it is read
+// (readStep). And so are Live Sound's switch, input and latency
+// (js/livesound.js): a step must never open a microphone on its own, and an
+// input's id and the buffer its hardware wants belong to this machine alone.
 const R = REPLAY_CONTROLS;
 const idxOf = new Map();
 const skip = new Uint8Array(R.length);
 for (let i = 0; i < R.length; i++) {
   idxOf.set(R[i].id, i);
-  if (R[i].id === 'engineThread' || R[i].id === 'parallaxSim') skip[i] = 1;
+  if (machineControl(R[i]) || R[i].id === 'liveOn' || R[i].id === 'liveDevice' ||
+      R[i].id === 'liveLatency') skip[i] = 1;
 }
 const baseline = new Array(R.length);
 const MODE = byId('textMode'), CUSTOM = byId('textCustomText');
@@ -845,10 +850,42 @@ const rampIds = new Set(), rampSections = new Set(), rampSubs = new Set();
 const HEX2 = new Array(256);
 for (let i = 0; i < 256; i++) HEX2[i] = (i < 16 ? '0' : '') + i.toString(16);
 
+// ---------- the broadcast's view of the ramp ----------
+// A broadcaster's followers glide a ramp themselves (core/broadcast.js): the
+// state message sent as it begins (glideStart) names every control on its
+// way, where to and how long is left (journeyEachGlide), and every message
+// after it says so again while the ramp lasts. The ramp's own per-frame
+// writes are marked (glideWriting, read by the broadcast's save listener),
+// so they are held rather than streamed, and the ramp ending, however it
+// ends (endTween: landed, replaced by the next step, the walk stopped), asks
+// for one more send (glideLand), which trues every screen up. Only the
+// controls' writes are marked: the sequencer's lines and the mix are not
+// controls a message can name, so a ramp moving them saves unmarked and
+// streams them as it always did. The hooks are handed in by broadcast.js,
+// as main.js hands in setRunning, since the broadcast depends on this module
+// and not the other way round; on a follower, in worker mode or with no
+// broadcast they are never set, and the flag is one nobody reads.
+let glideWriting = false;
+let glideStart = null, glideLand = null;
+export function setJourneyGlideHooks(start, land) { glideStart = start; glideLand = land; }
+export const journeyGlideWriting = () => glideWriting;
+// fn(control, target, secondsLeft) for each control the playing ramp still
+// moves: a slider's position, the colour's hex. A paused walk's ramp is
+// standing still, so it names nothing.
+export function journeyEachGlide(fn) {
+  if (!play.playing || !tw.active) return;
+  const left = (tw.t0 + tw.durMs - nowT) / 1000;
+  const rem = left > 0 ? left : 0;
+  for (let k = 0; k < tw.n; k++) if (twIdx[k] >= 0) fn(R[twIdx[k]], twTo[k], rem);
+  if (tw.colorOn && COLOR) fn(COLOR, cHex, rem);
+}
+
 function endTween() {
+  const was = tw.active;
   if (tw.seqMix) endSeqMix();
   tw.active = false; tw.n = 0; tw.colorOn = false; tw.glow = 0; tw.seqMix = false;
   rampIds.clear(); rampSections.clear(); rampSubs.clear();
+  if (was && glideLand) glideLand();
 }
 
 // A control joins the drawer's view of the ramp: its own row, its section's
@@ -924,7 +961,11 @@ function startRamp(st, withText) {
     if (c.kind === 'slider') addSlider(i, c, v);
     else if (c.kind === 'color') addColor(c, v);
   }
-  if (tw.n > 0 || tw.colorOn || tw.seqMix) { tw.active = true; tw.t0 = nowT; tw.durMs = st.rampS * 1000; tw.glow = 1; }
+  if (tw.n > 0 || tw.colorOn || tw.seqMix) {
+    tw.active = true; tw.t0 = nowT; tw.durMs = st.rampS * 1000; tw.glow = 1;
+    // the broadcast's glide-start message (see the broadcast's view above)
+    if (glideStart) glideStart();
+  }
 }
 
 // One frame of the ramp: each slider eased (smoothstep) toward its target,
@@ -950,7 +991,12 @@ function stepTween(t) {
       if (from < to) { if (v < from) v = from; else if (v > to) v = to; }
       else if (v < to) v = to; else if (v > from) v = from;
     }
-    if (v !== twSent[k]) { twSent[k] = v; c.set(S, v); twLast[k] = c.get(S); }
+    if (v !== twSent[k]) {
+      twSent[k] = v;
+      glideWriting = true;
+      try { c.set(S, v); } finally { glideWriting = false; }
+      twLast[k] = c.get(S);
+    }
   }
   if (tw.colorOn) stepColor(u, e);
   if (tw.seqMix) stepSeqMix(u, e);
@@ -973,7 +1019,8 @@ function stepColor(u, e) {
     b = Math.round(cFrom[2] + (cTo[2] - cFrom[2]) * e);
   }
   if (r === cLast[0] && g === cLast[1] && b === cLast[2]) return;
-  COLOR.set(S, u < 1 ? '#' + HEX2[r] + HEX2[g] + HEX2[b] : cHex);
+  glideWriting = true;
+  try { COLOR.set(S, u < 1 ? '#' + HEX2[r] + HEX2[g] + HEX2[b] : cHex); } finally { glideWriting = false; }
   const now = S.rgb;
   cLast[0] = now[0]; cLast[1] = now[1]; cLast[2] = now[2];
 }
@@ -1847,6 +1894,9 @@ function recordLiveControl(stepIdx, id, requested) {
     const cid = ids[n], k = idxOf.get(cid);
     if (k === undefined || skip[k] || inMix[k]) continue;
     const c = R[k];
+    // a range control has no single get (getLo/getHi); with no requested
+    // position either there is nothing to record for it
+    if (n !== 0 || requested === undefined) { if (!c.get) continue; }
     let v = n === 0 && requested !== undefined ? requested : c.get(S);
     v = validValue(c, v);
     if (v === undefined || st.overrides[cid] === v) continue;

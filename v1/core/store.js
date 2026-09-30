@@ -117,7 +117,8 @@ function buildSettings() {
     fieldOpacity: S.fieldOpacity, fieldFade: S.fieldFade, fieldSoft: S.fieldSoft,
     color: rgbHex(S.rgb),
     cornerOpacity: S.cornerOpacity, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
-    ringSpeedMul: S.ringSpeedMul, ringRate: S.ringRate, ringOrigin: S.ringOrigin, ringFadeInMs: S.ringFadeInMs, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
+    ringSpeedMul: S.ringSpeedMul, ringSpeedVar: S.ringSpeedVar, ringSpeedVarPeriod: S.ringSpeedVarPeriod,
+    ringRate: S.ringRate, ringOrigin: S.ringOrigin, ringFadeInMs: S.ringFadeInMs, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
     edgeFb: S.edgeFb, edgeFbStream: S.edgeFbStream, edgeFbTwist: S.edgeFbTwist, edgeFbOpacity: S.edgeFbOpacity,
     edgeMode: S.edgeMode, edgePulse: S.edgePulse,
@@ -135,7 +136,14 @@ function buildSettings() {
     textLinesTogether: S.textLinesTogether, textLinesTogetherIn: S.textLinesTogetherIn, textLinesTogetherOut: S.textLinesTogetherOut,
     textLinePause: S.textLinePause,
     textOpacity: S.textOpacity, textOpacityVar: S.textOpacityVar,
-    textOpacityVarPeriod: S.textOpacityVarPeriod, textBrighten: S.textBrighten,
+    textOpacityVarPeriod: S.textOpacityVarPeriod, textOpacityVarPeriodOff: S.textOpacityVarPeriodOff || 0,
+    textBrighten: S.textBrighten,
+    textShadowO: S.textShadowO || 0, textShadowBlur: S.textShadowBlur || 0, textPanelO: S.textPanelO || 0,
+    textShadowSize: S.textShadowSize || 0, textPanelSize: S.textPanelSize ?? 1,
+    textPanelSoft: S.textPanelSoft || 0, textShadowOn: S.textShadowOn !== false,
+    textPanelPerLine: S.textPanelPerLine === true, textPanelOn: S.textPanelOn !== false,
+    textShadowFadeInMs: S.textShadowFadeInMs || 0, textShadowFadeOutMs: S.textShadowFadeOutMs || 0,
+    textPanelFadeInMs: S.textPanelFadeInMs || 0, textPanelFadeOutMs: S.textPanelFadeOutMs || 0,
     textColorMode: S.textColorMode,
     musicOn: S.musicOn, pianoStyle: S.pianoStyle, pianoVol: S.pianoVol, bedVol: S.bedVol,
     bedLpfOn: S.bedLpfOn, bedLpfLo: S.bedLpfLo, bedLpfHi: S.bedLpfHi, bedLpfPeriod: S.bedLpfPeriod,
@@ -147,11 +155,16 @@ function buildSettings() {
     choirStackVar: S.choirStackVar, choirStackPeriod: S.choirStackPeriod,
     choirDensityVar: S.choirDensityVar, choirDensityPeriod: S.choirDensityPeriod,
     choirVolVar: S.choirVolVar, choirVolPeriod: S.choirVolPeriod,
+    choirVolVarMode: S.choirVolVarMode, choirStackVarMode: S.choirStackVarMode,
+    choirDensityVarMode: S.choirDensityVarMode, choirStrobeAmVarMode: S.choirStrobeAmVarMode,
+    bedStrobeAmVarMode: S.bedStrobeAmVarMode,
     ...layerSettings(),
     bedStrobeAm: S.bedStrobeAm, choirStrobeAm: S.choirStrobeAm, cloudStrobeAm: S.cloudStrobeAm,
     choirStrobeAmVar: S.choirStrobeAmVar, choirStrobeAmPeriod: S.choirStrobeAmPeriod,
     bedStrobeAmVar: S.bedStrobeAmVar, bedStrobeAmPeriod: S.bedStrobeAmPeriod,
-    pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP, musicRevOn: S.musicRevOn, bedOn: S.bedOn, pianoOn: S.pianoOn, arpOn: S.arpOn, arpVol: S.arpVol, arpRate: S.arpRate, arpWave: S.arpWave, arpAtk: S.arpAtk, arpDec: S.arpDec, arpOct: S.arpOct, arpRev: S.arpRev, arpSpread: S.arpSpread, arpStrobeAm: S.arpStrobeAm,
+    pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP, musicRevOn: S.musicRevOn, bedOn: S.bedOn, pianoOn: S.pianoOn, arpOn: S.arpOn, arpVol: S.arpVol, arpRate: S.arpRate,
+    arpVolVar: S.arpVolVar, arpVolPeriod: S.arpVolPeriod,
+    arpStrobeAmVar: S.arpStrobeAmVar, arpStrobeAmPeriod: S.arpStrobeAmPeriod, arpWave: S.arpWave, arpAtk: S.arpAtk, arpDec: S.arpDec, arpOct: S.arpOct, arpRev: S.arpRev, arpSpread: S.arpSpread, arpStrobeAm: S.arpStrobeAm,
       arpSwOn: S.arpSwOn, arpSwLo: S.arpSwLo, arpSwHi: S.arpSwHi, arpSwPeriod: S.arpSwPeriod, arpSwWander: S.arpSwWander,
     pianoDensity: S.pianoDensity, pianoCentre: S.pianoCentre,
     pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
@@ -171,6 +184,7 @@ function buildSettings() {
     freqDrift: S.freqDrift, freqDriftOn: S.freqDriftOn, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
     frameLock: S.frameLock, spareMode: S.spareMode, pauseWindDown: S.pauseWindDown, pauseFlickerStop: S.pauseFlickerStop !== false,
     hintFadeMs: S.hintFadeMs, hintSweep: S.hintSweep, hintFadeInMs: S.hintFadeInMs, hintArrive: S.hintArrive,
+    fbResScale: S.fbResScale, fbResSwitch: S.fbResSwitch,
     parallaxAmount: S.parallaxAmount, parallaxSpeed: S.parallaxSpeed, walkPeriod: S.walkPeriod, brightVar: S.brightVar, brightVarOn: S.brightVarOn,
     brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
     hueLo: S.hueLo, hueSpan: S.hueSpan,
@@ -622,13 +636,54 @@ function writeUiNow() {
 // in shape. buildSettings() hands back live references (layers, textThemes,
 // ambLayers), which is fine for a write that serialises immediately but not
 // for a snapshot that has to stay put while the viewer keeps playing, so this
-// takes a deep copy through JSON, the same round trip the file itself makes.
+// takes a deep copy. structuredClone rather than a JSON round trip: one pass
+// instead of a string built and parsed again, which mattered once the
+// broadcast took a snapshot every quarter second through a long glide. Both
+// builders hand back plain numbers, strings, booleans, arrays and objects, so
+// the copy is the same data. A key whose value is undefined survives where
+// JSON would drop it, which changes nothing, since every reader
+// (applySettings, applyExtra's helpers) type-checks each field and passes
+// over one that is not there or not the right kind. Anything written
+// to disk or the wire is still stringified on the way out.
 // The v1-only state rides along under v1extra, so a preset saved in v1
 // recalls the flowers and the kaleidoscope too.
 export function snapshot() {
-  const snap = JSON.parse(JSON.stringify(buildSettings()));
-  snap.v1extra = JSON.parse(JSON.stringify(buildExtra()));
+  const snap = structuredClone(buildSettings());
+  snap.v1extra = structuredClone(buildExtra());
   return snap;
+}
+
+// The settings this machine keeps for itself: the drawer's Render section
+// (schema-visual.js), by the S fields this file saves for it. How this
+// screen draws (the spare frame, the trail images' size and what a change
+// of it does to the trails), how its pause and
+// its hint behave, the parallax sim's sway: plumbing for the machine the
+// session runs on, not part of the scene an audience is shown. They are
+// saved with everything else, so a reload keeps them, and another tab of
+// this machine still takes them (syncFromStorage), but a preset recall and a
+// followed broadcast leave them where this machine has them (applySnapshot).
+// The Render rows with no field here (Ring draw, the parallax switch, the
+// engine's thread) are never written into this object at all. Listed by name
+// rather than read off the schema, since this module must not depend on it.
+const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
+                      'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive',
+                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed'];
+
+// The same object snapshot() gives, uncopied, for a caller that stringifies
+// it at once and keeps nothing (the broadcast's state message, a few times a
+// second through a long glide at most). buildSettings() and buildExtra()
+// build fresh objects on every call, so v1extra is attached to one nobody
+// else holds; the arrays and objects inside that are live references to S
+// (layers is copied, textThemes and ambLayers are not) are only read, by
+// that same synchronous stringify. The machine's own settings are blanked
+// rather than deleted, which keeps the object's shape, and JSON leaves an
+// undefined out, so they never reach the wire: a follower from before
+// applySnapshot learned to pass them over is spared them too.
+export function wireSettings() {
+  const out = buildSettings();
+  for (let i = 0; i < MACHINE_KEYS.length; i++) out[MACHINE_KEYS[i]] = undefined;
+  out.v1extra = buildExtra();
+  return out;
 }
 
 // Applies a snapshot into S while the session runs. This sets state only,
@@ -638,10 +693,12 @@ export function snapshot() {
 // one exception is the plain state helpers in schema-flowers.js and
 // schema-kaleido.js, which touch S and nothing else.) A snapshot from before
 // v1extra existed leaves the flowers and the kaleidoscope exactly as they
-// are.
+// are. The machine's own settings (MACHINE_KEYS) are passed over, so a
+// preset saved before they were set apart, or a broadcaster's, still lands
+// without moving this screen's.
 export function applySnapshot(obj) {
   if (!obj || typeof obj !== 'object') return;
-  applySettings(obj, true);
+  applySettings(obj, true, true);
   applyExtra(obj.v1extra);
   save();
 }
@@ -673,6 +730,47 @@ function writeKeysNow() {
   pendingKeys.clear();
 }
 
+// Live Sound (js/livesound.js) keeps its settings in a record of its own,
+// not in the shared object or the extra record, because both of those are
+// the snapshot: a preset recalls it, another tab replays it, and a broadcast
+// sends it to every follower. None of that should ever open a microphone on
+// someone else's machine, and an input's id means nothing on another
+// machine anyway. So the input, the level, the reverb mix and its decay, the
+// compressor, the Music window's trim and the latency live here, this
+// machine's alone, and the switch is not saved at all:
+// every load comes up with the input closed until someone switches it on.
+const LIVE_KEY = 'signal.v1.live';
+export function saveLive() {
+  saveKey(LIVE_KEY, { liveDevice: S.liveDevice, liveLevel: S.liveLevel, liveReverb: S.liveReverb, musLive: S.musLive,
+                      liveLatency: S.liveLatency, liveRevTime: S.liveRevTime,
+                      liveThreshold: S.liveThreshold, liveRatio: S.liveRatio,
+                      liveAttack: S.liveAttack, liveRelease: S.liveRelease });
+}
+// Each held to its slider's range (v1/core/schema-audio.js), as read back.
+const LIVE_RANGES = {
+  liveRevTime: [0.5, 8], liveThreshold: [-60, 0], liveRatio: [1, 20],
+  liveAttack: [0, 100], liveRelease: [10, 1000]
+};
+function loadLive() {
+  let x;
+  try { x = JSON.parse(readKey(LIVE_KEY) || 'null'); } catch (e) { x = null; }
+  if (!x || typeof x !== 'object') return;
+  if (typeof x.liveDevice === 'string') S.liveDevice = x.liveDevice;
+  for (const k of ['liveLevel', 'liveReverb', 'musLive']) {
+    if (typeof x[k] === 'number' && Number.isFinite(x[k])) S[k] = Math.max(0, Math.min(1, x[k]));
+  }
+  // the buffer asked of the input's own context, in ms (0 is the least)
+  if (typeof x.liveLatency === 'number' && Number.isFinite(x.liveLatency)) {
+    S.liveLatency = Math.max(0, Math.min(100, Math.round(x.liveLatency)));
+  }
+  // the room's length and the compressor; a record from before them has
+  // none, and the defaults (the programmed sound) stand
+  for (const k in LIVE_RANGES) {
+    const [lo, hi] = LIVE_RANGES[k];
+    if (typeof x[k] === 'number' && Number.isFinite(x[k])) S[k] = Math.max(lo, Math.min(hi, x[k]));
+  }
+}
+
 // The v0 hue-band buttons derive their own label from hueLo/hueSpan rather
 // than storing a name, so load() does the same derivation the schema's Hue
 // range control uses. Duplicated in both places on purpose: the schema needs
@@ -702,6 +800,7 @@ export function load() {
   let x;
   try { x = JSON.parse(storage.get(EXTRA_KEY) || 'null'); } catch (e) { x = null; }
   applyExtra(x);
+  loadLive();
 }
 
 // The edge's effects (v1/gpu/scene.js) and the new effects' numbers as
@@ -721,13 +820,19 @@ const EDGE_FX_NUM = [
 // And the atmosphere's layer list is only replaced when it actually differs,
 // because the ambience engine keys its playing voices by layer object: a
 // fresh but identical array would fade every recording out and back in.
-function applySettings(s, live) {
+// `scene` (applySnapshot's) leaves this machine's own settings as they are
+// (MACHINE_KEYS, above wireSettings): a preset or a broadcast is the scene,
+// not the screen it plays on. Another tab's write is this same machine's,
+// so syncFromStorage takes them, and so does load().
+function applySettings(s, live, scene) {
   if (typeof s.freq === 'number')   S.freq = s.freq;
   if (typeof s.depth === 'number')  S.depth = s.depth;
   if (typeof s.bright === 'number') S.bright = s.bright;
   if (typeof s.strobeScale === 'number' && isFinite(s.strobeScale)) S.strobeScale = Math.max(0, Math.min(1, s.strobeScale));
   if (s.color) setColorFromPicker(s.color);
   if (typeof s.ringSpeedMul === 'number') S.ringSpeedMul = s.ringSpeedMul;
+  if (typeof s.ringSpeedVar === 'number') S.ringSpeedVar = Math.max(0, Math.min(1, s.ringSpeedVar));
+  if (typeof s.ringSpeedVarPeriod === 'number') S.ringSpeedVarPeriod = Math.max(1, Math.min(60, s.ringSpeedVarPeriod));
   if (typeof s.cornerOpacity === 'number' && isFinite(s.cornerOpacity)) S.cornerOpacity = Math.max(0, Math.min(1, s.cornerOpacity));
   if (typeof s.cornerSpeed === 'number' && isFinite(s.cornerSpeed)) S.cornerSpeed = Math.max(0, Math.min(4, s.cornerSpeed));
   if (typeof s.cornerPulse === 'number' && isFinite(s.cornerPulse)) S.cornerPulse = Math.max(0, Math.min(1, s.cornerPulse));
@@ -762,18 +867,26 @@ function applySettings(s, live) {
   if (typeof s.trailMul === 'number')     S.trailMul = s.trailMul;
   if (typeof s.edgeSpeedMul === 'number') S.edgeSpeedMul = s.edgeSpeedMul;
   if (typeof s.frameLock === 'boolean') S.frameLock = s.frameLock;
-  // Anything else saved here (an old 'alt') falls through to the default.
-  if (s.spareMode === 'lit' || s.spareMode === 'dark') S.spareMode = s.spareMode;
-  if (typeof s.pauseWindDown === 'number') S.pauseWindDown = Math.max(0, Math.min(5, s.pauseWindDown));
-  if (typeof s.pauseFlickerStop === 'boolean') S.pauseFlickerStop = s.pauseFlickerStop;
-  if (typeof s.hintFadeMs === 'number') S.hintFadeMs = Math.max(0, Math.min(10000, s.hintFadeMs));
-  if (typeof s.hintSweep === 'number') S.hintSweep = Math.max(0.6, Math.min(4, s.hintSweep));
-  if (typeof s.hintFadeInMs === 'number') S.hintFadeInMs = Math.max(0, Math.min(10000, s.hintFadeInMs));
-  if (s.hintArrive === 'sweep' || s.hintArrive === 'all') S.hintArrive = s.hintArrive;
-  // The parallax sim's sway (core/eye.js). Its switch is never saved, so a
-  // load always starts with the head still.
-  if (typeof s.parallaxAmount === 'number' && isFinite(s.parallaxAmount)) S.parallaxAmount = Math.max(0, Math.min(0.3, s.parallaxAmount));
-  if (typeof s.parallaxSpeed === 'number' && isFinite(s.parallaxSpeed)) S.parallaxSpeed = Math.max(0.05, Math.min(2, s.parallaxSpeed));
+  // The Render section, this machine's own (MACHINE_KEYS): not for a scene.
+  if (!scene) {
+    // Anything else saved here (an old 'alt') falls through to the default.
+    if (s.spareMode === 'lit' || s.spareMode === 'dark') S.spareMode = s.spareMode;
+    if (typeof s.pauseWindDown === 'number') S.pauseWindDown = Math.max(0, Math.min(5, s.pauseWindDown));
+    if (typeof s.pauseFlickerStop === 'boolean') S.pauseFlickerStop = s.pauseFlickerStop;
+    if (typeof s.hintFadeMs === 'number') S.hintFadeMs = Math.max(0, Math.min(10000, s.hintFadeMs));
+    if (typeof s.hintSweep === 'number') S.hintSweep = Math.max(0.6, Math.min(4, s.hintSweep));
+    if (typeof s.hintFadeInMs === 'number') S.hintFadeInMs = Math.max(0, Math.min(10000, s.hintFadeInMs));
+    if (s.hintArrive === 'sweep' || s.hintArrive === 'all') S.hintArrive = s.hintArrive;
+    // Trail res: only the three the Render section offers; anything else
+    // saved stays at the default, full size.
+    if (s.fbResScale === 1 || s.fbResScale === 0.75 || s.fbResScale === 0.5) S.fbResScale = s.fbResScale;
+    // Trail switch: the two it offers; anything else stays at Keep.
+    if (s.fbResSwitch === 'keep' || s.fbResSwitch === 'clear') S.fbResSwitch = s.fbResSwitch;
+    // The parallax sim's sway (core/eye.js). Its switch is never saved, so a
+    // load always starts with the head still.
+    if (typeof s.parallaxAmount === 'number' && isFinite(s.parallaxAmount)) S.parallaxAmount = Math.max(0, Math.min(0.3, s.parallaxAmount));
+    if (typeof s.parallaxSpeed === 'number' && isFinite(s.parallaxSpeed)) S.parallaxSpeed = Math.max(0.05, Math.min(2, s.parallaxSpeed));
+  }
   if (typeof s.freqDrift === 'number')    S.freqDrift = s.freqDrift;
   if (typeof s.freqDriftOn === 'boolean') S.freqDriftOn = s.freqDriftOn;
   if (typeof s.driftPeriod === 'number')  S.driftPeriod = s.driftPeriod;
@@ -842,7 +955,24 @@ function applySettings(s, live) {
   if (typeof s.textOpacity === 'number')    S.textOpacity = s.textOpacity;
   if (typeof s.textOpacityVar === 'number') S.textOpacityVar = s.textOpacityVar;
   if (typeof s.textOpacityVarPeriod === 'number') S.textOpacityVarPeriod = s.textOpacityVarPeriod;
+  // the rate's standing phase offset (core/words.js retimeWordOpacity), 0
+  // to 1. Not seeded in js/state.js: the dip reads a missing one as 0, and
+  // the save writes that 0 out, so a follower derives the room's phase.
+  if (Number.isFinite(s.textOpacityVarPeriodOff)) S.textOpacityVarPeriodOff = Math.max(0, Math.min(1, s.textOpacityVarPeriodOff));
   if (typeof s.textBrighten === 'number') S.textBrighten = s.textBrighten;
+  // the word's backing (Text > Shadow, Shadow blur, Panel), each 0..1. Not
+  // seeded in js/state.js: every reader takes a missing value as 0, off, and
+  // the save writes that 0 out, so a follower's backing matches the room's.
+  for (const k of ['textShadowO', 'textShadowBlur', 'textShadowSize', 'textPanelO', 'textPanelSize', 'textPanelSoft']) {
+    if (Number.isFinite(s[k])) S[k] = Math.max(0, Math.min(1, s[k]));
+  }
+  if (typeof s.textShadowOn === 'boolean') S.textShadowOn = s.textShadowOn;
+  if (typeof s.textPanelPerLine === 'boolean') S.textPanelPerLine = s.textPanelPerLine;
+  if (typeof s.textPanelOn === 'boolean') S.textPanelOn = s.textPanelOn;
+  // the backing's fades, milliseconds, clamped to their sliders' span
+  for (const k of ['textShadowFadeInMs', 'textShadowFadeOutMs', 'textPanelFadeInMs', 'textPanelFadeOutMs']) {
+    if (Number.isFinite(s[k])) S[k] = Math.max(0, Math.min(2000, s[k]));
+  }
   if (s.textColorMode === 'white' || s.textColorMode === 'system') S.textColorMode = s.textColorMode;
   if (s.textThemes && typeof s.textThemes === 'object') S.textThemes = { ...s.textThemes };
   if (s.textMode === 'words' || s.textMode === 'affirmations' || s.textMode === 'custom') S.textMode = s.textMode;
@@ -866,6 +996,7 @@ function applySettings(s, live) {
   // cloudRevTime is v0's list too (js/settings.js); it was missing here, so a
   // saved clouds reverb decay never came back after a reload.
   ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','arpVol','arpRate','arpAtk','arpDec','arpOct','arpRev','arpSpread','arpStrobeAm','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
+   'arpVolVar','arpVolPeriod','arpStrobeAmVar','arpStrobeAmPeriod',
    'pianoSpread','pianoHold','pianoBass','ambVol','ambReverb','ambRevTime','ambDriftFadeS','ambKidsFreq',
    'cloudVol','cloudDensity','cloudPhrase','cloudReverb','cloudRevTime'].forEach(k => {
     if (typeof s[k] === 'number') S[k] = s[k];
@@ -915,6 +1046,10 @@ function applySettings(s, live) {
                              ['choirStrobeAmVar', 0, 1], ['choirStrobeAmPeriod', 0, 120],
                              ['bedStrobeAmVar', 0, 1], ['bedStrobeAmPeriod', 0, 120]])
     if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = Math.max(lo, Math.min(hi, s[k]));
+  // Each variance's Behavior, 'walk' or the default sinusoid.
+  for (const k of ['choirVolVarMode', 'choirStackVarMode', 'choirDensityVarMode',
+                   'choirStrobeAmVarMode', 'bedStrobeAmVarMode'])
+    if (s[k] === 'walk' || s[k] === 'sine') S[k] = s[k];
   // The music layers (js/layer-defs.js), each level held to its slider's range.
   for (const L of MUSIC_LAYERS) {
     const on = layerOnKey(L), vol = layerVolKey(L);

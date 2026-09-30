@@ -19,9 +19,30 @@
 // stands aside during a broadcaster's Journey sequence and the swings must
 // not.
 //
-// A phase is derived as floats, epoch zero: phase = (shared ms mod the
-// period) / the period. Nothing about it is a random pick, so there is no
+// A phase is derived as floats: phase = (shared ms / the period + the
+// swing's offset) mod 1. Nothing about it is a random pick, so there is no
 // hashing and no step counting here, only a modulo.
+//
+// The offset is a plain 0 to 1 number on S beside the swing's rate, under
+// the rate's name plus Off (partFadeRateOff, flowerPulsePeriodOff), saved
+// and sent with the layer's other numbers. It is what keeps a rate change
+// from jumping the swing: epoch zero alone, the room's phase at a new
+// period is somewhere else in the cycle entirely. So a rate moved here, in
+// a room, first folds the change into the offset (retimeRoomPhase, from the
+// rate's set()), choosing it so the derived phase at this instant is the
+// one the old period gave, and from there it runs on at the new rate. It is
+// pure clock math, never the layer's accumulator: a converged screen sits
+// on the derived phase, so a derivation that carries on smoothly is a swing
+// that does. A drag retimes on every step and the steps telescope, so the
+// whole drag is smooth. A follower never retimes anything: the rate and the
+// offset reach it together as data, through the load path (store.js
+// applySnapshot, whose replay does call set(), but with the new rate
+// already on S, so the retime sees no change). A snapshot recall on this
+// screen lands its rates and its saved offsets as data the same way, but it
+// is a local change, so it then folds each swing's offset afresh from the
+// pair it replaced (carryRoomPhase, from core/presets.js recallSnapshot).
+// Outside a room a rate change leaves the offset alone; the accumulator
+// carries the swing there.
 //
 // It is never jumped onto, though. Each layer keeps advancing its own
 // accumulator as it always has, and roomPhase then pulls that phase toward
@@ -43,13 +64,15 @@
 // frame's motion step (core/motion.js), so it fades with the pause
 // wind-down and a stopped scene holds its swings still, as it does outside
 // a room; on resume every screen glides back onto the shared phase
-// together. And a period that is moving: with epoch zero, the shared phase
-// at a slightly different period is somewhere else entirely, so while a
-// rate slider is dragged (or a preset or a follower's replay glides it)
-// the target spins, and chasing it would jitter. The pull waits until the
-// period has held still for SETTLE_S of motion, the accumulator carries
-// the swing smoothly at the new rate meanwhile, and then every screen,
-// which all ended on the same period, glides onto the same new phase.
+// together. And a period that is moving: the offset keeps a local drag's
+// target still, but a change that arrives as data (another tab, a
+// follower's replay) can land a rate and an offset that do not
+// continue this screen's phase, and a period the offset has not caught up
+// with spins the target, which chasing would turn into jitter. So the pull
+// still waits until the period has held still for SETTLE_S of motion, the
+// accumulator carries the swing smoothly at the new rate meanwhile, and
+// then every screen, which all ended on the same period and offset, glides
+// onto the same phase.
 
 let inRoom = false;
 let clockOff = NaN;      // shared ms minus this tab's rAF ms
@@ -81,20 +104,21 @@ export function roomPhaseState() { return { period: 0, still: 0, gen: 0 }; }
 
 // The swing's phase for this frame. phase is the layer's accumulator after
 // its own advance this frame, t the frame's rAF ms, step this frame's motion
-// step in seconds, periodSec the swing's period in seconds. Outside a room,
+// step in seconds, periodSec the swing's period in seconds, offset its
+// phase offset (the rate's Off key on S, 0 when unset). Outside a room,
 // clock unsettled, or stopped, it hands phase straight back. A wake while
 // outside a room owes the room nothing, so the swing's wake count keeps up
 // there, and entering a room later glides onto it as it always has; so does
 // a swing meeting a new period (its first frame included), which settles
 // and then glides like any other.
-export function roomPhase(st, phase, t, step, periodSec) {
+export function roomPhase(st, phase, t, step, periodSec, offset = 0) {
   if (!inRoom || clockOff !== clockOff) { st.gen = snapGen; return phase; }
   if (!(step > 0)) return phase;
   if (periodSec !== st.period) { st.period = periodSec; st.still = 0; st.gen = snapGen; return phase; }
   if (st.still < SETTLE_S) { st.still += step; return phase; }
   const pMs = periodSec * 1000;
-  let target = ((t + clockOff) % pMs) / pMs;
-  if (target < 0) target += 1;
+  let target = ((t + clockOff) % pMs) / pMs + (offset === offset ? offset : 0);
+  target -= Math.floor(target);
   // shortest way round the circle, in [-0.5, 0.5]
   let e = target - phase;
   e -= Math.round(e);
@@ -105,4 +129,42 @@ export function roomPhase(st, phase, t, step, periodSec) {
   const k = step * PULL_RATE;
   phase += e * (k < 1 ? k : 1);
   return phase - Math.floor(phase);
+}
+
+// Folds a rate change into a swing's phase offset, so the room's phase for
+// that swing carries on from where it is at the new rate instead of jumping
+// (see the offset above). Called from the rate's set(), with the period
+// before the write and the one being written, both in seconds and as the
+// layer reads them. offKey is the offset's name on S. The shared ms is this
+// tab's performance.now plus the offset, the timeline the frame's rAF t is
+// on (platform.now is performance.now on every platform), so the moment
+// this derives at and the frames that follow read the one clock:
+//
+//   offNew = (shared / oldPeriod + offOld) - (shared / newPeriod), mod 1
+//
+// Outside a room, clock unsettled, or a period that is not a change, it
+// does nothing.
+export function retimeRoomPhase(S, offKey, oldPeriodS, newPeriodS) {
+  if (oldPeriodS === newPeriodS) return;
+  carryRoomPhase(S, offKey, oldPeriodS, S[offKey], newPeriodS);
+}
+
+// The same fold with the old pair named outright rather than read off S:
+// the period and offset the swing was deriving from, and the period now on
+// S. A snapshot recall needs it (core/presets.js recallSnapshot), since the
+// recall has already written the preset's own rate and offset over the pair
+// this screen was running on, so the pair is kept from before the recall and
+// handed in here after it. A period that did not change still writes: the
+// preset's offset is a stale one from whenever it was saved, and continuing
+// this screen's phase means putting the old offset back. Outside a room,
+// clock unsettled, or a period that is not a period, it does nothing and the
+// offset stays whatever is on S.
+export function carryRoomPhase(S, offKey, oldPeriodS, oldOff, newPeriodS) {
+  if (!inRoom || clockOff !== clockOff) return;
+  if (!(oldPeriodS > 0) || !(newPeriodS > 0)) return;
+  const ms = performance.now() + clockOff;
+  const oldMs = oldPeriodS * 1000, newMs = newPeriodS * 1000;
+  let o = (ms % oldMs) / oldMs + (typeof oldOff === 'number' && oldOff === oldOff ? oldOff : 0) - (ms % newMs) / newMs;
+  o -= Math.floor(o);
+  S[offKey] = o;
 }

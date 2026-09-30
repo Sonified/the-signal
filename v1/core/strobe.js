@@ -30,6 +30,7 @@ const result = { lum: 0, lit: false };
 let prevLit = false;
 // The flowers' pulse variance's room bookkeeping (see stepStrobe).
 const flowerPulseRoom = roomPhaseState();
+const flowerOpacityRoom = roomPhaseState();
 
 // js/util.js's hslToRgb, written into an existing array instead of returning
 // a new one, and with its per-channel helper as a plain function rather than
@@ -462,11 +463,17 @@ export function stepStrobe(t) {
 
   if (flick) {
     S.edgeSpeedVarPhase += md / S.edgeSpeedVarPeriod; S.edgeSpeedVarPhase -= Math.floor(S.edgeSpeedVarPhase);
+    S.ringSpeedVarPhase += md / (S.ringSpeedVarPeriod || 20); S.ringSpeedVarPhase -= Math.floor(S.ringSpeedVarPhase);
     S.edgeSizeVarPhase += md / S.edgeSizeVarPeriod; S.edgeSizeVarPhase -= Math.floor(S.edgeSizeVarPhase);
   }
   S.effEdgeSpeed = S.edgeSpeedVar
     ? S.edgeSpeedMul * (1 - S.edgeSpeedVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.edgeSpeedVarPhase)))
     : S.edgeSpeedMul;
+  // The rings' Speed breathes the same way (js/sim.js reads the effective
+  // in place of the dial while the variance is up).
+  S.effRingSpeedMul = S.ringSpeedVar
+    ? S.ringSpeedMul * (1 - S.ringSpeedVar * 0.5 * (1 - Math.cos(2 * Math.PI * (S.ringSpeedVarPhase || 0))))
+    : S.ringSpeedMul;
   S.effEdgeSize = S.edgeSizeVar
     ? S.edgeSize * (1 - S.edgeSizeVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.edgeSizeVarPhase)))
     : S.edgeSize;
@@ -487,11 +494,24 @@ export function stepStrobe(t) {
     const fpPeriod = S.flowerPulsePeriod || 10;
     S.flowerPulsePhase = (S.flowerPulsePhase || 0) + md / fpPeriod;
     S.flowerPulsePhase -= Math.floor(S.flowerPulsePhase);
-    S.flowerPulsePhase = roomPhase(flowerPulseRoom, S.flowerPulsePhase, t, md, fpPeriod);
+    S.flowerPulsePhase = roomPhase(flowerPulseRoom, S.flowerPulsePhase, t, md, fpPeriod, S.flowerPulsePeriodOff || 0);
   }
   S.effFlowerPulse = S.flowerPulseVar
     ? S.flowerPulse * (1 - S.flowerPulseVar * 0.5 * (1 - Math.cos(2 * Math.PI * (S.flowerPulsePhase || 0))))
     : S.flowerPulse;
+
+  // The flowers' Opacity breathes the same way (gpu/flowers.js reads
+  // effFlowerOpacity in place of the dial while the variance is up), on a
+  // clock of its own, and in a room pulled onto the room clock likewise.
+  if (flick) {
+    const foPeriod = S.flowerOpacityPeriod || 10;
+    S.flowerOpacityPhase = (S.flowerOpacityPhase || 0) + md / foPeriod;
+    S.flowerOpacityPhase -= Math.floor(S.flowerOpacityPhase);
+    S.flowerOpacityPhase = roomPhase(flowerOpacityRoom, S.flowerOpacityPhase, t, md, foPeriod, S.flowerOpacityPeriodOff || 0);
+  }
+  S.effFlowerOpacity = S.flowerOpacityVar
+    ? S.flowerOpacity * (1 - S.flowerOpacityVar * 0.5 * (1 - Math.cos(2 * Math.PI * (S.flowerOpacityPhase || 0))))
+    : S.flowerOpacity;
 
   if (S.perElementColor && S.colorWalk > 0 && flick) {
     for (let i = 0; i < 4; i++) {
