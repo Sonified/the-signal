@@ -53,6 +53,7 @@ import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfter
 import { replayLive, syncPresetsFromStorage } from './core/presets.js';
 import { initBroadcast, broadcastPoke, followMayStart } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
+import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
 import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
@@ -98,6 +99,9 @@ if (!host.worker && typeof document !== 'undefined') {
       followAudioGate.classList.add('done');
       warmDevice();
       audioOn();
+      // the broadcaster's live sound plays from a media element, which this
+      // same gesture lets play (platform/live-media.js)
+      unlockLiveAudio();
       setTimeout(() => followAudioGate.remove(), 650);
     };
     followAudioGate.addEventListener('pointerdown', unlockFollowerAudio, { once: true });
@@ -331,7 +335,9 @@ async function boot() {
     const bIntent = broadcastUrlIntent();
     if (bIntent && bIntent.follow) setOverlayFollow();
     initBroadcast(
-      { intent: bIntent, open: openBroadcastSocket, followUrl: makeFollowUrl },
+      { intent: bIntent, open: openBroadcastSocket, followUrl: makeFollowUrl,
+        // the live sound's recorder and player (core/live-audio.js)
+        media: { record: recordLiveAudio, canRecord: canRecordLiveAudio, player: livePlayer } },
       {
         notify: flashNotice,
         isRunning: () => S.running,

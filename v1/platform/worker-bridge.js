@@ -49,6 +49,7 @@ import { createProfileHost } from './profile-web.js';
 import { getContext } from '../../js/audio.js';
 import { ENGINE_THREAD_KEY, engineThread, initEngineThread } from '../core/engine-thread.js';
 import { createAudioShell } from '../core/audio-shell.js';
+import { onLiveChange, liveInputs, liveLatencyNow, liveReductionNow } from '../../js/livesound.js';
 import { display, displayListenScreen, displaySampleScreen } from '../../js/display-watch.js';
 
 // Long enough for a cold load of every engine module over a slow link.
@@ -146,6 +147,29 @@ function runShell(canvas, worker, shell, size0, env) {
   const off = canvas.transferControlToOffscreen();
   worker.postMessage({ k: 'canvas', canvas: off, size: size0 }, [off]);
   const send = msg => worker.postMessage(msg);
+
+  // ---------- Live Sound ----------
+  // The microphone is here, the drawer is in the worker. The input list the
+  // browser gives, an input refused or lost (which turns the switch back
+  // off), and the latency the input's own context got (for the readout
+  // beside the Latency slider) are told to the worker as they happen, and
+  // once now (js/livesound.js liveFromPage, routed by worker-entry.js).
+  onLiveChange(failed => send({ k: 'live', inputs: liveInputs(), failed, ms: liveLatencyNow() }));
+  // The compressor's gain reduction, for the meter row under its sliders,
+  // is a reading rather than an event: looked at ten times a second from the
+  // sound's frame loop below, to a tenth of a dB, and posted only when that
+  // has moved, so a resting compressor, or no input at all, sends nothing.
+  const LIVE_GR_MS = 100;
+  let grAt = -1e9, grSent = NaN;
+  function liveReading(t) {
+    if (t - grAt < LIVE_GR_MS) return;
+    grAt = t;
+    const db = liveReductionNow();
+    const v = Number.isFinite(db) ? Math.round(db * 10) / 10 + 0 : NaN;
+    if (Object.is(v, grSent)) return;
+    grSent = v;
+    send({ k: 'liveGr', db: v });
+  }
 
   // ---------- input ----------
   // Copies with the DOM event's own field names, which is what the worker's
@@ -350,6 +374,7 @@ function runShell(canvas, worker, shell, size0, env) {
       send({ k: 'display', w: display.w, h: display.h, dpr: display.dpr, left: display.left, top: display.top, gen: display.gen });
     }
     pageClock(t);
+    liveReading(t);
     const m = shell.tick(t);
     if (m) worker.postMessage(m);
   }

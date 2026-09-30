@@ -58,9 +58,12 @@ export function makeFollowUrl(room, target = 'live') {
 
 // One socket to the relay, reconnecting until close() is called. handlers:
 //   onMessage(text)  each relay message
+//   onBinary(buf)    each binary frame, as an ArrayBuffer (a piece of the
+//                    broadcaster's live sound, core/live-audio.js); optional
 //   onStatus(s)      'open' | 'lost' (was connected, retrying) | 'dead' (gave up)
-// Returns { send(str), close() }; send while disconnected is dropped (the
-// broadcaster resends a fresh snapshot on every 'open', so nothing is owed).
+// Returns { send(data), close() }; data is a string or an ArrayBuffer, and a
+// send while disconnected is dropped (the broadcaster resends a fresh
+// snapshot on every 'open', and a fresh live sound header, so nothing is owed).
 export function openBroadcastSocket(room, role, key, handlers) {
   const host = relayHost();
   const scheme = LOCAL_RE.test(host) ? 'ws' : 'wss';
@@ -73,13 +76,18 @@ export function openBroadcastSocket(room, role, key, handlers) {
   function connect() {
     if (closed) return;
     ws = new WebSocket(url);
+    // live sound arrives as ArrayBuffers, which MediaSource appends as they are
+    ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       open = everOpen = true;
       fails = 0;
       pingTimer = setInterval(() => { try { ws.send('ping'); } catch (e) {} }, PING_MS);
       handlers.onStatus('open');
     };
-    ws.onmessage = e => { if (e.data !== 'pong') handlers.onMessage(e.data); };
+    ws.onmessage = e => {
+      if (typeof e.data !== 'string') { if (handlers.onBinary) handlers.onBinary(e.data); }
+      else if (e.data !== 'pong') handlers.onMessage(e.data);
+    };
     ws.onerror = () => { try { ws.close(); } catch (e) {} };
     ws.onclose = () => {
       clearInterval(pingTimer);
@@ -99,7 +107,7 @@ export function openBroadcastSocket(room, role, key, handlers) {
   connect();
 
   return {
-    send(str) { if (open && !closed) { try { ws.send(str); } catch (e) {} } },
+    send(data) { if (open && !closed) { try { ws.send(data); } catch (e) {} } },
     close() {
       closed = true;
       clearInterval(pingTimer);

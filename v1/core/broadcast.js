@@ -16,7 +16,10 @@
 // The broadcaster's side listens on store.onSave, which fires on every change
 // this tab makes and never on one arriving from elsewhere. onSave must stay
 // cheap (a slider drag calls it per input event), so it only arms a timer;
-// the send happens when it fires. The relay tells each broadcast socket how
+// the send happens when it fires. A glide's own frames (the performer's, a
+// Journey ramp's) are the exception: the message sent as a glide starts
+// names it, followers run it themselves, and one send as it lands trues
+// them up (see `tw` at sendNow). The relay tells each broadcast socket how
 // many followers its room holds ({t:'count',n}, on join and on every arrival
 // or departure), which is the watcher count beside each session in the
 // drawer.
@@ -42,18 +45,26 @@
 // keeps their settings and its own time while everything else still follows,
 // until the chrome's sync chip hands it back.
 //
+// The broadcaster's live sound rides the same sockets (core/live-audio.js):
+// this module tells it whenever a watcher count or a socket's status moves,
+// and its pieces count as activity for the doze below. On a follower, the
+// relay's live notices and binary frames are handed straight to it.
+//
 // Sessions and the broadcast key persist under their own record
 // (signal.broadcast.v1, through store.readKey/saveKey like the presets), so
 // the drawer's list survives a reload, and a session left active reconnects
 // at boot: a demo survives the broadcaster's page refresh.
 import { S } from '../../js/state.js';
-import { onSave, snapshot, readKey, saveKey } from './store.js';
-import { replayHolding, presetTransitionCount, lastTransitionSec } from './presets.js';
+import { onSave, wireSettings, readKey, saveKey } from './store.js';
+import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl } from './presets.js';
+import { setPerfGlideHooks, perfGlideWriting, perfEachGlide, perfFollowGlide, perfFollowDrop } from './perform.js';
+import { setJourneyGlideHooks, journeyGlideWriting, journeyEachGlide } from './journey.js';
 import { CONTROLS, byId } from './schema.js';
 import { setStrobeClockOffset, setStrobeSyncTarget, clearStrobeSync } from './strobe.js';
 import { onWordAppear, wordState, remoteWord, setWordsRemote,
          setWordWalk, setWordWalkClock, wordWalkRunning, wordsRepeating } from './words.js';
 import { setRoomClockRoom, setRoomClockOffset } from './room-clock.js';
+import { initLiveAudio, liveAudioCheck, liveFollowNotice, liveFollowChunk, liveFollowEnd } from './live-audio.js';
 
 const REC_KEY = 'signal.broadcast.v1';
 const SEND_DELAY_MS = 250;
@@ -171,10 +182,70 @@ function liveCount() {
 // instant even while the room sleeps. Until this tab's clock has settled
 // there is no shared moment to give, so the Event goes out without one and
 // the send is made again the moment the clock settles (takeTime).
+//
+// `tw` is the glides in flight: a slider or the colour on its way from where
+// the snapshot has it to somewhere else, over seconds, by the performer's
+// engine (core/perform.js) or a Journey step's ramp (core/journey.js). Each
+// is { id, to, rem }: the control, where it is going (a slider's position,
+// the colour's '#rrggbb') and the seconds left, to a tenth. A follower lands
+// the snapshot as ever and then sets each glide going in its own engine
+// (takeGlides), so it moves as smoothly as this screen does rather than in a
+// step every quarter second. So the glides' own per-frame writes are not
+// sent (localSave holds them, sendOnLand remembers they were made) and a
+// glide sends twice: once as it starts, which is the message naming it, and
+// once as its engine runs dry, which carries where everything ended up and
+// no `tw`. Every send while a glide is in flight names it again, so a
+// follower arriving mid-glide (the open's send, the count's), or a change of
+// the performer's own mid-glide, picks it up where it has got to. The field
+// is left out when nothing is gliding. A follower from before it ignores it
+// and just sees each glide land; one following a broadcaster from before it
+// never sees one and follows the stream as it always did.
+//
+// The list is filled into objects kept from send to send (twPool), so a send
+// makes nothing but its string. A machine's own control (presets.js
+// machineControl) is never named, as its field never rides the snapshot
+// (store.js wireSettings).
+const twPool = [], twList = [];
+let sendOnLand = false;
+function addGlide(c, to, rem) {
+  if (machineControl(c)) return;
+  const n = twList.length;
+  let g = twPool[n];
+  if (!g) g = twPool[n] = { id: '', to: 0, rem: 0 };
+  g.id = c.id; g.to = to; g.rem = Math.round(rem * 10) / 10;
+  twList.push(g);
+}
+function fillGlides() {
+  twList.length = 0;
+  perfEachGlide(addGlide);
+  journeyEachGlide(addGlide);
+  return twList.length ? twList : undefined;
+}
+
+// store.onSave's listener on the broadcaster. A save a glide's own frame
+// made (either engine marks those while they run) is held, and its landing
+// sends it; anything else, the performer's own hand on another control
+// mid-glide included, sends as it always did. So the gate asks who wrote,
+// not whether anything is gliding.
+function localSave() {
+  if (perfGlideWriting() || journeyGlideWriting()) { sendOnLand = true; return; }
+  queueSend();
+}
+
+// An engine running dry. Held writes are owed a send; with none, nothing
+// changed that a message has not already carried. sendOnLand is only a
+// debt: any state send pays it (sendNow), so it can never linger.
+function glideLanded() {
+  if (!sendOnLand) return;
+  sendOnLand = false;
+  queueSend();
+}
+
 let lastTransSeq = -1;
 let sentRepeating = true;
 function sendNow() {
   sendTimer = null;
+  sendOnLand = false;
   if (!liveCount()) return;
   let glide = 0;
   const seq = presetTransitionCount();
@@ -194,13 +265,15 @@ function sendNow() {
   if (sent) lastActivityMs = Date.now();
 }
 
-// The state message without its closing brace, for stateFor to finish.
+// The state message without its closing brace, for stateFor to finish. The
+// settings go in uncopied (store.js wireSettings): they are stringified here
+// and nothing keeps the object.
 function stateBody(glide) {
   sentRepeating = wordsRepeating();
   const msg = JSON.stringify({
-    t: 'state', run: !!hooks.isRunning(), snap: snapshot(),
+    t: 'state', run: !!hooks.isRunning(), snap: wireSettings(),
     at: isNaN(clockOff) ? undefined : hooks.now() + clockOff, glide,
-    wk: sentRepeating ? 1 : 0
+    wk: sentRepeating ? 1 : 0, tw: fillGlides()
   });
   return msg.slice(0, -1);
 }
@@ -236,7 +309,8 @@ export function broadcastPoke() { if (available) queueSend(); }
 // watching stays on what it last received and one arriving late is handed
 // that snapshot, which is still current because nothing has changed.
 //
-// Ten minutes without a state send hangs up every live session. The session
+// Ten minutes without a state send or a piece of live sound (every piece
+// core/live-audio.js sends counts) hangs up every live session. The session
 // stays active (still on in the drawer, still saved as active); it is simply
 // not connected, and its status reads 'doze'. No {t:'end'} goes out, since
 // that would clear the room's snapshot, which is exactly what should
@@ -280,7 +354,7 @@ function syncWalkRoom() {
 function checkDoze() {
   // a send already armed is activity about to happen; let it land first
   if (sendTimer || Date.now() - lastActivityMs <= IDLE_DOZE_MS) return;
-  let body = null;
+  let body = null, dozed = false;
   for (const s of sessions) {
     if (s.status !== 'live' || !s.sock) continue;
     if (s.stale) {
@@ -292,7 +366,9 @@ function checkDoze() {
     s.sock = null;
     s.status = 'doze';
     setLabel(s);
+    dozed = true;
   }
+  if (dozed) liveAudioCheck();
 }
 
 function wakeDozing() {
@@ -466,7 +542,10 @@ function watchStrobeWrites() {
     const act = visual.act;
     visual.act = s => { const was = !!s.layers.field; act(s); if (!!s.layers.field !== was) takeStrobe(); };
   }
-  onSave(() => { if (strobeWriting) takeStrobe(); });
+  // A glide the broadcast handed in (takeGlides) writes from the frame loop,
+  // outside followApplying; its engine marks those writes (perform.js
+  // glideWriting 2), and they are the broadcaster's, not the viewer's.
+  onSave(() => { if (strobeWriting && perfGlideWriting() !== 2) takeStrobe(); });
 }
 
 function takeStrobe() {
@@ -474,19 +553,58 @@ function takeStrobe() {
   strobeOwn = true;
   // the last beacon would otherwise keep steering for seconds
   clearStrobeSync();
+  // and a handed-in glide on a strobe control would keep moving it
+  for (let i = 0; i < STROBE_IDS.length; i++) perfFollowDrop(STROBE_IDS[i]);
 }
 
 // An arriving state, or the last one again on a sync. Left without a window
-// it takes the preset glide.
-function applyFollowed(snap, sec) {
+// it takes the preset glide. hold, when given, is more ids to leave where
+// they are, besides a strobe the viewer has taken.
+function applyFollowed(snap, sec, hold) {
   followApplying = true;
-  try { replayHolding(snap, sec, strobeOwn ? STROBE_IDS : null); } finally { followApplying = false; }
+  try { replayHolding(snap, sec, hold || (strobeOwn ? STROBE_IDS : null)); } finally { followApplying = false; }
+}
+
+// The glides a state message named (its `tw`, see sendNow), each set going
+// in this tab's own performer engine (perform.js perfFollowGlide) over what
+// is left of it once `spent` seconds are taken off (the network's delay, or
+// the time since the message on a sync), right after the snapshot has
+// landed. The snapshot has just put each such control where the
+// broadcaster's glide had it, so the glide starts from there, and a later
+// message naming it again simply restarts it from that message's position:
+// every send re-states them, so a follower is never more than one message
+// from the truth. A glide whose time ran out on the way lands at once.
+// Audio controls take this path too: it is the same engine, writing the same
+// per-frame steps the broadcaster's own sound hears. The snapshot's window
+// (FOLLOW_MIN_GLIDE_S, or a recall's) only carries the audio to where the
+// broadcaster's glide stood when the message left; from the next frame the
+// glide's own writes lead, as they do on the broadcaster, rather than the
+// sound trailing the picture in quarter-second stairs. Settings only, never
+// the run flag, so an Event still holds a follower before its unlock.
+// Anything malformed is passed over; the engine refuses a control that is
+// not a slider or the colour, or is this machine's own.
+const TW_MAX_S = 120, TW_MAX_N = 512;
+let lastTw = null, lastTwBase = 0;
+function takeGlides(list, spent) {
+  const n = list.length < TW_MAX_N ? list.length : TW_MAX_N;
+  followApplying = true;
+  try {
+    for (let i = 0; i < n; i++) {
+      const g = list[i];
+      if (!g || typeof g !== 'object' || typeof g.id !== 'string' || !Number.isFinite(g.rem)) continue;
+      // a strobe the viewer has taken keeps their settings
+      if (strobeOwn && STROBE_IDS.indexOf(g.id) >= 0) continue;
+      const rem = g.rem < 0 ? 0 : g.rem > TW_MAX_S ? TW_MAX_S : g.rem;
+      perfFollowGlide(g.id, g.to, rem - spent);
+    }
+  } finally { followApplying = false; }
 }
 
 function releaseStrobe() {
   strobeOwn = false;
   lastSnap = null;
   lastBeacon = null;
+  lastTw = null;
 }
 
 // Read by the chrome every frame: true only on a follower whose viewer has
@@ -494,11 +612,24 @@ function releaseStrobe() {
 export function followStrobeOwned() { return strobeOwn; }
 
 // The sync chip: the strobe goes back under the broadcast.
+// A glide in flight is left where it has got to rather than put back to where
+// the last message had it, and then taken up again for what is left: the
+// strobe's own come home from the viewer's settings on it, the rest carry on.
 export function followStrobeSync() {
   if (!strobeOwn) return;
   strobeOwn = false;
   if (lastBeacon) takeBeacon(lastBeacon);
-  if (lastSnap) applyFollowed(lastSnap);
+  if (!lastSnap) return;
+  let gliding = null;
+  if (lastTw) {
+    gliding = [];
+    for (let i = 0; i < lastTw.length && i < TW_MAX_N; i++) {
+      const g = lastTw[i];
+      if (g && typeof g.id === 'string') gliding.push(g.id);
+    }
+  }
+  applyFollowed(lastSnap, undefined, gliding);
+  if (lastTw) takeGlides(lastTw, (hooks.now() - lastTwBase) / 1000);
 }
 
 // ---------- Open and Event ----------
@@ -592,6 +723,8 @@ function openSession(s) {
         setLabel(s);
         // the first watcher finds a room gone quiet: hand them the state now
         if (!had && s.watchers && s.status === 'live') sendNow();
+        // and the sound, if on air: the last watcher leaving stops it
+        liveAudioCheck();
       } else if (msg.t === 'time' && Number.isFinite(msg.c) && Number.isFinite(msg.s)) {
         takeTime(msg.c, msg.s);
       }
@@ -619,6 +752,10 @@ function openSession(s) {
         hooks.notify('Broadcast "' + s.name + '" failed: relay unreachable or wrong key');
         persist();
       }
+      // A lost socket's room loses its place in the live sound, so the
+      // reconnect hands it a fresh header; an open one with watchers already
+      // counted takes the sound up at once.
+      liveAudioCheck();
     }
   });
 }
@@ -634,6 +771,7 @@ function closeSession(s, end) {
   s.status = 'off';
   s.watchers = 0;
   setLabel(s);
+  liveAudioCheck();
 }
 
 // ---------- the drawer's view ----------
@@ -813,7 +951,10 @@ export function initBroadcast(bits_, hooks_) {
   if (intent && intent.follow) {
     const room = intent.follow;
     watchStrobeWrites();
+    initLiveAudio(bits.media, hooks.notify, null);
     followSock = bits.open(room, 'follow', '', {
+      // a piece of the broadcaster's live sound (core/live-audio.js)
+      onBinary: liveFollowChunk,
       onMessage: str => {
         let msg;
         try { msg = JSON.parse(str); } catch (e) { return; }
@@ -835,6 +976,16 @@ export function initBroadcast(bits_, hooks_) {
           // it); the rest lands as always. Kept for the sync chip.
           lastSnap = msg.snap;
           applyFollowed(msg.snap, sec);
+          // Then the glides it names, over what the network left of each
+          // (see takeGlides); kept, with when they were counted from, for
+          // the sync chip. None named means none in flight.
+          lastTw = Array.isArray(msg.tw) && msg.tw.length ? msg.tw : null;
+          if (lastTw) {
+            const spent = !isNaN(clockOff) && Number.isFinite(msg.at)
+              ? Math.max(0, (hooks.now() + clockOff - msg.at) / 1000) : 0;
+            lastTwBase = hooks.now() - spent * 1000;
+            takeGlides(lastTw, spent);
+          }
           // The mode first, so the run flag is judged by this message's own
           // (see Open and Event). A broadcaster from before the modes sends
           // no ev, and its followers are Open.
@@ -867,7 +1018,11 @@ export function initBroadcast(bits_, hooks_) {
           }
         } else if (msg.t === 'time' && Number.isFinite(msg.c) && Number.isFinite(msg.s)) {
           takeTime(msg.c, msg.s);
+        } else if (msg.t === 'live') {
+          // the live sound starting afresh (its header comes next) or stopping
+          liveFollowNotice(msg.on === 1);
         } else if (msg.t === 'end') {
+          liveFollowEnd();
           clearStrobeSync();
           releaseStrobe();
           releaseEvent();
@@ -887,7 +1042,7 @@ export function initBroadcast(bits_, hooks_) {
           setWordsRemote(true);
         }
         else if (st === 'lost') hooks.notify('Broadcast link lost, reconnecting…');
-        else if (st === 'dead') { clearStrobeSync(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
+        else if (st === 'dead') { liveFollowEnd(); clearStrobeSync(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);
@@ -908,7 +1063,19 @@ export function initBroadcast(bits_, hooks_) {
     }
   }
 
-  onSave(queueSend);
+  onSave(localSave);
+  // Both glide engines report here (see `tw` at sendNow): a glide starting
+  // asks for its message, an engine running dry for the landing send.
+  setPerfGlideHooks(queueSend, glideLanded);
+  setJourneyGlideHooks(queueSend, glideLanded);
+  // The live sound's view of the sessions: it reads their sockets, statuses
+  // and counts, its pieces are activity for the doze, and going on air wakes
+  // a dozing session through queueSend like any other touch.
+  initLiveAudio(bits.media, hooks.notify, {
+    sessions: () => sessions,
+    activity: () => { lastActivityMs = Date.now(); },
+    wake: queueSend
+  });
   probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);
   beaconTimer = setInterval(sendBeacon, BEACON_MS);
   dozeTimer = setInterval(checkDoze, DOZE_CHECK_MS);

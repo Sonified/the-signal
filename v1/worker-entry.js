@@ -34,6 +34,12 @@ self.onmessage = e => {
     resolvePlatform(wp.platform);
     return;
   }
+  // Live Sound's report from the page (platform/worker-bridge.js): the
+  // input list and any refusal, for the drawer drawn here. The module is
+  // already loaded by the time the page sends one, through the schema.
+  if (d.k === 'live') { import('../js/livesound.js').then(m => m.liveFromPage(d)); return; }
+  // and the compressor's gain reduction, for the meter row beside it
+  if (d.k === 'liveGr') { import('../js/livesound.js').then(m => m.liveGrFromPage(d.db)); return; }
   if (wp) wp.handle(d);
 };
 

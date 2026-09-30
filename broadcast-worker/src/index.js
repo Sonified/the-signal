@@ -25,11 +25,45 @@
 // Publishing requires the key (wrangler secret put BROADCAST_KEY). Following
 // is open: anyone with the page URL and room name can watch, which is the
 // point of a demo. A room name is 1-64 word characters or dashes.
+//
+// Live sound. The broadcaster can also speak into the room: its Live Sound
+// mix, recorded as WebM/Opus in 200 ms pieces, arrives here as binary frames,
+// which fan out to the followers exactly as a word does and are never
+// stored. A WebM stream is only decodable from its beginning, though: the
+// first piece a recorder makes carries the stream's header (what the codec
+// is, how it is framed), and every later piece is bare audio that means
+// nothing without it. So a follower who joins mid-stream must be handed that
+// first piece before any other. The broadcaster says {t:'live',on:1} just
+// before each fresh recording (a start, a restart, a reconnect), which is
+// relayed so the followers present can make ready for a new header, and the
+// room keeps the next binary frame to arrive, the header piece, as liveInit.
+// A follower joining while it is held is told {t:'live',on:1} and handed it,
+// straight after the stored snapshot, and then hears the live pieces as they
+// come. {t:'live',on:0} (the broadcaster going off air, or its last listener
+// leaving) and {t:'end'} let it go.
+//
+// liveInit is the one exception to the rule above: it lives in an instance
+// field, not in storage, because it only has to outlast the stream, and a
+// streaming room is never evicted (a piece every 200 ms keeps it awake). The
+// room can only hibernate once pieces have stopped for some seconds, which is
+// the broadcaster's own link dropping (its reconnect sends a fresh
+// {t:'live',on:1} and header, so the room re-arms) or no one listening (in
+// which case nothing is being recorded, and the next listener's arrival
+// starts a fresh recording). A room woken with no liveInit therefore only
+// ever waits for the header that is already on its way. Keeping it out of
+// storage also means a live stream costs no storage writes at all, and adds
+// nothing that could wake an empty room.
+
+const LIVE_ON = '{"t":"live","on":1}';
 
 export class Room {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
+    // the current recording's header piece, and whether the next binary
+    // frame is it (see Live sound above); both forgotten on eviction
+    this.liveInit = null;
+    this.liveArm = false;
     // The edge answers each keepalive 'ping' with 'pong' itself, so a room
     // whose followers are only pinging stays hibernated; a join, a leave or a
     // real message still wakes it.
@@ -68,6 +102,15 @@ export class Room {
     if (role === 'follow') {
       const snap = await this.ctx.storage.get('snap');
       if (snap) pair[1].send(snap);
+      // A stream under way: the joiner is told so and handed its header
+      // before any live piece reaches it. Armed with the header still in
+      // flight, the notice alone goes, and the header follows in the fan-out.
+      if (this.liveInit || this.liveArm) {
+        try {
+          pair[1].send(LIVE_ON);
+          if (this.liveInit) pair[1].send(this.liveInit);
+        } catch (e) {}
+      }
       this.sendCounts();
     } else {
       try { pair[1].send(JSON.stringify({ t: 'count', n: this.followers().length })); } catch (e) {}
@@ -76,7 +119,17 @@ export class Room {
   }
 
   async webSocketMessage(ws, message) {
-    if (typeof message !== 'string') return;
+    // A binary frame is a piece of the broadcaster's live sound: relayed to
+    // every follower as it stands, never parsed and never stored. The first
+    // after {t:'live',on:1} is the recording's header, kept for joiners.
+    if (typeof message !== 'string') {
+      if (!this.ctx.getTags(ws).includes('broadcast')) return;
+      if (this.liveArm) { this.liveInit = message; this.liveArm = false; }
+      for (const peer of this.followers()) {
+        try { peer.send(message); } catch (e) {}
+      }
+      return;
+    }
     if (message === 'ping') return;
     let msg;
     try { msg = JSON.parse(message); } catch (e) { return; }
@@ -93,13 +146,19 @@ export class Room {
     // say (its pings are answered by the auto-response without reaching here).
     if (!this.ctx.getTags(ws).includes('broadcast')) return;
     if (msg.t === 'end') {
+      this.liveInit = null;
+      this.liveArm = false;
       await this.ctx.storage.delete('snap');
     } else if (msg.t === 'state') {
       await this.ctx.storage.put('snap', message);
+    } else if (msg.t === 'live') {
+      // a fresh recording arms the room for its header; off air lets it go
+      this.liveInit = null;
+      this.liveArm = msg.on === 1;
     } else if (msg.t !== 'phase' && msg.t !== 'word') return;
-    // A phase beacon or a word is relayed but never stored: each says what
-    // is on screen NOW, and a copy served minutes later would be worse than
-    // none.
+    // A phase beacon, a word or a live notice is relayed but never stored:
+    // each says what is happening NOW, and a copy served minutes later would
+    // be worse than none.
     for (const peer of this.followers()) {
       try { peer.send(message); } catch (e) { /* a peer mid-close; it will reconnect or is gone */ }
     }
