@@ -40,6 +40,7 @@ import { replayLive, presetTransitionCount, lastTransitionSec } from './presets.
 import { setStrobeClockOffset, setStrobeSyncTarget, clearStrobeSync } from './strobe.js';
 import { onWordAppear, wordState, remoteWord, setWordsRemote,
          setWordWalk, setWordWalkClock, wordWalkRunning, wordsRepeating } from './words.js';
+import { setRoomClockRoom, setRoomClockOffset } from './room-clock.js';
 
 const REC_KEY = 'signal.broadcast.v1';
 const SEND_DELAY_MS = 250;
@@ -197,6 +198,11 @@ export function broadcastPoke() { if (available) queueSend(); }
 // all count, since dozing is exactly when the walk must keep going. Several
 // active sessions cannot each have their walk on one screen, so the first
 // one wins here (see words.js stepWords).
+//
+// The layers' slow swings (core/room-clock.js) take their phase off the
+// same room clock whenever any session is active, dozing included. They
+// need no seed, only the clock, so every active room's screens swing
+// together, this one's among them.
 let lastActivityMs = 0;
 let dozeTimer = null;
 
@@ -205,6 +211,7 @@ function syncWalkRoom() {
   let room = '';
   for (const s of sessions) if (s.active) { room = s.room; break; }
   setWordWalk(room);
+  setRoomClockRoom(room !== '');
 }
 
 function checkDoze() {
@@ -298,6 +305,7 @@ function takeTime(c, s) {
     clockOff = s - (c + r) / 2;
     setStrobeClockOffset(clockOff);
     setWordWalkClock(clockOff);
+    setRoomClockOffset(clockOff);
   }
 }
 
@@ -514,6 +522,10 @@ export function initBroadcast(bits_, hooks_) {
           // before the walk sends no wk, and its followers keep showing only
           // its relayed words, as they always did.
           setWordWalk(msg.wk === 1 ? room : '');
+          // The layers' swings follow the room clock whatever wk says: a
+          // broadcaster's Journey keeps its own swings on the room clock,
+          // so its followers' must stay there too.
+          setRoomClockRoom(true);
         } else if (msg.t === 'phase') {
           takeBeacon(msg);
         } else if (msg.t === 'word') {
@@ -535,6 +547,7 @@ export function initBroadcast(bits_, hooks_) {
           clearStrobeSync();
           setWordsRemote(false);
           setWordWalk('');
+          setRoomClockRoom(false);
           hooks.notify('The broadcast has ended');
         }
       },
@@ -548,7 +561,7 @@ export function initBroadcast(bits_, hooks_) {
           setWordsRemote(true);
         }
         else if (st === 'lost') hooks.notify('Broadcast link lost, reconnecting…');
-        else if (st === 'dead') { clearStrobeSync(); setWordsRemote(false); setWordWalk(''); hooks.notify('Broadcast failed: could not reach the relay'); }
+        else if (st === 'dead') { clearStrobeSync(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);

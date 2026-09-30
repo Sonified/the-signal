@@ -79,6 +79,7 @@ import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { SIM_WGSL, RENDER_WGSL } from './particles.wgsl.js';
 import { motionStep } from '../core/motion.js';
 import { eye } from '../core/eye.js';
+import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { createFold, FOLD_CHAMBER_FORMAT } from './fold.js';
 import { createFeedback, FEEDBACK_FORMAT } from './feedback.js';
 import { particleBirthsPerSec, PARTICLE_MEAN_VZ, PARTICLE_SLOWEST } from '../core/schema-particles.js';
@@ -235,8 +236,13 @@ export function createParticles(device, format, platform) {
   // the scene, whether the Blend setting holds peaks (max) rather than
   // adding, and the phases (0 to 1) of the pulse, Amount, Stream and Twist
   // variances' cycles, each its own, and the Center fade radius's beside them.
+  // Each phase also has its room bookkeeping: in a broadcast room it is
+  // pulled onto the room clock (core/room-clock.js), so every screen swings
+  // together.
   let fbGain = 1, fbOpacity = 1, fbMax = false;
   let pulsePhase = 0, amtPhase = 0, streamPhase = 0, twistPhase = 0, fadePhase = 0;
+  const pulseRoom = roomPhaseState(), amtRoom = roomPhaseState(), streamRoom = roomPhaseState();
+  const twistRoom = roomPhaseState(), fadeRoom = roomPhaseState();
 
   let cursor = 0, spawned = 0, spawnAcc = 0, frameSeed = 1;
   let foldRot = 0;
@@ -462,9 +468,12 @@ export function createParticles(device, format, platform) {
     // eases from the setting down by the variance's share and back. At 0 it
     // is the setting exactly. Everything after reads the swung radius, so
     // where births first show follows it too, and travelHold covers the
-    // particles born before it moved.
-    fadePhase += step / clampNum(S.partFadeRate, 1, 60, 10);
+    // particles born before it moved. In a room the phase is then pulled
+    // onto the room clock's (core/room-clock.js); outside one that is a no-op.
+    const fadeRate = clampNum(S.partFadeRate, 1, 60, 10);
+    fadePhase += step / fadeRate;
     fadePhase -= Math.floor(fadePhase);
+    fadePhase = roomPhase(fadeRoom, fadePhase, t, step, fadeRate);
     let fadeIn = clampNum(S.partFade, 0, 1, 0.55);
     const fadeVar = clampNum(S.partFadeVar, 0, 1, 0);
     if (fadeVar > 0) fadeIn *= 1 - fadeVar * 0.5 * (1 - Math.cos(TAU * fadePhase));
@@ -575,13 +584,20 @@ export function createParticles(device, format, platform) {
     // the setting or its upper reach above 0, rather than off this frame's
     // swung amount, so a swing that passes through 0 clears for those frames
     // (keepHalfLife 0, exactly the slider at 0) without letting one image go
-    // and making the other.
-    amtPhase += step / clampNum(S.partFbAmtVarRate, 1, 120, 20);
+    // and making the other. In a room each is pulled onto the room clock,
+    // as the fade radius's is above.
+    const amtRate = clampNum(S.partFbAmtVarRate, 1, 120, 20);
+    const streamRate = clampNum(S.partFbStreamVarRate, 1, 120, 20);
+    const twistRate = clampNum(S.partFbTwistVarRate, 1, 120, 20);
+    amtPhase += step / amtRate;
     amtPhase -= Math.floor(amtPhase);
-    streamPhase += step / clampNum(S.partFbStreamVarRate, 1, 120, 20);
+    streamPhase += step / streamRate;
     streamPhase -= Math.floor(streamPhase);
-    twistPhase += step / clampNum(S.partFbTwistVarRate, 1, 120, 20);
+    twistPhase += step / twistRate;
     twistPhase -= Math.floor(twistPhase);
+    amtPhase = roomPhase(amtRoom, amtPhase, t, step, amtRate);
+    streamPhase = roomPhase(streamRoom, streamPhase, t, step, streamRate);
+    twistPhase = roomPhase(twistRoom, twistPhase, t, step, twistRate);
     const fbBase = clampNum(S.partFeedback, 0, 1, 0);
     const amtHi = clampNum(S.partFbAmtVarHi, 0, 1, 0);
     const fbS = swing(fbBase, clampNum(S.partFbAmtVarLo, -1, 0, 0), amtHi, amtPhase, 0, 1);
@@ -608,8 +624,10 @@ export function createParticles(device, format, platform) {
     // its variance (over one Variance rate cycle it eases from the setting
     // down by the variance's share and back), then the colour gain from the
     // strobe's lum. Stopped, the phase holds and so does the gain.
-    pulsePhase += step / clampNum(S.partFbPulseRate, 1, 60, 10);
+    const pulseRate = clampNum(S.partFbPulseRate, 1, 60, 10);
+    pulsePhase += step / pulseRate;
     pulsePhase -= Math.floor(pulsePhase);
+    pulsePhase = roomPhase(pulseRoom, pulsePhase, t, step, pulseRate);
     let fbPulse = clampNum(S.partFbPulse, 0, 1, 0);
     const fbPulseVar = clampNum(S.partFbPulseVar, 0, 1, 0);
     if (fbPulseVar > 0) fbPulse *= 1 - fbPulseVar * 0.5 * (1 - Math.cos(TAU * pulsePhase));

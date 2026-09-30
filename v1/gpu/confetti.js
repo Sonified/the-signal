@@ -109,6 +109,7 @@ import { createFold, FOLD_CHAMBER_FORMAT } from './fold.js';
 import { createFeedback, FEEDBACK_FORMAT } from './feedback.js';
 import { motionStep } from '../core/motion.js';
 import { eye } from '../core/eye.js';
+import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 
 // The travel clock wraps at W travel-seconds, so it and the birth times
 // stay precise in the shader's f32 (a step of about 0.0005 s near the top).
@@ -292,7 +293,12 @@ export function createConfetti(device, format) {
   let fbOpacity = 1;
   // The phases (0 to 1) of the Amount, Stream and Twist variances' cycles,
   // each its own, so the three swing independently at their own rates.
+  // Each of the four phases also has its room bookkeeping: in a broadcast
+  // room it is pulled onto the room clock (core/room-clock.js), so every
+  // screen swings together.
   let amtPhase = 0, streamPhase = 0, twistPhase = 0;
+  const pulseRoom = roomPhaseState(), amtRoom = roomPhaseState();
+  const streamRoom = roomPhaseState(), twistRoom = roomPhaseState();
 
   let travel = 0, tumble = 0, spin = 0, drawOn = false;
   let foldRot = 0, kaleidoNow = false, wasOn = false;
@@ -793,12 +799,20 @@ export function createConfetti(device, format) {
     // reach above 0, rather than off this frame's swung amount, so a swing
     // that passes through 0 clears for those frames (keepHalfLife 0, exactly
     // the slider at 0) without letting one image go and making the other.
-    amtPhase += step / clampNum(S.confFbAmtVarRate, 1, 120, 20);
+    // In a room each is then pulled onto the room clock's phase; outside
+    // one that is a no-op.
+    const amtRate = clampNum(S.confFbAmtVarRate, 1, 120, 20);
+    const streamRate = clampNum(S.confFbStreamVarRate, 1, 120, 20);
+    const twistRate = clampNum(S.confFbTwistVarRate, 1, 120, 20);
+    amtPhase += step / amtRate;
     amtPhase -= Math.floor(amtPhase);
-    streamPhase += step / clampNum(S.confFbStreamVarRate, 1, 120, 20);
+    streamPhase += step / streamRate;
     streamPhase -= Math.floor(streamPhase);
-    twistPhase += step / clampNum(S.confFbTwistVarRate, 1, 120, 20);
+    twistPhase += step / twistRate;
     twistPhase -= Math.floor(twistPhase);
+    amtPhase = roomPhase(amtRoom, amtPhase, t, step, amtRate);
+    streamPhase = roomPhase(streamRoom, streamPhase, t, step, streamRate);
+    twistPhase = roomPhase(twistRoom, twistPhase, t, step, twistRate);
     const fbBase = clampNum(S.confFeedback, 0, 1, 0);
     const amtHi = clampNum(S.confFbAmtVarHi, 0, 1, 0);
     const fbS = swing(fbBase, clampNum(S.confFbAmtVarLo, -1, 0, 0), amtHi, amtPhase, 0, 1);
@@ -827,8 +841,10 @@ export function createConfetti(device, format) {
     // variance's share and back, so at 100% from the full setting to nothing
     // and back. Then the colour gain from the strobe's lum. Stopped, the
     // phase holds and the strobe reports a steady lum, so the gain holds too.
-    pulsePhase += step / clampNum(S.confFbPulseRate, 1, 60, 10);
+    const pulseRate = clampNum(S.confFbPulseRate, 1, 60, 10);
+    pulsePhase += step / pulseRate;
     pulsePhase -= Math.floor(pulsePhase);
+    pulsePhase = roomPhase(pulseRoom, pulsePhase, t, step, pulseRate);
     let pulse = clampNum(S.confFbPulse, 0, 1, 0);
     const pulseVar = clampNum(S.confFbPulseVar, 0, 1, 0);
     if (pulseVar > 0) pulse *= 1 - pulseVar * 0.5 * (1 - Math.cos(TAU * pulsePhase));

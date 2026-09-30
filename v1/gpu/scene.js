@@ -255,10 +255,12 @@ export function createScene(device, format) {
     for (let i = 0; i < 4; i++) share[i] = i === mode ? s : leaving[i] * (1 - s);
   }
 
-  function update(lum, dt) {
+  // t is the frame's rAF ms, which the edge effects' breathing reads the
+  // broadcast room's clock by (core/room-clock.js).
+  function update(lum, dt, t) {
     stepShares(dt);
     data.build(lum, pixelW, pixelH, dpr, share[0]);
-    fxOn = fx.update(dt, share[1], share[2], share[3], pixelW, pixelH, dpr);
+    fxOn = fx.update(dt, share[1], share[2], share[3], pixelW, pixelH, dpr, t);
     if (data.grew) {
       tailBuf.destroy();
       capBuf.destroy();

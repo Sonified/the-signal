@@ -524,7 +524,7 @@ export async function createEngine(platform, opts) {
     const lum = args.lum, lit = args.lit, glassVisible = args.glassVisible;
     const overlayList = args.overlayList, uiList = args.uiList, topList = args.topList;
 
-    if (scene && scene.update) scene.update(lum, frameDt);
+    if (scene && scene.update) scene.update(lum, frameDt, frameT);
     if (flowers) flowers.update(frameT, frameDt, lum);
     if (kaleido) kaleido.update(frameT, frameDt, lum);
     if (particles) particles.update(frameT, frameDt, lum);

@@ -19,6 +19,7 @@ import { bandHue } from '../../js/color.js';
 import { setAmRate, hasNode } from '../../js/audio.js';
 import { updateRings, updateParticles } from '../../js/sim.js';
 import { motionStep, motionScale, winding } from './motion.js';
+import { roomPhase, roomPhaseState } from './room-clock.js';
 
 // Returned and mutated in place every call, so a frame that reads lum and lit
 // never makes stepStrobe allocate to hand them over.
@@ -26,6 +27,8 @@ const result = { lum: 0, lit: false };
 // The lit state of the frame a callback earlier, which is the frame on the
 // display while the current callback's after-submit slot runs (see darkSlot).
 let prevLit = false;
+// The flowers' pulse variance's room bookkeeping (see stepStrobe).
+const flowerPulseRoom = roomPhaseState();
 
 // js/util.js's hslToRgb, written into an existing array instead of returning
 // a new one, and with its per-channel helper as a plain function rather than
@@ -410,9 +413,14 @@ export function stepStrobe(t) {
 
   // The flowers' Pulse with strobe breathes the same way (gpu/flowers.js
   // reads effFlowerPulse in place of the dial while the variance is up).
+  // It rides no beacon, unlike the six above: in a broadcast room it is
+  // pulled onto the room clock instead (core/room-clock.js), a no-op
+  // outside one.
   if (flick) {
-    S.flowerPulsePhase = (S.flowerPulsePhase || 0) + md / (S.flowerPulsePeriod || 10);
+    const fpPeriod = S.flowerPulsePeriod || 10;
+    S.flowerPulsePhase = (S.flowerPulsePhase || 0) + md / fpPeriod;
     S.flowerPulsePhase -= Math.floor(S.flowerPulsePhase);
+    S.flowerPulsePhase = roomPhase(flowerPulseRoom, S.flowerPulsePhase, t, md, fpPeriod);
   }
   S.effFlowerPulse = S.flowerPulseVar
     ? S.flowerPulse * (1 - S.flowerPulseVar * 0.5 * (1 - Math.cos(2 * Math.PI * (S.flowerPulsePhase || 0))))

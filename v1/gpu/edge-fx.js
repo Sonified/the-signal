@@ -30,6 +30,7 @@ import { shape } from '../../js/util.js';
 import { bandHue } from '../../js/color.js';
 import { flickerLevel } from '../core/strobe.js';
 import { motionStep } from '../core/motion.js';
+import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { hsl } from './scene-data.js';
 import { EDGE_FX_WGSL, FX_UNIFORM_FLOATS, SPARK_SLOTS, SPARK_RATE_MAX, FLAME_PERIOD_D } from './edge-fx.wgsl.js';
 
@@ -91,8 +92,11 @@ export function createEdgeFx(device, format, fbFormat) {
   let pipes = null;   // [particles, flame, glow] on screen, the same into the feedback image, then on screen scaled by the blend constant
   const uni = new Float32Array(FX_UNIFORM_FLOATS);
 
-  // The clocks, in seconds of motion; the breathing's phase, 0..1.
+  // The clocks, in seconds of motion; the breathing's phase, 0..1, and its
+  // room bookkeeping (in a broadcast room the breathing is pulled onto the
+  // room clock, core/room-clock.js, so every screen's glow swells together).
   let partClock = 0, flameClock = 0, breathe = 0;
+  const breatheRoom = roomPhaseState();
   // What this frame draws.
   let drawPart = false, drawFlame = false, drawGlow = false;
 
@@ -146,16 +150,19 @@ export function createEdgeFx(device, format, fbFormat) {
   }
 
   // This frame's uniforms from S, given each effect's share of the edge.
-  // Returns whether any of the three has something to draw.
-  function update(dt, wPart, wFlame, wGlow, pixelW, pixelH, dpr) {
+  // Returns whether any of the three has something to draw. t is the frame's
+  // rAF ms, for the room clock.
+  function update(dt, wPart, wFlame, wGlow, pixelW, pixelH, dpr, t) {
     drawPart = false; drawFlame = false; drawGlow = false;
     const step = dt > 0 ? motionStep(dt) : 0;
     const flameSpeed = clampNum(S.edgeFlameSpeed, 0.1, 3, 1);
     partClock += step;
     if (partClock >= SPARK_PERIOD * CYCLE_WRAP) partClock -= SPARK_PERIOD * CYCLE_WRAP;
     flameClock += step * flameSpeed;
-    breathe += step / clampNum(S.edgeGlowBreatheRate, 1, 60, 8);
+    const breatheRate = clampNum(S.edgeGlowBreatheRate, 1, 60, 8);
+    breathe += step / breatheRate;
     breathe -= Math.floor(breathe);
+    breathe = roomPhase(breatheRoom, breathe, t, step, breatheRate);
 
     if (!S.layers.edge || (wPart <= 0 && wFlame <= 0 && wGlow <= 0)) return false;
     if (!made) make();
