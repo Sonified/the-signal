@@ -18,13 +18,18 @@ const VEIL = new Float32Array([0, 0, 0, 1]);
 const HINT_MAIN = new Float32Array([185 / 255, 198 / 255, 212 / 255, 1]);   // v0 #hint .hmain
 const REVEAL_MS = 2000;
 
-// On a touch device the space bar does not exist; main.js tells us once at
-// boot (platform.coarse) and the opening line becomes a tap. A follower tab
-// says the join line instead, the same words as the DOM gate over it, so the
-// two layers read as one prompt (index.html shows the gate on follow loads).
+// On a touch screen the hints are two lines in the whole app and nothing
+// else: 'Tap to begin' before the first start, 'Tap to resume' once a
+// session has run. The keyboard lines (HINT_2, HINT_3) never draw there.
+// A follower tab draws no canvas hint at all: the DOM join gate in
+// index.html ('Tap to join the live stream') is the one prompt on a
+// stream link, so nothing stacks behind it.
+let touchHints = false;
+let followTab = false;
+let everRan = false;
 let HINT_1 = 'Press the space bar to begin';
-export function setOverlayTouch(coarse) { if (coarse) HINT_1 = 'Tap to begin'; }
-export function setOverlayFollow() { HINT_1 = 'Tap to join the live stream'; }
+export function setOverlayTouch(coarse) { touchHints = coarse; }
+export function setOverlayFollow() { followTab = true; }
 const HINT_2 = 'press the “~” key for settings  ·  press ENTER for full screen';
 const HINT_3 = 'T for words  ·  C for color';
 
@@ -110,10 +115,15 @@ function relFx(i, n, relX, relY, wordW, size, out) {
 // boot) mean not yet: the hint stays hidden and this runs again next
 // frame, so the fade in never begins on letters that are not there.
 function beginHintIn(text, cx, cy, t) {
+  // The words are chosen as each appearance starts, so they hold steady
+  // while the hint is up and the resume wording arrives only after a run.
+  if (touchHints) HINT_1 = everRan ? 'Tap to resume' : 'Tap to begin';
   const rec = hintLay;
   let ok = text.layoutWord(HINT_1, cx, cy + 4, TYPE.xl, W.light, TRACK.hint, rec, false);
-  ok = text.layoutWord(HINT_2, cx, cy + 34, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
-  ok = text.layoutWord(HINT_3, cx, cy + 52, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
+  if (!touchHints) {
+    ok = text.layoutWord(HINT_2, cx, cy + 34, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
+    ok = text.layoutWord(HINT_3, cx, cy + 52, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
+  }
   if (!ok) return;
   let x0 = Infinity, x1 = -Infinity;
   for (let j = 0; j < rec.count; j++) {
@@ -147,8 +157,10 @@ function hintToSmoke(text, cx, cy, t) {
   const rec = smokeHint;
   let ok = text.layoutWord(HINT_1, cx, cy + 4, TYPE.xl, W.light, TRACK.hint, rec, false);
   const nMain = rec.count;
-  ok = text.layoutWord(HINT_2, cx, cy + 34, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
-  ok = text.layoutWord(HINT_3, cx, cy + 52, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
+  if (!touchHints) {
+    ok = text.layoutWord(HINT_2, cx, cy + 34, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
+    ok = text.layoutWord(HINT_3, cx, cy + 52, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
+  }
   if (!ok) return;
   for (let j = nMain; j < rec.count; j++) rec.data[j * 12 + 9] = 1;
   if (!all && hintP < 1) {
@@ -180,6 +192,7 @@ export function drawOverlay(dl, text, t, width, height) {
 
   // veil: fully black until the first start, then a linear two-second lift.
   if (S.running && revealAt < 0) revealAt = t;
+  if (S.running) everRan = true;
   // Every start with the hint on screen sends it off as smoke, the first
   // and each resume alike. hintToSmoke does nothing when the hint is
   // already gone (the guard's card up), and a hint caught mid fade-in
@@ -218,7 +231,7 @@ export function drawOverlay(dl, text, t, width, height) {
   // the panel guard's card sits where the hint does, so the hint makes way.
   // An appearance starts only once the last one has fully gone, and the
   // spring then only carries the yielding (and a return mid-yield).
-  const want = !S.running && !guard.noticeOpen;
+  const want = !S.running && !guard.noticeOpen && !followTab;
   // paused mid-release: the rest of the hint puffs off at once and a fresh
   // hint fades in over the smoke (one field, nothing waits)
   if (want && relOn) smokeHint.finishReq = true;
@@ -249,19 +262,25 @@ export function drawOverlay(dl, text, t, width, height) {
     if (relOn) {
       relFront = smokeHint.releasing ? smokeHint.frontX - smokeHint.cx : -1e9;
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, relPeak, relFx, null);
-      text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
-      text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
+      if (!touchHints) {
+        text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
+        text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
+      }
     }
   } else if (h > 0.002 && hintInAt >= 0) {
     if (hintIn && S.hintArrive !== 'all') {
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, h, hintFx, null);
-      text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);
-      text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);
+      if (!touchHints) {
+        text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);
+        text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);
+      }
     } else {
       dl.pushAlpha(h * (hintIn ? smooth01(hintP) : 1));
       text.draw(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, 1, TRACK.hint, 1);
-      text.draw(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, 1, TRACK.label, 1);
-      text.draw(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, 1, TRACK.label, 1);
+      if (!touchHints) {
+        text.draw(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, 1, TRACK.label, 1);
+        text.draw(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, 1, TRACK.label, 1);
+      }
       dl.popAlpha();
     }
   }
