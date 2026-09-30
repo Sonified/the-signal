@@ -966,7 +966,9 @@ function measureBroadcast(ui) {
 }
 
 function statusColor(st) {
-  return st === 'live' ? COLOR.good : st === 'wait' ? COLOR.accent : st === 'dead' ? COLOR.warn : COLOR.inkFaint;
+  // a dozing session (hung up while idle, still on) reads as live, its
+  // 'resting' label saying the rest
+  return st === 'live' || st === 'doze' ? COLOR.good : st === 'wait' ? COLOR.accent : st === 'dead' ? COLOR.warn : COLOR.inkFaint;
 }
 
 function drawBroadcast(ui) {
@@ -1189,7 +1191,9 @@ export function drawDrawer(ui, app) {
     const grp = GROUPS[g];
     const sw = grp.sw;
     if (rampGlow > 0 && journeyRampingSection(grp.sec)) { ui.headGlow = rampGlow; ui.headGlowColor = JOURNEY_ACCENT; }
-    const open = ui.group(grp.gid, grp.sec === 'tunnel' ? ringsTitle(grp.title) : grp.title, sw ? !!sw.ctrl.get(S) : undefined);
+    // The live '(drawn / total)' count on the Rings header is retired;
+    // ringsTitle above stays for the day it is wanted back.
+    const open = ui.group(grp.gid, grp.title, sw ? !!sw.ctrl.get(S) : undefined);
     if (sw && ui.groupSwitchChanged) setSwitch(sw, ui.groupSwitch);
     // Keep drawing through the whole closing animation, until the toolkit
     // says the height spring has come to rest shut; from then on the body is

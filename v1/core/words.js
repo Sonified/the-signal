@@ -10,6 +10,12 @@
 // hold, fade out, added rather than nested, exactly as v0 does it and for the
 // same reason (a short hold should not eat the fade times).
 //
+// Inside a broadcast room the choosing changes hands once more: the shared
+// walk (its own section below) deals every word from the room's name and the
+// room's clock, so every screen in the room lands on the same word at the
+// same moment with nothing sent between them. Outside a room none of that
+// runs and the words stay this screen's own dice rolls.
+//
 // v0 also carried an ink-centring hack: it measured a word's drawn pixels on a
 // scratch canvas because centring an element by its CSS box left a couple of
 // pixels of visual bias, which matters in the one place on screen a word sits
@@ -61,6 +67,10 @@ export const wordState = {
   // broadcast.js sends them with the word, so a follower's fades match)
   fadeInMul: 1,
   fadeOutMul: 1,
+  // the shared walk's step this word was dealt on, -1 for any other word
+  // (the broadcast tags its word message with it, so a follower dealing the
+  // same walk knows the word is one it already has)
+  step: -1,
   color: new Float32Array(4),
   visible: false,
 };
@@ -87,6 +97,12 @@ let goneAt = -1;         // ms timestamp the last word finished leaving (-1: non
 // scheduler silent until another step starts a sequence or the user changes
 // the Text source.
 let oneShotRemaining = -1;
+
+// Whether the scheduler is the ordinary repeating one, rather than a
+// Journey's one-shot sequence or the silence after it. The broadcast sends
+// this with its state (core/broadcast.js), since a follower's walk must fall
+// quiet exactly when the broadcaster's scheduler stops dealing on its own.
+export function wordsRepeating() { return oneShotRemaining === -1; }
 
 // The Phrase gap (Custom only): a set number of seconds between one phrase
 // leaving and the next arriving, in place of the scheduler's roll and rests.
@@ -134,6 +150,15 @@ export function initWords() {
 // The theme filter is resolved once into a flat pool rather than tested per
 // tick, so picking a word stays a single random index no matter how many
 // themes happen to be switched off.
+//
+// The shared walk leans on this pool being built identically on every screen
+// in a room: it indexes into it by position. It is, given the same settings.
+// The word and affirmation tables are static arrays in a fixed order,
+// filter() keeps that order, the theme test reads only which keys are on
+// (never the order they were set in), and the Custom split is plain string
+// work. What it cannot guarantee is the same table on both ends: a follower
+// served a different build of js/words.js than the broadcaster would deal
+// different words from the same positions.
 export function rebuildWordPool() {
   // Affirmations are their own pool, whole phrases with no theme filter;
   // the themes only carve up the individual-words pool. Custom is the
@@ -152,6 +177,8 @@ export function rebuildWordPool() {
       });
   lastIdx = -1;
   order.length = 0;   // a fresh pool deals a fresh cycle
+  walkEvalN = NaN;     // and the walk re-reads its word from the new pool
+  walkOrderCycle = NaN;
   oneShotRemaining = -1;
   nextPick = pick();
   wordState.nextText = nextPick;
@@ -183,7 +210,7 @@ export function poolSize() { return pool.length; }
 
 // The walk is a shuffled cycle, not independent rolls: the whole pool is
 // dealt in random order and consumed to the end before any word can come
-// again — every word (or affirmation) appears exactly once per cycle. Each
+// again: every word (or affirmation) appears exactly once per cycle. Each
 // new deal is its own shuffle, and the seam is guarded so the first word
 // of a cycle never repeats the last word of the one before.
 let order = [];
@@ -313,19 +340,26 @@ function cutShort() {
 // dissolve the same way on every screen. The fade and opacity machinery in
 // stepWords runs unchanged; only the choosing is remote. setWordsRemote(
 // false) hands the scheduler back when the broadcast ends or dies.
+//
+// k is the shared walk's step the broadcaster dealt the word on, or -1 for a
+// word it chose any other way. The broadcast only hands one over with a step
+// while this side's own walk is not yet running (its clock still settling);
+// remembering the step then keeps the walk, once it starts, from dealing the
+// same word a second time.
 let remote = false;
-const pendingRemote = { has: false, w: '', seed: 0, fi: 1, fo: 1 };
+const pendingRemote = { has: false, w: '', seed: 0, fi: 1, fo: 1, k: -1 };
 export function setWordsRemote(on) {
   remote = !!on;
   if (!remote) pendingRemote.has = false;
 }
-export function remoteWord(w, seed, fi, fo) {
+export function remoteWord(w, seed, fi, fo, k) {
   if (typeof w !== 'string' || !w) return;
   remote = true;
   pendingRemote.w = w.slice(0, STEP_MAX_REMOTE);
   pendingRemote.seed = Number.isFinite(seed) ? seed : Math.random() * 1000;
   pendingRemote.fi = Number.isFinite(fi) && fi > 0 && fi <= 1 ? fi : 1;
   pendingRemote.fo = Number.isFinite(fo) && fo > 0 && fo <= 1 ? fo : 1;
+  pendingRemote.k = Number.isFinite(k) && k >= 0 ? k : -1;
   pendingRemote.has = true;
   restUntil = 0;
   cutShort();
@@ -375,6 +409,7 @@ function showLocal(t) {
   wordState.seed = Math.random() * 1000;
   wordState.fadeInMul = fadeInMul;
   wordState.fadeOutMul = fadeOutMul;
+  wordState.step = -1;
   forceNext = false;
   for (let k = 0; k < appearCbs.length; k++) appearCbs[k](p.w);
 }
@@ -391,6 +426,8 @@ function showRemote(t) {
   wordState.seed = p.seed;
   wordState.fadeInMul = p.fi;
   wordState.fadeOutMul = p.fo;
+  wordState.step = p.k;
+  if (p.k >= 0) walkShown = p.k;
   nextPick = '';
   wordState.nextText = '';
   forceNext = false;
@@ -412,6 +449,7 @@ function showWord(t) {
   wordState.seed = Math.random() * 1000;
   wordState.fadeInMul = fadeInMul;
   wordState.fadeOutMul = fadeOutMul;
+  wordState.step = -1;
   if (oneShotRemaining > 0) {
     oneShotRemaining--;
     nextPick = oneShotRemaining > 0 ? pick() : '';
@@ -420,6 +458,253 @@ function showWord(t) {
   forceNext = false;
   for (let k = 0; k < appearCbs.length; k++) appearCbs[k](w);
   return true;
+}
+
+// ---------- the shared walk ----------
+// Inside a broadcast room every screen, broadcaster and followers alike,
+// deals the words itself, and they all deal the same ones at the same
+// moments, forever, with no message between them: the broadcaster's socket
+// can doze and the room can hibernate and the words carry on everywhere.
+// Two things make that possible. The seed is the room's name, hashed, which
+// both ends already know (the broadcaster's session room, the follower's
+// ?follow= room). The clock is the room's own, the shared clock the phase
+// beacons already run on: shared ms = this tab's rAF ms + the offset the time
+// probes measured (core/broadcast.js hands it in). While dozing, each screen
+// keeps the last offset it measured and drifts only by its own crystal,
+// which at word cadence is nothing.
+//
+// Nothing here is a sequence. Shared time is cut into steps of stepMs
+// counted from epoch zero, and everything about step n (its word, whether a
+// rest silences it, where in the step it starts, its fade and dwell rolls,
+// its dissolve seed) is a pure hash of the seed, n and a tag naming the
+// quantity, so each quantity draws from its own independent stream. A screen
+// joining mid-stream computes the step it is in and lands on the same word
+// as everyone else without replaying anything. stepMs comes from the word
+// settings, which ride the broadcast's snapshot, so once a follower has
+// synced them both ends cut time at the same boundaries.
+//
+// Until the clock settles (no probe answered yet, the offset NaN) the walk
+// stands aside and the scheduler behaves exactly as it does outside a room.
+let walkRoom = '';        // '' outside a room: the walk never runs
+let walkSeed = 0;
+let walkClock = NaN;      // shared ms minus this tab's rAF ms
+let walkShown = -1;       // the last step whose word went up here
+// Which purpose each hash serves. Distinct constants, so each quantity is
+// its own stream even for the same step.
+const TAG_SHUFFLE = 0x5348, TAG_JITTER = 0x4a49, TAG_REST = 0x5245, TAG_REST_LEN = 0x524c;
+const TAG_FADE_IN = 0x4649, TAG_FADE_OUT = 0x464f, TAG_DWELL = 0x4457, TAG_SEED = 0x5345;
+const WALK_MIN_STEP_MS = 50;
+// A rest is found by looking back over the steps that could still be
+// silencing this one; the cap only matters for absurd settings (a
+// minute-long rest at a very fast pace), where it shortens the rest.
+const WALK_LOOKBACK_MAX = 512;
+
+// splitmix32's finaliser: a small integer hash with full avalanche, all
+// 32-bit integer maths, no allocation.
+function mix32(x) {
+  x = (x + 0x9e3779b9) | 0;
+  x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+  x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+// A uniform number in [0, 1) for (step or cycle n, index i, purpose tag).
+// Step numbers pass 2^32 at short steps, so n is fed in as its low and high
+// words; a double holds the integer exactly, and >>> 0 takes it modulo 2^32.
+function walkU(n, i, tag) {
+  let h = mix32(walkSeed ^ tag);
+  h = mix32(h ^ (n >>> 0));
+  h = mix32(h ^ (Math.floor(n / 4294967296) >>> 0));
+  h = mix32(h ^ i);
+  return h / 4294967296;
+}
+
+// FNV-1a over the room name, finished through mix32. Runs when the room
+// changes, never per frame.
+function roomSeed(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193);
+  return mix32(h >>> 0);
+}
+
+// The room this screen is in, or '' for none (core/broadcast.js decides:
+// a broadcaster's first active session, a follower's followed room once the
+// broadcaster says it is dealing). The same name again changes nothing, so
+// the follower can say it on every state message.
+export function setWordWalk(room) {
+  const r = typeof room === 'string' ? room : '';
+  if (r === walkRoom) return;
+  walkRoom = r;
+  walkSeed = r ? roomSeed(r) : 0;
+  walkShown = -1;
+  walkEvalN = NaN;
+  walkOrderCycle = NaN;
+}
+export function setWordWalkClock(off) { walkClock = Number.isFinite(off) ? off : NaN; }
+export function wordWalkRunning() { return walkRoom !== '' && walkClock === walkClock; }
+
+// ---- the plan: step length from the settings ----
+// Recomputed every frame the walk runs, since a setting can move at any
+// time; it is a dozen reads and some arithmetic.
+//
+// The local scheduler rolls a chance per tick and lets a word on screen hold
+// its slot. With no variance that is dead regular: a word goes up on every
+// firing tick that finds the screen clear, so words start every
+// (floor(life / slot) + 1) slots, slot being the time between firing ticks.
+// That is exactly this step length at Appearance variance 0. With variance
+// the local wait after a word is a coin flip per tick, averaging one slot,
+// so the steps stretch toward life + slot as the variance rises and each
+// word starts at a hashed point inside its step's slack: the same long-run
+// pace, spread evenly rather than geometrically, and never a word crossing
+// into the next step.
+//
+// What cannot be reproduced: linked to the strobe, local ticks are the
+// strobe's own cycle wraps, which drift with the frequency drift and glides
+// and are quantised to each screen's refresh rate under frame lock, so no two
+// screens wrap together. The walk times linked ticks from the set frequency
+// (S.freq) instead, which is the drifting rate's average. Words land beside
+// the pulse rather than on it.
+let planStep = 0, planRandom = 0, planGap = false;
+let planFin = 0, planHold = 0, planFout = 0;
+function walkPlan() {
+  planFin = S.textFadeInOn === false ? 0 : Math.max(0, S.textFadeInMs);
+  planHold = Math.max(0, S.textDwellMs);
+  planFout = S.textFadeOutOn === false ? 0 : Math.max(0, S.textFadeOutMs);
+  const life = planFin + planHold + planFout;
+  const gap = phraseGapMs();
+  planGap = gap >= 0;
+  if (planGap) {
+    // the Phrase gap: each phrase the gap after the last one's full life
+    planRandom = 0;
+    planStep = Math.max(WALK_MIN_STEP_MS, life + gap);
+  } else {
+    const tick = Math.max(0.1, S.textLinked ? S.freq : S.textRateHz);
+    const f = S.textAppearMode === 'time'
+      ? Math.min(1, (S.textAppearPerMin || 10) / 60 / tick)
+      : Math.min(1, S.textFreq);
+    if (!(f > 0)) return false;
+    const slot = 1000 / tick / f;
+    const det = (Math.floor(life / slot) + 1) * slot;
+    planRandom = Math.max(0, Math.min(1, S.textRandom || 0));
+    planStep = Math.max(WALK_MIN_STEP_MS, det + planRandom * (life + slot - det));
+  }
+  return planStep > 0 && planStep < Infinity;
+}
+
+// ---- one step, as pure functions ----
+// walkTiming(m) leaves step m's start (shared ms), life and rolls in these.
+// The rolls are fadeRoll's shape: variance only shortens.
+let tmStart = 0, tmLife = 0, tmFi = 1, tmFo = 1, tmDw = 1;
+function walkTiming(m) {
+  tmFi = 1 - (S.textFadeInVar || 0) * walkU(m, 0, TAG_FADE_IN);
+  tmFo = 1 - (S.textFadeOutVar || 0) * walkU(m, 0, TAG_FADE_OUT);
+  tmDw = 1 - (S.textDwellVar || 0) * walkU(m, 0, TAG_DWELL);
+  tmLife = planFin * tmFi + planHold * tmDw + planFout * tmFo;
+  tmStart = m * planStep + planRandom * walkU(m, 0, TAG_JITTER) * Math.max(0, planStep - tmLife);
+}
+
+// maybeRest, stateless: every step rolls the rest chance as though its word
+// were leaving, and a rest that fires silences each later step starting
+// before the word's end plus the rest's span. Step n is silent if any step
+// that could still reach it rolled such a rest. One difference from local
+// play: locally a rest is only rolled by a word that actually showed, so two
+// rests never run back to back, whereas here a step silenced by one rest can
+// roll another. At the default rest chance (4%) that is rare, and it would
+// take replaying history to rule out.
+function walkSilent(n, startN) {
+  if (planGap || !(S.textRestFreq > 0)) return false;
+  const restMax = Math.max(0.1, S.textRestSec || 0) * 1000;
+  let k = Math.ceil((planFin + planHold + planFout + restMax) / planStep);
+  if (k > WALK_LOOKBACK_MAX) k = WALK_LOOKBACK_MAX;
+  for (let j = 1; j <= k; j++) {
+    const m = n - j;
+    if (walkU(m, 0, TAG_REST) >= S.textRestFreq) continue;
+    walkTiming(m);
+    const span = Math.max(0.1, S.textRestSec * (1 - (S.textRestVar || 0) * walkU(m, 0, TAG_REST_LEN))) * 1000;
+    if (startN < tmStart + tmLife + span) return true;
+  }
+  return false;
+}
+
+// The word for step n. The local walk deals the whole pool in a fresh
+// shuffle per cycle; here cycle c is steps c*N to c*N+N-1 and its shuffle is
+// a Fisher-Yates driven by hashes of c, so any step's word is one lookup
+// once its cycle is dealt, and a cycle is dealt once (on the step boundary
+// that enters it), not per frame. The seam guard (a cycle never opens on the
+// word the last one closed on) needs the previous cycle's last word, which
+// Fisher-Yates fixes on its very first swap and never touches again, so it is
+// one hash; the guard swaps positions 0 and 1 so that last slot stays
+// untouched. A silent step still uses up its word, so a rest skips words
+// rather than delaying them. Custom phrases keep their typed order, as they
+// do locally, and a two-word pool simply alternates, which is what the seam
+// guard forces locally too.
+let walkOrder = new Int32Array(0);
+let walkOrderCycle = NaN, walkOrderN = 0;
+function walkIndex(n) {
+  const N = pool.length;
+  if (S.textMode === 'custom') return n % N;
+  if (N === 1) return 0;
+  if (N === 2) return (n + walkSeed) % 2;
+  const c = Math.floor(n / N);
+  if (c !== walkOrderCycle || N !== walkOrderN) {
+    // grows only when the pool does, on a step boundary
+    if (walkOrder.length < N) walkOrder = new Int32Array(N);
+    for (let i = 0; i < N; i++) walkOrder[i] = i;
+    for (let i = N - 1; i > 0; i--) {
+      const j = Math.floor(walkU(c, i, TAG_SHUFFLE) * (i + 1));
+      const t = walkOrder[i]; walkOrder[i] = walkOrder[j]; walkOrder[j] = t;
+    }
+    const prevLast = Math.floor(walkU(c - 1, N - 1, TAG_SHUFFLE) * N);
+    if (walkOrder[0] === prevLast) { walkOrder[0] = walkOrder[1]; walkOrder[1] = prevLast; }
+    walkOrderCycle = c;
+    walkOrderN = N;
+  }
+  return walkOrder[n - c * N];
+}
+
+// Everything about the current step, worked out once as the step begins (or
+// when the step length or the pool changes), so the frame's own check is a
+// few comparisons.
+let walkEvalN = NaN, walkEvalStepMs = 0, walkEvalStart = 0, walkEvalEnd = 0;
+let walkEvalFi = 1, walkEvalFo = 1, walkEvalDw = 1, walkEvalSeed = 0;
+let walkEvalText = '', walkEvalNext = '', walkEvalSilent = true;
+function walkEval(n) {
+  walkEvalN = n;
+  walkEvalStepMs = planStep;
+  walkTiming(n);
+  walkEvalStart = tmStart;
+  walkEvalEnd = tmStart + tmLife;
+  walkEvalFi = tmFi; walkEvalFo = tmFo; walkEvalDw = tmDw;
+  walkEvalSeed = walkU(n, 0, TAG_SEED) * 1000;
+  walkEvalText = pool.length ? pool[walkIndex(n)][0] : '';
+  walkEvalNext = pool.length ? pool[walkIndex(n + 1)][0] : '';
+  walkEvalSilent = walkSilent(n, walkEvalStart);
+}
+
+// The walk's turn this frame. A step's word goes up whenever the screen is
+// clear during its life, not only at its first instant, and at its true age:
+// a screen that arrives mid-word (a follower joining, or one coming clear of
+// a relayed word or a performer's phrase) shows it exactly where every other
+// screen has it, fade included. A word on screen is never cut for it; the
+// step simply goes by, as a local word holds its slot.
+function walkTick(t) {
+  if (!walkPlan()) return;
+  const shared = t + walkClock;
+  const n = Math.floor(shared / planStep);
+  if (n !== walkEvalN || planStep !== walkEvalStepMs) walkEval(n);
+  if (showing || walkEvalSilent || !walkEvalText || n === walkShown) return;
+  if (shared < walkEvalStart || shared >= walkEvalEnd) return;
+  current = walkEvalText; shownAt = t - (shared - walkEvalStart); showing = true;
+  fadeInMul = walkEvalFi; fadeOutMul = walkEvalFo; dwellMul = walkEvalDw;
+  wordState.text = current;
+  wordState.visible = true;
+  wordState.seed = walkEvalSeed;
+  wordState.fadeInMul = walkEvalFi;
+  wordState.fadeOutMul = walkEvalFo;
+  wordState.step = n;
+  wordState.nextText = walkEvalNext;
+  walkShown = n;
+  for (let k = 0; k < appearCbs.length; k++) appearCbs[k](current);
 }
 
 export function stepWords(t, dt) {
@@ -445,8 +730,23 @@ export function stepWords(t, dt) {
   if (pendingLocal.has && !showing) { restUntil = 0; showLocal(t); }
   if (remote) {
     // Following a broadcast: the choosing is the broadcaster's. The word it
-    // sent goes up the moment the screen is clear; no roll, no rests.
+    // sent goes up the moment the screen is clear; no roll, no rests. A
+    // relayed word always wins: it is the broadcaster choosing live (a
+    // performer's phrase, a Journey's), and it cuts the walk's word short on
+    // arrival (remoteWord). With none waiting, the shared walk deals the
+    // same words the broadcaster's own walk does, which is what carries the
+    // words on while the broadcaster's socket dozes.
     if (pendingRemote.has && !showing) showRemote(t);
+    else if (wordWalkRunning()) walkTick(t);
+  } else if (wordWalkRunning() && oneShotRemaining === -1 && !forceNext) {
+    // Broadcasting: the shared walk takes the place of the roll, so this
+    // screen deals exactly what its followers deal. A Journey's one-shot
+    // sequence, and a wordNow, still run through the ordinary path below
+    // and reach followers as relayed words. A broadcaster with several
+    // sessions active at once shows its first session's walk; its other
+    // rooms' followers share their own room's walk among themselves, but
+    // cannot match this screen, which can show only one word at a time.
+    walkTick(t);
   } else {
     // A word asked for by wordNow shows on the first tick the screen is clear,
     // whatever the roll would have said: the word it cut short has finished
@@ -500,8 +800,12 @@ export function stepWords(t, dt) {
 
   // Peak opacity dips from the set value and back, the same shape every other
   // variance in the app uses, so a word never reads brighter than the slider.
+  // In a room the dip's phase is read off the shared clock instead of
+  // accumulated, so every screen's word dims together; a change to the
+  // period jumps it to where the new period puts it.
   if (S.textOpacityVarPeriod > 0) {
-    S.textOpacityPhase += dt / S.textOpacityVarPeriod;
+    if (wordWalkRunning()) S.textOpacityPhase = (t + walkClock) / 1000 / S.textOpacityVarPeriod;
+    else S.textOpacityPhase += dt / S.textOpacityVarPeriod;
     S.textOpacityPhase -= Math.floor(S.textOpacityPhase);
   }
   const opDip = 0.5 * (1 - Math.cos(2 * Math.PI * S.textOpacityPhase));
