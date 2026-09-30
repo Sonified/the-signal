@@ -1929,6 +1929,18 @@ export function journeyStepBy(dir) {
   journeyPlayFrom(to);
 }
 
+// A wake (core/wake.js): a playing walk is carried forward by the time spent
+// away, exactly as a resume from pause carries it (journeyTogglePlay), so a
+// step mid-hold keeps the hold it had left, a ramp carries on from where it
+// stood, and a step's text still waits for its moment. A paused walk needs
+// nothing: its own resume counts from pausedAt.
+export function journeyResume(away) {
+  if (!play.playing || !(away > 0)) return;
+  play.phaseStartT += away; play.enterT += away;
+  if (play.appearAt >= 0) play.appearAt += away;
+  if (tw.active) tw.t0 += away;
+}
+
 // Once a frame, from main.js, straight after the words step: the throttled
 // authoring diff, the ramp, the step's text at its moment, and auto-play's
 // clock. Nothing here allocates; a paused walk, its ramp included, waits.

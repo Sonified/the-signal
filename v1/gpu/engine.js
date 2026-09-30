@@ -5,6 +5,8 @@
 // the one place outside v1/platform allowed to touch navigator (navigator.gpu
 // specifically), because the device belongs to the GPU layer, not the page.
 
+import { wakeGap } from '../core/wake.js';
+
 let loggedAdapter = false;
 
 // The blur capture's refresh ceiling. Glass shows a heavily blurred image of
@@ -685,11 +687,17 @@ export async function createEngine(platform, opts) {
       if (deviceLost) return;
       rafHandle = requestAnimationFrame(raf);
       frameT = t;
-      let dt = lastFrameT === null ? 0 : (t - lastFrameT) / 1000;
+      // The wake rule (core/wake.js): a frame after an absence, the first
+      // frame, or the first after the page comes back into view advances
+      // nothing. Its dt is zero, for the frame function and for every layer
+      // render() updates below, and away (the ms spent gone, else -1) tells
+      // the frame function to re-anchor its schedulers by that much.
+      const away = wakeGap(t, lastFrameT);
+      let dt = away >= 0 ? 0 : (t - lastFrameT) / 1000;
       lastFrameT = t;
-      if (dt < 0 || dt > 0.25) dt = 0;   // tab-switch / device-sleep guard
+      if (dt < 0) dt = 0;
       frameDt = dt;
-      frameFn(t, dt);
+      frameFn(t, dt, away);
     }
     rafHandle = requestAnimationFrame(raf);
   }

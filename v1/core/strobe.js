@@ -20,6 +20,7 @@ import { setAmRate, hasNode } from '../../js/audio.js';
 import { updateRings, updateParticles } from '../../js/sim.js';
 import { motionStep, motionScale, winding } from './motion.js';
 import { roomPhase, roomPhaseState } from './room-clock.js';
+import { GAP_MS, stepWakeRamp, wakeRamp } from './wake.js';
 
 // Returned and mutated in place every call, so a frame that reads lum and lit
 // never makes stepStrobe allocate to hand them over.
@@ -76,6 +77,26 @@ let frameN = 0;
 
 export function resetStrobeClock() {
   S.lastT = null;
+}
+
+// The strobe's half of a wake (core/wake.js), run by main.js at the top of a
+// resume frame, before stepStrobe. The frame's own dt goes to zero (the
+// clock is reset, so nothing advances and the absence is not logged as a
+// dropped frame), and a preset's frequency glide carries on from where it
+// was rather than finishing in one frame. The refresh-rate window starts
+// over from this frame, keeping the rate it has: a window that straddled
+// the absence would measure a thirty-second gap as part of sixty frames, a
+// refresh rate of about 2 Hz, and frame lock would fall to its floor of two
+// frames per cycle, a flash on every other frame, 30 Hz on a 60 Hz panel,
+// with the panel guard blind to it (it counts nothing below 20 Hz). And,
+// while following a broadcast, the next beacon sync, when one comes, lands
+// on the broadcaster's phases in a single step rather than gliding onto
+// them (applySync).
+export function strobeResume(away) {
+  S.lastT = null;
+  frameN = 0;
+  if (fGlideMs > 0 && fGlideT0 >= 0) fGlideT0 += away;
+  if (syncOn) syncSnap = true;
 }
 
 // Forget the measured refresh rate entirely: the window of frame times, the
@@ -158,10 +179,23 @@ export function glideSkippingRiskBand(from, to, f) {
 // A beacon older than SYNC_STALE_S is not chased (the broadcast paused, or
 // the link dropped): the strobe holds its own time until a fresh one lands.
 // The broadcaster itself never corrects; it is the reference.
+//
+// Gliding is for small errors. A variability phase more than SYNC_SNAP_ERR
+// of a cycle out is set onto its target in one step instead: the frequency
+// drift's phase gliding half a cycle in a couple of seconds would sweep the
+// flash rate across its whole drift range at speed, where one step is a
+// single change of rate. The strobe's own phase keeps its glide at any
+// error, since the wrapped error caps that correction at half a cycle bled
+// off slowly, a bend of well under half a hertz. After a wake (strobeResume)
+// everything snaps once, strobe phase and frame index included, on the first
+// fresh beacon: the room kept moving while this screen was away, and the
+// viewer is best served by landing at its now in one blink.
 const SYNC_RATE = 0.8;
 const NUDGE_CYCLES = 3;
 const SYNC_STALE_S = 8;
+const SYNC_SNAP_ERR = 0.25;
 let syncOn = false;
+let syncSnap = false;                    // the next applied beacon lands in one step (a wake)
 let clockOff = NaN;                      // shared-clock ms minus this tab's rAF ms
 let syncAt = 0;                          // shared-clock ms the beacon was true at
 let syncP = 0, syncF = 0;                // strobe phase and frequency then
@@ -174,25 +208,44 @@ export function setStrobeSyncTarget(at, p, f, dp, vp, bp, rp, sp, zp) {
   syncDP = dp; syncVP = vp; syncBP = bp; syncRP = rp; syncSP = sp; syncZP = zp;
   syncOn = true;
 }
-export function clearStrobeSync() { syncOn = false; }
+export function clearStrobeSync() { syncOn = false; syncSnap = false; }
 
 const frac = x => x - Math.floor(x);
 // shortest way round the circle, in [-0.5, 0.5)
 function phaseErr(target, cur) { const e = (target - cur) % 1; return e - Math.round(e); }
 function slewTo(cur, target, k) { return frac(cur + phaseErr(target, cur) * k); }
+// A variability phase's pull: the glide above, or one step onto the target
+// after a wake or past SYNC_SNAP_ERR.
+function pullTo(cur, target, k) {
+  const e = phaseErr(target, cur);
+  if (syncSnap || e > SYNC_SNAP_ERR || e < -SYNC_SNAP_ERR) return frac(target);
+  return frac(cur + e * k);
+}
 
 function applySync(t, dt) {
   if (isNaN(clockOff)) return;
   const el = (t + clockOff - syncAt) / 1000;   // seconds since the beacon was true
   if (el < 0 || el > SYNC_STALE_S) return;
   const k = Math.min(1, dt * SYNC_RATE);
-  S.driftPhase        = slewTo(S.driftPhase,        syncDP + el / S.driftPeriod, k);
-  S.varPhase          = slewTo(S.varPhase,          syncVP + el / S.varPeriod, k);
-  S.brightVarPhase    = slewTo(S.brightVarPhase,    syncBP + el / S.brightVarPeriod, k);
-  S.ringBrightPhase   = slewTo(S.ringBrightPhase,   syncRP + el / S.ringBrightPeriod, k);
-  S.edgeSpeedVarPhase = slewTo(S.edgeSpeedVarPhase, syncSP + el / S.edgeSpeedVarPeriod, k);
-  S.edgeSizeVarPhase  = slewTo(S.edgeSizeVarPhase,  syncZP + el / S.edgeSizeVarPeriod, k);
+  S.driftPhase        = pullTo(S.driftPhase,        syncDP + el / S.driftPeriod, k);
+  S.varPhase          = pullTo(S.varPhase,          syncVP + el / S.varPeriod, k);
+  S.brightVarPhase    = pullTo(S.brightVarPhase,    syncBP + el / S.brightVarPeriod, k);
+  S.ringBrightPhase   = pullTo(S.ringBrightPhase,   syncRP + el / S.ringBrightPeriod, k);
+  S.edgeSpeedVarPhase = pullTo(S.edgeSpeedVarPhase, syncSP + el / S.edgeSpeedVarPeriod, k);
+  S.edgeSizeVarPhase  = pullTo(S.edgeSizeVarPhase,  syncZP + el / S.edgeSizeVarPeriod, k);
   const pt = syncP + el * syncF;
+  if (syncSnap) {
+    // the wake's one step: the frame index to the one nearest the target
+    // under frame lock, the phase itself running free
+    syncSnap = false;
+    if (S.frameLock && S.refreshHz > 0 && S.framesPerCycle >= 2) {
+      S.frameIdx = Math.round(frac(pt) * S.framesPerCycle) % S.framesPerCycle;
+      nudgeHold = S.framesPerCycle * NUDGE_CYCLES;
+    } else {
+      S.phase = frac(pt);
+    }
+    return;
+  }
   if (S.frameLock && S.refreshHz > 0 && S.framesPerCycle >= 2) {
     if (nudgeHold > 0) nudgeHold--;
     const err = phaseErr(pt, S.phase);
@@ -251,8 +304,17 @@ function isLit(lum) { return lum > 0.5; }
 // frequency instead would sweep the flicker down through the low Hz, which
 // is a photosensitivity risk; fading its depth never passes through any
 // rate it was not already at.
+//
+// The wake ramp (core/wake.js) enters here the same way, as a second factor
+// on that depth: for RAMP_S after a resume the flicker comes up from a
+// steady level to its set depth, whatever the wind-down is doing. This
+// function and flickerLevel below are the one door every strobing layer's
+// flicker passes through (the field and the layers through lum, the corners
+// and the edge through flickerLevel), so the ramp covers all of them and
+// multiplies into their own depths rather than replacing any.
 function flickerLum(l) {
-  return S.running ? l : 1 + (l - 1) * motionScale();
+  const k = (S.running ? 1 : motionScale()) * wakeRamp();
+  return k === 1 ? l : 1 + (l - 1) * k;
 }
 
 // Whether any flicker shows at all. Running, yes. Paused, only while the
@@ -269,10 +331,11 @@ function flickerShows() {
 // gpu/scene-data.js). Running it is 1; winding down with Pause stops
 // flicker off it is the motion scale, the same fade flickerLum applies to
 // the field; otherwise 0, a steady level, so pausing quiets every strobing
-// element together.
+// element together. Either way the wake ramp multiplies in, as it does in
+// flickerLum.
 export function flickerLevel() {
-  if (S.running) return 1;
-  return winding() && S.pauseFlickerStop === false ? motionScale() : 0;
+  if (S.running) return wakeRamp();
+  return winding() && S.pauseFlickerStop === false ? motionScale() * wakeRamp() : 0;
 }
 
 // The interval the next frame will most likely be shown after: the measured
@@ -284,13 +347,14 @@ function nextDt() {
 }
 
 export function stepStrobe(t) {
+  stepWakeRamp(t);
   if (S.lastT === null) S.lastT = t;
   let dt = (t - S.lastT) / 1000;
   S.lastT = t;
 
   // frame-health tracking: a dropped frame is a lost luminance sample, which
   // is exactly what an uneven strobe looks like
-  if (dt > 0 && dt < 0.25) {
+  if (dt > 0 && dt * 1000 <= GAP_MS) {
     pushWindow(S.intervals, dt * 1000, 180);
     if (S.refreshHz) {
       const expected = 1000 / S.refreshHz;
@@ -301,6 +365,9 @@ export function stepStrobe(t) {
   // The refresh-rate window. v0 kept it in S.frameTimes, which nothing in v1
   // reads, so here it is a fixed typed array: trimming a plain array back to
   // thirty let V8 shrink its storage, and the next thirty pushes grew it again.
+  // An absence starts the window over (strobeResume says why); main.js does
+  // that on every resume frame already, and this catches any it did not.
+  if (dt * 1000 > GAP_MS) frameN = 0;
   frameT[frameN++] = t;
   if (frameN > 60) {
     const span = (frameT[frameN - 1] - frameT[0]) / 1000;
@@ -310,7 +377,7 @@ export function stepStrobe(t) {
     frameN = 30;
   }
 
-  if (dt > 0.25) dt = 0;          // tab-switch guard
+  if (dt * 1000 > GAP_MS) dt = 0; // an absence advances nothing (core/wake.js)
 
   // A followed broadcast's corrections land before this frame advances, on
   // the accumulators as the last frame left them; the ordinary steps below

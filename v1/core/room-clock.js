@@ -32,6 +32,13 @@
 // stop look like. Once the two are within a hair the phase simply is the
 // room's, every frame, so a converged screen is pure derivation.
 //
+// Except when the gap is big. A swing more than LARGE_ERR of a cycle away
+// from the room is set onto it in one step, and so is every swing after a
+// wake (core/wake.js; main.js calls roomClockSnap on a resume frame), since
+// the room's time kept moving while this screen was away. A glide over a
+// large error races the swing through its cycle in a second or two, and a
+// fast sweep is what reads as flashing; one step is a single change, a blink.
+//
 // Two things hold the pull. A stopped scene: the pull is scaled by the
 // frame's motion step (core/motion.js), so it fades with the pause
 // wind-down and a stopped scene holds its swings still, as it does outside
@@ -59,19 +66,31 @@ const PULL_RATE = 0.8;
 const SETTLE_S = 0.5;
 // Closer than this (in cycles) and the phase is simply set to the room's.
 const SNAP = 1e-4;
+// Further than this (in cycles) and it is set to the room's too, in one
+// step: past a quarter cycle the glide would visibly race the swing.
+const LARGE_ERR = 0.25;
+// Bumped by every wake; a swing whose own count is behind it snaps once, on
+// its next frame in a room with the pull running, and catches up.
+let snapGen = 0;
+export function roomClockSnap() { snapGen++; }
 
-// One swing's own bookkeeping: the period it last saw, and how long that
-// period has held. Made once per phase, when its layer is made; roomPhase
-// writes into it and allocates nothing.
-export function roomPhaseState() { return { period: 0, still: 0 }; }
+// One swing's own bookkeeping: the period it last saw, how long that period
+// has held, and the wake count it last snapped at. Made once per phase, when
+// its layer is made; roomPhase writes into it and allocates nothing.
+export function roomPhaseState() { return { period: 0, still: 0, gen: 0 }; }
 
 // The swing's phase for this frame. phase is the layer's accumulator after
 // its own advance this frame, t the frame's rAF ms, step this frame's motion
 // step in seconds, periodSec the swing's period in seconds. Outside a room,
-// clock unsettled, or stopped, it hands phase straight back.
+// clock unsettled, or stopped, it hands phase straight back. A wake while
+// outside a room owes the room nothing, so the swing's wake count keeps up
+// there, and entering a room later glides onto it as it always has; so does
+// a swing meeting a new period (its first frame included), which settles
+// and then glides like any other.
 export function roomPhase(st, phase, t, step, periodSec) {
-  if (!inRoom || clockOff !== clockOff || !(step > 0)) return phase;
-  if (periodSec !== st.period) { st.period = periodSec; st.still = 0; return phase; }
+  if (!inRoom || clockOff !== clockOff) { st.gen = snapGen; return phase; }
+  if (!(step > 0)) return phase;
+  if (periodSec !== st.period) { st.period = periodSec; st.still = 0; st.gen = snapGen; return phase; }
   if (st.still < SETTLE_S) { st.still += step; return phase; }
   const pMs = periodSec * 1000;
   let target = ((t + clockOff) % pMs) / pMs;
@@ -79,7 +98,10 @@ export function roomPhase(st, phase, t, step, periodSec) {
   // shortest way round the circle, in [-0.5, 0.5]
   let e = target - phase;
   e -= Math.round(e);
-  if (e < SNAP && e > -SNAP) return target;
+  if (st.gen !== snapGen || (e < SNAP && e > -SNAP) || e > LARGE_ERR || e < -LARGE_ERR) {
+    st.gen = snapGen;
+    return target;
+  }
   const k = step * PULL_RATE;
   phase += e * (k < 1 ? k : 1);
   return phase - Math.floor(phase);

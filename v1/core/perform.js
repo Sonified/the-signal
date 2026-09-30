@@ -499,6 +499,13 @@ function glideShape(u, warm) {
   const r = 1 - u;
   return 1 - vmax * r * r / (2 * d);
 }
+// A wake (core/wake.js): every glide in flight is carried forward by the
+// time spent away, so it resumes from where it stood rather than landing
+// in one frame. Runs once per wake, never per frame.
+export function perfResume(away) {
+  if (!(away > 0) || !tweens.size) return;
+  for (const tw of tweens.values()) tw.t0 += away;
+}
 export function perfTick(t) {
   nowT = t;
   if (tweens.size) {

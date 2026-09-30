@@ -707,6 +707,21 @@ function walkTick(t) {
   for (let k = 0; k < appearCbs.length; k++) appearCbs[k](current);
 }
 
+// A wake (core/wake.js): every due-time this scheduler keeps moves on by
+// the time spent away, so a word mid-fade carries on from the same point, a
+// rest keeps what it had left, and nothing that came due while away fires
+// now. The one exception is a word inside a running shared walk: that is
+// the room's time, which kept moving, so the word ages by it and the walk
+// deals whatever step the room is on now (walkTick), at its true age.
+// Everything else here counts ticks or dt, which a resume frame holds.
+export function wordsResume(away) {
+  if (!(away > 0)) return;
+  if (showing && !wordWalkRunning()) shownAt += away;
+  if (restUntil > lastT) restUntil += away;
+  if (revealStart >= 0) revealStart += away;
+  if (goneAt >= 0) goneAt += away;
+}
+
 export function stepWords(t, dt) {
   lastT = t;
   if (!S.layers.text || !S.running) {

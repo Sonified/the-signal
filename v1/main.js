@@ -42,16 +42,18 @@ import { createText } from './gpu/text-atlas.js';
 import { createUIRenderer } from './gpu/ui-renderer.js';
 import { createBlur } from './gpu/blur.js';
 
-import { stepStrobe, resetStrobeClock, resetRefreshMeasure, darkSlot } from './core/strobe.js';
+import { stepStrobe, resetStrobeClock, resetRefreshMeasure, darkSlot, strobeResume } from './core/strobe.js';
+import { gentleResume, armResume } from './core/wake.js';
+import { roomClockSnap } from './core/room-clock.js';
 import { motionTick, motionHalt, winding } from './core/motion.js';
 import { eye, stepEye } from './core/eye.js';
 import { initChores, choreRegister, choreRun, choreYield } from './core/chores.js';
-import { initWords, stepWords } from './core/words.js';
+import { initWords, stepWords, wordsResume } from './core/words.js';
 import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame } from './core/store.js';
 import { replayLive, syncPresetsFromStorage } from './core/presets.js';
-import { initBroadcast, broadcastPoke } from './core/broadcast.js';
+import { initBroadcast, broadcastPoke, followMayStart } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
-import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount } from './core/journey.js';
+import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
 import { byId } from './core/schema.js';
@@ -77,18 +79,22 @@ import { drawJourney, journey } from './ui/screens/journey.js';
 import { drawPerformer, performer } from './ui/screens/performer.js';
 import { drawMusic, music } from './ui/screens/music.js';
 import { drawTextbank, textbank } from './ui/screens/textbank.js';
-import { perfTick } from './core/perform.js';
+import { perfTick, perfResume } from './core/perform.js';
 
 // Mobile browsers require a user gesture before audio can leave a suspended
 // AudioContext. A broadcast follower must keep running while it waits, so the
 // temporary DOM gate consumes only this tap, wakes audio, and fades away; it
 // never reaches the canvas's run/pause field.
+// The tap is also a join into a stream already flashing under the gate, so
+// the strobe's contrast ramps in from nothing as the gate lifts
+// (core/wake.js).
 if (!host.worker && typeof document !== 'undefined') {
   const followAudioGate = document.getElementById('follow-audio-gate');
   if (followAudioGate) {
     const unlockFollowerAudio = e => {
       e.preventDefault();
       e.stopPropagation();
+      gentleResume();
       followAudioGate.classList.add('done');
       warmDevice();
       audioOn();
@@ -211,7 +217,16 @@ async function boot() {
   if (!inWorker) ensureAudioGraph();   // compile the worklet now, while nothing plays (in worker mode the page does)
 
   // ---- actions the screens and keys share ----
+  // Every start or stop of this tab's own comes through toggleRun. On a
+  // follower of an Event broadcast still short of its unlock, a start is
+  // refused here, before anything moves, and the notice says when free play
+  // opens (core/broadcast.js followMayStart); a stop always goes through.
+  // The broadcast's own run flag lands through flipRun, which asks nothing.
   function toggleRun() {
+    if (!S.running && !followMayStart()) return;
+    flipRun();
+  }
+  function flipRun() {
     S.running = !S.running;
     if (S.running) {
       if (!S.rings.length) seedTunnel(16);
@@ -290,10 +305,13 @@ async function boot() {
   setSeqOpen(() => { sequencer.open = true; });
   setCopyHandler(txt => platform.clipboardWrite(txt));
   // Going out of sight writes this tab's own pending changes first, then
-  // holds back anything later (store.js's setHidden).
+  // holds back anything later (store.js's setHidden). Coming back arms a
+  // wake, so the next frame resumes gently whatever its gap (core/wake.js).
+  // In worker mode the page's visibility reaches this through the bridge.
   platform.onVisibility(visible => {
     pageVisible = visible;
     if (!visible) flush();
+    else armResume();
     setHidden(!visible);
   });
   // Another tab's write lands in this tab's state at once, live, so this tab
@@ -317,7 +335,7 @@ async function boot() {
       {
         notify: flashNotice,
         isRunning: () => S.running,
-        setRunning: on => { if (on !== !!S.running) toggleRun(); },
+        setRunning: on => { if (on !== !!S.running) flipRun(); },
         copy: txt => platform.clipboardWrite(txt),
         // the strobe clock's timebase: the same clock the frame loop's t is on
         now: platform.now
@@ -423,11 +441,27 @@ async function boot() {
     return false;
   }
 
+  // A resume frame (core/wake.js): the app was away for `away` ms, or this is
+  // the first frame, or the page just came back into view. The engine has
+  // already made this frame's dt zero; here every scheduler that keeps an
+  // absolute due-time is carried forward by the absence, so nothing that
+  // came due while away fires now, and the room-derived swings are told to
+  // land on the room's now in one step. The strobe's contrast ramp was
+  // started by the engine's wake test.
+  function holdBreath(away) {
+    strobeResume(away);
+    wordsResume(away);
+    journeyResume(away);
+    perfResume(away);
+    roomClockSnap();
+  }
+
   // The frame, in the order its work feeds the image. Anything that does not
   // feed this frame's pixels (meters nobody can see, glyph rasterising) waits
   // until after the submit, so it never stands between the strobe and the
-  // screen.
-  function frame(t, dt) {
+  // screen. away is -1 on an ordinary frame (see holdBreath).
+  function frame(t, dt, away) {
+    if (away >= 0) holdBreath(away);
     // The phase stamps run for perf mode or while the profiler records;
     // otherwise the frame pays two boolean tests for both.
     const profOn = prof.recording;

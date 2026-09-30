@@ -83,6 +83,7 @@ Each file has exactly one owning lane. A lane edits only files it owns.
 | `v1/gpu/ui-renderer.js` (+ `ui.wgsl.js`) | lane C | draws a DrawList |
 | `v1/gpu/blur.js` | lane C | lit-frame capture blur chain for glass |
 | `v1/ui/imgui.js`, `v1/ui/widgets.js`, `v1/ui/anim.js` | lane D | immediate-mode toolkit |
+| `v1/core/wake.js` | integration | wake safety: the frame-gap rule (dt 0, re-anchor), the gentle-resume strobe ramp |
 | `v1/core/schema.js`, `v1/core/schema-visual.js`, `v1/core/store.js` | lane E1 | control schema (visual side), persistence |
 | `v1/core/schema-audio.js`, `v1/core/presets.js` | lane E2 | control schema (audio side), preset apply |
 | `v1/ui/screens/*.js` | integration (wave 2) | `overlay.js` (veil, word, hint), `chrome.js` (burger, transport, quick bar), `drawer.js`, `mixer.js` |
@@ -191,7 +192,8 @@ export async function createEngine(platform) -> Engine | null
 // Engine:
 //   device, format, dpr, width, height (css px), pixelWidth, pixelHeight
 //   sceneFormat                          // == format
-//   start(frameFn)                       // frameFn(t, dt) runs once per rAF, before render
+//   start(frameFn)                       // frameFn(t, dt, away) runs once per rAF, before render;
+//                                        // away is the real ms a gap frame swallowed (core/wake.js), else 0
 //   render({ lum, overlayList, uiList, glassVisible, lit })
 //   registerScene(scene)                 // lane A2 object
 //   registerUI(uiRenderer, blur)         // lane C objects
