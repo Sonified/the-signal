@@ -289,7 +289,9 @@ export const CONFETTI_CONTROLS = [
   {
     // How solid the pieces are: at 100% paper covers what is behind it, and
     // down from there every piece turns see-through. Brightness is the other
-    // way down: it darkens the colour and keeps the pieces solid.
+    // way down: it darkens the colour and keeps the pieces solid. With
+    // Feedback on it dims the whole image, trails and pieces together
+    // (gpu/confetti.js), so pieces cover one another as at 100%.
     id: 'confOpacity', section: 'confetti', label: 'Opacity', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(spec('confOpacity')[3] * 100),
     get: S => Math.round(S.confOpacity * 100),
@@ -440,6 +442,7 @@ export const CONFETTI_CONTROLS = [
   },
   {
     id: 'confPalette', section: 'confetti', label: 'Palette', kind: 'segment', def: DEF_PALETTE,
+    hideLabel: true,
     options: [
       { value: 'rainbow', label: 'Rainbow',       domId: null },
       { value: 'strobe',  label: 'Strobe',        domId: null },
@@ -580,24 +583,6 @@ export const CONFETTI_CONTROLS = [
     format: S => S.confFbPulseRate + 's / cycle',
     enabled: layerOn, parent: 'confFeedbackDrawer'
   },
-  // Only means something folded, so it shows only while the Kaleidoscope is
-  // on: after the kaleidoscope the trails stream and turn across the whole
-  // pattern about its centre; before it they live inside the one wedge the
-  // fold repeats, so every copy trails alike, and Twist shears the wedge's
-  // content out through its edges.
-  {
-    id: 'confFbWhere', section: 'confetti', label: 'Where', kind: 'segment', def: DEF_FB_WHERE,
-    options: [
-      { value: 'after',  label: 'After kaleidoscope',  domId: null },
-      { value: 'before', label: 'Before kaleidoscope', domId: null }
-    ],
-    get: S => S.confFbWhere,
-    set: (S, v) => { S.confFbWhere = FB_WHERES.indexOf(v) >= 0 ? v : DEF_FB_WHERE; save(); },
-    // with the feedback off it does nothing, so it greys out rather than
-    // coming and going as the feedback is switched
-    enabled: S => layerOn(S) && (S.confFeedback > 0 || S.confFbAmtVarHi > 0),
-    visible: isFolded, parent: 'confFeedbackDrawer'
-  },
   // An optional fold of the whole confetti field into wedges, exactly as the
   // Particles layer's (the rows copy its shape: the switch under its own
   // heading, the three rows nested under it and shown only while it is on).
@@ -635,6 +620,25 @@ export const CONFETTI_CONTROLS = [
     set: (S, pos) => { S.confFoldSpin = fit(pos, -1, 1); save(); },
     format: S => S.confFoldSpin === 0 ? 'none' : (S.confFoldSpin > 0 ? '+' : '') + S.confFoldSpin.toFixed(2),
     enabled: layerOn,
+    sub: 'Kaleidoscope', visible: isFolded, parent: 'confKaleido'
+  },
+  // Where the feedback sits, the last row under the Kaleidoscope switch
+  // (it only means something folded, so it shows only while that is on):
+  // after the kaleidoscope the trails stream and turn across the whole
+  // pattern about its centre; before it they live inside the one wedge the
+  // fold repeats, so every copy trails alike, and Twist shears the wedge's
+  // content out through its edges.
+  {
+    id: 'confFbWhere', section: 'confetti', label: 'Feedback:', kind: 'segment', def: DEF_FB_WHERE,
+    options: [
+      { value: 'after',  label: 'After kaleidoscope',  domId: null },
+      { value: 'before', label: 'Before kaleidoscope', domId: null }
+    ],
+    get: S => S.confFbWhere,
+    set: (S, v) => { S.confFbWhere = FB_WHERES.indexOf(v) >= 0 ? v : DEF_FB_WHERE; save(); },
+    // with the feedback off it does nothing, so it greys out rather than
+    // coming and going as the feedback is switched
+    enabled: S => layerOn(S) && (S.confFeedback > 0 || S.confFbAmtVarHi > 0),
     sub: 'Kaleidoscope', visible: isFolded, parent: 'confKaleido'
   }
 ];

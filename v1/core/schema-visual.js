@@ -332,6 +332,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'cornerType', section: 'corners', label: 'Type', kind: 'segment', def: 'glow',
+    hideLabel: true,
     options: [
       { value: 'glow',    label: 'Glow' },
       { value: 'beam',    label: 'Beam' },
@@ -392,6 +393,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'wave', section: 'strobe', label: 'Waveform', kind: 'segment', def: 'square',
+    hideLabel: true,
     summaryLabel: 'Wave',
     parent: 'strobeTimingDrawer',
     options: [
@@ -516,6 +518,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'fieldShape', section: 'strobe', label: 'Field shape', kind: 'segment', def: 'full',
+    hideLabel: true,
     parent: 'strobeBrightnessDrawer',
     options: [
       { value: 'circle', label: 'Circle', domId: 'sCircle' },
@@ -558,6 +561,7 @@ export const VISUAL_CONTROLS = [
     // Same shape as frameLock: three buttons, no single owning v0 id, so the
     // group takes the natural name and each option carries its button id.
     id: 'hueBand', section: 'strobe', label: 'Hue range', kind: 'segment', def: 'full',
+    hideLabel: true,
     summaryLabel: 'Hue',
     parent: 'strobeColorDrawer',
     options: [
@@ -608,6 +612,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'colorWalkMode', section: 'strobe', label: 'Walk mode', kind: 'segment', def: false,
+    hideLabel: true,
     parent: 'strobeColorDrawer',
     options: [
       { value: false, label: 'Together',    domId: 'cwTogether' },
@@ -779,6 +784,7 @@ export const VISUAL_CONTROLS = [
     // crossfades (scene.js): over a preset's glide or a journey step's ramp
     // when one is under way, else over a third of a second.
     id: 'edgeMode', section: 'edge', label: 'Effect', kind: 'segment', def: 'surfing',
+    hideLabel: true,
     options: [
       { value: 'surfing',   label: 'Surfing',   domId: null },
       { value: 'particles', label: 'Particles', domId: null },
@@ -939,6 +945,7 @@ export const VISUAL_CONTROLS = [
     // widget, and byDomId only ever matches this control's own id ('edgeDir'),
     // never one of its options.
     id: 'edgeDir', section: 'edge', label: 'Edge rotation', kind: 'segment', def: 'both',
+    hideLabel: true,
     summaryLabel: 'Rotation',
     parent: 'edgeMotionDrawer',
     options: [
@@ -1000,6 +1007,7 @@ export const VISUAL_CONTROLS = [
     // The particle's leading tip (gpu/scene-data.js's buildEdge). v1 only,
     // so no v0 button ids.
     id: 'edgeCap', section: 'edge', label: 'Head shape', kind: 'segment', def: 'wedge',
+    hideLabel: true,
     parent: 'edgeStyleDrawer',
     options: [
       { value: 'wedge', label: 'Wedge',   domId: null },
@@ -1074,6 +1082,7 @@ export const VISUAL_CONTROLS = [
   // instead, since there is no checkbox in v1 to click through.
   {
     id: 'textOn', section: 'text', label: 'Words', kind: 'segment', def: true,
+    hideLabel: true,
     options: [
       { value: true,  label: 'On',  domId: 'txOn'  },
       { value: false, label: 'Off', domId: 'txOff' }
@@ -1089,6 +1098,7 @@ export const VISUAL_CONTROLS = [
     // Custom shows the viewer's own phrases (the row below), in the order
     // typed; a journey step's text arrives through the same two controls.
     id: 'textMode', section: 'text', label: 'Text', kind: 'segment', def: 'words',
+    hideLabel: true,
     options: [
       { value: 'words',        label: 'Words',        domId: 'txModeWords' },
       { value: 'affirmations', label: 'Affirmations', domId: 'txModeAff' },
@@ -1132,6 +1142,7 @@ export const VISUAL_CONTROLS = [
   subDrawer('textRateDrawer', 'Timing', 'text', ['textFreq', 'textAppearPerMin', 'textDwell']),
   {
     id: 'textLink', section: 'text', label: 'Blink source', kind: 'segment', def: true,
+    hideLabel: true,
     parent: 'textRateDrawer',
     options: [
       { value: true,  label: 'Match the strobe', domId: 'txLink' },
@@ -1157,6 +1168,7 @@ export const VISUAL_CONTROLS = [
     // chances a second) or holds a set pace in words per minute whatever
     // the frequency.
     id: 'textAppearMode', section: 'text', label: 'Appearance timing', kind: 'segment', def: 'frame',
+    hideLabel: true,
     parent: 'textRateDrawer',
     options: [
       { value: 'frame', label: 'By frame', domId: null },
@@ -1261,6 +1273,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     id: 'textColorMode', section: 'text', label: 'Word color', kind: 'segment', def: 'system',
+    hideLabel: true,
     parent: 'textStylingDrawer',
     options: [
       { value: 'white',  label: 'White',              domId: 'txWhite'  },
@@ -1534,6 +1547,7 @@ export const VISUAL_CONTROLS = [
     // comment above spLit/spDark in index.html for why 'lit' and 'dark' are
     // the only two options and there is no third, alternating one.
     id: 'spareMode', section: 'render', label: 'Spare frame', kind: 'segment', def: 'lit',
+    hideLabel: true,
     options: [
       { value: 'lit',  label: 'Lit',  domId: 'spLit'  },
       { value: 'dark', label: 'Dark', domId: 'spDark' }
@@ -1603,7 +1617,7 @@ export const VISUAL_CONTROLS = [
     // front maths as its smoke out (core/word-fx.js hintSweepShare), so the
     // arrival and the departure feel like one gesture. All at once fades
     // the whole hint together.
-    id: 'hintArrive', section: 'render', label: 'Hint arrive', kind: 'segment', def: 'sweep', labelAbove: true,
+    id: 'hintArrive', section: 'render', label: 'Hint arrive', kind: 'segment', def: 'sweep',
     options: [
       { value: 'sweep', label: 'Left to right', domId: null },
       { value: 'all',   label: 'All at once',   domId: null }
@@ -1618,7 +1632,7 @@ export const VISUAL_CONTROLS = [
     // from its own centre, radius and width, the way parallax will need, a
     // pixel measuring only the rings its radial bin lists (RING_BINS);
     // Lookup is the old shared radial table, kept only for comparing by eye.
-    id: 'ringDraw', section: 'render', label: 'Ring draw', kind: 'segment', def: 'records', labelAbove: true,
+    id: 'ringDraw', section: 'render', label: 'Ring draw', kind: 'segment', def: 'records',
     options: [
       { value: 'records', label: 'Records', domId: null },
       { value: 'lookup',  label: 'Lookup',  domId: null }

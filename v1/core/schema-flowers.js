@@ -161,6 +161,7 @@ export const FLOWER_CONTROLS = [
 
   {
     id: 'flowerMode', section: 'flowers', label: 'Mode', kind: 'segment', def: DEF_MODE,
+    hideLabel: true,
     options: [
       { value: 'tunnel',  label: 'Bloom tunnel', domId: null },
       { value: 'mandala', label: 'Mandala',      domId: null }

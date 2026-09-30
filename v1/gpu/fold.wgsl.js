@@ -58,7 +58,11 @@ fn fsFold(@builtin(position) p: vec4f) -> @location(0) vec4f {
   }
   let ang = u.dom.x + m;
   let t = u.map.xy + vec2f(cos(ang), sin(ang)) * (r * u.map.z);
-  let c = textureSampleLevel(chamberTex, chamberSamp, t * u.chamber.zw, 0.0);
+  // Clamped: a feedback image (drawFrom reading fbChamber, rgba16float) holds
+  // additive light well above 1, and its contract is that every reader clamps
+  // (feedback.js, fsComposite does the same). The scene chamber is rgba8unorm,
+  // where this is a no-op.
+  let c = clamp(textureSampleLevel(chamberTex, chamberSamp, t * u.chamber.zw, 0.0), vec4f(0.0), vec4f(1.0));
   return vec4f(c.rgb * u.dom.z, c.a) * u.map.w;
 }
 `;

@@ -384,6 +384,7 @@ const audioControls = [
     // the strobe's frequency. It comes first in the drawer, since it
     // decides whether that slider is live.
     id: 'amLinked', section: 'audio', label: 'Audio mode', kind: 'segment',
+    hideLabel: true,
     parent: 'audioAmDrawer',
     options: [
       { value: false, label: 'Free',            domId: 'aFree' },
@@ -454,6 +455,7 @@ const audioControls = [
   subDrawer('audioPulseDrawer', 'Pulse', 'audio', ['clickMode', 'clickVol'], 'aClick'),
   {
     id: 'clickMode', section: 'audio', label: 'Mode', kind: 'segment',
+    hideLabel: true,
     parent: 'audioPulseDrawer',
     options: [
       { value: 'click', label: 'Click', domId: 'cmClick' },
@@ -651,6 +653,7 @@ const audioControls = [
   },
   {
     id: 'biHardSwitch', section: 'audio', label: 'Bilateral shape', kind: 'segment',
+    hideLabel: true,
     parent: 'audioBilateralDrawer',
     options: [
       { value: true,  label: 'Switch', domId: 'biHard' },
@@ -800,6 +803,7 @@ const musicControls = [
     // this control (drawer.js SECTION_SWITCH), so it never shows as a body
     // row; it only exists for the header and the quick bar to drive.
     id: 'musicOn', section: 'music', label: 'Music', kind: 'segment',
+    hideLabel: true,
     options: [
       { value: true,  label: 'On',  domId: 'muOn' },
       { value: false, label: 'Off', domId: 'muOff' }
@@ -829,6 +833,7 @@ const musicControls = [
     // v1 only, so no v0 button ids. Read by piano.js as each gesture is
     // chosen, so a switch is heard from the next phrase on.
     id: 'pianoStyle', section: 'music',
+    hideLabel: true,
     parent: 'musicPianoDrawer', label: 'Play style', kind: 'segment',
     options: [
       { value: 'generative', label: 'Generative', domId: null },
@@ -1034,6 +1039,7 @@ const musicControls = [
     // Which render of the drone plays: the same drone bounced at four detune
     // amounts (audio/music/manifest.json). A change crossfades to the new one.
     id: 'bedDetune', section: 'music', label: 'Drone detune', kind: 'segment', def: 152,
+    hideLabel: true,
     parent: 'musicDroneDrawer',
     options: [
       { value: 152, label: '.152' },
@@ -1136,6 +1142,7 @@ const musicControls = [
     // The filter's slope; 12 dB an octave is the single filter it always was,
     // 6 dB a gentle one-pole.
     id: 'bedLpfSlope', section: 'music', label: 'Drone filter rolloff', kind: 'segment', def: 12,
+    hideLabel: true,
     parent: 'bedLpf',
     options: [
       { value: 6,  label: '6 dB' },
@@ -1372,6 +1379,7 @@ const musicControls = [
   ...MUSIC_LAYERS.flatMap(musicLayerControls),
   {
     id: 'cloudsOn', section: 'music', label: 'Clouds', kind: 'segment',
+    hideLabel: true,
     options: [
       { value: true,  label: 'On',  domId: 'clOn' },
       { value: false, label: 'Off', domId: 'clOff' }
@@ -1516,6 +1524,7 @@ const musicControls = [
 const atmosphereControls = [
   {
     id: 'ambOn', section: 'atmosphere', label: 'Ambience', kind: 'segment',
+    hideLabel: true,
     options: [
       { value: true,  label: 'On',  domId: 'amOn' },
       { value: false, label: 'Off', domId: 'amOff' }

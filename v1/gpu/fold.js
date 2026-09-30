@@ -136,19 +136,30 @@ export function createFold(device, format, opts) {
     primitive: { topology: 'triangle-list' }
   });
 
+  // Two uniform buffers, one for draw and one for drawFrom. writeBuffer
+  // lands at submit, before any pass runs, so a layer that folds its trail
+  // image and its chamber in the same frame (particles' before route) needs
+  // each call's params in a buffer of its own: shared, the frame's last
+  // upload would win for both draws, and drawFrom's gain would never reach
+  // the GPU.
   const uniBuf = device.createBuffer({
     label: label + '.uniforms',
     size: UNIFORM_FLOATS * 4,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
   });
+  const uniBufFrom = device.createBuffer({
+    label: label + '.uniformsFrom',
+    size: UNIFORM_FLOATS * 4,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+  });
   const uni = new Float32Array(UNIFORM_FLOATS);
-  // The block as last uploaded, bit for bit, so drawWith writes only when
-  // something in it moved (a stopped scene's fold, or one with no spin,
-  // uploads nothing). Only drawWith writes uniBuf, and it is the one buffer
-  // for draw and drawFrom alike, so the last upload is what the GPU holds.
+  // Each buffer's block as last uploaded, bit for bit, so drawWith writes
+  // only when something in it moved (a stopped scene's fold, or one with no
+  // spin, uploads nothing).
   const uniBits = new Uint32Array(uni.buffer);
   const upBits = new Uint32Array(UNIFORM_FLOATS);
-  let upValid = false;
+  const upBitsFrom = new Uint32Array(UNIFORM_FLOATS);
+  let upValid = false, upValidFrom = false;
   const sampler = device.createSampler({
     label: label + '.sampler',
     magFilter: 'linear', minFilter: 'linear',
@@ -250,7 +261,7 @@ export function createFold(device, format, opts) {
         label: label + '.bindFrom',
         layout: bgl,
         entries: [
-          { binding: 0, resource: { buffer: uniBuf } },
+          { binding: 0, resource: { buffer: uniBufFrom } },
           { binding: 1, resource: fromV },
           { binding: 2, resource: sampler }
         ]
@@ -258,10 +269,10 @@ export function createFold(device, format, opts) {
       fromView[fromNext] = fromV; fromBind[fromNext] = b;
       fromNext = 1 - fromNext;
     }
-    drawWith(pass, params, b);
+    drawWith(pass, params, b, true);
   }
 
-  function drawWith(pass, params, b) {
+  function drawWith(pass, params, b, from) {
     const folds = foldsOf(params);
     const mirror = !(params && params.mirror === false);
     const rotation = params && typeof params.rotation === 'number' ? params.rotation % TAU : 0;
@@ -275,12 +286,13 @@ export function createFold(device, format, opts) {
     uni[4] = frame[4]; uni[5] = frame[5]; uni[6] = frame[6]; uni[7] = gain;
     uni[8] = cxNow; uni[9] = cyNow; uni[10] = wedge; uni[11] = rotation;
     uni[12] = UP - span * 0.5; uni[13] = mirror ? 1 : 0; uni[14] = colorGain; uni[15] = 0;
-    let same = upValid;
-    for (let i = 0; same && i < UNIFORM_FLOATS; i++) if (uniBits[i] !== upBits[i]) same = false;
+    const up = from ? upBitsFrom : upBits;
+    let same = from ? upValidFrom : upValid;
+    for (let i = 0; same && i < UNIFORM_FLOATS; i++) if (uniBits[i] !== up[i]) same = false;
     if (!same) {
-      device.queue.writeBuffer(uniBuf, 0, uni);
-      upBits.set(uniBits);
-      upValid = true;
+      device.queue.writeBuffer(from ? uniBufFrom : uniBuf, 0, uni);
+      up.set(uniBits);
+      if (from) upValidFrom = true; else upValid = true;
     }
     pass.setPipeline(pipe);
     pass.setBindGroup(0, b);
@@ -300,6 +312,7 @@ export function createFold(device, format, opts) {
     releaseChamber();
     fromView[0] = fromView[1] = null; fromBind[0] = fromBind[1] = null;
     uniBuf.destroy();
+    uniBufFrom.destroy();
   }
 
   return {

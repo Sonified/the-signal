@@ -89,6 +89,7 @@ export const FIREWORK_CONTROLS = [
   },
   {
     id: 'fwMode', section: 'fireworks', label: 'Preset', kind: 'segment', def: DEF_MODE,
+    hideLabel: true,
     options: [
       { value: 'scatter', label: 'Scatter',      domId: null },
       { value: 'corners', label: 'Four corners', domId: null },

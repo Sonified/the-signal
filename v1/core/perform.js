@@ -193,7 +193,10 @@ export function perfSet(id, value, now, sec) {
   // a hand on a layer's opacity mid fade-out takes it over: the layer stays
   // on wherever they leave it
   if (kind === 'slider' && layerFades.size) {
-    for (const [tid, f] of layerFades) if (f.op === c) layerFades.delete(tid);
+    for (const [tid, f] of layerFades) {
+      if (f.op === c) { layerFades.delete(tid); if (f.fb) startSlider(f.fb, f.fbLevel); }
+      else if (f.fb === c) f.fb = null;   // the trails are theirs too: left where they put them
+    }
   }
 
   if (now && (kind === 'slider' || kind === 'color')) {
@@ -244,7 +247,21 @@ export function perfRecallPreset(i, sec) {
 // the layer keeps its level for next time. now (shift-click), a cut-length
 // ramp, a layer with no opacity or one already at nothing just switch.
 // A fade-out in flight is kept here by toggle id until perfTick lands it.
+//
+// A layer with trails fades its trail image's opacity alongside (TRAIL_OP):
+// the layer's opacity only thins what goes into the trails, so the trails
+// already laid would hold at full strength and then cut when the layer went
+// off. The trail opacity glides with it and is put back the same way.
 const layerFades = new Map();
+// Confetti is not listed: its Opacity already dims its trails
+// (gpu/confetti.js), and fading both would square the fade.
+const TRAIL_OP = { edgeOpacity: 'edgeFbOpacity', partOpacity: 'partFbOpacity' };
+// A slider's level to fade from and back to: where a glide on it is headed,
+// or where it is.
+function levelOf(c) {
+  const tgt = perfTarget(c.id);
+  return typeof tgt === 'number' ? tgt : c.get(S);
+}
 export function perfLayer(toggleId, opId, on, now) {
   loadPerform();
   const t = byId(toggleId);
@@ -258,18 +275,32 @@ export function perfLayer(toggleId, opId, on, now) {
   const floor = Number.isFinite(op.min) ? op.min : 0;
   // where the opacity belongs: a fade-out's remembered level, or where a
   // glide on it is headed, or where it is
-  const tgt = perfTarget(op.id);
-  const level = pend ? pend.level : typeof tgt === 'number' ? tgt : op.get(S);
+  const level = pend ? pend.level : levelOf(op);
+  // the trail opacity likewise, when the layer has one
+  let fb = TRAIL_OP[op.id] ? byId(TRAIL_OP[op.id]) : null;
+  if (fb && fb.kind !== 'slider') fb = null;
+  const fbFloor = fb && Number.isFinite(fb.min) ? fb.min : 0;
+  const fbLevel = !fb ? undefined : pend && pend.fb === fb ? pend.fbLevel : levelOf(fb);
+  if (fb) journeyManualOverride(fb.id);
   if (now || perform.rampS < TWEEN_MIN_S || typeof level !== 'number' || level <= floor) {
     if (pend || tweens.has(op.id)) { tweens.delete(op.id); if (op.get(S) !== level) setNow(op, level, 0); }
+    if (fb && (pend || tweens.has(fb.id))) { tweens.delete(fb.id); if (typeof fbLevel === 'number' && fb.get(S) !== fbLevel) setNow(fb, fbLevel, 0); }
     return perfSet(toggleId, on);
   }
+  // a trail opacity already at nothing (or not a number) is left alone
+  const fbFades = fb && typeof fbLevel === 'number' && fbLevel > fbFloor;
   if (on) {
-    if (!t.get(S)) { tweens.delete(op.id); setNow(op, floor, 0); perfSet(toggleId, true); }
+    if (!t.get(S)) {
+      tweens.delete(op.id); setNow(op, floor, 0);
+      if (fbFades) { tweens.delete(fb.id); setNow(fb, fbFloor, 0); }
+      perfSet(toggleId, true);
+    }
+    if (fbFades) startSlider(fb, fbLevel);
     return startSlider(op, level);   // up from nothing, or back up from where a fade-out had got to
   }
   if (!t.get(S)) return true;
-  layerFades.set(toggleId, { t, op, level, floor });
+  layerFades.set(toggleId, { t, op, level, floor, fb: fbFades ? fb : null, fbLevel });
+  if (fbFades) startSlider(fb, fbFloor);
   return startSlider(op, floor);
 }
 // The level a layer fading out will come back to, undefined when none is
@@ -280,17 +311,20 @@ export function perfLayerLevel(toggleId) {
   return f ? f.level : undefined;
 }
 // Once the fade-out's glide has landed: the layer goes off and its opacity
-// goes back to its level. If the glide was let go anywhere but the floor, a
-// hand (or a journey) took the opacity over, and the layer stays on.
+// goes back to its level, and its trail opacity too. If the glide was let go
+// anywhere but the floor, a hand (or a journey) took the opacity over, and
+// the layer stays on.
 function landLayerFades() {
   for (const [tid, f] of layerFades) {
     if (tweens.has(f.op.id)) continue;
     layerFades.delete(tid);
-    if (f.op.get(S) !== f.floor) continue;
+    // the layer stays on, so its trails come back up
+    if (f.op.get(S) !== f.floor) { if (f.fb) startSlider(f.fb, f.fbLevel); continue; }
     beginTransition(SWITCH_GLIDE_S);
     try {
       if (f.t.get(S)) f.t.set(S, false);
       f.op.set(S, f.level);
+      if (f.fb) { tweens.delete(f.fb.id); f.fb.set(S, f.fbLevel); }
     } finally { endGlide(); }
   }
 }

@@ -582,8 +582,9 @@ function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi0
 const segWidest = new WeakMap();   // label array -> width of its widest label
 
 // label is optional: given, the segment carries its name on a line of its own
-// above the pill, as a dropdown does, for choices whose options do not say
-// what they choose between (a schema segment with labelAbove: true).
+// above the pill, as a dropdown does. A schema segment always passes its
+// name, as every other row shows its own, unless it sets hideLabel: true
+// because its options already say what they choose between.
 function segment(id, labels, index, disabled, label) {
   const ui = this;
   const nid = ui.id(id);
@@ -1597,7 +1598,7 @@ function control(ctrl, S, shown) {
         if (!cache) { cache = { pos: NaN, text: '', at: -1e9 }; formatCache.set(ctrl.id, cache); }
         if (ctrl.format && ui.t - cache.at > 250) { cache.at = ui.t; cache.text = ctrl.format(S); }
         ni = ui.select(ctrl.id, ctrl.label, labels, idx, cache.text, !enabled);
-      } else ni = ui.segment(ctrl.id, labels, idx, !enabled, ctrl.labelAbove ? ctrl.label : undefined);
+      } else ni = ui.segment(ctrl.id, labels, idx, !enabled, ctrl.hideLabel ? undefined : ctrl.label);
       if (ni !== idx) { ctrl.set(S, ctrl.options[ni].value); changed = true; }
       break;
     }

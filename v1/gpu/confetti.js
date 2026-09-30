@@ -837,6 +837,12 @@ export function createConfetti(device, format) {
     const l = lum > 0 ? (lum < 1 ? lum : 1) : 0;
     fbGain = 1 - pulse + pulse * l;
     fbOpacity = clampNum(S.confFbOpacity, 0, 1, 1);
+    // With trails, the layer's Opacity rides the image as it lands rather
+    // than the pieces going into it (uni[23] is 1 then), so the trails
+    // already laid dim with the slider, and a layer faded out takes them
+    // with it instead of leaving them up until it switches off. Without
+    // trails it stays per piece, as the bypass needs.
+    if (fbInUse) fbOpacity *= opacity;
     // The bypass (see its note above): the feedback not in use, and
     // unfolded, an opacity the pieces can carry exactly.
     bypass = !fbInUse && (kaleidoNow || fbOpacity === 1 || fbOpacity <= 0.002);
@@ -912,7 +918,7 @@ export function createConfetti(device, format) {
     uni[8] = travel; uni[9] = W; uni[10] = 0; uni[11] = tumble;
     uni[12] = shapeMask(S.confShapes); uni[13] = clampNum(S.confSize, 0.2, 50, 1); uni[14] = clampNum(S.confShine, 0, 1, 0.35); uni[15] = pal;
     uni[16] = rgb[0] / 255; uni[17] = rgb[1] / 255; uni[18] = rgb[2] / 255; uni[19] = Z_FAR;
-    uni[20] = clampNum(S.confSpread, 0, 1, 0); uni[21] = clampNum(S.confFlutter, 0, 1, 1); uni[23] = opacity;
+    uni[20] = clampNum(S.confSpread, 0, 1, 0); uni[21] = clampNum(S.confFlutter, 0, 1, 1); uni[23] = fbInUse ? 1 : opacity;
     uni[24] = clampNum(S.confFade, 0, 1, 0.55); uni[25] = Z_NEAR; uni[26] = spin; uni[27] = clampNum(S.confTumble, 0, 1, 1);
     uni[28] = clampNum(S.confLife, 0.05, 1, 1);
     uni[29] = kaleidoNow ? (mirror ? 2 : 1) : 0; uni[30] = UP - span * 0.5; uni[31] = span;
