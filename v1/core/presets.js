@@ -528,18 +528,26 @@ function applyHolding(snap) {
     if (c && c.get && c.set && c.get(S) !== heldVals[k]) c.set(S, heldVals[k]);
   }
 }
+// The snapshot half of that, on its own: a snapshot replayed live with the
+// controls named in hold (any iterable of ids, or null for none) left where
+// they are. Exported for the broadcast too (core/broadcast.js): a follower
+// whose viewer has taken the strobe for their own takes each arriving state
+// with the strobe's controls held, exactly as a step holds its text.
+export function replayHolding(snap, sec, hold) {
+  heldIds = []; heldVals = [];
+  if (hold) for (const id of hold) {
+    const c = byId(id);
+    if (c && c.get) { heldIds.push(id); heldVals.push(c.get(S)); }
+  }
+  replayLive(() => applyHolding(snap), sec);
+}
 export function recallPresetForStep(i, sec, hold) {
   ensureLoaded();
   const e = row[i];
   if (!e) return undefined;
   const snap = e.u ? e.u.snapshot : data.overrides[PRESET_LIST[e.b].name];
   if (snap) {
-    heldIds = []; heldVals = [];
-    if (hold) for (const id of hold) {
-      const c = byId(id);
-      if (c && c.get) { heldIds.push(id); heldVals.push(c.get(S)); }
-    }
-    replayLive(() => applyHolding(snap), sec);
+    replayHolding(snap, sec, hold);
     save();
     return null;
   }

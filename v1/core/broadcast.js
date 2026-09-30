@@ -30,13 +30,19 @@
 // the broadcaster's. Sound still needs the follower's own first gesture, as
 // it always does; the usual Space to start covers both.
 //
+// A follower's viewer can take the strobe for their own by moving any of its
+// controls (see "the follower's own strobe" below): from then on the strobe
+// keeps their settings and its own time while everything else still follows,
+// until the chrome's sync chip hands it back.
+//
 // Sessions and the broadcast key persist under their own record
 // (signal.broadcast.v1, through store.readKey/saveKey like the presets), so
 // the drawer's list survives a reload, and a session left active reconnects
 // at boot: a demo survives the broadcaster's page refresh.
 import { S } from '../../js/state.js';
-import { onSave, snapshot, applySnapshot, readKey, saveKey } from './store.js';
-import { replayLive, presetTransitionCount, lastTransitionSec } from './presets.js';
+import { onSave, snapshot, readKey, saveKey } from './store.js';
+import { replayHolding, presetTransitionCount, lastTransitionSec } from './presets.js';
+import { CONTROLS, byId } from './schema.js';
 import { setStrobeClockOffset, setStrobeSyncTarget, clearStrobeSync } from './strobe.js';
 import { onWordAppear, wordState, remoteWord, setWordsRemote,
          setWordWalk, setWordWalkClock, wordWalkRunning, wordsRepeating } from './words.js';
@@ -326,9 +332,101 @@ function sendBeacon() {
 
 function takeBeacon(msg) {
   if (!Number.isFinite(msg.at) || !Number.isFinite(msg.p) || !Number.isFinite(msg.f)) return;
+  // kept even while the strobe is the viewer's, so a sync can steer by it at once
+  lastBeacon = msg;
+  if (strobeOwn) return;
   const n = v => Number.isFinite(v) ? v : 0;
   setStrobeSyncTarget(msg.at, msg.p, msg.f,
                       n(msg.dp), n(msg.vp), n(msg.bp), n(msg.rp), n(msg.sp), n(msg.zp));
+}
+
+// ---------- the follower's own strobe ----------
+// A follower's viewer may want the strobe their own way (slower, dimmer,
+// off) while the rest of the room's scene keeps coming. The moment they move
+// any strobe control here, the strobe comes loose from the broadcast: each
+// arriving state lands with the strobe's controls held where the viewer put
+// them (presets.js replayHolding, the journey's own hold), and the phase
+// beacons stop steering it, so it keeps its own time as well as its own
+// settings. The chrome's sync chip, shown only while this is so, hands it
+// back: the last state received is replayed on the preset glide and the last
+// beacon taken up, so the strobe glides and slews home rather than jumping,
+// and the next beacon, never more than BEACON_MS away, keeps it there. None
+// of this is a setting: never saved, never sent, loose only until the page
+// reloads, the broadcast ends or the link gives up.
+//
+// "The strobe" is what the schema files under it: every control of the
+// Strobe section (its switch, the master, frequency and waveform, depth and
+// brightness with their variances, the field's opacity, shape and fade, the
+// colour and its walk, and flash quantization), plus the two other surfaces
+// on the same state, the Layers row's Field switch and the chrome's STROBE
+// dial. Two quick chips write strobe state without going through any of
+// those, so they count too: the colour chip always, and the visual layers
+// chip when its cycle turns the field on or off.
+//
+// A local move is told from a replayed one at store.save(), which every one
+// of these set()s ends in: onSave fires for this tab's own changes and never
+// for another tab's (those are applied with save() held silent), and this
+// module's own applies run inside followApplying. So each strobe set() is
+// wrapped only to say "a strobe write is under way", and the one onSave
+// listener decides. Both flags are plain counters, so a drag allocates
+// nothing.
+const STROBE_IDS = [];
+let strobeOwn = false;
+let strobeWriting = 0;
+let followApplying = false;
+let lastSnap = null, lastBeacon = null;
+
+function watchStrobeWrites() {
+  for (const c of CONTROLS) {
+    if ((c.section === 'strobe' || c.id === 'lField' || c.id === 'strobeScale') && !c.uiOnly && c.get && c.set) {
+      STROBE_IDS.push(c.id);
+      const set = c.set;
+      c.set = (s, v) => { strobeWriting++; try { set(s, v); } finally { strobeWriting--; } };
+    }
+  }
+  const color = byId('colorQuick');
+  if (color && color.act) {
+    const act = color.act;
+    color.act = s => { strobeWriting++; try { act(s); } finally { strobeWriting--; } };
+  }
+  const visual = byId('visualQuick');
+  if (visual && visual.act) {
+    const act = visual.act;
+    visual.act = s => { const was = !!s.layers.field; act(s); if (!!s.layers.field !== was) takeStrobe(); };
+  }
+  onSave(() => { if (strobeWriting) takeStrobe(); });
+}
+
+function takeStrobe() {
+  if (strobeOwn || followApplying) return;
+  strobeOwn = true;
+  // the last beacon would otherwise keep steering for seconds
+  clearStrobeSync();
+}
+
+// An arriving state, or the last one again on a sync. Left without a window
+// it takes the preset glide.
+function applyFollowed(snap, sec) {
+  followApplying = true;
+  try { replayHolding(snap, sec, strobeOwn ? STROBE_IDS : null); } finally { followApplying = false; }
+}
+
+function releaseStrobe() {
+  strobeOwn = false;
+  lastSnap = null;
+  lastBeacon = null;
+}
+
+// Read by the chrome every frame: true only on a follower whose viewer has
+// taken the strobe.
+export function followStrobeOwned() { return strobeOwn; }
+
+// The sync chip: the strobe goes back under the broadcast.
+export function followStrobeSync() {
+  if (!strobeOwn) return;
+  strobeOwn = false;
+  if (lastBeacon) takeBeacon(lastBeacon);
+  if (lastSnap) applyFollowed(lastSnap);
 }
 
 function setLabel(s) {
@@ -497,6 +595,7 @@ export function initBroadcast(bits_, hooks_) {
   // flashes land with the broadcaster's, not just at the same rate.
   if (intent && intent.follow) {
     const room = intent.follow;
+    watchStrobeWrites();
     followSock = bits.open(room, 'follow', '', {
       onMessage: str => {
         let msg;
@@ -515,7 +614,10 @@ export function initBroadcast(bits_, hooks_) {
               : 0.3;
             sec = Math.max(FOLLOW_MIN_GLIDE_S, msg.glide - del);
           }
-          replayLive(() => applySnapshot(msg.snap), sec);
+          // A strobe the viewer has taken stays theirs (applyFollowed holds
+          // it); the rest lands as always. Kept for the sync chip.
+          lastSnap = msg.snap;
+          applyFollowed(msg.snap, sec);
           if (typeof msg.run === 'boolean' && hooks.setRunning) hooks.setRunning(msg.run);
           // The shared walk runs here only while the broadcaster's own
           // scheduler is dealing (wk, see sendNow). A broadcaster from
@@ -545,6 +647,7 @@ export function initBroadcast(bits_, hooks_) {
           takeTime(msg.c, msg.s);
         } else if (msg.t === 'end') {
           clearStrobeSync();
+          releaseStrobe();
           setWordsRemote(false);
           setWordWalk('');
           setRoomClockRoom(false);
@@ -561,7 +664,7 @@ export function initBroadcast(bits_, hooks_) {
           setWordsRemote(true);
         }
         else if (st === 'lost') hooks.notify('Broadcast link lost, reconnecting…');
-        else if (st === 'dead') { clearStrobeSync(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
+        else if (st === 'dead') { clearStrobeSync(); releaseStrobe(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);

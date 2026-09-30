@@ -32,6 +32,7 @@ import { ICON } from '../drawlist.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, GLASS } from '../theme.js';
 import { mixColor } from '../anim.js';
 import { strobeLum } from '../../core/strobe.js';
+import { followStrobeOwned, followStrobeSync } from '../../core/broadcast.js';
 
 const QUICK = [   // right to left after the full-screen button, with v0's min widths
   ['colorQuick', 118], ['textQuick', 86], ['clickQuick', 112], ['toneQuick', 86],
@@ -212,6 +213,16 @@ export function drawChrome(ui, app, alpha, frost) {
     scaleY = ty + ts + 8;
   }
   drawStrobeScale(ui, scaleX, scaleY, frost);
+  // A follower whose viewer has taken the strobe for their own (core/
+  // broadcast.js) gets the way back beside the dial: a sync chip, the dial's
+  // height, there only while the strobe is loose. Where the row has no room
+  // to its left it drops under the dial instead, never under the drawer.
+  if (followStrobeOwned()) {
+    const sw = ui.text.measure('sync', TYPE.sm, W.regular) + 26;
+    let sx = scaleX - GAP - sw, sy = scaleY;
+    if (sx < (S.edgeInset || 0) + EDGE) { sx = scaleX + SCALE_W - sw; sy = scaleY + SCALE_H + GAP; }
+    if (chip(ui, 'chrome.sync', 'sync', sx, sy, sw, SCALE_H, frost)) followStrobeSync();
+  }
 
   // quick bar, bottom right, read right to left
   const y = height - EDGE - CHIP_H;
