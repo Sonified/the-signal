@@ -853,7 +853,7 @@ export const WORDS = [
   ['flannel', 'sleep', 'texture'],
   ['pajamas', 'sleep', 'texture'],
   ['slippers', 'sleep', 'texture'],
-  ['bedtime', 'sleep', 'time'],
+  ['bedtime', 'sleep'],
   ['goodnight', 'sleep'],
   ['nightlight', 'sleep', 'light'],
   ['tucked', 'sleep', 'safety'],
