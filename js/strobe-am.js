@@ -32,12 +32,13 @@ function track() {
   }
 }
 
-// The depth's own wander, the shape every variance in the app walks
-// (js/choir.js): one cosine leg at a time, from where the last ended to a
-// random dip between 0 and the variance, `period` seconds a leg, stepped
-// by the shared timer above. The dip multiplies the voice's set depth, so
-// the pulse breathes between (1 - variance) of the slider and the full
-// setting, never above it.
+// The depth's own variance, two shapes on the voice's Behavior toggle
+// (js/choir.js keeps the same pair). Sinusoid, the default: a cosine dip
+// from the setting down by the variance and back, one cycle per period.
+// Walk: one cosine leg at a time, from where the last ended to a random
+// dip between 0 and the variance, `period` seconds a leg. Either way the
+// dip multiplies the voice's set depth, so the pulse breathes between
+// (1 - variance) of the slider and the full setting, never above it.
 const MIN_LEG = 0.5;
 const cos01 = x => 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, x)));
 
@@ -46,23 +47,31 @@ function wanderMul(am, now) {
   const w = am.w;
   if (!(amount > 0)) {
     w.from = 0; w.to = 0; w.t0 = now - MIN_LEG; w.dur = MIN_LEG; w.period = -1;
+    w.phase = 0; w.at = now;
     return 1;
   }
   const period = +(am.periodOf && am.periodOf()) || 0;
   const legDur = Math.max(MIN_LEG, period);
-  // a new speed takes over from wherever the wander is, rather than making
-  // a long leg run out first
-  if (w.period !== -1 && w.period !== period) {
-    w.from = w.from + (w.to - w.from) * cos01((now - w.t0) / w.dur);
-    w.t0 = now; w.dur = legDur;
+  if ((am.modeOf && am.modeOf()) === 'walk') {
+    // a new speed takes over from wherever the walk is, rather than making
+    // a long leg run out first
+    if (w.period !== -1 && w.period !== period) {
+      w.from = w.from + (w.to - w.from) * cos01((now - w.t0) / w.dur);
+      w.t0 = now; w.dur = legDur;
+    }
+    w.period = period;
+    if (now - w.t0 >= w.dur) {
+      w.from = w.to; w.to = Math.random() * amount; w.t0 = now; w.dur = legDur;
+    }
+    // a lowered variance takes effect at once, never left below the new floor
+    const leg = w.from + (w.to - w.from) * cos01((now - w.t0) / w.dur);
+    return 1 - Math.min(leg, amount);
   }
-  w.period = period;
-  if (now - w.t0 >= w.dur) {
-    w.from = w.to; w.to = Math.random() * amount; w.t0 = now; w.dur = legDur;
-  }
-  // a lowered variance takes effect at once, never left below the new floor
-  const leg = w.from + (w.to - w.from) * cos01((now - w.t0) / w.dur);
-  return 1 - Math.min(leg, amount);
+  if (!(w.at >= 0)) { w.phase = 0; w.at = now; }
+  w.phase += (now - w.at) / legDur;
+  w.phase -= Math.floor(w.phase);
+  w.at = now;
+  return 1 - amount * 0.5 * (1 - Math.cos(2 * Math.PI * w.phase));
 }
 
 function applyDepth(am) {
@@ -89,10 +98,12 @@ export function strobeAmEffective(am) {
   return clamp01(am.depthOf()) * wanderMul(am, ctx.currentTime);
 }
 
-// depthOf reads the voice's setting, 0..1; varOf and periodOf, when given,
-// its variance and variance speed. Wire the voice through am.node;
-// am.apply() after a setting moves; am.stop() once the voice is torn down.
-export function strobeAm(ctx, depthOf, varOf, periodOf) {
+// depthOf reads the voice's setting, 0..1; varOf, periodOf and modeOf,
+// when given, its variance, variance speed and Behavior ('walk' for the
+// random walk; anything else breathes the sinusoid). Wire the voice
+// through am.node; am.apply() after a setting moves; am.stop() once the
+// voice is torn down.
+export function strobeAm(ctx, depthOf, varOf, periodOf, modeOf) {
   const node = ctx.createGain();
   const lfo = ctx.createOscillator(), dg = ctx.createGain();
   const d = scaledStrobeDepth(clamp01(depthOf()));
@@ -100,8 +111,8 @@ export function strobeAm(ctx, depthOf, varOf, periodOf) {
   lfo.type = strobeWave(); lfo.frequency.value = strobeHz();
   lfo.connect(dg); dg.connect(node.gain); lfo.start();
   const am = {
-    node, lfo, dg, depthOf, varOf, periodOf, depth: d, hz: lfo.frequency.value,
-    w: { from: 0, to: 0, t0: 0, dur: MIN_LEG, period: -1 },
+    node, lfo, dg, depthOf, varOf, periodOf, modeOf, depth: d, hz: lfo.frequency.value,
+    w: { from: 0, to: 0, t0: 0, dur: MIN_LEG, period: -1, phase: 0, at: -1 },
     apply() { applyDepth(am); },
     stop() {
       live.delete(am);

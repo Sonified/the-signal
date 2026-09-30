@@ -233,8 +233,8 @@ async function choirStart() {
     return;
   }
   if (!wanted || my !== token) return;
-  // the level wander starts from the cap, as Stack and Density do below
-  resetWander(volW, ctx.currentTime);
+  // the level's breath starts from the top of its cycle, full level first
+  resetBreath(volB, ctx.currentTime);
   wanderVol(ctx.currentTime);
   const g = ctx.createGain();
   g.gain.value = level();
@@ -242,7 +242,8 @@ async function choirStart() {
   // meter reads; the tap feeds the dry bus and the room alike. The strobe
   // stage sits between, so the meter shows the pulse.
   const t = meterTap(ctx, dryBus, roomBus);
-  const a = strobeAm(ctx, () => S.choirStrobeAm, () => S.choirStrobeAmVar, () => S.choirStrobeAmPeriod);
+  const a = strobeAm(ctx, () => S.choirStrobeAm, () => S.choirStrobeAmVar, () => S.choirStrobeAmPeriod,
+    () => S.choirStrobeAmVarMode);
   g.connect(a.node); a.node.connect(t.analyser);
   voices = CHOIR_PARTS.map(part => {
     const loop = loops.get(part.semi);
@@ -293,43 +294,55 @@ function choirStop() {
 // One leg at a time: from `from` to `to` (depths, 0 to the amount) over
 // `dur` seconds of the audio clock from t0, on a cosine. `period` is the
 // setting the leg was laid with.
-const stackW = { from: 0, to: 0, t0: 0, dur: 0.5, period: -1 };
-const densW  = { from: 0, to: 0, t0: 0, dur: 0.5, period: -1 };
-const volW   = { from: 0, to: 0, t0: 0, dur: 0.5, period: -1 };
+// Each variance moves one of two ways, its Behavior toggle's choice
+// (schema-audio.js). Sinusoid, the default, breathes as the app's other
+// variances do: a cosine dip from the setting down by the amount and back,
+// one full cycle per period, so the speed dial reads directly as the swing
+// you hear. Walk drifts one cosine leg at a time from where the last ended
+// to a random depth within the amount, a period per leg, never twice the
+// same. The clocks ride the audio clock and hold still at 0 amount.
 const MIN_LEG = 0.5;
 let wanderTimer = null;
-
-// Back to the cap, with the next leg due at once.
-function resetWander(w, now) {
-  w.from = 0; w.to = 0; w.t0 = now - MIN_LEG; w.dur = MIN_LEG; w.period = -1;
+const stackB = { phase: 0, at: -1, from: 0, to: 0, t0: 0, dur: MIN_LEG, period: -1 };
+const densB  = { phase: 0, at: -1, from: 0, to: 0, t0: 0, dur: MIN_LEG, period: -1 };
+const volB   = { phase: 0, at: -1, from: 0, to: 0, t0: 0, dur: MIN_LEG, period: -1 };
+function resetBreath(b, now) {
+  b.phase = 0; b.at = now;
+  b.from = 0; b.to = 0; b.t0 = now - MIN_LEG; b.dur = MIN_LEG; b.period = -1;
 }
-const legAt = (w, now) => w.from + (w.to - w.from) * cosine01((now - w.t0) / w.dur);
-
-function wanderDepth(w, amount, period, now) {
-  if (!(amount > 0)) { resetWander(w, now); return 0; }
-  const legDur = Math.max(MIN_LEG, +period || 0);
-  // A new speed takes over from wherever the wander is, rather than making
-  // a long leg run out first.
-  if (w.period !== -1 && w.period !== period) {
-    w.from = legAt(w, now); w.t0 = now; w.dur = legDur;
+const legAt = (b, now) => b.from + (b.to - b.from) * cosine01((now - b.t0) / b.dur);
+function breathDepth(b, amount, period, now, mode) {
+  if (!(amount > 0)) { resetBreath(b, now); return 0; }
+  const p = Math.max(MIN_LEG, +period || 0);
+  if (mode === 'walk') {
+    // a new speed takes over from wherever the walk is, rather than
+    // making a long leg run out first
+    if (b.period !== -1 && b.period !== period) {
+      b.from = legAt(b, now); b.t0 = now; b.dur = p;
+    }
+    b.period = period;
+    if (now - b.t0 >= b.dur) {
+      b.from = b.to; b.to = Math.random() * amount; b.t0 = now; b.dur = p;
+    }
+    // a lowered amount takes effect at once, never left below the new floor
+    return Math.min(legAt(b, now), amount);
   }
-  w.period = period;
-  if (now - w.t0 >= w.dur) {
-    w.from = w.to; w.to = Math.random() * amount; w.t0 = now; w.dur = legDur;
-  }
-  // a lowered amount takes effect at once, never left below the new floor
-  return Math.min(legAt(w, now), amount);
+  if (b.at < 0) b.at = now;
+  b.phase += (now - b.at) / p;
+  b.phase -= Math.floor(b.phase);
+  b.at = now;
+  return amount * 0.5 * (1 - Math.cos(2 * Math.PI * b.phase));
 }
 
 const clampVar = v => Math.max(0, Math.min(1, +v || 0));
 function wanderLevels(now) {
-  effStack = S.choirStack * (1 - wanderDepth(stackW, clampVar(S.choirStackVar), S.choirStackPeriod, now));
-  effDensity = S.choirDensity * (1 - wanderDepth(densW, clampVar(S.choirDensityVar), S.choirDensityPeriod, now));
+  effStack = S.choirStack * (1 - breathDepth(stackB, clampVar(S.choirStackVar), S.choirStackPeriod, now, S.choirStackVarMode));
+  effDensity = S.choirDensity * (1 - breathDepth(densB, clampVar(S.choirDensityVar), S.choirDensityPeriod, now, S.choirDensityVarMode));
 }
-// The level's leg kept apart from the voices' two, so the level control
-// moves only the chain gain and the voice controls only the voices.
+// The level's kept apart from the voices' two, so the level control moves
+// only the chain gain and the voice controls only the voices.
 function wanderVol(now) {
-  effVolDepth = wanderDepth(volW, clampVar(S.choirVolVar), S.choirVolPeriod, now);
+  effVolDepth = breathDepth(volB, clampVar(S.choirVolVar), S.choirVolPeriod, now, S.choirVolVarMode);
 }
 
 function wanderTick() {

@@ -4,7 +4,7 @@
 // compact sliders in the title bar beside its name, then one dense row per
 // voice, its switch and name on the left and its level beside them. The
 // master volume leads, then the tone and the pulse, then the music engine's
-// own switch and its five voices, then the atmosphere.
+// own switch and its five voices, then the atmosphere, then the live input.
 //
 // Its faders are not the voices' levels. Those are the Levels window's (the
 // mixer, on L) and the drawer's, the backstage pre-mix that sets each
@@ -107,6 +107,18 @@ function cell(id, label, vw) {
 }
 // A level: the unlabelled slider in the LEVEL column.
 function levelCell(id) { return cell(id, ''); }
+// The choir's Density, on a line of its own under the level: the track
+// starts at the level column so the two sliders stack, and the label sits
+// out in the empty name column to their left (labelLeft in sliderCell).
+function densCell(id, label) {
+  const c = cell(id, label, DENS_VALUE_W);
+  if (!c) return null;
+  c.nl = true; c.labelLeft = true;
+  c.w = LEVEL_TRACK + INLINE_GAP + DENS_VALUE_W;
+  c.min = Math.min(c.w, SLIDER_MIN);
+  c.dw = c.w;
+  return c;
+}
 // toggleId null is a row with no switch (Master), never off and never dimmed.
 // dimBy names the switch above a row: 'music' for the five music voices,
 // which recede while the music engine is off, 'audio' for the tone and the
@@ -132,17 +144,22 @@ const ROWS = [
   makeRow(null, 'Master', [levelCell('vol')]),
   // The tone's trim takes the fundamental and its harmonics together, and
   // its switch is the sine tone's, since the harmonics sound only while the
-  // tone does. The pulse's takes the pips and their room, click or chirp.
+  // tone does. The click's takes the pips and their room; the chirp is a
+  // kind of click, so the one name covers both modes.
   makeRow('aTone', 'Tone', [levelCell('musTone')], { dimBy: 'audio' }),
-  makeRow('aClick', 'Pulse', [levelCell('musPulse')], { dimBy: 'audio' }),
+  makeRow('aClick', 'Click', [levelCell('musPulse')], { dimBy: 'audio' }),
   // the whole music engine: a switch and nothing to fade
   makeRow('musicOn', 'Music', []),
   makeRow('pianoOn', 'Piano', [levelCell('musPiano')], { dimBy: 'music' }),
   makeRow('cloudsOn', 'Clouds', [levelCell('musClouds')], { dimBy: 'music' }),
   makeRow('bedOn', 'Drone', [levelCell('musDrone')], { dimBy: 'music' }),
   makeRow('arpOn', 'Sequencer', [levelCell('musArp')], { dimBy: 'music', short: 'Seq' }),
-  makeRow('choirOn', 'Choir', [levelCell('musChoir'), cell('choirDensity', 'DENS', DENS_VALUE_W)], { dimBy: 'music' }),
-  makeRow('ambOn', 'Ambience', [levelCell('musAmb')])
+  makeRow('choirOn', 'Choir', [levelCell('musChoir'), densCell('choirDensity', 'DENS')], { dimBy: 'music' }),
+  makeRow('ambOn', 'Ambience', [levelCell('musAmb')]),
+  // The live input (js/livesound.js), outside the music engine as the
+  // ambience is, so it never recedes with it. Its trim moves the local
+  // monitor only; the broadcast hears the input at its designed level.
+  makeRow('liveOn', 'Live Sound', [levelCell('musLive')], { short: 'Live' })
 ].filter(Boolean);
 
 // placed says x and y hold a real position: a window dragged partly off the
@@ -238,11 +255,12 @@ function sliderCell(ui, cel, x, top) {
     if (L.fadeLevel !== undefined) tgt = L.fadeLevel;
     else if (!L.shownOn) fill = c.min ?? 0;
   }
-  const labelW = cel.label ? ui.text.measure(cel.label, TYPE.micro, W.semibold) : 0;
+  const labelW = cel.label && !cel.labelLeft ? ui.text.measure(cel.label, TYPE.micro, W.semibold) : 0;
   // A labelled slider is sized to its own label: the label, then exactly the
   // level column's bar and its own readout slot, so it keeps the column's
-  // rhythm. Measured on the first draw; the row refits once for it.
-  if (cel.label) {
+  // rhythm. Measured on the first draw; the row refits once for it. A
+  // labelLeft cell keeps its made width: its label lives in the name column.
+  if (cel.label && !cel.labelLeft) {
     const want = Math.ceil(labelW + INLINE_GAP + LEVEL_TRACK + INLINE_GAP + cel.vw);
     if (cel.w !== want) {
       cel.w = want;
@@ -250,7 +268,7 @@ function sliderCell(ui, cel, x, top) {
       if (cel.row) cel.row.fitW = -1;
     }
   }
-  const tx = x + (cel.label ? labelW + INLINE_GAP : 0);
+  const tx = x + (cel.label && !cel.labelLeft ? labelW + INLINE_GAP : 0);
   const trackRight = x + cel.dw - cel.vw - INLINE_GAP;
   const tw = Math.max(INLINE_MIN_TRACK, trackRight - tx), cy = top + ROW_H / 2;
   const sid = ui.idx('mus.sl', cel.k);
@@ -265,8 +283,12 @@ function sliderCell(ui, cel, x, top) {
   }
 
   const ramping = perfRamping(c.id), base = baseline(ui, cy, TYPE.micro);
-  if (cel.label) ui.text.draw(ui.dl, cel.label, x, base, TYPE.micro, W.semibold,
-    ramping ? COLOR.accent : C.cellLabel, 0, 0.08, 1);
+  if (cel.label) {
+    const ink = ramping ? COLOR.accent : C.cellLabel;
+    // labelLeft hangs right-aligned in the name column, left of the track
+    if (cel.labelLeft) ui.text.draw(ui.dl, cel.label, x - NAME_GAP, base, TYPE.micro, W.semibold, ink, 2, 0.08, 1);
+    else ui.text.draw(ui.dl, cel.label, x, base, TYPE.micro, W.semibold, ink, 0, 0.08, 1);
+  }
   ui.text.draw(ui.dl, compactSliderValue(c, L && L.fadeLevel !== undefined ? L.fadeLevel : targetPos(c)),
     trackRight + INLINE_GAP, base, TYPE.micro, W.regular, C.value, 0, 0, 1);
 }
@@ -290,7 +312,7 @@ const PCT_TEXT = new Array(101);
 for (let i = 0; i <= 100; i++) PCT_TEXT[i] = i + '%';
 let rampDirty = false;
 // Measured once, on the first frame that draws the bar.
-const TITLE = 'MUSIC', WIN_O_LABEL = 'WINDOW OP';
+const TITLE = 'MUSIC', WIN_O_LABEL = 'OP';
 let titleW = -1, rampLblW = 0, winOLblW = 0;
 function capsW(ui, str, size, track) {
   return ui.text.measure(str, size, W.semibold) + str.length * size * track;

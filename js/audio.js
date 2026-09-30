@@ -315,7 +315,10 @@ export function swapRoom(room, delayMs = 0) {
   clearTimeout(room.timer);
   room.timer = null;
   if (roomKey(room) === room.target) return;
-  const end = glideEnd();
+  // The transition's end is a time on this module's context. A room built in
+  // another one (Live Sound's, js/livesound.js) keeps a clock of its own, so
+  // it takes the ordinary crossfade rather than a time it cannot read.
+  const end = room.ctx === audioCtx ? glideEnd() : 0;
   room.timer = setTimeout(() => { room.timer = null; roomWant(room, end); }, delayMs);
 }
 const roomKey = room => irKey(room.ctx.sampleRate, room.sec(), room.decay);

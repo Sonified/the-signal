@@ -41,7 +41,7 @@ const SYNC_KEYS = [
   'depthVar', 'varPeriod', 'brightVar', 'brightVarPeriod',
   'ringBrightVar', 'ringBrightPeriod',
   'edgeSpeedVar', 'edgeSpeedVarPeriod', 'edgeSizeVar', 'edgeSizeVarPeriod',
-  'ringSpeedMul', 'ringFade', 'ringThick', 'ringThickVar',
+  'ringSpeedMul', 'ringSpeedVar', 'ringSpeedVarPeriod', 'ringFade', 'ringThick', 'ringThickVar',
   'edgeCount', 'edgeSize', 'trailMul', 'edgeSpeedMul', 'edgeDir',
   'colorWalk', 'colorMode', 'perElementColor', 'hueSat', 'hueLight',
   'hueLo', 'hueSpan', 'walkPeriod',

@@ -89,6 +89,8 @@ export const S = {
   hintSweep: 2,               // v1: the hint's left-to-right dissolve speed, x the words' default Leave sweep
   hintFadeInMs: 2000,         // v1: ms the hint takes to appear (boot and every pause), 0 at once
   hintArrive: 'sweep',        // v1: how the hint appears: 'sweep' left to right, 'all' at once
+  fbResScale: 1,              // v1: Trail res, the screen feedback images' texels per device px (1, 0.75, 0.5; v1/gpu/feedback.js)
+  fbResSwitch: 'keep',        // v1: Trail switch, what a Trail res change does to the trails: 'keep' hands them over, 'clear' starts afresh
   parallaxSim: false,         // v1: simulated head sway for parallax (v1/core/eye.js); never saved, off every load
   parallaxAmount: 0.1,        // v1: the sway's peak eye offset, tunnel units (0.1 is 10% of the tunnel's radius)
   parallaxSpeed: 0.25,        // v1: the sway's frequency, Hz (one side to the other and back)
@@ -137,6 +139,7 @@ export const S = {
   // each on its own accumulator and started at a different phase so the two
   // never breathe in lockstep.
   edgeSpeedVar: 0.5, edgeSpeedVarPeriod: 22, edgeSpeedVarPhase: 0,    effEdgeSpeed: 1,
+  ringSpeedVar: 0, ringSpeedVarPeriod: 20, ringSpeedVarPhase: 0,      effRingSpeedMul: 0.5,
   edgeSizeVar:  0.5, edgeSizeVarPeriod:  18, edgeSizeVarPhase:  0.37, effEdgeSize:  1,
 
   rings: [], particles: [], lastRingEmit: -1,
@@ -331,6 +334,18 @@ export const S = {
   // the AM depth's own wander: each pulse depth roams 0..var of its slider
   choirStrobeAmVar: 0, choirStrobeAmPeriod: 20,
   bedStrobeAmVar: 0, bedStrobeAmPeriod: 20,
+  // Live Sound (js/livesound.js): a microphone or line input. Off at every
+  // load, since the switch is never saved. liveDevice is the chosen input's
+  // id, empty for the system default. The level starts low because a
+  // microphone monitored through speakers feeds back; musLive is the Music
+  // window's trim on it, as musAmb is on the ambience. liveReverb is the
+  // dry/wet mix, 0 all dry to 1 all room. liveLatency is the buffer asked of
+  // the input's own audio context, in ms; 0 asks the hardware for its least.
+  // liveRevTime is the room's length in seconds. The compressor's four start
+  // where its programmed values always were: threshold in dB, ratio as N:1,
+  // attack and release in ms.
+  liveOn: false, liveDevice: '', liveLevel: 0.25, liveReverb: 0.25, musLive: 1, liveLatency: 0,
+  liveRevTime: 3, liveThreshold: -24, liveRatio: 3, liveAttack: 3, liveRelease: 250,
   bedDetune: 152,             // which render of the drone plays (audio/music/manifest.json)
   // The drone's two slow sweeps (js/piano.js), the click train's filter sweep
   // again with the drone's own settings. Both off by default, which leaves the

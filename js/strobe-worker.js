@@ -138,6 +138,7 @@ function tick(t) {
 
   if (S.running) {
     S.edgeSpeedVarPhase += dt / S.edgeSpeedVarPeriod; S.edgeSpeedVarPhase -= Math.floor(S.edgeSpeedVarPhase);
+    S.ringSpeedVarPhase += dt / (S.ringSpeedVarPeriod || 20); S.ringSpeedVarPhase -= Math.floor(S.ringSpeedVarPhase);
     S.edgeSizeVarPhase  += dt / S.edgeSizeVarPeriod;  S.edgeSizeVarPhase  -= Math.floor(S.edgeSizeVarPhase);
   }
   S.effEdgeSpeed = S.edgeSpeedVar
@@ -146,6 +147,9 @@ function tick(t) {
   S.effEdgeSize = S.edgeSizeVar
     ? S.edgeSize * (1 - S.edgeSizeVar * 0.5*(1 - Math.cos(2*Math.PI*S.edgeSizeVarPhase)))
     : S.edgeSize;
+  S.effRingSpeedMul = S.ringSpeedVar
+    ? S.ringSpeedMul * (1 - S.ringSpeedVar * 0.5*(1 - Math.cos(2*Math.PI*(S.ringSpeedVarPhase || 0))))
+    : S.ringSpeedMul;
 
   S.effRingBright = S.ringBrightVar
     ? S.bright * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2*Math.PI*S.ringBrightPhase)))

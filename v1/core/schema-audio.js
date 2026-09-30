@@ -25,7 +25,7 @@ import {
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn
 } from '../../js/audio.js';
-import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm } from '../../js/piano.js';
+import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm, arpEffectiveVol, arpEffectiveAm } from '../../js/piano.js';
 import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm } from '../../js/clouds.js';
 import {
   applyChoir, applyChoirVol, applyChoirOn, applyChoirAm, choirEffectiveAm,
@@ -35,8 +35,12 @@ import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, AMB
 import { applyMixGates } from '../../js/mixgate.js';
 import { MUSIC_LAYERS, applyLayerOn, applyLayerVol } from '../../js/layers.js';
 import { layerOnKey, layerVolKey, layerMixId, layerDrawerId } from '../../js/layer-defs.js';
+import {
+  applyLiveOn, applyLiveDevice, applyLiveLevel, applyLiveReverb, applyLiveLatency,
+  applyLiveRevTime, applyLiveComp, liveLatencyNow, liveReductionNow, liveInputs
+} from '../../js/livesound.js';
 import { startDrift, stopDrift } from './atmosphere.js';
-import { save } from './store.js';
+import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 
 // ---------- shared helpers, ported from js/ui.js closures ----------
@@ -323,6 +327,7 @@ export const AUDIO_SECTIONS = [
   { id: 'audio',      title: 'Audio' },
   { id: 'music',      title: 'Music' },
   { id: 'atmosphere', title: 'Ambience' },
+  { id: 'live',       title: 'Live Sound' },
   { id: 'quick',      title: 'Quick bar' },
   { id: 'transport',  title: 'Transport' },
   { id: 'mixer',      title: 'Ambience mixer' }
@@ -359,7 +364,7 @@ const audioControls = [
     visible: () => false
   },
   {
-    id: 'musPulse', section: 'audio', label: 'Pulse trim', kind: 'slider',
+    id: 'musPulse', section: 'audio', label: 'Click trim', kind: 'slider',
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musPulse ?? 1) * 100),
     set: (s, pos) => { s.musPulse = trimOf(pos); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
@@ -452,7 +457,7 @@ const audioControls = [
     set: (s, on) => setClickOn(s, !!on),
     format: s => s.clickOn ? 'On' : 'Off'
   },
-  subDrawer('audioPulseDrawer', 'Pulse', 'audio', ['clickMode', 'clickVol'], 'aClick'),
+  subDrawer('audioPulseDrawer', 'Click', 'audio', ['clickMode', 'clickVol'], 'aClick'),
   {
     id: 'clickMode', section: 'audio', label: 'Mode', kind: 'segment',
     hideLabel: true,
@@ -937,8 +942,30 @@ const musicControls = [
     parent: 'musicArpDrawer',
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.arpVol * 100),
+    effective: s => (s.arpVolVar || 0) > 0 ? arpEffectiveVol() * 100 : undefined,
     set: (s, pos) => { s.arpVol = pos / 100; applyArp(); save(); },
     format: s => Math.round(s.arpVol * 100) + '%',
+    visible: s => s.musicOn && s.arpOn
+  },
+  {
+    // The master volume's dip, the app's standard: over one speed cycle it
+    // eases from the setting down by this share and back (js/piano.js,
+    // arpPump).
+    id: 'arpVolVar', section: 'music', label: 'Volume variance', kind: 'slider',
+    parent: 'musicArpDrawer', varianceOf: 'arpVol',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round((s.arpVolVar || 0) * 100),
+    set: (s, pos) => { s.arpVolVar = pos / 100; save(); },
+    format: s => Math.round((s.arpVolVar || 0) * 100) + '%',
+    visible: s => s.musicOn && s.arpOn
+  },
+  {
+    id: 'arpVolPeriod', section: 'music', label: 'Volume variance speed', kind: 'slider',
+    parent: 'musicArpDrawer', varianceOf: 'arpVol',
+    min: 0, max: 120, step: 1, def: 20,
+    get: s => s.arpVolPeriod ?? 20,
+    set: (s, pos) => { s.arpVolPeriod = pos; save(); },
+    format: s => (s.arpVolPeriod ?? 20) + 's',
     visible: s => s.musicOn && s.arpOn
   },
   {
@@ -970,8 +997,29 @@ const musicControls = [
     parent: 'musicArpDrawer',
     min: 0, max: 100, step: 1, def: 0,
     get: s => Math.round((s.arpStrobeAm || 0) * 100),
+    effective: s => (s.arpStrobeAmVar || 0) > 0 ? arpEffectiveAm() * 100 : undefined,
     set: (s, pos) => { s.arpStrobeAm = pos / 100; applyArp(); save(); },
     format: s => Math.round((s.arpStrobeAm || 0) * 100) + '%',
+    visible: s => s.musicOn && s.arpOn
+  },
+  {
+    // The pulse depth's dip, the drone's and choir's own (js/piano.js,
+    // arpPump).
+    id: 'arpStrobeAmVar', section: 'music', label: 'Pulse variance', kind: 'slider',
+    parent: 'musicArpDrawer', varianceOf: 'arpStrobeAm',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round((s.arpStrobeAmVar || 0) * 100),
+    set: (s, pos) => { s.arpStrobeAmVar = pos / 100; save(); },
+    format: s => Math.round((s.arpStrobeAmVar || 0) * 100) + '%',
+    visible: s => s.musicOn && s.arpOn
+  },
+  {
+    id: 'arpStrobeAmPeriod', section: 'music', label: 'Pulse variance speed', kind: 'slider',
+    parent: 'musicArpDrawer', varianceOf: 'arpStrobeAm',
+    min: 0, max: 120, step: 1, def: 20,
+    get: s => s.arpStrobeAmPeriod ?? 20,
+    set: (s, pos) => { s.arpStrobeAmPeriod = pos; save(); },
+    format: s => (s.arpStrobeAmPeriod ?? 20) + 's',
     visible: s => s.musicOn && s.arpOn
   },
   {
@@ -1072,6 +1120,23 @@ const musicControls = [
     get: s => Math.round((s.bedStrobeAmVar || 0) * 100),
     set: (s, pos) => { s.bedStrobeAmVar = pos / 100; applyBedAm(); save(); },
     format: s => Math.round((s.bedStrobeAmVar || 0) * 100) + '%',
+    visible: s => s.musicOn && s.bedOn !== false
+  },
+  {
+    // How the variance moves: Sinusoid breathes evenly, down by the amount
+    // and back once per period; Walk drifts leg by leg to random depths
+    // within it, never twice the same (js/choir.js, js/strobe-am.js).
+    id: 'bedStrobeAmVarMode', section: 'music', label: 'Behavior', kind: 'segment',
+    hideLabel: true,
+    parent: 'musicDroneDrawer', varianceOf: 'bedStrobeAm',
+    options: [
+      { value: 'sine', label: 'Sinusoid' },
+      { value: 'walk', label: 'Walk' }
+    ],
+    def: 'sine',
+    get: s => s.bedStrobeAmVarMode === 'walk' ? 'walk' : 'sine',
+    set: (s, v) => { s.bedStrobeAmVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
+    format: s => s.bedStrobeAmVarMode === 'walk' ? 'walk' : 'sinusoid',
     visible: s => s.musicOn && s.bedOn !== false
   },
   {
@@ -1257,6 +1322,23 @@ const musicControls = [
     visible: s => s.musicOn && s.choirOn
   },
   {
+    // How the variance moves: Sinusoid breathes evenly, down by the amount
+    // and back once per period; Walk drifts leg by leg to random depths
+    // within it, never twice the same (js/choir.js, js/strobe-am.js).
+    id: 'choirVolVarMode', section: 'music', label: 'Behavior', kind: 'segment',
+    hideLabel: true,
+    parent: 'musicChoirDrawer', varianceOf: 'choirVol',
+    options: [
+      { value: 'sine', label: 'Sinusoid' },
+      { value: 'walk', label: 'Walk' }
+    ],
+    def: 'sine',
+    get: s => s.choirVolVarMode === 'walk' ? 'walk' : 'sine',
+    set: (s, v) => { s.choirVolVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
+    format: s => s.choirVolVarMode === 'walk' ? 'walk' : 'sinusoid',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
     id: 'choirVolPeriod', section: 'music', label: 'Level variance speed', kind: 'slider',
     parent: 'musicChoirDrawer', varianceOf: 'choirVol',
     min: 0, max: 120, step: 1, def: 20,
@@ -1285,6 +1367,23 @@ const musicControls = [
     get: s => Math.round((s.choirStrobeAmVar || 0) * 100),
     set: (s, pos) => { s.choirStrobeAmVar = pos / 100; applyChoirAm(); save(); },
     format: s => Math.round((s.choirStrobeAmVar || 0) * 100) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    // How the variance moves: Sinusoid breathes evenly, down by the amount
+    // and back once per period; Walk drifts leg by leg to random depths
+    // within it, never twice the same (js/choir.js, js/strobe-am.js).
+    id: 'choirStrobeAmVarMode', section: 'music', label: 'Behavior', kind: 'segment',
+    hideLabel: true,
+    parent: 'musicChoirDrawer', varianceOf: 'choirStrobeAm',
+    options: [
+      { value: 'sine', label: 'Sinusoid' },
+      { value: 'walk', label: 'Walk' }
+    ],
+    def: 'sine',
+    get: s => s.choirStrobeAmVarMode === 'walk' ? 'walk' : 'sine',
+    set: (s, v) => { s.choirStrobeAmVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
+    format: s => s.choirStrobeAmVarMode === 'walk' ? 'walk' : 'sinusoid',
     visible: s => s.musicOn && s.choirOn
   },
   {
@@ -1317,6 +1416,23 @@ const musicControls = [
     visible: s => s.musicOn && s.choirOn
   },
   {
+    // How the variance moves: Sinusoid breathes evenly, down by the amount
+    // and back once per period; Walk drifts leg by leg to random depths
+    // within it, never twice the same (js/choir.js, js/strobe-am.js).
+    id: 'choirStackVarMode', section: 'music', label: 'Behavior', kind: 'segment',
+    hideLabel: true,
+    parent: 'musicChoirDrawer', varianceOf: 'choirStack',
+    options: [
+      { value: 'sine', label: 'Sinusoid' },
+      { value: 'walk', label: 'Walk' }
+    ],
+    def: 'sine',
+    get: s => s.choirStackVarMode === 'walk' ? 'walk' : 'sine',
+    set: (s, v) => { s.choirStackVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
+    format: s => s.choirStackVarMode === 'walk' ? 'walk' : 'sinusoid',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
     id: 'choirStackPeriod', section: 'music', label: 'Stack variance speed', kind: 'slider',
     parent: 'musicChoirDrawer', varianceOf: 'choirStack',
     min: 0, max: 120, step: 1, def: 20,
@@ -1343,6 +1459,23 @@ const musicControls = [
     get: s => Math.round(s.choirDensityVar * 100),
     set: (s, pos) => { s.choirDensityVar = pos / 100; applyChoir(); save(); },
     format: s => Math.round(s.choirDensityVar * 100) + '%',
+    visible: s => s.musicOn && s.choirOn
+  },
+  {
+    // How the variance moves: Sinusoid breathes evenly, down by the amount
+    // and back once per period; Walk drifts leg by leg to random depths
+    // within it, never twice the same (js/choir.js, js/strobe-am.js).
+    id: 'choirDensityVarMode', section: 'music', label: 'Behavior', kind: 'segment',
+    hideLabel: true,
+    parent: 'musicChoirDrawer', varianceOf: 'choirDensity',
+    options: [
+      { value: 'sine', label: 'Sinusoid' },
+      { value: 'walk', label: 'Walk' }
+    ],
+    def: 'sine',
+    get: s => s.choirDensityVarMode === 'walk' ? 'walk' : 'sine',
+    set: (s, v) => { s.choirDensityVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
+    format: s => s.choirDensityVarMode === 'walk' ? 'walk' : 'sinusoid',
     visible: s => s.musicOn && s.choirOn
   },
   {
@@ -1599,6 +1732,196 @@ const atmosphereControls = [
     visible: s => s.ambOn
   }
 ];
+
+// ---------- Live Sound section (js/livesound.js) ----------
+// A microphone or line input, through a compressor and a room of its own. Every set() here ends in saveLive rather than save(): these settings
+// are this machine's alone and stay out of presets, other tabs and the
+// broadcast (see saveLive in store.js). The switch is not saved at all, so a
+// reload comes up with the input closed, and nothing is opened before
+// someone switches it on.
+//
+// The input list is the browser's, and it changes: blank until the first
+// grant (browsers hide the names until then), filled in after it, and again
+// whenever something is plugged in or pulled out. So the dropdown's options
+// are a getter over livesound.js's list: the same array for as long as the
+// list and the choice stay put, and a fresh one when either moves, which
+// the select notices by its identity (widgets.js). The first option, the
+// empty id, is the system's default input; a saved input the browser does
+// not list right now (before the grant, or unplugged) stays in the list as
+// 'Saved input' so the box shows what is actually chosen.
+let liveOpts = null, liveOptsList = null, liveOptsFor = null;
+function liveDeviceOptions() {
+  const list = liveInputs(), chosen = S.liveDevice || '';
+  if (liveOpts && list === liveOptsList && chosen === liveOptsFor) return liveOpts;
+  const opts = [{ value: '', label: 'Default input' }];
+  let found = !chosen;
+  for (const d of list) {
+    opts.push({ value: d.id, label: d.label });
+    if (d.id === chosen) found = true;
+  }
+  if (!found) opts.push({ value: chosen, label: 'Saved input' });
+  liveOpts = opts; liveOptsList = list; liveOptsFor = chosen;
+  return opts;
+}
+
+const liveControls = [
+  {
+    // Opens the input (asking the browser's permission the first time) and
+    // brings it in; off stops it, and the microphone light goes out. A
+    // refusal turns this back off by itself (livesound.js).
+    id: 'liveOn', section: 'live', label: 'On', kind: 'toggle',
+    get: s => !!s.liveOn,
+    set: (s, on) => { s.liveOn = !!on; applyLiveOn(); }
+  },
+  {
+    // A change while live opens the new input at once and crossfades to it.
+    id: 'liveDevice', section: 'live', label: 'Input', kind: 'segment', dropdown: true,
+    get options() { return liveDeviceOptions(); },
+    get: s => s.liveDevice || '',
+    set: (s, v) => { s.liveDevice = typeof v === 'string' ? v : ''; applyLiveDevice(); saveLive(); }
+  },
+  {
+    // The local monitor only. The broadcast hears the input at its designed
+    // level whatever this says, so a broadcaster can monitor at nothing.
+    id: 'liveLevel', section: 'live', label: 'Level', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 25,
+    get: s => Math.round(s.liveLevel * 100),
+    set: (s, pos) => { s.liveLevel = pos / 100; applyLiveLevel(); saveLive(); },
+    format: s => Math.round(s.liveLevel * 100) + '%',
+    visible: s => s.liveOn
+  },
+  {
+    // The Music window's trim, as musAmb is the ambience's: 100% plays
+    // exactly the level above. Out of the drawer.
+    id: 'musLive', section: 'live', label: 'Live Sound trim', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((s.musLive ?? 1) * 100),
+    set: (s, pos) => { s.musLive = trimOf(pos); applyLiveLevel(); saveLive(); },
+    format: s => Math.round((s.musLive ?? 1) * 100) + '%',
+    visible: () => false
+  },
+  {
+    // The mix between the dry input and its own room, after the compressor:
+    // 0 is all dry, 100 all room with no dry signal left. The broadcast
+    // hears the same mix the monitor does.
+    id: 'liveReverb', section: 'live', label: 'Reverb mix', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 25,
+    get: s => Math.round(s.liveReverb * 100),
+    set: (s, pos) => { s.liveReverb = pos / 100; applyLiveReverb(); saveLive(); },
+    format: s => liveMixLabel(Math.round(s.liveReverb * 100)),
+    visible: s => s.liveOn
+  },
+  {
+    // The room's length. A move builds the new impulse once the slider has
+    // rested and crossfades it in under the old tail (livesound.js), so a
+    // drag never clicks and never cuts the room off.
+    id: 'liveRevTime', section: 'live', label: 'Decay', kind: 'slider',
+    min: 0.5, max: 8, step: 0.1, def: 3,
+    get: s => s.liveRevTime,
+    set: (s, pos) => { s.liveRevTime = pos; applyLiveRevTime(); saveLive(); },
+    format: s => s.liveRevTime.toFixed(1) + 's',
+    visible: s => s.liveOn
+  },
+  // The compressor, ahead of the dry side and the room alike. The defaults
+  // are its old programmed settings; the knee stays programmed. Each move
+  // glides its parameter (livesound.js applyLiveComp).
+  {
+    id: 'liveThreshold', section: 'live', label: 'Threshold', kind: 'slider',
+    min: -60, max: 0, step: 1, def: -24,
+    get: s => s.liveThreshold,
+    set: (s, pos) => { s.liveThreshold = pos; applyLiveComp(); saveLive(); },
+    format: s => s.liveThreshold + ' dB',
+    visible: s => s.liveOn
+  },
+  {
+    id: 'liveRatio', section: 'live', label: 'Ratio', kind: 'slider',
+    min: 1, max: 20, step: 0.5, def: 3,
+    get: s => s.liveRatio,
+    set: (s, pos) => { s.liveRatio = pos; applyLiveComp(); saveLive(); },
+    format: s => (Number.isInteger(s.liveRatio) ? s.liveRatio : s.liveRatio.toFixed(1)) + ':1',
+    visible: s => s.liveOn
+  },
+  {
+    // The track is a cube: position p is 100 (p/100)^3 ms, so the first
+    // third of the travel covers 0 to about 4 ms, where an attack is mostly
+    // set, and the last stretch sweeps up to 100. The state keeps ms.
+    id: 'liveAttack', section: 'live', label: 'Attack', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 31,
+    get: s => attackToPos(s.liveAttack),
+    set: (s, pos) => { s.liveAttack = posToAttack(pos); applyLiveComp(); saveLive(); },
+    format: s => s.liveAttack < 10 ? s.liveAttack.toFixed(1) + ' ms' : Math.round(s.liveAttack) + ' ms',
+    parse: (s, text) => attackToPos(parseFloat(text)),
+    visible: s => s.liveOn
+  },
+  {
+    // Log, as the other time sliders are: 10 to 100 ms gets half the travel.
+    id: 'liveRelease', section: 'live', label: 'Release', kind: 'slider',
+    min: 10, max: 1000, step: 1, def: 250, taper: 'log',
+    get: s => s.liveRelease,
+    set: (s, pos) => { s.liveRelease = pos; applyLiveComp(); saveLive(); },
+    format: s => s.liveRelease + ' ms',
+    visible: s => s.liveOn
+  },
+  // The meter: how far the compressor is pulling the sound down right now,
+  // read from the node itself (in worker mode, the page's reading). Not a
+  // control, drawn the way the chirp's length is, a readout on a disabled
+  // action, refreshed with the drawer's action faces about five times a
+  // second.
+  {
+    id: 'liveReduction', section: 'live', label: 'Gain reduction', kind: 'action',
+    act: () => {},
+    format: () => liveReductionLabel(liveReductionNow()),
+    enabled: () => false,
+    visible: s => s.liveOn
+  },
+  {
+    // The buffer asked of the input's own audio context, 0 to 100 ms; at 0,
+    // the least the hardware offers. Moving it while the input is open
+    // builds the context again behind the slider (livesound.js rebuild).
+    // The readout gives what was asked and, while a context is open, what
+    // it actually got, output included where the browser says.
+    id: 'liveLatency', section: 'live', label: 'Latency', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => s.liveLatency || 0,
+    set: (s, pos) => { s.liveLatency = Math.max(0, Math.min(100, Math.round(pos))); applyLiveLatency(); saveLive(); },
+    format: s => liveLatencyLabel(s.liveLatency || 0, liveLatencyNow()),
+    visible: s => s.liveOn
+  }
+];
+
+// The two live readouts are read every frame the drawer shows them, and the
+// latency's second half can move on its own, so each keeps the string it
+// last built and hands it back while its numbers stay put.
+let mixPos = -1, mixText = '';
+function liveMixLabel(pos) {
+  if (pos === mixPos) return mixText;
+  mixPos = pos;
+  mixText = pos <= 0 ? 'dry' : pos >= 100 ? 'wet' : pos + '% wet';
+  return mixText;
+}
+let latAsked = -1, latGot = -2, latText = '';
+function liveLatencyLabel(asked, got) {
+  if (asked === latAsked && got === latGot) return latText;
+  latAsked = asked; latGot = got;
+  const a = asked > 0 ? asked + ' ms' : 'min';
+  latText = got >= 0 ? a + ', got ' + got + ' ms' : a;
+  return latText;
+}
+// The gain reduction, to a tenth of a dB, with a dash while no context is
+// open to read it from.
+let grTenths = NaN, grText = '';
+function liveReductionLabel(db) {
+  const t = Number.isFinite(db) ? Math.round(db * 10) + 0 : NaN;
+  if (Object.is(t, grTenths) && grText) return grText;
+  grTenths = t;
+  grText = Number.isFinite(t) ? 'Reduction ' + (t / 10).toFixed(1) + ' dB' : 'Reduction –';
+  return grText;
+}
+
+// Attack's cube taper (the Attack slider above), position 0 to 100 against
+// ms, and back.
+const posToAttack = pos => 100 * Math.pow(Math.max(0, Math.min(100, pos)) / 100, 3);
+const attackToPos = ms => Number.isFinite(ms) ? Math.round(100 * Math.cbrt(Math.max(0, Math.min(100, ms)) / 100)) : NaN;
 
 // ---------- Quick bar ----------
 // The chips' labels are re-read about five times a second while the chrome
@@ -1864,7 +2187,7 @@ function mixerSettingsText(s) {
 }
 
 export const AUDIO_CONTROLS = [
-  ...audioControls, ...musicControls, ...atmosphereControls,
+  ...audioControls, ...musicControls, ...atmosphereControls, ...liveControls,
   ...quickControls, ...transportControls, ...mixerControls
 ];
 

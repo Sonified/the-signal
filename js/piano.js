@@ -52,7 +52,7 @@ let running = false, clock = 0, elapsed = 0, drift = 0, lastDyad = 0, timer = nu
 // rather than each note, so a fade reaches the notes already ringing.
 const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
 const bedLevel = () => S.bedVol * perfTrim(S.musDrone ?? 1);
-const arpLevel = () => S.arpVol * perfTrim(S.musArp ?? 1);
+const arpLevel = () => S.arpVol * (1 - effArpVolDepth) * perfTrim(S.musArp ?? 1);
 
 const canOpus = (() => {
   const a = new Audio();
@@ -656,7 +656,8 @@ function bedOn() {
   bedRunning = true;
   bedGain = ctx.createGain();
   bedGain.gain.value = 0;
-  bedAm = strobeAm(ctx, () => S.bedStrobeAm, () => S.bedStrobeAmVar, () => S.bedStrobeAmPeriod);
+  bedAm = strobeAm(ctx, () => S.bedStrobeAm, () => S.bedStrobeAmVar, () => S.bedStrobeAmPeriod,
+    () => S.bedStrobeAmVarMode);
   bedGain.connect(bedAm.node);
   // The drone's own low-pass, ahead of its tap so the dry path, the room and
   // the meter all hear the same filtered drone, and its own feed into the
@@ -1210,7 +1211,26 @@ const arpVolSweep = createSweep({
 });
 // The strobe's flash rate and waveform (strobeHz, strobeWave) come from
 // strobe-am.js, shared with the drone's stage.
-const arpAmDepth = () => scaledStrobeDepth(S.arpStrobeAm || 0);
+// The master volume's and the strobe pulse's variances, each the app's
+// standard dip: down from the setting by the amount's share and back, one
+// cycle per its speed, stepped by arpPump on the audio clock, so a
+// suspended context holds them where they are. schema-audio.js reads the
+// two effectives for the sliders' glowing bars.
+const dip01 = v => Math.max(0, Math.min(1, +v || 0));
+const arpVolB = { phase: 0, at: -1 }, arpAmB = { phase: 0, at: -1 };
+let effArpVolDepth = 0, effArpAmDepth = 0;
+function arpDip(b, amount, period, now) {
+  if (!(amount > 0)) { b.phase = 0; b.at = now; return 0; }
+  const p = Math.max(0.5, +period || 20);
+  if (b.at < 0) b.at = now;
+  b.phase += (now - b.at) / p;
+  b.phase -= Math.floor(b.phase);
+  b.at = now;
+  return amount * 0.5 * (1 - Math.cos(2 * Math.PI * b.phase));
+}
+export const arpEffectiveVol = () => Math.max(0, S.arpVol || 0) * (1 - effArpVolDepth);
+export const arpEffectiveAm = () => dip01(S.arpStrobeAm) * (1 - effArpAmDepth);
+const arpAmDepth = () => scaledStrobeDepth(dip01(S.arpStrobeAm) * (1 - effArpAmDepth));
 const arpTargetRate = () => Math.max(2, Math.min(14, S.arpRate || 7));
 
 // One line's tone, in the old single line's shape: an oscillator that never
@@ -1530,6 +1550,17 @@ function arpPump() {
   // (no pump runs at all then).
   const dt = ctx.currentTime - arp.tickAt;
   arp.tickAt = ctx.currentTime;
+  // The two variances' step; only a moved depth rewrites its gains, so a
+  // still dip costs nothing.
+  const vd0 = effArpVolDepth, ad0 = effArpAmDepth;
+  effArpVolDepth = arpDip(arpVolB, dip01(S.arpVolVar), S.arpVolPeriod, ctx.currentTime);
+  effArpAmDepth = arpDip(arpAmB, dip01(S.arpStrobeAmVar), S.arpStrobeAmPeriod, ctx.currentTime);
+  if (effArpVolDepth !== vd0) glideParam(arp.out.gain, arpLevel(), 0.25);
+  if (effArpAmDepth !== ad0) {
+    const amD = arpAmDepth();
+    glideParam(arp.amG.gain, 1 - amD / 2, 0.25);
+    glideParam(arp.amDepth.gain, amD / 2, 0.25);
+  }
   if (dt > 0) seqAdvance(dt);
   seqSync();
   while (arp.next < ctx.currentTime + 0.6) {
