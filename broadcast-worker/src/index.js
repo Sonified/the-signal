@@ -30,6 +30,9 @@ export class Room {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
+    // The edge answers each keepalive 'ping' with 'pong' itself, so a room
+    // whose followers are only pinging stays hibernated; a join, a leave or a
+    // real message still wakes it.
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
@@ -74,6 +77,7 @@ export class Room {
 
   async webSocketMessage(ws, message) {
     if (typeof message !== 'string') return;
+    if (message === 'ping') return;
     let msg;
     try { msg = JSON.parse(message); } catch (e) { return; }
     if (!msg || typeof msg !== 'object') return;
