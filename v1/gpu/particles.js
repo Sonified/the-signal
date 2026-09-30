@@ -81,7 +81,7 @@ import { motionStep } from '../core/motion.js';
 import { eye } from '../core/eye.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { createFold, FOLD_CHAMBER_FORMAT } from './fold.js';
-import { createFeedback, FEEDBACK_FORMAT } from './feedback.js';
+import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './feedback.js';
 import { particleBirthsPerSec, PARTICLE_MEAN_VZ, PARTICLE_SLOWEST } from '../core/schema-particles.js';
 // the sequencer channel's peak through the mirror, which reads it from the
 // page in worker mode (core/audio-mirror.js)
@@ -240,8 +240,8 @@ export function createParticles(device, format, platform) {
   // pulled onto the room clock (core/room-clock.js), so every screen swings
   // together.
   let fbGain = 1, fbOpacity = 1, fbMax = false;
-  let pulsePhase = 0, amtPhase = 0, streamPhase = 0, twistPhase = 0, fadePhase = 0;
-  const pulseRoom = roomPhaseState(), amtRoom = roomPhaseState(), streamRoom = roomPhaseState();
+  let pulsePhase = 0, opPhase = 0, streamPhase = 0, twistPhase = 0, fadePhase = 0;
+  const pulseRoom = roomPhaseState(), opRoom = roomPhaseState(), streamRoom = roomPhaseState();
   const twistRoom = roomPhaseState(), fadeRoom = roomPhaseState();
 
   let cursor = 0, spawned = 0, spawnAcc = 0, frameSeed = 1;
@@ -473,7 +473,7 @@ export function createParticles(device, format, platform) {
     const fadeRate = clampNum(S.partFadeRate, 1, 60, 10);
     fadePhase += step / fadeRate;
     fadePhase -= Math.floor(fadePhase);
-    fadePhase = roomPhase(fadeRoom, fadePhase, t, step, fadeRate);
+    fadePhase = roomPhase(fadeRoom, fadePhase, t, step, fadeRate, S.partFadeRateOff || 0);
     let fadeIn = clampNum(S.partFade, 0, 1, 0.55);
     const fadeVar = clampNum(S.partFadeVar, 0, 1, 0);
     if (fadeVar > 0) fadeIn *= 1 - fadeVar * 0.5 * (1 - Math.cos(TAU * fadePhase));
@@ -556,10 +556,16 @@ export function createParticles(device, format, platform) {
     winCount = live;
     winStart = ((cursor - live) % CAPACITY + CAPACITY) % CAPACITY;
 
+    // Where births land (sim.d.x is read only at birth, particles.wgsl.js):
+    // Origin depth's share of the tunnel in log z, the rings' own mapping
+    // (js/sim.js ringBirthZ), so the slider moves the birth ring evenly;
+    // 100% is Z_FAR, exactly as it always was.
+    const originO = clampNum(S.partOrigin, 0.05, 1, 1);
+    const birthZ = originO >= 1 ? Z_FAR : Z_NEAR * Math.pow(Z_FAR / Z_NEAR, originO);
     sim[0] = step; sim[1] = t / 1000; sim[2] = spawnStart; sim[3] = spawnCount;
     sim[4] = CAPACITY; sim[5] = emitter; sim[6] = speed; sim[7] = spread;
     sim[8] = swirl; sim[9] = sizeMul; sim[10] = sizeVar; sim[11] = frameSeed * 7919;
-    sim[12] = Z_FAR; sim[13] = Z_NEAR; sim[14] = fillN; sim[15] = perSec;
+    sim[12] = birthZ; sim[13] = Z_NEAR; sim[14] = fillN; sim[15] = perSec;
     sim[16] = winStart; sim[17] = winCount; sim[18] = kVis; sim[19] = BIRTH_JITTER_SEC;
     device.queue.writeBuffer(simBuf, 0, sim);
 
@@ -578,29 +584,24 @@ export function createParticles(device, format, platform) {
     // This frame's feedback, exactly as confetti.js works it out: the
     // half-life from the slider's square (0, no trails), the stream and
     // twist rates, and the frame's step, 0 while stopped, which holds the
-    // image. Each of the three first swings by its variance, its phase
-    // advancing by the frame's step over its rate, so a stopped scene holds
-    // the swing where it is. The route keys off the feedback being in use,
-    // the setting or its upper reach above 0, rather than off this frame's
-    // swung amount, so a swing that passes through 0 clears for those frames
-    // (keepHalfLife 0, exactly the slider at 0) without letting one image go
-    // and making the other. In a room each is pulled onto the room clock,
-    // as the fade radius's is above.
-    const amtRate = clampNum(S.partFbAmtVarRate, 1, 120, 20);
+    // image. Stream and Twist first swing by their variances, and the
+    // trails' opacity dips by its own further down, each phase advancing by
+    // the frame's step over its rate, so a stopped scene holds the swing
+    // where it is. In a room each is pulled onto the room clock, as the
+    // fade radius's is above.
+    const opRate = clampNum(S.partFbOpVarRate, 1, 120, 20);
     const streamRate = clampNum(S.partFbStreamVarRate, 1, 120, 20);
     const twistRate = clampNum(S.partFbTwistVarRate, 1, 120, 20);
-    amtPhase += step / amtRate;
-    amtPhase -= Math.floor(amtPhase);
+    opPhase += step / opRate;
+    opPhase -= Math.floor(opPhase);
     streamPhase += step / streamRate;
     streamPhase -= Math.floor(streamPhase);
     twistPhase += step / twistRate;
     twistPhase -= Math.floor(twistPhase);
-    amtPhase = roomPhase(amtRoom, amtPhase, t, step, amtRate);
-    streamPhase = roomPhase(streamRoom, streamPhase, t, step, streamRate);
-    twistPhase = roomPhase(twistRoom, twistPhase, t, step, twistRate);
+    opPhase = roomPhase(opRoom, opPhase, t, step, opRate, S.partFbOpVarRateOff || 0);
+    streamPhase = roomPhase(streamRoom, streamPhase, t, step, streamRate, S.partFbStreamVarRateOff || 0);
+    twistPhase = roomPhase(twistRoom, twistPhase, t, step, twistRate, S.partFbTwistVarRateOff || 0);
     const fbBase = clampNum(S.partFeedback, 0, 1, 0);
-    const amtHi = clampNum(S.partFbAmtVarHi, 0, 1, 0);
-    const fbS = swing(fbBase, clampNum(S.partFbAmtVarLo, -1, 0, 0), amtHi, amtPhase, 0, 1);
     const fbStream = swing(clampNum(S.partFbStream, -2, 2, 0),
       clampNum(S.partFbStreamVarLo, -4, 0, 0), clampNum(S.partFbStreamVarHi, 0, 4, 0), streamPhase, -2, 2);
     const fbTwistBase = clampNum(S.partFbTwist, -1, 1, 0);
@@ -610,12 +611,18 @@ export function createParticles(device, format, platform) {
     const fbTwist = S.partFbTwistVarOn === false ? fbTwistBase
       : fbTwistBase + (swing(fbTwistBase, clampNum(S.partFbTwistVarLo, -2, 0, 0),
         clampNum(S.partFbTwistVarHi, 0, 2, 0), twistPhase, -1, 1) - fbTwistBase) * twistMix;
-    S.effPartFeedback = fbS;
     S.effPartFbStream = fbStream;
     S.effPartFbTwist = fbTwist;
-    const fbInUse = fbBase > 0 || amtHi > 0;
+    const fbInUse = fbBase > 0;
     before = kaleidoNow && fbInUse && S.partFbWhere === 'before';
-    fbParams.keepHalfLife = HL_MAX * fbS * fbS;
+    // The Render section's Trail res: fbScreen's texels per device pixel,
+    // handed to its ensure and to the fold that lays the chamber's pattern
+    // into it, so the two agree (feedback.js, fold.js fit). fbChamber is
+    // already small and keeps its own size. The Trail switch says whether a
+    // change of it keeps fbScreen's trails (feedback.js ensure's keep).
+    const fbRes = feedbackRes(S.fbResScale);
+    const fbKeep = feedbackKeep(S.fbResSwitch);
+    fbParams.keepHalfLife = HL_MAX * fbBase * fbBase;
     fbParams.zoomRate = STREAM_MAX * fbStream;
     fbParams.twistRate = TWIST_MAX * fbTwist;
     fbParams.dt = step;
@@ -627,14 +634,20 @@ export function createParticles(device, format, platform) {
     const pulseRate = clampNum(S.partFbPulseRate, 1, 60, 10);
     pulsePhase += step / pulseRate;
     pulsePhase -= Math.floor(pulsePhase);
-    pulsePhase = roomPhase(pulseRoom, pulsePhase, t, step, pulseRate);
+    pulsePhase = roomPhase(pulseRoom, pulsePhase, t, step, pulseRate, S.partFbPulseRateOff || 0);
     let fbPulse = clampNum(S.partFbPulse, 0, 1, 0);
     const fbPulseVar = clampNum(S.partFbPulseVar, 0, 1, 0);
     if (fbPulseVar > 0) fbPulse *= 1 - fbPulseVar * 0.5 * (1 - Math.cos(TAU * pulsePhase));
     fbPulse = scaledStrobeDepth(fbPulse);
     S.effPartFbPulse = fbPulse;
     fbGain = 1 - fbPulse + fbPulse * l;
+    // The trails' Opacity, dipped by its variance as the Pulse above: over
+    // one Variance rate cycle it eases from the setting down by the
+    // variance's share and back.
     fbOpacity = clampNum(S.partFbOpacity, 0, 1, 1);
+    const fbOpVar = clampNum(S.partFbOpVar, 0, 1, 0);
+    if (fbOpVar > 0) fbOpacity *= 1 - fbOpVar * 0.5 * (1 - Math.cos(TAU * opPhase));
+    S.effPartFbOpacity = fbOpacity;
     fbMax = S.partFbBlend === 'max';
     // The bypass (see its note in createParticles): the feedback not in use,
     // so no image work this frame.
@@ -666,7 +679,7 @@ export function createParticles(device, format, platform) {
       if (!bypass && !before) {
         const fi = fbMax ? foldMax : foldAdd;
         fi.ensureChamber(pixelW, pixelH, foldParams, true);
-        fi.fit(cx, cy);
+        fi.fit(cx, cy, fbRes);
       } else {
         (fbMax ? foldMax : foldAdd).releaseChamber();
       }
@@ -686,7 +699,9 @@ export function createParticles(device, format, platform) {
     // visible field, carries and rescales the trails with the scene
     // (feedback.js). On screen the unit is focal itself; in the chamber it
     // is focal times the chamber's texels per device pixel. The image not in
-    // use is let go, so coming back to it starts clear.
+    // use is let go, so coming back to it starts clear. The screen image's
+    // centre and unit stay in device px at any Trail res: feedback.js takes
+    // them into its own texels by the scale ensure was given.
     if (bypass) {
       fbScreen.release();
       fbChamber.release();
@@ -696,7 +711,7 @@ export function createParticles(device, format, platform) {
       fbParams.cx = f[4]; fbParams.cy = f[5]; fbParams.unit = focal * f[6];
       fbScreen.release();
     } else {
-      fbScreen.ensure(pixelW, pixelH);
+      fbScreen.ensure(pixelW, pixelH, fbRes, fbKeep);
       fbParams.cx = cx; fbParams.cy = cy; fbParams.unit = focal;
       fbChamber.release();
     }

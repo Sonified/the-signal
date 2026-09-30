@@ -31,7 +31,7 @@ import { CORNER_TYPES } from '../../js/state.js';
 import { setAmRate } from '../../js/audio.js';
 import { seedParticles, applyEdgeDir } from '../../js/sim.js';
 import { THEMES, WORDS } from '../../js/words.js';
-import { rebuildWordPool } from './words.js';
+import { rebuildWordPool, retimeWordOpacity } from './words.js';
 import { FX_NAMES } from './word-fx.js';
 import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
@@ -643,8 +643,30 @@ export const VISUAL_CONTROLS = [
     parent: 'tunnelTimingDrawer',
     min: 0.2, max: 3, step: 0.05, def: 0.5,
     get: S => S.ringSpeedMul,
+    // the glowing bar: the speed as the variance is dipping it, computed in
+    // core/strobe.js (and the worker's own copy) each frame
+    effective: S => S.ringSpeedVar > 0 && typeof S.effRingSpeedMul === 'number'
+      ? S.effRingSpeedMul : undefined,
     set: (S, pos) => { S.ringSpeedMul = pos; save(); },
     format: S => S.ringSpeedMul.toFixed(1) + '×'
+  },
+  {
+    // The speed's dip, the app's standard: over one rate cycle the rings
+    // ease from the setting down by this share and back, never above it.
+    id: 'ringSpeedVar', section: 'tunnel', label: 'Speed variance', kind: 'slider',
+    parent: 'tunnelTimingDrawer', varianceOf: 'ringSpeed',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.ringSpeedVar || 0) * 100),
+    set: (S, pos) => { S.ringSpeedVar = pos / 100; save(); },
+    format: S => Math.round((S.ringSpeedVar || 0) * 100) + '%'
+  },
+  {
+    id: 'ringSpeedVarPeriod', section: 'tunnel', label: 'Variance rate', kind: 'slider',
+    parent: 'tunnelTimingDrawer', varianceOf: 'ringSpeed',
+    min: 1, max: 60, step: 1, def: 20,
+    get: S => S.ringSpeedVarPeriod ?? 20,
+    set: (S, pos) => { S.ringSpeedVarPeriod = pos; save(); },
+    format: S => (S.ringSpeedVarPeriod ?? 20) + 's / cycle'
   },
   {
     // How often a new ring is born, straight in rings a second; the old
@@ -1320,7 +1342,10 @@ export const VISUAL_CONTROLS = [
     parent: 'textStylingDrawer',
     min: 1, max: 60, step: 1, def: 20,
     get: S => S.textOpacityVarPeriod,
-    set: (S, pos) => { S.textOpacityVarPeriod = pos; save(); },
+    // in a running word walk the change is folded into the dip's phase
+    // offset first (core/words.js retimeWordOpacity), so it carries on from
+    // where it is at the new rate instead of jumping
+    set: (S, pos) => { retimeWordOpacity(S, S.textOpacityVarPeriod, pos); S.textOpacityVarPeriod = pos; save(); },
     format: S => S.textOpacityVarPeriod + 's / cycle'
   },
   {
@@ -1355,6 +1380,151 @@ export const VISUAL_CONTROLS = [
     get: S => !!S.textLinesTogether,
     set: (S, on) => { S.textLinesTogether = !!on; save(); },
     format: S => S.textLinesTogether ? 'On' : 'Off'
+  },
+  // ---- the words' backing, its own drawer: two ways to help the letters
+  // hold their own over a busy scene (ui/screens/overlay.js), each off at 0
+  // and each with its own opacity ----
+  {
+    // The shadow's switch, on its strip: a quick A/B of the scene with and
+    // without it. Off greys the rows below rather than hiding them, so the
+    // settings stay in sight and come back as left.
+    id: 'textShadowOn', section: 'text', label: 'Shadow', kind: 'toggle', def: true,
+    get: S => S.textShadowOn !== false,
+    set: (S, on) => { S.textShadowOn = !!on; save(); },
+    format: S => S.textShadowOn !== false ? 'On' : 'Off'
+  },
+  subDrawer('textShadowDrawer', 'Shadow', 'text', ['textShadowO'], 'textShadowOn'),
+  {
+    // A black copy of every letter directly behind it, following each
+    // transition letter for letter. It darkens what shows through a soft or
+    // faint letter and haloes the edge. A record from before either of
+    // these controls reads as 0.
+    id: 'textShadowO', section: 'text', label: 'Opacity', kind: 'slider',
+    summaryLabel: 'Opacity',
+    parent: 'textShadowDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.textShadowO || 0) * 100),
+    set: (S, pos) => { S.textShadowO = pos / 100; save(); },
+    format: S => Math.round((S.textShadowO || 0) * 100) + '%',
+    enabled: S => S.textShadowOn !== false
+  },
+  {
+    // How far the shadow softens past the letter's edge, on top of the little
+    // it always has, up to the most the glyph shader allows (ui/screens/overlay.js).
+    id: 'textShadowBlur', section: 'text', label: 'Blur', kind: 'slider',
+    parent: 'textShadowDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.textShadowBlur || 0) * 100),
+    set: (S, pos) => { S.textShadowBlur = pos / 100; save(); },
+    format: S => Math.round((S.textShadowBlur || 0) * 100) + '%',
+    enabled: S => S.textShadowOn !== false
+  },
+  {
+    // How far the dark copies swell past the letters' edges, evenly all
+    // round, up to a quarter more letter (ui/screens/overlay.js).
+    id: 'textShadowSize', section: 'text', label: 'Size', kind: 'slider',
+    parent: 'textShadowDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.textShadowSize || 0) * 100),
+    set: (S, pos) => { S.textShadowSize = pos / 100; save(); },
+    format: S => Math.round((S.textShadowSize || 0) * 100) + '%',
+    enabled: S => S.textShadowOn !== false
+  },
+  {
+    // The shadow's own arrival: it eases in over this once a word appears.
+    // 0 follows the letters exactly, as before (ui/screens/overlay.js).
+    id: 'textShadowFadeIn', section: 'text', label: 'Fade in', kind: 'slider',
+    parent: 'textShadowDrawer',
+    min: 0, max: 2000, step: 50, def: 0,
+    get: S => S.textShadowFadeInMs || 0,
+    set: (S, pos) => { S.textShadowFadeInMs = pos; save(); },
+    format: S => (S.textShadowFadeInMs || 0) + ' ms',
+    enabled: S => S.textShadowOn !== false
+  },
+  {
+    // And its leaving: from the moment the word starts out, the shadow
+    // sinks over this. 0 rides the letters out, as before.
+    id: 'textShadowFadeOut', section: 'text', label: 'Fade out', kind: 'slider',
+    parent: 'textShadowDrawer',
+    min: 0, max: 2000, step: 50, def: 0,
+    get: S => S.textShadowFadeOutMs || 0,
+    set: (S, pos) => { S.textShadowFadeOutMs = pos; save(); },
+    format: S => (S.textShadowFadeOutMs || 0) + ' ms',
+    enabled: S => S.textShadowOn !== false
+  },
+  {
+    // The panel's switch, on its strip, the shadow's twin above.
+    id: 'textPanelOn', section: 'text', label: 'Panel', kind: 'toggle', def: true,
+    get: S => S.textPanelOn !== false,
+    set: (S, on) => { S.textPanelOn = !!on; save(); },
+    format: S => S.textPanelOn !== false ? 'On' : 'Off'
+  },
+  subDrawer('textPanelDrawer', 'Panel', 'text', ['textPanelO'], 'textPanelOn'),
+  {
+    // A rounded black block behind the letters, filling in as they arrive
+    // and gone with the last of them, so it never sits on an empty screen.
+    id: 'textPanelO', section: 'text', label: 'Opacity', kind: 'slider',
+    summaryLabel: 'Opacity',
+    parent: 'textPanelDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.textPanelO || 0) * 100),
+    set: (S, pos) => { S.textPanelO = pos / 100; save(); },
+    format: S => Math.round((S.textPanelO || 0) * 100) + '%',
+    enabled: S => S.textPanelOn !== false
+  },
+  {
+    // The panel's margin past the letters: a sliver at 0, the full wide
+    // pad at 100% (ui/screens/overlay.js).
+    id: 'textPanelSize', section: 'text', label: 'Size', kind: 'slider',
+    parent: 'textPanelDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.textPanelSize ?? 1) * 100),
+    set: (S, pos) => { S.textPanelSize = pos / 100; save(); },
+    format: S => Math.round((S.textPanelSize ?? 1) * 100) + '%',
+    enabled: S => S.textPanelOn !== false
+  },
+  {
+    // Soft edges melt the panel's rim into the scene: the hard rounded rect
+    // gives way to a true Gaussian of the same box, up to half an em wide
+    // (ui/screens/overlay.js).
+    id: 'textPanelSoft', section: 'text', label: 'Soft edges', kind: 'slider',
+    parent: 'textPanelDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.textPanelSoft || 0) * 100),
+    set: (S, pos) => { S.textPanelSoft = pos / 100; save(); },
+    format: S => Math.round((S.textPanelSoft || 0) * 100) + '%',
+    enabled: S => S.textPanelOn !== false
+  },
+  {
+    // On, each line of a phrase gets a panel of its own, as wide as that
+    // line's letters ask; off, one panel spans the whole block
+    // (ui/screens/overlay.js).
+    id: 'textPanelPerLine', section: 'text', label: 'Vary per line', kind: 'toggle', def: false,
+    parent: 'textPanelDrawer',
+    get: S => S.textPanelPerLine === true,
+    set: (S, on) => { S.textPanelPerLine = !!on; save(); },
+    format: S => S.textPanelPerLine === true ? 'On' : 'Off',
+    enabled: S => S.textPanelOn !== false
+  },
+  {
+    // The panel's arrival, the shadow's fade in above but its own time.
+    id: 'textPanelFadeIn', section: 'text', label: 'Fade in', kind: 'slider',
+    parent: 'textPanelDrawer',
+    min: 0, max: 2000, step: 50, def: 0,
+    get: S => S.textPanelFadeInMs || 0,
+    set: (S, pos) => { S.textPanelFadeInMs = pos; save(); },
+    format: S => (S.textPanelFadeInMs || 0) + ' ms',
+    enabled: S => S.textPanelOn !== false
+  },
+  {
+    // And its leaving, from the word's first step out.
+    id: 'textPanelFadeOut', section: 'text', label: 'Fade out', kind: 'slider',
+    parent: 'textPanelDrawer',
+    min: 0, max: 2000, step: 50, def: 0,
+    get: S => S.textPanelFadeOutMs || 0,
+    set: (S, pos) => { S.textPanelFadeOutMs = pos; save(); },
+    format: S => (S.textPanelFadeOutMs || 0) + ' ms',
+    enabled: S => S.textPanelOn !== false
   },
   subDrawer('textFadesDrawer', 'Fades', 'text', ['textFadeIn', 'textFadeOut']),
   {
@@ -1640,6 +1810,42 @@ export const VISUAL_CONTROLS = [
     get: S => S.ringDraw === 'lookup' ? 'lookup' : 'records',
     set: (S, v) => { S.ringDraw = v === 'lookup' ? 'lookup' : 'records'; save(); },
     format: S => S.ringDraw === 'lookup' ? 'Lookup' : 'Records'
+  },
+  {
+    // The size of the trail images laid over the whole screen (the edge's,
+    // and Particles' and Confetti's after the fold or unfolded), as a share
+    // of the canvas a side: at 75% they hold about half the memory and
+    // fill, at 50% a quarter, stretched back over the screen with a filtered
+    // read (gpu/feedback.js). For weighing the trails' cost by eye; the
+    // chamber-sized images before the fold are already small and keep their
+    // size. A change makes the images afresh; Trail switch below says
+    // whether the trails in them carry over or start clear.
+    id: 'fbResScale', section: 'render', label: 'Trail res', kind: 'segment', def: 1,
+    options: [
+      { value: 1,    label: 'Full', domId: null },
+      { value: 0.75, label: '75%',  domId: null },
+      { value: 0.5,  label: '50%',  domId: null }
+    ],
+    get: S => S.fbResScale === 0.75 || S.fbResScale === 0.5 ? S.fbResScale : 1,
+    set: (S, v) => { S.fbResScale = v === 0.75 || v === 0.5 ? v : 1; save(); },
+    format: S => S.fbResScale === 0.75 ? '75%' : S.fbResScale === 0.5 ? '50%' : 'Full'
+  },
+  {
+    // What a Trail res change does to the trails already on screen. Keep
+    // hands each image over to the new size (gpu/feedback.js, the hand-off),
+    // so A/B-ing the sizes, or anything that changes them on its own, never
+    // blanks the trails: going up they arrive soft and sharpen as new light
+    // replaces them, going down they just shrink. Clear starts them afresh,
+    // as Trail res always used to. A resized window starts them clear
+    // either way.
+    id: 'fbResSwitch', section: 'render', label: 'Trail switch', kind: 'segment', def: 'keep',
+    options: [
+      { value: 'keep',  label: 'Keep',  domId: null },
+      { value: 'clear', label: 'Clear', domId: null }
+    ],
+    get: S => S.fbResSwitch === 'clear' ? 'clear' : 'keep',
+    set: (S, v) => { S.fbResSwitch = v === 'clear' ? 'clear' : 'keep'; save(); },
+    format: S => S.fbResSwitch === 'clear' ? 'Clear' : 'Keep'
   },
   {
     // A stand-in for head tracking: the viewer's eye (core/eye.js) sways

@@ -98,7 +98,7 @@ export function updateRings(dt, t) {
   let w = 0;
   for (let i = 0; i < rings.length; i++) {
     const ring = rings[i];
-    ring.z -= ring.v * S.ringSpeedMul * dt;
+    ring.z -= ring.v * (S.effRingSpeedMul ?? S.ringSpeedMul) * dt;
     ring.age += dt;
     if (S.perElementColor && S.colorWalk > 0) walkHue(ring, dt);
     if (ring.z > Z_NEAR) rings[w++] = ring;

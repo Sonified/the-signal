@@ -390,9 +390,10 @@ export function fitRow(row, availW) {
   for (let i = 0; i < n; i++) {
     const c = cells[i];
     // a cell may pull in toward the one before it (lead, negative), into
-    // room that cell's readout leaves empty; never at the start of a line
+    // room that cell's readout leaves empty; never at the start of a line.
+    // nl asks for a line of its own whatever the room.
     if (cx > 0 && c.lead) cx = Math.max(0, cx + c.lead);
-    if (cx > 0 && cx + c.w > availW) { ln++; cx = 0; }
+    if (cx > 0 && (c.nl || cx + c.w > availW)) { ln++; cx = 0; }
     c.ln = ln; c.ox = cx;
     c.dw = cx === 0 && c.w > availW ? Math.max(c.min, availW) : c.w;
     if (c.dw > availW) row.fitOver = true;

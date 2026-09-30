@@ -29,6 +29,7 @@ import {
   broadcastHasKey, broadcastSetKey, broadcastLinkTarget, broadcastSetLinkTarget,
   broadcastEvent, broadcastSetEvent, broadcastHasUnlock, broadcastUnlockLabel, broadcastSetUnlock
 } from '../../core/broadcast.js';
+import { liveOnAir, liveSetOnAir, liveAirLabel, liveAirSending } from '../../core/live-audio.js';
 import {
   journeyEditing, journeyOverridden, journeyClearOverride,
   journeyRampGlow, journeyRampingControl, journeyRampingSection, journeyRampingSub,
@@ -37,7 +38,7 @@ import {
 import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 
-const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'render'];
+const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'live', 'render'];
 
 // The control each section's header switch stands for: the layer's own on/off,
 // the same one the section holds as its first row, so the header and the row
@@ -515,7 +516,7 @@ const HEAD_W = W_DRAWER - HEAD_X * 2, BODY_W = W_DRAWER - PAD_X * 2;
 // Each line is rebuilt only when a number it prints has changed at the
 // precision it prints, so a steady display makes no strings at all.
 const meta = { at: -1e9, a: '', b: '',
-               hz: NaN, lock: NaN, freq: NaN, fpc: NaN, med: NaN, worst: NaN, drops: NaN };
+               hz: NaN, lock: NaN, freq: NaN, fpc: NaN, fps: NaN, med: NaN, worst: NaN, drops: NaN };
 function refreshMeta(t) {
   if (t - meta.at < 250) return;
   meta.at = t;
@@ -539,10 +540,16 @@ function refreshMeta(t) {
     for (let i = 0; i < n; i++) { sum += S.intervals[i]; if (S.intervals[i] > worst) worst = S.intervals[i]; }
     med = sum / n;
   }
+  // The frames actually drawn a second, from the same window: one over the
+  // mean interval (S.intervals, the last 180 rAF gaps, about 1.5 s at
+  // 120 Hz), so it is the display rate when nothing drops and falls with
+  // every long frame, where the display figure above never moves.
+  const fps = med > 0 ? 1000 / med : 0;
+  const fpsK = Math.round(fps * 10);
   const medK = Math.round(med * 10), worstK = Math.round(worst * 10), drops = S.dropCount;
-  if (medK !== meta.med || worstK !== meta.worst || drops !== meta.drops) {
-    meta.med = medK; meta.worst = worstK; meta.drops = drops;
-    meta.b = 'Frame ' + med.toFixed(1) + ' / ' + worst.toFixed(1) + ' ms   ·   dropped ' + drops;
+  if (fpsK !== meta.fps || medK !== meta.med || worstK !== meta.worst || drops !== meta.drops) {
+    meta.fps = fpsK; meta.med = medK; meta.worst = worstK; meta.drops = drops;
+    meta.b = 'FPS ' + fps.toFixed(1) + '   ·   Frame ' + med.toFixed(1) + ' / ' + worst.toFixed(1) + ' ms   ·   dropped ' + drops;
   }
 }
 
@@ -930,7 +937,19 @@ function addChip(ui, px, py) {
 // countdown the core keeps cached ('in 12:40', rebuilt once a second), or
 // Unlocked once passed, or Not set; a click opens a field where it was,
 // taking a time ("21:30") or a wait ("45m", "1h30m"), and "none" clears it.
-const BC_ROW_H = 30, BC_SWITCH_W = 34;   // a toggle row's height and its switch's width (widgets.js toggle)
+//
+// Above the sessions, under the link target, is On air (core/live-audio.js):
+// a plain toggle row whose switch sends the Live Sound layer's mix to every
+// session someone is watching. Beside the switch, right-aligned where a
+// session's watcher count sits, the core's cached word for what it is doing:
+// 'sending' in the good green, or dim 'no listeners' or 'Live Sound off' when
+// on air with nothing going out. It belongs to this section rather than the
+// schema because, like a session's own switch, it is transport, never part
+// of a scene or a preset, and never saved.
+const BC_ROW_H = 30, BC_SWITCH_W = 34;
+const BC_AIR_LABEL = 'On air';
+const TIP_BC_AIR_ON = 'Send your Live Sound to everyone watching a session';
+const TIP_BC_AIR_OFF = 'Stop sending your Live Sound';   // a toggle row's height and its switch's width (widgets.js toggle)
 const BC_MODES = ['Open', 'Event'];
 const BC_UNLOCK_LABEL = 'Unlocks';
 const TIP_BC_MODE = 'Open: viewers start and stop freely. Event: they run with you until it unlocks';
@@ -992,6 +1011,7 @@ function drawBroadcast(ui) {
   const target = broadcastLinkTarget() === 'local' ? 1 : 0;
   const nextTarget = ui.select('drawer.bcLinkTarget', 'Link target', BC_LINK_TARGETS, target, '', false);
   if (nextTarget !== target) broadcastSetLinkTarget(nextTarget === 1 ? 'local' : 'live');
+  onAirRow(ui);
   ui.spacer(SPACE.sm);
   const n = broadcastCount();
   if (!n) bcEditing = false;
@@ -1002,6 +1022,22 @@ function drawBroadcast(ui) {
   if (drop >= 0) broadcastRemove(drop);
   addSessionRow(ui, n);
   keyRow(ui);
+}
+
+// The On air row: the toolkit's toggle, then its status drawn over the row's
+// right side from the rect the toggle just laid out (ui._last*), on the
+// label's baseline and clear of the switch.
+function onAirRow(ui) {
+  const on = liveOnAir();
+  if (ui.toggle('drawer.bcOnAir', BC_AIR_LABEL, on, false) !== on) liveSetOnAir(!on);
+  const x = ui._lastX, y = ui._lastY, w = ui._lastW, h = ui._lastH;
+  if (ui._lastHover) noteTip(ui.id('drawer.bcOnAirTip'), x + w - BC_SWITCH_W, y, BC_SWITCH_W, on ? TIP_BC_AIR_OFF : TIP_BC_AIR_ON, h);
+  const label = liveAirLabel();
+  if (!label) return;
+  ui.text.lineMetrics(TYPE.sm, ui._lm);
+  const base = y + h / 2 + (ui._lm.ascent - ui._lm.descent) / 2;
+  ui.text.draw(ui.dl, label, x + w - BC_SWITCH_W - SPACE.sm, base, TYPE.xs, W.regular,
+               liveAirSending() ? COLOR.good : COLOR.inkDim, 2, TRACK.ui, 1);
 }
 
 // One session's row; true when its × was clicked. Each row is its own id

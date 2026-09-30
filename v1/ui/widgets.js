@@ -162,8 +162,9 @@ const SWITCH_W = 34, SWITCH_H = 18;
 // One-time-per-control caches, keyed by the schema Control's stable id
 // string (looked up once per control per frame, a Map.get on a string that
 // already exists is not the "building a string" the no-allocation rule is
-// about). Populated lazily and never rebuilt once warm.
-const segmentLabelCache = new Map(); // ctrl.id -> string[] of option labels
+// about). Populated lazily and never rebuilt once warm, except a segment's
+// labels when its control hands over a new options array.
+const segmentLabelCache = new Map(); // ctrl.id -> { options, labels: string[] }
 const formatCache = new Map();       // ctrl.id -> { pos, text }
 
 export function touchAware(ui, base) {
@@ -1582,15 +1583,22 @@ function control(ctrl, S, shown) {
       break;
     }
     case 'segment': {
-      let labels = segmentLabelCache.get(ctrl.id);
-      if (!labels) {
-        labels = new Array(ctrl.options.length);
-        for (let i = 0; i < ctrl.options.length; i++) labels[i] = ctrl.options[i].label;
-        segmentLabelCache.set(ctrl.id, labels);
+      // Almost every segment's options are fixed, but a few are made at run
+      // time (the Live Sound input list, which the browser fills in and
+      // changes), handed over as a fresh array when they change; the labels
+      // are built again only then, as the multi chips' widths are.
+      const opts = ctrl.options;
+      let lc = segmentLabelCache.get(ctrl.id);
+      if (!lc || lc.options !== opts) {
+        const labels = new Array(opts.length);
+        for (let i = 0; i < opts.length; i++) labels[i] = opts[i].label;
+        lc = { options: opts, labels };
+        segmentLabelCache.set(ctrl.id, lc);
       }
+      const labels = lc.labels;
       const cur = ctrl.get(S);
       let idx = 0;
-      for (let i = 0; i < ctrl.options.length; i++) if (ctrl.options[i].value === cur) { idx = i; break; }
+      for (let i = 0; i < opts.length; i++) if (opts[i].value === cur) { idx = i; break; }
       let ni;
       if (ctrl.dropdown) {
         // the readout is rebuilt at most four times a second, not per frame
@@ -1599,7 +1607,7 @@ function control(ctrl, S, shown) {
         if (ctrl.format && ui.t - cache.at > 250) { cache.at = ui.t; cache.text = ctrl.format(S); }
         ni = ui.select(ctrl.id, ctrl.label, labels, idx, cache.text, !enabled);
       } else ni = ui.segment(ctrl.id, labels, idx, !enabled, ctrl.hideLabel ? undefined : ctrl.label);
-      if (ni !== idx) { ctrl.set(S, ctrl.options[ni].value); changed = true; }
+      if (ni !== idx) { ctrl.set(S, opts[ni].value); changed = true; }
       break;
     }
     case 'toggle': {
@@ -1632,7 +1640,9 @@ function control(ctrl, S, shown) {
     changed = true;
   }
 
-  if (changed) journeyManualOverride(ctrl.id, ctrl.get(S));
+  // A range has no single get (getLo/getHi instead); the override still
+  // marks the id as taken by hand, with no one position to hand over.
+  if (changed) journeyManualOverride(ctrl.id, ctrl.get ? ctrl.get(S) : undefined);
 
   if (!enabled) ui.dl.popAlpha();
   return changed;

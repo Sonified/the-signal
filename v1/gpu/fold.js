@@ -11,7 +11,8 @@
 // ensureChamber(pixelW, pixelH, params) with the canvas size in device pixels
 // and this frame's fold params (it makes the texture only when the wanted
 // size changes, never in an ordinary frame), then fit(cx, cy) with the field
-// centre in device pixels. After
+// centre in device pixels (and a third argument when the fold draws into a
+// target smaller than the canvas; see fit). After
 // that, frame holds everything needed to draw into the chamber: a point that
 // sits at (x, y) device px from the field centre on screen belongs at
 // frame[4] + x * frame[6], frame[5] + y * frame[6] texels in a chamber of
@@ -173,6 +174,10 @@ export function createFold(device, format, opts) {
   let fromNext = 0;
   let chamberW = 0, chamberH = 0, canvasW = 1, canvasH = 1, halfSin = WIDEST_HALF_SIN;
   let cxNow = 0, cyNow = 0;
+  // The texels of the pass's target per device pixel (fit's into): 1 for
+  // the scene, the Trail res for a feedback image made smaller than the
+  // canvas (feedback.js ensure).
+  let intoNow = 1;
   const frame = new Float32Array(8);
   const chamberPassDesc = {
     label: label + '.chamber',
@@ -229,8 +234,22 @@ export function createFold(device, format, opts) {
   // Places the field centre (device px) in the chamber and works out the
   // texels per device pixel that let the chamber reach the farthest screen
   // pixel both straight up and across the domain. Fills frame.
-  function fit(cx, cy) {
+  //
+  // into, optional and 1 when left out, is the texels per device pixel of
+  // the target the fold draws INTO, for a fold laying its pattern into a
+  // feedback image smaller than the canvas (feedback.js ensure's scale).
+  // fsFold works from the fragment's own position, so in such a target the
+  // field centre sits at cx, cy times into and a texel spans 1 / into device
+  // px; draw and drawFrom upload the centre and the chamber's texels per
+  // pixel that way, and the pattern lands as a shrunk copy of the screen's,
+  // just as the layers' NDC drawing does. frame itself stays in device px,
+  // so drawing INTO the chamber is unchanged. One scale for both axes: the
+  // image's sides are rounded to whole texels, so its true scale differs
+  // across the axes by under half a texel over the whole image, which
+  // nothing can see.
+  function fit(cx, cy, into) {
     cxNow = cx; cyNow = cy;
+    intoNow = into > 0 ? into : 1;
     const farX = cx > canvasW - cx ? cx : canvasW - cx;
     const farY = cy > canvasH - cy ? cy : canvasH - cy;
     const reachPx = Math.max(1, Math.hypot(farX, farY));
@@ -283,8 +302,9 @@ export function createFold(device, format, opts) {
     const wedge = TAU / folds;
     const span = mirror ? wedge * 0.5 : wedge;
     uni[0] = frame[0]; uni[1] = frame[1]; uni[2] = frame[2]; uni[3] = frame[3];
-    uni[4] = frame[4]; uni[5] = frame[5]; uni[6] = frame[6]; uni[7] = gain;
-    uni[8] = cxNow; uni[9] = cyNow; uni[10] = wedge; uni[11] = rotation;
+    // Taken into the target's own pixels by fit's into (1 for the scene).
+    uni[4] = frame[4]; uni[5] = frame[5]; uni[6] = frame[6] / intoNow; uni[7] = gain;
+    uni[8] = cxNow * intoNow; uni[9] = cyNow * intoNow; uni[10] = wedge; uni[11] = rotation;
     uni[12] = UP - span * 0.5; uni[13] = mirror ? 1 : 0; uni[14] = colorGain; uni[15] = 0;
     const up = from ? upBitsFrom : upBits;
     let same = from ? upValidFrom : upValid;

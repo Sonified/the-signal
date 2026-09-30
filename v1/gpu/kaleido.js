@@ -415,6 +415,7 @@ export function createKaleido(device, format, platform) {
   // do, and are accumulated from dt so moving a slider changes the pace from
   // here on rather than jumping the pattern.
   let twistAng = 0;                // complete rotation, radians
+  let velRefPh = 0;                // the Speed glow's reference swing phase
   let spawnAcc = 0, spawnGap = 1;  // spawn accumulator and the next (jittered) gap
   let wasOn = false, fade = 0;
   // How far the size law has moved from growing with radius (0) to
@@ -1136,10 +1137,21 @@ export function createKaleido(device, format, platform) {
       }
     }
 
+    // The Speed slider's glowing bar (schema-kaleido.js reads it as the
+    // control's effective): one reference swing at the base rate, the
+    // envelope each shape follows with its own phase and weight, floored
+    // as theirs are. It holds where it is while the scene is paused.
+    {
+      let v = 1 + speedVar * Math.sin(velRefPh);
+      if (v < SPEED_FLOOR) v = SPEED_FLOOR;
+      S.effKaleidoSpeed = speed * v;
+    }
+
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
     const md = dt > 0 ? motionStep(dt) : 0;
     if (md > 0) {
       twistAng = (twistAng + md * twist) % TAU;
+      velRefPh = (velRefPh + md * TAU / speedPeriod) % TAU;
       advance(md, travel, spinMax, spinVar, orbitMax, orbitVar, speedVar, speedPeriod);
       // Births at the centre arrive at the rate that holds the live count at
       // its target (target objects per flight), at jittered intervals so

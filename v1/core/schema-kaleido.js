@@ -241,7 +241,12 @@ export const KALEIDO_CONTROLS = [
   // drawers; a heading inside a drawer would end its run, and the labels
   // already say which kind of turning a slider moves ----
   subDrawer('kaleidoMotionDrawer', 'Motion', 'kaleido', ['kaleidoSpeed', 'kaleidoDensity']),
-  under('kaleidoMotionDrawer', direct('kaleidoSpeed', 'kaleidoSpeed', 'Speed', 0.05, times2('kaleidoSpeed'))),
+  under('kaleidoMotionDrawer', Object.assign(
+    direct('kaleidoSpeed', 'kaleidoSpeed', 'Speed', 0.05, times2('kaleidoSpeed')),
+    // the glowing bar: a reference shape's swing, the envelope every shape
+    // rides at its own phase, as gpu/kaleido.js writes it each frame
+    { effective: S => S.kaleidoSpeedVar > 0 && typeof S.effKaleidoSpeed === 'number'
+        ? S.effKaleidoSpeed : undefined })),
   // The speed's variance and its rate fold out from under Speed, and the
   // size's from under Max size (drawer.js, the schema's varianceOf).
   varianceOf('kaleidoSpeed', percent('kaleidoSpeedVar', 'kaleidoSpeedVar', 'Speed variance')),

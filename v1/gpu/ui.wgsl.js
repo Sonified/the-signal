@@ -77,7 +77,11 @@ fn vsMain(in: VertexIn) -> VOut {
   let opacity = in.a5.w;
 
   let halfSize = rectSize * 0.5;
-  let expand = shadowRadius + 1.0;
+  // A slab (a RECT with field B set, DrawList slab) is all shadow, so its
+  // quad reaches three sigma out, where the Gaussian has faded to nothing;
+  // every other shape keeps its one-sigma margin.
+  var expand = shadowRadius + 1.0;
+  if (kind < 0.5 && fieldAB.y > 0.5) { expand = shadowRadius * 3.0 + 1.0; }
   let halfSizeExp = halfSize + vec2f(expand, expand);
   let center = rectPos + halfSize;
   let unit = QUAD[in.vertexIndex];
@@ -275,7 +279,18 @@ fn carbonWeave(p: vec2f) -> f32 {
 // Static by construction: there is no time term, and a pixel's texture
 // never changes while the strip sits still. The UI never strobes, so
 // nothing here may animate.
+//
+// Field B on a RECT marks a slab (DrawList slab): the shadow alone, not
+// masked to outside the box as an ordinary rect's is, so the Gaussian fills
+// the whole box and a panel reads as a feathered black block, soft on every
+// edge, rather than a hollow ring. Every other rect leaves B at 0.
 fn shadeRect(in: VOut, fragXY: vec2f) -> vec4f {
+  if (in.fieldAB.y > 0.5) {
+    let corner = min(in.radius, min(in.halfSize.x, in.halfSize.y));
+    let amt = roundedBoxShadow(in.halfSize, in.local, in.shadow.x, corner) * in.shadow.y;
+    let slabA = clamp(amt, 0.0, 1.0) * in.opacity;
+    return vec4f(0.0, 0.0, 0.0, slabA);
+  }
   var fill = in.fill;
   if (in.fieldAB.x > 0.0) {
     fill.a = clamp(fill.a + carbonWeave(fragXY) * in.fieldAB.x, 0.0, 1.0);
@@ -315,7 +330,9 @@ fn shadeGlyph(in: VOut) -> vec4f {
   let s = textureSample(textTex, textSamp, uv).r;
   let sdfRange = in.fieldAB.x;
   // Atlas encoding (lane B, text-atlas.js): texel = 0.5 + signedDistance /
-  // (2 * sdfRange), signedDistance in atlas texels, positive inside. Decode
+  // (2 * sdfRange), signedDistance in atlas texels, positive inside. The
+  // range is field A, per instance: 6 for every glyph's own cell, and the
+  // wider range of the far copies the word's shadow is drawn from. Decode
   // it back to atlas texels, then rescale into physical screen pixels using
   // this instance's own uv span versus its quad size, so a glyph drawn at
   // any point size still gets a one-pixel-wide edge.
@@ -326,10 +343,18 @@ fn shadeGlyph(in: VOut) -> vec4f {
   // Field B is an extra edge softness in css px (the word's transitions blur
   // letters with it). It widens the anti-aliasing ramp, capped short of the
   // SDF range, since past that the field is flat and the ramp would clip.
+  // The border-width slot is a dilation in css px (the word's shadow): the
+  // iso-line the ramp is centred on moves that far outward, an even growth
+  // of the outline in every direction, and the softness then blurs the
+  // grown edge. Both come out of the same reach, the dilation first, so the
+  // ramp's outer end never runs past where the field is valid. At 0, as for
+  // every glyph but the shadow's, this is the plain ramp exactly.
   let rangePx = sdfRange / max(texelsPerPixel, 0.0001);
-  let softPx = min(in.fieldAB.y * uniforms.dpr, rangePx * 0.9);
+  let reachPx = rangePx * 0.9;
+  let growPx = min(in.borderWidth * uniforms.dpr, reachPx);
+  let softPx = min(in.fieldAB.y * uniforms.dpr, reachPx - growPx);
   let w = max(fwidth(distPx) * 0.5, 0.0001) + softPx;
-  let coverage = clamp(smoothstep(-w, w, distPx), 0.0, 1.0);
+  let coverage = clamp(smoothstep(-w, w, distPx + growPx), 0.0, 1.0);
   let outA = in.fill.a * coverage * in.opacity;
   return vec4f(in.fill.rgb * outA, outA);
 }

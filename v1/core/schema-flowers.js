@@ -18,6 +18,7 @@
 // call save(); store.js decides when to write.
 import { save } from './store.js';
 import { subDrawer } from './schema-visual.js';
+import { retimeRoomPhase } from './room-clock.js';
 
 // Mode, the layer switch, and every numeric field with its range. The GPU
 // agent reads these names off S directly, so they are the source of truth
@@ -36,11 +37,19 @@ const NUM = [
   ['flowerSpiral',       0,   1,   0.38, false],
   ['flowerRipple',       0,   1,   0.6,  false],
   ['flowerOpacity',      0,   1,   0.85, false],
+  ['flowerOpacityVar',   0,   1,   0,    false],
+  ['flowerOpacityPeriod', 1,  60,  10,   true ],
   ['flowerFade',         0,   1,   0.55, false],
   ['flowerTint',         0,   1,   0,    false],
   ['flowerPulse',        0,   1,   0,    false],
   ['flowerPulseVar',     0,   1,   0,    false],
-  ['flowerPulsePeriod',  1,   60,  10,   true ]
+  ['flowerPulsePeriod',  1,   60,  10,   true ],
+  // The room-clocked swings' phase offsets (core/room-clock.js), one beside
+  // each period above. State, not controls: a period's set() writes its
+  // offset, and they are saved and sent with the rest so every screen in a
+  // room derives the same phase.
+  ['flowerOpacityPeriodOff', 0, 1,  0,    false],
+  ['flowerPulsePeriodOff', 0,   1,  0,    false]
 ];
 
 // A slider's rounded position can come back as 1.1500000000000001; this
@@ -106,6 +115,22 @@ function direct(id, key, label, step, format, visible) {
     enabled: layerOn
   };
   if (visible) c.visible = visible;
+  return c;
+}
+
+// A direct() slider over a room-clocked swing's period (core/room-clock.js):
+// the change is folded into the swing's phase offset before the write, so
+// in a broadcast room it carries on from where it is at the new period
+// rather than jumping to another point in its cycle. Outside a room the
+// offset is left alone.
+function roomRate(c) {
+  const key = c.id, n = spec(key);
+  c.set = (S, pos) => {
+    const v = fit(pos, n[1], n[2], n[4]);
+    retimeRoomPhase(S, key + 'Off', S[key], v);
+    S[key] = v;
+    save();
+  };
   return c;
 }
 
@@ -202,7 +227,20 @@ export const FLOWER_CONTROLS = [
   under('flowersShapeDrawer', percent('flowerRipple', 'flowerRipple', 'Ripple', null, isTunnel)),
 
   subDrawer('flowersBrightnessDrawer', 'Brightness', 'flowers', ['flowerOpacity', 'flowerFade']),
-  under('flowersBrightnessDrawer', percent('flowerOpacity', 'flowerOpacity', 'Opacity')),
+  under('flowersBrightnessDrawer', Object.assign(
+    percent('flowerOpacity', 'flowerOpacity', 'Opacity'),
+    // the glowing bar: the opacity as the variance is playing it, the same
+    // shape core/strobe.js computes into S.effFlowerOpacity each frame
+    { effective: S => S.flowerOpacityVar > 0
+        ? S.flowerOpacity * (1 - S.flowerOpacityVar * 0.5 * (1 - Math.cos(2 * Math.PI * (S.flowerOpacityPhase || 0)))) * 100
+        : undefined })),
+  under('flowersBrightnessDrawer', Object.assign(
+    percent('flowerOpacityVar', 'flowerOpacityVar', 'Opacity variance'),
+    { varianceOf: 'flowerOpacity' })),
+  under('flowersBrightnessDrawer', Object.assign(
+    roomRate(direct('flowerOpacityPeriod', 'flowerOpacityPeriod', 'Opacity var rate', 1,
+      S => S.flowerOpacityPeriod + 's / cycle')),
+    { varianceOf: 'flowerOpacity' })),
   // The tunnel rings' fade in from the centre (core/fade.js), with its own
   // amount so the flowers can ease in sooner or later than the rings do.
   // Both modes use it, so it is never hidden.
@@ -225,8 +263,8 @@ export const FLOWER_CONTROLS = [
     percent('flowerPulseVar', 'flowerPulseVar', 'Pulse variance'),
     { varianceOf: 'flowerPulse' })),
   under('flowersBrightnessDrawer', Object.assign(
-    direct('flowerPulsePeriod', 'flowerPulsePeriod', 'Pulse variance rate', 1,
-      S => S.flowerPulsePeriod + 's / cycle'),
+    roomRate(direct('flowerPulsePeriod', 'flowerPulsePeriod', 'Pulse variance rate', 1,
+      S => S.flowerPulsePeriod + 's / cycle')),
     { varianceOf: 'flowerPulse' })),
   under('flowersBrightnessDrawer', percent('flowerTint', 'flowerTint', 'Tint to strobe colour',
     S => S.flowerTint === 0 ? 'own colour' : Math.round(S.flowerTint * 100) + '%'))

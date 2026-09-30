@@ -267,7 +267,7 @@ export function createFlowers(device, format, platform) {
     const size = clampNum(S.flowerSize, 0.2, 3, 1);
     const spiral = clampNum(S.flowerSpiral, 0, 1, 0.38);
     const ripple = clampNum(S.flowerRipple, 0, 1, 0.6);
-    const opacity = clampNum(S.flowerOpacity, 0, 1, 0.85);
+    const opacity = clampNum(S.effFlowerOpacity ?? S.flowerOpacity, 0, 1, 0.85);
     const fade = clampNum(S.flowerFade, 0, 1, 0.55);
     const tintAmt = clampNum(S.flowerTint, 0, 1, 0);
     const pulse = scaledStrobeDepth(clampNum(S.effFlowerPulse ?? S.flowerPulse, 0, 1, 0));

@@ -63,7 +63,7 @@
 import { S, Z_NEAR, MAX_RINGS } from '../../js/state.js';
 import { SCENE_WGSL } from './scene.wgsl.js';
 import { SceneData, LUT_N, UNIFORM_FLOATS, RING_FLOATS, RING_BIN_WORDS } from './scene-data.js';
-import { createFeedback } from './feedback.js';
+import { createFeedback, feedbackRes, feedbackKeep } from './feedback.js';
 import { createEdgeFx } from './edge-fx.js';
 import { motionStep } from '../core/motion.js';
 import { presetTransitionCount, transitionRemaining } from '../core/presets.js';
@@ -301,7 +301,12 @@ export function createScene(device, format) {
     fbParams.cy = cssH * 0.5 * dpr;
     fbParams.unit = Math.hypot(visW, cssH) * 0.62 * dpr * Z_NEAR;
     fbParams.dt = dt > 0 ? motionStep(dt) : 0;
-    fb.ensure(pixelW, pixelH);
+    // At the Render section's Trail res; the centre and unit above stay in
+    // device px (feedback.js scales them). The tails and caps draw in NDC,
+    // and the Flame and Glow bands carry their device px in a varying
+    // (edge-fx.wgsl.js), so all of it lands as a shrunk copy of the screen.
+    // The Trail switch says whether a change of it keeps the trails.
+    fb.ensure(pixelW, pixelH, feedbackRes(S.fbResScale), feedbackKeep(S.fbResSwitch));
   }
 
   // The edge's tails then caps, into whichever pass, with the pipelines

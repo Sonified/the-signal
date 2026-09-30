@@ -106,7 +106,7 @@ import { S, Z_NEAR, Z_FAR } from '../../js/state.js';
 import { scaledStrobeDepth } from '../../js/strobe-scale.js';
 import { CONFETTI_WGSL, N_MAX, FLIGHT, LETGO, TUMBLE_PERIOD, UNIFORM_FLOATS, SLOT_FLOATS, R_MIN, R_MAX, KICK_PACK } from './confetti.wgsl.js';
 import { createFold, FOLD_CHAMBER_FORMAT } from './fold.js';
-import { createFeedback, FEEDBACK_FORMAT } from './feedback.js';
+import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './feedback.js';
 import { motionStep } from '../core/motion.js';
 import { eye } from '../core/eye.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
@@ -296,8 +296,8 @@ export function createConfetti(device, format) {
   // Each of the four phases also has its room bookkeeping: in a broadcast
   // room it is pulled onto the room clock (core/room-clock.js), so every
   // screen swings together.
-  let amtPhase = 0, streamPhase = 0, twistPhase = 0;
-  const pulseRoom = roomPhaseState(), amtRoom = roomPhaseState();
+  let amtPhase = 0, streamPhase = 0, twistPhase = 0, opacPhase = 0;
+  const pulseRoom = roomPhaseState(), amtRoom = roomPhaseState(), opacRoom = roomPhaseState();
   const streamRoom = roomPhaseState(), twistRoom = roomPhaseState();
 
   let travel = 0, tumble = 0, spin = 0, drawOn = false;
@@ -340,7 +340,8 @@ export function createConfetti(device, format) {
   // start angle and span, radians, and whether folded and mirrored), and the
   // spin clock and travel clock now with the spin's rate per travel-second,
   // to back-date each birth's spin clock.
-  let speedVar = 0, sizeVar = 0.2, alignPct = 0;
+  let sizeVar = 0.2, alignPct = 0;
+  let spdPhase = 0;                // the Speed variance's swing phase
   // Rotation variance's two sides: a birth's spin factor falls anywhere in
   // [1 + spinLo, 1 + spinHi].
   let spinLo = 0, spinHi = 0;
@@ -497,7 +498,7 @@ export function createConfetti(device, format) {
     if (s < 0) return;
     const o = s * SLOT_FLOATS;
     rec[o] = b;
-    rec[o + 1] = 1 + speedVar * SPEED_VAR * (2 * rand() - 1);
+    rec[o + 1] = 1;   // per-piece speed retired: the variance swings the clock above
     rec[o + 2] = (rand() * 16777216) | 0;
     rec[o + 3] = 1 + sizeVar * (2 * rand() - 1);
     let at, kick = 0;
@@ -673,7 +674,20 @@ export function createConfetti(device, format) {
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
     const step = dt > 0 ? motionStep(dt) : 0;
     const t0 = travel;
-    const stepT = step * clampNum(S.confSpeed, 0.1, 2, 1);
+    // The Speed, dipped by its variance as the app's other variances dip:
+    // over one rate cycle it eases from the setting down by the variance's
+    // share and back, never above the dial, floored just off a dead stop,
+    // and written out for the Speed slider's glowing bar (schema-confetti's
+    // effective). The dip breathes the travel clock, so births, flight and
+    // spin carry together; spinPerTravel below stays on the plain setting,
+    // so the swing never rewrites a piece's already-turned pose.
+    const spdVar = clampNum(S.confSpeedVar, 0, 1, 0);
+    const spdRate = clampNum(S.confSpeedVarRate, 1, 120, 20);
+    if (step > 0 && spdVar > 0) { spdPhase += step / spdRate; spdPhase -= Math.floor(spdPhase); }
+    let spdMul = 1 - spdVar * 0.5 * (1 - Math.cos(TAU * spdPhase));
+    if (spdMul < 0.05) spdMul = 0.05;
+    S.effConfSpeed = clampNum(S.confSpeed, 0.1, 2, 1) * spdMul;
+    const stepT = step * S.effConfSpeed;
     travel += stepT;
     if (travel >= W) travel -= W;
     nowF = Math.fround(travel);
@@ -702,7 +716,6 @@ export function createConfetti(device, format) {
     const full = Math.min(amount * BASE_RATE, RATE_CAP);
     const base = kaleidoNow ? full * span / TAU : full;
     const clump = clampNum(S.confClump, 0, 1, 0);
-    speedVar = clampNum(S.confSpeedVar, 0, 1, 0);
     sizeVar = clampNum(S.confSizeVar, 0, 0.95, 0.2);
     spinLo = clampNum(S.confSpinVarLo, -1, 0, 0);
     spinHi = clampNum(S.confSpinVarHi, 0, 2, 0);
@@ -775,7 +788,19 @@ export function createConfetti(device, format) {
     // skipped; the fold and the feedback still run, so trails already made
     // keep fading, streaming and turning.
     const bright = clampNum(S.confBright, 0, 1, 1);
-    const opacity = clampNum(S.confOpacity, 0, 1, 1);
+    // The Opacity, dipped by its variance as the app's standard variances
+    // dip: down from the setting by its share and back, one cycle per its
+    // rate, held while stopped and pulled onto the room clock in a room.
+    // Written out for the Opacity slider's glowing bar (schema-confetti's
+    // effective).
+    const opVar = clampNum(S.confOpacityVar, 0, 1, 0);
+    const opRate = clampNum(S.confOpacityVarRate, 1, 120, 20);
+    opacPhase += step / opRate;
+    opacPhase -= Math.floor(opacPhase);
+    opacPhase = roomPhase(opacRoom, opacPhase, t, step, opRate, S.confOpacityVarRateOff || 0);
+    const opacity = clampNum(S.confOpacity, 0, 1, 1)
+      * (1 - opVar * 0.5 * (1 - Math.cos(TAU * opacPhase)));
+    S.effConfOpacity = opacity;
     const pieces = n > 0 && bright > 0.002 && opacity > 0.002;
 
     // The visible field and the rings' projection, as the particles frame
@@ -792,13 +817,14 @@ export function createConfetti(device, format) {
     // stopped, which holds the image. Before the fold only while folded
     // with trails; otherwise after, the one route.
     //
-    // Each of the three first swings by its variance (see swing and the top
-    // of this file), its phase advancing by the frame's step over its rate,
-    // so a stopped scene holds the swing where it is, as the pulse's does.
-    // The route keys off the feedback being in use, the setting or its upper
-    // reach above 0, rather than off this frame's swung amount, so a swing
-    // that passes through 0 clears for those frames (keepHalfLife 0, exactly
-    // the slider at 0) without letting one image go and making the other.
+    // Each of the three first moves by its variance (the Amount a plain
+    // dip, Stream and Twist the two-sided swing), its phase advancing by
+    // the frame's step over its rate, so a stopped scene holds the swing
+    // where it is, as the pulse's does. The route keys off the feedback
+    // being in use, the setting above 0, rather than off this frame's
+    // dipped amount, so a dip that reaches 0 clears for those frames
+    // (keepHalfLife 0, exactly the slider at 0) without letting one image
+    // go and making the other.
     // In a room each is then pulled onto the room clock's phase; outside
     // one that is a no-op.
     const amtRate = clampNum(S.confFbAmtVarRate, 1, 120, 20);
@@ -810,12 +836,14 @@ export function createConfetti(device, format) {
     streamPhase -= Math.floor(streamPhase);
     twistPhase += step / twistRate;
     twistPhase -= Math.floor(twistPhase);
-    amtPhase = roomPhase(amtRoom, amtPhase, t, step, amtRate);
-    streamPhase = roomPhase(streamRoom, streamPhase, t, step, streamRate);
-    twistPhase = roomPhase(twistRoom, twistPhase, t, step, twistRate);
+    amtPhase = roomPhase(amtRoom, amtPhase, t, step, amtRate, S.confFbAmtVarRateOff || 0);
+    streamPhase = roomPhase(streamRoom, streamPhase, t, step, streamRate, S.confFbStreamVarRateOff || 0);
+    twistPhase = roomPhase(twistRoom, twistPhase, t, step, twistRate, S.confFbTwistVarRateOff || 0);
     const fbBase = clampNum(S.confFeedback, 0, 1, 0);
-    const amtHi = clampNum(S.confFbAmtVarHi, 0, 1, 0);
-    const fbS = swing(fbBase, clampNum(S.confFbAmtVarLo, -1, 0, 0), amtHi, amtPhase, 0, 1);
+    // Amount dips as the app's standard variances do: down from the
+    // setting by its share and back, never above the dial.
+    const amtVar = clampNum(S.confFbAmtVar, 0, 1, 0);
+    const fbS = fbBase * (1 - amtVar * 0.5 * (1 - Math.cos(TAU * amtPhase)));
     const fbStream = swing(clampNum(S.confFbStream, -2, 2, 0),
       clampNum(S.confFbStreamVarLo, -4, 0, 0), clampNum(S.confFbStreamVarHi, 0, 4, 0), streamPhase, -2, 2);
     const fbTwistBase = clampNum(S.confFbTwist, -1, 1, 0);
@@ -828,8 +856,15 @@ export function createConfetti(device, format) {
     S.effConfFeedback = fbS;
     S.effConfFbStream = fbStream;
     S.effConfFbTwist = fbTwist;
-    const fbInUse = fbBase > 0 || amtHi > 0;
+    const fbInUse = fbBase > 0;
     before = kaleidoNow && fbInUse && S.confFbWhere === 'before';
+    // The Render section's Trail res: fbScreen's texels per device pixel,
+    // handed to its ensure and to fold, which lays its pattern into it, so
+    // the two agree (feedback.js, fold.js fit). fbChamber is already small
+    // and keeps its own size. The Trail switch says whether a change of it
+    // keeps fbScreen's trails (feedback.js ensure's keep).
+    const fbRes = feedbackRes(S.fbResScale);
+    const fbKeep = feedbackKeep(S.fbResSwitch);
     fbParams.keepHalfLife = HL_MAX * fbS * fbS;
     fbParams.zoomRate = STREAM_MAX * fbStream;
     fbParams.twistRate = TWIST_MAX * fbTwist;
@@ -844,7 +879,7 @@ export function createConfetti(device, format) {
     const pulseRate = clampNum(S.confFbPulseRate, 1, 60, 10);
     pulsePhase += step / pulseRate;
     pulsePhase -= Math.floor(pulsePhase);
-    pulsePhase = roomPhase(pulseRoom, pulsePhase, t, step, pulseRate);
+    pulsePhase = roomPhase(pulseRoom, pulsePhase, t, step, pulseRate, S.confFbPulseRateOff || 0);
     let pulse = clampNum(S.confFbPulse, 0, 1, 0);
     const pulseVar = clampNum(S.confFbPulseVar, 0, 1, 0);
     if (pulseVar > 0) pulse *= 1 - pulseVar * 0.5 * (1 - Math.cos(TAU * pulsePhase));
@@ -887,7 +922,9 @@ export function createConfetti(device, format) {
       const fd = before || bypass ? foldScene : fold;
       (fd === foldScene ? fold : foldScene).releaseChamber();
       fd.ensureChamber(pixelW, pixelH, foldParams, before);
-      fd.fit(cx, cy);
+      // fold only ever draws into fbScreen, so it takes the Trail res;
+      // foldScene draws into the scene itself.
+      fd.fit(cx, cy, fd === fold ? fbRes : 1);
       const f = fd.frame;
       uni[0] = f[4]; uni[1] = f[5]; uni[4] = f[2]; uni[5] = f[3]; uni[22] = f[6];
     } else {
@@ -914,7 +951,8 @@ export function createConfetti(device, format) {
       fbParams.cx = f[4]; fbParams.cy = f[5]; fbParams.unit = focal * f[6];
       fbScreen.release();
     } else {
-      fbScreen.ensure(pixelW, pixelH);
+      // Centre and unit in device px at any Trail res (feedback.js scales).
+      fbScreen.ensure(pixelW, pixelH, fbRes, fbKeep);
       fbParams.cx = cx; fbParams.cy = cy; fbParams.unit = focal;
       fbChamber.release();
     }

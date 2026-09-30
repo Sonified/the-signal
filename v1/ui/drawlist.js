@@ -31,17 +31,18 @@ export const ICON = {
 //   1 x   2 y   3 w   4 h          rect in css px
 //   5 radius                        corner radius, css px; GLYPH rotation (radians)
 //   6..9  fill rgba                 RECT fill, GLASS tint (a = tint strength), GLYPH and ICON colour
-//   10 border width                 css px, 0 for none
+//   10 border width                 css px, 0 for none; GLYPH dilation css px (the outline pushed outward)
 //   11..14 border rgba
-//   15 shadow radius                css px, 0 for none; the quad is expanded by this
+//   15 shadow radius                css px, 0 for none; the quad is expanded by this (three times it for a slab)
 //   16 shadow alpha
 //   17..20 u0 v0 u1 v1              GLYPH atlas uvs; ICON unused
 //   21 A                            GLYPH sdf range in atlas px; ICON icon id; GLASS blur mix 0..1; RECT grain amount (grainRect)
-//   22 B                            ICON stroke width css px; GLYPH edge softness css px; ICON rotation lives in 17 (radians)
+//   22 B                            ICON stroke width css px; GLYPH edge softness css px; RECT 1 for a slab; ICON rotation lives in 17 (radians)
 //   23 opacity                      the group-alpha stack product at emit time
 export const STRIDE = 24;
 
 const MAX_CLIP_DEPTH = 32, MAX_ALPHA_DEPTH = 32;
+const CLEAR = new Float32Array([0, 0, 0, 0]);
 
 export class DrawList {
   constructor(capacity = 2048) {
@@ -151,11 +152,27 @@ export class DrawList {
     this.data[o + 21] = blurMix;
   }
 
+  // A feathered black slab: the rect's own Gaussian shadow (blur css px, the
+  // sigma) filling the box as well as falling past it, so it is soft on every
+  // edge and hollow nowhere, with no fill or border of its own. An ordinary
+  // rect's shadow is masked to outside its box and its quad reaches one
+  // sigma out; a slab's quad reaches three, where the Gaussian is spent, so
+  // its outer edge fades to nothing instead of stopping. Field B marks it
+  // for shadeRect; every other rect leaves B at 0.
+  slab(x, y, w, h, r, blur, alpha) {
+    const b = blur > 0 ? blur : 0;
+    const o = this._slot(KIND.RECT, x, y, w, h, r, CLEAR, b * 3);
+    if (o < 0) return;
+    this._border(o, 0, null, b, alpha);
+    this.data[o + 22] = 1;
+  }
+
   // One glyph quad. The text system computes the quad and uvs; this only
   // stores them. rotation (radians, about the quad's centre) and soft (edge
-  // blur, css px) are for the centre word's transitions; every other caller
-  // leaves them off and gets 0.
-  glyph(x, y, w, h, u0, v0, u1, v1, color, sdfRange, rotation, soft) {
+  // blur, css px) are for the centre word's transitions; dilate (css px)
+  // pushes the outline outward by that much before soft blurs it, for the
+  // word's shadow. Every other caller leaves them off and gets 0.
+  glyph(x, y, w, h, u0, v0, u1, v1, color, sdfRange, rotation, soft, dilate) {
     const o = this._slot(KIND.GLYPH, x, y, w, h, 0, color, 0);
     if (o < 0) return;
     const d = this.data;
@@ -163,6 +180,7 @@ export class DrawList {
     d[o + 21] = sdfRange;
     if (rotation) d[o + 5] = rotation;
     if (soft) d[o + 22] = soft;
+    if (dilate) d[o + 10] = dilate;
   }
 
   // An analytic icon centred in its box. stroke is the line width in css px

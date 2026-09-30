@@ -10,6 +10,7 @@
 // applyConfettiState().
 import { save } from './store.js';
 import { subDrawer } from './schema-visual.js';
+import { retimeRoomPhase } from './room-clock.js';
 
 // The palettes, as v1/gpu/confetti.js reads S.confPalette: six festive hues,
 // the strobe's own colour with each piece's hue turned a little, or gold and
@@ -29,11 +30,14 @@ const NUM = [
   // key,         min, max, def,  integer
   ['confAmount',  0,   1,   0.5 ],   // the birth rate, as a share of the full stream
   ['confSpeed',   0.1, 2,   1   ],   // how fast the pieces come down the tunnel
-  ['confSpeedVar', 0,  1,   0   ],   // each new piece's own speed, up to 40% either way
+  ['confSpeedVar', 0,  1,   0   ],   // how far Speed swings about its setting over time
+  ['confSpeedVarRate', 1, 120, 20],  // seconds for one swing of the speed variance
   ['confClump',   0,   1,   0   ],   // 0 a steady stream, 1 every birth in bursts
   ['confSize',    0.2, 50,  1   ],
   ['confSizeVar', 0,   0.95, 0.2],   // each new piece's own size, this far either way
   ['confOpacity', 0,   1,   1   ],   // how solid the pieces are
+  ['confOpacityVar', 0, 1,  0   ],   // how far Opacity dips below its setting over time
+  ['confOpacityVarRate', 1, 120, 20, true],  // seconds for one swing of the opacity variance
   ['confFade',    0,   1,   0.55],   // the centre fade in, the rings' own curve
   ['confLife',    0.05, 1,  1   ],   // the share of the flight a piece lives before fading out
   ['confSpread',  0,   1,   0   ],   // how far the paths angle out toward the edges
@@ -52,8 +56,7 @@ const NUM = [
   // Each of Amount, Stream and Twist swings over time about its setting: down
   // as far as its Lo, up as far as its Hi, both in the owner's own units and
   // each at most the owner's whole span, once every Rate seconds.
-  ['confFbAmtVarLo', -1, 0, 0   ],
-  ['confFbAmtVarHi', 0,  1, 0   ],
+  ['confFbAmtVar',   0,  1, 0   ],   // how far Amount dips below its setting over time
   ['confFbAmtVarRate', 1, 120, 20, true],
   ['confFbStreamVarLo', -4, 0, 0 ],
   ['confFbStreamVarHi', 0,  4, 0 ],
@@ -65,7 +68,16 @@ const NUM = [
   ['confFbPulseVar', 0, 1,  0   ],   // how far that pulse amount swings down from its setting and back
   ['confFbPulseRate', 1, 60, 10, true],   // seconds for one swing of the pulse variance
   ['confFolds',   3,   16,  8,    true ],   // the kaleidoscope's fold count
-  ['confFoldSpin', -1, 1,   0.05]    // the kaleidoscope's turn, signed
+  ['confFoldSpin', -1, 1,   0.05],   // the kaleidoscope's turn, signed
+  // The room-clocked swings' phase offsets (core/room-clock.js), one beside
+  // each rate above that has a swing in a broadcast room. State, not
+  // controls: a rate's set() writes its offset, and they are saved and sent
+  // with the rest so every screen in a room derives the same phase.
+  ['confOpacityVarRateOff', 0, 1, 0],
+  ['confFbAmtVarRateOff', 0, 1, 0],
+  ['confFbStreamVarRateOff', 0, 1, 0],
+  ['confFbTwistVarRateOff', 0, 1, 0],
+  ['confFbPulseRateOff', 0, 1, 0]
 ];
 
 function fit(v, min, max, integer) {
@@ -77,6 +89,15 @@ function fit(v, min, max, integer) {
 function spec(key) {
   for (let i = 0; i < NUM.length; i++) if (NUM[i][0] === key) return NUM[i];
   return null;
+}
+
+// A room-clocked swing's rate (core/room-clock.js): the change is folded
+// into the swing's phase offset before the write, so in a broadcast room it
+// carries on from where it is at the new rate rather than jumping to
+// another point in its cycle. Outside a room the offset is left alone.
+function setRate(S, key, v) {
+  retimeRoomPhase(S, key + 'Off', S[key], v);
+  S[key] = v;
 }
 
 // The piece shapes, in the order v1/gpu/confetti.js packs them into the
@@ -181,8 +202,8 @@ function rangeText(lo, hi, pct) {
   return lo === 0 && hi === 0 ? 'none' : sideText(lo, pct) + ' / ' + sideText(hi, pct);
 }
 
-// The variance fold under one of the feedback's own settings (Amount, Stream
-// or Twist): how far it swings each way, and how long one swing takes. Both
+// The variance fold under one of the feedback's own settings (Stream or
+// Twist): how far it swings each way, and how long one swing takes. Both
 // rows sit in the Feedback sub-drawer and fold out from under their owner by
 // its chevron (drawer.js, varianceOf). key is the NUM prefix; span the
 // owner's whole slider span in its own units, so either knob can carry it
@@ -209,7 +230,7 @@ function fbVariance(owner, key, span, pct, switchId) {
       varianceOf: owner,
       min: 1, max: 120, step: 1, def: spec(rate)[3],
       get: S => S[rate],
-      set: (S, pos) => { S[rate] = fit(pos, 1, 120, true); save(); },
+      set: (S, pos) => { setRate(S, rate, fit(pos, 1, 120, true)); save(); },
       format: S => S[rate] + 's / cycle',
       enabled: layerOn, parent: switchId || 'confFeedbackDrawer', visible
     }
@@ -295,8 +316,33 @@ export const CONFETTI_CONTROLS = [
     id: 'confOpacity', section: 'confetti', label: 'Opacity', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(spec('confOpacity')[3] * 100),
     get: S => Math.round(S.confOpacity * 100),
+    // the glowing bar: the opacity as the variance is dipping it, written
+    // by gpu/confetti.js each frame
+    effective: S => S.confOpacityVar > 0 && typeof S.effConfOpacity === 'number'
+      ? S.effConfOpacity * 100 : undefined,
     set: (S, pos) => { S.confOpacity = fit(pos / 100, 0, 1); save(); },
     format: S => Math.round(S.confOpacity * 100) + '%',
+    enabled: layerOn
+  },
+  {
+    // Opacity's dip, the app's standard: over one rate cycle the pieces
+    // ease from the setting down by this share and back, never above it.
+    id: 'confOpacityVar', section: 'confetti', label: 'Opacity variance', kind: 'slider',
+    varianceOf: 'confOpacity',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.confOpacityVar || 0) * 100),
+    set: (S, pos) => { S.confOpacityVar = fit(pos / 100, 0, 1); save(); },
+    format: S => Math.round((S.confOpacityVar || 0) * 100) + '%',
+    enabled: layerOn
+  },
+  {
+    // Seconds for one swing of the opacity variance.
+    id: 'confOpacityVarRate', section: 'confetti', label: 'Variance rate', kind: 'slider',
+    varianceOf: 'confOpacity',
+    min: 1, max: 120, step: 1, def: 20,
+    get: S => S.confOpacityVarRate,
+    set: (S, pos) => { setRate(S, 'confOpacityVarRate', fit(pos, 1, 120, true)); save(); },
+    format: S => S.confOpacityVarRate + 's / cycle',
     enabled: layerOn
   },
   {
@@ -305,21 +351,35 @@ export const CONFETTI_CONTROLS = [
     get: S => S.confSpeed,
     set: (S, pos) => { S.confSpeed = fit(pos, 0.1, 2); save(); },
     format: S => S.confSpeed.toFixed(2) + '×',
+    // the glowing bar: the speed as the variance is swinging it, written by
+    // gpu/confetti.js each frame
+    effective: S => S.confSpeedVar > 0 && typeof S.effConfSpeed === 'number'
+      ? S.effConfSpeed : undefined,
     enabled: layerOn
   },
   {
-    // How much the pieces differ in speed: at 100% each flies anywhere from
-    // 0.6 to 1.4 times Speed, so the quick ones overtake the slow. Drawn
-    // once as a piece is born, so moving it only shapes the pieces born from
-    // then on. It folds out from under Speed by its chevron (drawer.js,
-    // varianceOf), so it has to follow Speed directly; Clump after it is a
-    // row of its own again.
+    // How far Speed dips below its setting over time: one cycle per the
+    // rate below eases the whole field from the dial down by this share
+    // and back, so everything slows and surges together, never above the
+    // setting. It folds out from under Speed by its chevron (drawer.js,
+    // varianceOf), so it has to follow Speed directly; Clump after the
+    // rate is a row of its own again.
     id: 'confSpeedVar', section: 'confetti', label: 'Speed variance', kind: 'slider',
     varianceOf: 'confSpeed',
     min: 0, max: 100, step: 1, def: Math.round(spec('confSpeedVar')[3] * 100),
     get: S => Math.round(S.confSpeedVar * 100),
     set: (S, pos) => { S.confSpeedVar = fit(pos / 100, 0, 1); save(); },
     format: S => Math.round(S.confSpeedVar * 100) + '%',
+    enabled: layerOn
+  },
+  {
+    // Seconds for one swing of the speed variance.
+    id: 'confSpeedVarRate', section: 'confetti', label: 'Variance rate', kind: 'slider',
+    varianceOf: 'confSpeed',
+    min: 1, max: 120, step: 1, def: Math.round(spec('confSpeedVarRate')[3]),
+    get: S => S.confSpeedVarRate,
+    set: (S, pos) => { S.confSpeedVarRate = fit(pos, 1, 120, true); save(); },
+    format: S => S.confSpeedVarRate + 's / cycle',
     enabled: layerOn
   },
   {
@@ -489,16 +549,36 @@ export const CONFETTI_CONTROLS = [
     id: 'confFeedback', section: 'confetti', label: 'Amount', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(spec('confFeedback')[3] * 100),
     get: S => Math.round(S.confFeedback * 100),
-    effective: S => (S.confFbAmtVarLo !== 0 || S.confFbAmtVarHi !== 0)
+    effective: S => S.confFbAmtVar > 0
       ? (typeof S.effConfFeedback === 'number' ? S.effConfFeedback : S.confFeedback) * 100 : undefined,
     set: (S, pos) => { S.confFeedback = fit(pos / 100, 0, 1); save(); },
     format: S => Math.round(S.confFeedback * 100) + '%',
     enabled: layerOn, parent: 'confFeedbackDrawer'
   },
-  // Amount's swing, in the Amount's own share, so its readout is percent to
-  // match the row above. Swinging down to 0 clears the image just as the
-  // slider at 0 does; the shut strip's summary still shows the setting.
-  ...fbVariance('confFeedback', 'confFbAmtVar', 1, true),
+  // Amount's dip, in the Amount's own share, so its readout is percent to
+  // match the row above: over one rate cycle the trails ease from the
+  // setting down by this share and back, never above it. Dipping to 0
+  // clears the image just as the slider at 0 does; the shut strip's
+  // summary still shows the setting.
+  {
+    id: 'confFbAmtVar', section: 'confetti', label: 'Variance', kind: 'slider',
+    varianceOf: 'confFeedback', parent: 'confFeedbackDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round((S.confFbAmtVar || 0) * 100),
+    set: (S, pos) => { S.confFbAmtVar = fit(pos / 100, 0, 1); save(); },
+    format: S => Math.round((S.confFbAmtVar || 0) * 100) + '%',
+    enabled: layerOn
+  },
+  {
+    // Seconds for one swing of the variance.
+    id: 'confFbAmtVarRate', section: 'confetti', label: 'Variance rate', kind: 'slider',
+    varianceOf: 'confFeedback', parent: 'confFeedbackDrawer',
+    min: 1, max: 120, step: 1, def: 20,
+    get: S => S.confFbAmtVarRate,
+    set: (S, pos) => { setRate(S, 'confFbAmtVarRate', fit(pos, 1, 120, true)); save(); },
+    format: S => S.confFbAmtVarRate + 's / cycle',
+    enabled: layerOn
+  },
   // The trails' own motion, always in the drawer; at an Amount of 0 there is
   // no trail, so they simply have nothing to move. Each frame's faded copy
   // is taken a little larger or smaller about the field centre (Stream) and
@@ -579,7 +659,7 @@ export const CONFETTI_CONTROLS = [
     varianceOf: 'confFbPulse',
     min: 1, max: 60, step: 1, def: spec('confFbPulseRate')[3],
     get: S => S.confFbPulseRate,
-    set: (S, pos) => { S.confFbPulseRate = fit(pos, 1, 60, true); save(); },
+    set: (S, pos) => { setRate(S, 'confFbPulseRate', fit(pos, 1, 60, true)); save(); },
     format: S => S.confFbPulseRate + 's / cycle',
     enabled: layerOn, parent: 'confFeedbackDrawer'
   },
@@ -638,7 +718,7 @@ export const CONFETTI_CONTROLS = [
     set: (S, v) => { S.confFbWhere = FB_WHERES.indexOf(v) >= 0 ? v : DEF_FB_WHERE; save(); },
     // with the feedback off it does nothing, so it greys out rather than
     // coming and going as the feedback is switched
-    enabled: S => layerOn(S) && (S.confFeedback > 0 || S.confFbAmtVarHi > 0),
+    enabled: S => layerOn(S) && S.confFeedback > 0,
     sub: 'Kaleidoscope', visible: isFolded, parent: 'confKaleido'
   }
 ];

@@ -231,9 +231,16 @@ fn fsPart(o: POut) -> @location(0) vec4f {
 
 // ---- the border bands, Flame and Glow ----
 
+// px is the fragment's place in device px, carried rather than read from
+// pos: pos is in the target's own pixels, which for the edge's feedback
+// image at a Trail res under 1 (feedback.js ensure) are fewer than the
+// screen's, while bandPlace, the flame's noise cells and the glow's width
+// all go by device px. Interpolated across the band it is exact (the band
+// is flat, w is 1), and at full size it is pos.xy itself.
 struct BOut {
   @builtin(position) pos: vec4f,
   @location(0) @interpolate(flat) band: u32,
+  @location(1) px: vec2f,
 };
 
 // The rectangle's corner k (0 top left, clockwise), pulled r in along its
@@ -265,6 +272,7 @@ fn bandVert(vi: u32, r: f32) -> BOut {
   var o: BOut;
   o.pos = toClip(p);
   o.band = b;
+  o.px = p;
   return o;
 }
 
@@ -341,7 +349,7 @@ fn fbm(p: vec2f, px: i32, py: i32, gain: f32) -> f32 {
 
 @fragment
 fn fsFlame(o: BOut) -> @location(0) vec4f {
-  let pl = bandPlace(o.pos.xy, o.band);
+  let pl = bandPlace(o.px, o.band);
   let reach = u.flame.x;
   let h = pl.x / reach;
   if (h >= 1.0) { return vec4f(0.0, 0.0, 0.0, 0.0); }
@@ -370,7 +378,7 @@ fn fsFlame(o: BOut) -> @location(0) vec4f {
 
 @fragment
 fn fsGlow(o: BOut) -> @location(0) vec4f {
-  let pl = bandPlace(o.pos.xy, o.band);
+  let pl = bandPlace(o.px, o.band);
   // Light bleeding in from beyond the border: full on the screen's very
   // edge and falling away inward to nothing by Width, (1 - t)^k over the
   // share t of Width. The depth is taken from the outer side of the pixel,

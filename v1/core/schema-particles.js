@@ -18,6 +18,7 @@
 // never call save(); store.js decides when to write.
 import { save } from './store.js';
 import { subDrawer } from './schema-visual.js';
+import { retimeRoomPhase } from './room-clock.js';
 
 // The three choices, the two plain booleans, and every numeric field with its
 // range. The GPU agent reads these names off S directly, so this table is the
@@ -52,6 +53,7 @@ const NUM = [
   ['partSize',        0.2, 3,   1,    false],
   ['partSizeVar',     0,   1,   0.5,  false],
   ['partSpread',      0,   1,   0.35, false],
+  ['partOrigin',      0.05, 1,  1,    false],  // birth depth, share of the tunnel; 1 is the far plane
   ['partSwirl',      -1,   1,   0,    false],
   ['partTrail',       0,   1,   0.5,  false],
   ['partHueVar',      0,   1,   0.15, false],
@@ -75,12 +77,11 @@ const NUM = [
   ['partFbOpacity',   0,   1,   1,    false],   // how brightly the trails land; the live particles draw on their own
   ['partFbStream',   -2,   2,   0,    false],   // the trails stream outward (+) or inward (-), signed
   ['partFbTwist',    -1,   1,   0,    false],   // the trails turn about the centre, + clockwise, signed
-  // Each of Amount, Stream and Twist swings over time about its setting: down
-  // as far as its Lo, up as far as its Hi, both in the owner's own units and
-  // each at most the owner's whole span, once every Rate seconds.
-  ['partFbAmtVarLo', -1,   0,   0,    false],
-  ['partFbAmtVarHi',  0,   1,   0,    false],
-  ['partFbAmtVarRate', 1,  120, 20,   true ],
+  ['partFbOpVar',     0,   1,   0,    false],   // how far the trails' Opacity swings down from its setting and back
+  ['partFbOpVarRate', 1,   120, 20,   true ],   // seconds for one swing of the opacity variance
+  // Stream and Twist each swing over time about their setting: down as far
+  // as its Lo, up as far as its Hi, both in the owner's own units and each
+  // at most the owner's whole span, once every Rate seconds.
   ['partFbStreamVarLo', -4, 0,  0,    false],
   ['partFbStreamVarHi', 0,  4,  0,    false],
   ['partFbStreamVarRate', 1, 120, 20, true ],
@@ -89,7 +90,16 @@ const NUM = [
   ['partFbTwistVarRate', 1, 120, 20,  true ],
   ['partFbPulse',     0,   1,   0,    false],   // how far the whole feedback image brightens and darkens with the strobe
   ['partFbPulseVar',  0,   1,   0,    false],   // how far that pulse amount swings down from its setting and back
-  ['partFbPulseRate', 1,   60,  10,   true ]    // seconds for one swing of the pulse variance
+  ['partFbPulseRate', 1,   60,  10,   true ],   // seconds for one swing of the pulse variance
+  // The room-clocked swings' phase offsets (core/room-clock.js), one beside
+  // each rate above that has a swing in a broadcast room. State, not
+  // controls: a rate's set() writes its offset, and they are saved and sent
+  // with the rest so every screen in a room derives the same phase.
+  ['partFadeRateOff',       0, 1, 0, false],
+  ['partFbOpVarRateOff',    0, 1, 0, false],
+  ['partFbStreamVarRateOff', 0, 1, 0, false],
+  ['partFbTwistVarRateOff', 0, 1, 0, false],
+  ['partFbPulseRateOff',    0, 1, 0, false]
 ];
 
 // A slider's rounded position can come back as 1.1500000000000001; this
@@ -244,6 +254,22 @@ function toggle(id, key, label, def, sub, visible) {
   return c;
 }
 
+// A room-clocked swing's rate (core/room-clock.js): the change is folded
+// into the swing's phase offset before the write, so in a broadcast room it
+// carries on from where it is at the new rate rather than jumping to
+// another point in its cycle. Outside a room the offset is left alone.
+function setRate(S, key, v) {
+  retimeRoomPhase(S, key + 'Off', S[key], v);
+  S[key] = v;
+}
+// A direct() slider over one of those rates, its set() writing through
+// setRate.
+function roomRate(c) {
+  const key = c.id, n = spec(key);
+  c.set = (S, pos) => { setRate(S, key, fit(pos, n[1], n[2], n[4])); save(); };
+  return c;
+}
+
 const times2 = key => S => S[key].toFixed(2) + '×';
 
 // Marks a control as a child row of the toggle, segment or sub-drawer
@@ -310,8 +336,8 @@ function rangeText(lo, hi, pct) {
   return lo === 0 && hi === 0 ? 'none' : sideText(lo, pct) + ' / ' + sideText(hi, pct);
 }
 
-// The variance fold under one of the feedback's own settings (Amount, Stream
-// or Twist), schema-confetti.js's own: how far it swings each way, and how
+// The variance fold under one of the feedback's own settings (Stream or
+// Twist), schema-confetti.js's own: how far it swings each way, and how
 // long one swing takes, folding out from under their owner by its chevron
 // (drawer.js, varianceOf). key is the NUM prefix; span the owner's whole
 // slider span in its own units, so either knob can carry it from any setting
@@ -338,7 +364,7 @@ function fbVariance(owner, key, span, pct, switchId) {
       varianceOf: owner,
       min: 1, max: 120, step: 1, def: spec(rate)[3],
       get: S => S[rate],
-      set: (S, pos) => { S[rate] = fit(pos, 1, 120, true); save(); },
+      set: (S, pos) => { setRate(S, rate, fit(pos, 1, 120, true)); save(); },
       format: S => S[rate] + 's / cycle',
       enabled: layerOn, parent: switchId || 'partFeedbackDrawer', visible
     }
@@ -379,6 +405,19 @@ export const PARTICLE_CONTROLS = [
   under('partMotionDrawer', percent('partRate', 'partRate', 'Birth rate', rateText)),
   under('partMotionDrawer', direct('partSpeed', 'partSpeed', 'Speed', 0.01, speedText)),
   under('partMotionDrawer', percent('partSpread', 'partSpread', 'Spread (toward screen edge)')),
+  under('partMotionDrawer', {
+    // Where a new particle is born, as a share of the tunnel's depth: 100%
+    // is the far plane (where they have always started), lower births them
+    // nearer the viewer, spread evenly in log z exactly as the rings'
+    // Origin is (js/sim.js ringBirthZ; v1/gpu/particles.js maps this one).
+    // Particles already in flight carry on from where they are.
+    id: 'partOrigin', section: 'particles', label: 'Origin depth', kind: 'slider',
+    min: 5, max: 100, step: 1, def: 100,
+    get: S => Math.round((S.partOrigin ?? 1) * 100),
+    set: (S, pos) => { S.partOrigin = fit(pos / 100, 0.05, 1, false); save(); },
+    format: S => Math.round((S.partOrigin ?? 1) * 100) + '%',
+    enabled: layerOn
+  }),
   under('partMotionDrawer', direct('partSwirl', 'partSwirl', 'Swirl', 0.01, signed('partSwirl'))),
 
   // What each one looks like. Size is the largest a particle gets; the
@@ -415,7 +454,7 @@ export const PARTICLE_CONTROLS = [
   // Seconds for one swing of the radius variance, as the strobe's Variance
   // rate.
   under('partColorDrawer', varianceOf('partFade',
-    direct('partFadeRate', 'partFadeRate', 'Variance rate', 1, S => S.partFadeRate + 's / cycle'))),
+    roomRate(direct('partFadeRate', 'partFadeRate', 'Variance rate', 1, S => S.partFadeRate + 's / cycle')))),
   // It defaults to 0, a steady layer of its own on top of the flicker, and
   // the readout spells out what 0 means.
   under('partColorDrawer', percent('partPulse', 'partPulse', 'Pulse with strobe',
@@ -430,23 +469,28 @@ export const PARTICLE_CONTROLS = [
   // the particles stand alone. It only changes how the image is laid over,
   // never the trails inside it, so they build and fade the same at any
   // setting and turning it back up shows them as they are now.
-  under('partFeedbackDrawer', percent('partFbOpacity', 'partFbOpacity', 'Opacity')),
+  // While a variance is set the slider shows the swung value as it moves.
+  {
+    ...under('partFeedbackDrawer', percent('partFbOpacity', 'partFbOpacity', 'Opacity')),
+    effective: S => S.partFbOpVar > 0
+      ? (typeof S.effPartFbOpacity === 'number' ? S.effPartFbOpacity : S.partFbOpacity) * 100 : undefined
+  },
+  // The Opacity's swing, folding out from under it: over one Variance rate
+  // cycle the trails' opacity eases from the setting down by this share and
+  // back, so at 100% the trail image breathes from the set brightness to
+  // nothing and back. At 0 the opacity stays where it is set.
+  under('partFeedbackDrawer', varianceOf('partFbOpacity', percent('partFbOpVar', 'partFbOpVar', 'Variance'))),
+  // Seconds for one swing of the opacity variance, as the strobe's Variance
+  // rate.
+  under('partFeedbackDrawer', varianceOf('partFbOpacity',
+    roomRate(direct('partFbOpVarRate', 'partFbOpVarRate', 'Variance rate', 1, S => S.partFbOpVarRate + 's / cycle')))),
   // Each frame keeps a fading copy of the last, so every particle leaves a
   // trail that stays where it was drawn and dies away. At 0 there is no
   // trail, the particles as they are; at 100% a trail takes about two
   // seconds to fade to half, and in between the time grows with the square
   // of the slider, so the low end is fine grained. Labelled Amount since the
-  // drawer carries the Feedback name. While a variance is set the knob shows
-  // the swung value as it moves.
-  {
-    ...under('partFeedbackDrawer', percent('partFeedback', 'partFeedback', 'Amount')),
-    effective: S => (S.partFbAmtVarLo !== 0 || S.partFbAmtVarHi !== 0)
-      ? (typeof S.effPartFeedback === 'number' ? S.effPartFeedback : S.partFeedback) * 100 : undefined
-  },
-  // Amount's swing, in the Amount's own share, so its readout is percent to
-  // match the row above. Swinging down to 0 clears the image just as the
-  // slider at 0 does; the shut strip's summary still shows the setting.
-  ...fbVariance('partFeedback', 'partFbAmtVar', 1, true),
+  // drawer carries the Feedback name.
+  under('partFeedbackDrawer', percent('partFeedback', 'partFeedback', 'Amount')),
   // How this frame's light goes into the trails. Additive piles it onto
   // what is already there, so overlapping paths build and a long Amount
   // blooms toward white; Max holds each point at the brightest light that
@@ -508,7 +552,7 @@ export const PARTICLE_CONTROLS = [
   // Seconds for one swing of the pulse variance, as the strobe's Variance
   // rate.
   under('partFeedbackDrawer', varianceOf('partFbPulse',
-    direct('partFbPulseRate', 'partFbPulseRate', 'Variance rate', 1, S => S.partFbPulseRate + 's / cycle'))),
+    roomRate(direct('partFbPulseRate', 'partFbPulseRate', 'Variance rate', 1, S => S.partFbPulseRate + 's / cycle')))),
   // An optional fold of the whole particle field into wedges, like the
   // Kaleidoscope layer's own. The three rows under the switch only show
   // while it is on. The fold count reads with the number first, so clicking
@@ -529,7 +573,7 @@ export const PARTICLE_CONTROLS = [
     visible: isFolded,
     // with the feedback off it does nothing, so it greys out rather than
     // coming and going as the feedback is switched
-    enabled: S => layerOn(S) && (S.partFeedback > 0 || S.partFbAmtVarHi > 0)
+    enabled: S => layerOn(S) && S.partFeedback > 0
   },
 
   // Pulse with the sequencer, behind its own switch: off, its five dials
