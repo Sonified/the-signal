@@ -105,7 +105,6 @@ const RAW = [
   'Trusting the timing.',
   'Thank you.',
   'So much to be grateful for.',
-  'This is a gift.',
   'Grateful for this breath.',
   'What if it’s all ok?',
   'What if you’re already enough?',
