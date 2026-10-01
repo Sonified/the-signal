@@ -1,18 +1,18 @@
 // Entry point: the requestAnimationFrame loop and the boot sequence.
-import { S, WALK_STEP, WALK_DAMP, WALK_SWING, SKIP_KEY } from './state.js';
-import { $, hint, panel } from './dom.js';
-import { shape, hslToRgb } from './util.js';
-import { setColorFromPicker, bandHue } from './color.js';
-import { seedParticles, updateRings, updateParticles } from './sim.js';
+import { S, WALK_STEP, WALK_DAMP, WALK_SWING, SKIP_KEY } from '../../js/state.js';
+import { $, hint, panel } from '../../js/dom.js';
+import { shape, hslToRgb } from '../../js/util.js';
+import { setColorFromPicker, bandHue } from '../../js/color.js';
+import { seedParticles, updateRings, updateParticles } from '../../js/sim.js';
 import { initRenderer } from './renderer.js';
-import { applySettings } from './settings.js';
+import { applySettings } from '../../js/settings.js';
 import { initUI, updateReadouts, resize, syncAmbControls, toggle } from './ui.js';
-import { ensureAudioGraph, warmDevice, audioOn, setAmRate, hasNode } from './audio.js';
+import { ensureAudioGraph, warmDevice, audioOn, setAmRate, hasNode } from '../../js/audio.js';
 import { initText, updateText } from './text.js';
 import { initAmbMixer } from './ambience-mixer.js';
-import { startStrobeWorker, strobeInWorker, syncWorkerInset, syncWorkerGuardSim, setWorkerGuardHandler, resetWorkerRefresh } from './strobe-bridge.js';
-import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from './panel-guard.js';
-import { displayListenScreen, displaySampleScreen, displaySummary, DISPLAY_CHANGED } from './display-watch.js';
+import { startStrobeWorker, strobeInWorker, syncWorkerInset, syncWorkerGuardSim, setWorkerGuardHandler, resetWorkerRefresh } from '../../js/strobe-bridge.js';
+import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from '../../js/panel-guard.js';
+import { displayListenScreen, displaySampleScreen, displaySummary, DISPLAY_CHANGED } from '../../js/display-watch.js';
 
 let lastInset = -1;
 

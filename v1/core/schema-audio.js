@@ -2,7 +2,7 @@
 // drawer groups, the quick bar, the transport, and the fixed rows of the
 // atmosphere mixer. Owns everything a listener touches.
 //
-// Every control below is a DOM-free port of one handler in js/ui.js. Where
+// Every control below is a DOM-free port of one handler in v0/js/ui.js. Where
 // v0 wired a slider to an <input> and read el.value, here get/set trade in
 // the same v0 SLIDER POSITION units (0-100 unless the control's own min/max
 // says otherwise) so a widget can drive the control exactly the way v0's
@@ -45,7 +45,7 @@ import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows } from './schema-variance.js';
 
-// ---------- shared helpers, ported from js/ui.js closures ----------
+// ---------- shared helpers, ported from v0/js/ui.js closures ----------
 
 // Readouts for the pip filter: kHz above a thousand, and a sweep time in
 // seconds that switches to minutes once it gets long.
@@ -57,7 +57,7 @@ const fmtSweep = sec => sec < 90 ? Math.round(sec) + 's'
 // $('lAudio').checked, round-tripped through the saved settings JSON under
 // the key 'audioOnBoot'. store.js parks that as a real scalar, S.audioOnBoot,
 // loaded and saved under that same key so v0 and v1 stay byte-compatible.
-// Anywhere v0 read $('lAudio').checked (js/main.js's resume-on-first-gesture
+// Anywhere v0 read $('lAudio').checked (v0/js/main.js's resume-on-first-gesture
 // logic, for one) the v1 equivalent is S.audioOnBoot.
 //
 // state.js never seeds this field (it is not a v0 S field at all), and
@@ -225,7 +225,7 @@ function parseTilt(s, text) {
   return Number.isFinite(n) ? n : NaN;
 }
 
-// ---------- quick bar cycles, ported from js/ui.js ----------
+// ---------- quick bar cycles, ported from v0/js/ui.js ----------
 
 // Six shorthand arrangements of the four visual layers. The cycle writes
 // straight into S.layers, the same object schema-visual.js's own layer

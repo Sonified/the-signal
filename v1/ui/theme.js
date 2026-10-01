@@ -101,5 +101,5 @@ export const LAYOUT = {
   childIndent: 14,
   chipH: 38,                 // quick-bar buttons
   burger: 42,
-  idleMs: 1000               // chrome idle fade delay (v0 used 1000 in js/ui.js, 2200 here before)
+  idleMs: 1000               // chrome idle fade delay (v0 used 1000 in v0/js/ui.js, 2200 here before)
 };

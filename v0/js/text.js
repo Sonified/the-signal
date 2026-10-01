@@ -10,7 +10,7 @@
 // put string work straight back into it. One absolutely positioned element with
 // an opacity write costs nothing by comparison, and the browser's own text
 // rasteriser is sharper than anything worth writing here.
-import { S } from './state.js';
+import { S } from '../../js/state.js';
 
 let el = null;
 let words = [];                 // [word, ...themeKeys] rows from words.js
@@ -89,7 +89,7 @@ export function initText(node) {
   el = node;
   // Dynamic so a large table never blocks first paint, and so a missing or
   // broken list degrades to "no words" instead of taking the whole app down.
-  import('./words.js').then(m => {
+  import('../../js/words.js').then(m => {
     THEMES = m.THEMES || {};
     words  = m.WORDS  || [];
     loaded = true;

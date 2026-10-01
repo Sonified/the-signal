@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<!-- Archived v0. The shared modules in /js fetch samples by paths relative
+     to the page (audio/piano/...), so the page is based at the site root.
+     Its own files are under v0/. -->
+<base href="../">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Signal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128302;</text></svg>">
@@ -15,7 +19,7 @@
 <meta name="theme-color" content="#07080b">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="v0/css/style.css">
 </head>
 <body>
 
@@ -175,7 +179,7 @@
   <div class="hsub">press the &ldquo;~&rdquo; key for settings &nbsp;&middot;&nbsp; press ENTER for full screen<br>T for words &nbsp;&middot;&nbsp; C for color</div>
 </div>
 
-<!-- The panel guard's notice (js/panel-guard.js, wired in js/main.js): shown
+<!-- The panel guard's notice (js/panel-guard.js, wired in v0/js/main.js): shown
      when the strobe has been paused because every flash was landing on the
      same half of the display's refresh cycle. Hidden until then. -->
 <div id="guard" role="alertdialog" aria-labelledby="guardTitle" aria-describedby="guardBody" hidden>
@@ -811,6 +815,6 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="v0/js/main.js"></script>
 </body>
 </html>

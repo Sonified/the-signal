@@ -3,7 +3,7 @@
 // Scene section for the contract. update(lum) writes this frame's GPU
 // buffers before the pass begins; draw(pass) only records draw calls.
 //
-// The field/ring/corner maths is js/framedata.js and js/shaders.js ported
+// The field/ring/corner maths is v0/js/framedata.js and v0/js/shaders.js ported
 // into scene-data.js and scene.wgsl.js, widened so rings and corners can
 // carry their own colour when S.perElementColor is on (see those files for
 // why). The edge layer is a rewrite: v0's WebGPU path drew one rounded

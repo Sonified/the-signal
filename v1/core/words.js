@@ -1,4 +1,4 @@
-// The word layer's scheduling, ported from js/text.js with the DOM taken out
+// The word layer's scheduling, ported from v0/js/text.js with the DOM taken out
 // from underneath it. v0 kept a live element and wrote its opacity and text
 // content straight to the page; v1 has no element to write to, so this file
 // only keeps score, once per frame, into wordState, and whatever draws the

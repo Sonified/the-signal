@@ -3,7 +3,7 @@
 // and instance buffers. Nothing here touches the GPU directly; scene.js owns
 // the device and just uploads whatever this module last wrote.
 //
-// Two things widen past what js/framedata.js did for the old WebGPU path.
+// Two things widen past what v0/js/framedata.js did for the old WebGPU path.
 // First, rings and corners can now carry their own colour per element
 // (S.perElementColor), which the old single-tint full-screen shader never
 // needed, so each ring carries its own colour, already weighted by its

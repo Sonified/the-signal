@@ -1,6 +1,6 @@
 // ---------- WebGPU ----------
-import { layers } from '../state.js';
-import { cv, $ } from '../dom.js';
+import { layers } from '../../../js/state.js';
+import { cv, $ } from '../../../js/dom.js';
 import { WGSL } from '../shaders.js';
 import { uniArr, lutArr, edgeArr, edgeInst, buildFrameData } from '../framedata.js';
 

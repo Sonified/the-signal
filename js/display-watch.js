@@ -37,7 +37,7 @@
 //
 // Pure logic over plain numbers, like js/panel-guard.js, apart from
 // displaySampleScreen and displayListenScreen, which read the real screen and
-// are only ever called on a page (v0's js/main.js, v1's platform files). Every
+// are only ever called on a page (v0's v0/js/main.js, v1's platform files). Every
 // per-frame function here allocates nothing.
 
 // The two clocks may differ by this fraction of the slower before they are

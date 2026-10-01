@@ -1,8 +1,8 @@
 // The Atmosphere mixer: v0's floating mixer window, redrawn on the GPU.
 //
 // v0 is the template, line for line: index.html's #ambMixerWindow for the
-// structure, css/style.css's #ambMixer* and .amb-* rules for every size,
-// colour and gap, and js/ambience-mixer.js for how it behaves. The window is
+// structure, v0/css/style.css's #ambMixer* and .amb-* rules for every size,
+// colour and gap, and v0/js/ambience-mixer.js for how it behaves. The window is
 // a header bar (power light, title, drift, copy settings, on, close) over a
 // body of compact one-line channel rows laid out on v0's six-column grid:
 // the tone engine and the music as label, fader, value and a meter with its
@@ -37,7 +37,7 @@ import { anySolo, chanSilenced } from '../../../js/mixgate.js';
 import { MUSIC_LAYERS, layerMixId } from '../../../js/layer-defs.js';
 
 // ---------- v0's colours ----------
-// Every one of these is a value from css/style.css, alpha included (a CSS
+// Every one of these is a value from v0/css/style.css, alpha included (a CSS
 // #rrggbbaa's last pair over 255). Built once at load and never written.
 function css(hex, a) {
   const n = parseInt(hex.slice(1, 7), 16), v = new Float32Array(4);

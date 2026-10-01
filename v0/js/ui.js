@@ -1,22 +1,22 @@
 // Controls, readouts, drawer, keyboard and the clipboard helpers.
-import { S, layers, STORE, SKIP_KEY, GROUPS_KEY, RENDER_BTNS } from './state.js';
-import { $, cv, hint, panel } from './dom.js';
-import { bandName, posToAmp, ampToPos, ampToDb} from './util.js';
-import { setColorFromPicker } from './color.js';
-import { seedParticles, applyEdgeDir, seedTunnel } from './sim.js';
-import { invalidateGradients } from './renderers/canvas2d.js';
-import { saveSettings, paintPipLpf, lpfFromPos } from './settings.js';
-import { strobeInWorker, syncWorker, WORKER_FLAG } from './strobe-bridge.js';
-import { applyPreset } from './presets.js';
-import { pianoOn, pianoOff, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, pianoAvailable } from './piano.js';
-import { cloudsOn, cloudsOff, applyCloudReverb } from './clouds.js';
-import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR } from './ambience.js';
+import { S, layers, STORE, SKIP_KEY, GROUPS_KEY, RENDER_BTNS } from '../../js/state.js';
+import { $, cv, hint, panel } from '../../js/dom.js';
+import { bandName, posToAmp, ampToPos, ampToDb} from '../../js/util.js';
+import { setColorFromPicker } from '../../js/color.js';
+import { seedParticles, applyEdgeDir, seedTunnel } from '../../js/sim.js';
+import { invalidateGradients } from '../../js/renderers/canvas2d.js';
+import { saveSettings, paintPipLpf, lpfFromPos } from '../../js/settings.js';
+import { strobeInWorker, syncWorker, WORKER_FLAG } from '../../js/strobe-bridge.js';
+import { applyPreset } from '../../js/presets.js';
+import { pianoOn, pianoOff, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, pianoAvailable } from '../../js/piano.js';
+import { cloudsOn, cloudsOff, applyCloudReverb } from '../../js/clouds.js';
+import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR } from '../../js/ambience.js';
 import { rebuildPool, poolSize, recentreWord, THEMES as WORD_THEMES } from './text.js';
-import { chirpDurationMs } from './chirp.js';
+import { chirpDurationMs } from '../../js/chirp.js';
 import {
   setParam, applyLevel, applyAudioShape, applyHarmonics, applyReverbMix,
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
-  warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf} from './audio.js';
+  warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf} from '../../js/audio.js';
 
 // ---------- readouts ----------
 export function updateReadouts() {

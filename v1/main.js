@@ -425,7 +425,7 @@ async function boot() {
       return true;
     }
     // L does the same for the Levels window, the atmosphere mixer that M
-    // used to open (v0's js/ambience-mixer.js shortcut).
+    // used to open (v0's v0/js/ambience-mixer.js shortcut).
     if (lk === 'l' && !e.alt) {
       if (!levelsKeyHeld) { levelsKeyHeld = true; mixer.open = !mixer.open; }
       return true;

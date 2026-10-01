@@ -98,7 +98,7 @@ export function syncWorkerGuardSim(hz) {
   if (worker) worker.postMessage({ t: 'guardSim', hz });
 }
 
-// The display changed (js/main.js's tripwire): the worker throws away its
+// The display changed (v0/js/main.js's tripwire): the worker throws away its
 // refresh measurement, its frame lock count and its panel guard's
 // integrators, as the main thread has done with its own.
 export function resetWorkerRefresh() {

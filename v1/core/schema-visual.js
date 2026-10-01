@@ -1,7 +1,7 @@
 // The visual half of the control schema: layers, Strobe, Tunnel, Edge, Text
 // and the one Render item that still means something once the frame loop is
 // WebGPU on the main thread by design (see the Render section below). Every
-// entry is a faithful port of one handler in js/ui.js, read side by side with
+// entry is a faithful port of one handler in v0/js/ui.js, read side by side with
 // this file while it was written: the same state key, the same unit
 // conversion, the same side effects, in the same order. What is dropped is
 // only ever a DOM write, since the toolkit repaints every frame and never
@@ -534,7 +534,7 @@ export const VISUAL_CONTROLS = [
       { value: 'warm', label: 'Warm', domId: 'hbWarm' },
       { value: 'cool', label: 'Cool', domId: 'hbCool' }
     ],
-    // The three named arcs from setHueBand in js/ui.js. Warm runs magenta-red
+    // The three named arcs from setHueBand in v0/js/ui.js. Warm runs magenta-red
     // through amber and stops short of green, clear of the blue that
     // suppresses melatonin; cool is its mirror, for contrast rather than sleep.
     get: S => S.hueSpan >= 1 ? 'full' : (S.hueLo > 0.9 || S.hueLo < 0.2 ? 'warm' : 'cool'),
@@ -1559,10 +1559,10 @@ export const VISUAL_CONTROLS = [
   // (textThemes below)
     // Multi-select: every theme chip is independently on or off. get()
     // returns the array of theme keys currently active; an empty S.textThemes
-    // reads as "every theme", matching rebuildPool's own rule in js/text.js,
+    // reads as "every theme", matching rebuildPool's own rule in v0/js/text.js,
     // so a fresh session shows every chip lit without having written 22
     // `true`s into storage. set(S, key) toggles exactly one key, replicating
-    // the per-chip button handler in js/ui.js including the "first touch
+    // the per-chip button handler in v0/js/ui.js including the "first touch
     // turns the blanket everything into an explicit set" rule: the set has to
     // be made real before any single key can be subtracted from it. The All
     // and None buttons are separate action controls below, matching v0's
@@ -1807,7 +1807,7 @@ export const VISUAL_CONTROLS = [
   }
 ];
 
-// Mirrors rebuildPool's filter in js/text.js exactly, but reads the static
+// Mirrors rebuildPool's filter in v0/js/text.js exactly, but reads the static
 // WORDS table directly rather than lane B's live pool cache: format() is
 // called from the toolkit on every change to S.textThemes, and computing it
 // from S plus the word list keeps this control's readout a pure function of

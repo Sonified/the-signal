@@ -76,7 +76,7 @@ Each file has exactly one owning lane. A lane edits only files it owns.
 | `v1/gpu/engine.js` | lane A1 | device, context, frame graph, render targets |
 | `v1/gpu/scene.js` (+ `scene-data.js`, `scene.wgsl.js`) | lane A2 | field, rings, corners, edge; bead fix |
 | `v1/gpu/text-atlas.js` | lane B | SDF glyph atlas, measure, emit glyphs |
-| `v1/core/words.js` | lane B | word scheduler, pure port of `js/text.js` timing |
+| `v1/core/words.js` | lane B | word scheduler, pure port of `v0/js/text.js` timing |
 | `v1/core/word-fx.js` | text | word transitions: per-letter arrive/leave effects (fade, gather, wind, cloud), drawn by `text.drawWord` |
 | `v1/gpu/word-cloud.js` | text | Cloud transition: an advected smoke density field exchanging material with per-pixel SDF ink through a formation mask |
 | `v1/gpu/word-smoke.js` | text | Smoke transition: arrivals replay an offscreen-recorded dissolution backward; departures simulate the same physics LIVE at 1024x512 during the fade-out |
@@ -177,7 +177,7 @@ canvas. Space bar default scroll is prevented. The platform does no UI logic.
 export function stepStrobe(t) -> { lum, lit }   // t = rAF timestamp ms
 export function resetStrobeClock()
 ```
-A faithful port of the non-DOM body of `tick()` in `js/main.js` (frame-health
+A faithful port of the non-DOM body of `tick()` in `v0/js/main.js` (frame-health
 tracking into `S.intervals` / `S.dropCount` / `S.refreshHz`, drift, frame lock
 including `S.spareMode`, the eff* values with their zero-variance guards,
 colour walks, `S.litLog`, then `updateRings` / `updateParticles` from
@@ -210,7 +210,7 @@ export function createScene(device, format) -> Scene
 // Scene: draw(pass), resize(pixelW, pixelH, dpr), update(lum)   // update writes buffers, before the pass
 ```
 Draws field, rings, corners and edge exactly as v0 does visually, reading
-`S` and `layers`. Port the maths from `js/framedata.js` + `js/shaders.js`
+`S` and `layers`. Port the maths from `v0/js/framedata.js` + `v0/js/shaders.js`
 (WGSL) into v1 files with no DOM (canvas size comes from `resize`). **Fix the
 bead bug**: v0's WebGPU edge draws one rounded capsule per segment, which
 reads as beads on a string. v1 must match Canvas2D's look: each particle is a
@@ -243,7 +243,7 @@ editing platform/web.js).
 
 ### Words (`v1/core/words.js`, lane B)
 
-Pure port of the scheduling logic in `js/text.js` (`fires`, `pick`,
+Pure port of the scheduling logic in `v0/js/text.js` (`fires`, `pick`,
 `maybeRest`, reveal, fade in / hold / fade out, opacity variance, linked to
 the strobe cycle wrap or its own rate), with no DOM. Exposes
 `initWords()` (loads `../../js/words.js` data and theme filter exactly as v0),
@@ -349,7 +349,7 @@ step/range. The carrier (1-1000 Hz) uses it.
 
 `set` must reproduce the v0 handler's side effects precisely (for example the
 `clickVol` handler writes through `pipSet` and calls `applyLevel('clickLevel')`
-and `applyLevel('clickSend')`). Read each handler in `js/ui.js`. Calls that
+and `applyLevel('clickSend')`). Read each handler in `v0/js/ui.js`. Calls that
 v0 makes into DOM-only functions (repaints, `updateReadouts`) are dropped,
 since the toolkit repaints every frame. `saveSettings()` is replaced by
 `store.save()` (debounced) from `v1/core/store.js`.
@@ -407,7 +407,7 @@ atmosphere; the engine's loop is the worker's.
 ## Conventions
 
 - Comments: prose, explaining why, in the voice of the existing codebase
-  (see `js/text.js`, `js/sim.js`, `css/style.css`). No bullet lists inside
+  (see `v0/js/text.js`, `js/sim.js`, `v0/css/style.css`). No bullet lists inside
   comments. No em dashes anywhere.
 - Every module starts with a short header comment saying what it owns.
 - No console noise in the frame loop. Warnings once, on failure paths.

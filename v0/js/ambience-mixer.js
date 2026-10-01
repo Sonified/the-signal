@@ -1,16 +1,16 @@
 // Floating mixer: every channel gets a fader and a post-fader meter -- the
 // tone engine, the music, and one row per atmosphere recording.
-import { S } from './state.js';
-import { $ } from './dom.js';
-import { saveSettings } from './settings.js';
+import { S } from '../../js/state.js';
+import { $ } from '../../js/dom.js';
+import { saveSettings } from '../../js/settings.js';
 import {
   AMBIENCE_SOURCES, normalizeAmbLayers, syncAmbLayers, ambLayerStatus, ambLayerPeak,
   startAmbDrift, stopAmbDrift, ambDriftTick, setAmbLayerLevel
-} from './ambience.js';
-import { enginePeaks } from './audio.js';
-import { pianoPeak, bedPeak } from './piano.js';
-import { cloudPeak } from './clouds.js';
-import { ampToPos, ampToDb } from './util.js';
+} from '../../js/ambience.js';
+import { enginePeaks } from '../../js/audio.js';
+import { pianoPeak, bedPeak } from '../../js/piano.js';
+import { cloudPeak } from '../../js/clouds.js';
+import { ampToPos, ampToDb } from '../../js/util.js';
 
 // The fixed channels: one row each for the tone engine and the music, paired
 // with the source its meter reads. Tone, harmonics and pips come back from the

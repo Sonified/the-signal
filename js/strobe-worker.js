@@ -234,7 +234,7 @@ self.onmessage = e => {
   } else if (m.t === 'guardSim') {
     guardSimulate(m.hz);
   } else if (m.t === 'displayReset') {
-    // The window is on another screen (js/main.js's display tripwire). What
+    // The window is on another screen (v0/js/main.js's display tripwire). What
     // was measured here describes the old one, so it all starts again.
     S.frameTimes.length = 0;
     S.refreshHz = 0;

@@ -1,7 +1,7 @@
-import { S } from './state.js';
-import { $, cv } from './dom.js';
-import { strobeNote } from './strobe-bridge.js';
-import { initCanvas2D } from './renderers/canvas2d.js';
+import { S } from '../../js/state.js';
+import { $, cv } from '../../js/dom.js';
+import { strobeNote } from '../../js/strobe-bridge.js';
+import { initCanvas2D } from '../../js/renderers/canvas2d.js';
 import { initWebGL2 } from './renderers/webgl2.js';
 import { initWebGPU } from './renderers/webgpu.js';
 

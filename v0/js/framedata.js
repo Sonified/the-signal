@@ -26,10 +26,10 @@
 //  with hardware additive blending.
 // ---------------------------------------------------------------------
 
-import { S, layers, LUT_N, MAX_EDGE_INST, Z_NEAR } from './state.js';
-import { shape, smoothstep } from './util.js';
-import { perimeterPoint, px, py } from './geometry.js';
-import { cv } from './dom.js';
+import { S, layers, LUT_N, MAX_EDGE_INST, Z_NEAR } from '../../js/state.js';
+import { shape, smoothstep } from '../../js/util.js';
+import { perimeterPoint, px, py } from '../../js/geometry.js';
+import { cv } from '../../js/dom.js';
 
 export const uniArr  = new Float32Array(24);     // 6 * vec4, 96 bytes
 export const lutArr  = new Float32Array(LUT_N);

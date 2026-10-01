@@ -1,4 +1,4 @@
-// The atmosphere mixer's own logic, ported out of js/ambience-mixer.js with
+// The atmosphere mixer's own logic, ported out of v0/js/ambience-mixer.js with
 // every DOM line left behind: the drift scheduler that slowly crossfades
 // between recorded places, the meters the mixer screen paints as twelve LEDs
 // a channel, and the dynamic per-layer controls (one source's level, mute
@@ -153,7 +153,7 @@ export function ambLayerControls(i) {
 // ---------- meters ----------
 // One meter, twelve LEDs, -60 to 0 dBFS, the peak falling on its own 180 ms
 // release so a pip that lands between two frames still reads. Identical maths
-// to js/ambience-mixer.js's paintMeter; only the DOM classList write is gone.
+// to v0/js/ambience-mixer.js's paintMeter; only the DOM classList write is gone.
 const LEDS = 12;
 function updateMeter(meter, level, dt) {
   meter.peak = Math.max(level, meter.peak * Math.exp(-dt / 180));
@@ -162,7 +162,7 @@ function updateMeter(meter, level, dt) {
   return meter.count;
 }
 
-// The fixed channels' meters read the same sources js/ambience-mixer.js's
+// The fixed channels' meters read the same sources v0/js/ambience-mixer.js's
 // CHANNELS table did, keyed by the mixer control id schema-audio.js gives
 // each fader so a screen can go straight from one to the other.
 const CHANNEL_PEAK_FNS = {

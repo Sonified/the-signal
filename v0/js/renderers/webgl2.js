@@ -1,6 +1,6 @@
 // ---------- WebGL2 ----------
-import { layers, LUT_N } from '../state.js';
-import { cv } from '../dom.js';
+import { layers, LUT_N } from '../../../js/state.js';
+import { cv } from '../../../js/dom.js';
 import { GL_VS_FULL, GL_FS_FULL, GL_VS_EDGE, GL_FS_EDGE } from '../shaders.js';
 import { uniArr, lutArr, edgeArr, edgeInst, buildFrameData } from '../framedata.js';
 

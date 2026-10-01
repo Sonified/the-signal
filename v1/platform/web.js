@@ -132,7 +132,7 @@ export function clipboardWrite(text) {
 }
 
 // ---------- fullscreen ----------
-// Ported from js/ui.js: the same three-name fallback chain, because a
+// Ported from v0/js/ui.js: the same three-name fallback chain, because a
 // plain optional-chained requestFullscreen quietly does nothing on the
 // browsers that only ship the prefixed form.
 const FS_REQUEST = ['requestFullscreen', 'webkitRequestFullscreen', 'webkitRequestFullScreen'];

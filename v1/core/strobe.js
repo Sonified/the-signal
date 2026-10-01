@@ -1,5 +1,5 @@
 // The strobe core: a faithful, non-DOM port of the per-frame body of tick()
-// in js/main.js. Everything here is pure state advance, no drawing and no
+// in v0/js/main.js. Everything here is pure state advance, no drawing and no
 // reading of any element. The frame graph (v1/gpu/engine.js, wired by
 // integration) calls stepStrobe(t) once per rAF, before the scene is built,
 // and hands the returned lum and lit on to scene.update and the render call.
@@ -230,7 +230,7 @@ export function glideStrobeFreq(sec) {
 }
 
 // A glide must never dwell in the 15-25 Hz photosensitive band the app warns
-// about (js/ui.js); a 7.5 to 40 Hz recall would otherwise sweep through it for
+// about (v0/js/ui.js); a 7.5 to 40 Hz recall would otherwise sweep through it for
 // almost half a second. So when the path crosses the band and neither end is
 // inside it, the band is cut out of the path: the glide runs at an even pace
 // over the rest and steps straight across the band in a single frame. When a

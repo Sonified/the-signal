@@ -40,7 +40,7 @@
 //
 // Testing without a 60 Hz display: guardSimulate(hz) makes the guard model a
 // display refreshing at `hz` instead of the real one. It replays the frame
-// lock exactly as js/main.js and v1/core/strobe.js would run it at that rate
+// lock exactly as v0/js/main.js and v1/core/strobe.js would run it at that rate
 // (frames per cycle, spare frame, waveform, depth) against a virtual refresh
 // clock, and feeds that into the same integrators, so the whole path from
 // measurement to pause to message is exercised. Each surface exposes it in

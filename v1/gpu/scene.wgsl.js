@@ -1,5 +1,5 @@
 // WGSL for the scene: field, rings and corners as one full-screen pass
-// (reusing the maths in js/shaders.js's WGSL export almost unchanged), plus
+// (reusing the maths in v0/js/shaders.js's WGSL export almost unchanged), plus
 // the edge layer's tail and head-cap passes, which are new for v1.
 //
 // The full-screen pass widens past the old struct U in one way: cornerCol
@@ -250,7 +250,7 @@ fn fsTail(o: TOut) -> @location(0) vec4f {
 // One instance per particle, a quad expanded past the circle's radius the
 // same way v0's old edge line drew its antialiasing margin, with corners
 // built from vertex_index rather than a dedicated quad buffer (same trick
-// js/shaders.js's vsEdge already used). cutDir is the tail's own leading
+// v0/js/shaders.js's vsEdge already used). cutDir is the tail's own leading
 // direction; fsCap discards the half of the circle behind it, which is the
 // half the tail polygon already paints, so additive blending never doubles
 // up into a bright seam where the two shapes meet.
