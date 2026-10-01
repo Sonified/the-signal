@@ -50,14 +50,16 @@ import {
 } from './atmosphere.js';
 import { initStore, load, syncFromStorage } from './store.js';
 import { replayLive } from './presets.js';
+import { signal, unpackSignal, publishSignal } from './signal.js';
 import {
   M_FLAGS, M_DRIFT, M_ARP, M_HEAD, M_ATMOS, F_AUDIO, F_WORKLET, F_DRIFT,
-  DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP, CALL_SLOTS
+  DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP, W_READBACKS, CALL_SLOTS, packReadbacks
 } from './audio-mirror.js';
 
 // Post cadence for the readings: the arp's peak drives a visual envelope, so
-// it goes about every 60 Hz frame while watched; meters and the playhead are
-// fine at about 30 Hz.
+// it goes about every 60 Hz frame while watched; meters, the playhead and the
+// lines' swings (which only move on the pump, five times a second) are fine
+// at about 30 Hz.
 const ARP_POST_MS = 15, METER_POST_MS = 33;
 
 // storage is { get(key) } over the page's localStorage; nothing is ever set.
@@ -97,6 +99,13 @@ export function createAudioShell(storage) {
       if (S.amLinked && hasNode() && Math.abs(S.effFreq - S.lastAmSet) > 0.01) {
         setAmRate(S.effFreq); S.lastAmSet = S.effFreq;
       }
+    },
+    // The strobe signal, as the engine's strobe core last set it: into this
+    // thread's copy, whose listener (js/strobe-am.js) hands it on to the
+    // worklet every Vary with strobe stage taps.
+    signal(p) {
+      unpackSignal(signal, p);
+      publishSignal();
     },
     // The sequencer's active line and all eight lines, unpacked in place
     // (the arp reads them at every step, so the next step plays the edit),
@@ -169,9 +178,13 @@ export function createAudioShell(storage) {
     const since = t - lastPost;
     const due = flags !== lastFlags || driftCode !== 0 ||
       ((watch & W_ARP) && since >= ARP_POST_MS) ||
-      ((watch & (W_METERS | W_PLAYHEAD)) && since >= METER_POST_MS);
+      ((watch & (W_METERS | W_PLAYHEAD | W_READBACKS)) && since >= METER_POST_MS);
     if (!due) return null;
-    readings[M_FLAGS] = flags;
+    // the read-backs (audio-mirror.js READBACKS) only while watched, each
+    // marked live only when it had something live to send (the swings, a
+    // playing sequencer); the live bits ride outside lastFlags, since the
+    // watched post goes out on its own cadence anyway
+    readings[M_FLAGS] = flags | packReadbacks(readings, watch);
     readings[M_DRIFT] = driftCode;
     readings[M_ARP] = (watch & W_ARP) ? arpPeak() : 0;
     readings[M_HEAD] = (watch & W_PLAYHEAD) ? seqClock() : -1;

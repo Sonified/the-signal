@@ -13,7 +13,7 @@
 // Eight lines play together, one strip each in the section under the grid:
 // its name, mute and solo, waveform, its octave (BASE) and octave
 // randomization (RAND), its level, and a chevron that folds open the line's
-// own settings in four rows, ENVELOPE, PAN, REVERB and DELAY. A click on a strip
+// own settings in four rows, ENVELOPE, PAN, DELAY and REVERB. A click on a strip
 // anywhere off its controls makes that line the active one, the one the
 // grid, the length and randomize and clear act on. Line 1 is the original
 // 3 4 8 figure. Which folds are open is the window's own state, kept with
@@ -26,10 +26,12 @@
 import { S, seqSeat } from '../../../js/state.js';
 import {
   SEQ_ROWS, SEQ_MAX, SEQ_COUNT, SEQ_WAVES, SEQ_OCT_MODES, SEQ_DLY_STEPS,
+  SEQ_SW_ATK, SEQ_SW_DEC, SEQ_SW_PAN, SEQ_SW_REV, SEQ_SW_FB, SEQ_SWINGS,
   seqRandomize, applyArp, applySeqs, seqAnySolo, seqGate
 } from '../../../js/piano.js';
-// the step clock through the mirror, which reads it from the page in worker mode
-import { seqClockNow } from '../../core/audio-mirror.js';
+// the step clock and the lines' swings through the mirror, which reads them
+// from the page in worker mode
+import { seqClockNow, seqSwingNow } from '../../core/audio-mirror.js';
 import { loadUiState, saveUiState, save } from '../../core/store.js';
 import { byId } from '../../core/schema.js';
 import { W, MOTION } from '../theme.js';
@@ -102,8 +104,8 @@ const STRIP_W = LVAL_X + 30 + 6 + CHEV_W;
 // FDBK) leaves a different gap before every name, which is what read as
 // uneven. Here the gap from one knob's dots to the next name is always
 // UNIT_GAP, and where a row parts into clusters (ENVELOPE's attack and
-// decay, REVERB's send and its TIME, DELAY's TIME, its feedback and its
-// spread with ping pong) it is UNIT_GAP plus CLUSTER_GAP, the one wider
+// decay, DELAY's mix, its TIME, its feedback and its ping pong,
+// REVERB's mix and its TIME) it is UNIT_GAP plus CLUSTER_GAP, the one wider
 // gap, the same everywhere (FOLD_BREAKS). Every row starts
 // its first name on the same column. The layout is measured once, the
 // first frame the text can be measured (foldLayout).
@@ -113,21 +115,24 @@ const FOLD_NAME_X = 4, FOLD_CELL0 = 70;
 const KNOB_REACH = 11;                    // the knob's dots reach this far from its centre
 const PAIR_GAP = 5, UNIT_GAP = 14, CLUSTER_GAP = 14;
 const KNOB_LABEL_R = KNOB_REACH + PAIR_GAP;
-// Per knob row (ENVELOPE, PAN, REVERB, DELAY): the knobs a cluster break
+// Per knob row (ENVELOPE, PAN, DELAY, REVERB): the knobs a cluster break
 // comes before, and the panels, each a first and last knob index. A panel
 // wraps a value with its own VAR and RATE; a knob that stands alone
-// (reverb TIME, delay TIME, SPRD) gets none, and a break parts it from the
-// panel beside it.
-const FOLD_BREAKS = [[3], [], [3], [1, 4]];
-const FOLD_PANELS = [[0, 2, 3, 5], [0, 2], [0, 2], [1, 3]];
+// (reverb TIME, delay MIX and TIME) gets none, and a break parts it from
+// the panel beside it.
+const FOLD_BREAKS = [[3], [], [1, 2], [3]];
+const FOLD_PANELS = [[0, 2, 3, 5], [0, 2], [2, 4], [0, 2]];
 // A panel reaches PANEL_PAD past its first name and its last knob's dots,
 // PANEL_H tall on the row's centre. Inside it, a hairline runs through each
 // gap from one knob's dots to the next knob's name, at the knobs' height:
 // in the gaps rather than centre to centre, since the names sit on that
 // same line and a wire through them would strike them out.
 const PANEL_PAD = 5, PANEL_H = 26, PANEL_R = 6, WIRE_PAD = 2;
-const FOLD_NAMES = ['ENVELOPE', 'PAN', 'REVERB', 'DELAY'];
-// DELAY: the ping pong box a unit gap after SPRD, in SPRD's cluster
+// DELAY before REVERB, reading as the signal flows: the send into the room
+// is taken after the delay taps, so the repeats feed the reverb.
+const FOLD_NAMES = ['ENVELOPE', 'PAN', 'DELAY', 'REVERB'];
+const DELAY_ROW = 2;
+// DELAY: the ping pong box a cluster of its own after the feedback's panel
 const PING_BOX = 11, PING_LABEL_GAP = 5;
 // The measured layout: each knob's centre by row (4 rows of up to 6), the
 // ping pong box, and from them the lines' width, the wider of the grid and
@@ -149,6 +154,10 @@ const WAVE_SHORT = { sine: 'sin', triangle: 'tri', sawtooth: 'saw', square: 'sqr
 // Every whole percent, made once, so a level's value never builds a string.
 const PCT = Array.from({ length: 101 }, (_, i) => i + '%');
 const pctText = v => PCT[Math.max(0, Math.min(100, Math.round(v * 100)))];
+// And the reverb's mix in the Live Sound drawer's words: dry at one end, wet
+// at the other, the share of room between.
+const MIX = Array.from({ length: 101 }, (_, i) => i <= 0 ? 'dry' : i >= 100 ? 'wet' : i + '% wet');
+const mixText = v => MIX[Math.max(0, Math.min(100, Math.round(v * 100)))];
 // the octave's baseline, -3..+3, and the randomization's mode and range in
 // the mode's own spelling
 const OCT_BASE_LABELS = ['-3', '-2', '-1', '0', '+1', '+2', '+3'];
@@ -256,6 +265,11 @@ function drawMs(ui, x, cy, w, h, on, isMute, label) {
 // at it. Dragging up turns it up and down turns it down, the whole range in
 // KNOB_TRAVEL px, ten times finer with Shift; a centred knob catches at its
 // centre on the way through. A double-click puts it back to its default.
+// While a swing is moving the value (its VAR or MOD turned up), ring is the
+// value as it swings, and the dots follow it round, lit from the start (or
+// the top) to wherever the swing has carried it, either side of the
+// setting, while the pointer stays on the setting the hand placed; left
+// out, the dots light to the value itself.
 // One knob is dragged at a time, so its drag lives in module state, and the
 // dots' directions are worked out once here, so a frame allocates nothing.
 const KNOB_R = 7, KNOB_ARC_R = 10, KNOB_DOTS = 13, KNOB_TRAVEL = 150, KNOB_SWEEP = 270 * Math.PI / 180;
@@ -271,7 +285,7 @@ let knobHeld = -1, knobY = 0, knobRaw = 0, knobFine = false;
 let knobLive = false;
 // Returns the knob's value after this frame's input (value itself when
 // untouched); the caller writes it back if it moved.
-function knob(ui, id, cx, cy, value, lo, hi, def, centred) {
+function knob(ui, id, cx, cy, value, lo, hi, def, centred, ring) {
   const hr = KNOB_ARC_R + 2;
   ui.interact(id, cx - hr, cy - hr, hr * 2, hr * 2, false);
   const hover = ui.hover, pressed = ui.pressed;
@@ -295,7 +309,8 @@ function knob(ui, id, cx, cy, value, lo, hi, def, centred) {
   if (ui.dbl) v = def;
   const dl = ui.dl, lit = hover || pressed;
   const u = Math.max(0, Math.min(1, (v - lo) / (hi - lo))), u0 = centred ? 0.5 : 0;
-  const a = (u < u0 ? u : u0) - KNOB_EPS, b = (u > u0 ? u : u0) + KNOB_EPS;
+  const w = ring === undefined ? u : Math.max(0, Math.min(1, (ring - lo) / (hi - lo)));
+  const a = (w < u0 ? w : u0) - KNOB_EPS, b = (w > u0 ? w : u0) + KNOB_EPS;
   for (let k = 0; k < KNOB_DOTS; k++) {
     const f = k / (KNOB_DOTS - 1);
     dl.rect(cx + KNOB_DX[k] * KNOB_ARC_R - 1.2, cy + KNOB_DY[k] * KNOB_ARC_R - 1.2, 2.4, 2.4, 1.2,
@@ -314,21 +329,27 @@ function knob(ui, id, cx, cy, value, lo, hi, def, centred) {
 // A log knob turns in the logarithm of its value, so the short times get as
 // much travel as the long ones; the delay's time turns through the index of
 // SEQ_DLY_STEPS, so it only ever lands on one of those.
-const F_PCT = 0, F_MS = 1, F_SEC = 2, F_PAN = 3, F_DLY = 4, F_SEC1 = 5;
+const F_PCT = 0, F_MS = 1, F_SEC = 2, F_PAN = 3, F_DLY = 4, F_SEC1 = 5, F_MIX = 6;
 const round01 = v => Math.round(v * 100) / 100;
 function kspec(key, label, lo, hi, def, fmt, snap, log, centred) {
   return { key, label, lo, hi, def, fmt, snap, log: !!log, centred: !!centred, steps: null,
-           kLo: log ? Math.log(lo) : lo, kHi: log ? Math.log(hi) : hi, kDef: log ? Math.log(def) : def };
+           kLo: log ? Math.log(lo) : lo, kHi: log ? Math.log(hi) : hi, kDef: log ? Math.log(def) : def,
+           sw: -1, swDepth: null };
 }
+// A knob whose value swings: its place among a line's swung values
+// (js/piano.js SEQ_SW_*) and the field that sets the swing's depth, so its
+// lights can follow the swing while that depth is above 0 (lineKnob).
+function swung(sp, slot, depthKey) { sp.sw = slot; sp.swDepth = depthKey; return sp; }
 const RATE_SNAP = v => Math.round(v);
-const K_ATK = kspec('atk', 'ATK', 0.001, 0.5, 0.01, F_MS, v => Math.round(v * 1000) / 1000, true);
-const K_DEC = kspec('dec', 'DEC', 0.02, 2, 0.25, F_MS, v => Math.round(v * 200) / 200, true);
+const K_ATK = swung(kspec('atk', 'ATK', 0.001, 0.5, 0.01, F_MS, v => Math.round(v * 1000) / 1000, true), SEQ_SW_ATK, 'atkVar');
+const K_DEC = swung(kspec('dec', 'DEC', 0.02, 2, 0.25, F_MS, v => Math.round(v * 200) / 200, true), SEQ_SW_DEC, 'decVar');
 const K_VAR = key => kspec(key, 'VAR', 0, 1, 0, F_PCT, round01);
 const K_RATE = key => kspec(key, 'RATE', 1, 120, 20, F_SEC, RATE_SNAP, true);
 // the pan's double-click goes to its own line's seat (lineKnob), not the
 // centre, which dragging still catches on the way through
 const K_PAN = kspec('pan', 'PAN', -1, 1, 0, F_PAN, round01, false, true);
 K_PAN.seat = true;
+swung(K_PAN, SEQ_SW_PAN, 'panMod');
 const K_DLY = kspec('dlyTime', 'TIME', 0, SEQ_DLY_STEPS.length - 1, 1.5, F_DLY, null);
 K_DLY.steps = SEQ_DLY_STEPS; K_DLY.kDef = SEQ_DLY_STEPS.indexOf(1.5);
 // the fold's rows, in order, each a list of knobs left to right
@@ -336,10 +357,13 @@ const FOLD_KNOBS = [
   [K_ATK, K_VAR('atkVar'), K_RATE('atkRate'), K_DEC, K_VAR('decVar'), K_RATE('decRate')],
   [K_PAN,
    kspec('panMod', 'MOD', 0, 1, 0, F_PCT, round01), K_RATE('panRate')],
-  [kspec('rev', 'AMT', 0, 1, 1, F_PCT, round01), K_VAR('revVar'), K_RATE('revRate'),
-   kspec('revTime', 'TIME', 1, 15, 4.5, F_SEC1, v => Math.round(v * 2) / 2, true)],
-  [K_DLY, kspec('dlyFb', 'FDBK', 0, 0.95, 0, F_PCT, round01), K_VAR('dlyFbVar'), K_RATE('dlyFbRate'),
-   kspec('spread', 'SPRD', 0, 1, 0.9, F_PCT, round01)]
+  // the delay's MIX leads, the voice against its own repeats; its SPRD knob
+  // is resting out of the row for now (the line's spread still keeps and
+  // still places the repeats, at its setting)
+  [kspec('dlyMix', 'MIX', 0, 1, 0.5, F_PCT, round01), K_DLY,
+   swung(kspec('dlyFb', 'FDBK', 0, 0.95, 0, F_PCT, round01), SEQ_SW_FB, 'dlyFbVar'), K_VAR('dlyFbVar'), K_RATE('dlyFbRate')],
+  [swung(kspec('rev', 'MIX', 0, 1, 1, F_MIX, round01), SEQ_SW_REV, 'revVar'), K_VAR('revVar'), K_RATE('revRate'),
+   kspec('revTime', 'TIME', 1, 15, 4.5, F_SEC1, v => Math.round(v * 2) / 2, true)]
 ];
 // A small name's drawn width: measure() knows nothing of tracking, so the
 // 0.08 em between letters is added by hand.
@@ -376,8 +400,8 @@ function foldLayout(ui) {
       }
     }
     let end = x - UNIT_GAP;
-    if (r === FOLD_KNOBS.length - 1) {
-      PING_X = x;
+    if (r === DELAY_ROW) {
+      PING_X = x + CLUSTER_GAP;
       end = PING_X + PING_BOX + PING_LABEL_GAP + trackedW(ui, 'PING PONG');
     }
     if (end > widest) widest = end;
@@ -406,6 +430,7 @@ function readout(id, sp, v) {
   readId = id; readVal = v;
   const f = sp.fmt;
   if (f === F_PCT) readText = pctText(v);
+  else if (f === F_MIX) readText = mixText(v);
   else if (f === F_MS) readText = v < 1 ? Math.round(v * 1000) + 'ms' : v.toFixed(2) + 's';
   else if (f === F_SEC) readText = Math.round(v) + 's';
   else if (f === F_SEC1) readText = v.toFixed(1) + 's';
@@ -413,17 +438,32 @@ function readout(id, sp, v) {
   else readText = Math.abs(v) < 0.005 ? 'C' : (v < 0 ? 'L' : 'R') + Math.round(Math.abs(v) * 100);
   return readText;
 }
+// The lines' swung values, asked for once a frame, and only by the first
+// knob drawn that has a swing to show, so a window with every VAR at 0 (or
+// every fold shut) never asks, and in worker mode the page is never told
+// to send them (audio-mirror.js seqSwingNow). null while nothing swings.
+let swing = null, swingAsked = false;
 // One fold knob in cell k of a row centred on cy, turning line q's field.
 // Writes the field only when the knob was actually turned (an untouched
 // knob hands back exactly what it was given), so a log knob's round trip
 // never rewrites a value nobody touched. Returns whether it wrote.
+// A swinging knob's lights follow line i's swung value, brought into the
+// knob's own turning (the logarithm, for a log knob) so the ring reads true.
 function lineKnob(ui, q, i, slot, cx, cy, sp) {
   const raw = q[sp.key];
   const def = sp.seat ? seqSeat(i) : sp.def, kDef = sp.seat ? def : sp.kDef;
   const cur = typeof raw === 'number' && raw === raw ? raw : def;
   const id = ui.idx('seq.knob', i * 64 + slot);
   const pos = sp.steps ? dlyIndex(cur) : sp.log ? Math.log(Math.max(sp.lo, Math.min(sp.hi, cur))) : cur;
-  const got = knob(ui, id, cx, cy, pos, sp.kLo, sp.kHi, kDef, sp.centred);
+  let ring;
+  if (sp.sw >= 0 && +q[sp.swDepth] > 0) {
+    if (!swingAsked) { swingAsked = true; swing = seqSwingNow(); }
+    if (swing) {
+      const e = swing[i * SEQ_SWINGS + sp.sw];
+      ring = sp.log ? Math.log(Math.max(sp.lo, Math.min(sp.hi, e))) : e;
+    }
+  }
+  const got = knob(ui, id, cx, cy, pos, sp.kLo, sp.kHi, kDef, sp.centred, ring);
   let moved = false, shown = cur;
   if (got !== pos) {
     const v = sp.steps ? sp.steps[Math.max(0, Math.min(sp.steps.length - 1, Math.round(got)))]
@@ -466,6 +506,7 @@ export function drawSequencer(ui, app, fade = 1) {
   if (o < 0.002) { sequencer.rw = 0; return; }
   ui.pushScope(ui.id('seq'));
   foldLayout(ui);
+  swingAsked = false;
   // Each fold opens on a spring of its own, and the window is as tall as
   // the folds are open, so it grows and shrinks with them.
   let folds = 0;
@@ -790,7 +831,7 @@ function drawFold(ui, q, i, x0, fy) {
     // ping pong, after the delay's knobs: on, each repeat takes the other
     // side from the last; off, the repeats stay in place, either side of
     // the line's pan by its spread
-    if (r === FOLD_ROWS - 1) {
+    if (r === DELAY_ROW) {
       const ping = q.dlyPing !== false;
       const bx = x0 + PING_X, lw = trackedW(ui, 'PING PONG');
       if (btnAt(ui, ui.idx('seq.ping', i), bx - 2, cy - 8, PING_BOX + 7 + lw, 16)) { q.dlyPing = !ping; moved = true; }

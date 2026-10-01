@@ -18,7 +18,7 @@ import {
   applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset, renamePresetAt, presetIsUser,
   presetIsHearted, presetActiveIndex, togglePresetHeartAt, presetRampS, setPresetRampS
 } from '../../core/presets.js';
-import { perfRecallPreset } from '../../core/perform.js';
+import { perfRecallPreset, perfRecallLeft } from '../../core/perform.js';
 import { ICON } from '../drawlist.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { prof, profToggle, profSave, profCopy } from '../../core/profiler.js';
@@ -428,19 +428,29 @@ let renameK = -1;
 // takes an accent wash for SAVED_MS, springing in and out on that state.
 const SAVED_MS = 1200;
 let savedIdx = -1, savedUntil = 0;
-// Ramp time, at the top of the presets: how long a recall glides every
-// slider and the colour to the preset's positions, the performer's engine
-// driving (core/perform.js perfRecallPreset). At 0 a recall lands as the
-// cut it always was. An ad-hoc control, since the presets block is drawn
-// loose above the schema sections. Greyed out in journey mode, when a
-// recall takes the journey's ramp instead (core/journey.js journeyRampS).
+// Ramp time, at the top of the presets: how long a recall crossfades from
+// where everything is to the preset, the performer's engine driving
+// (core/perform.js perfRecallPreset). At 0 a recall lands as the cut it
+// always was. An ad-hoc control, since the presets block is drawn loose
+// above the schema sections. Greyed out in journey mode, when a recall takes
+// the journey's ramp instead (core/journey.js journeyRampS).
+//
+// While a recall's ramp runs, the bar shows it going: the time left is its
+// effective value, which the slider draws as the brighter breathing fill
+// over the set one, so the fill drains from the set time to nothing and,
+// the ramp landed, stands full at the setting again. Not in journey mode,
+// where the ramp is the journey's and not this bar's.
 const rampCtrl = {
   id: 'presetRampS', label: 'Ramp time', kind: 'slider',
   min: 0, max: 60, step: 0.5, def: 0,
+  // one row: the name left of the track, the readout right of it, the
+  // readout's slot held at the widest text so the track never jitters
+  inline: 'instant',
   get: () => presetRampS(),
   set: (s, v) => setPresetRampS(v),
-  format: () => presetRampS() < 0.25 ? 'cut' : presetRampS().toFixed(1) + 's',
-  enabled: () => !journeyModeOn()
+  format: () => presetRampS() < 0.25 ? 'instant' : presetRampS().toFixed(1) + 's',
+  enabled: () => !journeyModeOn(),
+  effective: () => journeyModeOn() ? undefined : perfRecallLeft()
 };
 const recallRampS = () => journeyModeOn() ? journeyRampS() : presetRampS();
 
@@ -1268,7 +1278,11 @@ export function drawDrawer(ui, app) {
   // presets, a wrapped row of chips at the head of the drawer
   subHeading(ui, 'PRESETS', false);
   const hx = ui.rx, hy = ui.ry, hw = ui.rw, hh = ui.rh;
+  // a breath of air around the one-line ramp row, so it reads as its own
+  // small block between the heading and the chips
+  ui.spacer(SPACE.xs);
   ui.control(rampCtrl, S);
+  ui.spacer(SPACE.xs);
   drawPresets(ui);
   presetHeart(ui, hx, hy, hw, hh);
   // a wider gap than between sections, so the presets read as a block of

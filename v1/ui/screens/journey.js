@@ -54,7 +54,7 @@ import {
   journeyEditing, journeyLoadPreset, journeySetTextLock,
   journeySizeLocked, journeySetTextSize, journeySetSizeLock,
   journeyLibCount, journeyLibTitle, journeyLibOpen, journeyOpenAt, journeyNew, journeyDeleteAt,
-  journeyRenameAt, journeyMoveAt, TITLE_MAX,
+  journeyRenameAt, journeyMoveAt, journeyDuplicate, TITLE_MAX,
   RAMP_MIN, RAMP_MAX, HOLD_MIN, HOLD_MAX, STEP_TEXT_MAX
 } from '../../core/journey.js';
 import { S } from '../../../js/state.js';
@@ -547,7 +547,7 @@ export function drawJourney(ui, app, fade = 1) {
 // Chip widths are measured when the journey's version moves, not per frame;
 // each item's place (relative to the row's origin) is laid out every frame,
 // since the + field grows as its name is typed.
-let libW = new Float32Array(16), libWVersion = -1, libN = 0, editLabelW = 0;
+let libW = new Float32Array(16), libWVersion = -1, libN = 0, editLabelW = 0, dupLabelW = 0;
 let itemX = new Float32Array(20), itemY = new Float32Array(20), itemWd = new Float32Array(20);
 let libX = 0, libY = 0;
 let libEditing = false;
@@ -556,7 +556,7 @@ const libRenameEdit = makeTextState(TITLE_MAX, 'Name');
 let libRenameK = -1;
 const libDrag = { k: -1, moved: false, sx: 0, sy: 0, ox: 0, oy: 0, ins: -1 };
 // what the row asked for this frame: 1 open chip i, 2 a new journey named
-// text, 3 delete chip i (runLibOp)
+// text, 3 delete chip i, 4 duplicate the open journey (runLibOp)
 const libDo = { op: 0, i: 0, text: '' };
 
 function fieldW(st, maxW) {
@@ -571,13 +571,15 @@ function layoutLib(ui, maxW) {
     libWVersion = v;
   }
   if (!editLabelW) editLabelW = Math.max(ui.text.measure('Edit', 11, W.regular), ui.text.measure('Done', 11, W.regular)) + CHIP_PAD * 2;
-  const total = n + 2;
+  if (!dupLabelW) dupLabelW = ui.text.measure('Duplicate', 11, W.regular) + CHIP_PAD * 2;
+  const total = n + 3;
   if (itemX.length < total) { itemX = new Float32Array(total + 8); itemY = new Float32Array(total + 8); itemWd = new Float32Array(total + 8); }
   let lines = 1, lx = 0, ly = 0;
   for (let k = 0; k < total; k++) {
     const w = k === libRenameK && libRenameEdit.active ? fieldW(libRenameEdit, maxW)
       : k < n ? libW[k] + (libEditing ? EDIT_PAD : 0)
       : k === n ? (libNameEdit.active ? fieldW(libNameEdit, maxW) : LIB_ADD_W)
+      : k === n + 1 ? dupLabelW
       : editLabelW;
     if (lx > 0 && lx + w > maxW) { lines++; lx = 0; ly += CHIP_H + CHIP_GAP; }
     itemX[k] = lx; itemY[k] = ly; itemWd[k] = w;
@@ -589,7 +591,7 @@ function layoutLib(ui, maxW) {
 
 function drawLib(ui) {
   const n = libN, open = journeyLibOpen();
-  for (let k = 0; k < n + 2; k++) {
+  for (let k = 0; k < n + 3; k++) {
     const px = libX + itemX[k], py = libY + itemY[k], w = itemWd[k];
     if (k === libRenameK && libRenameEdit.active) {
       // Enter or a press elsewhere keeps the new title; Escape or an empty
@@ -606,8 +608,18 @@ function drawLib(ui) {
           libDo.op = 2; libDo.text = libNameEdit.text;
         }
       } else libAddChip(ui, px, py);
-    } else libEditChip(ui, px, py, w);
+    } else if (k === n + 1) libDupChip(ui, px, py, w);
+    else libEditChip(ui, px, py, w);
   }
+}
+
+// An exact copy of the open journey, next to it, lettered and opened
+// (core/journey.js journeyDuplicate).
+function libDupChip(ui, px, py, w) {
+  if (btn(ui, 'jr.libDup', px, py, w, CHIP_H)) libDo.op = 4;
+  ui.dl.rect(px, py, w, CHIP_H, CHIP_H / 2, C.btnBg, 1, btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
+  ui.text.draw(ui.dl, 'Duplicate', px + w / 2, baseline(ui, py + CHIP_H / 2, 11), 11, W.regular,
+    btnHover ? C.valueInk : C.btnInk, 1, 0, 1);
 }
 
 // One journey's chip. Off edit mode a click opens it; in edit mode its ×
@@ -711,6 +723,7 @@ function runLibOp() {
   if (op === 1) journeyOpenAt(libDo.i);
   else if (op === 2) journeyNew(libDo.text);
   else if (op === 3) journeyDeleteAt(libDo.i);
+  else if (op === 4) journeyDuplicate();
   // the steps under the fold and the drag are another journey's now
   textIdx = -1; drag.k = -1; drag.moved = false;
 }

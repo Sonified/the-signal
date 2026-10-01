@@ -49,6 +49,7 @@ import { createProfileHost } from './profile-web.js';
 import { getContext } from '../../js/audio.js';
 import { ENGINE_THREAD_KEY, engineThread, initEngineThread } from '../core/engine-thread.js';
 import { createAudioShell } from '../core/audio-shell.js';
+import { setMediaTransport } from '../../js/background.js';
 import { onLiveChange, liveInputs, liveLatencyNow, liveReductionNow } from '../../js/livesound.js';
 import { display, displayListenScreen, displaySampleScreen } from '../../js/display-watch.js';
 
@@ -223,6 +224,9 @@ function runShell(canvas, worker, shell, size0, env) {
     send({ k: 'in', t: 'key', e: { key: t.slice(0, 512), code: 'Paste', shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, timeStamp: e.timeStamp } });
   });
   guardGestures(canvas);
+  // Media Session's play and pause (js/background.js) go to the engine's
+  // transport in the worker, which answers with the link's run call.
+  setMediaTransport(on => send({ k: 'run', on }));
 
   // ---------- size, visibility, fullscreen ----------
   watchCanvasSize(canvas, (pxW, pxH, dpr, w, h) => send({

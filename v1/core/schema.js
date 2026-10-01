@@ -13,6 +13,7 @@ import { KALEIDO_CONTROLS, KALEIDO_SECTIONS } from './schema-kaleido.js';
 import { PARTICLE_CONTROLS, PARTICLE_SECTIONS } from './schema-particles.js';
 import { FIREWORK_CONTROLS, FIREWORK_SECTIONS } from './schema-fireworks.js';
 import { CONFETTI_CONTROLS, CONFETTI_SECTIONS } from './schema-confetti.js';
+import { wireVariances } from './schema-variance.js';
 
 // Flowers go straight after the visual controls, so their lFlowers toggle
 // follows Field, Rings, Corners, Edge and Text within the Layers section, and
@@ -32,6 +33,11 @@ const visualSections = VISUAL_SECTIONS.slice();
 export const SECTIONS = [...visualSections, ...AUDIO_SECTIONS];
 
 const byIdMap = new Map(CONTROLS.map(c => [c.id, c]));
+
+// Every variance made by the factory (schema-variance.js varianceRows) takes
+// its owner's section, and the owner its lit bar, now that the owners from
+// every file sit in the one list.
+wireVariances(CONTROLS, byIdMap);
 
 // A toggle that other controls name as their `parent` heads a nested run in
 // the drawer, so it is marked here once and drawn as a small heading (all

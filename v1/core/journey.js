@@ -449,9 +449,11 @@ for (let k = 0; k < MIX_CTL.length; k++) if (idxOf.has(MIX_CTL[k].id)) inMix[idx
 // SEQ_DLY_STEPS) and ping pong. Its wave crossfades (lineMorph in
 // js/piano.js); its mute and solo turn at the midpoint.
 const SQ_FIELDS = ['vol', 'pan', 'rev', 'spread', 'atk', 'atkVar', 'atkRate', 'dec', 'decVar', 'decRate',
-                   'panMod', 'panRate', 'revTime', 'revVar', 'revRate', 'dlyFb', 'dlyFbVar', 'dlyFbRate'];
+                   'panMod', 'panRate', 'revTime', 'revVar', 'revRate', 'dlyFb', 'dlyFbVar', 'dlyFbRate',
+                   'dlyMix'];
 const SQ_GRID = [0.01, 0.01, 0.01, 0.01, 0.001, 0.01, 1, 0.005, 0.01, 1,
-                 0.01, 1, 0.5, 0.01, 1, 0.01, 0.01, 1];
+                 0.01, 1, 0.5, 0.01, 1, 0.01, 0.01, 1,
+                 0.01];
 const SQ_P = SQ_GRID.map(g => { let p = 1; for (let d = 0; d < 6 && Math.abs(Math.round(g * p) - g * p) > 1e-9; d++) p *= 10; return p; });
 const SQ_SWITCH_NUMS = ['octaves', 'oct', 'dlyTime'];
 const SQ_KEYS = ['wave', 'mute', 'solo', 'octMode', 'dlyPing'];
@@ -1714,6 +1716,42 @@ export function journeyNew(title) {
   openId(id);
   persist();
   return lib.items.length - 1;
+}
+
+// A copy of the open journey, exact settings and steps, placed on the chip
+// just right of it and opened. The copy is named with the next free letter:
+// "Dawn" begets "Dawn A", then "Dawn B", and a title already lettered counts
+// up from its own base, so duplicating "Dawn B" gives the next letter free.
+// Detached through the same write/read round trip a reload takes, so the two
+// journeys share nothing.
+export function journeyDuplicate() {
+  ensureLoaded();
+  if (lib.items.length >= LIB_MAX) return -1;
+  // the selected step's pending drawer edits belong in the copy too
+  flushDiff();
+  const i = libIndex(lib.cur);
+  const src = lib.items[i];
+  if (!src) return -1;
+  const copy = readJourney(JSON.parse(JSON.stringify(data)));
+  let n = 0;
+  for (const it of lib.items) n = Math.max(n, parseInt(it.id.slice(1), 10) || 0);
+  const id = 'j' + (n + 1);
+  const m = /^(.*\S)\s+[A-Z]$/.exec(src.title);
+  const base = m ? m[1] : src.title;
+  const taken = t => { const l = t.toLowerCase(); return lib.items.some(it => it.title.toLowerCase() === l); };
+  let title = '';
+  for (let c = 0; c < 26 && !title; c++) {
+    const cand = base + ' ' + String.fromCharCode(65 + c);
+    if (!taken(cand)) title = cand;
+  }
+  if (!title) title = uniqueTitle(base, -1);   // every letter taken: the numbered fallback
+  leaveOpen();
+  lib.items.splice(i + 1, 0, { id, title });
+  cache.set(id, copy);
+  saveKey(keyOf(id), copy);
+  openId(id);
+  version++;
+  return i + 1;
 }
 
 // Deletes the journey at chip i; the open one hands over to its right-hand

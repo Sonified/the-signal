@@ -213,7 +213,7 @@ export const RO_PLAIN = 0, RO_CLICK = 1, RO_HIDDEN = 2;
 // starts on the track can never land on the readout instead.
 const RO_PAD_X = 6, RO_PAD_Y = 3;
 
-function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01) {
+function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01, inline) {
   const ui = this;
   const step = step01 === undefined ? 0.02 : step01;
   const nid = ui.id(id);
@@ -226,10 +226,24 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   // 2 px tighter than it once was: the label sits close over its bar,
   // and every row in every drawer gives that height back.
   const gap = SPACE.xxs;
-  ui.nextRect(labelH + gap + trackAreaH);
-  const rx = ui.rx, ry = ui.ry, rw = ui.rw;
+  const totalH = inline ? trackAreaH : labelH + gap + trackAreaH;
+  ui.nextRect(totalH);
+  // Inline (a control with `inline` set to its widest readout text) is the
+  // whole row on one line: the label left of the track, the readout right of
+  // it, the track taking what remains. The readout's slot is sized to that
+  // widest text, not the current one, so the track never jitters as the
+  // readout changes under a drag. fx/fw stay the full row for the ends;
+  // rx/rw become the track's own span, which all the drag math below maps
+  // presses through unchanged.
+  const fx = ui.rx, ry = ui.ry, fw = ui.rw;
+  let rx = fx, rw = fw, labelW = 0;
+  if (inline) {
+    labelW = ui.text.measure(label, TYPE.sm, W.regular) + SPACE.sm;
+    const roSlot = ui.text.measure(inline, TYPE.sm, W.regular) + SPACE.sm;
+    rx = fx + labelW; rw = Math.max(24, fw - labelW - roSlot);
+  }
 
-  const trackY0 = ry + labelH + gap;
+  const trackY0 = inline ? ry : ry + labelH + gap;
   const trackCY = trackY0 + trackAreaH / 2;
   const trackH = 3;
 
@@ -241,18 +255,24 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   let roW = 0, roHover = false;
   if (clickable) {
     roW = ui.text.measure(formatted, TYPE.sm, W.regular);
-    const hy = ry - RO_PAD_Y;
-    ui.interact(combine2(nid, 14), rx + rw - roW - RO_PAD_X, hy, roW + RO_PAD_X, trackY0 - 1 - hy, false);
+    if (inline) {
+      ui.interact(combine2(nid, 14), fx + fw - roW - RO_PAD_X, ry, roW + RO_PAD_X, trackAreaH, false);
+    } else {
+      const hy = ry - RO_PAD_Y;
+      ui.interact(combine2(nid, 14), rx + rw - roW - RO_PAD_X, hy, roW + RO_PAD_X, trackY0 - 1 - hy, false);
+    }
     roHover = ui.hover;
     if (roHover) ui.setCursorHint('pointer');
     if (ui.clicked) ui.sliderReadoutClicked = true;
   }
   ui.sliderReadoutW = roW;
-  labelHit(ui, nid, label, rx, ry - RO_PAD_Y, trackY0 - 1 - (ry - RO_PAD_Y), rw - roW - RO_PAD_X * 2, disabled);
+  if (inline) labelHit(ui, nid, label, fx, ry, trackAreaH, labelW, disabled);
+  else labelHit(ui, nid, label, rx, ry - RO_PAD_Y, trackY0 - 1 - (ry - RO_PAD_Y), rw - roW - RO_PAD_X * 2, disabled);
 
   // An indented (child) row still takes presses from the column's left edge;
   // a press left of the track reads as 0%, exactly as one past its start does.
-  ui.interact(nid, rx - ui.rIndent, trackY0, rw + ui.rIndent, trackAreaH, !!disabled);
+  // An inline track keeps to its own span, leaving its label and readout theirs.
+  ui.interact(nid, rx - (inline ? 0 : ui.rIndent), trackY0, rw + (inline ? 0 : ui.rIndent), trackAreaH, !!disabled);
   const hover = ui.hover, dbl = ui.dbl;
   if (hover) ui.setCursorHint('ew-resize');
   if (focused && ui.focusVisible) ui._focusRing(rx, trackY0, rw, trackAreaH, RADIUS.xs);
@@ -326,11 +346,14 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   const changed = !disabled && value !== value01;
 
   // ---- draw ----
+  // The label and readout live at the full row's ends (fx/fw), which in the
+  // stacked layout are the track's own; inline centres their baseline on the
+  // one shared line.
   const labelColor = disabled ? COLOR.inkFaint : COLOR.inkDim;
-  const baseline1 = ry + ui._lm.ascent;
-  ui.text.draw(ui.dl, label, rx, baseline1, TYPE.sm, W.regular, labelColor, 0, TRACK.ui, 1);
+  const baseline1 = inline ? centerBaseline(ui, trackY0, trackAreaH, TYPE.sm) : ry + ui._lm.ascent;
+  ui.text.draw(ui.dl, label, fx, baseline1, TYPE.sm, W.regular, labelColor, 0, TRACK.ui, 1);
   if (readout !== RO_HIDDEN) {
-    ui.text.draw(ui.dl, formatted, rx + rw, baseline1, TYPE.sm, W.regular, disabled ? COLOR.inkDim : COLOR.ink, 2, TRACK.tight, 1);
+    ui.text.draw(ui.dl, formatted, fx + fw, baseline1, TYPE.sm, W.regular, disabled ? COLOR.inkDim : COLOR.ink, 2, TRACK.tight, 1);
   }
   // A clickable readout says so on hover with a hairline under the text,
   // faded in and out on the hover state and placed fresh from this frame's rect.
@@ -339,7 +362,7 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
     if (ua > 0.01) {
       ui.scratch2[0] = COLOR.inkDim[0]; ui.scratch2[1] = COLOR.inkDim[1];
       ui.scratch2[2] = COLOR.inkDim[2]; ui.scratch2[3] = COLOR.inkDim[3] * ua;
-      ui.dl.rect(rx + rw - roW, baseline1 + 2.5, roW, 1, 0.5, ui.scratch2, 0, null, 0, 0);
+      ui.dl.rect(fx + fw - roW, baseline1 + 2.5, roW, 1, 0.5, ui.scratch2, 0, null, 0, 0);
     }
   }
 
@@ -370,7 +393,7 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   const knobX = rx + shown * rw;
   ui.dl.rect(knobX - knobR, trackCY - knobR, knobR * 2, knobR * 2, knobR, COLOR.accent, 0, null, disabled ? 0 : 8, 0.4 * pressA + 0.15);
 
-  ui._lastId = nid; ui._lastX = rx; ui._lastY = ry; ui._lastW = rw; ui._lastH = labelH + gap + trackAreaH; ui._lastHover = hover;
+  ui._lastId = nid; ui._lastX = fx; ui._lastY = ry; ui._lastW = fw; ui._lastH = totalH; ui._lastHover = hover;
 
   return changed ? value : -1;
 }
@@ -1573,7 +1596,7 @@ function control(ctrl, S, shown) {
       const step01 = log ? LOG_STEP01 : ctrl.step ? (ctrl.step / ((ctrl.max - ctrl.min) || 1)) : 0.02;
       const def01 = ctrl.def !== undefined ? posToUnit(ctrl, ctrl.def, log) : undefined;
       const nv = ui.slider(ctrl.id, ctrl.label, value01, cache.text, step01, def01, !enabled,
-                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01);
+                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01, ctrl.inline);
       if (nv >= 0) {
         let newPos = snapPos(ctrl, unitToPos(ctrl, nv, log));
         if (newPos === pos && ui.sliderNudge !== 0 && ctrl.step) newPos = snapPos(ctrl, pos + ui.sliderNudge * ctrl.step);

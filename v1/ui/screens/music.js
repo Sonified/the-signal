@@ -327,8 +327,10 @@ function barLabels(ui, label, lblW, readout, tx, trackW, cy, showLabel) {
 }
 // Laid out left to right just after the title, the opacity first and the
 // ramp after it, never past rightX. When room is short the labels go first,
-// then the ramp, then the opacity, so neither the title nor the close button
-// is ever overlapped.
+// then both tracks shrink together in proportion, so the ramp stays in the
+// bar at any reasonable width; only below the floor a squeezed track stops
+// at does the ramp give way, then the opacity, so neither the title nor the
+// close button is ever overlapped.
 function barSliders(ui, titleX, rightX, cy) {
   if (titleW < 0) {
     titleW = capsW(ui, TITLE, 11, 0.13);
@@ -341,12 +343,22 @@ function barSliders(ui, titleX, rightX, cy) {
   const rampFull = rampBare + rampLblW + INLINE_GAP, winOFull = winOBare + winOLblW + INLINE_GAP;
   const room = rightX - leftX;
   let showLabels = true, showWinO = true, showRamp = true;
+  let winOW = WINO_TRACK_W, rampW = RAMP_TRACK_W;
   if (winOFull + BAR_GROUP_GAP + rampFull > room) {
     showLabels = false;
     if (winOBare + BAR_GROUP_GAP + rampBare > room) {
-      showRamp = false;
-      showLabels = winOFull <= room;
-      if (winOBare > room) showWinO = false;
+      // both tracks give ground together, each keeping its share of what
+      // room there is, down to the floor a squeezed row slider stops at
+      const avail = room - BAR_GROUP_GAP - 2 * slot;
+      const scale = avail / (WINO_TRACK_W + RAMP_TRACK_W);
+      winOW = Math.floor(WINO_TRACK_W * scale);
+      rampW = Math.floor(RAMP_TRACK_W * scale);
+      if (winOW < INLINE_MIN_TRACK || rampW < INLINE_MIN_TRACK) {
+        winOW = WINO_TRACK_W; rampW = RAMP_TRACK_W;
+        showRamp = false;
+        showLabels = winOFull <= room;
+        if (winOBare > room) showWinO = false;
+      }
     }
   }
   const rampId = ui.id('mus.ramp'), winOId = ui.id('mus.winO');
@@ -358,26 +370,26 @@ function barSliders(ui, titleX, rightX, cy) {
   if (showWinO) {
     const tx = gx + (showLabels ? winOLblW + INLINE_GAP : 0);
     const wu = (music.winO - WIN_O_MIN) / (1 - WIN_O_MIN);
-    const nu = hslider(ui, winOId, tx, cy, WINO_TRACK_W, wu, wu, false);
+    const nu = hslider(ui, winOId, tx, cy, winOW, wu, wu, false);
     if (ui.hover || ui.pressed) overBtn = true;
     if (nu >= 0) {
       winOHeld = true;
       music.winO = clampWinO(round2(WIN_O_MIN + nu * (1 - WIN_O_MIN)));
     }
-    barLabels(ui, WIN_O_LABEL, winOLblW, PCT_TEXT[Math.round(music.winO * 100)], tx, WINO_TRACK_W, cy, showLabels);
-    gx = tx + WINO_TRACK_W + slot + BAR_GROUP_GAP;
+    barLabels(ui, WIN_O_LABEL, winOLblW, PCT_TEXT[Math.round(music.winO * 100)], tx, winOW, cy, showLabels);
+    gx = tx + winOW + slot + BAR_GROUP_GAP;
   }
   if (showRamp) {
     const tx = gx + (showLabels ? rampLblW + INLINE_GAP : 0);
     const v = typeof perform.rampS === 'number' ? perform.rampS : 0;
     const ru = rampToU(v);
-    const u = hslider(ui, rampId, tx, cy, RAMP_TRACK_W, ru, ru, false);
+    const u = hslider(ui, rampId, tx, cy, rampW, ru, ru, false);
     if (ui.hover || ui.pressed) overBtn = true;
     if (u >= 0) {
       const nv = uToRamp(u);
       if (nv !== v) { setRampS(nv); rampDirty = true; }
     }
-    barLabels(ui, 'RAMP', rampLblW, fmtRamp(v), tx, RAMP_TRACK_W, cy, showLabels);
+    barLabels(ui, 'RAMP', rampLblW, fmtRamp(v), tx, rampW, cy, showLabels);
   }
 }
 

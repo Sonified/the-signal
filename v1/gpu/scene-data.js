@@ -486,8 +486,11 @@ function buildEdge(sd, dpr, surf) {
   // pause ends the flashing (core/strobe.js flickerLevel).
   // Pulse with strobe (S.edgePulse) scales how deep that breathing goes:
   // at 1 exactly as it always was, at 0 a steady edge at full strength.
+  // It is taken as its variance is dipping it this frame (core/strobe.js
+  // effEdgePulse, which is the dial itself while the variance is at 0).
   const efl = flickerLevel();
-  const pulse = scaledStrobeDepth(typeof S.edgePulse === 'number' ? Math.max(0, Math.min(1, S.edgePulse)) : 1);
+  const ep = S.effEdgePulse ?? S.edgePulse;
+  const pulse = scaledStrobeDepth(typeof ep === 'number' ? Math.max(0, Math.min(1, ep)) : 1);
   for (let pi = 0; pi < n; pi++) {
     const p = particles[pi];
     const lp = 1 + (shape((S.phase + p.off) % 1) - 1) * efl;

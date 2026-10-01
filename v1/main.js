@@ -23,6 +23,7 @@ import { S, STORE } from '../js/state.js';
 import { seedParticles, seedTunnel } from '../js/sim.js';
 import { setColorFromPicker } from '../js/color.js';
 import { ensureAudioGraph, warmDevice, audioOn } from '../js/audio.js';
+import { setMediaTransport } from '../js/background.js';
 import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from '../js/panel-guard.js';
 import { display, displayChanged, clockCheck, clockMessage, displaySummary, DISPLAY_CHANGED } from '../js/display-watch.js';
 
@@ -305,6 +306,14 @@ async function boot() {
   let pageVisible = true;
   setToggleRun(toggleRun);
   setJourneyRunning(on => { if (on !== !!S.running) toggleRun(); });
+  // Media Session's play and pause (the lock screen, a headset, a media key;
+  // js/background.js) are the space bar's own toggleRun. In worker mode they
+  // reach this thread from the page through host.run, and the audio link is
+  // flushed straight away, since a locked screen draws no frame to carry the
+  // run call back to the sound.
+  const mediaRun = on => { if (on !== !!S.running) toggleRun(); };
+  if (inWorker) host.run = on => { mediaRun(on); host.link.flush(); };
+  else setMediaTransport(mediaRun);
   setMixerOpen(open => { mixer.open = !!open; });
   setSeqOpen(() => { sequencer.open = true; });
   setCopyHandler(txt => platform.clipboardWrite(txt));

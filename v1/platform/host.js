@@ -8,13 +8,15 @@
 // for the worker's Platform (it settles once the page has transferred the
 // canvas), `profileHost` stands in for platform/profile-web.js, and `link`
 // is the worker's end of the audio link (core/audio-link.js), which main.js
-// calls once a frame after the submit, and `bootFailed(err)` is where main.js
-// reports a boot that threw. On the page they stay as below and nothing
-// reads them.
+// calls once a frame after the submit, `bootFailed(err)` is where main.js
+// reports a boot that threw, and `run(on)` is where main.js takes a play or
+// pause from the page's Media Session (js/background.js). On the page they
+// stay as below and nothing reads them.
 export const host = {
   worker: false,
   platform: null,
   profileHost: null,
   link: null,
-  bootFailed: null
+  bootFailed: null,
+  run: null
 };

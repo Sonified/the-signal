@@ -194,9 +194,10 @@ export function createEdgeFx(device, format, fbFormat) {
     // The shimmer at eight offsets round the strobe's cycle, as the Surfing
     // particles each take their own: paused, flickerLevel is 0 and every one
     // is steady at the top. Pulse with strobe (S.edgePulse) scales how far
-    // each departs from that steady top, as it does the Surfing edge's.
+    // each departs from that steady top, as it does the Surfing edge's,
+    // taken as its variance is dipping it this frame (core/strobe.js).
     const fl = flickerLevel();
-    const pulse = scaledStrobeDepth(clampNum(S.edgePulse, 0, 1, 1));
+    const pulse = scaledStrobeDepth(clampNum(S.effEdgePulse ?? S.edgePulse, 0, 1, 1));
     for (let k = 0; k < 8; k++) {
       const lp = 1 + (shape((S.phase + k / 8) % 1) - 1) * fl;
       const full = SHIMMER_FLOOR + (1 - SHIMMER_FLOOR) * lp;

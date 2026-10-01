@@ -35,7 +35,10 @@
 import { S } from '../../js/state.js';
 import { endGlide } from '../../js/audio.js';
 import { byId } from './schema.js';
-import { beginTransition, applyPresetAt, REPLAY_CONTROLS, machineControl } from './presets.js';
+import {
+  beginTransition, applyPresetAt, REPLAY_CONTROLS, machineControl,
+  presetTargets, presetMarkActive, presetLabel, presetCount, recallPresetForStep
+} from './presets.js';
 import { readKey, saveKey } from './store.js';
 import { triggerPhrase } from './words.js';
 import { glideSkippingRiskBand } from './strobe.js';
@@ -247,14 +250,7 @@ export function perfSet(id, value, now, sec) {
     return true;
   }
 
-  // a hand on a layer's opacity mid fade-out takes it over: the layer stays
-  // on wherever they leave it
-  if (kind === 'slider' && layerFades.size) {
-    for (const [tid, f] of layerFades) {
-      if (f.op === c) { layerFades.delete(tid); if (f.fb) startSlider(f.fb, f.fbLevel); }
-      else if (f.fb === c) f.fb = null;   // the trails are theirs too: left where they put them
-    }
-  }
+  if (kind === 'slider') takeLayerFade(c);
 
   if (now && (kind === 'slider' || kind === 'color')) {
     tweens.delete(c.id);
@@ -269,31 +265,305 @@ export function perfSet(id, value, now, sec) {
 }
 
 // ---------- a preset recalled over a ramp ----------
-// The presets' Ramp time (presets.js): recall preset i with every slider
-// and the colour gliding from where they are to the preset's positions over
-// `sec` seconds through the engine above, while switches, segments and the
-// rest land at once, exactly as this menu's own switches do. A built-in
-// preset is a recipe, not a table of positions, so the only way to know its
-// targets is to land it: the preset is applied whole inside this one frame,
-// each moved slider is put straight back where it was, and the glides take
-// it from there — the frame ends with nothing jumped and every moved
-// control on its way.
-export function perfRecallPreset(i, sec) {
-  if (!(sec >= TWEEN_MIN_S)) { applyPresetAt(i); return; }
-  const ctrls = REPLAY_CONTROLS, n = ctrls.length;
-  const before = new Array(n);
-  for (let j = 0; j < n; j++) before[j] = ctrls[j].get(S);
-  applyPresetAt(i);
-  for (let j = 0; j < n; j++) {
-    const c = ctrls[j];
-    if (c.kind !== 'slider' && c.kind !== 'color') continue;
-    const to = c.get(S);
-    if (to === before[j]) continue;
-    if (c.kind === 'slider' && (typeof before[j] !== 'number' || !Number.isFinite(before[j]))) continue;
-    c.set(S, before[j]);
-    // a refusal (it should not happen for these kinds) still lands the target
-    if (!perfSet(c.id, to, false, sec)) c.set(S, to);
+// The presets' Ramp time (presets.js): preset i recalled as one crossfade of
+// `sec` seconds, every control travelling from where it is to where the
+// preset puts it, through this engine. It used to land the preset whole and
+// then pull the sliders and the colour back to glide, which left every
+// switch, every mode and everything that is not a control landing at the
+// click, inside the preset's own second and a half: a layer or a voice
+// switched off simply vanished, and the glides that remained were lost
+// under the cut. Now nothing lands first. The preset's positions are read
+// without playing it (presets.js presetTargets), and each control goes the
+// way it can:
+//
+//   a slider, the colour    glides over the ramp, as a handle here does;
+//   a mode (a segment)      changes as the ramp begins, inside a short
+//                           transition whose window spans the ramp, so the
+//                           Edge layer's effect crossfades across all of it
+//                           (the journey's startRamp does the same);
+//   a switch coming on      comes on as the ramp begins, its level
+//                           (SWITCH_LEVELS) dropped to nothing first and
+//                           gliding up to the preset's;
+//   a switch going off      stays on while its level glides down to nothing,
+//                           and only as the ramp ends does it go off, its
+//                           level going quietly back to the preset's:
+//                           perfLayer's fade-out, over the ramp. One with no
+//                           level simply holds until the end;
+//   a variance switch       crossfades through its mix (startMix).
+//
+// The switches go first and the sliders read where they set off from after,
+// since a mode can change what a slider addresses (clickMode decides whether
+// the pip controls are the click's or the chirp's). A slider locked to a
+// neighbour (its enabled rule says no, as Pulse rate shows the strobe while
+// linked, as a layer's rows are while it stays off) is left for the landing.
+//
+// When the ramp ends (perfTick) the fade-outs land, and then the preset is
+// recalled for real over its usual glide, holding every control a hand took
+// on the way (presets.js recallPresetForStep). By then every control is
+// where the preset wants it, so that pass moves only what is not a control
+// at all (the recordings' levels, the sequencer, the mix, the word effects'
+// tables) and whatever was left for it.
+//
+// A second recall mid-ramp starts from wherever this one has got to: every
+// glide retargets from where it stands, a switch still fading out comes back
+// up if the new preset wants it on, and one the new preset leaves alone goes
+// on fading out. The first recall's landing is dropped; the second lands its
+// own. A recall with no ramp lands at once as it always did, after settling
+// whatever a ramp still had fading out.
+const R = REPLAY_CONTROLS;
+// the running recall's targets, filled by presetTargets, index for index
+const recallTo = new Array(R.length);
+let rIdx = null;
+function idxOf(id) {
+  if (!rIdx) { rIdx = new Map(); for (let j = 0; j < R.length; j++) rIdx.set(R[j].id, j); }
+  const j = rIdx.get(id);
+  return j === undefined ? -1 : j;
+}
+// The recall on its way, or null: { i, label, t0, durMs, offs, leave }. offs
+// are the switches held on until the end, each { t, levels } with levels a
+// list of { c, to, floor } (to: where the level goes back to once the switch
+// is off), or null for a switch with none. leave is the ids left for the
+// landing. label is the preset's name, unique in the row, so a row
+// rearranged or trimmed under the ramp still lands the preset that began it.
+let recall = null;
+
+// The level each switch fades through: the rows of the two windows that fade
+// a switch rather than cut it (ui/screens/performer.js LAYERS, ui/screens/
+// music.js ROWS), a layer's opacity and a voice's trim, with a layer's trail
+// opacity beside it (TRAIL_OP). The text and the fireworks are faded the
+// same way though no window row does. The music engine's switch has no level
+// of its own, so it fades through its five voices' trims together. A switch
+// not listed simply switches. Ids the schema does not know are dropped.
+const SWITCH_LEVELS = {
+  lField: ['fieldOpacity'], lEdge: ['edgeOpacity'], lCorners: ['cornerOpacity'],
+  lRings: ['ringOpacity'], lKaleido: ['kaleidoOpacity'], lFlowers: ['flowerOpacity'],
+  lParticles: ['partOpacity'], lConfetti: ['confOpacity'], lFireworks: ['fwBright'],
+  lText: ['textOpacity'],
+  aTone: ['musTone'], aClick: ['musPulse'],
+  musicOn: ['musPiano', 'musClouds', 'musDrone', 'musArp', 'musChoir'],
+  pianoOn: ['musPiano'], cloudsOn: ['musClouds'], bedOn: ['musDrone'],
+  arpOn: ['musArp'], choirOn: ['musChoir'], ambOn: ['musAmb']
+};
+let levelMap = null;
+function levelsOf(id) {
+  if (!levelMap) {
+    levelMap = new Map();
+    const ok = c => c && c.kind === 'slider' && c.get && c.set;
+    for (const k in SWITCH_LEVELS) {
+      const out = [];
+      for (const lid of SWITCH_LEVELS[k]) {
+        const L = byId(lid);
+        if (!ok(L)) continue;
+        out.push(L);
+        const fb = TRAIL_OP[lid] ? byId(TRAIL_OP[lid]) : null;
+        if (ok(fb)) out.push(fb);
+      }
+      if (out.length) levelMap.set(k, out);
+    }
   }
+  return levelMap.get(id);
+}
+const floorOf = c => Number.isFinite(c.min) ? c.min : 0;
+
+// A switch is a toggle, or a segment that is only an On/Off pair (the music,
+// the clouds, the ambience); any other segment is a mode.
+function isSwitch(c) {
+  if (c.kind === 'toggle') return true;
+  if (c.kind !== 'segment' || !c.options || c.options.length !== 2) return false;
+  const a = c.options[0], b = c.options[1];
+  return (a.value === true && b.value === false && b.label === 'Off') ||
+         (a.value === false && b.value === true && a.label === 'Off');
+}
+
+// A switch the last recall was still holding on, or null.
+function heldOff(r, c) {
+  if (r) for (let k = 0; k < r.offs.length; k++) if (r.offs[k].t === c) return r.offs[k];
+  return null;
+}
+
+// Where a switch's level belongs once the fade is done: the preset's own, or,
+// for a preset that names none, what a fade-out already under way (the last
+// recall's, old, or the window's, pend) meant to put back, or where the
+// level is, or is headed.
+function levelGoal(L, old, pend) {
+  const j = idxOf(L.id);
+  const v = j >= 0 ? recallTo[j] : undefined;
+  if (typeof v === 'number') return v;
+  if (old && old.levels) for (let k = 0; k < old.levels.length; k++) if (old.levels[k].c === L) return old.levels[k].to;
+  if (pend) { if (pend.op === L) return pend.level; if (pend.fb === L) return pend.fbLevel; }
+  return levelOf(L);
+}
+
+// Seconds left in the recall's ramp, undefined when none is running: the
+// drawer's Ramp time bar drains through it and fills again as it lands.
+export function perfRecallLeft() {
+  if (!recall) return undefined;
+  const left = (recall.t0 + recall.durMs - nowT) / 1000;
+  return left > 0 ? left : 0;
+}
+
+export function perfRecallPreset(i, sec) {
+  loadPerform();
+  const prev = recall;
+  recall = null;
+  if (!(sec >= TWEEN_MIN_S)) {
+    if (prev) settleRecall(prev, i);
+    applyPresetAt(i);
+    return;
+  }
+  const to = recallTo, n = R.length;
+  // no preset at i: whatever was on its way carries on
+  if (!presetTargets(i, to)) { recall = prev; return; }
+  presetMarkActive(i);
+  const rec = { i, label: presetLabel(i), t0: nowT, durMs: sec * 1000, offs: [], leave: new Set() };
+  // each switch's level, claimed: down to nothing (a switch going off, which
+  // wins over one coming on through the same trim) or up to its goal
+  const down = new Set(), upTo = new Map();
+  const ups = [], mixes = [];
+
+  // ---- the switches, planned ----
+  for (let j = 0; j < n; j++) {
+    const c = R[j];
+    if (!isSwitch(c) || machineControl(c)) continue;
+    const old = heldOff(prev, c);
+    let want = to[j];
+    if (want === undefined) { if (!old) continue; want = false; }
+    want = !!want;
+    const on = !!c.get(S);
+    if (c.mixKey) { if (want !== on || tweens.has(c.id)) mixes.push(c, want); continue; }
+    // a fade-out a window started on it is this recall's now
+    const pend = layerFades.get(c.id);
+    if (pend) layerFades.delete(c.id);
+    if (want === on && !old && !pend) continue;
+    if (want && !on) ups.push(c);
+    const lv = levelsOf(c.id);
+    if (!want && !on) continue;
+    if (!want && !lv) { rec.offs.push({ t: c, levels: null }); continue; }
+    if (!lv) continue;
+    const ls = want ? null : [];
+    for (let k = 0; k < lv.length; k++) {
+      const L = lv[k], goal = levelGoal(L, old, pend);
+      if (typeof goal !== 'number' || !Number.isFinite(goal)) continue;
+      if (ls) { ls.push({ c: L, to: goal, floor: floorOf(L) }); down.add(L.id); }
+      else upTo.set(L.id, goal);
+    }
+    if (ls) rec.offs.push({ t: c, levels: ls });
+  }
+
+  // ---- the switches coming on, and the modes, as the ramp begins ----
+  // Each level of a switch coming on drops to nothing first, through its own
+  // short declick, before any switch moves (perfLayer's order), so it comes
+  // on silent and dark.
+  for (let k = 0; k < ups.length; k++) {
+    const lv = levelsOf(ups[k].id);
+    if (lv) for (let q = 0; q < lv.length; q++) {
+      const L = lv[q];
+      if (down.has(L.id) || !upTo.has(L.id)) continue;
+      tweens.delete(L.id);
+      if (L.get(S) !== floorOf(L)) setNow(L, floorOf(L), 0);
+    }
+  }
+  beginTransition(SWITCH_GLIDE_S, sec);
+  try {
+    for (let j = 0; j < n; j++) {
+      const c = R[j], v = to[j];
+      if (v === undefined || machineControl(c) || c.kind === 'slider' || c.kind === 'color') continue;
+      if (isSwitch(c)) { if (v && !c.mixKey && !c.get(S)) c.set(S, true); }
+      else if (c.get(S) !== v) c.set(S, v);
+    }
+    for (let k = 0; k < mixes.length; k += 2) startMix(mixes[k], mixes[k + 1], false, sec);
+  } finally { endGlide(); }
+
+  // ---- the sliders and the colour, from where they now stand ----
+  for (let j = 0; j < n; j++) {
+    const c = R[j];
+    if ((c.kind !== 'slider' && c.kind !== 'color') || machineControl(c)) continue;
+    let goal = to[j];
+    if (down.has(c.id)) goal = floorOf(c);
+    else if (upTo.has(c.id)) goal = upTo.get(c.id);
+    else if (goal === undefined) continue;
+    else if (c.enabled && !c.enabled(S)) { if (c.get(S) !== goal) rec.leave.add(c.id); continue; }
+    if (c.get(S) === goal && !tweens.has(c.id)) continue;
+    journeyManualOverride(c.id, goal);
+    if (c.kind === 'slider') { takeLayerFade(c); startSlider(c, goal, sec); }
+    else startColor(c, goal, sec);
+  }
+  recall = rec;
+}
+
+// The ramp's end, from perfTick once every glide it started has landed.
+function landRecall(r) {
+  const offs = r.offs;
+  // A switch whose level a hand (or a journey) took on the way stays on
+  // where they left it, as perfLayer's does. Judged for every switch before
+  // any level is put back, since two switches can share one (the music
+  // engine and a voice's trim).
+  for (let k = 0; k < offs.length; k++) {
+    const o = offs[k];
+    o.taken = false;
+    if (o.levels && o.t.get(S)) {
+      for (let q = 0; q < o.levels.length; q++) {
+        const x = o.levels[q];
+        if (tweens.has(x.c.id) || x.c.get(S) !== x.floor) o.taken = true;
+      }
+    }
+  }
+  beginTransition(SWITCH_GLIDE_S);
+  try {
+    for (let k = 0; k < offs.length; k++) {
+      const o = offs[k];
+      if (o.taken) continue;
+      if (o.t.get(S)) o.t.set(S, false);
+      if (o.levels) for (let q = 0; q < o.levels.length; q++) {
+        const x = o.levels[q];
+        tweens.delete(x.c.id);
+        if (x.c.get(S) !== x.to) x.c.set(S, x.to);
+      }
+    }
+  } finally { endGlide(); }
+  // a switch kept on brings the rest of its levels (its trails) back up
+  for (let k = 0; k < offs.length; k++) {
+    const o = offs[k];
+    if (o.taken) for (let q = 0; q < o.levels.length; q++) {
+      const x = o.levels[q];
+      if (!tweens.has(x.c.id) && x.c.get(S) === x.floor) startSlider(x.c, x.to, r.durMs / 1000);
+    }
+  }
+  // the rest of the preset, for real, every control a hand took held
+  let at = presetLabel(r.i) === r.label ? r.i : -1;
+  for (let q = 0; at < 0 && q < presetCount(); q++) if (presetLabel(q) === r.label) at = q;
+  if (at < 0) return;
+  const hold = new Set();
+  for (let j = 0; j < R.length; j++) {
+    const c = R[j], v = recallTo[j];
+    if (v === undefined || r.leave.has(c.id)) continue;
+    const now = c.get(S);
+    if (now !== v && now === now) hold.add(c.id);
+  }
+  recallPresetForStep(at, undefined, hold);
+}
+
+// A recall with no ramp arriving while one is under way: each switch the ramp
+// was holding on goes off now, its level back, unless the new preset wants it
+// on, when only its level goes back, for the new preset to take from there.
+// Then the cut lands whole over it (applyPresetAt).
+function settleRecall(r, i) {
+  if (!r.offs.length || !presetTargets(i, recallTo)) return;
+  beginTransition(SWITCH_GLIDE_S);
+  try {
+    for (let k = 0; k < r.offs.length; k++) {
+      const o = r.offs[k];
+      if (!o.t.get(S)) continue;
+      const j = idxOf(o.t.id);
+      const keep = j >= 0 && !!recallTo[j];
+      if (!keep) o.t.set(S, false);
+      if (o.levels) for (let q = 0; q < o.levels.length; q++) {
+        const x = o.levels[q];
+        tweens.delete(x.c.id);
+        if (x.c.get(S) !== x.to) x.c.set(S, x.to);
+      }
+    }
+  } finally { endGlide(); }
 }
 
 // ---------- a layer switched on or off from the window ----------
@@ -367,6 +637,16 @@ export function perfLayerLevel(toggleId) {
   const f = layerFades.get(toggleId);
   return f ? f.level : undefined;
 }
+// A hand on a layer's opacity mid fade-out takes it over: the layer stays on
+// wherever they leave it, and its trails come back up. A hand on the trails
+// alone leaves them where it put them.
+function takeLayerFade(c) {
+  if (!layerFades.size) return;
+  for (const [tid, f] of layerFades) {
+    if (f.op === c) { layerFades.delete(tid); if (f.fb) startSlider(f.fb, f.fbLevel); }
+    else if (f.fb === c) f.fb = null;
+  }
+}
 // Once the fade-out's glide has landed: the layer goes off and its opacity
 // goes back to its level, and its trail opacity too. If the glide was let go
 // anywhere but the floor, a hand (or a journey) took the opacity over, and
@@ -393,10 +673,12 @@ function landLayerFades() {
 // off, the mix falls and the switch goes off when it lands, the mix left at
 // 1 for whatever turns it on next. now (shift-click) or a cut-length ramp
 // switches at once. A second click mid-glide turns back from where it is.
-function startMix(c, on, now) {
+// sec, when given, is the ramp in place of the menu's (a preset's recall).
+function startMix(c, on, now, sec) {
   const key = c.mixKey;
   const cur = Number.isFinite(S[key]) ? S[key] : 1;
-  if (now || perform.rampS < TWEEN_MIN_S) {
+  const rampS = sec ?? perform.rampS;
+  if (now || rampS < TWEEN_MIN_S) {
     tweens.delete(c.id);
     S[key] = 1;
     beginTransition(SWITCH_GLIDE_S);
@@ -414,7 +696,7 @@ function startMix(c, on, now) {
   const from = c.get(S) ? (running ? cur : 1) : 0;
   if (on && !c.get(S)) { S[key] = 0; c.set(S, true); }
   tw.warm = running;
-  tw.t0 = nowT; tw.durMs = perform.rampS * 1000;
+  tw.t0 = nowT; tw.durMs = rampS * 1000;
   tw.from = from; tw.to = on ? 1 : 0; tw.on = on;
   S[key] = from;
   return true;
@@ -573,7 +855,9 @@ function glideShape(u, warm) {
 // time spent away, so it resumes from where it stood rather than landing
 // in one frame. Runs once per wake, never per frame.
 export function perfResume(away) {
-  if (!(away > 0) || !tweens.size) return;
+  if (!(away > 0)) return;
+  if (recall) recall.t0 += away;
+  if (!tweens.size) return;
   for (const tw of tweens.values()) tw.t0 += away;
 }
 export function perfTick(t) {
@@ -589,6 +873,12 @@ export function perfTick(t) {
     }
   }
   if (layerFades.size) landLayerFades();
+  // a preset's ramp whose time is up: its own glides have all landed above
+  if (recall && t - recall.t0 >= recall.durMs) {
+    const r = recall;
+    recall = null;
+    landRecall(r);
+  }
   // Every glide gone, landed or let go, this frame or since the last one:
   // the final writes above have all been made, so the broadcast's landing
   // send carries them.

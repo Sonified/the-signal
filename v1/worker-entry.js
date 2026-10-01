@@ -40,6 +40,9 @@ self.onmessage = e => {
   if (d.k === 'live') { import('../js/livesound.js').then(m => m.liveFromPage(d)); return; }
   // and the compressor's gain reduction, for the meter row beside it
   if (d.k === 'liveGr') { import('../js/livesound.js').then(m => m.liveGrFromPage(d.db)); return; }
+  // Media Session's play or pause, from the page (js/background.js), for
+  // main.js's transport.
+  if (d.k === 'run') { if (host.run) host.run(d.on); return; }
   if (wp) wp.handle(d);
 };
 

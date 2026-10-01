@@ -25,7 +25,7 @@ import {
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn
 } from '../../js/audio.js';
-import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm, arpEffectiveVol, arpEffectiveAm } from '../../js/piano.js';
+import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm, arpEffectiveVol, arpEffectiveAm } from '../../js/piano.js';
 import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm } from '../../js/clouds.js';
 import {
   applyChoir, applyChoirVol, applyChoirOn, applyChoirAm, choirEffectiveAm,
@@ -40,8 +40,10 @@ import {
   applyLiveRevTime, applyLiveComp, liveLatencyNow, liveReductionNow, liveInputs
 } from '../../js/livesound.js';
 import { startDrift, stopDrift } from './atmosphere.js';
+import { pipDipNow } from './audio-mirror.js';
 import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
+import { varianceRows } from './schema-variance.js';
 
 // ---------- shared helpers, ported from js/ui.js closures ----------
 
@@ -64,6 +66,8 @@ const fmtSweep = sec => sec < 90 ? Math.round(sec) + 's'
 // default for the checkbox is checked, so undefined reads as on here rather
 // than off, the same default a fresh <input checked> would give.
 const audioLayerOn = s => s.audioOnBoot !== false;
+// The choir's rows show while the music and the choir both play.
+const choirShows = s => s.musicOn && s.choirOn;
 // A Music window trim from its slider's 0..100 position: a share of the
 // voice's level, 0 to 1 (see musTone below).
 const trimOf = pos => Math.max(0, Math.min(1, (Number(pos) || 0) / 100));
@@ -156,6 +160,16 @@ const PIP_KEYS = {
 const pipKey = (s, which) => PIP_KEYS[which][s.clickMode === 'chirp' ? 1 : 0];
 const pipGet = (s, which) => s[pipKey(s, which)];
 const pipSet = (s, which, v) => { s[pipKey(s, which)] = v; };
+
+// Where the level's bar sits with the variance's dip taken off it: the dip
+// is a share of the amplitude, and the fader spreads decibels evenly over its
+// travel, so the share comes off as that many decibels' worth of positions
+// below the set one. A dip to nothing is the foot of the bar.
+function pipDippedPos(s) {
+  const dip = pipDipNow();
+  const pos = ampToPos(pipGet(s, 'vol'));
+  return dip > 0 ? Math.max(0, pos + 20 * Math.log10(Math.min(1, dip)) / DB_PER_POS) : 0;
+}
 
 const TILT_NAMES = [[0, 'white'], [0.5, 'bright'], [1, 'pink'], [1.25, 'warm'], [1.5, 'dark']];
 function tiltName(v) {
@@ -471,6 +485,29 @@ const audioControls = [
     format: s => s.clickMode,
     visible: s => s.clickOn
   },
+  // The level first under the mode, since it answers to whichever shape the
+  // mode has chosen, with its variance folded away beneath it. The variance
+  // is the worklet's own dip (js/worklet.js): over each variance time the
+  // pips, dry and their room alike, ease down from the level by up to the
+  // variance's share of it and back, never above. The bar's brighter fill is
+  // that dip as it plays (pipDipNow, core/audio-mirror.js), on either thread.
+  {
+    id: 'clickVol', section: 'audio', label: 'Level', kind: 'slider',
+    parent: 'audioPulseDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => ampToPos(pipGet(s, 'vol')),
+    set: (s, pos) => { pipSet(s, 'vol', posToAmp(pos)); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
+    format: s => ampToDb(pipGet(s, 'vol')) + ' dB',
+    parse: parseDb,
+    visible: s => s.clickOn
+  },
+  // The two keys follow the live shape, the click's or the chirp's.
+  ...varianceRows('clickVol', {
+    music: true, amount: s => pipKey(s, 'modDep'), period: s => pipKey(s, 'modPer'),
+    ids: ['clickModDepth', 'clickModRate'], labels: ['Variance', 'Variance time'],
+    periodMin: 1, periodMax: 60, periodDef: 26, apply: applyHarmonics,
+    parent: 'audioPulseDrawer', visible: s => s.clickOn, effective: pipDippedPos
+  }),
   {
     id: 'pipMs', section: 'audio', label: 'Pip width', kind: 'slider',
     parent: 'audioPulseDrawer',
@@ -531,16 +568,6 @@ const audioControls = [
     visible: s => s.clickOn && s.clickMode === 'chirp'
   },
   {
-    id: 'clickVol', section: 'audio', label: 'Level', kind: 'slider',
-    parent: 'audioPulseDrawer',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => ampToPos(pipGet(s, 'vol')),
-    set: (s, pos) => { pipSet(s, 'vol', posToAmp(pos)); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
-    format: s => ampToDb(pipGet(s, 'vol')) + ' dB',
-    parse: parseDb,
-    visible: s => s.clickOn
-  },
-  {
     id: 'clickReverb', section: 'audio', label: 'Click / Chirp reverb', kind: 'slider',
     parent: 'audioPulseDrawer',
     min: 0, max: 100, step: 1, def: 37,
@@ -556,24 +583,6 @@ const audioControls = [
     get: s => pipGet(s, 'revTime'),
     set: (s, pos) => { pipSet(s, 'revTime', pos); rebuildClickIR(); save(); },
     format: s => pipGet(s, 'revTime').toFixed(1) + 's',
-    visible: s => s.clickOn
-  },
-  {
-    id: 'clickModDepth', section: 'audio', label: 'Click / Chirp loudness variance', kind: 'slider',
-    parent: 'audioPulseDrawer',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round(pipGet(s, 'modDep') * 100),
-    set: (s, pos) => { pipSet(s, 'modDep', pos / 100); applyHarmonics(); save(); },
-    format: s => Math.round(pipGet(s, 'modDep') * 100) + '%',
-    visible: s => s.clickOn
-  },
-  {
-    id: 'clickModRate', section: 'audio', label: 'Click / Chirp loudness var rate', kind: 'slider',
-    parent: 'audioPulseDrawer',
-    min: 1, max: 60, step: 1, def: 26,
-    get: s => pipGet(s, 'modPer'),
-    set: (s, pos) => { pipSet(s, 'modPer', pos); applyHarmonics(); save(); },
-    format: s => pipGet(s, 'modPer') + 's / cycle',
     visible: s => s.clickOn
   },
   // The lowpass sweep. One filter for the whole train, click or chirp, so it
@@ -942,32 +951,17 @@ const musicControls = [
     parent: 'musicArpDrawer',
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.arpVol * 100),
-    effective: s => (s.arpVolVar || 0) > 0 ? arpEffectiveVol() * 100 : undefined,
     set: (s, pos) => { s.arpVol = pos / 100; applyArp(); save(); },
     format: s => Math.round(s.arpVol * 100) + '%',
     visible: s => s.musicOn && s.arpOn
   },
-  {
-    // The master volume's dip, the app's standard: over one speed cycle it
-    // eases from the setting down by this share and back (js/piano.js,
-    // arpPump).
-    id: 'arpVolVar', section: 'music', label: 'Volume variance', kind: 'slider',
-    parent: 'musicArpDrawer', varianceOf: 'arpVol',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round((s.arpVolVar || 0) * 100),
-    set: (s, pos) => { s.arpVolVar = pos / 100; save(); },
-    format: s => Math.round((s.arpVolVar || 0) * 100) + '%',
-    visible: s => s.musicOn && s.arpOn
-  },
-  {
-    id: 'arpVolPeriod', section: 'music', label: 'Volume variance speed', kind: 'slider',
-    parent: 'musicArpDrawer', varianceOf: 'arpVol',
-    min: 0, max: 120, step: 1, def: 20,
-    get: s => s.arpVolPeriod ?? 20,
-    set: (s, pos) => { s.arpVolPeriod = pos; save(); },
-    format: s => (s.arpVolPeriod ?? 20) + 's',
-    visible: s => s.musicOn && s.arpOn
-  },
+  // The master volume's dip, the app's standard: over one speed cycle it
+  // eases from the setting down by this share and back (js/piano.js,
+  // arpPump).
+  ...varianceRows('arpVol', {
+    music: true, name: 'Volume', parent: 'musicArpDrawer', visible: s => s.musicOn && s.arpOn,
+    effective: () => arpEffectiveVol() * 100
+  }),
   {
     id: 'arpRate', section: 'music', label: 'Sequencer speed', kind: 'slider',
     parent: 'musicArpDrawer',
@@ -990,6 +984,19 @@ const musicControls = [
     visible: s => s.musicOn && s.arpOn
   },
   {
+    // A tilt over every line's own range, octave jumps included: the
+    // highest note a line can reach comes down by this much, its lowest not
+    // at all, the rest evenly between by semitone; the next note lands on
+    // the slope (js/piano.js, the high freq reduction).
+    id: 'arpHfCut', section: 'music', label: 'High freq reduction', kind: 'slider',
+    parent: 'musicArpDrawer',
+    min: 0, max: 20, step: 1, def: 0,
+    get: s => s.arpHfCut || 0,
+    set: (s, pos) => { s.arpHfCut = pos; save(); },
+    format: s => (s.arpHfCut || 0) > 0 ? s.arpHfCut + ' dB' : 'off',
+    visible: s => s.musicOn && s.arpOn
+  },
+  {
     // A volume pulse at the strobe's own flash rate and in its waveform,
     // layered over everything else the level does; 0 is none, 100% swings
     // the line from full down to silence on every flash.
@@ -997,75 +1004,16 @@ const musicControls = [
     parent: 'musicArpDrawer',
     min: 0, max: 100, step: 1, def: 0,
     get: s => Math.round((s.arpStrobeAm || 0) * 100),
-    effective: s => (s.arpStrobeAmVar || 0) > 0 ? arpEffectiveAm() * 100 : undefined,
     set: (s, pos) => { s.arpStrobeAm = pos / 100; applyArp(); save(); },
     format: s => Math.round((s.arpStrobeAm || 0) * 100) + '%',
     visible: s => s.musicOn && s.arpOn
   },
-  {
-    // The pulse depth's dip, the drone's and choir's own (js/piano.js,
-    // arpPump).
-    id: 'arpStrobeAmVar', section: 'music', label: 'Pulse variance', kind: 'slider',
-    parent: 'musicArpDrawer', varianceOf: 'arpStrobeAm',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round((s.arpStrobeAmVar || 0) * 100),
-    set: (s, pos) => { s.arpStrobeAmVar = pos / 100; save(); },
-    format: s => Math.round((s.arpStrobeAmVar || 0) * 100) + '%',
-    visible: s => s.musicOn && s.arpOn
-  },
-  {
-    id: 'arpStrobeAmPeriod', section: 'music', label: 'Pulse variance speed', kind: 'slider',
-    parent: 'musicArpDrawer', varianceOf: 'arpStrobeAm',
-    min: 0, max: 120, step: 1, def: 20,
-    get: s => s.arpStrobeAmPeriod ?? 20,
-    set: (s, pos) => { s.arpStrobeAmPeriod = pos; save(); },
-    format: s => (s.arpStrobeAmPeriod ?? 20) + 's',
-    visible: s => s.musicOn && s.arpOn
-  },
-  {
-    id: 'arpSw', section: 'music', label: 'Sequencer volume sweep', kind: 'toggle',
-    parent: 'musicArpDrawer',
-    get: s => !!s.arpSwOn,
-    set: (s, on) => { s.arpSwOn = !!on; applyArp(); save(); },
-    format: s => s.arpSwOn ? 'On' : 'Off',
-    visible: s => s.musicOn && s.arpOn
-  },
-  {
-    id: 'arpSwLo', section: 'music', label: 'Sequencer sweep low', kind: 'slider',
-    parent: 'arpSw',
-    min: 0, max: 200, step: 1, def: 0,
-    get: s => Math.round(s.arpSwLo * 100),
-    set: (s, pos) => { s.arpSwLo = pos / 100; applyArp(); save(); },
-    format: s => Math.round(s.arpSwLo * 100) + '%',
-    visible: s => s.musicOn && s.arpOn && s.arpSwOn
-  },
-  {
-    id: 'arpSwHi', section: 'music', label: 'Sequencer sweep high', kind: 'slider',
-    parent: 'arpSw',
-    min: 0, max: 200, step: 1, def: 100,
-    get: s => Math.round(s.arpSwHi * 100),
-    set: (s, pos) => { s.arpSwHi = pos / 100; applyArp(); save(); },
-    format: s => Math.round(s.arpSwHi * 100) + '%',
-    visible: s => s.musicOn && s.arpOn && s.arpSwOn
-  },
-  {
-    id: 'arpSwPeriod', section: 'music', label: 'Sequencer sweep time', kind: 'slider',
-    parent: 'arpSw',
-    min: 2, max: 300, step: 1, def: 120, taper: 'log',
-    get: s => s.arpSwPeriod,
-    set: (s, pos) => { s.arpSwPeriod = pos; applyArp(); save(); },
-    format: s => fmtSweep(s.arpSwPeriod) + ' / cycle',
-    visible: s => s.musicOn && s.arpOn && s.arpSwOn
-  },
-  {
-    id: 'arpSwWander', section: 'music', label: 'Sequencer sweep wander', kind: 'slider',
-    parent: 'arpSw',
-    min: 0, max: 100, step: 1, def: 30,
-    get: s => Math.round(s.arpSwWander * 100),
-    set: (s, pos) => { s.arpSwWander = pos / 100; applyArp(); save(); },
-    format: s => Math.round(s.arpSwWander * 100) + '%',
-    visible: s => s.musicOn && s.arpOn && s.arpSwOn
-  },
+  // The pulse depth's dip, the drone's and choir's own (js/piano.js,
+  // arpPump).
+  ...varianceRows('arpStrobeAm', {
+    music: true, name: 'Pulse', parent: 'musicArpDrawer', visible: s => s.musicOn && s.arpOn,
+    effective: () => arpEffectiveAm() * 100
+  }),
   {
     id: 'bedOn', section: 'music', label: 'Ocean drone', kind: 'toggle',
     get: s => s.bedOn !== false,
@@ -1108,46 +1056,15 @@ const musicControls = [
     parent: 'musicDroneDrawer',
     min: 0, max: 100, step: 1, def: 0,
     get: s => Math.round((s.bedStrobeAm || 0) * 100),
-    effective: s => s.bedStrobeAmVar > 0 ? bedEffectiveAm() * 100 : undefined,
     set: (s, pos) => { s.bedStrobeAm = pos / 100; applyBedAm(); save(); },
     format: s => Math.round((s.bedStrobeAm || 0) * 100) + '%',
     visible: s => s.musicOn && s.bedOn !== false
   },
-  {
-    id: 'bedStrobeAmVar', section: 'music', label: 'Pulse variance', kind: 'slider',
-    parent: 'musicDroneDrawer', varianceOf: 'bedStrobeAm',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round((s.bedStrobeAmVar || 0) * 100),
-    set: (s, pos) => { s.bedStrobeAmVar = pos / 100; applyBedAm(); save(); },
-    format: s => Math.round((s.bedStrobeAmVar || 0) * 100) + '%',
-    visible: s => s.musicOn && s.bedOn !== false
-  },
-  {
-    // How the variance moves: Sinusoid breathes evenly, down by the amount
-    // and back once per period; Walk drifts leg by leg to random depths
-    // within it, never twice the same (js/choir.js, js/strobe-am.js).
-    id: 'bedStrobeAmVarMode', section: 'music', label: 'Behavior', kind: 'segment',
-    hideLabel: true,
-    parent: 'musicDroneDrawer', varianceOf: 'bedStrobeAm',
-    options: [
-      { value: 'sine', label: 'Sinusoid' },
-      { value: 'walk', label: 'Walk' }
-    ],
-    def: 'sine',
-    get: s => s.bedStrobeAmVarMode === 'walk' ? 'walk' : 'sine',
-    set: (s, v) => { s.bedStrobeAmVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
-    format: s => s.bedStrobeAmVarMode === 'walk' ? 'walk' : 'sinusoid',
-    visible: s => s.musicOn && s.bedOn !== false
-  },
-  {
-    id: 'bedStrobeAmPeriod', section: 'music', label: 'Pulse variance speed', kind: 'slider',
-    parent: 'musicDroneDrawer', varianceOf: 'bedStrobeAm',
-    min: 0, max: 120, step: 1, def: 20,
-    get: s => s.bedStrobeAmPeriod,
-    set: (s, pos) => { s.bedStrobeAmPeriod = pos; applyBedAm(); save(); },
-    format: s => s.bedStrobeAmPeriod + 's',
-    visible: s => s.musicOn && s.bedOn !== false
-  },
+  ...varianceRows('bedStrobeAm', {
+    music: true, name: 'Pulse', mode: true, apply: applyBedAm,
+    parent: 'musicDroneDrawer', visible: s => s.musicOn && s.bedOn !== false,
+    effective: () => bedEffectiveAm() * 100
+  }),
   // The drone's filter sweep: the click train's set above, on the drone's own
   // low-pass (js/piano.js), with the same ranges, tapers and readouts.
   {
@@ -1307,46 +1224,15 @@ const musicControls = [
     parent: 'musicChoirDrawer',
     min: 0, max: 200, step: 1, def: 100,
     get: s => Math.round(s.choirVol * 100),
-    effective: s => s.choirVolVar > 0 ? choirEffectiveLevel() * 100 : undefined,
     set: (s, pos) => { s.choirVol = pos / 100; applyChoirVol(); save(); },
     format: s => Math.round(s.choirVol * 100) + '%',
     visible: s => s.musicOn && s.choirOn
   },
-  {
-    id: 'choirVolVar', section: 'music', label: 'Level variance', kind: 'slider',
-    parent: 'musicChoirDrawer', varianceOf: 'choirVol',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round(s.choirVolVar * 100),
-    set: (s, pos) => { s.choirVolVar = pos / 100; applyChoirVol(); save(); },
-    format: s => Math.round(s.choirVolVar * 100) + '%',
-    visible: s => s.musicOn && s.choirOn
-  },
-  {
-    // How the variance moves: Sinusoid breathes evenly, down by the amount
-    // and back once per period; Walk drifts leg by leg to random depths
-    // within it, never twice the same (js/choir.js, js/strobe-am.js).
-    id: 'choirVolVarMode', section: 'music', label: 'Behavior', kind: 'segment',
-    hideLabel: true,
-    parent: 'musicChoirDrawer', varianceOf: 'choirVol',
-    options: [
-      { value: 'sine', label: 'Sinusoid' },
-      { value: 'walk', label: 'Walk' }
-    ],
-    def: 'sine',
-    get: s => s.choirVolVarMode === 'walk' ? 'walk' : 'sine',
-    set: (s, v) => { s.choirVolVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
-    format: s => s.choirVolVarMode === 'walk' ? 'walk' : 'sinusoid',
-    visible: s => s.musicOn && s.choirOn
-  },
-  {
-    id: 'choirVolPeriod', section: 'music', label: 'Level variance speed', kind: 'slider',
-    parent: 'musicChoirDrawer', varianceOf: 'choirVol',
-    min: 0, max: 120, step: 1, def: 20,
-    get: s => s.choirVolPeriod,
-    set: (s, pos) => { s.choirVolPeriod = pos; applyChoirVol(); save(); },
-    format: s => s.choirVolPeriod + 's',
-    visible: s => s.musicOn && s.choirOn
-  },
+  ...varianceRows('choirVol', {
+    music: true, name: 'Level', mode: true, apply: applyChoirVol,
+    parent: 'musicChoirDrawer', visible: choirShows,
+    effective: () => choirEffectiveLevel() * 100
+  }),
   {
     // The sequencer's Vary with strobe (js/strobe-am.js): a volume pulse at
     // the strobe's flash rate and in its waveform; 0 is none, 100% swings
@@ -1355,138 +1241,45 @@ const musicControls = [
     parent: 'musicChoirDrawer',
     min: 0, max: 100, step: 1, def: 0,
     get: s => Math.round((s.choirStrobeAm || 0) * 100),
-    effective: s => s.choirStrobeAmVar > 0 ? choirEffectiveAm() * 100 : undefined,
     set: (s, pos) => { s.choirStrobeAm = pos / 100; applyChoirAm(); save(); },
     format: s => Math.round((s.choirStrobeAm || 0) * 100) + '%',
     visible: s => s.musicOn && s.choirOn
   },
-  {
-    id: 'choirStrobeAmVar', section: 'music', label: 'Pulse variance', kind: 'slider',
-    parent: 'musicChoirDrawer', varianceOf: 'choirStrobeAm',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round((s.choirStrobeAmVar || 0) * 100),
-    set: (s, pos) => { s.choirStrobeAmVar = pos / 100; applyChoirAm(); save(); },
-    format: s => Math.round((s.choirStrobeAmVar || 0) * 100) + '%',
-    visible: s => s.musicOn && s.choirOn
-  },
-  {
-    // How the variance moves: Sinusoid breathes evenly, down by the amount
-    // and back once per period; Walk drifts leg by leg to random depths
-    // within it, never twice the same (js/choir.js, js/strobe-am.js).
-    id: 'choirStrobeAmVarMode', section: 'music', label: 'Behavior', kind: 'segment',
-    hideLabel: true,
-    parent: 'musicChoirDrawer', varianceOf: 'choirStrobeAm',
-    options: [
-      { value: 'sine', label: 'Sinusoid' },
-      { value: 'walk', label: 'Walk' }
-    ],
-    def: 'sine',
-    get: s => s.choirStrobeAmVarMode === 'walk' ? 'walk' : 'sine',
-    set: (s, v) => { s.choirStrobeAmVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
-    format: s => s.choirStrobeAmVarMode === 'walk' ? 'walk' : 'sinusoid',
-    visible: s => s.musicOn && s.choirOn
-  },
-  {
-    id: 'choirStrobeAmPeriod', section: 'music', label: 'Pulse variance speed', kind: 'slider',
-    parent: 'musicChoirDrawer', varianceOf: 'choirStrobeAm',
-    min: 0, max: 120, step: 1, def: 20,
-    get: s => s.choirStrobeAmPeriod,
-    set: (s, pos) => { s.choirStrobeAmPeriod = pos; applyChoirAm(); save(); },
-    format: s => s.choirStrobeAmPeriod + 's',
-    visible: s => s.musicOn && s.choirOn
-  },
+  ...varianceRows('choirStrobeAm', {
+    music: true, name: 'Pulse', mode: true, apply: applyChoirAm,
+    parent: 'musicChoirDrawer', visible: choirShows,
+    effective: () => choirEffectiveAm() * 100
+  }),
   {
     // Fills upward through the choir from the low voice.
     id: 'choirStack', section: 'music', label: 'Stack', kind: 'slider',
     parent: 'musicChoirDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: s => s.choirStack,
-    effective: s => s.choirStackVar > 0 ? choirEffectiveStack() : undefined,
     set: (s, pos) => { s.choirStack = pos; applyChoir(); save(); },
     format: s => s.choirStack < 1 ? 'low voice' : Math.round(s.choirStack) + '% filled',
     visible: s => s.musicOn && s.choirOn
   },
-  {
-    id: 'choirStackVar', section: 'music', label: 'Stack variance', kind: 'slider',
-    parent: 'musicChoirDrawer', varianceOf: 'choirStack',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round(s.choirStackVar * 100),
-    set: (s, pos) => { s.choirStackVar = pos / 100; applyChoir(); save(); },
-    format: s => Math.round(s.choirStackVar * 100) + '%',
-    visible: s => s.musicOn && s.choirOn
-  },
-  {
-    // How the variance moves: Sinusoid breathes evenly, down by the amount
-    // and back once per period; Walk drifts leg by leg to random depths
-    // within it, never twice the same (js/choir.js, js/strobe-am.js).
-    id: 'choirStackVarMode', section: 'music', label: 'Behavior', kind: 'segment',
-    hideLabel: true,
-    parent: 'musicChoirDrawer', varianceOf: 'choirStack',
-    options: [
-      { value: 'sine', label: 'Sinusoid' },
-      { value: 'walk', label: 'Walk' }
-    ],
-    def: 'sine',
-    get: s => s.choirStackVarMode === 'walk' ? 'walk' : 'sine',
-    set: (s, v) => { s.choirStackVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
-    format: s => s.choirStackVarMode === 'walk' ? 'walk' : 'sinusoid',
-    visible: s => s.musicOn && s.choirOn
-  },
-  {
-    id: 'choirStackPeriod', section: 'music', label: 'Stack variance speed', kind: 'slider',
-    parent: 'musicChoirDrawer', varianceOf: 'choirStack',
-    min: 0, max: 120, step: 1, def: 20,
-    get: s => s.choirStackPeriod,
-    set: (s, pos) => { s.choirStackPeriod = pos; applyChoir(); save(); },
-    format: s => s.choirStackPeriod + 's',
-    visible: s => s.musicOn && s.choirOn
-  },
+  ...varianceRows('choirStack', {
+    music: true, name: 'Stack', mode: true, apply: applyChoir,
+    parent: 'musicChoirDrawer', visible: choirShows,
+    effective: choirEffectiveStack
+  }),
   {
     // Adds the harmonic degrees one at a time: 1, then 8, 5, 3, 2, 7 and 9.
     id: 'choirDensity', section: 'music', label: 'Density', kind: 'slider',
     parent: 'musicChoirDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: s => s.choirDensity,
-    effective: s => s.choirDensityVar > 0 ? choirEffectiveDensity() : undefined,
     set: (s, pos) => { s.choirDensity = pos; applyChoir(); save(); },
     format: s => choirDensityText(s.choirDensity),
     visible: s => s.musicOn && s.choirOn
   },
-  {
-    id: 'choirDensityVar', section: 'music', label: 'Density variance', kind: 'slider',
-    parent: 'musicChoirDrawer', varianceOf: 'choirDensity',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round(s.choirDensityVar * 100),
-    set: (s, pos) => { s.choirDensityVar = pos / 100; applyChoir(); save(); },
-    format: s => Math.round(s.choirDensityVar * 100) + '%',
-    visible: s => s.musicOn && s.choirOn
-  },
-  {
-    // How the variance moves: Sinusoid breathes evenly, down by the amount
-    // and back once per period; Walk drifts leg by leg to random depths
-    // within it, never twice the same (js/choir.js, js/strobe-am.js).
-    id: 'choirDensityVarMode', section: 'music', label: 'Behavior', kind: 'segment',
-    hideLabel: true,
-    parent: 'musicChoirDrawer', varianceOf: 'choirDensity',
-    options: [
-      { value: 'sine', label: 'Sinusoid' },
-      { value: 'walk', label: 'Walk' }
-    ],
-    def: 'sine',
-    get: s => s.choirDensityVarMode === 'walk' ? 'walk' : 'sine',
-    set: (s, v) => { s.choirDensityVarMode = v === 'walk' ? 'walk' : 'sine'; save(); },
-    format: s => s.choirDensityVarMode === 'walk' ? 'walk' : 'sinusoid',
-    visible: s => s.musicOn && s.choirOn
-  },
-  {
-    id: 'choirDensityPeriod', section: 'music', label: 'Density variance speed', kind: 'slider',
-    parent: 'musicChoirDrawer', varianceOf: 'choirDensity',
-    min: 0, max: 120, step: 1, def: 20,
-    get: s => s.choirDensityPeriod,
-    set: (s, pos) => { s.choirDensityPeriod = pos; applyChoir(); save(); },
-    format: s => s.choirDensityPeriod + 's',
-    visible: s => s.musicOn && s.choirOn
-  },
+  ...varianceRows('choirDensity', {
+    music: true, name: 'Density', mode: true, apply: applyChoir,
+    parent: 'musicChoirDrawer', visible: choirShows,
+    effective: choirEffectiveDensity
+  }),
   {
     // From the low voices to the high; at 0 the choir is even.
     id: 'choirBrightness', section: 'music', label: 'Brightness', kind: 'slider',
@@ -1633,6 +1426,24 @@ const musicControls = [
   },
   subDrawer('musicReverbDrawer', 'Reverb', 'music', ['pianoReverb', 'pianoRevTime'], 'musicRevOn'),
   {
+    // What plays the room: Convolution, a fixed impulse (a new decay is a
+    // new impulse, crossfaded in), or Algorithmic, a feedback delay network
+    // whose decay is one number, with a damping and a drift of its own
+    // (js/piano.js applyRevType, js/fdn-worklet.js). Level and decay, and
+    // their variances, are the same settings under either.
+    id: 'musicRevType', section: 'music', label: 'Reverb type', kind: 'segment',
+    parent: 'musicReverbDrawer',
+    options: [
+      { value: 'conv', label: 'Convolution' },
+      { value: 'algo', label: 'Algorithmic' }
+    ],
+    def: 'conv',
+    get: s => s.musicRevType === 'algo' ? 'algo' : 'conv',
+    set: (s, v) => { s.musicRevType = v === 'algo' ? 'algo' : 'conv'; applyRevType(); save(); },
+    format: s => s.musicRevType === 'algo' ? 'algorithmic' : 'convolution',
+    visible: s => s.musicOn && s.musicRevOn !== false
+  },
+  {
     id: 'pianoReverb', section: 'music', label: 'Reverb level', kind: 'slider',
     parent: 'musicReverbDrawer',
     min: 0, max: 200, step: 1, def: 100,
@@ -1641,6 +1452,12 @@ const musicControls = [
     format: s => Math.round(s.pianoReverb * 100) + '%',
     visible: s => s.musicOn && s.musicRevOn !== false
   },
+  // The room's level and decay each breathe by the app's standard dip
+  // (js/piano.js, revBreathe, on the music's own clock).
+  ...varianceRows('pianoReverb', {
+    music: true, name: 'Level', parent: 'musicReverbDrawer', visible: s => s.musicOn && s.musicRevOn !== false,
+    effective: () => pianoEffectiveReverb() * 100
+  }),
   {
     id: 'pianoRevTime', section: 'music', label: 'Reverb decay', kind: 'slider',
     parent: 'musicReverbDrawer',
@@ -1649,6 +1466,35 @@ const musicControls = [
     set: (s, pos) => { s.pianoRevTime = pos; rebuildPianoIR(); save(); },
     format: s => s.pianoRevTime.toFixed(1) + 's',
     visible: s => s.musicOn && s.musicRevOn !== false
+  },
+  // Under Convolution a new decay is a new impulse, built and crossfaded
+  // in, so its speed starts at 5 s rather than 0.
+  ...varianceRows('pianoRevTime', {
+    music: true, name: 'Decay', parent: 'musicReverbDrawer', visible: s => s.musicOn && s.musicRevOn !== false,
+    periodMin: 5, effective: pianoEffectiveRevTime
+  }),
+  {
+    // How much sooner the highs die than the decay: 0 keeps every
+    // frequency to the decay, as the convolution room does; full has the
+    // top end gone in about a sixth of it.
+    id: 'pianoRevDamp', section: 'music', label: 'Damping', kind: 'slider',
+    parent: 'musicReverbDrawer',
+    min: 0, max: 100, step: 1, def: 35,
+    get: s => Math.round((s.pianoRevDamp ?? 0.35) * 100),
+    set: (s, pos) => { s.pianoRevDamp = pos / 100; applyPianoRevShape(); save(); },
+    format: s => Math.round((s.pianoRevDamp ?? 0.35) * 100) + '%',
+    visible: s => s.musicOn && s.musicRevOn !== false && s.musicRevType === 'algo'
+  },
+  {
+    // The slow drift of the network's delay lengths, which keeps a held
+    // tone from ringing metallic; 0 holds them still.
+    id: 'pianoRevMod', section: 'music', label: 'Modulation', kind: 'slider',
+    parent: 'musicReverbDrawer',
+    min: 0, max: 100, step: 1, def: 30,
+    get: s => Math.round((s.pianoRevMod ?? 0.3) * 100),
+    set: (s, pos) => { s.pianoRevMod = pos / 100; applyPianoRevShape(); save(); },
+    format: s => Math.round((s.pianoRevMod ?? 0.3) * 100) + '%',
+    visible: s => s.musicOn && s.musicRevOn !== false && s.musicRevType === 'algo'
   }
 ];
 

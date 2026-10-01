@@ -432,7 +432,7 @@ export function createParticles(device, format, platform) {
     const emitter = EMITTER_IDS[S.partEmitter] ?? 0;
     const colour = COLOUR_IDS[S.partColor] ?? 0;
     const rate = clampNum(S.partRate, 0, 1, 0.5);
-    const speed = clampNum(S.partSpeed, 0, 0.5, 0.25);
+    const speed = clampNum(S.effPartSpeed ?? S.partSpeed, 0, 0.5, 0.25);
     let sizeMul = clampNum(S.partSize, 0.2, 3, 1);
     if (style === STYLE_IDS.dust) sizeMul *= DUST_SIZE;
     const sizeVar = clampNum(S.partSizeVar, 0, 1, 0.5);
@@ -440,7 +440,7 @@ export function createParticles(device, format, platform) {
     const swirl = clampNum(S.partSwirl, -1, 1, 0);
     const trail = clampNum(S.partTrail, 0, 1, 0.5);
     const hueVar = clampNum(S.partHueVar, 0, 1, 0.15);
-    const opacity = clampNum(S.partOpacity, 0, 1, 0.9);
+    const opacity = clampNum(S.effPartOpacity ?? S.partOpacity, 0, 1, 0.9);
     const pulse = scaledStrobeDepth(clampNum(S.partPulse, 0, 1, 0));
     kaleidoNow = !!S.partKaleido;
 
@@ -660,7 +660,7 @@ export function createParticles(device, format, platform) {
       // foldScene always owns it and draws the raw particles plain; the
       // trail read (foldFbParams) carries the same shape with the trails'
       // opacity and pulse, only read in the before route.
-      foldRot += clampNum(S.partFoldSpin, -1, 1, 0.05) * 0.5 * step;
+      foldRot += clampNum(S.effPartFoldSpin ?? S.partFoldSpin, -1, 1, 0.05) * 0.5 * step;
       foldParams.folds = clampNum(S.partFolds, 3, 16, 8);
       foldParams.mirror = S.partMirror !== false;
       foldParams.rotation = foldRot;

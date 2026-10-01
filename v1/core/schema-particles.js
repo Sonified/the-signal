@@ -19,6 +19,7 @@
 import { save } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { retimeRoomPhase } from './room-clock.js';
+import { varianceRows } from './schema-variance.js';
 
 // The three choices, the two plain booleans, and every numeric field with its
 // range. The GPU agent reads these names off S directly, so this table is the
@@ -50,6 +51,8 @@ const NUM = [
   // key,            min,  max, def,  integer
   ['partRate',        0,   1,   0.5,  false],
   ['partSpeed',       0,   0.5, 0.25, false],   // 0.5 is the top: faster read as far too fast
+  ['partSpeedVar',    0,   1,   0,    false],   // how far Speed dips below its setting over time
+  ['partSpeedVarPeriod', 1, 120, 20,  true ],   // seconds for one swing of it
   ['partSize',        0.2, 3,   1,    false],
   ['partSizeVar',     0,   1,   0.5,  false],
   ['partSpread',      0,   1,   0.35, false],
@@ -58,6 +61,8 @@ const NUM = [
   ['partTrail',       0,   1,   0.5,  false],
   ['partHueVar',      0,   1,   0.15, false],
   ['partOpacity',     0,   1,   0.9,  false],
+  ['partOpacityVar',  0,   1,   0,    false],   // how far Opacity dips below its setting over time
+  ['partOpacityVarPeriod', 1, 120, 20, true],   // seconds for one swing of it
   ['partFade',        0,   1,   0.55, false],   // the rings' radial fade in, same curve (core/fade.js)
   ['partFadeVar',     0,   1,   0,    false],   // how far that radius swings down from its setting and back
   ['partFadeRate',    1,   60,  10,   true ],   // seconds for one swing of the radius variance
@@ -72,6 +77,8 @@ const NUM = [
   ['partSeqAtk',      0.001, 0.3, 0.01, false],
   ['partSeqRel',      0.02, 2,  0.25, false],
   ['partFoldSpin',   -1,   1,   0.05, false],
+  ['partFoldSpinVar', 0,   1,   0,    false],   // how far Rotation eases toward still over time
+  ['partFoldSpinVarPeriod', 1, 120, 20, true],  // seconds for one swing of it
   // Video feedback, the Confetti layer's own, with its ranges and defaults.
   ['partFeedback',    0,   1,   0,    false],   // how long each particle leaves a trail where it passed
   ['partFbOpacity',   0,   1,   1,    false],   // how brightly the trails land; the live particles draw on their own
@@ -404,6 +411,10 @@ export const PARTICLE_CONTROLS = [
   subDrawer('partMotionDrawer', 'Motion', 'particles', ['partRate', 'partSpeed']),
   under('partMotionDrawer', percent('partRate', 'partRate', 'Birth rate', rateText)),
   under('partMotionDrawer', direct('partSpeed', 'partSpeed', 'Speed', 0.01, speedText)),
+  ...varianceRows('partSpeed', {
+    name: 'Speed', periodMax: 120, parent: 'partMotionDrawer', enabled: layerOn,
+    effective: S => S.effPartSpeed ?? S.partSpeed
+  }),
   under('partMotionDrawer', percent('partSpread', 'partSpread', 'Spread (toward screen edge)')),
   under('partMotionDrawer', {
     // Where a new particle is born, as a share of the tunnel's depth: 100%
@@ -433,10 +444,14 @@ export const PARTICLE_CONTROLS = [
   // Where the colour comes from, how far each particle wanders from it, how
   // solid the layer is, how it fades in from the centre, and how far it
   // flickers with the strobe.
-  subDrawer('partColorDrawer', 'Color', 'particles', ['partColor', 'partOpacity']),
+  subDrawer('partColorDrawer', 'Color', 'particles', ['partOpacity', 'partColor']),
+  under('partColorDrawer', percent('partOpacity', 'partOpacity', 'Opacity')),
+  ...varianceRows('partOpacity', {
+    name: 'Opacity', periodMax: 120, parent: 'partColorDrawer', enabled: layerOn,
+    effective: S => (S.effPartOpacity ?? S.partOpacity) * 100
+  }),
   under('partColorDrawer', noLabel(choice('partColor', 'partColor', 'Colour', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR))),
   under('partColorDrawer', percent('partHueVar', 'partHueVar', 'Hue variation')),
-  under('partColorDrawer', percent('partOpacity', 'partOpacity', 'Opacity')),
   // How far out from the centre the particles take to come up to full
   // brightness, the tunnel rings' own 'Ring fade in' curve (core/fade.js),
   // so the two layers fade alike at the same setting. 0 is no fade at all.
@@ -561,6 +576,10 @@ export const PARTICLE_CONTROLS = [
   under('partKaleido', direct('partFolds', 'partFolds', 'Symmetry', 1, S => S.partFolds + '-fold', 'Kaleidoscope', isFolded)),
   under('partKaleido', toggle('partMirror', 'partMirror', 'Mirror', DEF_MIRROR, 'Kaleidoscope', isFolded)),
   under('partKaleido', direct('partFoldSpin', 'partFoldSpin', 'Rotation', 0.01, signed('partFoldSpin'), 'Kaleidoscope', isFolded)),
+  ...varianceRows('partFoldSpin', {
+    name: 'Rotation', periodMax: 120, parent: 'partKaleido', visible: isFolded, enabled: layerOn,
+    effective: S => S.effPartFoldSpin ?? S.partFoldSpin
+  }),
   // Where the feedback sits, the last row under the Kaleidoscope switch
   // (it only means something folded, so it shows only while that is on):
   // after the kaleidoscope the trails stream and turn across the whole

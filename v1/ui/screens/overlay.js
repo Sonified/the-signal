@@ -13,6 +13,7 @@ import { letterFx, wordLetters, lineCtx, smokeHint, hintSweepShare, wordFxWhole 
 import { guard } from '../../../js/panel-guard.js';
 import { COLOR, TYPE, TRACK, W, MOTION } from '../theme.js';
 import * as anim from '../anim.js';
+import { STRIDE } from '../drawlist.js';
 
 const VEIL = new Float32Array([0, 0, 0, 1]);
 const HINT_MAIN = new Float32Array([185 / 255, 198 / 255, 212 / 255, 1]);   // v0 #hint .hmain
@@ -96,6 +97,23 @@ function panelBox(dl, x0, y0, x1, y1, padX, padY, radius, blur) {
     dl.rect(x0 - padX, y0 - padY, x1 - x0 + 2 * padX, y1 - y0 + 2 * padY, radius, PANEL_FILL, 0, null, 0, 0);
   }
 }
+// The panel's measures at one text size (Panel size and Soft edges, 0..1),
+// into this record, reused every frame. Shared by the word and the hint.
+const pm = { blur: 0, pad: 0, radius: 0 };
+function panelMetrics(size, sizeAmt, soft) {
+  pm.blur = soft * PANEL_SOFT_MAX_EM * size;
+  pm.pad = (PANEL_PAD_MIN_EM + sizeAmt * (PANEL_PAD_EM - PANEL_PAD_MIN_EM)) * size + pm.blur * 0.5;
+  pm.radius = pm.pad * (PANEL_RADIUS_EM / PANEL_PAD_EM);
+}
+// One line's pill at pm's measures. With neighbours above or below, the
+// vertical pad stops at the line's own slot (slotH, its distance to them;
+// Infinity for a line alone, which keeps the full pad), so the pills stay
+// apart instead of stacking dark on dark where they'd overlap.
+function linePill(dl, x0, y0, x1, y1, slotH) {
+  if (!(x1 > x0) || !(y1 > y0)) return;
+  const padY = Math.min(pm.pad, Math.max(1, (slotH - (y1 - y0)) * 0.5));
+  panelBox(dl, x0, y0, x1, y1, pm.pad, padY, Math.min(pm.radius, (y1 - y0) * 0.5 + padY), pm.blur);
+}
 // Vary per line keeps a box per drawn line rather than the one union
 // (captured in drawOverlay's measure loop): a pill per line, each as wide
 // as its own letters ask.
@@ -106,37 +124,109 @@ function drawPanel(dl, size, strength, sizeAmt, soft, perLine, lineH) {
   const f = wordState.peak > 0 ? wordState.opacity / wordState.peak : 0;
   const a = strength * f * wordState.reveal;
   if (a <= 0.002) return;
-  const blur = soft * PANEL_SOFT_MAX_EM * size;
-  const pad = (PANEL_PAD_MIN_EM + sizeAmt * (PANEL_PAD_EM - PANEL_PAD_MIN_EM)) * size + blur * 0.5;
-  const radius = pad * (PANEL_RADIUS_EM / PANEL_PAD_EM);
+  panelMetrics(size, sizeAmt, soft);
   dl.pushAlpha(a);
   if (perLine) {
+    const slotH = lineBoxN > 1 ? lineH : Infinity;
     for (let i = 0; i < lineBoxN; i++) {
       const o = i * 4;
-      const x0 = LINE_BOXES[o], y0 = LINE_BOXES[o + 1], x1 = LINE_BOXES[o + 2], y1 = LINE_BOXES[o + 3];
-      if (!(x1 > x0) || !(y1 > y0)) continue;
-      // With neighbours above or below, the vertical pad stops at the
-      // line's own slot, so the pills stay apart instead of stacking dark
-      // on dark where they'd overlap.
-      const padY = lineBoxN > 1 ? Math.min(pad, Math.max(1, (lineH - (y1 - y0)) * 0.5)) : pad;
-      panelBox(dl, x0, y0, x1, y1, pad, padY, Math.min(radius, (y1 - y0) * 0.5 + padY), blur);
+      linePill(dl, LINE_BOXES[o], LINE_BOXES[o + 1], LINE_BOXES[o + 2], LINE_BOXES[o + 3], slotH);
     }
   } else {
     let x0 = shade.ax0, y0 = shade.ay0, x1 = shade.ax1, y1 = shade.ay1;
     if (!(x1 > x0) && wordFxWhole()) { x0 = shade.dx0; y0 = shade.dy0; x1 = shade.dx1; y1 = shade.dy1; }
-    if (x1 > x0 && y1 > y0) panelBox(dl, x0, y0, x1, y1, pad, pad, radius, blur);
+    if (x1 > x0 && y1 > y0) panelBox(dl, x0, y0, x1, y1, pm.pad, pm.pad, pm.radius, pm.blur);
   }
   dl.popAlpha();
 }
 
+// shade set up for a measure pass: nothing drawn, both bounds emptied
+function shadeBounds() {
+  shade.ax0 = shade.ay0 = shade.dx0 = shade.dy0 = Infinity;
+  shade.ax1 = shade.ay1 = shade.dx1 = shade.dy1 = -Infinity;
+}
+function shadeMeasure() {
+  shade.alpha = 0; shade.soft = 0; shade.dilate = 0; shade.measure = true;
+  shadeBounds();
+}
+// shade set up for a shadow pass at one text size (Shadow blur and size, 0..1)
+function shadeShadow(alpha, blur, sizeAmt, size) {
+  shade.alpha = alpha; shade.measure = false;
+  shade.soft = SHADOW_SPREAD + blur * Math.max(0, SHADOW_SOFT_CAP_EM * size - SHADOW_SPREAD);
+  // Shadow size grows each dark letter's outline outward, the same
+  // distance past every edge, and the blur then softens that grown edge.
+  shade.dilate = sizeAmt * SHADOW_SIZE_EM * size;
+}
+
 // The backing's fade envelopes (see their block in drawOverlay), and the
-// last frame's clock for their step.
+// last frame's clock for their step. leaving is the text's own going (the
+// word's phase 2, the hint's release or yielding): with a Fade out set the
+// envelope sinks over it from that moment.
 let envShadow = 0, envPanel = 0, envLastT = -1;
-function stepEnv(env, onStage, dt, inMs, outMs) {
+function stepEnv(env, onStage, leaving, dt, inMs, outMs) {
   if (!onStage) return 0;
-  if (wordState.phase === 2 && outMs > 0) return Math.max(0, env - dt / outMs);
+  if (leaving && outMs > 0) return Math.max(0, env - dt / outMs);
   return inMs > 0 ? Math.min(1, env + dt / inMs) : 1;
 }
+
+// The word's backing outliving its word. Drawn live, the shadow is each
+// letter again at that letter's own opacity and the panel rides the word's
+// fade and the letters shown, so either can only last as long as the
+// letters do, whatever its Fade out says. So every frame the word is up and
+// not yet leaving, each pass's draw records are copied out (snap); the
+// frame it starts leaving (or vanishes, or its switch goes off) that copy
+// becomes the ghost, frozen at rest, and is replayed under everything at a
+// level sinking from 1 over the effect's own Fade out, the word gone or not.
+// The live pass steps aside meanwhile, its envelope back at 0, so a next
+// word's backing rises from nothing while the last one's fades. Two buffers
+// each, swapped as a ghost starts, so a new word's snaps never overwrite a
+// ghost still on screen. At Fade out 0 nothing is kept and the backing
+// follows the word as before.
+function makeGhost() {
+  return { snap: new Float32Array(64 * STRIDE), snapN: 0, fresh: false,
+           ghost: new Float32Array(64 * STRIDE), ghostN: 0, level: 0 };
+}
+const ghostPanel = makeGhost(), ghostShadow = makeGhost();
+function ghostSnap(g, dl, from) {
+  const n = dl.count - from;
+  if (n * STRIDE > g.snap.length) g.snap = new Float32Array(n * STRIDE * 2);
+  g.snap.set(dl.data.subarray(from * STRIDE, dl.count * STRIDE));
+  g.snapN = n; g.fresh = true;
+}
+// going: the word is leaving or gone, or this effect is off
+function ghostStep(g, going, dt, outMs) {
+  if (going && g.fresh) {
+    g.fresh = false;
+    if (outMs > 0 && g.snapN > 0) {
+      const b = g.ghost; g.ghost = g.snap; g.snap = b;
+      g.ghostN = g.snapN; g.snapN = 0; g.level = 1;
+      return;
+    }
+  }
+  // still up: this frame's live pass snaps afresh, or there is nothing to keep
+  if (!going) g.fresh = false;
+  if (g.level > 0) g.level = outMs > 0 ? Math.max(0, g.level - dt / outMs) : 0;
+}
+function ghostDraw(g, dl) {
+  if (g.level <= 0.002) return;
+  dl.pushAlpha(g.level);
+  dl.replay(g.ghost, g.ghostN);
+  dl.popAlpha();
+}
+
+// The hint's own backing: the word's shadow and panel, through the same
+// helpers, at fixed values that mirror Robert's tuned Text > Shadow and
+// Panel, so the opening line holds its own over a bright strobing field
+// whatever the words layer is set to, words off included. Not settings;
+// the word's sliders never reach these. The same units as those sliders:
+// opacity, blur, size and soft 0..1 of their travel, fades in ms. Panel is
+// always per line (Vary per line on): a pill for each line of the hint, the
+// one line on a phone, the main line and its two keyboard lines elsewhere.
+const HINT_SHADOW_O = 0.3, HINT_SHADOW_BLUR = 0.79, HINT_SHADOW_SIZE = 0.35;
+const HINT_SHADOW_IN_MS = 400, HINT_SHADOW_OUT_MS = 250;
+const HINT_PANEL_O = 0.9, HINT_PANEL_SIZE = 0.33, HINT_PANEL_SOFT = 1;
+const HINT_PANEL_IN_MS = 100, HINT_PANEL_OUT_MS = 500;
+let envHintShadow = 0, envHintPanel = 0;
 
 let revealAt = -1;
 let wasRunning = false;
@@ -208,6 +298,57 @@ function relFx(i, n, relX, relY, wordW, size, out) {
     a = smooth01((relP - f * hintSws) / (1 - hintSws));
   }
   out[4] = a; out[5] = 0; out[6] = 0; out[7] = 0;
+}
+
+// and the hint at rest, every letter whole where draw() puts it, for the
+// backing's passes when the letters themselves go through plain draw()
+function restFx(i, n, relX, relY, wordW, size, out) {
+  out[0] = 0; out[1] = 0; out[2] = 1; out[3] = 0;
+  out[4] = 1; out[5] = 0; out[6] = 0; out[7] = 0;
+}
+
+// The hint's lines as its draw calls below lay them: offset under the
+// middle, size, weight, tracking. Only the backing reads these.
+const HINT_DY = [4, 34, 52];
+const HINT_SIZE = [TYPE.xl, TYPE.sm, TYPE.sm];
+const HINT_WEIGHT = [W.light, W.regular, W.regular];
+const HINT_TRACK = [TRACK.hint, TRACK.label, TRACK.label];
+function hintLine(k) { return k === 0 ? HINT_1 : k === 1 ? HINT_2 : HINT_3; }
+
+// The hint's backing, under its letters: a pill per line, then the shadow,
+// each a drawWord pass through fx at level, the very walk the letters take
+// (hintFx sweeping in, relFx under the smoke, restFx otherwise), so the
+// shadow is each letter's own and follows its opacity exactly. The panel,
+// like the word's, rides the hint's whole-line level (the spring, the all
+// at once fade in, the release's frozen peak), never a letter's; its box is
+// the letters shown, as the word's is, so sweeping in the pill spreads with
+// the front under the arriving letters rather than standing dark ahead of
+// them, and at rest it is the whole line. Each line's pads are in its own
+// size's ems, as the word's are in the word's.
+function drawHintBacking(dl, text, cx, cy, fx, level) {
+  const n = touchHints ? 1 : 3;
+  const panelA = HINT_PANEL_O * envHintPanel * level;
+  if (panelA > 0.002) {
+    dl.pushAlpha(panelA);
+    for (let k = 0; k < n; k++) {
+      shadeMeasure();
+      text.drawWord(dl, hintLine(k), cx, cy + HINT_DY[k], HINT_SIZE[k], HINT_WEIGHT[k],
+                    SHADE_INK, HINT_TRACK[k], level, fx, null, shade);
+      const up = k > 0 ? HINT_DY[k] - HINT_DY[k - 1] : Infinity;
+      const down = k < n - 1 ? HINT_DY[k + 1] - HINT_DY[k] : Infinity;
+      panelMetrics(HINT_SIZE[k], HINT_PANEL_SIZE, HINT_PANEL_SOFT);
+      linePill(dl, shade.ax0, shade.ay0, shade.ax1, shade.ay1, Math.min(up, down));
+    }
+    dl.popAlpha();
+  }
+  const shadowA = HINT_SHADOW_O * envHintShadow;
+  if (shadowA > 0.002) {
+    for (let k = 0; k < n; k++) {
+      shadeShadow(shadowA, HINT_SHADOW_BLUR, HINT_SHADOW_SIZE, HINT_SIZE[k]);
+      text.drawWord(dl, hintLine(k), cx, cy + HINT_DY[k], HINT_SIZE[k], HINT_WEIGHT[k],
+                    SHADE_INK, HINT_TRACK[k], level, fx, null, shade);
+    }
+  }
 }
 
 // Starts an appearance. Glyphs still rasterising (the first frames after
@@ -310,19 +451,28 @@ export function drawOverlay(dl, text, t, width, height) {
   wordLetters.count = 0;
   wordLetters.seed = wordState.seed;
   // The backing's own fades, an envelope per effect: it rises over the Fade
-  // in as a word arrives and, with a Fade out set, sinks over it from the
-  // moment the word starts leaving (wordState.phase 2). At 0 either simply
+  // in as a word arrives and, with a Fade out set, hands over to its ghost
+  // the moment the word starts leaving (wordState.phase 2), which sinks over
+  // the Fade out whether the word is still there or not. At 0 either simply
   // follows the word as before. An empty stage resets both, so the next
   // word's backing fades in from nothing.
-  {
-    const dt = envLastT < 0 ? 0 : Math.min(100, t - envLastT);
-    envLastT = t;
-    const wordUp = wordState.visible && wordState.peak > 0.002 && !!wordState.text;
-    envShadow = stepEnv(envShadow, S.textShadowOn !== false && wordUp, dt,
-      S.textShadowFadeInMs || 0, S.textShadowFadeOutMs || 0);
-    envPanel = stepEnv(envPanel, S.textPanelOn !== false && wordUp, dt,
-      S.textPanelFadeInMs || 0, S.textPanelFadeOutMs || 0);
-  }
+  const dt = envLastT < 0 ? 0 : Math.min(100, t - envLastT);
+  envLastT = t;
+  const wordUp = wordState.visible && wordState.peak > 0.002 && !!wordState.text;
+  const leaving = wordState.phase === 2;
+  const shadowOutMs = S.textShadowFadeOutMs || 0, panelOutMs = S.textPanelFadeOutMs || 0;
+  const shadowStage = S.textShadowOn !== false && wordUp;
+  const panelStage = S.textPanelOn !== false && wordUp;
+  // a Fade out hands the leaving to the ghost, so the live envelope drops out
+  envShadow = stepEnv(envShadow, shadowStage && !(leaving && shadowOutMs > 0), leaving, dt,
+    S.textShadowFadeInMs || 0, shadowOutMs);
+  envPanel = stepEnv(envPanel, panelStage && !(leaving && panelOutMs > 0), leaving, dt,
+    S.textPanelFadeInMs || 0, panelOutMs);
+  ghostStep(ghostShadow, !shadowStage || leaving, dt, shadowOutMs);
+  ghostStep(ghostPanel, !panelStage || leaving, dt, panelOutMs);
+  // under everything, the word's own backing included: older goes behind
+  ghostDraw(ghostPanel, dl);
+  ghostDraw(ghostShadow, dl);
   if (wordState.visible && wordState.peak > 0.002 && wordState.text) {
     // An affirmation wraps into balanced lines around the middle (see
     // phrase in text-atlas); a single word is simply one line of it. The
@@ -342,19 +492,15 @@ export function drawOverlay(dl, text, t, width, height) {
     const panelO = S.textPanelOn !== false ? unit(S.textPanelO || 0) * envPanel : 0;
     const shadowO = S.textShadowOn !== false ? unit(S.textShadowO || 0) * envShadow : 0;
     if (panelO > 0.002) {
-      shade.alpha = 0; shade.soft = 0; shade.dilate = 0; shade.measure = true;
       // Vary per line remeasures per line, a box each; otherwise the one
       // union across the block. Either way each line takes its dissolve
       // box when the smoke or the cloud holds all its letters at nothing.
+      const from = dl.count;
+      shadeMeasure();
       const perLine = S.textPanelPerLine === true;
       lineBoxN = 0;
-      shade.ax0 = shade.ay0 = shade.dx0 = shade.dy0 = Infinity;
-      shade.ax1 = shade.ay1 = shade.dx1 = shade.dy1 = -Infinity;
       for (let k = 0; k < n; k++) {
-        if (perLine) {
-          shade.ax0 = shade.ay0 = shade.dx0 = shade.dy0 = Infinity;
-          shade.ax1 = shade.ay1 = shade.dx1 = shade.dy1 = -Infinity;
-        }
+        if (perLine) shadeBounds();
         lineCtx.k = k;
         text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
                       SHADE_INK, TRACK.word, wordState.peak, letterFx, null, shade);
@@ -367,19 +513,17 @@ export function drawOverlay(dl, text, t, width, height) {
         }
       }
       drawPanel(dl, size, panelO, unit(S.textPanelSize ?? 1), unit(S.textPanelSoft || 0), perLine, ph.lineH);
+      if (!leaving) ghostSnap(ghostPanel, dl, from);
     }
     if (shadowO > 0.002) {
-      shade.alpha = shadowO; shade.measure = false;
-      const blur = unit(S.textShadowBlur || 0);
-      shade.soft = SHADOW_SPREAD + blur * Math.max(0, SHADOW_SOFT_CAP_EM * size - SHADOW_SPREAD);
-      // Shadow size grows each dark letter's outline outward, the same
-      // distance past every edge, and the blur then softens that grown edge.
-      shade.dilate = unit(S.textShadowSize || 0) * SHADOW_SIZE_EM * size;
+      const from = dl.count;
+      shadeShadow(shadowO, unit(S.textShadowBlur || 0), unit(S.textShadowSize || 0), size);
       for (let k = 0; k < n; k++) {
         lineCtx.k = k;
         text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
                       SHADE_INK, TRACK.word, wordState.peak, letterFx, null, shade);
       }
+      if (!leaving) ghostSnap(ghostShadow, dl, from);
     }
     for (let k = 0; k < n; k++) {
       lineCtx.k = k;
@@ -400,6 +544,17 @@ export function drawOverlay(dl, text, t, width, height) {
   if (!want && h <= 0.002) hintInAt = -1;
   hintP = hintInProgress(t); hintSws = hintSweepShare();
   const hintIn = hintInAt >= 0 && hintP < 1 && h > 0.002;
+  // The hint's backing envelopes, as the word's: they rise over their Fade
+  // in from the moment a hint is up, sink over their Fade out from the
+  // moment it starts going (the smoke's release on a start, or yielding to
+  // the guard's card), and an empty stage resets both for the next one.
+  {
+    const hintUp = relOn || (h > 0.002 && hintInAt >= 0);
+    const leaving = relOn || !want;
+    envHintShadow = stepEnv(envHintShadow, hintUp, leaving, dt, HINT_SHADOW_IN_MS, HINT_SHADOW_OUT_MS);
+    envHintPanel = stepEnv(envHintPanel, hintUp, leaving, dt, HINT_PANEL_IN_MS, HINT_PANEL_OUT_MS);
+  }
+  const hintEnvMoving = (envHintShadow > 0 && envHintShadow < 1) || (envHintPanel > 0 && envHintPanel < 1);
   // the hotkey notice, under the composition so it never sits on the word
   let noticeLive = false;
   if (notice.text) {
@@ -414,13 +569,15 @@ export function drawOverlay(dl, text, t, width, height) {
     }
   }
 
-  overlayState.animating = (veil > 0.001 && veil < 1) || !anim.settled('overlay.hint') || noticeLive || hintIn || relOn;
+  const ghostMoving = ghostPanel.level > 0 || ghostShadow.level > 0;
+  overlayState.animating = (veil > 0.001 && veil < 1) || !anim.settled('overlay.hint') || noticeLive || hintIn || relOn || hintEnvMoving || ghostMoving;
   if (relOn) {
     if (smokeHint.releasing) relWait = 0;
     else if (relWait > 0) relWait--;
     else relOn = false;
     if (relOn) {
       relFront = smokeHint.releasing ? smokeHint.frontX - smokeHint.cx : -1e9;
+      drawHintBacking(dl, text, cx, cy, relFx, relPeak);
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, relPeak, relFx, null);
       if (!touchHints) {
         text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
@@ -429,13 +586,16 @@ export function drawOverlay(dl, text, t, width, height) {
     }
   } else if (h > 0.002 && hintInAt >= 0) {
     if (hintIn && S.hintArrive !== 'all') {
+      drawHintBacking(dl, text, cx, cy, hintFx, h);
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, h, hintFx, null);
       if (!touchHints) {
         text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);
         text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);
       }
     } else {
-      dl.pushAlpha(h * (hintIn ? smooth01(hintP) : 1));
+      const level = h * (hintIn ? smooth01(hintP) : 1);
+      drawHintBacking(dl, text, cx, cy, restFx, level);
+      dl.pushAlpha(level);
       text.draw(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, 1, TRACK.hint, 1);
       if (!touchHints) {
         text.draw(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, 1, TRACK.label, 1);

@@ -27,7 +27,7 @@
 import { S } from '../../js/state.js';
 import { MASK_WGSL, SIM_WGSL, COMP_WGSL } from './word-cloud.wgsl.js';
 import { wordLetters, MAX_CLOUD_LETTERS, fxv } from '../core/word-fx.js';
-import { wordState, fadeInMs, fadeOutMs } from '../core/words.js';
+import { wordState, wordLife, fadeInMs, fadeOutMs } from '../core/words.js';
 import { W, TRACK } from '../ui/theme.js';
 
 const DENS_W = 256, DENS_H = 128;
@@ -48,7 +48,12 @@ export function createWordCloud(device, format, text) {
   let maskBind = null, seedBinds = null, simBinds = null, compBinds = null;
   let dpr = 1, cssW = 1, cssH = 1;
   let simT = 0, acc = 0, lastLiveT = -1e9, lastDir = 0, heldPeak = 0;
-  let maskSeed = -1, progPrev = 1, lastPhase = 1;
+  let maskSeed = -1, maskN = 0, progPrev = 1, lastPhase = 1;
+  // The look the field runs on, taken from the word's life on every frame
+  // the word is clouding and held through the tail, so smoke still flowing
+  // after its word has gone never borrows the next word's distances, fade or
+  // size.
+  let cSize = 35, cD = 1, cTurb = 0, cSt = 1, cEase = 0;
   let rx = 0, ry = 0, rw = 1, rh = 1;   // the region, css px, held while smoke lives
   const uni = new Float32Array(UNI_FLOATS);
 
@@ -225,9 +230,9 @@ export function createWordCloud(device, format, text) {
   function update(t, dt) {
     const n = wordLetters.count;
     const phase = wordState.phase;
-    const outFx = S.textFxMirror ? S.textFxIn : S.textFxOut;
+    // the word on screen's own effects, from its life
     const cloudNow = n > 0 && wordState.visible &&
-      ((phase === 0 && S.textFxIn === 'cloud') || (phase === 2 && outFx === 'cloud'));
+      ((phase === 0 && wordLife.fxIn === 'cloud') || (phase === 2 && wordLife.fxOut === 'cloud'));
     const dir = cloudNow ? (phase === 2 ? 1 : -1) : 0;
     if (dir !== 0) { lastLiveT = t; lastDir = dir; }
 
@@ -244,21 +249,25 @@ export function createWordCloud(device, format, text) {
     wasActive = true;
     active = true;
 
-    // the word's drawn size: a long affirmation fits itself smaller, and
-    // the cloud's distances scale with the pixels actually on screen
-    const size = text.wordSize(wordState.text, S.textSize || 35, W.light, TRACK.word,
-                               cssW - (S.edgeInset || 0));
-    // Arrive and Leave have their own settings; the tail is a departure's.
+    // Arrive and Leave have their own settings; the tail is a departure's,
+    // the last the clouding word had.
     const leaving = dir > 0 || (dir === 0 && lastDir > 0);
-    const D = Math.max(1, (fxv('textFxDist', leaving) || 1.5) * size);
-    const turb = fxv('textFxTurb', leaving);
-    // The journey time the guide paces itself against: this phase's own
-    // configured fade. The tail keeps the departure's.
-    const st = ((dir >= 0 ? fadeOutMs() : fadeInMs()) || 1000) / 1000;
-    const ease = fxv('textFxEase', leaving);
-    // The tail draws at the opacity the word left with: the hidden word's
-    // own peak is 0, and smoke should thin away, not vanish with it.
-    if (dir !== 0) heldPeak = wordState.peak;
+    if (dir !== 0) {
+      // the word's drawn size: a long affirmation fits itself smaller, and
+      // the cloud's distances scale with the pixels actually on screen
+      cSize = text.wordSize(wordState.text, S.textSize || 35, W.light, TRACK.word,
+                            cssW - (S.edgeInset || 0));
+      cD = Math.max(1, (fxv('textFxDist', leaving) || 1.5) * cSize);
+      cTurb = fxv('textFxTurb', leaving);
+      // The journey time the guide paces itself against: this phase's own
+      // fade, as the word's life fixed it.
+      cSt = ((dir > 0 ? fadeOutMs() : fadeInMs()) || 1000) / 1000;
+      cEase = fxv('textFxEase', leaving);
+      // The tail draws at the opacity the word left with: the hidden word's
+      // own peak is 0, and smoke should thin away, not vanish with it.
+      heldPeak = wordState.peak;
+    }
+    const size = cSize, D = cD, turb = cTurb, st = cSt, ease = cEase;
     const tailAge = dir === 0 ? Math.max(0, (t - lastLiveT) / 1000) : 0;
     const tailFade = dir === 0 ? 1 - smooth01((tailAge - TAIL_S * 0.5) / (TAIL_S * 0.5)) : 1;
     const peak = (dir !== 0 ? wordState.peak : heldPeak) * tailFade;
@@ -268,6 +277,7 @@ export function createWordCloud(device, format, text) {
     // any of that word's smoke is alive, so the field never teleports.
     if (cloudNow && wordLetters.seed !== maskSeed) {
       maskSeed = wordLetters.seed;
+      maskN = n;
       needMask = true;
       needSeed = true;
       const L = wordLetters.data;
@@ -304,7 +314,7 @@ export function createWordCloud(device, format, text) {
     // Seeding is a phase boundary operation. Arrival starts as a plume
     // grown from the word; departure starts as the exact word itself.
     if (needSeed) {
-      fillUni(uni, 1 / DENS_W, 1 / DENS_H, 0, simT, prog, prog, dir, peak, turb, D, st, ease, size, n, maskSeed % 1000);
+      fillUni(uni, 1 / DENS_W, 1 / DENS_H, 0, simT, prog, prog, dir, peak, turb, D, st, ease, size, maskN, maskSeed % 1000);
       device.queue.writeBuffer(seedBuf, 0, uni);
     }
 
@@ -317,14 +327,14 @@ export function createWordCloud(device, format, text) {
       acc -= DT;
       const p0 = progPrev + (prog - progPrev) * (k / nSub);
       const p1 = progPrev + (prog - progPrev) * ((k + 1) / nSub);
-      fillUni(uni, 1 / DENS_W, 1 / DENS_H, DT, simT, p1, p0, dir, peak, turb, D, st, ease, size, n, maskSeed % 1000);
+      fillUni(uni, 1 / DENS_W, 1 / DENS_H, DT, simT, p1, p0, dir, peak, turb, D, st, ease, size, maskN, maskSeed % 1000);
       device.queue.writeBuffer(uniBufs[steps], 0, uni);
       simT += DT;
       steps++;
     }
     progPrev = prog;
 
-    fillUni(uni, 1 / DENS_W, 1 / DENS_H, 0, simT, prog, prog, dir, peak, turb, D, st, ease, size, n, maskSeed % 1000);
+    fillUni(uni, 1 / DENS_W, 1 / DENS_H, 0, simT, prog, prog, dir, peak, turb, D, st, ease, size, maskN, maskSeed % 1000);
     device.queue.writeBuffer(compBuf, 0, uni);
   }
 

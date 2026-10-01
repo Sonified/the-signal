@@ -43,6 +43,14 @@ import { carryRoomPhase } from './room-clock.js';
 // None of the three ever moves one of this machine's own controls (see
 // machineControl below), so a v0 recipe that clicks spLit leaves the spare
 // frame as this screen has it, and a step never records it as named.
+//
+// While `dry` is set (presetTargets below), none of the three sets anything:
+// each writes the position it would have set into dry instead, by control
+// id, so a built-in's recipe can be read for its targets without a sound or
+// a pixel moving. A flip reads the position a flip earlier in the same
+// recipe left, as the live recipe would.
+let dry = null;
+const dryGet = c => dry.has(c.id) ? dry.get(c.id) : c.get(S);
 function clickButton(domId, hold, named) {
   const hit = byDomId(domId);
   if (!hit) return;
@@ -50,6 +58,7 @@ function clickButton(domId, hold, named) {
   if (machineControl(control)) return;
   if (named) named.push(control.id);
   if (hold && hold.has(control.id)) return;
+  if (dry) { dry.set(control.id, option ? option.value : !dryGet(control)); return; }
   control.set(S, option ? option.value : !control.get(S));
 }
 
@@ -63,6 +72,7 @@ function setBoolIfNeeded(id, want, hold, named) {
   if (!control || machineControl(control)) return;
   if (named) named.push(control.id);
   if (hold && hold.has(control.id)) return;
+  if (dry) { if (!!dryGet(control) !== want) dry.set(control.id, want); return; }
   if (!!control.get(S) !== want) control.set(S, want);
 }
 
@@ -72,6 +82,7 @@ function setNamed(id, val, hold, named) {
   if (!control || !control.set || machineControl(control)) return;
   if (named) named.push(control.id);
   if (hold && hold.has(control.id)) return;
+  if (dry) { dry.set(control.id, val); return; }
   control.set(S, val);
 }
 
@@ -482,10 +493,10 @@ function uniqueName(raw, skipUser) {
 // accessor here is allocation-free, since the drawer calls them each frame;
 // presetsVersion() changes whenever the list, its order or a label does, so
 // the drawer knows when to remeasure its chips.
-// The drawer's Ramp time: how long a recall glides the sliders and the
-// colour to the preset's positions (core/perform.js perfRecallPreset). It
-// lives in this record, beside the presets it paces, and 0 keeps a recall
-// the cut it always was.
+// The drawer's Ramp time: how long a recall crossfades from where everything
+// is to the preset (core/perform.js perfRecallPreset). It lives in this
+// record, beside the presets it paces, and 0 keeps a recall the cut it
+// always was.
 export function presetRampS() { ensureLoaded(); return data.rampS || 0; }
 export function setPresetRampS(v) {
   ensureLoaded();
@@ -629,6 +640,78 @@ export function recallPresetForStep(i, sec, hold) {
   beginTransition(sec);
   try { applyPresetNow(PRESET_LIST[e.b].name, hold, named); } finally { endGlide(); }
   return named;
+}
+
+// ---------- a preset's positions, read without playing it ----------
+// The performer's ramped recall (core/perform.js perfRecallPreset) has to
+// know where preset i puts every control before it moves any of them, so a
+// switch going off can be held on while its level fades, and a slider can
+// set off from where it stands rather than being landed and pulled back.
+// out[j] is filled with REPLAY_CONTROLS[j]'s position after the preset, or
+// undefined for a control the preset leaves alone (a built-in names only
+// some). Returns false when there is no preset at i.
+//
+// Nothing is played. A snapshot is written into S through store.js
+// applySnapshot, which sets state and nothing else; the positions are read;
+// and the settings as they stood, taken the same way a moment before, are
+// written back. The atmosphere's recordings are left out both ways: they
+// are no control's position, and a fresh S.ambLayers, even for an instant,
+// is every recording restarted the next time anything syncs them
+// (keepLayerObjects above), which the mixer's gates do at once when a mute
+// or solo flag moves (store.js applyMixState). Those gates are the one state
+// write that speaks, and the round trip hands them back in the same
+// instant, before the audio clock has moved. A built-in's recipe runs dry
+// (see `dry` at the top): its sets are written down rather than made, and
+// only its two raw writes into S (colorMode, P.state) happen, are read
+// through, and are put back field by field.
+//
+// Last, every control is checked against where it stood: a field the
+// settings object does not carry back would have leaked the preset into S
+// unheard, so any control found moved is set back through its own set(),
+// which only tells the engine what it already has.
+const dryBefore = new Array(REPLAY.length);
+export function presetTargets(i, out) {
+  ensureLoaded();
+  const e = row[i];
+  if (!e) return false;
+  const n = REPLAY.length;
+  for (let j = 0; j < n; j++) dryBefore[j] = REPLAY[j].get(S);
+  const snap = e.u ? e.u.snapshot : data.overrides[PRESET_LIST[e.b].name];
+  if (snap) {
+    const here = snapshot(), probe = Object.assign({}, snap), layers = S.ambLayers;
+    delete here.ambLayers;
+    delete probe.ambLayers;
+    applySnapshot(probe);
+    for (let j = 0; j < n; j++) out[j] = REPLAY[j].get(S);
+    applySnapshot(here);
+    S.ambLayers = layers;
+  } else {
+    const name = PRESET_LIST[e.b].name, P = PRESETS[name];
+    if (!P) return false;
+    const keys = P.state ? Object.keys(P.state) : [];
+    const was = keys.map(k => S[k]), mode = S.colorMode;
+    const m = dry = new Map();
+    try { applyPresetNow(name); } finally { dry = null; }
+    for (let j = 0; j < n; j++) {
+      const c = REPLAY[j], v = c.get(S);
+      out[j] = m.has(c.id) ? m.get(c.id) : v !== dryBefore[j] ? v : undefined;
+    }
+    S.colorMode = mode;
+    for (let k = 0; k < keys.length; k++) S[keys[k]] = was[k];
+  }
+  for (let j = 0; j < n; j++) {
+    const c = REPLAY[j], v = c.get(S), b = dryBefore[j];
+    if (v !== b && v === v && b === b) c.set(S, b);
+  }
+  return true;
+}
+
+// Lights preset i's chip, as a click's recall does (applyPresetAt), for the
+// ramped recall, which plays the preset through a door of its own.
+export function presetMarkActive(i) {
+  ensureLoaded();
+  const e = row[i];
+  if (e) setActive(e);
 }
 
 export function savePresetOverAt(i) {

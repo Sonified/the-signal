@@ -121,7 +121,7 @@ function buildSettings() {
     ringRate: S.ringRate, ringOrigin: S.ringOrigin, ringFadeInMs: S.ringFadeInMs, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
     edgeFb: S.edgeFb, edgeFbStream: S.edgeFbStream, edgeFbTwist: S.edgeFbTwist, edgeFbOpacity: S.edgeFbOpacity,
-    edgeMode: S.edgeMode, edgePulse: S.edgePulse,
+    edgeMode: S.edgeMode, edgePulse: S.edgePulse, edgePulseVar: S.edgePulseVar, edgePulseVarPeriod: S.edgePulseVarPeriod,
     edgePartRate: S.edgePartRate, edgePartSize: S.edgePartSize, edgePartDrift: S.edgePartDrift, edgePartSparkle: S.edgePartSparkle,
     edgeFlameHeight: S.edgeFlameHeight, edgeFlameSpeed: S.edgeFlameSpeed, edgeFlameTurb: S.edgeFlameTurb,
     edgeGlowWidth: S.edgeGlowWidth, edgeGlowSoft: S.edgeGlowSoft, edgeGlowBreathe: S.edgeGlowBreathe, edgeGlowBreatheRate: S.edgeGlowBreatheRate,
@@ -164,7 +164,11 @@ function buildSettings() {
     bedStrobeAmVar: S.bedStrobeAmVar, bedStrobeAmPeriod: S.bedStrobeAmPeriod,
     pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP, musicRevOn: S.musicRevOn, bedOn: S.bedOn, pianoOn: S.pianoOn, arpOn: S.arpOn, arpVol: S.arpVol, arpRate: S.arpRate,
     arpVolVar: S.arpVolVar, arpVolPeriod: S.arpVolPeriod,
+    pianoReverbVar: S.pianoReverbVar, pianoReverbPeriod: S.pianoReverbPeriod,
+    pianoRevTimeVar: S.pianoRevTimeVar, pianoRevTimePeriod: S.pianoRevTimePeriod,
+    musicRevType: S.musicRevType, pianoRevDamp: S.pianoRevDamp, pianoRevMod: S.pianoRevMod,
     arpStrobeAmVar: S.arpStrobeAmVar, arpStrobeAmPeriod: S.arpStrobeAmPeriod, arpWave: S.arpWave, arpAtk: S.arpAtk, arpDec: S.arpDec, arpOct: S.arpOct, arpRev: S.arpRev, arpSpread: S.arpSpread, arpStrobeAm: S.arpStrobeAm,
+    arpHfCut: S.arpHfCut,
       arpSwOn: S.arpSwOn, arpSwLo: S.arpSwLo, arpSwHi: S.arpSwHi, arpSwPeriod: S.arpSwPeriod, arpSwWander: S.arpSwWander,
     pianoDensity: S.pianoDensity, pianoCentre: S.pianoCentre,
     pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
@@ -186,6 +190,7 @@ function buildSettings() {
     hintFadeMs: S.hintFadeMs, hintSweep: S.hintSweep, hintFadeInMs: S.hintFadeInMs, hintArrive: S.hintArrive,
     fbResScale: S.fbResScale, fbResSwitch: S.fbResSwitch,
     parallaxAmount: S.parallaxAmount, parallaxSpeed: S.parallaxSpeed, walkPeriod: S.walkPeriod, brightVar: S.brightVar, brightVarOn: S.brightVarOn,
+    skipRiskBand: S.skipRiskBand !== false,
     brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
     hueLo: S.hueLo, hueSpan: S.hueSpan,
     ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod,
@@ -285,7 +290,7 @@ export const SEQ_NUM_RANGE = {
   dec: [0.02, 2], decVar: [0, 1], decRate: [1, 120],
   panMod: [0, 1], panRate: [1, 120],
   revTime: [1, 15], revVar: [0, 1], revRate: [1, 120],
-  dlyTime: [0.25, 4], dlyFb: [0, 0.95], dlyFbVar: [0, 1], dlyFbRate: [1, 120]
+  dlyTime: [0.25, 4], dlyFb: [0, 0.95], dlyFbVar: [0, 1], dlyFbRate: [1, 120], dlyMix: [0, 1]
 };
 const SEQ_WHOLE = { octaves: 1, oct: 1 };
 const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -850,6 +855,8 @@ function applySettings(s, live, scene) {
   if (typeof s.edgeCount === 'number')    S.edgeCount = s.edgeCount;
   if (typeof s.edgeOpacity === 'number')  S.edgeOpacity = s.edgeOpacity;
   if (typeof s.edgePulse === 'number' && isFinite(s.edgePulse)) S.edgePulse = Math.max(0, Math.min(1, s.edgePulse));
+  if (typeof s.edgePulseVar === 'number' && isFinite(s.edgePulseVar)) S.edgePulseVar = Math.max(0, Math.min(1, s.edgePulseVar));
+  if (typeof s.edgePulseVarPeriod === 'number' && isFinite(s.edgePulseVarPeriod)) S.edgePulseVarPeriod = Math.max(1, Math.min(60, s.edgePulseVarPeriod));
   if (typeof s.edgeFb === 'number' && isFinite(s.edgeFb)) S.edgeFb = Math.max(0, Math.min(1, s.edgeFb));
   if (typeof s.edgeFbOpacity === 'number' && isFinite(s.edgeFbOpacity)) S.edgeFbOpacity = Math.max(0, Math.min(1, s.edgeFbOpacity));
   if (typeof s.edgeFbStream === 'number' && isFinite(s.edgeFbStream)) S.edgeFbStream = Math.max(-2, Math.min(2, s.edgeFbStream));
@@ -895,6 +902,7 @@ function applySettings(s, live, scene) {
   if (typeof s.varPeriod === 'number')    S.varPeriod = s.varPeriod;
   if (typeof s.brightVar === 'number')    S.brightVar = s.brightVar;
   if (typeof s.brightVarOn === 'boolean') S.brightVarOn = s.brightVarOn;
+  if (typeof s.skipRiskBand === 'boolean') S.skipRiskBand = s.skipRiskBand;
   if (typeof s.brightVarPeriod === 'number') S.brightVarPeriod = s.brightVarPeriod;
   if (typeof s.colorWalk === 'number')    S.colorWalk = s.colorWalk;
   if (typeof s.hueLo === 'number')   S.hueLo = s.hueLo;
@@ -996,7 +1004,7 @@ function applySettings(s, live, scene) {
   // cloudRevTime is v0's list too (js/settings.js); it was missing here, so a
   // saved clouds reverb decay never came back after a reload.
   ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','arpVol','arpRate','arpAtk','arpDec','arpOct','arpRev','arpSpread','arpStrobeAm','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
-   'arpVolVar','arpVolPeriod','arpStrobeAmVar','arpStrobeAmPeriod',
+   'arpVolVar','arpVolPeriod','pianoReverbVar','pianoReverbPeriod','pianoRevTimeVar','pianoRevTimePeriod','pianoRevDamp','pianoRevMod','arpStrobeAmVar','arpStrobeAmPeriod','arpHfCut',
    'pianoSpread','pianoHold','pianoBass','ambVol','ambReverb','ambRevTime','ambDriftFadeS','ambKidsFreq',
    'cloudVol','cloudDensity','cloudPhrase','cloudReverb','cloudRevTime'].forEach(k => {
     if (typeof s[k] === 'number') S[k] = s[k];
@@ -1032,9 +1040,11 @@ function applySettings(s, live, scene) {
   if (typeof s.bedRevOn === 'boolean') S.bedRevOn = s.bedRevOn;
   if (typeof s.arpOn === 'boolean') S.arpOn = s.arpOn;
   if (typeof s.musicRevOn === 'boolean') S.musicRevOn = s.musicRevOn;
+  if (s.musicRevType === 'conv' || s.musicRevType === 'algo') S.musicRevType = s.musicRevType;
   if (typeof s.bedOn === 'boolean') S.bedOn = s.bedOn;
   if (typeof s.pianoOn === 'boolean') S.pianoOn = s.pianoOn;
-  if (typeof s.arpSwOn === 'boolean') S.arpSwOn = s.arpSwOn;
+  // arpSwOn is no longer restored: the sequencer's volume sweep lost its
+  // switch to the master volume's variance, so a saved On would sweep unseen.
   // The choir (js/choir.js), each number held to its slider's range.
   if (typeof s.choirOn === 'boolean') S.choirOn = s.choirOn;
   for (const [k, lo, hi] of [['choirVol', 0, 2], ['choirStack', 0, 100], ['choirDensity', 0, 100],

@@ -29,10 +29,17 @@
 // atlas cells to draw it from.
 //
 // Nothing here allocates: letterFx writes into the caller's scratch array and
-// reads everything else from S and wordState.
+// reads everything else from wordState and the word's life.
+//
+// The word's life (core/words.js wordLife) is where every look below comes
+// from: the effect each way and every dial, fixed the moment the word
+// appeared, so a preset or a ramp landing mid-transition reaches the next
+// word and never bends the one already moving. The settings as they stand
+// (fxLive) are for what has no word yet: the smoke's recording of the word
+// to come, and the resting screen's hint.
 
 import { S } from '../../js/state.js';
-import { wordState } from './words.js';
+import { wordState, wordLife } from './words.js';
 
 export const FX_NAMES = { fade: 'Fade', gather: 'Gather', wind: 'Wind', cloud: 'Cloud', smoke: 'Smoke' };
 
@@ -43,7 +50,7 @@ export const FX_NAMES = { fade: 'Fade', gather: 'Gather', wind: 'Wind', cloud: '
 // another: Fade lines together does it both ways; the Fade out block's own
 // switch does it for departures alone.
 export function linesTogether(leaving) {
-  return !!S.textLinesTogether || (leaving ? !!S.textLinesTogetherOut : !!S.textLinesTogetherIn);
+  return leaving ? wordLife.linesOut : wordLife.linesIn;
 }
 
 // Line pause: the rest between one line visibly finishing and the next
@@ -62,7 +69,7 @@ export function linesTogether(leaving) {
 // done for the last (or first) LINE_TAIL_D^(1/k) of its clock.
 const LINE_TAIL_D = 0.1;
 export function lineStep(st, k) {
-  const v = S.textLinePause;
+  const v = wordLife.linePause;
   const g = v > 0 ? (v < 1 ? v : 1) : 0;
   const s = st > 0 ? (st < 0.9 ? st : 0.9) : 0;
   return 1 - (1 - s) * Math.pow(LINE_TAIL_D, 1 / Math.max(1, k)) + g;
@@ -75,7 +82,10 @@ export function lineProgress(prog, k, n, a) {
   return clamp01(prog * (1 + (n - 1) * a) - k * a);
 }
 
-export function fxv(name, leaving) { return leaving && !S.textFxMirror ? S[name + 'Out'] : S[name]; }
+// The word on screen's own dial, from its life; and the same dial as the
+// settings stand now, for the word still to come and the hint.
+export function fxv(name, leaving) { return (leaving ? wordLife.out : wordLife.in)[name]; }
+export function fxLive(name, leaving) { return leaving && !S.textFxMirror ? S[name + 'Out'] : S[name]; }
 
 // The smoke recording's scoreboard. gpu/word-smoke.js writes readyText
 // (which word it holds a finished recording for); letterFx latches playing
@@ -96,7 +106,7 @@ let smokeLatchSeed = -1, smokeLatchPhase = -1;
 export function wordFxWhole() {
   const ph = wordState.phase;
   if (ph === 1) return false;
-  const fx = ph === 2 ? (S.textFxMirror ? S.textFxIn : S.textFxOut) : S.textFxIn;
+  const fx = ph === 2 ? wordLife.fxOut : wordLife.fxIn;
   return fx === 'cloud' || (fx === 'smoke' && smokeState.playing);
 }
 
@@ -168,7 +178,7 @@ export function letterFx(i, n, relX, relY, wordW, size, out) {
   const ph = wordState.phase;
   if (ph === 1) return;
   const leaving = ph === 2;
-  const fx = leaving ? (S.textFxMirror ? S.textFxIn : S.textFxOut) : S.textFxIn;
+  const fx = leaving ? wordLife.fxOut : wordLife.fxIn;
 
   // Leaving rolls its own randoms, so even a mirrored exit takes a new path
   // back into the cloud rather than retracing the arrival exactly.

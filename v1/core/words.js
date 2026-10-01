@@ -40,15 +40,11 @@ const REVEAL_MS = 2000;
 // of its life the word is in (0 arriving, 1 holding, 2 leaving), progress runs
 // 0 to 1 across that stretch, age is ms since the word appeared, and seed is
 // rolled once per word so each one scatters its own way.
-// The Fade in and Fade out switches: off, the word just appears or goes,
-// and the time slider keeps its value for when the switch comes back on.
-// Each time dips from its slider by its variance on its own cycle, the shape
-// a fresh roll for every word: taken once as the word appears, so a
-// transition already under way never changes speed.
-let fadeInMul = 1, fadeOutMul = 1, dwellMul = 1;
-export function fadeInMs()  { return S.textFadeInOn  === false ? 0 : Math.max(0, S.textFadeInMs) * fadeInMul; }
-export function fadeOutMs() { return S.textFadeOutOn === false ? 0 : Math.max(0, S.textFadeOutMs) * fadeOutMul; }
-function dwellMs() { return Math.max(0, S.textDwellMs) * dwellMul; }
+// The word on screen's own times, from its life (wordLife, below), never
+// from the sliders: the sliders are the next word's.
+export function fadeInMs()  { return wordLife.fin; }
+export function fadeOutMs() { return wordLife.fout; }
+function dwellMs() { return wordLife.hold; }
 // The variance is a per-word roll, not an oscillation: the set duration is
 // the cap, and each word's fade lands anywhere from (1 - variance) of it up
 // to the full value.
@@ -78,6 +74,73 @@ export const wordState = {
   visible: false,
 };
 wordState.color.set(WHITE);
+
+// ---------- the word's life ----------
+// Everything about how a word comes and goes is fixed the moment it
+// appears, here, and read from here until it has fully gone, its transition
+// included: its fade in, time on screen and fade out (the Fade switches and
+// this word's variance rolls already folded in), and its transition look
+// each way, the effect, the lines' order and every dial the transitions
+// (core/word-fx.js fxv) and the GPU dissolves (gpu/word-smoke.js,
+// gpu/word-cloud.js) read. A change of settings, whether a preset, a
+// journey's ramp, the performer, a drag or a broadcast's state, reaches the
+// next word and never the one on screen.
+//
+// Read live, as they once were, a recall mid-word moved the finish line
+// under the word. Shortened, the word was past its new end at once: its
+// letters vanished with no fade while its smoke or cloud dissolve, barely
+// begun, carried on as a tail still shaped like the word, and the next word
+// arrived over it. Lengthened, a leaving word snapped back to holding, its
+// crisp letters back on screen over its own smoke. A change of effect
+// mid-transition did the same, the old effect's dissolve and the new one's
+// letters both drawn. With the life fixed, the word on screen always ends
+// exactly where it began meaning to, so its dissolve is done before the
+// scheduler, which waits for the screen to clear, deals the next.
+//
+// Only the peak stays live: the opacity dip and the layer's first reveal
+// shade the word without touching its clock.
+//
+// in and out are the Arrive and Leave copies of each dial (the Leave copy
+// is S[name + 'Out']), a mirrored exit taking the arrival's, so a reader
+// asks for one by name and side without knowing about the mirror. LOOK is
+// every dial a transition reads; a new one joins the list.
+const LOOK = [
+  'textFxDist', 'textFxStagger', 'textFxTurb', 'textFxBlur', 'textFxEase', 'textFxWindDir',
+  'textGatherSweep', 'textSmokeSpeed', 'textSmokeSoft', 'textSmokeLinger', 'textSmokeRadial',
+  'textSmokeAccel', 'textSmokeEq', 'textSmokeSweep', 'textSmokeSweepSpeed'
+];
+export const wordLife = {
+  fin: 0, hold: 0, fout: 0,          // ms, rolls and switches folded in
+  fxIn: 'fade', fxOut: 'fade',       // the effect each way, the mirror resolved
+  linesIn: false, linesOut: false,   // whether a block's lines move as one, each way
+  linePause: 0,
+  in: {}, out: {}
+};
+
+// The one capture, run by every way a word can appear (the pick, the walk,
+// a relayed word, the performer's phrase), with that word's three rolls:
+// fade in, fade out, time on screen. Writes in place; nothing allocates.
+function bornWith(fi, fo, dw) {
+  const L = wordLife;
+  L.fin = S.textFadeInOn === false ? 0 : Math.max(0, S.textFadeInMs) * fi;
+  L.hold = Math.max(0, S.textDwellMs) * dw;
+  L.fout = S.textFadeOutOn === false ? 0 : Math.max(0, S.textFadeOutMs) * fo;
+  const mirror = !!S.textFxMirror;
+  L.fxIn = S.textFxIn;
+  L.fxOut = mirror ? S.textFxIn : S.textFxOut;
+  L.linesIn = !!S.textLinesTogether || !!S.textLinesTogetherIn;
+  L.linesOut = !!S.textLinesTogether || !!S.textLinesTogetherOut;
+  L.linePause = S.textLinePause;
+  for (let i = 0; i < LOOK.length; i++) {
+    const k = LOOK[i];
+    L.in[k] = S[k];
+    L.out[k] = mirror ? S[k] : S[k + 'Out'];
+  }
+  // mirrored for the broadcast (core/broadcast.js sends them with the word)
+  wordState.fadeInMul = fi;
+  wordState.fadeOutMul = fo;
+}
+bornWith(1, 1, 1);   // a full set of keys from the start, so the shape never changes
 
 let words = [];       // [word, ...themeKeys] rows from js/words.js
 let affirmations = []; // [phrase] rows, same shape so pick() reads either pool
@@ -168,6 +231,7 @@ export function rebuildWordPool() {
   // viewer's own phrases (or a journey step's), typed as one line with a
   // '|' between them, each phrase a row of its own in the same shape.
   const on = S.textThemes;
+  const prev = pool;
   pool = S.textMode === 'custom'
     ? customRows(S.textCustomText)
     : S.textMode === 'affirmations'
@@ -178,6 +242,14 @@ export function rebuildWordPool() {
         for (let i = 1; i < row.length; i++) if (on[row[i]]) return true;
         return false;
       });
+  // A recall rebuilds the pool every time (core/presets.js replayLive),
+  // whether or not it touched the Text source. When the rebuilt pool holds
+  // the very same phrases in the same order the deal simply carries on: the
+  // shuffle's place, the walk's cached step and the word already picked to
+  // come next all still hold. That last matters most, since the smoke has
+  // been recording that word's arrival (gpu/word-smoke.js), and a fresh pick
+  // threw the recording away and sent the next word in as a plain fade.
+  if (nextPick && samePhrases(prev, pool)) { oneShotRemaining = -1; return; }
   lastIdx = -1;
   order.length = 0;   // a fresh pool deals a fresh cycle
   walkEvalN = NaN;     // and the walk re-reads its word from the new pool
@@ -185,6 +257,14 @@ export function rebuildWordPool() {
   oneShotRemaining = -1;
   nextPick = pick();
   wordState.nextText = nextPick;
+}
+
+// Whether two pools deal the same phrases in the same positions. Runs only
+// when the pool is rebuilt, never per frame.
+function samePhrases(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i][0] !== b[i][0]) return false;
+  return true;
 }
 
 // The Custom source's phrases, split on '|', trimmed, empties dropped. A '/'
@@ -404,14 +484,10 @@ function showLocal(t) {
   const p = pendingLocal;
   p.has = false;
   current = p.w; shownAt = t; showing = true;
-  fadeInMul = fadeRoll(S.textFadeInVar);
-  fadeOutMul = fadeRoll(S.textFadeOutVar);
-  dwellMul = fadeRoll(S.textDwellVar);
+  bornWith(fadeRoll(S.textFadeInVar), fadeRoll(S.textFadeOutVar), fadeRoll(S.textDwellVar));
   wordState.text = p.w;
   wordState.visible = true;
   wordState.seed = Math.random() * 1000;
-  wordState.fadeInMul = fadeInMul;
-  wordState.fadeOutMul = fadeOutMul;
   wordState.step = -1;
   forceNext = false;
   for (let k = 0; k < appearCbs.length; k++) appearCbs[k](p.w);
@@ -423,12 +499,10 @@ function showRemote(t) {
   const p = pendingRemote;
   p.has = false;
   current = p.w; shownAt = t; showing = true;
-  fadeInMul = p.fi; fadeOutMul = p.fo; dwellMul = 1;
+  bornWith(p.fi, p.fo, 1);
   wordState.text = p.w;
   wordState.visible = true;
   wordState.seed = p.seed;
-  wordState.fadeInMul = p.fi;
-  wordState.fadeOutMul = p.fo;
   wordState.step = p.k;
   if (p.k >= 0) walkShown = p.k;
   nextPick = '';
@@ -444,14 +518,10 @@ function showWord(t) {
   const w = nextPick || pick();
   if (!w) return false;
   current = w; shownAt = t; showing = true;
-  fadeInMul = fadeRoll(S.textFadeInVar);
-  fadeOutMul = fadeRoll(S.textFadeOutVar);
-  dwellMul = fadeRoll(S.textDwellVar);
+  bornWith(fadeRoll(S.textFadeInVar), fadeRoll(S.textFadeOutVar), fadeRoll(S.textDwellVar));
   wordState.text = w;
   wordState.visible = true;
   wordState.seed = Math.random() * 1000;
-  wordState.fadeInMul = fadeInMul;
-  wordState.fadeOutMul = fadeOutMul;
   wordState.step = -1;
   if (oneShotRemaining > 0) {
     oneShotRemaining--;
@@ -714,14 +784,19 @@ function walkIndex(n) {
 }
 
 // Everything about the current step, worked out once as the step begins (or
-// when the step length or the pool changes), so the frame's own check is a
-// few comparisons.
+// when the step length, the plan's times or the pool changes), so the
+// frame's own check is a few comparisons. The times are in the check because
+// they are the step's life (walkEvalEnd here, and the word's own life once
+// it is dealt): a fade moved without moving the step length must reach both,
+// or the two would part.
 let walkEvalN = NaN, walkEvalStepMs = 0, walkEvalStart = 0, walkEvalEnd = 0;
 let walkEvalFi = 1, walkEvalFo = 1, walkEvalDw = 1, walkEvalSeed = 0;
 let walkEvalText = '', walkEvalNext = '', walkEvalSilent = true;
+let walkEvalFin = 0, walkEvalHold = 0, walkEvalFout = 0;
 function walkEval(n) {
   walkEvalN = n;
   walkEvalStepMs = planStep;
+  walkEvalFin = planFin; walkEvalHold = planHold; walkEvalFout = planFout;
   walkTiming(n);
   walkEvalStart = tmStart;
   walkEvalEnd = tmStart + tmLife;
@@ -742,16 +817,26 @@ function walkTick(t) {
   if (!walkPlan()) return;
   const shared = t + walkClock;
   const n = Math.floor(shared / planStep);
-  if (n !== walkEvalN || planStep !== walkEvalStepMs) walkEval(n);
+  if (n !== walkEvalN || planStep !== walkEvalStepMs ||
+      planFin !== walkEvalFin || planHold !== walkEvalHold || planFout !== walkEvalFout) walkEval(n);
+  // The word the walk deals next, for the smoke to record its arrival
+  // (gpu/word-smoke.js): this step's, if it has yet to go up, otherwise the
+  // next step's. Kept current every frame rather than only as a word goes
+  // up, so a recall that rebuilds the pool, or a step the screen was too
+  // busy to take, never leaves the recording on a word the walk will not
+  // show.
+  wordState.nextText = n === walkShown || walkEvalSilent ? walkEvalNext : walkEvalText;
   if (showing || walkEvalSilent || !walkEvalText || n === walkShown) return;
   if (shared < walkEvalStart || shared >= walkEvalEnd) return;
   current = walkEvalText; shownAt = t - (shared - walkEvalStart); showing = true;
-  fadeInMul = walkEvalFi; fadeOutMul = walkEvalFo; dwellMul = walkEvalDw;
+  // The life is the step's own: the plan's times (walkPlan read them from
+  // the settings this very frame) under the step's hashed rolls, so it is
+  // the life walkTiming worked the step out with, and every screen holding
+  // the same settings fixes the same one.
+  bornWith(walkEvalFi, walkEvalFo, walkEvalDw);
   wordState.text = current;
   wordState.visible = true;
   wordState.seed = walkEvalSeed;
-  wordState.fadeInMul = walkEvalFi;
-  wordState.fadeOutMul = walkEvalFo;
   wordState.step = n;
   wordState.nextText = walkEvalNext;
   walkShown = n;
@@ -824,7 +909,20 @@ export function stepWords(t, dt) {
     // rather than beside it; otherwise a free-running rate of its own.
     let ticks = 0;
     if (S.textLinked) {
-      if (S.phase < S.lastPhase) ticks = 1; // the cycle just wrapped
+      // The cycle just wrapped: the phase came round past 1. A phase that
+      // went back instead is a pin, not a wrap (core/strobe.js: frame lock
+      // picking the counter up from the signal on a start or a wake, a
+      // follower's snap onto the broadcaster), and it reads the same as a
+      // wrap from the two numbers alone. So the way round from the last
+      // phase must be about what the strobe's rate covers in this frame;
+      // twice that plus a quarter cycle allows for a rate on the move and
+      // frame lock carrying the phase across a change of count. That turns
+      // a step back away at any rate where one stray tick would show; only
+      // a strobe so fast that a frame covers most of a cycle could still
+      // let one through, and there one chance more among dozens a second is
+      // nothing.
+      if (S.phase < S.lastPhase &&
+          S.phase + 1 - S.lastPhase <= 2 * (S.achievedFreq || S.effFreq) * dt + 0.25) ticks = 1;
     } else {
       rateAcc += dt * S.textRateHz;
       while (rateAcc >= 1) { rateAcc -= 1; ticks++; }

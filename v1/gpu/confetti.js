@@ -887,7 +887,8 @@ export function createConfetti(device, format) {
     S.effConfFbPulse = pulse;
     const l = lum > 0 ? (lum < 1 ? lum : 1) : 0;
     fbGain = 1 - pulse + pulse * l;
-    fbOpacity = clampNum(S.confFbOpacity, 0, 1, 1);
+    // the Opacity as its variance plays it (core/strobe.js VARIANCES)
+    fbOpacity = clampNum(S.effConfFbOpacity ?? S.confFbOpacity, 0, 1, 1);
     // With trails, the layer's Opacity rides the image as it lands rather
     // than the pieces going into it (uni[23] is 1 then), so the trails
     // already laid dim with the slider, and a layer faded out takes them

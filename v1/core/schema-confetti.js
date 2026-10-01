@@ -10,6 +10,7 @@
 // applyConfettiState().
 import { save } from './store.js';
 import { subDrawer } from './schema-visual.js';
+import { varianceRows } from './schema-variance.js';
 import { retimeRoomPhase } from './room-clock.js';
 
 // The palettes, as v1/gpu/confetti.js reads S.confPalette: six festive hues,
@@ -51,6 +52,8 @@ const NUM = [
   ['confBright',  0,   1,   1   ],
   ['confFeedback', 0,  1,   0   ],   // how long each piece leaves a trail where it passed
   ['confFbOpacity', 0, 1,   1   ],   // how solidly the feedback image lands on the scene
+  ['confFbOpacityVar', 0, 1, 0   ],   // how far that Opacity dips below its setting over time
+  ['confFbOpacityVarPeriod', 1, 120, 20, true],   // seconds for one swing of it
   ['confFbStream', -2, 2,   0   ],   // the trails stream outward (+) or inward (-), signed
   ['confFbTwist', -1,  1,   0   ],   // the trails turn about the centre, + clockwise, signed
   // Each of Amount, Stream and Twist swings over time about its setting: down
@@ -538,6 +541,13 @@ export const CONFETTI_CONTROLS = [
     format: S => Math.round(S.confFbOpacity * 100) + '%',
     enabled: layerOn, parent: 'confFeedbackDrawer'
   },
+  // Opacity's dip, the app's standard: over one rate cycle the image eases
+  // from the setting down by this share and back, never above it (stepped
+  // with the strobe's own variances, core/strobe.js).
+  ...varianceRows('confFbOpacity', {
+    name: 'Opacity', periodMax: 120, parent: 'confFeedbackDrawer', enabled: layerOn,
+    effective: S => (S.effConfFbOpacity ?? S.confFbOpacity) * 100
+  }),
   // Each frame keeps a fading copy of the last, so every piece leaves a
   // trail that stays where it was drawn and dies away. At 0 there is no
   // trail, the pieces as they are; at 100% a trail takes about two seconds

@@ -26,6 +26,13 @@
 //                           linked pulse rate and the arp's strobe pulse
 //                           follow it, as strobe.js's own link does in main
 //                           mode, with the same threshold.
+//   signal(packed)          the strobe signal (core/signal.js) changed: its
+//                           formula's numbers, packed into a Float64Array
+//                           (packSignal), so the page's Vary with strobe
+//                           stages play the very flash this thread draws.
+//                           Sent only on a change, never once a frame; the
+//                           anchor is absolute time, the same instant on
+//                           both threads.
 //   seq(packed)             the sequencer's active line, or anything on any
 //                           of its eight lines, changed: the steps, the
 //                           length and every per-line setting travel only
@@ -33,7 +40,8 @@
 //                           packSeqs).
 //   watch(bits)             which live readings the worker is showing (the
 //                           mixer's meters, the sequencer's playhead, the
-//                           arp's peak), so the page reads and sends only those.
+//                           arp's peak, the lines' swings), so the page reads
+//                           and sends only those.
 //   pianoFree(on)           the journey let the piano play freely (1) or held
 //                           its clock for the words (0): S.pianoFreePlay,
 //                           which is never saved, so it only travels here.
@@ -51,10 +59,11 @@
 //
 // The other way, the page posts one reused Float32Array of readings (see the
 // layout in core/audio-mirror.js): whether the sound is on, the meters, the
-// recordings' statuses, the arp's peak and the playhead, and, while the
-// atmosphere's drift runs (it runs on the page, on the audio clock), the
-// levels it has glided to. receiveMirror takes those in, and runs the drift's
-// saving policy here, where the settings are written.
+// recordings' statuses, the arp's peak, the playhead and the lines' swung
+// values, and, while the atmosphere's drift runs (it runs on the page, on
+// the audio clock), the levels it has glided to. receiveMirror takes those
+// in, and runs the drift's saving policy here, where the settings are
+// written.
 //
 // The audio calls the worker's own copy of the schema still makes are
 // harmless: with no AudioContext in this thread every one of them returns at
@@ -71,9 +80,10 @@ import {
 } from './atmosphere.js';
 import { presetTransitionCount } from './presets.js';
 import { save } from './store.js';
+import { signal, SIGNAL_PACK, packSignal } from './signal.js';
 import {
   mirror, M_FLAGS, M_DRIFT, M_ARP, M_HEAD, M_ATMOS, F_AUDIO, F_WORKLET, F_DRIFT,
-  DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP
+  DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP, unpackReadbacks, readbacksWatched
 } from './audio-mirror.js';
 
 // How many frames a reading stays watched after the last frame that read it.
@@ -125,6 +135,8 @@ export function createAudioLink(post) {
 
   let lastRunning = false, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
   let lastFree = true, lastGesture = 0;
+  let lastSignal = -1;
+  const sigPack = new Float64Array(SIGNAL_PACK);
   let seeded = false;
   const outbox = [];
 
@@ -197,11 +209,17 @@ export function createAudioLink(post) {
       lastEff = eff; lastAch = ach;
       call('strobe', eff, ach, 0, 0);
     }
+    // the signal whenever it moved (a fresh copy, as the seq row is)
+    if (signal.gen !== lastSignal) {
+      lastSignal = signal.gen;
+      call('signal', packSignal(signal, sigPack).slice(), 0, 0, 0);
+    }
 
     let w = 0;
     if (atmosphereMetersWanted()) w |= W_METERS;
     if (mirror.frame - mirror.playheadReadAt < WATCH_FRAMES) w |= W_PLAYHEAD;
     if (mirror.frame - mirror.arpReadAt < WATCH_FRAMES) w |= W_ARP;
+    w |= readbacksWatched(WATCH_FRAMES);
     if (w !== lastWatch) { lastWatch = w; call('watch', w, 0, 0, 0); }
 
     if (outbox.length) { post(outbox); outbox.length = 0; }
@@ -223,6 +241,7 @@ export function createAudioLink(post) {
     S.workletReady = !!(flags & F_WORKLET);
     mirror.arpPeak = m[M_ARP];
     mirror.seqClock = m[M_HEAD];
+    unpackReadbacks(m, flags);
     const drifting = !!(flags & F_DRIFT);
     unpackAtmosphere(m, M_ATMOS, drifting);
     if (drifting) for (let i = 0; i < levelIdx.length; i++) shadow[levelIdx[i]] = watched[levelIdx[i]].get(S);

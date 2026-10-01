@@ -35,6 +35,8 @@ import { rebuildWordPool, retimeWordOpacity } from './words.js';
 import { FX_NAMES } from './word-fx.js';
 import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
+import { varianceRows } from './schema-variance.js';
+import { varied } from './variance.js';
 
 // S stores colour as an [r,g,b] triple (js/color.js's setColorFromPicker
 // writes S.rgb, S.hue, S.hueSat, S.hueLight from it); v0 kept the hex string
@@ -296,6 +298,17 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { const c = byId('strobeScale'); if (c) c.set(S, pos); },
     format: S => Math.round((typeof S.strobeScale === 'number' ? S.strobeScale : 1) * 100) + '%'
   },
+  {
+    // On, every glide of the strobe's rate (a preset's, a journey's, the
+    // performer's) steps straight across the 15-25 Hz photosensitive band
+    // rather than sweeping through it (strobe.js glideSkippingRiskBand). Off,
+    // glides run straight through. A master like the one above: live
+    // whatever is on.
+    id: 'skipRiskBand', section: 'strobe', label: 'Skip photosensitive range', kind: 'toggle', def: true,
+    get: S => S.skipRiskBand !== false,
+    set: (S, on) => { S.skipRiskBand = !!on; save(); },
+    format: S => S.skipRiskBand !== false ? 'On' : 'Off'
+  },
   // Corners are their own layer with their own section (below Strobe), so
   // the Strobe switch never touches them.
   sectionToggle('cornersOn', 'corners', 'corners', 'On'),
@@ -432,78 +445,30 @@ export const VISUAL_CONTROLS = [
     parent: 'strobeBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 80,
     get: S => Math.round(S.depth * 100),
-    effective: S => S.depthVarOn !== false && S.depthVar > 0 ? S.effDepth * 100 : undefined,
     set: (S, pos) => { S.depth = pos / 100; save(); },
     format: S => Math.round(S.depth * 100) + '%'
   },
-  {
-    // Off holds the depth at its set value; the amount and rate below keep
-    // their values for when it comes back on.
-    id: 'depthVarOn', section: 'strobe', label: 'Depth variance', kind: 'toggle', def: true,
-    varianceOf: 'depth',
-    get: S => S.depthVarOn !== false,
-    set: (S, on) => { S.depthVarOn = !!on; save(); },
-    format: S => S.depthVarOn !== false ? 'On' : 'Off'
-  },
-  {
-    id: 'depthVar', section: 'strobe', label: 'Variance amount', kind: 'slider',
-    varianceOf: 'depth',
-    parent: 'depthVarOn',
-    min: 0, max: 100, step: 1, def: 80,
-    get: S => Math.round(S.depthVar * 100),
-    set: (S, pos) => { S.depthVar = pos / 100; save(); },
-    format: S => Math.round(S.depthVar * 100) + '%',
-    visible: S => S.depthVarOn !== false
-  },
-  {
-    id: 'varPeriod', section: 'strobe', label: 'Variance rate', kind: 'slider',
-    varianceOf: 'depth',
-    parent: 'depthVarOn',
-    min: 1, max: 60, step: 1, def: 10,
-    get: S => S.varPeriod,
-    set: (S, pos) => { S.varPeriod = pos; save(); },
-    format: S => S.varPeriod + 's / cycle',
-    visible: S => S.depthVarOn !== false
-  },
+  // Off holds the depth at its set value; the amount and rate keep their
+  // values for when it comes back on.
+  ...varianceRows('depth', {
+    name: 'Depth', on: true, period: 'varPeriod', amountDef: 80, periodDef: 10,
+    effective: S => S.effDepth * 100
+  }),
   {
     id: 'bright', section: 'strobe', label: 'Brightness', kind: 'slider',
     summaryLabel: 'Bright',
     parent: 'strobeBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.bright * 100),
-    effective: S => S.brightVarOn !== false && S.brightVar > 0 ? S.effBright * 100 : undefined,
     set: (S, pos) => { S.bright = pos / 100; save(); },
     format: S => Math.round(S.bright * 100) + '%'
   },
-  {
-    // Off holds the brightness at its set value; the amount and rate below keep
-    // their values for when it comes back on.
-    id: 'brightVarOn', section: 'strobe', label: 'Brightness variance', kind: 'toggle', def: true,
-    varianceOf: 'bright',
-    get: S => S.brightVarOn !== false,
-    set: (S, on) => { S.brightVarOn = !!on; save(); },
-    format: S => S.brightVarOn !== false ? 'On' : 'Off'
-  },
-  {
-    id: 'brightVar', section: 'strobe', label: 'Variance amount', kind: 'slider',
-    varianceOf: 'bright',
-    parent: 'brightVarOn',
-    min: 0, max: 100, step: 1, def: 85,
-    get: S => Math.round(S.brightVar * 100),
-    set: (S, pos) => { S.brightVar = pos / 100; save(); },
-    format: S => Math.round(S.brightVar * 100) + '%',
-    visible: S => S.brightVarOn !== false
-  },
-  {
-    id: 'brightVarPeriod', section: 'strobe', label: 'Variance rate', kind: 'slider',
-    varianceOf: 'bright',
-    parent: 'brightVarOn',
-    min: 1, max: 60, step: 1, def: 22,
-    get: S => S.brightVarPeriod,
-    set: (S, pos) => { S.brightVarPeriod = pos; save(); },
-    format: S => S.brightVarPeriod + 's / cycle',
-    visible: S => S.brightVarOn !== false
-  },
+  // Off holds the brightness at its set value; the amount and rate keep
+  // their values for when it comes back on.
+  ...varianceRows('bright', {
+    name: 'Brightness', on: true, amountDef: 85, periodDef: 22,
+    effective: S => S.effBright * 100
+  }),
   {
     // The field's own opacity: it dims the strobe field and nothing else.
     // Brightness above is the whole flash signal, which the rings, the
@@ -643,31 +608,16 @@ export const VISUAL_CONTROLS = [
     parent: 'tunnelTimingDrawer',
     min: 0.2, max: 3, step: 0.05, def: 0.5,
     get: S => S.ringSpeedMul,
-    // the glowing bar: the speed as the variance is dipping it, computed in
-    // core/strobe.js (and the worker's own copy) each frame
-    effective: S => S.ringSpeedVar > 0 && typeof S.effRingSpeedMul === 'number'
-      ? S.effRingSpeedMul : undefined,
     set: (S, pos) => { S.ringSpeedMul = pos; save(); },
     format: S => S.ringSpeedMul.toFixed(1) + '×'
   },
-  {
-    // The speed's dip, the app's standard: over one rate cycle the rings
-    // ease from the setting down by this share and back, never above it.
-    id: 'ringSpeedVar', section: 'tunnel', label: 'Speed variance', kind: 'slider',
-    parent: 'tunnelTimingDrawer', varianceOf: 'ringSpeed',
-    min: 0, max: 100, step: 1, def: 0,
-    get: S => Math.round((S.ringSpeedVar || 0) * 100),
-    set: (S, pos) => { S.ringSpeedVar = pos / 100; save(); },
-    format: S => Math.round((S.ringSpeedVar || 0) * 100) + '%'
-  },
-  {
-    id: 'ringSpeedVarPeriod', section: 'tunnel', label: 'Variance rate', kind: 'slider',
-    parent: 'tunnelTimingDrawer', varianceOf: 'ringSpeed',
-    min: 1, max: 60, step: 1, def: 20,
-    get: S => S.ringSpeedVarPeriod ?? 20,
-    set: (S, pos) => { S.ringSpeedVarPeriod = pos; save(); },
-    format: S => (S.ringSpeedVarPeriod ?? 20) + 's / cycle'
-  },
+  // The speed's dip, the app's standard: over one rate cycle the rings ease
+  // from the setting down by this share and back, never above it. The bar
+  // glows with the speed as core/strobe.js dips it each frame.
+  ...varianceRows('ringSpeed', {
+    labels: ['Speed variance', 'Variance rate'], parent: 'tunnelTimingDrawer',
+    effective: S => typeof S.effRingSpeedMul === 'number' ? S.effRingSpeedMul : undefined
+  }),
   {
     // How often a new ring is born, straight in rings a second; the old
     // behaviour was one per flash capped near five, so five is the familiar
@@ -712,28 +662,14 @@ export const VISUAL_CONTROLS = [
     parent: 'tunnelBrightnessDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((S.ringOpacity ?? 1) * 100),
-    effective: S => S.ringBrightVar > 0
-      ? (S.ringOpacity ?? 1) * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase))) * 100
-      : undefined,
     set: (S, pos) => { S.ringOpacity = pos / 100; save(); },
     format: S => Math.round((S.ringOpacity ?? 1) * 100) + '%'
   },
-  {
-    id: 'ringBrightVar', section: 'tunnel', label: 'Ring brightness var', kind: 'slider',
-    varianceOf: 'ringOpacity',
-    min: 0, max: 100, step: 1, def: 55,
-    get: S => Math.round(S.ringBrightVar * 100),
-    set: (S, pos) => { S.ringBrightVar = pos / 100; save(); },
-    format: S => Math.round(S.ringBrightVar * 100) + '%'
-  },
-  {
-    id: 'ringBrightPeriod', section: 'tunnel', label: 'Ring bright var rate', kind: 'slider',
-    varianceOf: 'ringOpacity',
-    min: 1, max: 60, step: 1, def: 10,
-    get: S => S.ringBrightPeriod,
-    set: (S, pos) => { S.ringBrightPeriod = pos; save(); },
-    format: S => S.ringBrightPeriod + 's / cycle'
-  },
+  ...varianceRows('ringOpacity', {
+    amount: 'ringBrightVar', period: 'ringBrightPeriod', labels: ['Ring brightness var', 'Ring bright var rate'],
+    amountDef: 55, periodDef: 10,
+    effective: S => varied(S.ringOpacity ?? 1, S.ringBrightVar, S.ringBrightPhase) * 100
+  }),
   {
     id: 'ringFade', section: 'tunnel', label: 'Center fade radius', kind: 'slider',
     summaryLabel: 'Fade',
@@ -796,6 +732,17 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.edgePulse = Math.max(0, Math.min(1, pos / 100)); save(); },
     format: S => edgePulse(S) === 0 ? 'never flickers' : Math.round(edgePulse(S) * 100) + '%'
   },
+  // The pulse's dip, the app's standard: over one rate cycle the edge's
+  // breathing eases from the setting down by this share and back, never
+  // deeper than the setting asks. At 0 the pulse holds where it is set. The
+  // bar glows with the very number core/strobe.js leaves in S.effEdgePulse
+  // for the edge to draw with this frame, so the bar and the edge never
+  // disagree.
+  ...varianceRows('edgePulse', {
+    labels: ['Pulse variance', 'Pulse variance rate'],
+    effective: S => typeof S.effEdgePulse === 'number' ? S.effEdgePulse * 100 : undefined,
+    rows: { amount: { set: (S, pos) => { S.edgePulseVar = Math.max(0, Math.min(1, pos / 100)); save(); } } }
+  }),
   {
     // The edge's effect (v1/gpu/scene.js). Surfing is the particles walking
     // the perimeter with their tails, as the edge always was; Particles,
@@ -941,26 +888,13 @@ export const VISUAL_CONTROLS = [
     parent: 'edgeMotionDrawer',
     min: 0, max: 6, step: 0.1, def: 4,
     get: S => S.edgeSpeedMul,
-    effective: S => S.edgeSpeedVar > 0 ? S.effEdgeSpeed : undefined,
     set: (S, pos) => { S.edgeSpeedMul = pos; save(); },
     format: S => S.edgeSpeedMul.toFixed(1) + '×'
   },
-  {
-    id: 'edgeSpeedVar', section: 'edge', label: 'Edge speed variance', kind: 'slider',
-    varianceOf: 'edgeSpeed',
-    min: 0, max: 100, step: 1, def: 50,
-    get: S => Math.round(S.edgeSpeedVar * 100),
-    set: (S, pos) => { S.edgeSpeedVar = pos / 100; save(); },
-    format: S => Math.round(S.edgeSpeedVar * 100) + '%'
-  },
-  {
-    id: 'edgeSpeedVarPeriod', section: 'edge', label: 'Edge speed var rate', kind: 'slider',
-    varianceOf: 'edgeSpeed',
-    min: 1, max: 60, step: 1, def: 22,
-    get: S => S.edgeSpeedVarPeriod,
-    set: (S, pos) => { S.edgeSpeedVarPeriod = pos; save(); },
-    format: S => S.edgeSpeedVarPeriod + 's / cycle'
-  },
+  ...varianceRows('edgeSpeed', {
+    name: 'Edge speed', amountDef: 50, periodDef: 22,
+    effective: S => S.effEdgeSpeed
+  }),
   {
     // A native <select> in v0, not a button row, so there is no per-option
     // DOM id to hand out; the options below exist for the toolkit's segment
@@ -997,26 +931,13 @@ export const VISUAL_CONTROLS = [
     parent: 'edgeStyleDrawer',
     min: 0.1, max: 20, step: 0.1, def: 3,
     get: S => S.edgeSize / 2,
-    effective: S => S.edgeSizeVar > 0 ? S.effEdgeSize / 2 : undefined,
     set: (S, pos) => { S.edgeSize = pos * 2; save(); },
     format: S => (S.edgeSize / 2).toFixed(1) + '×'
   },
-  {
-    id: 'edgeSizeVar', section: 'edge', label: 'Edge size variance', kind: 'slider',
-    varianceOf: 'edgeSize',
-    min: 0, max: 100, step: 1, def: 50,
-    get: S => Math.round(S.edgeSizeVar * 100),
-    set: (S, pos) => { S.edgeSizeVar = pos / 100; save(); },
-    format: S => Math.round(S.edgeSizeVar * 100) + '%'
-  },
-  {
-    id: 'edgeSizeVarPeriod', section: 'edge', label: 'Edge size var rate', kind: 'slider',
-    varianceOf: 'edgeSize',
-    min: 1, max: 60, step: 1, def: 18,
-    get: S => S.edgeSizeVarPeriod,
-    set: (S, pos) => { S.edgeSizeVarPeriod = pos; save(); },
-    format: S => S.edgeSizeVarPeriod + 's / cycle'
-  },
+  ...varianceRows('edgeSize', {
+    name: 'Edge size', amountDef: 50, periodDef: 18,
+    effective: S => S.effEdgeSize / 2
+  }),
   {
     id: 'trailLen', section: 'edge', label: 'Trail length', kind: 'slider',
     parent: 'edgeStyleDrawer',
@@ -1321,33 +1242,17 @@ export const VISUAL_CONTROLS = [
     parent: 'textStylingDrawer',
     min: 0, max: 100, step: 1, def: 95,
     get: S => Math.round(S.textOpacity * 100),
-    effective: S => S.textOpacityVar > 0
-      ? S.textOpacity * (1 - S.textOpacityVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.textOpacityPhase))) * 100
-      : undefined,
     set: (S, pos) => { S.textOpacity = pos / 100; save(); },
     format: S => Math.round(S.textOpacity * 100) + '%'
   },
-  {
-    id: 'textOpacityVar', section: 'text', label: 'Opacity variance', kind: 'slider',
-    varianceOf: 'textOpacity',
-    parent: 'textStylingDrawer',
-    min: 0, max: 100, step: 1, def: 10,
-    get: S => Math.round(S.textOpacityVar * 100),
-    set: (S, pos) => { S.textOpacityVar = pos / 100; save(); },
-    format: S => Math.round(S.textOpacityVar * 100) + '%'
-  },
-  {
-    id: 'textOpacityVarPeriod', section: 'text', label: 'Opacity var rate', kind: 'slider',
-    varianceOf: 'textOpacity',
-    parent: 'textStylingDrawer',
-    min: 1, max: 60, step: 1, def: 20,
-    get: S => S.textOpacityVarPeriod,
-    // in a running word walk the change is folded into the dip's phase
-    // offset first (core/words.js retimeWordOpacity), so it carries on from
-    // where it is at the new rate instead of jumping
-    set: (S, pos) => { retimeWordOpacity(S, S.textOpacityVarPeriod, pos); S.textOpacityVarPeriod = pos; save(); },
-    format: S => S.textOpacityVarPeriod + 's / cycle'
-  },
+  // In a running word walk a change of rate is folded into the dip's phase
+  // offset first (core/words.js retimeWordOpacity), so it carries on from
+  // where it is at the new rate instead of jumping. The walk steps the
+  // phase (core/words.js); the bar reads it here.
+  ...varianceRows('textOpacity', {
+    name: 'Opacity', amountDef: 10, parent: 'textStylingDrawer', retime: retimeWordOpacity,
+    effective: S => varied(S.textOpacity, S.textOpacityVar, S.textOpacityPhase) * 100
+  }),
   {
     // The one wrap control: how wide a line may run, as a share of the
     // view. A phrase breaks (only ever between words) into balanced,

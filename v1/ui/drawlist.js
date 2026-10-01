@@ -194,6 +194,30 @@ export class DrawList {
     d[o + 22] = stroke;
   }
 
+  // Records taken from an earlier frame's list (a run of this.data copied
+  // out), emitted again as they were, their opacity times the current group
+  // alpha. The word's backing keeps a snapshot this way to fade on after
+  // its word has gone (ui/screens/overlay.js). No clip test: the snapshot
+  // passed one when it was drawn, and the caller replays it at that clip.
+  replay(src, n) {
+    const a = this._alpha[this._alphaDepth - 1];
+    if (a <= 0.001 || n <= 0) return;
+    while ((this.count + n) * STRIDE > this.data.length) this._grow();
+    const o = this.count * STRIDE, d = this.data;
+    d.set(src.subarray(0, n * STRIDE), o);
+    let kept = 0;
+    for (let i = 0; i < n; i++) {
+      const s = i * STRIDE, k = o + kept * STRIDE;
+      const op = src[s + 23] * a;
+      if (op <= 0.001) continue;
+      if (k !== o + s) d.copyWithin(k, o + s, o + s + STRIDE);
+      d[k + 23] = op;
+      kept++;
+    }
+    this.count += kept;
+    this.batches[this.batchCount - 1].count += kept;
+  }
+
   // ---- internals ----
 
   // An instance that cannot put a pixel inside the current clip is dropped
