@@ -26,6 +26,7 @@
 // behaviour, while the engine and this file's createPlatform are not used on
 // the page at all.
 import { createInputQueue } from './input-queue.js';
+import { settingsFile } from './settings-file.js';
 import { displayListenScreen, displaySampleScreen } from '../js/display-watch.js';
 
 export const GUARDED_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab']);
@@ -374,6 +375,7 @@ export function createPlatform(canvas) {
     storage: { get: storageGet, set: storageSet },
     onStorage(fn) { storageCbs.push(fn); },
     clipboardWrite,
+    settingsFile,
     onVisibility(fn) { visCbs.push(fn); },
     fullscreen: { toggle: toggleFullscreen, active: fullscreenActive },
     message: showMessage,

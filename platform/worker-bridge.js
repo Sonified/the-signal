@@ -46,6 +46,7 @@ import {
   toggleFullscreen, fsElement, showMessage, watchLongTasks
 } from './web.js';
 import { createProfileHost } from './profile-web.js';
+import { settingsFile } from './settings-file.js';
 import { getContext } from '../js/audio.js';
 import { ENGINE_THREAD_KEY, engineThread, initEngineThread } from '../core/engine-thread.js';
 import { createAudioShell } from '../core/audio-shell.js';
@@ -318,6 +319,7 @@ function runShell(canvas, worker, shell, size0, env) {
         else if (!d.on && observers) { observers.stop(); observers = null; }
         break;
       case 'download': profHost.download(d.filename, d.text); break;
+      case 'settingsFile': settingsFile(d.kind); break;
       case 'expose': exposeProxy(d); break;
       case 'ret': {
         const c = calls.get(d.id);

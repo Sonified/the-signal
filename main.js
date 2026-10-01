@@ -58,6 +58,7 @@ import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from
 import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
+import { setSettingsFileHandler } from './core/schema-visual.js';
 import { byId } from './core/schema.js';
 import { buildDiagnostics } from './core/diagnostics.js';
 import { perf, perfAttachGpu, perfFrameStart, perfRecord } from './core/perf.js';
@@ -317,6 +318,7 @@ async function boot() {
   setMixerOpen(open => { mixer.open = !!open; });
   setSeqOpen(() => { sequencer.open = true; });
   setCopyHandler(txt => platform.clipboardWrite(txt));
+  setSettingsFileHandler(kind => platform.settingsFile(kind));
   // Going out of sight writes this tab's own pending changes first, then
   // holds back anything later (store.js's setHidden). Coming back arms a
   // wake, so the next frame resumes gently whatever its gap (core/wake.js).

@@ -122,6 +122,8 @@ export function createWorkerPlatform(init, post) {
     storage: { get: storageGet, set: storageSet },
     onStorage(fn) { storageCbs.push(fn); },
     clipboardWrite: text => request({ k: 'clip', text }),
+    // Download or load a settings file: the page does it (platform/settings-file.js).
+    settingsFile: kind => post({ k: 'settingsFile', kind }),
     onVisibility(fn) { visCbs.push(fn); },
     fullscreen: {
       toggle() { post({ k: 'fullscreen' }); return true; },

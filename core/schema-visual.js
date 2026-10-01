@@ -1804,8 +1804,23 @@ export const VISUAL_CONTROLS = [
     get: () => engineThread.wanted,
     set: (S, v) => setEngineThreadWanted(v),
     format: () => engineThreadStatus()
+  },
+  {
+    // Everything this app keeps (settings, presets, journeys, the broadcast
+    // key, window layout) to a file, and back: how a setup moves to another
+    // site or is kept safe (platform/settings-file.js, through main.js).
+    id: 'settingsDownload', section: 'render', label: 'Download settings', kind: 'action',
+    act: () => settingsFileHook('download')
+  },
+  {
+    id: 'settingsLoad', section: 'render', label: 'Load settings', kind: 'action',
+    act: () => settingsFileHook('load')
   }
 ];
+
+// The page's settings-file handler, set by main.js (platform.settingsFile).
+let settingsFileHook = () => {};
+export function setSettingsFileHandler(fn) { settingsFileHook = fn; }
 
 // Mirrors rebuildPool's filter in v0/js/text.js exactly, but reads the static
 // WORDS table directly rather than lane B's live pool cache: format() is
