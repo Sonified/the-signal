@@ -95,7 +95,8 @@ export function initAmbMixer() {
     clearTimeout(driftSaveTimer); driftSaveTimer = null; driftSaveOwed = false;
   }
   const WINDOW_KEY = 'signal.atmosphere.window.v1';
-  let layout = { open: true, x: null, y: 80, width: 500, version: 3 };
+  // A first visit starts with the mixer shut; after that it opens as it was left.
+  let layout = { open: false, x: null, y: 80, width: 500, version: 3 };
   try { Object.assign(layout, JSON.parse(localStorage.getItem(WINDOW_KEY) || '{}')); } catch {}
   if (!layout.version || layout.version < 3) { layout.width = 500; layout.version = 3; }
   let frame = 0, lastFrame = 0, resizeTimer;

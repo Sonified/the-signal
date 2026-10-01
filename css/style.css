@@ -623,6 +623,7 @@
     color:var(--ui-dim); font-size:13px; cursor:pointer; user-select:none;
   }
   #gate .skip input { accent-color:var(--ui-accent); margin:0; cursor:pointer; }
+  #gate .skip[hidden] { display:none; }
   /* The panel guard's notice: the opening safety card's look, floating in the
      middle of the visible field rather than covering the page, since the field
      is already stopped behind it and the drawer should stay reachable. Only

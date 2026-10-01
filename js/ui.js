@@ -1572,13 +1572,13 @@ export function initUI() {
   // The warning is unskippable the first time a browser sees this page: the
   // opt-out only appears once someone has already read it and come back. A
   // full-field flicker is not something to let a first-time visitor click past.
+  // The row starts hidden in the page itself, so a first visit never glimpses
+  // it while the scripts load; a returning visitor's is revealed here.
   const SEEN_KEY = SKIP_KEY + '.seen';
   let seenBefore = false;
   try { seenBefore = localStorage.getItem(SEEN_KEY) === '1'; } catch (e) {}
-  if (!seenBefore) {
-    const row = document.querySelector('#gate .skip');
-    if (row) row.remove();
-  }
+  const row = document.querySelector('#gate .skip');
+  if (row) row.hidden = !seenBefore;
 
   $('gateBtn').onclick = () => {
     warmDevice();            // wake the device here, minutes before anything plays
