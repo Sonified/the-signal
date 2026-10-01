@@ -19,7 +19,7 @@
 //
 // Media Session. The lock screen, a headset's button and a keyboard's media
 // keys show the title and send play and pause, which go to the app's own
-// transport (setMediaTransport, from v1/main.js), so pausing from the lock
+// transport (setMediaTransport, from main.js), so pausing from the lock
 // screen is exactly the space bar. playbackState is kept in step.
 //
 // Every piece is feature detected and fails silently: a desktop browser

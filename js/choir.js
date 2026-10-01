@@ -32,7 +32,7 @@ import { chanGate, onChannelGates } from './mixgate.js';
 import { strobeAm, strobeAmEffective } from './strobe-am.js';
 import { inTurn, TURN } from './load-order.js';
 import { every, clear } from './ticker.js';
-import { breath, breathState, resetBreath, resetBreathLow } from '../v1/core/variance.js';
+import { breath, breathState, resetBreath, resetBreathLow } from '../core/variance.js';
 
 // Semitone above the keyboard root -> the degree sung, ascending the mode.
 const LAH = { 24: '1', 26: '2', 28: '3', 31: '5', 35: '7', 36: '8', 38: '9' };
@@ -303,7 +303,7 @@ function choirStop() {
 
 // ---------- the variance wander ----------
 // Each variance is the app's one law run on the audio clock
-// (v1/core/variance.js breath), sinusoid or walk by its Behavior toggle
+// (core/variance.js breath), sinusoid or walk by its Behavior toggle
 // (schema-audio.js), one full cycle (or one walk leg) per period, so the
 // speed dial reads directly as the swing you hear. The clocks hold still at
 // 0 amount.

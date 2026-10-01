@@ -6,7 +6,7 @@
 // (strobeTap, js/piano.js).
 //
 // The swing is the flash itself, not an oscillator set to its rate. The
-// strobe is one formula of time (v1/core/signal.js), and one AudioWorklet
+// strobe is one formula of time (core/signal.js), and one AudioWorklet
 // node ('strobe-signal', js/worklet.js) runs that formula sample by sample
 // and puts out +1 lit, -1 dark; every stage taps that one node, so every
 // pulse lands where the screen's flash does, at any wave, through any glide,
@@ -39,11 +39,11 @@ import { S } from './state.js';
 import { getContext, glideParam, watchEngine } from './audio.js';
 import { makeWorklet } from './heart/route.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
-import { breath, breathState } from '../v1/core/variance.js';
+import { breath, breathState } from '../core/variance.js';
 import { every, clear } from './ticker.js';
 import {
   signal, SIGNAL_ORIGIN, signalNow, steerSignal, setSignalShape, waveCode, onSignal, publishSignal
-} from '../v1/core/signal.js';
+} from '../core/signal.js';
 
 // The strobe's flash rate as it is actually shown (the frame-locked rate
 // when locked, drift included otherwise) and its waveform: what an early
@@ -58,7 +58,7 @@ const taps = new Set();     // every tap on the flash: the stages' and the seque
 let timer = null;
 
 // ---------- the audio clock ----------
-// The signal's t is absolute milliseconds (v1/core/signal.js); the worklet's
+// The signal's t is absolute milliseconds (core/signal.js); the worklet's
 // is this context's currentTime. The two are matched in real time, as Robert
 // asked, with no allowance for output latency on either side: a sample is
 // given the signal's value for the moment it is rendered, as a frame is
@@ -244,7 +244,7 @@ function track() {
 }
 
 // The depth's own variance, the app's one law on the audio clock
-// (v1/core/variance.js breath), sinusoid or walk by the voice's Behavior
+// (core/variance.js breath), sinusoid or walk by the voice's Behavior
 // toggle. The dip multiplies the voice's set depth, so the pulse breathes
 // between (1 - variance) of the slider and the full setting, never above it.
 function wanderMul(am, now) {

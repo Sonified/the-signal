@@ -17,7 +17,7 @@ import { strobeAm, strobeAmEffective, strobeTap, untapStrobe } from './strobe-am
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { inTurn, TURN } from './load-order.js';
 import { every, after, clear } from './ticker.js';
-import { breath, breathPhase, breathState } from '../v1/core/variance.js';
+import { breath, breathPhase, breathState } from '../core/variance.js';
 
 const SEMIS = [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40];
 const RELEASES = 18;
@@ -205,7 +205,7 @@ export function applyPianoReverb() {
   if (arp) seqSync();
 }
 
-// The room's two variances, each the app's standard dip (v1/core/variance.js
+// The room's two variances, each the app's standard dip (core/variance.js
 // breath, the sinusoid): the level and the decay ease down from their
 // settings by the amount's share and back, one cycle per its speed (an unset
 // speed reads as 20 s), stepped by the music's clock (step, below) on the
@@ -659,7 +659,7 @@ function gesture(at) {
 }
 
 // One gesture now, on request: v1's journey plays the piano on the words,
-// one gesture as each appears (v1/core/journey.js). The free clock is left
+// one gesture as each appears (core/journey.js). The free clock is left
 // alone, so free play picks up where it idled when the step lets it go.
 // Nothing without a running, loaded piano with its voice on, which also
 // makes it a harmless no-op in v1's engine worker, where no context exists.
@@ -1169,7 +1169,7 @@ export function seqRandomize(p) {
 }
 
 // The lines as one row of numbers, the single way they travel in worker
-// mode (v1/core/audio-link.js packs, v1/core/audio-shell.js unpacks), so
+// mode (core/audio-link.js packs, core/audio-shell.js unpacks), so
 // both ends share this one layout: the active slot, then each line as
 // SEQ_STRIDE numbers, its length, its 16 steps, its wave (an index into
 // SEQ_WAVES) and octave mode (an index into SEQ_OCT_MODES), then the
@@ -1237,7 +1237,7 @@ export const SEQ_DLY_STEPS = [0.25, 1 / 3, 0.5, 2 / 3, 0.75, 1, 1.5, 2, 3, 4];
 // Five settings on each line can swing on their own slow sine: the
 // envelope's attack and decay, the mix into the line's room, the pan and
 // the delay's feedback. Each is a variance on the one law
-// (v1/core/variance.js breath), with its own period (its RATE, 1 to 120 s a
+// (core/variance.js breath), with its own period (its RATE, 1 to 120 s a
 // cycle) and depth (its VAR, or MOD for the pan), run on the sequencer's own
 // clock: seqT moves only on the step clock's pump, by the audio clock's time
 // since the last pump, so the swings hold still while the sequencer is
@@ -1363,7 +1363,7 @@ const arpVolSweep = createSweep({
 // The strobe pulse taps the strobe's own flash (strobe-am.js strobeTap), the
 // one signal the drone's, the choir's and the clouds' stages tap too.
 // The master volume's and the strobe pulse's variances, each the app's
-// standard dip (v1/core/variance.js breath, the sinusoid): down from the
+// standard dip (core/variance.js breath, the sinusoid): down from the
 // setting by the amount's share and back, one cycle per its speed (an unset
 // speed reads as 20 s), stepped by arpPump on the audio clock, so a
 // suspended context holds them where they are. schema-audio.js reads the
@@ -1535,7 +1535,7 @@ function lineShape(v, q, i) {
   }
 }
 // A waveform crossfade: while a journey step ramps a line from one wave to
-// another (v1/core/journey.js), the line names the wave it is leaving
+// another (core/journey.js), the line names the wave it is leaving
 // (morphWave, 1 + its index in SEQ_WAVES) and how far it has come (morphMix,
 // 0 to 1). The line's own tone is already the new wave; a second tone in the
 // old one plays beside it, at the same pitch and under the same filter, so

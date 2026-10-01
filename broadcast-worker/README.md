@@ -6,8 +6,8 @@ late joiner the latest snapshot the moment they connect. Uses WebSocket
 hibernation, so an idle room costs nothing; demo-scale traffic fits inside
 Cloudflare's free tier.
 
-The client halves live in the app: `v1/platform/broadcast-socket.js` (the
-socket) and `v1/core/broadcast.js` (the logic).
+The client halves live in the app: `platform/broadcast-socket.js` (the
+socket) and `core/broadcast.js` (the logic).
 
 ## Deploy (once)
 
@@ -19,7 +19,7 @@ npx wrangler secret put BROADCAST_KEY   # choose the broadcast passphrase
 ```
 
 Then put the printed host (no scheme, no path) into `RELAY_HOST` at the top
-of `v1/platform/broadcast-socket.js` and push the site.
+of `platform/broadcast-socket.js` and push the site.
 
 ## Use
 
@@ -28,9 +28,9 @@ of `v1/platform/broadcast-socket.js` and push the site.
   session shows how many viewers are watching. Every settings change you make
   (and run/stop) goes up as it happens. The URL form
   `?broadcast=<room>&key=<passphrase>` still works and seeds a session.
-- **Link target:** choose Live page to copy a public GitHub Pages URL, or
-  Localhost to copy a development URL. Live page is the default even when the
-  broadcaster is running locally.
+- **Link target:** choose Live page to copy the public site URL (`LIVE_PAGE` in
+  `platform/broadcast-socket.js`), or Localhost to copy a development URL.
+  Live page is the default even when the broadcaster is running locally.
 - **Everyone else:** open the link you copied (`?follow=<room>`) — their
   settings glide to yours, live, exactly as a preset recall does. They still
   press Space once themselves so the browser lets sound play.

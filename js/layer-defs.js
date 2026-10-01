@@ -2,9 +2,9 @@
 // own switch and level (js/layers.js plays them). This table is the whole of a
 // layer's definition. Everything else is built from it: the state defaults
 // and the mix gate's channels (state.js, mixgate.js), the saved settings
-// (v1/core/store.js), the Music section's toggle, sub-drawer and level, the
-// mixer strip and its meter (v1/core/schema-audio.js, atmosphere.js,
-// v1/ui/screens/mixer.js). A new layer is one entry here plus its loop in
+// (core/store.js), the Music section's toggle, sub-drawer and level, the
+// mixer strip and its meter (core/schema-audio.js, atmosphere.js,
+// ui/screens/mixer.js). A new layer is one entry here plus its loop in
 // audio/music/layers.
 //
 // It imports nothing, so state.js and mixgate.js can read it without a cycle.

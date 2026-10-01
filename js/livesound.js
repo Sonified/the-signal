@@ -19,7 +19,7 @@
 // The input is opened only when the layer is switched on, never at boot, and
 // switching it off stops the tracks, so the browser's microphone light goes
 // out with it, and closes the context. The switch itself is never saved
-// (v1/core/store.js keeps the input, the level, the room, the compressor and
+// (core/store.js keeps the input, the level, the room, the compressor and
 // the latency in a record of their own and leaves the switch out), so a reload always comes
 // up with the input closed and nothing is ever opened before someone asks
 // for it. A refusal fails soft: a warning in the console, the switch back to
@@ -36,7 +36,7 @@
 //
 // In worker mode this module is loaded twice: in the worker, where the
 // drawer draws and nothing can be captured, and on the page, where the audio
-// shell (v1/core/audio-shell.js) runs every set() the worker makes, so the
+// shell (core/audio-shell.js) runs every set() the worker makes, so the
 // page's copy is the one that captures. The page tells the worker what it
 // found (the inputs, whether an attempt failed, and the latency it got)
 // through liveFromPage, and how hard the compressor is working through
@@ -363,7 +363,7 @@ function release() {
 // and it is announced as exactly that, one onLiveChange for each edge. The
 // broadcast tap is one of the nodes rebuilt, so the stream handed out by
 // liveBroadcastStream is a new object afterwards, which the transport
-// (v1/core/live-audio.js) sees as a new recording to start.
+// (core/live-audio.js) sees as a new recording to start.
 function rebuild() {
   rebuildTimer = null;
   if (!graph || graph.ms === latencyMs()) return;
@@ -417,7 +417,7 @@ if (media()) {
   try { media().addEventListener('devicechange', refreshInputs); } catch (e) {}
 }
 
-// ---------- the controls (v1/core/schema-audio.js) ----------
+// ---------- the controls (core/schema-audio.js) ----------
 export function applyLiveOn() {
   if (S.liveOn) { if (!cap && !busy) acquire(); }
   else release();
@@ -521,7 +521,7 @@ export function liveFromPage(msg) {
 }
 
 // ---------- the broadcast tap ----------
-// The broadcast side (v1/core/broadcast.js and its transport) imports this.
+// The broadcast side (core/broadcast.js and its transport) imports this.
 // A MediaStream of the designed sound while the layer is on and capturing,
 // otherwise null. It is taken from the voice, after the compressor and the
 // reverb mix, and before the local level fader and the monitor's gate, at

@@ -184,7 +184,7 @@ Everything here is the Web Audio spec unless it says Chrome. Where the spec leav
 | Convolver | B | the spec's normalisation (`normalize = true`): `scale = 1/√(Σx²/(channels·len)) · 10^(−58/20) · 44100/sr`, with the 4-channel halving. Mono input into a 2-channel IR gives L = in∗IR0, R = in∗IR1; stereo input gives L = inL∗IR0, R = inR∗IR1. **Non-uniform partitioned FFT convolution**: zero latency, 128-frame head partitions, sizes doubling through the tail. The tail is the IR's length. |
 | FDN | B | port of js/fdn-worklet.js, sample for sample |
 | one-pole | B | port of worklet.js 'one-pole', `frequency` a-rate with G exact every 8 samples |
-| strobe-signal | B | port of worklet.js 'strobe-signal', including its message `{at, p, r0, r1, dur, wave, duty, on}` and the shared signal math (`v1/core/signal.js` cyclesAt/rateAt/waveShape) |
+| strobe-signal | B | port of worklet.js 'strobe-signal', including its message `{at, p, r0, r1, dur, wave, duty, on}` and the shared signal math (`core/signal.js` cyclesAt/rateAt/waveShape) |
 | genus | B | port of worklet.js 'genus', all 27 params, 3 outputs `[2, 2, 1]`, every port message in and out (peaks, dip, chirp table with ack) |
 
 ### 6.4 Randomness

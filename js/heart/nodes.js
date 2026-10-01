@@ -870,7 +870,7 @@ const SIGNAL_IN = MESSAGES.strobe_signal_in, GENUS_IN = MESSAGES.genus_in, GENUS
 //   dur' = dur − Δ, r1 the same       what is left of the ramp, or, once
 //                                     it is over, a steady r1
 //
-// which v1/core/signal.js's cyclesAt confirms: the cycles from at' on are
+// which core/signal.js's cyclesAt confirms: the cycles from at' on are
 // r0'τ + (r1 − r0')τ²/2dur', the old formula's cycles less those it had
 // done by Δ. Every replica, made now or later, hears the folded message, so
 // they all change on the same frame. A single stage needs no fold, and the
@@ -891,7 +891,7 @@ class StrobeSignalCodec {
 }
 
 // The formula's numbers `delta` seconds after its anchor: [p, r0, r1, dur].
-// cycles is v1/core/signal.js cyclesAt (and the Rust port's cycles_at).
+// cycles is core/signal.js cyclesAt (and the Rust port's cycles_at).
 export function foldSignal(p, r0, r1, dur, delta) {
   let cycles, rate;
   if (!(dur > 0)) { cycles = r0 * delta; rate = r0; }

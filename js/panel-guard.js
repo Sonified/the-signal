@@ -40,7 +40,7 @@
 //
 // Testing without a 60 Hz display: guardSimulate(hz) makes the guard model a
 // display refreshing at `hz` instead of the real one. It replays the frame
-// lock exactly as v0/js/main.js and v1/core/strobe.js would run it at that rate
+// lock exactly as v0/js/main.js and core/strobe.js would run it at that rate
 // (frames per cycle, spare frame, waveform, depth) against a virtual refresh
 // clock, and feeds that into the same integrators, so the whole path from
 // measurement to pause to message is exercised. Each surface exposes it in
@@ -160,7 +160,7 @@ export function guardSimulate(hz) {
 }
 
 // The light the field puts out for this strobe level, as the renderers draw
-// it (js/renderers/canvas2d.js drawField, v1/gpu/scene-data.js): the envelope
+// it (js/renderers/canvas2d.js drawField, gpu/scene-data.js): the envelope
 // every strobing layer follows. Nothing strobing on screen reads as dark.
 function lightOf(lum) {
   if (!(layers.field || layers.corners || layers.flowers || layers.kaleido || layers.particles)) return 0;

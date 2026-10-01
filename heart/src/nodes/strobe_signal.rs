@@ -3,7 +3,7 @@
 //! 'strobe-signal' processor.
 //!
 //! It is not a clock of its own and it chases nothing. The flash is one
-//! formula of time (v1/core/signal.js), and this runs that formula at every
+//! formula of time (core/signal.js), and this runs that formula at every
 //! sample's own time, handed the formula's numbers by the page whenever they
 //! change: the anchor, the phase there, the rate and its ramp, the wave, the
 //! duty, and whether the flicker shows. Between changes there is nothing to
@@ -17,7 +17,7 @@
 //!
 //! The law itself (cycles_at, rate_at, wave_shape) lives here once, for this
 //! node and for genus, which reads the first two for its phase while linked
-//! to the visual. They are v1/core/signal.js's cyclesAt, rateAt and
+//! to the visual. They are core/signal.js's cyclesAt, rateAt and
 //! waveShape, which js/worklet.js copies as sigCycles, sigRate and sigShape;
 //! a change to any of them there must be made here too.
 //!

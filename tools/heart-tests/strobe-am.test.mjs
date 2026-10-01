@@ -29,7 +29,7 @@ const nativeCtx = {
 const h = await load();
 const { S } = await import('../../js/state.js');
 const { strobeTap, untapStrobe } = await import('../../js/strobe-am.js');
-const { publishSignal } = await import('../../v1/core/signal.js');
+const { publishSignal } = await import('../../core/signal.js');
 S.workletReady = true;
 
 test('one node per context, native and Heart, and every one hears the formula', () => {

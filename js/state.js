@@ -92,9 +92,9 @@ export const S = {
   hintSweep: 2,               // v1: the hint's left-to-right dissolve speed, x the words' default Leave sweep
   hintFadeInMs: 2000,         // v1: ms the hint takes to appear (boot and every pause), 0 at once
   hintArrive: 'sweep',        // v1: how the hint appears: 'sweep' left to right, 'all' at once
-  fbResScale: 1,              // v1: Trail res, the screen feedback images' texels per device px (1, 0.75, 0.5; v1/gpu/feedback.js)
+  fbResScale: 1,              // v1: Trail res, the screen feedback images' texels per device px (1, 0.75, 0.5; gpu/feedback.js)
   fbResSwitch: 'keep',        // v1: Trail switch, what a Trail res change does to the trails: 'keep' hands them over, 'clear' starts afresh
-  parallaxSim: false,         // v1: simulated head sway for parallax (v1/core/eye.js); never saved, off every load
+  parallaxSim: false,         // v1: simulated head sway for parallax (core/eye.js); never saved, off every load
   parallaxAmount: 0.1,        // v1: the sway's peak eye offset, tunnel units (0.1 is 10% of the tunnel's radius)
   parallaxSpeed: 0.25,        // v1: the sway's frequency, Hz (one side to the other and back)
 
@@ -121,13 +121,13 @@ export const S = {
   ringSpeedMul: 0.5, edgeCount: 60, edgeSize: 6, trailMul: 1, ringFade: 0.55, ringThick: 3, ringThickVar: 1,
   edgeOpacity: 1,             // v1: scales the edge particles' brightness
   edgePulse: 1,               // v1: how much the edge breathes with the strobe's flicker, 0 steady
-  // v1: edge video feedback (v1/gpu/scene.js). edgeFb 0..1 softens the edge
+  // v1: edge video feedback (gpu/scene.js). edgeFb 0..1 softens the edge
   // into trails, 0 off; edgeFbStream -2..2 streams them out (+) or in (-);
   // edgeFbTwist -1..1 turns them about the centre, + clockwise;
   // edgeFbOpacity 0..1 is how solidly that image lands on the scene.
   edgeFb: 0, edgeFbStream: 0, edgeFbTwist: 0, edgeFbOpacity: 1,
   edgeCap: 'wedge',           // v1: the edge particle's head, 'wedge' (<>), 'round' or 'ball'
-  // v1: the edge's effect (v1/gpu/scene.js, edge-fx.js): 'surfing' (the
+  // v1: the edge's effect (gpu/scene.js, edge-fx.js): 'surfing' (the
   // tails above), 'particles', 'flame' or 'glow', and each new one's settings.
   // Particles: births a second, spark radius px, drift -1..1 (+ out past the
   // border, - in toward the centre), sparkle 0..1. Flame: reach px, speed x,
@@ -244,7 +244,7 @@ export const S = {
   // length of the pause, and variance widens the range the actual length is drawn
   // from rather than making every pause longer.
   textRestFreq: 0.04, textRestSec: 10, textRestVar: 0.7,
-  // Transitions (v1/core/word-fx.js): how the letters arrive and leave inside
+  // Transitions (core/word-fx.js): how the letters arrive and leave inside
   // the fade in and fade out times. Mirror has the word leave the way it came.
   // Distance is in word heights, the rest are 0..1.
   textFadeInOn: true, textFadeOutOn: true,   // v1: off, the word just appears / goes
@@ -252,7 +252,7 @@ export const S = {
   textFxDist: 1.5, textFxStagger: 0.5, textFxTurb: 0.5, textFxBlur: 0.6,
   textFxEase: 0.6, textFxWindDir: 0,
   textCloudCount: 12000, textCloudSize: 1.6,   // legacy Cloud particle keys, kept for old saves
-  // Smoke (v1/gpu/word-smoke.js): recorded-vapour tuning, all 0..1 except
+  // Smoke (gpu/word-smoke.js): recorded-vapour tuning, all 0..1 except
   // speed (0..2, 1 is travel of about the Distance setting).
   textSmokeSpeed: 1, textSmokeSoft: 0.5, textSmokeLinger: 0.5,
   textSmokeRadial: 0.75, textSmokeAccel: 0.7, textSmokeEq: 0.5,   // Smoke: outward-vs-swirl balance, and motion wind-up
@@ -289,7 +289,7 @@ export const S = {
   // arpRev, arpSpread, arpAtk and arpDec each moved onto the lines (seqs
   // below); these globals stay only because v0 shares the settings record
   // that holds them, and an old v1 record's values seed the lines when it is
-  // migrated (v1/core/store.js applySeqState). Nothing else reads them.
+  // migrated (core/store.js applySeqState). Nothing else reads them.
   arpOn: false, arpVol: 0.5, arpRate: 7, arpWave: 'sine', arpAtk: 0.01, arpDec: 0.25, arpOct: 0, arpRev: 1, arpSpread: 0.9,
   arpStrobeAm: 0,             // 'Vary with strobe': depth of a volume pulse at the flash rate, 0..1
   arpHfCut: 0,                // 'High freq reduction': dB off each line's highest reachable note, 0..20, sloped down to 0 at its lowest

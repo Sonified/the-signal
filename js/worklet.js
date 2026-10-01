@@ -19,7 +19,7 @@
 // the phase, so a rate that moves mid-pip cannot move the pip.
 //
 // Linked to the visual (S.amLinked), that one phase is the strobe's own: the
-// flash is a formula of time (v1/core/signal.js), the page hands this
+// flash is a formula of time (core/signal.js), the page hands this
 // processor the formula's numbers whenever they change (js/strobe-am.js,
 // the same post the Vary with strobe stages' node gets), and while linked
 // the phase is steered sample by sample onto the formula's phase, shifted so
@@ -33,7 +33,7 @@
 
 // ---------- locked to the flash ----------
 // Where on the strobe's cycle the genus lands while linked, as phases of the
-// flash's own cycle (v1/core/signal.js: 0 is the cycle's start, where a
+// flash's own cycle (core/signal.js: 0 is the cycle's start, where a
 // square lights; a sine or a triangle is brightest at 0.5). Robert's rule is
 // that the sound is loudest while the screen is lit. `pip` is where the pip
 // fires and the genus cycle begins; `peak` is where the tone's envelope (and
@@ -146,7 +146,7 @@ class GenusProcessor extends AudioWorkletProcessor {
     // the rate does, and a carrier that moves mid-pip bends it rather than
     // jumping its phase.
     this.pipN = 0; this.pipPh = 0;
-    // The flash's formula (v1/core/signal.js, as js/strobe-am.js posts it:
+    // The flash's formula (core/signal.js, as js/strobe-am.js posts it:
     // the anchor in this context's seconds, the phase there, the rate and
     // its ramp), whether the pulse is linked to it, and where on it the
     // genus lands (flashAlign). Until the first post there is no formula
@@ -703,7 +703,7 @@ registerProcessor('one-pole', OnePoleProcessor);
 // The strobe's own flash as a signal, for every Vary with strobe stage
 // (js/strobe-am.js): one of these feeds them all. It is not a clock of its
 // own and it chases nothing. The flash is one formula of time
-// (v1/core/signal.js), and this runs that formula at every sample's own
+// (core/signal.js), and this runs that formula at every sample's own
 // time, handed the formula's numbers by the page whenever they change: the
 // anchor (in this context's seconds), the phase there, the rate and its
 // ramp, the wave, the duty, and whether the flicker shows. Between changes
@@ -720,7 +720,7 @@ registerProcessor('one-pole', OnePoleProcessor);
 // imported the law would hang the whole module, the engine's tone and pips
 // included, on module imports inside worklets, which not every browser this
 // app runs on has had for long. So the law's pieces are copied here,
-// sigCycles from v1/core/signal.js's cyclesAt, sigRate from its rateAt and
+// sigCycles from core/signal.js's cyclesAt, sigRate from its rateAt and
 // sigShape from its waveShape, exactly as the click's dip above keeps its
 // copy of the variance law. A change to any of them there must be made here
 // too. The genus processor above reads sigCycles and sigRate as well, for
@@ -742,7 +742,7 @@ function sigShape(wave, duty, p) {
 class StrobeSignalProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // the formula's numbers (v1/core/signal.js signalState), at seconds on
+    // the formula's numbers (core/signal.js signalState), at seconds on
     // this context's clock; until the page's first word, a steady 7.5 Hz
     // square held lit
     this.at = 0; this.p = 0; this.r0 = 7.5; this.r1 = 7.5; this.dur = 0;

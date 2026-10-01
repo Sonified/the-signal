@@ -17,7 +17,7 @@
 //! phase, so a rate that moves mid-pip cannot move the pip.
 //!
 //! Linked to the visual (S.amLinked), that one phase is the strobe's own: the
-//! flash is a formula of time (v1/core/signal.js, strobe_signal.rs here), the
+//! flash is a formula of time (core/signal.js, strobe_signal.rs here), the
 //! page hands this node the formula's numbers whenever they change, and while
 //! linked the phase is steered sample by sample onto the formula's phase,
 //! shifted so the loud part of the pulse lands on the lit part of the flash

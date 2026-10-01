@@ -123,7 +123,7 @@ const NOT_FOUND = `<!doctype html>
 <meta charset="utf-8">
 <title>Not found</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#000;color:#b9c6d4;font:300 18px/1.4 ui-sans-serif,-apple-system,sans-serif}</style>
-<p>Nothing here. <a href="/v1/" style="color:inherit">Open The Signal</a></p>
+<p>Nothing here. <a href="/" style="color:inherit">Open The Signal</a></p>
 `;
 
 server.on('error', err => {
@@ -133,5 +133,5 @@ server.on('error', err => {
 });
 
 server.listen(PORT, () => {
-  console.log(`The Signal: http://localhost:${PORT}/v1/  (cross-origin isolated, no-store; serving ${ROOT})`);
+  console.log(`The Signal: http://localhost:${PORT}/  (cross-origin isolated, no-store; serving ${ROOT})`);
 });

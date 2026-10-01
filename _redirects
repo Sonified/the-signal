@@ -1,0 +1,4 @@
+# Old links into the app's former home. Exact paths first, then the splat.
+/v1     /        301
+/v1/    /        301
+/v1/*   /:splat  301

@@ -2,7 +2,7 @@
 
 A browser-based tool for rhythmic audio-visual stimulation, built for meditation, open-focus attention practice, and inner work.
 
-**→ [Open The Signal](https://sonified.github.io/the-signal/)**
+**→ [Open The Signal](https://presence.now.audio/)**
 
 ---
 
@@ -101,7 +101,7 @@ python3 -m http.server 8000
 For the full audio engine, serve it with the repo's own server instead:
 
 ```
-node tools/serve.mjs        # http://localhost:8000/v1/ (a port number as an argument changes it)
+node tools/serve.mjs        # http://localhost:8000/ (a port number as an argument changes it)
 ```
 
 It sends the cross-origin isolation headers that Heart, the audio engine, needs for its fastest mode (shared memory between its workers), and tells the browser never to cache, so a reload always runs what is on disk. `python3 -m http.server` still works; Heart then carries its audio in messages instead.

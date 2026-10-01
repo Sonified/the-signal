@@ -41,7 +41,7 @@ month of video; see the research doc.
 
 ## What was built today (all in v1, Robert tests in Chrome)
 
-- **Watcher gating** (v1/core/broadcast.js): state snapshots, phase
+- **Watcher gating** (core/broadcast.js): state snapshots, phase
   beacons and relayed words go only to sessions with watchers > 0. An
   empty room hears nothing but the 10 s clock probe and the 20 s ping
   and hibernates between them. A first watcher's count transition
