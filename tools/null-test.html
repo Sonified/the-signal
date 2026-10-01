@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heart Null Tests</title>
+<style>
+  :root {
+    --bg: #0e0d0b;
+    --surface: #15130f;
+    --line: #29251c;
+    --text: #ebe5d6;
+    --muted: #958d7e;
+    --gold: #d6a84a;
+    --gold-soft: rgba(214, 168, 74, 0.45);
+    --fail: #e2705c;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-weight: 500; font-size: 26px; letter-spacing: 0.01em; margin: 0 0 6px; }
+  h1 span { color: var(--gold); }
+  .lede { color: var(--muted); margin: 0 0 28px; max-width: 70ch; }
+  .bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px;
+    padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    position: sticky; top: 0; z-index: 2;
+  }
+  button {
+    font: inherit; font-weight: 600; color: var(--bg); background: var(--gold);
+    border: 0; border-radius: 7px; padding: 8px 18px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.45; cursor: default; }
+  label { color: var(--muted); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--gold); }
+  #summary { flex: 1 1 320px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  #summary b { color: var(--text); font-weight: 600; }
+  #summary .bad { color: var(--fail); }
+  h2 {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--gold); margin: 36px 0 8px;
+  }
+  .wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  th {
+    text-align: left; font-weight: 500; font-size: 12px; color: var(--muted);
+    padding: 6px 10px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  td.name { cursor: pointer; }
+  td.name:hover { color: var(--gold); }
+  td.name small { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; margin-top: 2px; }
+  td.mark { font-family: var(--mono); font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .cell { display: grid; grid-template-columns: 46px 64px 64px 1fr auto; gap: 10px; align-items: center; }
+  .plays { display: inline-flex; gap: 4px; }
+  .plays button {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; padding: 3px 7px; border-radius: 4px;
+    color: var(--muted); background: transparent; border: 1px solid var(--line);
+  }
+  .plays button:hover:not(:disabled) { color: var(--gold); border-color: var(--gold-soft); }
+  .plays button.on { color: var(--bg); background: var(--gold); border-color: var(--gold); }
+  .num { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  .num.rms { color: var(--muted); }
+  .pill {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-align: center;
+    padding: 2px 0; border-radius: 4px; border: 1px solid var(--line); color: var(--muted);
+  }
+  .pill.pass { color: var(--gold); border-color: var(--gold-soft); }
+  .pill.fail { color: var(--fail); border-color: rgba(226, 112, 92, 0.5); }
+  .pill.busy { color: var(--muted); }
+  canvas { width: 160px; height: 30px; display: block; }
+  .err { color: var(--fail); font-size: 12px; font-family: var(--mono); }
+  footer { color: var(--muted); font-size: 13px; margin-top: 40px; max-width: 75ch; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Heart <span>null tests</span></h1>
+  <p class="lede">Each scenario is rendered on a native <code>OfflineAudioContext</code> and on Heart's
+    <code>OfflineHeartContext</code>, with the same calls, then subtracted. What is left is the residual:
+    its peak must sit below the scenario's mark. Click a scenario to run it alone.</p>
+  <div class="bar">
+    <button id="run">Run all</button>
+    <label><input type="checkbox" id="r48" checked> 48 kHz</label>
+    <label><input type="checkbox" id="r44" checked> 44.1 kHz</label>
+    <div id="summary">Not run yet.</div>
+  </div>
+  <div id="groups"></div>
+  <footer>Residuals are in dBFS: the peak decides, the RMS is shown beside it. Each little trace is the
+    residual itself, scaled to its own peak, left in gold and right fainter. The marks are the spec's
+    (documents/heart-audio-engine.md, §9).</footer>
+</main>
+<script type="module" src="./null-test.js"></script>
+</body>
+</html>

@@ -1,0 +1,808 @@
+{
+  "_": "Heart's wire format, the single source of truth. tools/heart-protocol.mjs generates heart/src/protocol_gen.rs and js/heart/protocol-gen.js from this file; never hand-edit those. Every record is little-endian: u16 op, u16 byteLength (the whole record), u32 node, then the fields below in order. Types: u32, f32, f64, and f32[] / u8[] (a u32 count, then the items, padded to 4 bytes). See documents/heart-audio-engine.md section 8.",
+  "kinds": {
+    "gain": 1,
+    "constant_source": 2,
+    "stereo_panner": 3,
+    "delay": 4,
+    "biquad": 5,
+    "oscillator": 6,
+    "buffer_source": 7,
+    "analyser": 8,
+    "convolver": 9,
+    "fdn": 10,
+    "one_pole": 11,
+    "strobe_signal": 12,
+    "genus": 13,
+    "egress": 14,
+    "ingress": 15,
+    "master": 16
+  },
+  "kind_options": {
+    "_": "create's opts[8], positional per kind; unlisted slots are 0",
+    "delay": [
+      "maxDelayTime"
+    ],
+    "biquad": [
+      "type"
+    ],
+    "oscillator": [
+      "type"
+    ],
+    "analyser": [
+      "fftSize"
+    ],
+    "egress": [
+      "port"
+    ],
+    "ingress": [
+      "port",
+      "sourceStage"
+    ],
+    "genus": [],
+    "fdn": [],
+    "one_pole": [],
+    "strobe_signal": []
+  },
+  "params": {
+    "_": "Per kind, in wire order: [name, default, min, max, rate]. 'max' is f32::MAX, '-max' its negative, 'nyquist' half the sample rate, 'maxDelayTime' the delay's creation option; the graph clamps with the numbers, a node clamps the sample-rate-dependent ones itself.",
+    "gain": [
+      [
+        "gain",
+        1,
+        "-max",
+        "max",
+        "a"
+      ]
+    ],
+    "constant_source": [
+      [
+        "offset",
+        1,
+        "-max",
+        "max",
+        "a"
+      ]
+    ],
+    "stereo_panner": [
+      [
+        "pan",
+        0,
+        -1,
+        1,
+        "a"
+      ]
+    ],
+    "delay": [
+      [
+        "delayTime",
+        0,
+        0,
+        "maxDelayTime",
+        "a"
+      ]
+    ],
+    "biquad": [
+      [
+        "frequency",
+        350,
+        0,
+        "nyquist",
+        "a"
+      ],
+      [
+        "detune",
+        0,
+        -153600,
+        153600,
+        "a"
+      ],
+      [
+        "Q",
+        1,
+        "-max",
+        "max",
+        "a"
+      ],
+      [
+        "gain",
+        0,
+        -1541,
+        1541,
+        "a"
+      ]
+    ],
+    "oscillator": [
+      [
+        "frequency",
+        440,
+        "-nyquist",
+        "nyquist",
+        "a"
+      ],
+      [
+        "detune",
+        0,
+        -153600,
+        153600,
+        "a"
+      ]
+    ],
+    "buffer_source": [
+      [
+        "playbackRate",
+        1,
+        "-max",
+        "max",
+        "k"
+      ],
+      [
+        "detune",
+        0,
+        "-max",
+        "max",
+        "k"
+      ]
+    ],
+    "analyser": [],
+    "convolver": [],
+    "fdn": [
+      [
+        "decay",
+        4.5,
+        0.1,
+        60,
+        "k"
+      ],
+      [
+        "damping",
+        0.35,
+        0,
+        1,
+        "k"
+      ],
+      [
+        "mod",
+        0.3,
+        0,
+        1,
+        "k"
+      ]
+    ],
+    "one_pole": [
+      [
+        "frequency",
+        24000,
+        0,
+        96000,
+        "a"
+      ]
+    ],
+    "strobe_signal": [],
+    "genus": [
+      [
+        "rate",
+        40,
+        0.05,
+        200,
+        "k"
+      ],
+      [
+        "amDepth",
+        1,
+        0,
+        1,
+        "a"
+      ],
+      [
+        "carrier",
+        200,
+        20,
+        20000,
+        "k"
+      ],
+      [
+        "pipMs",
+        5,
+        0.1,
+        100,
+        "k"
+      ],
+      [
+        "toneLevel",
+        0,
+        0,
+        1,
+        "a"
+      ],
+      [
+        "clickLevel",
+        0,
+        0,
+        1,
+        "a"
+      ],
+      [
+        "clickSend",
+        0,
+        0,
+        1,
+        "a"
+      ],
+      [
+        "chirpLevel",
+        0,
+        0,
+        1,
+        "a"
+      ],
+      [
+        "chirpSend",
+        0,
+        0,
+        1,
+        "a"
+      ],
+      [
+        "clickModDepth",
+        0,
+        0,
+        1,
+        "k"
+      ],
+      [
+        "clickModRate",
+        0.1,
+        0.005,
+        8,
+        "k"
+      ],
+      [
+        "biDepth",
+        0,
+        0,
+        1,
+        "k"
+      ],
+      [
+        "biRate",
+        1,
+        0.02,
+        4,
+        "k"
+      ],
+      [
+        "biHard",
+        1,
+        0,
+        1,
+        "k"
+      ],
+      [
+        "harmLevel",
+        0,
+        0,
+        1,
+        "a"
+      ],
+      [
+        "harmCount",
+        6,
+        1,
+        16,
+        "k"
+      ],
+      [
+        "harmBright",
+        1.2,
+        0.1,
+        4,
+        "k"
+      ],
+      [
+        "harmSpread",
+        0.7,
+        0,
+        1,
+        "k"
+      ],
+      [
+        "harmPanRate",
+        0.15,
+        0,
+        4,
+        "k"
+      ],
+      [
+        "shimDepth",
+        0,
+        0,
+        1,
+        "k"
+      ],
+      [
+        "shimRate",
+        0.25,
+        0.01,
+        6,
+        "k"
+      ],
+      [
+        "lpfOn",
+        0,
+        0,
+        1,
+        "k"
+      ],
+      [
+        "lpfLo",
+        400,
+        20,
+        20000,
+        "k"
+      ],
+      [
+        "lpfHi",
+        9000,
+        20,
+        20000,
+        "k"
+      ],
+      [
+        "lpfPeriod",
+        60,
+        0.5,
+        600,
+        "k"
+      ],
+      [
+        "lpfQ",
+        0.707,
+        0.3,
+        10,
+        "k"
+      ],
+      [
+        "lpfWander",
+        0,
+        0,
+        1,
+        "k"
+      ]
+    ],
+    "egress": [],
+    "ingress": [],
+    "master": []
+  },
+  "enums": {
+    "biquad_type": {
+      "lowpass": 0,
+      "highpass": 1,
+      "bandpass": 2,
+      "lowshelf": 3,
+      "highshelf": 4,
+      "peaking": 5,
+      "notch": 6,
+      "allpass": 7
+    },
+    "oscillator_type": {
+      "sine": 0,
+      "square": 1,
+      "sawtooth": 2,
+      "triangle": 3
+    },
+    "channel_count_mode": {
+      "max": 0,
+      "clamped-max": 1,
+      "explicit": 2
+    },
+    "channel_interpretation": {
+      "speakers": 0,
+      "discrete": 1
+    },
+    "log_code": {
+      "cycle_cut": 1
+    }
+  },
+  "attrs": {
+    "_": "attr's attr id; value is an f64 (enum values, booleans as 0/1, seconds, buffer ids)",
+    "type": 1,
+    "loop": 2,
+    "loopStart": 3,
+    "loopEnd": 4,
+    "buffer": 5,
+    "normalize": 6,
+    "fftSize": 7
+  },
+  "commands": {
+    "create": {
+      "op": 1,
+      "fields": [
+        [
+          "kind",
+          "u32"
+        ],
+        [
+          "island",
+          "u32"
+        ],
+        [
+          "opts",
+          "f64x8"
+        ]
+      ]
+    },
+    "destroy": {
+      "op": 2,
+      "fields": []
+    },
+    "connect": {
+      "op": 3,
+      "fields": [
+        [
+          "output",
+          "u32"
+        ],
+        [
+          "target",
+          "u32"
+        ],
+        [
+          "input",
+          "u32"
+        ]
+      ]
+    },
+    "connect_param": {
+      "op": 4,
+      "fields": [
+        [
+          "output",
+          "u32"
+        ],
+        [
+          "target",
+          "u32"
+        ],
+        [
+          "param",
+          "u32"
+        ]
+      ]
+    },
+    "disconnect_all": {
+      "op": 5,
+      "fields": []
+    },
+    "disconnect_node": {
+      "op": 6,
+      "fields": [
+        [
+          "target",
+          "u32"
+        ]
+      ]
+    },
+    "disconnect_output": {
+      "op": 7,
+      "fields": [
+        [
+          "output",
+          "u32"
+        ]
+      ]
+    },
+    "disconnect_param": {
+      "op": 8,
+      "fields": [
+        [
+          "target",
+          "u32"
+        ],
+        [
+          "param",
+          "u32"
+        ]
+      ]
+    },
+    "param_set": {
+      "op": 10,
+      "fields": [
+        [
+          "param",
+          "u32"
+        ],
+        [
+          "time",
+          "f64"
+        ],
+        [
+          "value",
+          "f32"
+        ]
+      ]
+    },
+    "param_linear": {
+      "op": 11,
+      "fields": [
+        [
+          "param",
+          "u32"
+        ],
+        [
+          "time",
+          "f64"
+        ],
+        [
+          "value",
+          "f32"
+        ]
+      ]
+    },
+    "param_exp": {
+      "op": 12,
+      "fields": [
+        [
+          "param",
+          "u32"
+        ],
+        [
+          "time",
+          "f64"
+        ],
+        [
+          "value",
+          "f32"
+        ]
+      ]
+    },
+    "param_target": {
+      "op": 13,
+      "fields": [
+        [
+          "param",
+          "u32"
+        ],
+        [
+          "time",
+          "f64"
+        ],
+        [
+          "value",
+          "f32"
+        ],
+        [
+          "tau",
+          "f64"
+        ]
+      ]
+    },
+    "param_curve": {
+      "op": 14,
+      "fields": [
+        [
+          "param",
+          "u32"
+        ],
+        [
+          "time",
+          "f64"
+        ],
+        [
+          "duration",
+          "f64"
+        ],
+        [
+          "values",
+          "f32[]"
+        ]
+      ]
+    },
+    "param_cancel": {
+      "op": 15,
+      "fields": [
+        [
+          "param",
+          "u32"
+        ],
+        [
+          "time",
+          "f64"
+        ]
+      ]
+    },
+    "param_cancel_hold": {
+      "op": 16,
+      "fields": [
+        [
+          "param",
+          "u32"
+        ],
+        [
+          "time",
+          "f64"
+        ]
+      ]
+    },
+    "attr": {
+      "op": 20,
+      "fields": [
+        [
+          "attr",
+          "u32"
+        ],
+        [
+          "value",
+          "f64"
+        ]
+      ]
+    },
+    "channels": {
+      "op": 21,
+      "fields": [
+        [
+          "count",
+          "u32"
+        ],
+        [
+          "mode",
+          "u32"
+        ],
+        [
+          "interpretation",
+          "u32"
+        ]
+      ]
+    },
+    "start": {
+      "op": 22,
+      "fields": [
+        [
+          "time",
+          "f64"
+        ],
+        [
+          "offset",
+          "f64"
+        ],
+        [
+          "duration",
+          "f64"
+        ]
+      ]
+    },
+    "stop": {
+      "op": 23,
+      "fields": [
+        [
+          "time",
+          "f64"
+        ]
+      ]
+    },
+    "message": {
+      "op": 24,
+      "fields": [
+        [
+          "bytes",
+          "u8[]"
+        ]
+      ]
+    },
+    "peak_request": {
+      "op": 25,
+      "fields": []
+    }
+  },
+  "events": {
+    "ended": {
+      "op": 101,
+      "fields": []
+    },
+    "peak": {
+      "op": 102,
+      "fields": [
+        [
+          "value",
+          "f32"
+        ]
+      ]
+    },
+    "port": {
+      "op": 103,
+      "fields": [
+        [
+          "bytes",
+          "u8[]"
+        ]
+      ]
+    },
+    "stats": {
+      "op": 104,
+      "fields": [
+        [
+          "frame",
+          "f64"
+        ],
+        [
+          "micros",
+          "f32"
+        ]
+      ]
+    },
+    "log": {
+      "op": 105,
+      "fields": [
+        [
+          "code",
+          "u32"
+        ],
+        [
+          "value",
+          "u32"
+        ]
+      ]
+    }
+  },
+  "_notes": [
+    "Times on the wire are engine frames as f64 (JS converts native ctx seconds with Engine.frameAt before encoding), except tau and duration, which stay in seconds.",
+    "start.duration < 0 means none. node ids are issued by JS, unique per engine, never reused.",
+    "param ids are the index into the node kind's param_specs() list, in the order the node declares them.",
+    "message bytes for processors (genus, strobe_signal) are the processor's own encoding, documented in its Rust file and mirrored in nodes.js.",
+    "A record's byteLength is a u16, so one record is at most 65,535 bytes: a curve of about 16,370 values, a message of about 65,520 bytes. The app's curves and chirp tables fit with room to spare; an event too long to fit is not sent.",
+    "log(node, code, value) is the stage telling the page something it should know (enums.log_code). cycle_cut: at the last change of connections, `value` nodes sat in a cycle with no DelayNode and were silenced, the first of them `node`; it is sent when that changes, and once more with value 0 when the cycle is gone."
+  ],
+  "processor_messages": {
+    "_": "Processor port messages travel as `message` command bytes and `port` event bytes, little-endian, no padding: a u32 type, then the fields. Times named *_frame are engine frames (JS converts native ctx seconds with Engine.frameAt); other times are seconds.",
+    "strobe_signal_in": {
+      "1 signal": [
+        "f64 at_frame",
+        "f64 p",
+        "f64 r0",
+        "f64 r1",
+        "f64 dur",
+        "f64 wave",
+        "f64 duty",
+        "f64 on"
+      ]
+    },
+    "genus_in": {
+      "1 signal": [
+        "f64 at_frame",
+        "f64 p",
+        "f64 r0",
+        "f64 r1",
+        "f64 dur",
+        "f64 wave",
+        "f64 duty",
+        "f64 linked"
+      ],
+      "2 meters": [
+        "f64 on"
+      ],
+      "3 dipWatch": [
+        "f64 on"
+      ],
+      "4 chirp": [
+        "f64 sig",
+        "f64 xf",
+        "u32 count",
+        "f32[count] table"
+      ]
+    },
+    "genus_out": {
+      "101 peaks": [
+        "f32 tone",
+        "f32 pulse",
+        "f32 harm"
+      ],
+      "102 dip": [
+        "f32 dip"
+      ],
+      "103 chirpAck": [
+        "f64 sig"
+      ]
+    },
+    "notes": "wave is the number the JS already posts (d.wave | 0). The chirp signature is a string in audio.js; nodes.js maps each string to a number for the wire and back for the ack."
+  }
+}
