@@ -96,6 +96,16 @@ No build step, no dependencies. Native ES modules, Canvas2D, Web Audio with an A
 python3 -m http.server 8000
 ```
 
+### Local server
+
+For the full audio engine, serve it with the repo's own server instead:
+
+```
+node tools/serve.mjs        # http://localhost:8000/v1/ (a port number as an argument changes it)
+```
+
+It sends the cross-origin isolation headers that Heart, the audio engine, needs for its fastest mode (shared memory between its workers), and tells the browser never to cache, so a reload always runs what is on disk. `python3 -m http.server` still works; Heart then carries its audio in messages instead.
+
 `stereo.html` is a separate proof-of-concept for free-fusion 3D depth using a side-by-side stereo pair.
 
 ---

@@ -1,0 +1,28 @@
+# Cloudflare Pages headers (documents/heart-audio-engine.md, section 11).
+#
+# Every path is cross-origin isolated, which is what gives the page
+# SharedArrayBuffer and Heart its fastest mode; tools/serve.mjs sends the
+# same three headers on localhost.
+#
+# Code, HTML, worklets and heart.wasm change in place with every push, so
+# they are revalidated on every load and a push is live for returning
+# visitors at once. Only the recordings under /audio are cached for a year,
+# so a recording must never change in place: a new take gets a new name.
+# The manifests beside them do change, and are revalidated like code.
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin
+  Cache-Control: public, max-age=0, must-revalidate
+
+# A header set by two matching rules is joined with a comma, so the rule
+# above's Cache-Control is detached here before the long one is set.
+/audio/*
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+
+# the sample manifests and loop lists, which are edited in place
+/audio/*.json
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
