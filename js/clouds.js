@@ -25,11 +25,13 @@
 // note on it was that it ran 25 to 50 percent busier than he wanted, so every
 // measured gap is stretched by CLOUD_SPARSE before anything else touches it.
 import { S } from './state.js';
-import { getContext, getMaster, createRoom, swapRoom, glideParam, sourceGate } from './audio.js';
+import { getContext, getMaster, createRoom, swapRoom, glideParam, sourceGate, ensureAudioGraph } from './audio.js';
+import { ctxFor, masterFor, parseHeartFlag } from './heart/route.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 import { strobeAm } from './strobe-am.js';
 import { inTurn, TURN } from './load-order.js';
+import { after, clear } from './ticker.js';
 
 const ROOT = 48;                       // written C3; sounds ~79.5 Hz
 const DEG  = [0, 2, 4, 7, 11];         // 1 2 3 5 7, the 8 is the next octave's 1
@@ -106,6 +108,18 @@ let ready = false, loading = null;
 let dry = null, room = null, wet = null, padTap = null, bus = null;
 let cloudAm = null;                    // vary with strobe (strobe-am.js)
 let running = false, clock = 0, timer = null;
+
+// The engine the clouds play through (js/heart/route.js): Heart's context
+// and master bus under ?heart=clouds, the native ones otherwise. route.js
+// has nothing to answer with until the audio graph has started the engine
+// (or found it not wanted), which can be after the clouds are first asked
+// for, so the native objects stand in until then, as they always did. The
+// context is asked for once, when the graph is built, and kept in actx, so
+// every pad is made on the context its bus lives on.
+const familyCtx = () => ctxFor('clouds') || getContext();
+const familyMaster = () => masterFor('clouds') || getMaster();
+const HEART_WANTED = parseHeartFlag().has('clouds');
+let actx = null;
 // walk state: where the line is, which way it is going, how much of this run is left
 let idx = 0, dir = 1, run = 0;
 
@@ -145,12 +159,18 @@ let voices = 0;
 // In its turn, after the drone and the piano (js/load-order.js).
 export function loadClouds() {
   if (loading) return loading;
-  const ctx = getContext();
+  // Decoding is native on either engine (a Heart context forwards it), so
+  // the buffers are the same whichever context decodes them.
+  const ctx = familyCtx();
   if (!ctx || !canOpus) return Promise.resolve(false);
   loading = inTurn(TURN.clouds, async () => {
     const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
     await Promise.all(PADS.map(async sm =>
       pads.set(sm, await get(`audio/music/clouds/clouds-${NAMES[sm]}.opus`))));
+    // Under the flag, a graph built before the engine has started would be
+    // built natively and stay there (route.js), so it waits for the audio
+    // graph, which starts the engine, to be done.
+    if (HEART_WANTED && !S.workletReady) await ensureAudioGraph();
     buildGraph();
     ready = true;
     return true;
@@ -158,8 +178,12 @@ export function loadClouds() {
   return loading;
 }
 
+// On Heart the clouds are one island: everything here, the room and the
+// strobe stage included, lives in it, and only dry and wet cross into the
+// mix, into the master's input.
 function buildGraph() {
-  const ctx = getContext(), master = getMaster();
+  const ctx = familyCtx(), master = familyMaster();
+  actx = ctx;
   if (!ctx || !master) return;
   dry  = ctx.createGain(); dry.gain.value = 1;
   // two convolvers, so a new decay fades in under the old tail (audio.js)
@@ -235,7 +259,7 @@ export function rebuildCloudIR() {
 // left of the buffer, or the tail is cut off mid-fade and the pad ends on an
 // edge — the same reason a fixed length is squeezed rather than truncated.
 function cloud(written, vel, at, tag = '') {
-  const ctx = getContext();
+  const ctx = actx;
   const semi = written - ROOT;
   const src = nearest(semi);
   const buf = pads.get(src);
@@ -306,7 +330,9 @@ function cloud(written, vel, at, tag = '') {
   if (LOG) {
     voices++;
     s.onended = () => { voices--; };
-    const lead = at - ctx.currentTime;
+    // Measured from where a call made now lands: on Heart that is the
+    // context's present, a lookahead past currentTime (js/heart/heart.js).
+    const lead = at - (ctx.presentTime ?? ctx.currentTime);
     const listed = NOTE_TRIM[semi] !== undefined;
     console.log(
       `[cloud] ${noteName(semi)} semi=${semi} ${tag}` +
@@ -321,13 +347,15 @@ function cloud(written, vel, at, tag = '') {
     // Read the gain back at the top of the attack. If the envelope took, this
     // is within a hair of peak; anything else means the automation did not
     // land, which is the case where a pad plays flat out to the end of the file.
+    // A Heart param's value is read at the present, so the wait runs until the
+    // present, not the clock, reaches the top.
     setTimeout(() => {
       if (!g) return;
       const actual = g.gain.value;
       const off = peak > 0 ? 20 * Math.log10(Math.max(actual, 1e-6) / peak) : 0;
       console.log(`[cloud]   ${noteName(semi)} at attack top: gain=${actual.toFixed(4)}` +
         ` expected=${peak.toFixed(4)} off=${off.toFixed(1)}dB`);
-    }, Math.max(0, (at - ctx.currentTime + A) * 1000));
+    }, Math.max(0, (at - (ctx.presentTime ?? ctx.currentTime) + A) * 1000));
   }
 }
 
@@ -396,21 +424,26 @@ function gWander(at) {
 
 function step() {
   if (!running) return;
-  const ctx = getContext();
+  const ctx = actx;
   const now = ctx.currentTime;
   // Scheduled further ahead than the piano, because a pad's attack is seconds
   // long and a late start is audible as a swell arriving behind the music.
+  // Never sooner than 80 ms past where a call made now lands: currentTime
+  // natively, the present on Heart, a lookahead on (js/heart/heart.js), so a
+  // pad and its envelope always keep true time there too and a falling
+  // figure's steps keep their spacing.
+  const soonest = (ctx.presentTime ?? now) + 0.08;
   while (clock < now + 4) {
-    const at = Math.max(clock, now + 0.08);
+    const at = Math.max(clock, soonest);
     const g = Math.random() < S.cloudPhrase ? gFall(at) : gWander(at);
     clock = g.end + g.gap * CLOUD_SPARSE / S.cloudDensity;
   }
-  timer = setTimeout(step, 700);
+  timer = after(700, step);
 }
 
 export async function cloudsOn() {
   if (!ready && !(await loadClouds())) return false;
-  const ctx = getContext();
+  const ctx = actx;
   if (!ctx) return false;
   running = true;
   clock = ctx.currentTime + 0.5;
@@ -420,6 +453,6 @@ export async function cloudsOn() {
   step();
   return true;
 }
-export function cloudsOff() { running = false; clearTimeout(timer); }
+export function cloudsOff() { running = false; clear(timer); }
 export const cloudsReady = () => ready;
 export const cloudsAvailable = () => canOpus;

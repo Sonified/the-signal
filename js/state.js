@@ -37,7 +37,10 @@ function seqLine(len, steps, i) {
     atk: 0.01, atkVar: 0, atkRate: 20, dec: 0.25, decVar: 0, decRate: 20,
     panMod: 0, panRate: 20,
     revTime: 4.5, revVar: 0, revRate: 20,
-    dlyTime: 1.5, dlyFb: 0, dlyFbVar: 0, dlyFbRate: 20, dlyPing: true
+    dlyTime: 1.5, dlyFb: 0, dlyFbVar: 0, dlyFbRate: 20, dlyPing: true,
+    // the delay's mix, the voice against its repeats; the middle is the
+    // balance every line had before it existed (lineShape in js/piano.js)
+    dlyMix: 0.5
   };
 }
 
@@ -289,6 +292,7 @@ export const S = {
   // migrated (v1/core/store.js applySeqState). Nothing else reads them.
   arpOn: false, arpVol: 0.5, arpRate: 7, arpWave: 'sine', arpAtk: 0.01, arpDec: 0.25, arpOct: 0, arpRev: 1, arpSpread: 0.9,
   arpStrobeAm: 0,             // 'Vary with strobe': depth of a volume pulse at the flash rate, 0..1
+  arpHfCut: 0,                // 'High freq reduction': dB off each line's highest reachable note, 0..20, sloped down to 0 at its lowest
   // The sequencer's eight lines (js/piano.js, the sequencer section), all
   // playing together off one step clock. Each has its own length of up to 16
   // steps, a step holding a written MIDI note or -1 for a rest, and its own

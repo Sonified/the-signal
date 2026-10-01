@@ -31,6 +31,8 @@
 // arrays, the settings are read into one reused object, and the only garbage
 // is whatever the browser keeps for each automation event.
 
+import { every, clear } from './ticker.js';
+
 const LOOKAHEAD_S = 3;       // how far ahead of the audio clock the motion is written
 const CADENCE_MS = 1000;     // how often the timer tops it up
 const MARGIN_S = 0.05;       // breakpoints this close to now count as already playing
@@ -151,10 +153,17 @@ export function createSweep({ domain, read }) {
     push();
   }
 
+  // The audio clock's now, as a call made now is heard: currentTime, or on a
+  // Heart context its present (js/heart/nodes.js, late gestures), since a
+  // stage has rendered up to there already. Planned from it, no breakpoint
+  // is ever late, so none is moved, and a re-plan never cancels anything a
+  // stage may have played.
+  const heardNow = () => ctx.presentTime ?? ctx.currentTime;
+
   function tick() {
     if (!prm) return;
     readCfg();
-    const now = ctx.currentTime;
+    const now = heardNow();
     expire(now);
     if (settledOff()) return;
     anchorIfLapsed(now);
@@ -164,7 +173,7 @@ export function createSweep({ domain, read }) {
   // Lets go. The param keeps whatever was already written, which is fine
   // for its only caller, whose node is faded out and dropped.
   function stop() {
-    clearInterval(timer); timer = null;
+    clear(timer); timer = null;
     prm = null; ctx = null; count = 0;
   }
 
@@ -178,7 +187,7 @@ export function createSweep({ domain, read }) {
       head = 0; count = 0;
       from = 1; to = 0; u = 0; mul = 1; wasOn = false; y = yN; t = 0;
       tick();
-      timer = setInterval(tick, CADENCE_MS);
+      timer = every(CADENCE_MS, tick);
     },
     stop,
     // A setting moved: keep what is playing, re-plan the rest. Deferred to
@@ -198,7 +207,7 @@ export function createSweep({ domain, read }) {
     updateQueued = false;
     if (!prm) return;
     readCfg();
-    const now = ctx.currentTime;
+    const now = heardNow();
     expire(now);
     for (let k = 0; k < count; k++) {
       const i = (head + k) % CAP;

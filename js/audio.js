@@ -5,6 +5,8 @@ import { S } from './state.js';
 import { $ } from './dom.js';
 import { buildChirp } from './chirp.js';
 import { chanGate, onChannelGates } from './mixgate.js';
+import { prepareAudioSession, startBackgroundKeepAlive, setBackgroundPlaying, setMediaWake } from './background.js';
+import { startHeart, ctxFor, masterFor, makeWorklet, heartEngine } from './heart/route.js';
 
 let audioCtx = null, volGain = null, node = null;
 let harmDry = null, harmWet = null, convolver = null, clickWet = null;
@@ -35,11 +37,29 @@ export function setEngineMeters(on) {
   if (node) node.port.postMessage({ meters: on });
 }
 
+// The click level's variance as it plays. The dip itself lives in the
+// worklet, sample by sample (worklet.js, the pips' loudness modulation), so
+// the drawer's bar reads it back from there rather than keeping a second
+// clock that could drift from what is heard: the share of the set level the
+// dip is leaving, posted on the meters' clock while someone reads it. Nothing
+// is posted with the variance at 0, nor once the readings stop being asked
+// for (the first report after half a second unread switches them off again).
+// A report gone quiet (a suspended context, no worklet yet) reads as no dip.
+let pipDip = 1, pipDipAt = -1e9, pipDipAsked = -1e9, pipDipWanted = false;
+export function pipDipRead() {
+  const now = performance.now();
+  pipDipAsked = now;
+  if (!pipDipWanted && node) { pipDipWanted = true; node.port.postMessage({ dipWatch: true }); }
+  return now - pipDipAt < 200 ? pipDip : 1;
+}
+
 // The worklet used to be a template literal turned into a Blob URL. As a real
 // file it can be handed straight to addModule(). The URL is resolved against
 // this module rather than the document so it keeps working from a subpath.
 const WORKLET_URL = new URL('./worklet.js', import.meta.url).href;
 window.__WORKLET_URL = WORKLET_URL;   // exposed so tests can render it offline
+// The master room's algorithmic reverb (fdn-worklet.js, js/piano.js).
+const FDN_URL = new URL('./fdn-worklet.js', import.meta.url).href;
 
 export const isDeviceWarm = () => deviceWarm;
 export const hasNode = () => !!node;
@@ -315,10 +335,11 @@ export function swapRoom(room, delayMs = 0) {
   clearTimeout(room.timer);
   room.timer = null;
   if (roomKey(room) === room.target) return;
-  // The transition's end is a time on this module's context. A room built in
-  // another one (Live Sound's, js/livesound.js) keeps a clock of its own, so
+  // The transition's end is a time on this module's context, whose clock a
+  // Heart context keeps too (js/heart/heart.js). A room built in another
+  // native one (Live Sound's, js/livesound.js) keeps a clock of its own, so
   // it takes the ordinary crossfade rather than a time it cannot read.
-  const end = room.ctx === audioCtx ? glideEnd() : 0;
+  const end = room.ctx === audioCtx || room.ctx.isHeart ? glideEnd() : 0;
   room.timer = setTimeout(() => { room.timer = null; roomWant(room, end); }, delayMs);
 }
 const roomKey = room => irKey(room.ctx.sampleRate, room.sec(), room.decay);
@@ -336,6 +357,11 @@ function roomWant(room, end) {
     inSlot(() => roomPlace(room, tok, buf, end), assignCost(sec)));
 }
 
+// On Heart a gesture anchored at currentTime is heard from the context's
+// presentTime, a lookahead on (js/heart/nodes.js, late gestures), while an
+// impulse handed to a convolver lands at once. So a crossfade's end is kept
+// as the time it is heard, and the next one waits for the clock to pass it
+// before touching the side it faded out; natively the two times are one.
 function roomPlace(room, tok, buf, end) {
   if (room.tok !== tok) return;
   const ctx = room.ctx, now = ctx.currentTime;
@@ -363,12 +389,13 @@ function roomPlace(room, tok, buf, end) {
   gi.linearRampToValueAtTime(1, now + dur);
   anchorParam(outgoing.g.gain, now);
   outgoing.g.gain.linearRampToValueAtTime(0, now + dur);
-  room.live = incoming; room.idle = outgoing; room.busyUntil = now + dur;
+  room.live = incoming; room.idle = outgoing;
+  room.busyUntil = (ctx.presentTime ?? now) + dur;
   const gen = ++room.gen;
   setTimeout(() => {
     if (room.gen !== gen) return;
     try { room.input.disconnect(outgoing.c); } catch (e) {}
-  }, dur * 1000 + 100);
+  }, (room.busyUntil - now) * 1000 + 100);
 }
 
 // The active pip shape owns its own level and room. Everything downstream reads
@@ -393,7 +420,6 @@ export function applyReverbMix() {
   // equal-power crossfade so the total stays level as reverb comes up
   glideParam(harmDry.gain, Math.cos(S.harmReverb * Math.PI / 2), 0.05);
   glideParam(harmWet.gain, Math.sin(S.harmReverb * Math.PI / 2) * 0.9, 0.05);
-  if (clickWet) glideParam(clickWet.gain, pipReverb() * 0.9, 0.05);
 }
 
 // Deliberately does not touch harmLevel. That param is owned by rampLevel,
@@ -481,8 +507,12 @@ let chirpSig = null, chirpLive = null, chirpRetry = null, chirpTries = 0;
 // once the real output device wakes, and a table built for the old one is the
 // wrong length and the wrong sweep.
 function chirpSignature() {
-  return [audioCtx.sampleRate, S.chirpLowHz, S.chirpHighHz, S.chirpComp, S.chirpTilt].join(':');
+  return [genusRate(), S.chirpLowHz, S.chirpHighHz, S.chirpComp, S.chirpTilt].join(':');
 }
+// The rate the engine renders at, which is the rate its table is built for.
+// Natively that is the context's own, the one iOS can change on wake. On
+// Heart it is the engine's, fixed when Heart started (js/heart/engine.js).
+const genusRate = () => (node.context && node.context.isHeart ? heartEngine().sampleRate : audioCtx.sampleRate);
 
 // The worklet crossfades from the table it has to the new one rather than
 // swapping it under a chirp that is sounding: over what is left of the window
@@ -491,7 +521,7 @@ const CHIRP_XF_S = 0.03;
 function sendChirp() {
   if (!node || !audioCtx) return;
   const buf = buildChirp({
-    sampleRate: audioCtx.sampleRate,
+    sampleRate: genusRate(),
     lowHz:  S.chirpLowHz,
     highHz: S.chirpHighHz,
     comp:   S.chirpComp,
@@ -655,7 +685,22 @@ export function applyAudioShape(lead = 0) {
   applyAmOn();
 }
 
-export function setAudioRate(hz) { setParam('rate', hz, 0.03); }
+// The pulse rate the engine's phase runs at while free. Linked, the engine
+// takes its phase from the strobe's own formula instead (worklet.js,
+// flashAlign), which js/strobe-am.js posts it; that file registers here
+// (watchEngine) and is told when the node is made and whenever the rate is
+// set, since every change of the link (v1's Audio mode, v0's Link and Free
+// buttons) sets the rate straight after, so the switch reaches the engine
+// at once rather than at strobe-am's next tick.
+let engineWatch = null;
+export function watchEngine(fn) {
+  engineWatch = fn;
+  if (node && S.workletReady) fn(node);
+}
+function tellEngineWatch() {
+  if (engineWatch && node && S.workletReady) engineWatch(node);
+}
+export function setAudioRate(hz) { setParam('rate', hz, 0.03); tellEngineWatch(); }
 export const setAmRate = hz => setAudioRate(hz);
 
 // The Amplitude modulation switch. Off holds the tone and harmonics steady
@@ -678,20 +723,39 @@ export function applyAmOn(tc = 0.05) { setParam('amDepth', S.amModOn === false ?
 // so it is triggered on the earliest gesture available rather than on play.
 export function ensureAudioGraph() {
   if (graphPromise) return graphPromise;
+  prepareAudioSession();   // media, not ambient sound, so a locked phone plays on
   graphPromise = (async () => {
     const AC = window.AudioContext || window.webkitAudioContext;
     // 'interactive' is the default and gives the smallest possible buffer, which
     // underruns while the device spins up and clicks. Nothing here needs low
     // latency, so ask for the large buffer instead.
     audioCtx = new AC({ latencyHint: 'playback' });
+    setMediaWake(resumeAudio);
 
     volGain = audioCtx.createGain();
     volGain.gain.value = 0;
     volGain.connect(audioCtx.destination);
 
-    await audioCtx.audioWorklet.addModule(WORKLET_URL);
+    // The reverb's module loads beside the engine's; if it fails, the
+    // Algorithmic reverb type stays on convolution (piano.js) and nothing
+    // else notices.
+    await Promise.all([
+      audioCtx.audioWorklet.addModule(WORKLET_URL),
+      audioCtx.audioWorklet.addModule(FDN_URL).catch(e => console.warn('audio: algorithmic reverb failed to load', e))
+    ]);
+    // Heart, the engine that renders ahead in workers, starts here for the
+    // families flagged to use it (js/heart/route.js), playing into volGain
+    // so the volume and the pause gate stay these. With no family flagged
+    // it loads nothing and does nothing.
+    await startHeart(audioCtx, volGain);
 
-    node = new AudioWorkletNode(audioCtx, 'genus', {
+    // The genus family (this engine, the harmonics' room and the pips' room)
+    // builds on the context route.js hands it and ends at its master: on
+    // Heart, the island 'genus' and Heart's master bus, which plays into
+    // volGain; otherwise this context and volGain itself. Times are still
+    // read from audioCtx, whose clock a Heart context keeps.
+    const gctx = ctxFor('genus'), out = masterFor('genus');
+    node = makeWorklet(gctx, 'genus', {
       numberOfInputs: 0,
       numberOfOutputs: 3,
       outputChannelCount: [2, 2, 1]   // 0: tone and pips, 1: harmonics, 2: pip reverb send
@@ -701,12 +765,12 @@ export function ensureAudioGraph() {
     // as well as the speakers and the tails are left to ring out (see the
     // pause gate, after applyAudioGain).
     const srcGate = [0, 1, 2].map(i => {
-      const g = audioCtx.createGain();
+      const g = gctx.createGain();
       sourceGate(g.gain);
       node.connect(g, i);
       return g;
     });
-    srcGate[0].connect(volGain);
+    srcGate[0].connect(out);
     if (!engineMetersOn) node.port.postMessage({ meters: false });
 
     // The processor reports which chirp table it is actually holding, so a lost
@@ -718,6 +782,11 @@ export function ensureAudioGraph() {
         // iterator protocol: this arrives every 20 ms
         enginePk.tone = d.tone; enginePk.pulse = d.pulse; enginePk.harm = d.harm;
         enginePk.at = performance.now();
+        return;
+      }
+      if (d && d.dip !== undefined) {
+        pipDip = d.dip; pipDipAt = performance.now();
+        if (pipDipAt - pipDipAsked > 500) { pipDipWanted = false; node.port.postMessage({ dipWatch: false }); }
         return;
       }
       if (e.data && e.data.chirpAck === undefined) return;
@@ -735,26 +804,30 @@ export function ensureAudioGraph() {
     // Harmonics get their own dry/wet pair so reverb applies to them alone.
     // The pulse itself must stay dry or the reverb tail fills in the gaps that
     // carry the entrainment.
-    harmDry = audioCtx.createGain();
-    harmWet = audioCtx.createGain();
+    harmDry = gctx.createGain();
+    harmWet = gctx.createGain();
     // Its impulse never changes, but it is still built off the main thread
     // and handed over in an idle slot (see impulse responses, above); the
     // harmonics' wet side is simply silent until it lands.
-    convolver = audioCtx.createConvolver();
-    getIR(audioCtx, HARM_IR_S, 2.5, buf => inSlot(() => { convolver.buffer = buf; }, assignCost(HARM_IR_S)));
+    convolver = gctx.createConvolver();
+    getIR(gctx, HARM_IR_S, 2.5, buf => inSlot(() => { convolver.buffer = buf; }, assignCost(HARM_IR_S)));
     srcGate[1].connect(harmDry);
     srcGate[1].connect(convolver);
     convolver.connect(harmWet);
-    harmDry.connect(volGain);
-    harmWet.connect(volGain);
+    harmDry.connect(out);
+    harmWet.connect(out);
 
     // pips get their own send into a room of their own, so the dry pip stays
     // sharp; a pair of convolvers, so its impulse can change under a tail
-    clickWet = audioCtx.createGain();
-    clickRoom = createRoom(audioCtx, pipRevTime, 2.5);
+    // The reverb amount rides the send (clickSend, chirpSend), once, so each
+    // shape keeps its own amount through a swap; the room's return is a fixed
+    // trim, as every room's feed is a send and its return a constant.
+    clickWet = gctx.createGain();
+    clickWet.gain.value = 0.9;
+    clickRoom = createRoom(gctx, pipRevTime, 2.5);
     srcGate[2].connect(clickRoom.input);
     clickRoom.output.connect(clickWet);
-    clickWet.connect(volGain);
+    clickWet.connect(out);
 
     applyReverbMix();
 
@@ -767,6 +840,7 @@ export function ensureAudioGraph() {
     applyAmOn(0.001);
 
     S.workletReady = true;
+    tellEngineWatch();
     refreshChirp();
   })().catch(e => {
     console.warn('audio graph failed:', e);
@@ -789,6 +863,9 @@ function audioLayerChecked() {
 export async function warmDevice() {
   // nothing to wake for if audio is not in play
   if (!audioLayerChecked() && !S.audioEnabled) return;
+  // The lock screen's silent loop takes its first play from this same
+  // gesture, before anything below awaits (js/background.js).
+  startBackgroundKeepAlive();
   if (deviceWarm) return;
 
   // Resume FIRST, synchronously, while the gesture that called us is still the
@@ -811,6 +888,15 @@ export async function warmDevice() {
   // Not every engine fires statechange on every resume, and this is the one
   // path guaranteed to run on the gesture that wakes the device.
   if (deviceWarm) refreshChirp();
+}
+
+// Media Session's play (the lock screen, a headset) starts the transport,
+// and the context iOS suspended while the screen was locked has to wake with
+// it: nothing else on that path resumes it (js/background.js).
+function resumeAudio() {
+  if (audioCtx && audioCtx.state !== 'running' && audioCtx.state !== 'closed') {
+    audioCtx.resume().catch(() => {});
+  }
 }
 
 // Several gestures can race to start audio: the gate click, the first key, and
@@ -859,6 +945,7 @@ export function audioOff() {
 // spacebar pauses the whole experience, sound included
 let hasRisen = false;
 export function applyAudioGain() {
+  setBackgroundPlaying(S.running);   // the lock screen's loop and controls follow the transport
   // If audio has somehow never started, start it here rather than going quiet.
   // This is the only place that knows the session is actually running, so it is
   // the right place to be self-healing about it.

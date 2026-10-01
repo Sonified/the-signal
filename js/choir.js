@@ -31,6 +31,8 @@ import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 import { strobeAm, strobeAmEffective } from './strobe-am.js';
 import { inTurn, TURN } from './load-order.js';
+import { every, clear } from './ticker.js';
+import { breath, breathState, resetBreath, resetBreathLow } from '../v1/core/variance.js';
 
 // Semitone above the keyboard root -> the degree sung, ascending the mode.
 const LAH = { 24: '1', 26: '2', 28: '3', 31: '5', 35: '7', 36: '8', 38: '9' };
@@ -222,7 +224,9 @@ function cosineParam(ctx, param, target, duration, delay) {
 
 async function choirStart() {
   if (wanted) return;
-  const ctx = getContext();
+  // The bus's own context: the music family's (js/piano.js), Heart's when
+  // the flag names music, so the choir always builds where its bus lives.
+  const ctx = dryBus && dryBus.context;
   if (!ctx || !dryBus || !roomBus) return;
   wanted = true;
   const my = ++token;
@@ -257,8 +261,11 @@ async function choirStart() {
     return { source, gain };
   });
   chain = g; tap = t; am = a;
-  resetWander(stackW, ctx.currentTime);
-  resetWander(densW, ctx.currentTime);
+  resetBreath(stackB, ctx.currentTime);
+  // the density's breath starts from the BOTTOM of its cycle: a fresh start
+  // opens sparse and fills over the first half period, so nobody is met by
+  // the full density at once (the level above starts full instead)
+  resetBreathLow(densB, ctx.currentTime, clampVar(S.choirDensityVar));
   wanderLevels(ctx.currentTime);
   // the performer's opening: every voice rising to its place from silence
   applyChoirTargets(1.6);
@@ -270,7 +277,7 @@ function choirStop() {
   ++token;
   stopWanderTimer();
   if (!voices) return;
-  const ctx = getContext();
+  const ctx = chain.context;
   const vs = voices, g = chain, t = tap, a = am;
   voices = null; chain = null; tap = null; am = null;
   const duration = 1.1;
@@ -280,6 +287,10 @@ function choirStop() {
     try { cosineParam(ctx, vs[i].gain.gain, 0, duration, i * 0.02); }
     catch (e) { vs[i].gain.gain.setTargetAtTime(0, ctx.currentTime, duration / 4); }
   }
+  // On Heart the release is heard from the present, ctx.presentTime, about
+  // a lookahead after currentTime (js/heart/nodes.js, late gestures), so the
+  // teardown waits that much longer; natively the two are one.
+  const late = ctx.presentTime === undefined ? 0 : Math.max(0, ctx.presentTime - ctx.currentTime);
   setTimeout(() => {
     for (const v of vs) {
       try { v.source.stop(); } catch (e) {}
@@ -287,62 +298,27 @@ function choirStop() {
     }
     try { g.disconnect(); t.analyser.disconnect(); } catch (e) {}
     if (a) a.stop();
-  }, (duration + 0.2 + vs.length * 0.02) * 1000);
+  }, (duration + 0.2 + vs.length * 0.02 + late) * 1000);
 }
 
 // ---------- the variance wander ----------
-// One leg at a time: from `from` to `to` (depths, 0 to the amount) over
-// `dur` seconds of the audio clock from t0, on a cosine. `period` is the
-// setting the leg was laid with.
-// Each variance moves one of two ways, its Behavior toggle's choice
-// (schema-audio.js). Sinusoid, the default, breathes as the app's other
-// variances do: a cosine dip from the setting down by the amount and back,
-// one full cycle per period, so the speed dial reads directly as the swing
-// you hear. Walk drifts one cosine leg at a time from where the last ended
-// to a random depth within the amount, a period per leg, never twice the
-// same. The clocks ride the audio clock and hold still at 0 amount.
-const MIN_LEG = 0.5;
+// Each variance is the app's one law run on the audio clock
+// (v1/core/variance.js breath), sinusoid or walk by its Behavior toggle
+// (schema-audio.js), one full cycle (or one walk leg) per period, so the
+// speed dial reads directly as the swing you hear. The clocks hold still at
+// 0 amount.
 let wanderTimer = null;
-const stackB = { phase: 0, at: -1, from: 0, to: 0, t0: 0, dur: MIN_LEG, period: -1 };
-const densB  = { phase: 0, at: -1, from: 0, to: 0, t0: 0, dur: MIN_LEG, period: -1 };
-const volB   = { phase: 0, at: -1, from: 0, to: 0, t0: 0, dur: MIN_LEG, period: -1 };
-function resetBreath(b, now) {
-  b.phase = 0; b.at = now;
-  b.from = 0; b.to = 0; b.t0 = now - MIN_LEG; b.dur = MIN_LEG; b.period = -1;
-}
-const legAt = (b, now) => b.from + (b.to - b.from) * cosine01((now - b.t0) / b.dur);
-function breathDepth(b, amount, period, now, mode) {
-  if (!(amount > 0)) { resetBreath(b, now); return 0; }
-  const p = Math.max(MIN_LEG, +period || 0);
-  if (mode === 'walk') {
-    // a new speed takes over from wherever the walk is, rather than
-    // making a long leg run out first
-    if (b.period !== -1 && b.period !== period) {
-      b.from = legAt(b, now); b.t0 = now; b.dur = p;
-    }
-    b.period = period;
-    if (now - b.t0 >= b.dur) {
-      b.from = b.to; b.to = Math.random() * amount; b.t0 = now; b.dur = p;
-    }
-    // a lowered amount takes effect at once, never left below the new floor
-    return Math.min(legAt(b, now), amount);
-  }
-  if (b.at < 0) b.at = now;
-  b.phase += (now - b.at) / p;
-  b.phase -= Math.floor(b.phase);
-  b.at = now;
-  return amount * 0.5 * (1 - Math.cos(2 * Math.PI * b.phase));
-}
+const stackB = breathState(), densB = breathState(), volB = breathState();
 
 const clampVar = v => Math.max(0, Math.min(1, +v || 0));
 function wanderLevels(now) {
-  effStack = S.choirStack * (1 - breathDepth(stackB, clampVar(S.choirStackVar), S.choirStackPeriod, now, S.choirStackVarMode));
-  effDensity = S.choirDensity * (1 - breathDepth(densB, clampVar(S.choirDensityVar), S.choirDensityPeriod, now, S.choirDensityVarMode));
+  effStack = S.choirStack * (1 - breath(stackB, clampVar(S.choirStackVar), S.choirStackPeriod, now, S.choirStackVarMode));
+  effDensity = S.choirDensity * (1 - breath(densB, clampVar(S.choirDensityVar), S.choirDensityPeriod, now, S.choirDensityVarMode));
 }
 // The level's kept apart from the voices' two, so the level control moves
 // only the chain gain and the voice controls only the voices.
 function wanderVol(now) {
-  effVolDepth = breathDepth(volB, clampVar(S.choirVolVar), S.choirVolPeriod, now, S.choirVolVarMode);
+  effVolDepth = breath(volB, clampVar(S.choirVolVar), S.choirVolPeriod, now, S.choirVolVarMode);
 }
 
 function wanderTick() {
@@ -357,12 +333,12 @@ function wanderTick() {
 }
 
 function stopWanderTimer() {
-  if (wanderTimer) { clearInterval(wanderTimer); wanderTimer = null; }
+  if (wanderTimer) { clear(wanderTimer); wanderTimer = null; }
 }
 function syncWanderTimer() {
   const need = !!voices && (clampVar(S.choirStackVar) > 0 || clampVar(S.choirDensityVar) > 0 ||
     clampVar(S.choirVolVar) > 0);
-  if (need && !wanderTimer) wanderTimer = setInterval(wanderTick, 100);
+  if (need && !wanderTimer) wanderTimer = every(100, wanderTick);
   else if (!need) stopWanderTimer();
 }
 

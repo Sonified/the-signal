@@ -1,4 +1,5 @@
 import { S } from './state.js';
+import { waveShape, waveCode } from '../v1/core/signal.js';
 
 export const hexToRgb = h => {
   const n = parseInt(h.slice(1), 16);
@@ -40,12 +41,11 @@ export function smoothstep(e0, e1, x) {
   return t * t * (3 - 2*t);
 }
 
+// The strobe's wave at phase p, 0 dark to 1 lit, in its own wave and duty.
+// The shape itself is the strobe signal's law (v1/core/signal.js waveShape),
+// so the screen and the sound's Vary with strobe light by the one curve.
 export function shape(p) {
-  switch (S.wave) {
-    case 'square':   return p < S.duty ? 1 : 0;
-    case 'triangle': return p < .5 ? p*2 : 2 - p*2;
-    default:         return .5 * (1 - Math.cos(2*Math.PI*p));
-  }
+  return waveShape(waveCode(S.wave), S.duty, p);
 }
 
 // ---------- level taper ----------

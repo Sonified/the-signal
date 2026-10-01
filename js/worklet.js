@@ -18,12 +18,75 @@
 // pip is timed from the start of its own cycle rather than recomputed from
 // the phase, so a rate that moves mid-pip cannot move the pip.
 //
+// Linked to the visual (S.amLinked), that one phase is the strobe's own: the
+// flash is a formula of time (v1/core/signal.js), the page hands this
+// processor the formula's numbers whenever they change (js/strobe-am.js,
+// the same post the Vary with strobe stages' node gets), and while linked
+// the phase is steered sample by sample onto the formula's phase, shifted so
+// the loud part of the pulse lands on the lit part of the flash (flashAlign,
+// below). Free, it runs at the rate param exactly as it always has. Either
+// way the phase only ever moves forward and never jumps, so the pips, timed
+// from the start of each cycle, still fire once a cycle and stay whole.
+//
 // This used to be a template literal turned into a Blob URL. As a real file it
 // is loaded straight with addModule(), so it is debuggable and cacheable.
+
+// ---------- locked to the flash ----------
+// Where on the strobe's cycle the genus lands while linked, as phases of the
+// flash's own cycle (v1/core/signal.js: 0 is the cycle's start, where a
+// square lights; a sine or a triangle is brightest at 0.5). Robert's rule is
+// that the sound is loudest while the screen is lit. `pip` is where the pip
+// fires and the genus cycle begins; `peak` is where the tone's envelope (and
+// the harmonics', which share it) is at its loudest.
+//
+//   sine, triangle   both at 0.5, the flash's peak: the envelope is a raised
+//                    cosine like the sine's own brightness, so the two swell
+//                    and fade together, and the pip sits on the brightest
+//                    moment.
+//   square           the pip at 0, the onset, the instant the screen lights;
+//                    the envelope's peak at duty / 2, the middle of the lit
+//                    window, so the louder half of the pulse is the lit half
+//                    (peaking at the onset instead would put half the loud
+//                    part in the dark before it). Under frame lock the duty
+//                    is the lit frames' share (core/strobe.js signalDuty), so
+//                    it centres on the frames actually lit.
+//
+// This is the one place to tune it. Any change of either (a new wave, a new
+// duty) is glided, never stepped: the pip's by the lock below, the peak's by
+// ENV_SHIFT_S.
+function flashAlign(wave, duty, out) {
+  if (wave === 2) { out.pip = 0; out.peak = duty / 2; }
+  else { out.pip = 0.5; out.peak = 0.5; }
+  return out;
+}
+// How the phase is held on the formula. Each sample the phase advances by
+// the formula's own step (its rate at that moment) plus a pull toward the
+// formula's phase, the gap closing with a time constant of LOCK_TAU_S. In
+// steady running the gap is nothing and the pull is nothing. A gap opens
+// only when the formula itself jumps: the link switched on (the free phase
+// sits wherever it was), the formula arriving for the first time, the wave
+// changing (the pip's place moves by half a cycle), the clock estimate
+// being re-posted, or frame lock pinning the formula back onto its frame
+// grid (a fraction of a frame, either way). The pull is capped at LOCK_SLEW
+// of the formula's step, so while a gap closes the pulse runs between half
+// and one and a half times its rate, and never backward: a backward pin
+// slows the phase rather than turning it round, so no cycle boundary is
+// crossed twice and no pip fires twice, and a forward one hurries it, so no
+// boundary is jumped and no pip is lost. A big gap (half a cycle) closes
+// within about a cycle; a pin's few milliseconds in a few tens of them.
+const LOCK_TAU_S = 0.05, LOCK_SLEW = 0.5;
+// The envelope's own shift from the pip (flashAlign's peak less its pip)
+// glides to a new value over this time constant, and back to 0 when the
+// link is let go.
+const ENV_SHIFT_S = 0.05;
 
 class GenusProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
+      // The pulse rate the phase runs at while free. Linked to the visual,
+      // once the flash's formula has arrived, the formula sets the pace
+      // instead and this only stands ready for the moment the link is let
+      // go (or for a linked start before the first post).
       { name:'rate',       defaultValue:40,  minValue:0.05, maxValue:200,   automationRate:'k-rate' },
       // How much the pulse envelope moves the tone and the harmonics: 1 is the
       // full pulse, 0 a steady tone at the pulse's peak. It is the Amplitude
@@ -83,6 +146,19 @@ class GenusProcessor extends AudioWorkletProcessor {
     // the rate does, and a carrier that moves mid-pip bends it rather than
     // jumping its phase.
     this.pipN = 0; this.pipPh = 0;
+    // The flash's formula (v1/core/signal.js, as js/strobe-am.js posts it:
+    // the anchor in this context's seconds, the phase there, the rate and
+    // its ramp), whether the pulse is linked to it, and where on it the
+    // genus lands (flashAlign). Until the first post there is no formula
+    // and the phase runs free at the rate param even when linked, as it
+    // always did. envSh is the envelope's shift from the pip as it glides,
+    // 0 whenever the phase is free.
+    this.sigOk = false; this.linked = false;
+    this.sAt = 0; this.sP = 0; this.sR0 = 0; this.sR1 = 0; this.sDur = 0;
+    this.align = flashAlign(0, 0.5, { pip: 0, peak: 0 });
+    this.envSh = 0;
+    this.lockA = 1 - Math.exp(-1 / (LOCK_TAU_S * sampleRate));
+    this.envA = 1 - Math.exp(-1 / (ENV_SHIFT_S * sampleRate));
     // Lowpass sweep state. The sweep is a run of half-sweeps, each an eased
     // move of lpfPos (0 = the low cutoff, 1 = the high) from lpfFrom to lpfTo;
     // lpfU is how far through the current one it is. lpfHz is the cutoff
@@ -107,7 +183,18 @@ class GenusProcessor extends AudioWorkletProcessor {
     this.chirp = null; this.chirpOld = null; this.chirpNext = null;
     this.xfLeft = 0; this.xfLen = 1; this.xfNext = 1;
     this.port.onmessage = e => {
+      const d = e.data;
+      if (d && d.signal) {
+        // the flash's formula and the link, posted only when one changes
+        this.sAt = +d.at || 0; this.sP = +d.p || 0;
+        this.sR0 = +d.r0 || 0; this.sR1 = +d.r1 || 0; this.sDur = +d.dur || 0;
+        const duty = +d.duty;
+        flashAlign(d.wave | 0, duty === duty ? duty : 0.5, this.align);
+        this.linked = !!d.linked; this.sigOk = true;
+        return;
+      }
       if (e.data && e.data.meters !== undefined) { this.metersOn = !!e.data.meters; return; }
+      if (e.data && e.data.dipWatch !== undefined) { this.dipWatch = !!e.data.dipWatch; return; }
       if (e.data && e.data.chirp) {
         this.chirpNext = e.data.chirp;
         this.xfNext = Math.max(1, Math.round((e.data.xf > 0 ? e.data.xf : 0.03) * sampleRate));
@@ -128,6 +215,11 @@ class GenusProcessor extends AudioWorkletProcessor {
     // them.
     this.metersOn = true;
     this.pkMsg = { peaks: true, tone: 0, pulse: 0, harm: 0 };
+    // The pips' loudness dip, reported on the same clock for the drawer's
+    // level bar: the share of the set level it leaves right now. Off until
+    // the main thread asks, and never sent while the depth is 0.
+    this.dipWatch = false; this.cmodDepthNow = 0;
+    this.dipMsg = { dip: 1 };
     // Every harmonic gets its own pan phase and its own slightly different pan
     // rate, so they never settle into a single synchronised sweep.
     this.MAXH = 16;
@@ -170,6 +262,11 @@ class GenusProcessor extends AudioWorkletProcessor {
       const m = this.pkMsg;
       m.tone = this.pkTone; m.pulse = this.pkPip; m.harm = this.pkHarm;
       this.port.postMessage(m);
+    }
+    if (this.dipWatch && this.cmodDepthNow > 0) {
+      // the very curve the pips ride below, at the phase they have reached
+      this.dipMsg.dip = 1 - this.cmodDepthNow * 0.5 * (1 - Math.cos(2 * Math.PI * this.cmodPhase));
+      this.port.postMessage(this.dipMsg);
     }
     this.pkTone = 0; this.pkPip = 0; this.pkHarm = 0;
   }
@@ -310,8 +407,19 @@ class GenusProcessor extends AudioWorkletProcessor {
     const biHard  = p.biHard[0];
     const cmodDepth = p.clickModDepth[0];
     const cmodInc   = p.clickModRate[0] / sampleRate;
+    this.cmodDepthNow = cmodDepth;
     const shimDepth = p.shimDepth[0];
     const shimInc   = p.shimRate[0] / sampleRate;
+    // Locked to the flash (see flashAlign and LOCK_TAU_S above): the
+    // formula's numbers for this block, its time at the block's first
+    // sample, and the envelope shift the glide heads for. Free, none of it
+    // is touched and the rate param drives the phase alone.
+    const lock = this.linked && this.sigOk;
+    const sDt = 1 / sampleRate, sTau0 = currentTime - this.sAt;
+    const sP = this.sP, sR0 = this.sR0, sR1 = this.sR1, sDur = this.sDur;
+    const pipAt = this.align.pip;
+    const envTo = lock ? this.align.peak - pipAt : 0;
+    const lockA = this.lockA, envA = this.envA;
     this.lpfBlock(p, outputs[0][0] ? outputs[0][0].length : 128);
 
     // A waiting chirp table starts its crossfade once the last one has done.
@@ -338,11 +446,22 @@ class GenusProcessor extends AudioWorkletProcessor {
       if (hL) hL.fill(0);
       if (hR) hR.fill(0);
       if (cOut) cOut.fill(0);
-      this.phase  = (this.phase  + inc  * out.length) % 1;
+      if (lock) {
+        // nothing is sounding, so the phase is simply put where the flash
+        // has it at the block's end, with no glide to hear
+        const tauE = sTau0 + out.length * sDt;
+        const x = sP + sigCycles(tauE, sR0, sR1, sDur) - pipAt;
+        const fi = sigRate(tauE, sR0, sR1, sDur) / sampleRate;
+        this.phase = x - Math.floor(x);
+        this.pipN = fi > 0 ? this.phase / fi : 1e7;
+      } else {
+        this.phase  = (this.phase  + inc  * out.length) % 1;
+        this.pipN  = this.phase / inc;
+      }
+      this.envSh = envTo;
       this.cphase = (this.cphase + cinc * out.length) % 1;
       this.cmodPhase = (this.cmodPhase + cmodInc * out.length) % 1;
       this.biPhase   = (this.biPhase   + biInc   * out.length) % 1;
-      this.pipN  = this.phase / inc;
       this.pipPh = (this.pipN * cinc) % 1;
       this.xfLeft = Math.max(0, this.xfLeft - out.length);
       ampPrev.set(amp); this.hTopPrev = hTop;
@@ -373,10 +492,11 @@ class GenusProcessor extends AudioWorkletProcessor {
       // the harmonics, so each is computed once a sample, and only if needed.
       let env = 0, sc = 0;
       if (tl > 0 || harmNow) {
-        // peaks with the pip; the depth only ever pulls the troughs up toward
-        // the peak (at full depth this is 0.75 + 0.25 cos, as it always was)
+        // peaks with the pip (or, linked, envSh after it: see flashAlign);
+        // the depth only ever pulls the troughs up toward the peak (at full
+        // depth this is 0.75 + 0.25 cos, as it always was)
         const ad = adN ? AD[i] : AD[0];
-        env = ad > 0 ? 1 - 0.25 * ad * (1 - Math.cos(TAU * this.phase)) : 1;
+        env = ad > 0 ? 1 - 0.25 * ad * (1 - Math.cos(TAU * (this.phase - this.envSh))) : 1;
         sc = Math.sin(TAU * this.cphase);
       }
       let v = 0;
@@ -467,11 +587,33 @@ class GenusProcessor extends AudioWorkletProcessor {
         const ahr = vr < 0 ? -vr : vr;   if (ahr > pkH) pkH = ahr;
       } else if (hL && hR) { hL[i] = 0; hR[i] = 0; }
 
-      this.phase += inc;
+      // The phase's step: the rate param's, free; linked, the formula's own
+      // step at this sample plus the capped pull onto its phase (see
+      // LOCK_TAU_S), which is always forward. The envelope's shift glides
+      // toward its place, and back to exactly 0 once the link is let go.
+      let step = inc;
+      if (lock) {
+        const tau = sTau0 + i * sDt;
+        let x = sP + sigCycles(tau, sR0, sR1, sDur) - pipAt;
+        x -= Math.floor(x);
+        const fi = sigRate(tau, sR0, sR1, sDur) / sampleRate;
+        let gap = x - this.phase;
+        gap -= Math.round(gap);                   // the near way round, -0.5..0.5
+        let pull = gap * lockA;
+        const cap = LOCK_SLEW * fi;
+        if (pull > cap) pull = cap; else if (pull < -cap) pull = -cap;
+        step = fi + pull;
+      }
+      const sh = this.envSh;
+      if (sh !== envTo) {
+        const d = envTo - sh;
+        this.envSh = d < 1e-6 && d > -1e-6 ? envTo : sh + envA * d;
+      }
+      this.phase += step;
       if (this.phase >= 1) {
         this.phase -= 1;
         // a new cycle, and a new pip, starting this far past the boundary
-        this.pipN = this.phase / inc;
+        this.pipN = step > 0 ? this.phase / step : 0;
         this.pipPh = this.pipN * cinc;
       } else {
         this.pipN += 1;
@@ -557,3 +699,83 @@ class OnePoleProcessor extends AudioWorkletProcessor {
   }
 }
 registerProcessor('one-pole', OnePoleProcessor);
+
+// The strobe's own flash as a signal, for every Vary with strobe stage
+// (js/strobe-am.js): one of these feeds them all. It is not a clock of its
+// own and it chases nothing. The flash is one formula of time
+// (v1/core/signal.js), and this runs that formula at every sample's own
+// time, handed the formula's numbers by the page whenever they change: the
+// anchor (in this context's seconds), the phase there, the rate and its
+// ramp, the wave, the duty, and whether the flicker shows. Between changes
+// there is nothing to tell it; the screen and this are each just reading
+// the same law at their own moment.
+//
+// Out comes 2 x shape - 1: +1 lit, -1 dark. With the flicker stopped
+// (paused) it eases over a twentieth of a second to +1, the steady lit
+// level the field holds, and back when it starts. A millisecond's smoothing
+// keeps a square's edges, and the rare re-anchor of the phase, from
+// clicking.
+//
+// This file is loaded by addModule and keeps to itself: a worklet that
+// imported the law would hang the whole module, the engine's tone and pips
+// included, on module imports inside worklets, which not every browser this
+// app runs on has had for long. So the law's pieces are copied here,
+// sigCycles from v1/core/signal.js's cyclesAt, sigRate from its rateAt and
+// sigShape from its waveShape, exactly as the click's dip above keeps its
+// copy of the variance law. A change to any of them there must be made here
+// too. The genus processor above reads sigCycles and sigRate as well, for
+// its phase while linked to the visual.
+function sigCycles(tau, r0, r1, dur) {
+  if (tau <= 0 || !(dur > 0)) return r0 * tau;
+  if (tau < dur) return r0 * tau + (r1 - r0) * tau * tau / (2 * dur);
+  return (r0 + r1) * 0.5 * dur + r1 * (tau - dur);
+}
+function sigRate(tau, r0, r1, dur) {
+  if (tau <= 0 || !(dur > 0)) return r0;
+  return tau < dur ? r0 + (r1 - r0) * tau / dur : r1;
+}
+function sigShape(wave, duty, p) {
+  if (wave === 2) return p < duty ? 1 : 0;
+  if (wave === 1) return p < 0.5 ? p * 2 : 2 - p * 2;
+  return 0.5 * (1 - Math.cos(2 * Math.PI * p));
+}
+class StrobeSignalProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    // the formula's numbers (v1/core/signal.js signalState), at seconds on
+    // this context's clock; until the page's first word, a steady 7.5 Hz
+    // square held lit
+    this.at = 0; this.p = 0; this.r0 = 7.5; this.r1 = 7.5; this.dur = 0;
+    this.wave = 2; this.duty = 0.5; this.on = false;
+    // the output's smoothing and the ease to lit, starting at rest, lit
+    this.y = 1; this.hold = 1;
+    this.a = 1 - Math.exp(-1 / (0.001 * sampleRate));
+    this.h = 1 - Math.exp(-1 / (0.05 * sampleRate));
+    this.port.onmessage = e => {
+      const d = e.data;
+      if (!d) return;
+      this.at = +d.at || 0; this.p = +d.p || 0;
+      this.r0 = +d.r0 || 0; this.r1 = +d.r1 || 0; this.dur = +d.dur || 0;
+      this.wave = d.wave | 0; this.duty = +d.duty; this.on = !!d.on;
+    };
+  }
+  process(inputs, outputs) {
+    const out = outputs[0] && outputs[0][0];
+    if (!out) return true;
+    const n = out.length, dt = 1 / sampleRate, tau0 = currentTime - this.at;
+    const p0 = this.p, r0 = this.r0, r1 = this.r1, dur = this.dur, wave = this.wave, duty = this.duty;
+    const a = this.a, h = this.h, holdTo = this.on ? 0 : 1;
+    let y = this.y, hold = this.hold;
+    for (let i = 0; i < n; i++) {
+      let ph = p0 + sigCycles(tau0 + i * dt, r0, r1, dur);
+      ph -= Math.floor(ph);
+      hold += h * (holdTo - hold);
+      const v = sigShape(wave, duty, ph) * (1 - hold) + hold;
+      y += a * (v - y);
+      out[i] = 2 * y - 1;
+    }
+    this.y = y; this.hold = hold;
+    return true;
+  }
+}
+registerProcessor('strobe-signal', StrobeSignalProcessor);

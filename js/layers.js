@@ -54,7 +54,9 @@ function load(ctx, r) {
 
 async function start(r) {
   if (r.wanted) return;
-  const ctx = getContext();
+  // The bus's own context: the music family's (js/piano.js), Heart's when
+  // the flag names music, so a layer always builds where its bus lives.
+  const ctx = dryBus && dryBus.context;
   if (!ctx || !dryBus || !roomBus) return;
   r.wanted = true;
   const my = ++r.token;
@@ -85,7 +87,7 @@ function stop(r) {
   r.wanted = false;
   ++r.token;
   if (!r.src) return;
-  const ctx = getContext();
+  const ctx = r.gain.context;
   const src = r.src, g = r.gain, t = r.tap;
   r.src = null; r.gain = null; r.tap = null;
   // Its own curve, not glideParam: a preset transition would stretch that
@@ -94,10 +96,14 @@ function stop(r) {
   try { p.cancelAndHoldAtTime(now); }
   catch (e) { p.cancelScheduledValues(now); p.setValueAtTime(p.value, now); }
   p.setTargetAtTime(0, now, FADE_OUT_TC);
+  // On Heart the fade is heard from the present, ctx.presentTime, about a
+  // lookahead after currentTime (js/heart/nodes.js, late gestures), so the
+  // teardown waits that much longer; natively the two are one.
+  const late = ctx.presentTime === undefined ? 0 : Math.max(0, ctx.presentTime - ctx.currentTime);
   setTimeout(() => {
     try { src.stop(); } catch (e) {}
     try { src.disconnect(); g.disconnect(); t.analyser.disconnect(); } catch (e) {}
-  }, TEARDOWN_MS);
+  }, TEARDOWN_MS + late * 1000);
 }
 
 const find = id => run.get(id);

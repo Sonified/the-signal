@@ -5,6 +5,7 @@ import {
   sourceGate
 } from './audio.js';
 import { layerGate, layerSoloChanged, onLayerGates } from './mixgate.js';
+import { ctxFor, masterFor } from './heart/route.js';
 
 export const WORLDS = [
   { id: 'ocean',    bed: 'ocean-waves',    kids: 'kids-beach' },
@@ -106,10 +107,22 @@ async function buf(url) {
 const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
 const outLevel = () => S.ambVol * perfTrim(S.musAmb ?? 1);
 
+// The atmosphere is built on the context route.js gives the ambience family:
+// Heart's, rendered ahead in a worker, when ?heart= names it, else the
+// native one (spec 12). Its clock is the native one either way, so every
+// time below is still read from getContext(). Until audio.js has asked
+// route.js to start Heart, route.js has no context to give, and the bus is
+// built natively as it always was. Once the bus is built, every voice is
+// made on the context it lives on, since a node cannot connect to another
+// engine's: a bus begun natively while Heart was still starting stays
+// native, as route.js says it should.
+let outCtx = null;
+
 function ensureOut() {
   if (out) return out;
-  const ctx = getContext(), master = getMaster();
+  const ctx = ctxFor('ambience') || getContext(), master = masterFor('ambience') || getMaster();
   if (!ctx || !master) return null;
+  outCtx = ctx;
   out = ctx.createGain();
   out.gain.value = outLevel();
   // The pause gate (audio.js) on the dry side, a gain of its own since the
@@ -151,8 +164,13 @@ export function rebuildAmbIR() {
 
 // A voice is a looping source with its own gain, so two can overlap during a
 // crossfade without either knowing about the other.
+//
+// On Heart, the start at currentTime and the fade in anchored there are
+// both late by the render's lookahead, and both are moved on by the same
+// amount (js/heart/nodes.js, late gestures), so the voice still begins
+// exactly where its fade does, a lookahead later than natively.
 function voice(buffer, level, fade) {
-  const ctx = getContext();
+  const ctx = outCtx;
   const g = ctx.createGain();
   g.gain.value = 0;
   const s = ctx.createBufferSource();
@@ -171,7 +189,9 @@ function fadeOut(v, fade) {
   // among them would be pulled back up by the next one, so they go first.
   hold(v.g.gain, ctx.currentTime);
   glideParam(v.g.gain, 0, fade / 3);
-  // stopped once it is silent, however long a transition made the fade
+  // stopped once it is silent, however long a transition made the fade. On
+  // Heart the fade is heard up to about 0.13 s later than it was written
+  // (nodes.js, late gestures), which both margins here leave room for.
   const end = glideEnd();
   const wait = Math.max(fade + 2, end ? end - ctx.currentTime + 0.5 : 0);
   setTimeout(() => { try { v.s.stop(); } catch (e) {} }, wait * 1000);
@@ -401,6 +421,9 @@ export function ambLayerStatus(layer) {
 export function ambLayerPeak(layer) {
   const v = mixVoices.get(layer)?.v;
   if (!running || !v || !S.running || !S.audioEnabled || getContext()?.state !== 'running') return 0;
+  // Heart's analyser sends back its peak, not the waveform (js/heart/nodes.js
+  // HeartAnalyser); a native one has no peak() and is scanned as always.
+  if (v.meter.peak) return v.meter.peak();
   const x = v.samples;
   v.meter.getFloatTimeDomainData(x);
   let peak = 0;   // indexed, as tapPeak in util.js, for the same reason
