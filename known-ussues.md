@@ -58,3 +58,21 @@ Found (2026-09-30): a sequencer line that stopped being heard (muted, solo'd awa
 ## Visuals: a GPU profiling pass (wanted)
 
 **Tag: gpu-profile.** The visuals already run entirely on WebGPU: WGSL shaders for every layer, and compute shaders for particles, word smoke and the word cloud. The strobe is one formula of time in core/signal.js. Nothing has measured what each effect costs on the GPU. Next time frames feel tight: time each render and compute pass with WebGPU timestamp queries (`timestamp-query` feature, a query set written at each pass boundary and read back), show the per-pass milliseconds in the profiler, and tune the heaviest passes first.
+
+## Broadcast: a follower can show different words than the broadcaster
+
+**Tag: word-walk-drift.** Seen 2026-10-01: in a broadcast session with words on, a follower showed different words than the broadcaster.
+
+How words reach a follower (core/broadcast.js, core/words.js):
+- **Relayed:** every word the broadcaster shows is sent at once (`{t:'word', w, seed, fi, fo, k}`).
+- **The shared walk:** both sides also compute the same sequence from the room seed and the shared clock step, so most words need no message. While the follower's own walk runs, it **drops relayed walk words** (those with a step `k`) and trusts its own pick (`if (k < 0 || !wordWalkRunning()) remoteWord(...)`).
+
+**Not explained yet.** Robert confirms both screens had the same word pool and the same (or nearly the same) app version, and words were about 8 an hour, so neither pool drift nor clock offset explains it. Robert is testing it himself to find the root. Candidates:
+1. **Clock offset.** Unlikely for this case: words were about 8 an hour, so the walk's steps are minutes long, and no plausible clock error moves a screen to another step. Worth ruling out only at fast word rates.
+2. **The plan's inputs differing for a moment.** planStep is recomputed every frame from S.freq, textFreq, textRandom, the fade and dwell times, textAppearMode and the phrase gap. If any of them differs on the follower (a snapshot still landing, a glide mid-way), the step index changes and every word after it differs. Linked words read the set S.freq, which both sides should share.
+3. **The follower not in the room at all.** In worker engine mode `?follow=` is ignored (found during the v1-to-root migration; see its brief), so a follower with Render → Engine thread on Worker deals its own words. Nothing else would follow then either.
+4. **Pool or version drift** (ruled out for this case, but still possible in general): the walk indexes into the pool by position, so a different js/words.js build or different themes deal different words.
+
+**To find out:** log on both screens, once per word, the walk step m, walkClock, planStep and the word (words.js walk path), then compare a few seconds of each side's log. A different planStep or step m means candidate 2; no walk running on the follower means candidate 3; the same m with a different word means the pools differ after all.
+
+**The fix (not built yet): the broadcaster always wins.** When a relayed walk word arrives with step `k`, compare it with the word the follower's own walk dealt at step `k`. On the first mismatch, stop the walk for the rest of the session (`setWordWalk('')`) and show relayed words from then on. Walking keeps saving messages when everything matches, and any drift heals within one word. A console note on the switch would help diagnose it. This heals candidates 2 and 4, not 1: with a clock offset both sides deal the same word for each step, just at different moments, so the step check would match. Candidate 1 needs a tighter shared clock (more probes, picking the minimum round trip, and allowing for each screen's output latency) or a floor on the step length while in a room.
