@@ -1809,11 +1809,11 @@ export const VISUAL_CONTROLS = [
     // Everything this app keeps (settings, presets, journeys, the broadcast
     // key, window layout) to a file, and back: how a setup moves to another
     // site or is kept safe (platform/settings-file.js, through main.js).
-    id: 'settingsDownload', section: 'render', label: 'Download settings', kind: 'action',
+    id: 'settingsDownload', section: 'settings', label: 'Download settings', kind: 'action',
     act: () => settingsFileHook('download')
   },
   {
-    id: 'settingsLoad', section: 'render', label: 'Load settings', kind: 'action',
+    id: 'settingsLoad', section: 'settings', label: 'Load settings', kind: 'action',
     act: () => settingsFileHook('load')
   }
 ];
@@ -1846,5 +1846,7 @@ export const VISUAL_SECTIONS = [
   { id: 'tunnel', title: 'Rings' },
   { id: 'edge',   title: 'Edge'   },
   { id: 'text',   title: 'Text'   },
-  { id: 'render', title: 'Render' }
+  { id: 'render', title: 'Render' },
+  // the last group in the drawer: your settings to a file and back
+  { id: 'settings', title: 'Your settings' }
 ];
