@@ -220,8 +220,8 @@ function ghostDraw(g, dl) {
 // whatever the words layer is set to, words off included. Not settings;
 // the word's sliders never reach these. The same units as those sliders:
 // opacity, blur, size and soft 0..1 of their travel, fades in ms. Panel is
-// always per line (Vary per line on): a pill for each line of the hint, the
-// one line on a phone, the main line and its two keyboard lines elsewhere.
+// always per line (Vary per line on), and only behind the main line: the
+// two small keyboard lines below it go bare.
 const HINT_SHADOW_O = 0.3, HINT_SHADOW_BLUR = 0.79, HINT_SHADOW_SIZE = 0.35;
 const HINT_SHADOW_IN_MS = 400, HINT_SHADOW_OUT_MS = 250;
 const HINT_PANEL_O = 0.9, HINT_PANEL_SIZE = 0.33, HINT_PANEL_SOFT = 1;
@@ -326,7 +326,10 @@ function hintLine(k) { return k === 0 ? HINT_1 : k === 1 ? HINT_2 : HINT_3; }
 // them, and at rest it is the whole line. Each line's pads are in its own
 // size's ems, as the word's are in the word's.
 function drawHintBacking(dl, text, cx, cy, fx, level) {
-  const n = touchHints ? 1 : 3;
+  // Only the main line is backed: the small grey keyboard lines read
+  // better bare, a dark backing only muddies them. They still bound the
+  // main line's pill, so it never spreads down over them.
+  const lines = touchHints ? 1 : 3, n = 1;
   const panelA = HINT_PANEL_O * envHintPanel * level;
   if (panelA > 0.002) {
     dl.pushAlpha(panelA);
@@ -335,7 +338,7 @@ function drawHintBacking(dl, text, cx, cy, fx, level) {
       text.drawWord(dl, hintLine(k), cx, cy + HINT_DY[k], HINT_SIZE[k], HINT_WEIGHT[k],
                     SHADE_INK, HINT_TRACK[k], level, fx, null, shade);
       const up = k > 0 ? HINT_DY[k] - HINT_DY[k - 1] : Infinity;
-      const down = k < n - 1 ? HINT_DY[k + 1] - HINT_DY[k] : Infinity;
+      const down = k < lines - 1 ? HINT_DY[k + 1] - HINT_DY[k] : Infinity;
       panelMetrics(HINT_SIZE[k], HINT_PANEL_SIZE, HINT_PANEL_SOFT);
       linePill(dl, shade.ax0, shade.ay0, shade.ax1, shade.ay1, Math.min(up, down));
     }
