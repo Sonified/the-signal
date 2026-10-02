@@ -19,6 +19,11 @@
 // Every command batch comes back as an event, byte for byte, and every
 // uploaded buffer as an event [0xB0B0, id, f32 sum of its samples]. Command
 // batches also grow the memory, so the transport's re-viewing is exercised.
+//
+// Two batches also act on the stage, for the lookahead tests: [0xF5, lo, hi]
+// stalls it where it lands, holding the worker busy for lo + 256·hi ms, as
+// an OS that parks the thread would; [0xF6, ms] makes every render from then
+// on take that long (0 to stop), a stage too heavy to keep up.
 
 import { parentPort, workerData } from 'node:worker_threads';
 
@@ -26,7 +31,8 @@ function fakeHeart() {
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 8192 });
   const CH = 512;
   let top = 64, role = 0, seed = 0, frame = 0;
-  let egress = 0, master = 0, upload = null;
+  let egress = 0, master = 0, upload = null, cost = 0;
+  const busy = ms => { const end = performance.now() + ms; while (performance.now() < end); };
   const ingress = new Map(), asked = [], pending = [];
   const alloc = bytes => {
     const at = top;
@@ -46,7 +52,10 @@ function fakeHeart() {
     heart_alloc: alloc,
     heart_free() {},
     heart_commands(ptr, len) {
-      pending.push(new Uint8Array(memory.buffer, ptr, len).slice());
+      const bytes = new Uint8Array(memory.buffer, ptr, len).slice();
+      pending.push(bytes);
+      if (bytes[0] === 0xf5) busy(bytes[1] + 256 * bytes[2]);
+      if (bytes[0] === 0xf6) cost = bytes[1];
       alloc(70000);
     },
     heart_buffer_alloc(id, channels, frames) {
@@ -55,6 +64,7 @@ function fakeHeart() {
       return at;
     },
     heart_render(frames) {
+      if (cost) busy(cost);
       if (upload) {
         const m = new Float32Array(memory.buffer, upload.at, upload.n);
         let sum = 0;

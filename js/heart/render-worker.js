@@ -19,13 +19,23 @@
 //
 // An island never waits on the mix, only on room in its ring.
 //
+// The lookahead is live (§7.3, adaptive lookahead): the drain grows it on
+// an underrun or when the page goes hidden and eases it back after a steady
+// stretch, and a stage reads it before every chunk, from the control block
+// or, without one, from the last chunk the drain sent back. An island's
+// egress ring is sized for the base lookahead only, so once the lookahead
+// grows an island stays as far ahead of the mix as its ring holds, and the
+// extra cushion lives in the final ring, where it is two channels rather
+// than thirty-two.
+//
 // Waiting. With SharedArrayBuffer (the control block, ring.js) a stage that
 // cannot render sleeps on its bell with Atomics.waitAsync, which leaves the
 // worker's event loop free, so commands and buffers keep landing while it
 // sleeps. It wakes when the thing it waits for happens: the drain rings it
 // when the clock reaches the count it asked for (WAKE), the mix rings an
 // island when it has emptied a block of the island's ring, an island rings
-// the mix when it has filled one. A long safety timeout only guards against
+// the mix when it has filled one, and the drain rings every stage when the
+// lookahead grows. A long safety timeout only guards against
 // a wake that never comes. Without SharedArrayBuffer, the rings' own
 // messages wake the stage: the drain posts back each chunk it has played,
 // carrying its clock, and the mix posts back each island chunk. An island
@@ -34,13 +44,27 @@
 // chunks, so it stays a few chunks ahead of the mix. A slow timer is the
 // fallback.
 //
+// Yielding. A stage that is behind, catching up after a stall or simply too
+// slow, could render chunk after chunk in one turn and never return to its
+// event loop, and commands and buffers would wait behind the whole of it:
+// with a lookahead grown to half a second, that is dozens of chunks, and
+// for an overloaded stage it is for ever. So every few chunks it returns to
+// the event loop and picks up again on a zero timer. A chain of those is
+// clamped to 4 ms, small beside the 43 ms of audio four chunks hold; a
+// message to itself would be quicker, but a port that keeps posting to
+// itself can keep the worker's other messages waiting (node does). For the
+// same reason a ring's message (message mode) only schedules a pump on
+// that timer rather than rendering inside its handler: a steady stream of
+// returned chunks would otherwise be a turn that never ends. Until the
+// timer fires every other wake-up returns at once.
+//
 // Memory. Every ABI call that can allocate can grow the wasm memory, which
 // detaches the typed arrays over the old one, so they are re-taken through
 // view() after each such call and indices, not views, are kept.
 
 import {
   QUANTUM, MAX_PORTS, ingressKey, openRing,
-  PLAYED, bellOf, wakeOf, headOf, renderOf, ringBell
+  PLAYED, LOOKAHEAD, bellOf, wakeOf, headOf, renderOf, ringBell
 } from './ring.js';
 
 const ROLE_ISLAND = 1, ROLE_MIX = 2;
@@ -52,11 +76,13 @@ const FALLBACK_MS = 50;
 // In message mode islands report their head and render time every this many
 // chunks; the mix (stage 0) every chunk, as renderedUntil() reads its head.
 const REPORT_EVERY = 8;
+// Chunks rendered in one turn before the stage lets its messages in.
+const TURN_CHUNKS = 4;
 
 let wasm = null, memory = null, f32 = null, u8 = null, u32 = null;
-let stage = 0, role = 0, chunk = 0, ahead = Infinity, ctl = null;
+let stage = 0, role = 0, chunk = 0, lookahead = 0, ctl = null;
 let out = null, ins = [], frame = 0, eventsAt = 0;
-let renderMs = 0, reports = 0, dead = false, started = false;
+let renderMs = 0, reports = 0, dead = false, started = false, scheduled = false;
 const backlog = [];
 // The egress ports this island has ever written. A port missing now (not
 // made yet, or destroyed) is written as silence only if it once carried
@@ -90,9 +116,7 @@ async function init(d) {
   role = d.role;
   chunk = d.chunk;
   ctl = d.control;
-  // The mix and the combined stage keep to the lookahead; an island runs a
-  // chunk further, or, without the shared clock, keys on ring room alone.
-  ahead = role !== ROLE_ISLAND ? d.lookahead : ctl ? d.lookahead + chunk : Infinity;
+  lookahead = d.lookahead;
 
   // heart.wasm imports nothing (§5), so the import object is empty.
   const instance = await WebAssembly.instantiate(d.module, {});
@@ -105,8 +129,8 @@ async function init(d) {
   out = openRing(d.out, 'writer');
   ins = d.ins.map(i => ({ stage: i.stage, ring: openRing(i.ring, 'reader') }));
   if (!ctl) {
-    out.onchange = pump;
-    for (const i of ins) i.ring.onchange = pump;
+    out.onchange = soon;
+    for (const i of ins) i.ring.onchange = soon;
     setInterval(pump, FALLBACK_MS);
   }
 
@@ -169,21 +193,45 @@ function events() {
 // ---------- rendering ----------
 const played = () => ctl ? Atomics.load(ctl, PLAYED) * QUANTUM : out.clock;
 
+// How far past the clock this stage may render, read afresh each time. The
+// mix and the combined stage keep to the lookahead; an island runs a chunk
+// further, or, without the shared clock, keys on ring room alone. Without
+// the control block the drain's lookahead arrives on the chunks it sends
+// back (ring.js, MessageRing); until the first one, the one from init.
+function ahead() {
+  if (role === ROLE_ISLAND) return ctl ? Atomics.load(ctl, LOOKAHEAD) + chunk : Infinity;
+  return ctl ? Atomics.load(ctl, LOOKAHEAD) : out.ahead || lookahead;
+}
+
 function ready() {
   if (out.writable() < chunk) return false;
-  if (frame + chunk > played() + ahead) return false;
+  if (frame + chunk > played() + ahead()) return false;
   for (const i of ins) if (i.ring.readable() < chunk) return false;
   return true;
 }
 
+function soon() {
+  if (scheduled) return;
+  scheduled = true;
+  setTimeout(resume, 0);
+}
+function resume() {
+  scheduled = false;
+  pump();
+}
+
 function pump() {
-  if (dead || !started) return;
+  if (dead || !started || scheduled) return;
   try {
-    for (;;) {
+    for (let turn = 0; ;) {
       // The bell is read before the checks, so a ring that lands between
       // them changes it and the wait below returns at once.
       const bell = ctl ? Atomics.load(ctl, bellOf(stage)) : 0;
-      if (ready()) { render(); continue; }
+      if (ready()) {
+        if (turn++ === TURN_CHUNKS) { soon(); return; }
+        render();
+        continue;
+      }
       if (!ctl) return;
       Atomics.store(ctl, wakeOf(stage), wakeAt());
       if (ready()) continue;        // the clock moved while we decided
@@ -196,9 +244,9 @@ function pump() {
 // The clock count to be woken at, or -1 when what is missing is room in an
 // egress ring or an island's block, which the other stage rings for.
 function wakeAt() {
-  const now = Atomics.load(ctl, PLAYED);
+  const now = Atomics.load(ctl, PLAYED), reach = ahead();
   let want = -1;
-  if (frame + chunk > now * QUANTUM + ahead) want = Math.ceil((frame + chunk - ahead) / QUANTUM);
+  if (frame + chunk > now * QUANTUM + reach) want = Math.ceil((frame + chunk - reach) / QUANTUM);
   // The final ring empties a quantum at a time, as the drain plays it.
   if (role !== ROLE_ISLAND) {
     const room = out.writable();

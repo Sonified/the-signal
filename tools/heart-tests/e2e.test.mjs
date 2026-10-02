@@ -32,7 +32,8 @@ const { registerBuffer } = await import('../../js/heart/buffers.js');
 const SR = 48000;
 // How far ahead a scenario is scheduled: past every stage's render head in
 // either mode (message mode's lookahead is 90 ms, and an island runs up to
-// three chunks beyond).
+// three chunks beyond), or, should the lookahead have grown on a loaded
+// machine (§7.3), a tenth of a second past it.
 const AHEAD = 0.3;
 const collect = async () => {
   for (let i = 0; i < 4; i++) { globalThis.gc?.(); await wait(10); }
@@ -60,6 +61,7 @@ async function boot(isolated, workers) {
 // A native time `ahead` seconds on whose engine frame is a whole number, so
 // that sources start on a sample and their output can be read exactly.
 function at({ engine, native }, ahead = AHEAD) {
+  ahead = Math.max(ahead, engine.lookahead() + 0.1);
   for (let frame = Math.ceil(engine.frameAt(native.currentTime + ahead)); ; frame++) {
     const t = engine.timeAt(frame);
     if (engine.frameAt(t) === frame) return { t, frame };
@@ -353,7 +355,9 @@ for (const [isolated, workers] of [[true, 1], [false, 1], [true, 3], [false, 3]]
         assert.equal(s.cut, 0, `stage ${s.stage} cut no cycle`);
       }
       const st = rig.engine.stats();
-      t.diagnostic(`underruns ${st.underruns}, render ${st.renderMs.map(ms => ms.toFixed(2)).join(' / ')} ms a chunk`);
+      t.diagnostic(`underruns ${st.underruns}, lookahead ${(st.lookahead * 1000).toFixed(0)} ms, render ${st.renderMs.map(ms => ms.toFixed(2)).join(' / ')} ms a chunk`);
+      assert.equal(st.overloaded, false, 'no stage overloaded');
+      assert.ok(st.lookahead > 0 && st.lookahead <= 0.51, `lookahead ${st.lookahead}`);
       assert.deepEqual(warned, [], 'nothing said in the console');
     } finally {
       console.warn = warn;

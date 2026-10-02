@@ -64,9 +64,10 @@ export class SharedRing {
     this.size = capacity + 1;
     this.at = new Int32Array(sab, 0, 2);
     this.data = new Float32Array(sab, HEADER_BYTES, channels * this.size);
-    // The clock rides the control block in this mode; kept so the two rings
-    // read the same to their users.
+    // The clock and the lookahead ride the control block in this mode;
+    // kept so the two rings read the same to their users.
     this.clock = 0;
+    this.ahead = 0;
     this.onchange = null;
   }
 
@@ -119,10 +120,11 @@ export class SharedRing {
 // one it is filling; it makes a new chunk only while fewer than `slots`
 // exist. The reader side holds the chunks in flight towards it, in order,
 // in a fixed circle of `slots`, and how far into the first it has read.
-// Every message, either way, is { buf, clock }: the reader's clock (the
-// frames the drain has played, as far as the reader knows) rides each
-// returned chunk, which is how the mix hears the drain's progress without a
-// channel of its own.
+// Every message, either way, is { buf, clock, ahead }: the reader's clock
+// (the frames the drain has played, as far as the reader knows) and its
+// lookahead (the frames the writer may render past that clock, 0 for none
+// to give) ride each returned chunk, which is how the mix hears the drain's
+// progress and its lookahead without a channel of its own.
 export class MessageRing {
   constructor({ port, channels, chunk, slots }, side) {
     this.port = port;
@@ -131,6 +133,7 @@ export class MessageRing {
     this.slots = slots;
     this.writer = side === 'writer';
     this.clock = 0;
+    this.ahead = 0;
     this.onchange = null;
     // writer
     this.spare = [];
@@ -143,7 +146,7 @@ export class MessageRing {
     this.queued = 0;
     this.offset = 0;
     // One message object and transfer list, refilled for every post.
-    this.msg = { buf: null, clock: 0 };
+    this.msg = { buf: null, clock: 0, ahead: 0 };
     this.xfer = [null];
     port.onmessage = e => this.receive(e.data);
   }
@@ -156,11 +159,12 @@ export class MessageRing {
     };
   }
 
-  receive({ buf, clock }) {
+  receive({ buf, clock, ahead }) {
     if (this.writer) {
       this.spare.push(buf);
       this.inFlight--;
       this.clock = clock;
+      this.ahead = ahead;
     } else {
       this.queue[(this.head + this.queued) % this.slots] = buf;
       this.queued++;
@@ -190,7 +194,7 @@ export class MessageRing {
   // A chunk travels whole, so a commit is always exactly one chunk.
   commit(frames) {
     if (frames !== this.chunk) throw new Error(`heart: MessageRing commits whole chunks of ${this.chunk}, not ${frames}`);
-    this.send(this.fill(), 0);
+    this.send(this.fill(), 0, 0);
     this.filling = null;
     this.inFlight++;
   }
@@ -217,14 +221,15 @@ export class MessageRing {
       this.head = (this.head + 1) % this.slots;
       this.queued--;
       this.offset -= this.chunk;
-      this.send(buf, this.clock);
+      this.send(buf, this.clock, this.ahead);
     }
   }
 
-  send(buf, clock) {
+  send(buf, clock, ahead) {
     const { msg, xfer } = this;
     msg.buf = buf;
     msg.clock = clock;
+    msg.ahead = ahead;
     xfer[0] = buf.buffer;
     this.port.postMessage(msg, xfer);
     msg.buf = null;
@@ -253,7 +258,19 @@ export const openRing = (desc, side) => desc.kind === 'shared' ? new SharedRing(
 // A few Int32s every thread shares. The drain is the clock: it adds one to
 // PLAYED for every quantum it hands the speakers, whether music or the
 // silence of an underrun, so played × 128 is always the engine frame now
-// sounding (less F, §7.2). Each stage then has four slots:
+// sounding (less F, §7.2). The lookahead is two more (§7.3, adaptive
+// lookahead), both in frames and both written only by the drain:
+//
+//   LOOKAHEAD       how far past the clock the mix and the combined stage
+//                   render now (islands a chunk further); every stage reads
+//                   it before each chunk.
+//   LOOKAHEAD_NEXT  where the lookahead is going. A growth is written here
+//                   at once and into LOOKAHEAD a chunk later, so the page's
+//                   horizon, which reads this one, is ahead of the stages by
+//                   the time they obey it, and a command batch already on
+//                   its way still lands before a stage renders past it.
+//
+// Each stage then has four slots:
 //
 //   BELL     a counter the worker sleeps on with Atomics.waitAsync; anyone
 //            who may have unblocked it adds one and notifies.
@@ -267,15 +284,16 @@ export const openRing = (desc, side) => desc.kind === 'shared' ? new SharedRing(
 // The worker writes WAKE and then reads PLAYED; the drain writes PLAYED and
 // then reads WAKE. Atomics are sequentially consistent, so at least one of
 // the two sees the other's write, and a wake-up can never fall between them.
-export const PLAYED = 0, UNDERRUNS = 1;
-const CONTROL_HEAD = 2, PER_STAGE = 4;
+export const PLAYED = 0, UNDERRUNS = 1, LOOKAHEAD = 2, LOOKAHEAD_NEXT = 3;
+const CONTROL_HEAD = 4, PER_STAGE = 4;
 export const bellOf = s => CONTROL_HEAD + s * PER_STAGE;
 export const wakeOf = s => CONTROL_HEAD + s * PER_STAGE + 1;
 export const headOf = s => CONTROL_HEAD + s * PER_STAGE + 2;
 export const renderOf = s => CONTROL_HEAD + s * PER_STAGE + 3;
 
-export function makeControl(stages) {
+export function makeControl(stages, lookahead = 0) {
   const ctl = new Int32Array(new SharedArrayBuffer(4 * (CONTROL_HEAD + stages * PER_STAGE)));
+  ctl[LOOKAHEAD] = ctl[LOOKAHEAD_NEXT] = lookahead;
   for (let s = 0; s < stages; s++) ctl[wakeOf(s)] = -1;
   return ctl;
 }
