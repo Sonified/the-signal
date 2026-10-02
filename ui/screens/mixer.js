@@ -32,6 +32,7 @@ import {
 import { runAction, makeTextState, TEXT_EDITING, TEXT_COMMIT } from '../widgets.js';
 import { ICON } from '../drawlist.js';
 import { W, MOTION } from '../theme.js';
+import { smallScreen, fitWindow, fit } from './win-fit.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { anySolo, chanSilenced } from '../../js/mixgate.js';
 import { MUSIC_LAYERS, layerMixId } from '../../js/layer-defs.js';
@@ -628,16 +629,18 @@ export function drawMixer(ui, app, fade = 1) {
   // of the screen (so the window's own bottom edge stays in reach), and
   // scrolling whatever does not fit.
   const maxW = Math.max(200, width - 24), minW = Math.min(WIN_MIN, maxW);
-  const winW = Math.max(minW, Math.min(mixer.w, maxW));
+  let winW = Math.max(minW, Math.min(mixer.w, maxW));
   const minH = BAR_H + 80, fitH = 1 + BAR_H + BODY_H + 1;
   const roomH = Math.max(minH, height - 12 - Math.max(12, mixer.y));
   const maxH = roomH;
-  const h = Math.max(minH, Math.min(mixer.h > 0 ? mixer.h : fitH, maxH));
+  let h = Math.max(minH, Math.min(mixer.h > 0 ? mixer.h : fitH, maxH));
   // first showing: v0's top 80, right 24
   if (!mixer.placed) { mixer.placed = true; mixer.x = Math.max(12, width - winW - 24); mixer.y = 80; }
   // keep the window reachable after a resize
   mixer.x = Math.max(12 - winW + 80, Math.min(mixer.x, width - 80));
   mixer.y = Math.max(12, Math.min(mixer.y, height - BAR_H - 12));
+  // a small screen keeps the whole window on it, the × in reach (win-fit.js)
+  if (smallScreen(width, height)) { fitWindow(mixer, width, height, winW, h); winW = fit.w; h = fit.h; }
   const x = mixer.x, y = mixer.y + (1 - open) * 16;   // slides on open/shut only, not the idle fade
   mixer.rx = x; mixer.ry = y; mixer.rw = winW; mixer.rh = h;
   const dl = ui.dl;

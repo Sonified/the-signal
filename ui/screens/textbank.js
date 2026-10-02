@@ -27,6 +27,7 @@ import { loadUiState, saveUiState } from '../../core/store.js';
 import { perform, loadPerform, savePerform, triggerText, perfSet } from '../../core/perform.js';
 import { makeTextState, TEXT_COMMIT, TEXT_EDITING, drawSwitch } from '../widgets.js';
 import { COLOR, TYPE, W, MOTION } from '../theme.js';
+import { smallScreen, fitWindow, fit } from './win-fit.js';
 import {
   C, CELL_H, DD_MENU_MIN_W, baseline, hslider, makeDropdown, ddInput, ddDraw, ddCell,
   sliderCell, fitRow, drawRow, cellLabelLine, targetPos
@@ -386,13 +387,13 @@ export function drawTextbank(ui, app, fade = 1) {
   const width = app.width, height = app.height;
 
   const maxW = Math.max(320, width - 24), minW = Math.min(WIN_MIN_W, maxW);
-  const winW = Math.max(minW, Math.min(textbank.w, maxW));
+  let winW = Math.max(minW, Math.min(textbank.w, maxW));
   const maxH = Math.max(BAR_H + 120, height - 24), minH = Math.min(WIN_MIN_H, maxH);
   // The window is as tall as what it holds: it opens snug around the hint,
   // the rows, + Add and the timing strip, and grows a row at a time as
   // phrases are added. textbank.h, the bottom edge's drag, is only a ceiling:
   // past it the list scrolls instead of the window growing.
-  const winH = Math.max(minH, Math.min(naturalH(winW), textbank.h, maxH));
+  let winH = Math.max(minH, Math.min(naturalH(winW), textbank.h, maxH));
   // first showing: against the right edge, a little down from the top, so it
   // stays clear of the Performance window centred on the screen
   if (!textbank.placed) {
@@ -403,6 +404,8 @@ export function drawTextbank(ui, app, fade = 1) {
   // keep the title bar reachable after any resize
   textbank.x = Math.max(12 - winW + 80, Math.min(textbank.x, width - 80));
   textbank.y = Math.max(12, Math.min(textbank.y, height - BAR_H - 12));
+  // a small screen keeps the whole window on it, the × in reach (win-fit.js)
+  if (smallScreen(width, height)) { fitWindow(textbank, width, height, winW, winH); winW = fit.w; winH = fit.h; }
   const x = textbank.x, y = textbank.y + (1 - open) * 16;   // slides on open and shut only
   textbank.rx = x; textbank.ry = y; textbank.rw = winW; textbank.rh = winH;
   const dl = ui.dl;

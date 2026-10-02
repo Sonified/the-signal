@@ -38,7 +38,7 @@ import {
 import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 
-const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'live', 'render'];
+const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'live', 'render', 'settings'];
 
 // The control each section's header switch stands for: the layer's own on/off,
 // the same one the section holds as its first row, so the header and the row
@@ -1246,6 +1246,34 @@ function keyRow(ui) {
                hv > 0.5 ? COLOR.ink : has ? COLOR.inkDim : COLOR.inkFaint, 2, TRACK.ui, 1);
 }
 
+// The floating windows, a button each: the way to them on a screen with no
+// keyboard (a phone), where M, L, S, P, J and T cannot reach. A press opens
+// the window, or shuts it again, and a window that is open shows its button
+// lit. Indices are main.js's (app.toggleWindow). Three to a row, or two
+// where the column is too narrow for the longest name, so every name fits
+// whole.
+const WIN_LABELS = ['Music', 'Levels', 'Sequencer', 'Performance', 'Journeys', 'Text'];
+const WIN_IDS = WIN_LABELS.map(l => 'drawer.win.' + l);
+let winLabelW = 0;
+function drawWindowButtons(ui, app) {
+  subHeading(ui, 'WINDOWS', false);
+  ui.spacer(SPACE.xs);
+  if (!(winLabelW > 0)) {
+    for (let i = 0; i < WIN_LABELS.length; i++) {
+      // measure() knows nothing of tracking, so the button's is added by hand
+      const lab = WIN_LABELS[i];
+      winLabelW = Math.max(winLabelW, ui.text.measure(lab, TYPE.sm, W.regular)
+        + TRACK.ui * TYPE.sm * (lab.length - 1) + CHIP_PAD * 2);
+    }
+  }
+  const cols = (ui.regionW - SPACE.sm * 2) / 3 >= winLabelW ? 3 : 2;
+  for (let i = 0; i < WIN_LABELS.length; i++) {
+    if (i % cols === 0) ui.row(cols);
+    if (ui.button(WIN_IDS[i], WIN_LABELS[i], app.windowOpen(i) ? 'primary' : 'chip', false)) app.toggleWindow(i);
+    if (i % cols === cols - 1 || i === WIN_LABELS.length - 1) ui.endRow();
+  }
+}
+
 // The drawer's slide, stepped once per frame before anything reads it, so
 // the drawer, the burger riding its edge and S.edgeInset all move on this
 // frame's value: the same spring, the same maths, no frame of lag.
@@ -1287,6 +1315,10 @@ export function drawDrawer(ui, app) {
   presetHeart(ui, hx, hy, hw, hh);
   // a wider gap than between sections, so the presets read as a block of
   // their own above the list rather than as the first section's contents
+  ui.spacer(SPACE.lg);
+
+  // the floating windows, a button each, under the presets
+  drawWindowButtons(ui, app);
   ui.spacer(SPACE.lg);
 
   // every section as a collapsible group, headers on the wider column

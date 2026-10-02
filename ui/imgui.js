@@ -28,6 +28,15 @@
 //       drag driven with momentum and rubber-band overshoot at the ends, and
 //       an auto-hiding scrollbar on its right edge. Must be called inside a
 //       region (a panel or the root).
+//   ui.scroll(id, h, contentW) -> st
+//       The same, panning sideways too wherever contentW is wider than the
+//       region: a drag moves the content both ways, a sideways wheel moves
+//       it across, and a second auto-hiding bar runs along the foot. For a
+//       body drawn at fixed positions rather than down the cursor (a
+//       floating window's, on a screen too small for it): the caller draws
+//       it shifted left by st.offX and up by st.offset (the cursor already
+//       carries the latter), then spacer()s its full height so the region
+//       knows how tall it was.
 //   ui.group(id, label) -> open (bool) / ui.endGroup()
 //       A collapsible section: a caps-label header with a chevron that
 //       rotates open, and a content area whose height springs to its
@@ -173,6 +182,14 @@
 //   ui.slopPending                    // true while a touch press on the active
 //                                      // widget has not yet travelled TOUCH_SLOP
 //                                      // px, so its axis is still undecided
+//   ui.dragHold = 0 | 1 | 2           // set just before an interact(): which
+//                                      // drag a touch on that widget keeps from
+//                                      // the scroll around it. 1, the default
+//                                      // (put back by every interact), keeps a
+//                                      // sideways drag (a slider); 2 keeps an
+//                                      // up and down one (a knob); 0 keeps
+//                                      // neither (a button, a cell), so a
+//                                      // drag either way pans the content
 //
 //   DEVIATIONS FROM THE ARCHITECTURE.md SKETCH (documented per the brief):
 //   - ui.control(ctrl, S) takes the state object S as a second argument.
@@ -428,6 +445,7 @@ class UI {
 
     // touch slop: see TOUCH_SLOP and interact()
     this.slopPending = false; this._slopX = 0; this._slopY = 0;
+    this.dragHold = 1; this._slopHold = 1;
 
     // hot/active/focus
     this.hotId = -1;
@@ -803,6 +821,8 @@ class UI {
   // active, or focused, and never consumes the down/up event it sits under.
   interact(id, x, y, w, h, disabled) {
     this.hover = false; this.pressed = false; this.clicked = false; this.released = false; this.dbl = false;
+    const hold = this.dragHold;
+    this.dragHold = 1;
     // A disabled holder is not marked seen, so a widget that locks mid-press
     // lets go of it at end().
     if (disabled || this._inert > 0) return;
@@ -826,6 +846,7 @@ class UI {
       this.focusVisible = false;
       this.slopPending = this.pointerType === 'touch';
       this._slopX = this._downX; this._slopY = this._downY;
+      this._slopHold = hold;
     }
 
     // A finger that lands on a widget inside a scroll region and then moves
@@ -834,12 +855,17 @@ class UI {
     // vertical one hands the press to the enclosing scroll (the widget sees
     // no hover, press, or click from then on), a horizontal one stays with
     // the widget. Mouse and pen presses never enter this state, so a mouse
-    // drag on a slider stays a slider drag in any direction.
+    // drag on a slider stays a slider drag in any direction. The widget's
+    // dragHold (see the API notes) can turn either rule round: a knob keeps
+    // its up and down, and a horizontal drag goes to a scroll that pans
+    // sideways unless the widget keeps those.
     if (this.activeId === id && this.slopPending && this._pointerDown && !this._upEvent) {
       const sdx = this.pointerX - this._slopX, sdy = this.pointerY - this._slopY;
       if (sdx * sdx + sdy * sdy >= TOUCH_SLOP * TOUCH_SLOP) {
         this.slopPending = false;
-        if (Math.abs(sdy) > Math.abs(sdx) && this._handToScroll(this._slopY)) {
+        const give = Math.abs(sdy) > Math.abs(sdx) ? this._slopHold !== 2
+          : this._slopHold !== 1 && this._scrollPansX();
+        if (give && this._handToScroll(this._slopY)) {
           this.hover = false;
           if (this.hotId === id) this.hotId = -1;
           return false;
@@ -923,7 +949,22 @@ class UI {
       st.dragStartOffset = st.offset;
       st.lastY = this.pointerY;
       st.vel = 0;
+      st.dragStartX = this._slopX;
+      st.dragStartOffX = st.offX;
+      st.lastX = this.pointerX;
+      st.velX = 0;
       return true;
+    }
+    return false;
+  }
+
+  // Whether the innermost scroll around the layout position pans sideways.
+  _scrollPansX() {
+    for (let d = this._regionDepth; d >= 0; d--) {
+      const reg = this._regions[d];
+      if (reg.kind !== 'scroll') continue;
+      const st = this._scrolls.get(reg.key);
+      return !!st && st.maxX > 0;
     }
     return false;
   }
@@ -1878,16 +1919,21 @@ class UI {
 
   // ---------------- layout: scroll ----------------
 
-  scroll(id, h) {
+  scroll(id, h, contentW) {
     const nid = this.id(id);
     const reg = this.region;
     const x = reg.x, y = reg.cursorY, w = reg.w;
     let st = this._scrolls.get(nid);
     if (!st) {
       st = { offset: 0, vel: 0, dragging: false, dragStartY: 0, dragStartOffset: 0, contentH: 0, lastY: 0,
-             _pendingClaim: false, layMax: 0, groups: [], groupCount: 0, folds: [], foldCount: 0 };
+             _pendingClaim: false, layMax: 0, groups: [], groupCount: 0, folds: [], foldCount: 0,
+             offX: 0, velX: 0, dragStartX: 0, dragStartOffX: 0, lastX: 0, maxX: 0, contentW: 0 };
       this._scrolls.set(nid, st);
     }
+    // the sideways range, which only a contentW wider than the region opens
+    const cw = contentW > w ? contentW : w;
+    st.contentW = cw;
+    st.maxX = cw - w;
 
     // The groups laid straight into this region last frame have their height
     // springs stepped now, before anything is laid out, because the offset
@@ -1949,6 +1995,10 @@ class UI {
       // makes a new one.
       const cap = newMax + over;
       if (st.offset > cap) st.offset = cap;
+      // a region widening to its content (a screen turned) takes in what
+      // no longer needs panning
+      if (st.maxX <= 0) { st.offX = 0; st.velX = 0; }
+      else if (st.offX > st.maxX && st.velX === 0) st.offX = st.maxX;
     }
     st.layMax = newMax;
 
@@ -1961,6 +2011,11 @@ class UI {
         const frameDt = this.dt > 0 ? this.dt / 1000 : 1 / 60;
         st.vel = (st.lastY - this.pointerY) / frameDt;
         st.lastY = this.pointerY;
+        if (st.maxX > 0) {
+          st.offX = this._rubberBand(st.dragStartOffX - (this.pointerX - st.dragStartX), cw, w);
+          st.velX = (st.lastX - this.pointerX) / frameDt;
+          st.lastX = this.pointerX;
+        }
       }
       if (this._upEvent) {
         this.activeId = -1;
@@ -1971,6 +2026,9 @@ class UI {
       st.dragStartY = this.pointerY;
       st.dragStartOffset = st.offset;
       st.lastY = this.pointerY;
+      st.dragStartX = this.pointerX;
+      st.dragStartOffX = st.offX;
+      st.lastX = this.pointerX;
     }
 
     this.dl.pushClip(x, y, w, h);
@@ -2015,6 +2073,7 @@ class UI {
       if (this.activeId === -1 && !this._downConsumed) {
         this._downConsumed = true;
         st.vel = 0;
+        st.velX = 0;
         if (this._pointerDown) {
           this.activeId = nid;
           st.dragging = true;
@@ -2039,12 +2098,23 @@ class UI {
     const inRegion = this.pointerX >= viewX && this.pointerX < viewX + viewW && this.pointerY >= viewY && this.pointerY < viewY + viewH &&
       !this._pointerOccluded();
     let wheeled = false;
-    if (this.activeId !== nid && inRegion && this.wheelDY !== 0 && !this._wheelConsumed) {
-      const lo = st.offset < 0 ? st.offset : 0;
-      const hi = st.offset > maxOffset ? st.offset : maxOffset;
-      const next = st.offset + this.wheelDY;
-      st.offset = next < lo ? lo : next > hi ? hi : next;
-      st.vel = 0;
+    const maxX = st.maxX;
+    if (this.activeId !== nid && inRegion && (this.wheelDY !== 0 || (maxX > 0 && this.wheelDX !== 0)) && !this._wheelConsumed) {
+      if (this.wheelDY !== 0) {
+        const lo = st.offset < 0 ? st.offset : 0;
+        const hi = st.offset > maxOffset ? st.offset : maxOffset;
+        const next = st.offset + this.wheelDY;
+        st.offset = next < lo ? lo : next > hi ? hi : next;
+        st.vel = 0;
+      }
+      // sideways the same way, clamped, never pushing an overshoot further
+      if (maxX > 0 && this.wheelDX !== 0) {
+        const lo = st.offX < 0 ? st.offX : 0;
+        const hi = st.offX > maxX ? st.offX : maxX;
+        const next = st.offX + this.wheelDX;
+        st.offX = next < lo ? lo : next > hi ? hi : next;
+        st.velX = 0;
+      }
       this._wheelConsumed = true;
       this._unsettled = true;
       wheeled = true;
@@ -2067,8 +2137,17 @@ class UI {
         st.vel *= decay;
         if (st.offset < 0 && st.offset > -0.5) { st.offset = 0; st.vel = 0; }
         if (st.offset > maxOffset && st.offset < maxOffset + 0.5) { st.offset = maxOffset; st.vel = 0; }
+        // sideways, by the same rules, only while there is a range to pan
+        if (maxX > 0 || st.offX !== 0) {
+          if (st.offX < 0) st.velX += (0 - st.offX) * MOTION.scroll.friction * 6 * dtS;
+          else if (st.offX > maxX) st.velX += (maxX - st.offX) * MOTION.scroll.friction * 6 * dtS;
+          st.offX += st.velX * dtS;
+          st.velX *= decay;
+          if (st.offX < 0 && st.offX > -0.5) { st.offX = 0; st.velX = 0; }
+          if (st.offX > maxX && st.offX < maxX + 0.5) { st.offX = maxX; st.velX = 0; }
+        }
       }
-      if (Math.abs(st.vel) > 0.02) this._unsettled = true;
+      if (Math.abs(st.vel) > 0.02 || Math.abs(st.velX) > 0.02) this._unsettled = true;
     }
 
     this.dl.popClip();
@@ -2088,6 +2167,21 @@ class UI {
         this.scratch1[0] = COLOR.wellHi[0]; this.scratch1[1] = COLOR.wellHi[1];
         this.scratch1[2] = COLOR.wellHi[2]; this.scratch1[3] = COLOR.wellHi[3] * op;
         this.dl.rect(viewX + viewW - barW - 2, barY, barW, barH, barW / 2, this.scratch1, 0, null, 0, 0);
+      }
+    }
+    // and its sideways twin along the foot, while the content pans across
+    if (maxX > 0) {
+      const barH = 4;
+      const trackW = viewW - 6;
+      const barW = Math.max(20, trackW * (viewW / st.contentW));
+      const p = Math.min(1, Math.max(0, st.offX / maxX));
+      const barX = viewX + 3 + (trackW - barW) * p;
+      const active = st.dragging || Math.abs(st.velX) > 0.5 || inRegion;
+      const op = this.spring(combine(nid, 10), active ? 1 : 0, MOTION.fade);
+      if (op > 0.01) {
+        this.scratch1[0] = COLOR.wellHi[0]; this.scratch1[1] = COLOR.wellHi[1];
+        this.scratch1[2] = COLOR.wellHi[2]; this.scratch1[3] = COLOR.wellHi[3] * op;
+        this.dl.rect(barX, viewY + viewH - barH - 2, barW, barH, barH / 2, this.scratch1, 0, null, 0, 0);
       }
     }
   }

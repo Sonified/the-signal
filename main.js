@@ -246,10 +246,15 @@ async function boot() {
     broadcastPoke();
   }
   const colorQuick = byId('colorQuick');
+  // The floating windows in the order of the drawer's Windows buttons
+  // (drawer.js WIN_LABELS).
+  const winByButton = [music, mixer, sequencer, performer, journey, textbank];
   const app = {
     width: 0, height: 0,
     toggleRun,
     toggleDrawer: () => { S.panelOpen = !S.panelOpen; },
+    windowOpen: i => !!winByButton[i].open,
+    toggleWindow: i => { const w = winByButton[i]; w.open = !w.open; },
     toggleFullscreen: () => platform.fullscreen.toggle(),
     fullscreenActive: () => platform.fullscreen.active(),
     copyDiagnostics: () => platform.clipboardWrite(buildDiagnostics(platform.env())),
@@ -304,7 +309,7 @@ async function boot() {
     openGuardNotice(clockMessage());
     profNote('clock conflict', displaySummary(S.refreshHz, inWorker));
   }
-  let pageVisible = true;
+  let pageVisible = true, backInView = false;
   setToggleRun(toggleRun);
   setJourneyRunning(on => { if (on !== !!S.running) toggleRun(); });
   // Media Session's play and pause (the lock screen, a headset, a media key;
@@ -326,7 +331,7 @@ async function boot() {
   platform.onVisibility(visible => {
     pageVisible = visible;
     if (!visible) flush();
-    else armResume();
+    else { armResume(); backInView = true; }
     setHidden(!visible);
   });
   // Another tab's write lands in this tab's state at once, live, so this tab
@@ -385,6 +390,14 @@ async function boot() {
   // skip building one at all: the chrome's fade, and whether any spring,
   // momentum scroll or tooltip was still moving.
   let lastChromeA = 1, uiUnsettled = true, lastInset = -1;
+  // A touch that lands while the chrome has faded away (the last build left
+  // it under half shown), or the first touch since the page came back into
+  // view (a phone unlocked, whatever was showing when it went dark), is a
+  // wake tap: on the bare field it only brings the controls back, so
+  // reaching for the burger on a phone never pauses a running session. The
+  // next tap, with the controls up, pauses as ever. A stopped session still
+  // starts on its first tap ('Tap to resume').
+  let wakeTap = false;
   let lastEyeX = 0, lastEyeY = 0;
   // The platform's key events carry no repeat flag, so M remembers that it is
   // held and ignores the auto-repeats, as v0's !e.repeat did; otherwise a
@@ -494,6 +507,10 @@ async function boot() {
     uiEvents.length = 0;
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
+      if (e.type === 'down') {
+        wakeTap = e.pointerType === 'touch' && (lastChromeA < 0.5 || backInView);
+        backInView = false;
+      }
       if (e.type === 'move' || e.type === 'down' || e.type === 'wheel' || e.type === 'key') lastActivity = t;
       // (in worker mode the page wakes the sound inside the gesture itself)
       if (!audioWoken && !inWorker && (e.type === 'down' || e.type === 'key')) {
@@ -628,9 +645,13 @@ async function boot() {
       }
 
       // the field: any press nothing above claimed. With the drawer open it
-      // puts the drawer away, as v0 does; otherwise it starts and stops.
+      // puts the drawer away, as v0 does; otherwise it starts and stops,
+      // except that a wake tap on a running session only woke the chrome.
       ui.interact(ui.id('field'), 0, 0, width, height, false);
-      if (ui.clicked) { if (S.panelOpen) S.panelOpen = false; else toggleRun(); }
+      if (ui.clicked) {
+        if (S.panelOpen) S.panelOpen = false;
+        else if (!(wakeTap && S.running)) toggleRun();
+      }
 
       const res = ui.end();
       uiUnsettled = res.wantsFrames;

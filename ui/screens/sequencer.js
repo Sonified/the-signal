@@ -36,6 +36,7 @@ import { loadUiState, saveUiState, save } from '../../core/store.js';
 import { byId } from '../../core/schema.js';
 import { W, MOTION } from '../theme.js';
 import { ICON } from '../drawlist.js';
+import { smallScreen, fitWindow, fit } from './win-fit.js';
 
 // ---------- colours: the mixer's, and Sonara's purple for the cells ----------
 function css(hex, a) {
@@ -238,6 +239,8 @@ let btnHover = false, overBtn = false;
 function btn(ui, name, x, y, w, h) { return btnAt(ui, ui.id(name), x, y, w, h); }
 // the same by a numeric id (ui.idx), so a button per line builds no string
 function btnAt(ui, id, x, y, w, h) {
+  // a drag that starts on a button pans a panning body either way
+  ui.dragHold = 0;
   ui.interact(id, x, y, w, h, false);
   btnHover = ui.hover;
   if (btnHover) { ui.setCursorHint('pointer'); overBtn = true; }
@@ -287,6 +290,8 @@ let knobLive = false;
 // untouched); the caller writes it back if it moved.
 function knob(ui, id, cx, cy, value, lo, hi, def, centred, ring) {
   const hr = KNOB_ARC_R + 2;
+  // a knob keeps its up and down drag from a panning body
+  ui.dragHold = 2;
   ui.interact(id, cx - hr, cy - hr, hr * 2, hr * 2, false);
   const hover = ui.hover, pressed = ui.pressed;
   knobLive = hover || pressed;
@@ -515,11 +520,16 @@ export function drawSequencer(ui, app, fade = 1) {
     folds += foldA[i] * FOLD_H;
   }
   const width = app.width, height = app.height;
-  const winW = Math.min(WIN_W, width - 24), h = WIN_H_BASE + folds;
+  const natH = WIN_H_BASE + folds;
+  let winW = Math.min(WIN_W, width - 24), h = natH;
   // first showing: under the mixer's usual place, right side
   if (!sequencer.placed) { sequencer.placed = true; sequencer.x = Math.max(12, width - winW - 24); sequencer.y = Math.max(12, height - h - 90); }
   sequencer.x = Math.max(12 - winW + 80, Math.min(sequencer.x, width - 80));
   sequencer.y = Math.max(12, Math.min(sequencer.y, height - BAR_H - 12));
+  // A small screen keeps the whole window on it, the × in reach
+  // (win-fit.js), and the body, at its full size, pans inside it below.
+  const fitting = smallScreen(width, height);
+  if (fitting) { fitWindow(sequencer, width, height, WIN_W, natH); winW = fit.w; h = fit.h; }
   const x = sequencer.x, y = sequencer.y + (1 - open) * 16;
   sequencer.rx = x; sequencer.ry = y; sequencer.rw = winW; sequencer.rh = h;
   const dl = ui.dl;
@@ -570,8 +580,12 @@ export function drawSequencer(ui, app, fade = 1) {
 
   // the sequencer's volume, a small slider right of the play button; a
   // press jumps it there and dragging follows. The window's opacity has no
-  // slider any more and rests at its 90% default.
-  const ax = playX + PLAY_BOX + 12, aw = 70;
+  // slider any more and rests at its 90% default. On a window too narrow
+  // for both sliders at full length (a phone's), both shorten alike, so
+  // the step rate's readout never runs under the ×.
+  const ax = playX + PLAY_BOX + 12;
+  const sliderRoom = closeX - 10 - ax;
+  const aw = sliderRoom >= 234 ? 70 : Math.max(28, (sliderRoom - 94) / 2);
   ui.interact(ui.id('seq.vol'), ax - 6, cy - 9, aw + 12, 18, false);
   if (ui.hover || ui.pressed) { ui.setCursorHint('ew-resize'); overBtn = true; }
   const aHover = ui.hover || ui.pressed;
@@ -596,7 +610,7 @@ export function drawSequencer(ui, app, fade = 1) {
 
   // the step rate, the same kind of slider after it, with its value beside
   if (RATE) {
-    const rx = ax + aw + 50, rw = 70;
+    const rx = ax + aw + 50, rw = aw;
     const lo = RATE.min, hi = RATE.max, stp = RATE.step || 0.5;
     ui.interact(ui.id('seq.rate'), rx - 6, cy - 9, rw + 12, 18, false);
     if (ui.hover || ui.pressed) { ui.setCursorHint('ew-resize'); overBtn = true; }
@@ -624,10 +638,22 @@ export function drawSequencer(ui, app, fade = 1) {
   dl.rect(closeX, cy - CLOSE_H / 2, closeW, CLOSE_H, 6, C.btnBg, 1, btnHover ? C.closeHoverBorder : C.btnBorder, 0, 0);
   ui.text.draw(dl, '×', closeX + closeW / 2, baseline(ui, cy, 18), 18, W.regular, btnHover ? C.closeHoverInk : C.btnInk, 1, 0, 1);
 
+  // ---- the body: toolbar, grid and lines ----
+  // Laid out from (bx, by), a cw wide window's origin: the window's own,
+  // or on a small screen the full size window's, panning in a scroll under
+  // the title bar (ui.scroll's contentW), which stays put with its ×.
+  let bx = x, by = y, cw = winW, cx0 = 0, cy0 = 0, cw0 = 0;
+  if (fitting) {
+    cx0 = ui.cursorX; cy0 = ui.cursorY; cw0 = ui.regionW;
+    ui.setCursor(x + 1, y + BAR_H + 1, winW - 2);
+    const st = ui.scroll('seq.body', h - BAR_H - 2, WIN_W - 2);
+    bx = x - st.offX; by = ui.cursorY - BAR_H - 1; cw = WIN_W;
+  }
+
   // ---- toolbar: the active line's length, randomize, clear ----
   // (the line itself is chosen from its row in the section below)
-  const ty = y + BAR_H + 1 + TOOL_H / 2;
-  let tx = x + PAD;
+  const ty = by + BAR_H + 1 + TOOL_H / 2;
+  let tx = bx + PAD;
   ui.text.draw(dl, 'LENGTH', tx, baseline(ui, ty, 9), 9, W.semibold, C.sectionInk, 0, 0.1, 1);
   tx += ui.text.measure('LENGTH', 9, W.semibold) + 8;
   if (btn(ui, 'seq.lenDown', tx, ty - BTN_H / 2, 20, BTN_H) && pat.len > 1) { pat.len--; save(); }
@@ -639,14 +665,14 @@ export function drawSequencer(ui, app, fade = 1) {
   drawBtn(ui, tx, ty, 20, BTN_H, false, '+', 12);
   // randomize and clear, from the right
   const clearW = measureBtn(ui, 'clear', 10), randW = measureBtn(ui, 'randomize', 10);
-  const clearX = x + winW - PAD - clearW, randX = clearX - 6 - randW;
+  const clearX = bx + cw - PAD - clearW, randX = clearX - 6 - randW;
   if (btn(ui, 'seq.rand', randX, ty - BTN_H / 2, randW, BTN_H)) { seqRandomize(pat); save(); }
   drawBtn(ui, randX, ty, randW, BTN_H, false, 'randomize', 10);
   if (btn(ui, 'seq.clear', clearX, ty - BTN_H / 2, clearW, BTN_H)) { pat.steps.fill(-1); save(); }
   drawBtn(ui, clearX, ty, clearW, BTN_H, false, 'clear', 10);
 
   // ---- the grid ----
-  const gx = x + PAD + LABEL_W, gy = y + BAR_H + 1 + TOOL_H;
+  const gx = bx + PAD + LABEL_W, gy = by + BAR_H + 1 + TOOL_H;
   // One step count for every line (js/piano.js seqClock): each line's step
   // is the count modulo its own length, the grid's playhead the active one's.
   const clock = S.arpOn && S.running ? seqClockNow() : -1;
@@ -656,12 +682,13 @@ export function drawSequencer(ui, app, fade = 1) {
   }
   for (let r = 0; r < ROWS; r++) {
     const ry = gy + r * (CELL + CELL_GAP);
-    ui.text.draw(dl, ROW_LABELS[r], x + PAD + LABEL_W / 2 - 4, baseline(ui, ry + CELL / 2, 10), 10, W.semibold, C.label, 1, 0, 1);
+    ui.text.draw(dl, ROW_LABELS[r], bx + PAD + LABEL_W / 2 - 4, baseline(ui, ry + CELL / 2, 10), 10, W.semibold, C.label, 1, 0, 1);
     const note = SEQ_ROWS[r];
     for (let c = 0; c < SEQ_MAX; c++) {
       const cx = gx + c * (CELL + CELL_GAP);
       const live = c < pat.len;
       const id = ui.idx('seq.cell', r * SEQ_MAX + c);
+      ui.dragHold = 0;
       ui.interact(id, cx, ry, CELL, CELL, !live);
       const hover = ui.hover && live;
       if (hover) ui.setCursorHint('pointer');
@@ -689,7 +716,12 @@ export function drawSequencer(ui, app, fade = 1) {
   }
 
   // ---- the lines, each with its fold ----
-  drawLines(ui, x, winW, gy + GRID_H + NUM_H + LINES_GAP, clock);
+  drawLines(ui, bx, cw, gy + GRID_H + NUM_H + LINES_GAP, clock);
+  if (fitting) {
+    ui.spacer(natH - BAR_H - 2);
+    ui.endScroll();
+    ui.setCursor(cx0, cy0, cw0);
+  }
 
   // ---- title bar drag, the offset taken on press so the window does not jump ----
   ui.interact(ui.id('seq.drag'), x, y, winW, BAR_H, false);
@@ -785,6 +817,7 @@ function drawLines(ui, x, winW, top, clock) {
 
     // the rest of the strip makes this line the active one
     const overCtl = overBtn;
+    ui.dragHold = 0;
     ui.interact(ui.idx('seq.line', i), x0 - 5, ry, LINES_W + 10, ROW_H, false);
     const stripHover = ui.hover;
     if (stripHover && !overCtl && !active) ui.setCursorHint('pointer');

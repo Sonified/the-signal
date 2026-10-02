@@ -39,6 +39,7 @@ import { loadUiState, saveUiState } from '../../core/store.js';
 import { perform, loadPerform, savePerform, setRampS, perfSet, perfRamping, perfLayer, perfLayerLevel } from '../../core/perform.js';
 import { drawSwitch } from '../widgets.js';
 import { COLOR, TYPE, W, MOTION } from '../theme.js';
+import { smallScreen, fitWindow, fit } from './win-fit.js';
 import {
   C, baseline, hslider, targetPos, effectivePos, unitOf, posOf, fmtAt, fitRow, drawRow
 } from './perf-widgets.js';
@@ -488,14 +489,14 @@ export function drawMusic(ui, app, fade = 1) {
   const width = app.width, height = app.height;
 
   const maxW = Math.max(320, width - 24), minW = Math.min(WIN_MIN_W, maxW);
-  const winW = Math.max(minW, Math.min(music.w, maxW));
+  let winW = Math.max(minW, Math.min(music.w, maxW));
   // Never taller than its rows (last frame's measure, 0 before the first
   // one): the saved or default height is a ceiling, so it opens fitted and a
   // drag down past the last row stops there.
   let maxH = Math.max(BAR_H + 120, height - 24);
   if (fitH > 0) maxH = Math.min(maxH, fitH);
   const minH = Math.min(WIN_MIN_H, maxH);
-  const winH = Math.max(minH, Math.min(music.h, maxH));
+  let winH = Math.max(minH, Math.min(music.h, maxH));
   // first showing: centred, a little down from the top
   if (!music.placed) {
     music.placed = true;
@@ -505,6 +506,8 @@ export function drawMusic(ui, app, fade = 1) {
   // keep the title bar reachable after any resize
   music.x = Math.max(12 - winW + 80, Math.min(music.x, width - 80));
   music.y = Math.max(12, Math.min(music.y, height - BAR_H - 12));
+  // a small screen keeps the whole window on it, the × in reach (win-fit.js)
+  if (smallScreen(width, height)) { fitWindow(music, width, height, winW, winH); winW = fit.w; winH = fit.h; }
   const x = music.x, y = music.y + (1 - open) * 16;   // slides on open and shut only
   music.rx = x; music.ry = y; music.rw = winW; music.rh = winH;
   const dl = ui.dl;

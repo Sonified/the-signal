@@ -93,6 +93,8 @@ const VOL_W = 120, VOL_H = 7, VOL_HIT = 27, VOL_GAP = 10, SPK = 34;
 const VOL_CTRL = byId('vol'), MUTE_CTRL = byId('vmute');
 const STROBE_SCALE_CTRL = byId('strobeScale');
 const SCALE_W = 210, SCALE_H = 38, SCALE_PAD = 12, SCALE_GAP = 10;
+// the transport's play button, and the cluster's width from it to the edge
+const TS = 38, TOP_RIGHT_W = TS + 14 + SPK + VOL_GAP + VOL_W + EDGE;
 const spkInk = new Float32Array([0.949, 0.949, 0.949, 1]);
 const volWell = new Float32Array([1, 1, 1, 0.15]);
 const volFill = new Float32Array(4);
@@ -183,26 +185,11 @@ function drawStrobeScale(ui, x, y, frost) {
   }
 }
 
-// The burger lives on the top layer so it stays above the open drawer. It
-// holds the top left corner of the VIEW, not the screen: locked to the
-// drawer's own edge (this frame's, see stepDrawer) once that edge is on
-// screen, and at the corner while it is still tucked away.
-export function drawBurger(ui, app, alpha, frost) {
-  if (alpha < 0.01) return;
-  ui.dl.pushAlpha(alpha);
-  const bx = Math.max(0, drawerEdge()) + 14;
-  if (glassIcon(ui, 'chrome.burger', S.panelOpen ? ICON.CLOSE : ICON.BURGER, bx, 14, LAYOUT.burger, false, frost)) app.toggleDrawer();
-  ui.dl.popAlpha();
-}
-
-export function drawChrome(ui, app, alpha, frost) {
-  if (alpha < 0.01) return;
-  const dl = ui.dl, width = app.width, height = app.height;
-  dl.pushAlpha(alpha);
-
-  // transport, top right, as v0 laid it out: play/pause, then the speaker,
-  // then the volume track at the far right
-  const ts = 38, ty = EDGE;
+// transport, top right, as v0 laid it out: play/pause, then the speaker,
+// then the volume track at the far right; the strobe dial left of them, or
+// under them where the row has no room
+function drawTopRight(ui, app, width, frost) {
+  const ts = TS, ty = EDGE;
   const trackX = width - EDGE - VOL_W, spkX = trackX - VOL_GAP - SPK;
   const playX = spkX - 14 - ts;
   if (glassIcon(ui, 'chrome.play', S.running ? ICON.PAUSE : ICON.PLAY, playX, ty, ts, true, frost)) app.toggleRun();
@@ -222,6 +209,38 @@ export function drawChrome(ui, app, alpha, frost) {
     let sx = scaleX - GAP - sw, sy = scaleY;
     if (sx < (S.edgeInset || 0) + EDGE) { sx = scaleX + SCALE_W - sw; sy = scaleY + SCALE_H + GAP; }
     if (chip(ui, 'chrome.sync', 'sync', sx, sy, sw, SCALE_H, frost)) followStrobeSync();
+  }
+}
+
+// The burger lives on the top layer so it stays above the open drawer. It
+// holds the top left corner of the VIEW, not the screen: locked to the
+// drawer's own edge (this frame's, see stepDrawer) once that edge is on
+// screen, and at the corner while it is still tucked away.
+export function drawBurger(ui, app, alpha, frost) {
+  if (alpha < 0.01) return;
+  ui.dl.pushAlpha(alpha);
+  const bx = Math.max(0, drawerEdge()) + 14;
+  if (glassIcon(ui, 'chrome.burger', S.panelOpen ? ICON.CLOSE : ICON.BURGER, bx, 14, LAYOUT.burger, false, frost)) app.toggleDrawer();
+  ui.dl.popAlpha();
+}
+
+export function drawChrome(ui, app, alpha, frost) {
+  if (alpha < 0.01) return;
+  const dl = ui.dl, width = app.width, height = app.height;
+  dl.pushAlpha(alpha);
+
+  // The whole top right cluster (transport, volume, the strobe dial and its
+  // sync chip) fades away while the drawer is open on a screen too narrow to
+  // hold the transport beside it (a phone), and takes no presses meanwhile:
+  // there it could only sit over the drawer's own rows.
+  const crowded = S.panelOpen && width - LAYOUT.drawerW < TOP_RIGHT_W + EDGE;
+  const topA = ui.spring('chrome.topRight', crowded ? 0 : 1, MOTION.fade);
+  if (topA > 0.01) {
+    if (crowded) ui.pushInert();
+    dl.pushAlpha(topA);
+    drawTopRight(ui, app, width, frost);
+    dl.popAlpha();
+    if (crowded) ui.popInert();
   }
 
   // quick bar, bottom right, read right to left

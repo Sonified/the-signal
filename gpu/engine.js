@@ -677,14 +677,31 @@ export async function createEngine(platform, opts) {
   let rafHandle = 0;
   function start(frameFn) {
     let lastFrameT = null;
+    // Out of sight (a phone's app switched away, the screen locked, a
+    // background tab) the loop stops outright: no frame is asked for, so no
+    // GPU work is encoded or submitted at all, rather than trusting each
+    // browser to throttle a hidden page's (or a worker's) frames. Coming
+    // back asks for the next frame, and the wake rule (core/wake.js) makes
+    // that first frame advance nothing.
+    let pageHidden = platform.hidden ? platform.hidden() : false;
+    platform.onVisibility(visible => {
+      pageHidden = !visible;
+      if (pageHidden) {
+        if (rafHandle) cancelAnimationFrame(rafHandle);
+        rafHandle = 0;
+      } else if (!rafHandle && !deviceLost) {
+        rafHandle = requestAnimationFrame(raf);
+      }
+    });
     function raf(t) {
+      rafHandle = 0;
       // A lost device is the one condition where the loop truly stops rather
       // than just skipping a frame's work: there is nothing left to submit
       // to, and integration is responsible for deciding whether to build a
       // new engine. Every other frame requests its successor first thing, as
       // v0 does, so a slow frame never pushes the next one further out than
       // it has to be.
-      if (deviceLost) return;
+      if (deviceLost || pageHidden) return;
       rafHandle = requestAnimationFrame(raf);
       frameT = t;
       // The wake rule (core/wake.js): a frame after an absence, the first

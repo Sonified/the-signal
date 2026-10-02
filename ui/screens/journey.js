@@ -64,6 +64,7 @@ import { loadUiState, saveUiState } from '../../core/store.js';
 import { makeTextState, TEXT_COMMIT, TEXT_CANCEL, TEXT_EDITING } from '../widgets.js';
 import { W, MOTION } from '../theme.js';
 import { ICON } from '../drawlist.js';
+import { smallScreen, fitWindow, fit } from './win-fit.js';
 
 // ---------- colours: the sequencer's pane, and a gold for the journey ----------
 function css(hex, a) {
@@ -217,6 +218,8 @@ const SNAPSHOT_OK_MS = 1400;
 const transportDo = { op: 0, arg: 0 }; // 1 toggle, 2 step by, 3 play from
 function btn(ui, name, x, y, w, h) { return btnAt(ui, ui.id(name), x, y, w, h); }
 function btnAt(ui, id, x, y, w, h) {
+  // a drag that starts on a button pans a panning body either way
+  ui.dragHold = 0;
   ui.interact(id, x, y, w, h, false);
   btnHover = ui.hover;
   if (btnHover) { ui.setCursorHint('pointer'); overBtn = true; }
@@ -366,14 +369,21 @@ export function drawJourney(ui, app, fade = 1) {
   }
   const setA = ui.spring('jr.setA', journey.settings ? 1 : 0, MOTION.panel), setH = setA * SET_H;
   const width = app.width, height = app.height;
-  const winW = Math.min(WIN_W, width - 24);
-  const libLines = layoutLib(ui, winW - PAD * 2);
+  // A small screen keeps the whole window on it, the × in reach
+  // (win-fit.js), and the body, laid out at its full width (cw), pans
+  // inside it below.
+  const fitting = smallScreen(width, height);
+  const cw = fitting ? WIN_W : Math.min(WIN_W, width - 24);
+  let winW = cw;
+  const libLines = layoutLib(ui, cw - PAD * 2);
   const libH = LIB_TOP + libLines * CHIP_H + (libLines - 1) * CHIP_GAP;
-  const h = BAR_H + 1 + libH + setH + LIST_TOP + n * (ROW_H + ROW_GAP) + folds + (n ? ADD_GAP - ROW_GAP : 0) + ADD_H + PAD;
+  const natH = BAR_H + 1 + libH + setH + LIST_TOP + n * (ROW_H + ROW_GAP) + folds + (n ? ADD_GAP - ROW_GAP : 0) + ADD_H + PAD;
+  let h = natH;
   // first showing: the upper right, clear of the sequencer's usual place
   if (!journey.placed) { journey.placed = true; journey.x = Math.max(12, width - winW - 24); journey.y = 24; }
   journey.x = Math.max(12 - winW + 80, Math.min(journey.x, width - 80));
   journey.y = Math.max(12, Math.min(journey.y, height - BAR_H - 12));
+  if (fitting) { fitWindow(journey, width, height, WIN_W, natH); winW = fit.w; h = fit.h; }
   const x = journey.x, y = journey.y + (1 - open) * 16;
   journey.rx = x; journey.ry = y; journey.rw = winW; journey.rh = h;
   viewH = height;
@@ -404,19 +414,25 @@ export function drawJourney(ui, app, fade = 1) {
   } else {
     dl.rect(lightX, cy - 3, 6, 6, 3, playIdx >= 0 ? C.lightPaused : C.lightOff, 0, null, 0, 0);
   }
-  ui.text.draw(dl, 'JOURNEY', lightX + 6 + BAR_GAP, baseline(ui, cy, 13), 13, W.semibold, C.title, 0, 0.13, 1);
-
-  // ACTIVE, right after the title: grey off, the sequencer's green on
+  const closeW = ui.text.measure('×', 18, W.regular) + CLOSE_PAD_X * 2 + 2;
+  const closeX = x + winW - 1 - 8 - closeW;
+  // ACTIVE, right after the title: grey off, the sequencer's green on. On a
+  // window too narrow for the whole row (a phone's) the title is left out,
+  // so the transport and LOOP never run under the gear and the ×.
   const active = journey.active;
-  const actX = lightX + 6 + BAR_GAP + trackedW(ui, 'JOURNEY', 13, 0.13) + 8, actW = measureBtn(ui, 'ACTIVE', 11);
+  const actW = measureBtn(ui, 'ACTIVE', 11), autoW = measureBtn(ui, 'AUTO', 11);
+  const titleX = lightX + 6 + BAR_GAP;
+  const rowW = actW + 10 + BOX + 10 + BOX + ARROW_GAP + BOX + 10 + autoW + LOOP_GAP + LOOP_W;
+  let actX = titleX + trackedW(ui, 'JOURNEY', 13, 0.13) + 8;
+  if (actX + rowW + 6 <= closeX - 6 - BOX) {
+    ui.text.draw(dl, 'JOURNEY', titleX, baseline(ui, cy, 13), 13, W.semibold, C.title, 0, 0.13, 1);
+  } else actX = titleX;
   if (btn(ui, 'jr.active', actX, cy - BTN_H / 2, actW, BTN_H)) journey.active = !active;
   dl.rect(actX, cy - BTN_H / 2, actW, BTN_H, 6, active ? C.loopOnBg : C.btnBg, 1,
     active ? C.loopOnBorder : btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
   ui.text.draw(dl, 'ACTIVE', actX + actW / 2, baseline(ui, cy, 11), 11, W.regular,
     active ? C.loopOnInk : btnHover ? C.valueInk : C.btnInk, 1, 0, 1);
 
-  const closeW = ui.text.measure('×', 18, W.regular) + CLOSE_PAD_X * 2 + 2;
-  const closeX = x + winW - 1 - 8 - closeW;
   if (btn(ui, 'jr.close', closeX, cy - CLOSE_H / 2, closeW, CLOSE_H)) journey.open = false;
   dl.rect(closeX, cy - CLOSE_H / 2, closeW, CLOSE_H, 6, C.btnBg, 1, btnHover ? C.closeHoverBorder : C.btnBorder, 0, 0);
   ui.text.draw(dl, '×', closeX + closeW / 2, baseline(ui, cy, 18), 18, W.regular, btnHover ? C.closeHoverInk : C.btnInk, 1, 0, 1);
@@ -451,7 +467,7 @@ export function drawJourney(ui, app, fade = 1) {
   if (dim) dl.popAlpha();
 
   const auto = journeyAutoPlay();
-  const autoX = nextX + BOX + 10, autoW = measureBtn(ui, 'AUTO', 11);
+  const autoX = nextX + BOX + 10;
   if (btn(ui, 'jr.auto', autoX, cy - BTN_H / 2, autoW, BTN_H)) journeySetAutoPlay(!auto);
   drawBtn(ui, autoX, cy, autoW, BTN_H, auto, 'AUTO', 11);
 
@@ -473,31 +489,48 @@ export function drawJourney(ui, app, fade = 1) {
   dl.icon(ICON.GEAR, gearX + (BOX - ICON_S) / 2, cy - ICON_S / 2, ICON_S, ICON_S,
     gearOn ? C.btnOnInk : btnHover ? C.valueInk : C.btnInk, 1.8, 0);
 
+  // ---- the body ----
+  // Laid out from (bx, by), a cw wide window's origin: the window's own,
+  // or on a small screen the full size window's, panning in a scroll under
+  // the title bar (ui.scroll's contentW), which stays put with its ×.
+  let bx = x, by = y, cx0 = 0, cy0 = 0, cw0 = 0;
+  if (fitting) {
+    cx0 = ui.cursorX; cy0 = ui.cursorY; cw0 = ui.regionW;
+    ui.setCursor(x + 1, y + BAR_H + 1, winW - 2);
+    const st = ui.scroll('jr.body', h - BAR_H - 2, cw - 2);
+    bx = x - st.offX; by = ui.cursorY - BAR_H - 1;
+  }
+
   // ---- the journeys' chips ----
-  libX = x + PAD; libY = y + BAR_H + 1 + LIB_TOP;
+  libX = bx + PAD; libY = by + BAR_H + 1 + LIB_TOP;
   drawLib(ui);
 
   // ---- the gear's strip, clipped to however far it is open ----
   if (setH > 0.5) {
-    dl.pushClip(x + 1, y + BAR_H + 1 + libH, winW - 2, setH);
-    drawSettings(ui, x + PAD, y + BAR_H + 1 + libH);
+    dl.pushClip(bx + 1, by + BAR_H + 1 + libH, cw - 2, setH);
+    drawSettings(ui, bx + PAD, by + BAR_H + 1 + libH);
     dl.popClip();
   }
 
   // ---- the steps ----
   // (the list's foot is taken from the layout, not from drawSteps, which
   // stops early on the frame a row is deleted or moved)
-  const listY = y + BAR_H + 1 + libH + setH + LIST_TOP;
-  drawSteps(ui, x, listY, n, sel, playing, playIdx);
+  const listY = by + BAR_H + 1 + libH + setH + LIST_TOP;
+  drawSteps(ui, bx, listY, n, sel, playing, playIdx);
   const endY = listY + n * (ROW_H + ROW_GAP) + folds;
 
   // ---- + Add step, full width under the list ----
   {
-    const ax = x + PAD, ay = endY + (n ? ADD_GAP - ROW_GAP : 0), aw = winW - PAD * 2;
+    const ax = bx + PAD, ay = endY + (n ? ADD_GAP - ROW_GAP : 0), aw = cw - PAD * 2;
     if (btn(ui, 'jr.add', ax, ay, aw, ADD_H)) journeyAddStep();
     dl.rect(ax, ay, aw, ADD_H, 6, btnHover ? C.rowActive : C.btnBg, 1, btnHover ? C.rowActiveBorder : C.btnBorder, 0, 0);
     ui.text.draw(dl, '+  Add step', ax + aw / 2, baseline(ui, ay + ADD_H / 2, 12), 12, W.regular,
       btnHover ? C.btnOnInk : C.btnInk, 1, 0.04, 1);
+  }
+  if (fitting) {
+    ui.spacer(natH - BAR_H - 2);
+    ui.endScroll();
+    ui.setCursor(cx0, cy0, cw0);
   }
 
   // a journey opened, made or deleted this frame changes the steps under
@@ -515,7 +548,7 @@ export function drawJourney(ui, app, fade = 1) {
   }
 
   // the lifted row or chip, riding the pointer over everything else
-  if (drag.k >= 0 && drag.moved && drag.k < n) drawLifted(ui, x, n);
+  if (drag.k >= 0 && drag.moved && drag.k < n) drawLifted(ui, bx, n);
   if (libDrag.k >= 0 && libDrag.moved && libDrag.k < libN) drawLibDrag(ui);
   // the open PRESET menu over all of it, and counted in the window's rect,
   // so the windows' stacking gives a press on it to this window
@@ -637,6 +670,7 @@ function libChip(ui, k, px, py, w, isOpen, n) {
     }
     dHover = btnHover;
   }
+  ui.dragHold = 0;
   ui.interact(id, px, py, w, CHIP_H, false);
   const hover = ui.hover;
   if (libEditing) {
@@ -645,7 +679,7 @@ function libChip(ui, k, px, py, w, isOpen, n) {
       if (libDrag.k !== k) {
         libDrag.k = k; libDrag.moved = false; libDrag.sx = ui.pointerX; libDrag.sy = ui.pointerY;
         libDrag.ox = ui.pointerX - px; libDrag.oy = ui.pointerY - py; libDrag.ins = -1;
-      } else if (!libDrag.moved && Math.abs(ui.pointerX - libDrag.sx) + Math.abs(ui.pointerY - libDrag.sy) > DRAG_SLOP) libDrag.moved = true;
+      } else if (!libDrag.moved && !ui.slopPending && Math.abs(ui.pointerX - libDrag.sx) + Math.abs(ui.pointerY - libDrag.sy) > DRAG_SLOP) libDrag.moved = true;
     } else if (libDrag.k === k) {
       const moved = libDrag.moved, ins = libDrag.ins, clicked = ui.clicked;
       libDrag.k = -1; libDrag.moved = false;
@@ -799,6 +833,8 @@ function drawSteps(ui, x, y, n, sel, playing, playIdx) {
     const overCtl = overBtn;
     const rid = ui.idx('jr.row', i);
     if (!changed) {
+      // (in a panning body a finger's drag pans; the mouse still lifts)
+      ui.dragHold = 0;
       ui.interact(rid, rowX, ry, rowW, ROW_H, false);
       const hover = ui.hover && !overCtl;
       if (hover && !selected && !lit && drag.k < 0) dl.rect(rowX, ry, rowW, ROW_H, 5, C.rowHover, 0, null, 0, 0);
@@ -807,7 +843,9 @@ function drawSteps(ui, x, y, n, sel, playing, playIdx) {
         if (drag.k !== i) {
           drag.k = i; drag.moved = false; drag.sx = ui.pointerX; drag.sy = ui.pointerY;
           drag.oy = ui.pointerY - ry; drag.ins = -1;
-        } else if (!drag.moved && Math.abs(ui.pointerX - drag.sx) + Math.abs(ui.pointerY - drag.sy) > DRAG_SLOP) drag.moved = true;
+        // (a finger lifts the row only once the toolkit has kept the press
+        // for it, so one handed on to a panning body never moves a row)
+        } else if (!drag.moved && !ui.slopPending && Math.abs(ui.pointerX - drag.sx) + Math.abs(ui.pointerY - drag.sy) > DRAG_SLOP) drag.moved = true;
         if (drag.moved) ui.setCursorHint('grabbing');
       } else if (drag.k === i) {
         // released: a real drag lands it where the bar was, and a plain

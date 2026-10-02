@@ -30,6 +30,7 @@ import { loadUiState, saveUiState } from '../../core/store.js';
 import { perform, loadPerform, savePerform, setRampS, perfSet, perfRamping, perfLayer, perfLayerLevel } from '../../core/perform.js';
 import { drawSwitch } from '../widgets.js';
 import { COLOR, TYPE, W, MOTION } from '../theme.js';
+import { smallScreen, fitWindow, fit } from './win-fit.js';
 import {
   css, C, CELL_H, baseline, hslider, targetPos, effectivePos, unitOf, posOf, fmtAt,
   makeDropdown, ddInput, ddDraw, ddCell, cellLabelLine, fitRow, drawRow, DD_BOX_H
@@ -621,14 +622,14 @@ export function drawPerformer(ui, app, fade = 1) {
   const width = app.width, height = app.height;
 
   const maxW = Math.max(320, width - 24), minW = Math.min(WIN_MIN_W, maxW);
-  const winW = Math.max(minW, Math.min(performer.w, maxW));
+  let winW = Math.max(minW, Math.min(performer.w, maxW));
   // The window is never taller than its rows (last frame's measure, 0
   // before the first one): the saved or default height is a ceiling, so it
   // opens fitted and a drag down past the last row stops there.
   let maxH = Math.max(BAR_H + 120, height - 24);
   if (fitH > 0) maxH = Math.min(maxH, fitH);
   const minH = Math.min(WIN_MIN_H, maxH);
-  const winH = Math.max(minH, Math.min(performer.h, maxH));
+  let winH = Math.max(minH, Math.min(performer.h, maxH));
   // first showing: centred, a little down from the top
   if (!performer.placed) {
     performer.placed = true;
@@ -638,6 +639,8 @@ export function drawPerformer(ui, app, fade = 1) {
   // keep the title bar reachable after any resize
   performer.x = Math.max(12 - winW + 80, Math.min(performer.x, width - 80));
   performer.y = Math.max(12, Math.min(performer.y, height - BAR_H - 12));
+  // a small screen keeps the whole window on it, the × in reach (win-fit.js)
+  if (smallScreen(width, height)) { fitWindow(performer, width, height, winW, winH); winW = fit.w; winH = fit.h; }
   const x = performer.x, y = performer.y + (1 - open) * 16;   // slides on open and shut only
   performer.rx = x; performer.ry = y; performer.rw = winW; performer.rh = winH;
   const dl = ui.dl;
