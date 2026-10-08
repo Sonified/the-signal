@@ -402,6 +402,31 @@ export function perfRecallLeft() {
   return left > 0 ? left : 0;
 }
 
+// The drawer's Ramp time turned down mid-ramp: a recall with more time left
+// than the new setting lands within it instead. Every glide the recall
+// started picks up from where it stands and runs out over the new time,
+// warm (no second acceleration from rest), and the landing comes with them.
+// A recall's glides are known by sharing its start and length, which any
+// retarget (a hand on the control, a second recall) changes, so a glide that
+// is no longer the recall's keeps its own time. Turned up, nothing changes.
+export function perfShortenRecall(sec) {
+  const r = recall;
+  if (!r) return;
+  const ms = Math.max(1, (sec > 0 ? sec : 0) * 1000);
+  if (r.t0 + r.durMs - nowT <= ms) return;
+  const t0 = r.t0, dur = r.durMs;
+  for (const tw of tweens.values()) {
+    if (tw.t0 !== t0 || tw.durMs !== dur) continue;
+    if (tw.kind === 'slider') tw.from = tw.sent;
+    else if (tw.kind === 'color') { tw.f[0] = tw.l[0]; tw.f[1] = tw.l[1]; tw.f[2] = tw.l[2]; }
+    else if (tw.kind === 'mix') { const m = S[tw.c.mixKey]; if (Number.isFinite(m)) tw.from = m; }
+    tw.t0 = nowT; tw.durMs = ms; tw.warm = true;
+  }
+  r.t0 = nowT; r.durMs = ms;
+  // the broadcast's followers retime theirs from the fresh time left
+  if (glideStart) glideStart();
+}
+
 export function perfRecallPreset(i, sec) {
   loadPerform();
   const prev = recall;

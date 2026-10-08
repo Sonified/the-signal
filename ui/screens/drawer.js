@@ -18,7 +18,7 @@ import {
   applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset, renamePresetAt, presetIsUser,
   presetIsHearted, presetActiveIndex, togglePresetHeartAt, presetRampS, setPresetRampS
 } from '../../core/presets.js';
-import { perfRecallPreset, perfRecallLeft } from '../../core/perform.js';
+import { perfRecallPreset, perfRecallLeft, perfShortenRecall } from '../../core/perform.js';
 import { ICON } from '../drawlist.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { prof, profToggle, profSave, profCopy } from '../../core/profiler.js';
@@ -447,7 +447,8 @@ const rampCtrl = {
   // readout's slot held at the widest text so the track never jitters
   inline: 'instant',
   get: () => presetRampS(),
-  set: (s, v) => setPresetRampS(v),
+  // turned below what a running recall has left, the recall lands within it
+  set: (s, v) => { setPresetRampS(v); perfShortenRecall(presetRampS()); },
   format: () => presetRampS() < 0.25 ? 'instant' : presetRampS().toFixed(1) + 's',
   enabled: () => !journeyModeOn(),
   effective: () => journeyModeOn() ? undefined : perfRecallLeft()
