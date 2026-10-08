@@ -63,7 +63,7 @@
 // result is premultiplied and given a short mip chain.
 //
 // The pool is struct-of-arrays, allocated once. Per frame the CPU side
-// advances the live objects, spawns and retires them, sorts them far to near
+// advances the live objects, spawns and retires them, keeps their paint order
 // in place, and writes at most MAX_INST instances plus one small uniform
 // block into buffers allocated once. The chamber texture is made the first
 // time the layer draws after a resize, never in an ordinary frame. No
@@ -94,8 +94,8 @@ const ALPHA_CUT = 40;               // alpha below this goes fully transparent
 const MAX_SHAPES = 2048;
 // Instances: one per object, plus the wrap-round copies of rotation mode,
 // where an object straddling an edge of the wedge is drawn on both sides.
-// Room for every live shape's copies with margin: filled far to near, so if
-// it were ever reached the nearest, largest shapes would be the ones to pop.
+// Room for every live shape's copies with margin, so paint order cannot
+// cause a piece to be dropped at the instance limit.
 const MAX_INST = 4 * MAX_SHAPES;
 // The square of each atlas tile the quad covers (see kaleido.wgsl.js), and
 // the motifs' mean painted share of it if the atlas has not said: measured
@@ -427,8 +427,10 @@ export function createKaleido(device, format, platform) {
   // Objects born at the centre start at 1; the flight's own fade serves.
   const appear = new Float32Array(MAX_SHAPES);
   const appearDir = new Int8Array(MAX_SHAPES);
-  // order holds the live slots, kept sorted far to near so nearer, larger
-  // motifs overlap the ones behind them; free is a stack of empty slots.
+  // order holds the live slots, youngest first. A piece keeps its place
+  // relative to every other live piece even when their flight speeds differ.
+  // Sorting by current radius would abruptly swap opaque overlapping motifs
+  // at each overtake. free is a stack of empty slots.
   const order = new Int16Array(MAX_SHAPES);
   const free = new Int16Array(MAX_SHAPES);
   let live = 0, freeTop = 0;
@@ -499,6 +501,8 @@ export function createKaleido(device, format, platform) {
   let velRefPh = 0;                // the Speed glow's reference swing phase
   let spawnAcc = 0, spawnGap = 1;  // spawn accumulator and the next (jittered) gap
   let wasOn = false, fade = 0;
+  // The frame's geometry, kept for inspect() below.
+  let dbgMaxR = 0, dbgHoleR = 0, dbgSideK = 0, dbgSizeVar = 0, dbgCx = 0, dbgCy = 0;
   // The layer's motion clock, seconds: steps with motionStep, so a pause
   // holds every running fade in where it is.
   let clockS = 0;
@@ -1095,7 +1099,7 @@ export function createKaleido(device, format, platform) {
 
   // Moves the on-the-spot fades along on wall time, so a density change
   // shows even while paused, and frees the surplus objects that have faded
-  // all the way out. Removal keeps the far-to-near order.
+  // all the way out. Removal keeps the paint order.
   function settle(dt) {
     if (!fading) return;
     const step = dt / APPEAR_SECONDS;
@@ -1273,15 +1277,16 @@ export function createKaleido(device, format, platform) {
     live = w;
   }
 
-  // Insertion sort, far to near. The order barely changes between frames
-  // (the speed variance reorders neighbours, newborns arrive at the end with
-  // the smallest depth, and a catch-up adds a few a frame at random depths),
-  // so this is close to one pass.
+  // Insertion sort by birth time, youngest first. Prewarm backdates births
+  // so its initial paint order is still far to near; new centre births go
+  // underneath existing pieces. Birth time stays fixed through overtakes
+  // and angular re-entry, so two live pieces never flip who covers whom.
+  // Ordinary frames are one pass; only new births need moving into place.
   function sortOrder() {
     for (let n = 1; n < live; n++) {
-      const i = order[n], d = depth[i];
+      const i = order[n], b = bornT[i];
       let m = n - 1;
-      while (m >= 0 && depth[order[m]] > d) { order[m + 1] = order[m]; m--; }
+      while (m >= 0 && bornT[order[m]] < b) { order[m + 1] = order[m]; m--; }
       order[m + 1] = i;
     }
   }
@@ -1464,6 +1469,8 @@ export function createKaleido(device, format, platform) {
     // size law only ever shrink it), plus the bilinear clearance.
     const maxR = Math.hypot(visW, cssH) * 0.62 * dpr;
     const holeR = K_BIRTH * maxR * (1 + reachKNow) + HOLE_PAD_TEXELS / s;
+    dbgMaxR = maxR; dbgHoleR = holeR; dbgSideK = sideK; dbgSizeVar = sizeVar;
+    dbgCx = cx; dbgCy = cy;
 
     const rgb = S.rgb;
     const peak = Math.max(rgb[0], rgb[1], rgb[2], 1);
@@ -1517,7 +1524,7 @@ export function createKaleido(device, format, platform) {
     }
   }
 
-  // Every live object, far to near, as device px from the field centre.
+  // Every live object, in stable paint order, as device px from the field centre.
   // Travel to radius is the continuous zoom (see radiusK), and the fade is
   // the rings' radialFade at the Fade in setting against maxR, the same rim
   // as the ring layer (both are hypot(visible width, height) * 0.62); the
@@ -1627,5 +1634,21 @@ export function createKaleido(device, format, platform) {
     pass.draw(3);
   }
 
-  return { update, encodeChamber, draw, resize };
+  // The debug page's window into the pool (tools/kaleido-test.html): every
+  // live piece, drawn into the chamber or not, as plain numbers, with the
+  // frame's wedge and geometry. It allocates, so the app's own frames never
+  // call it; only the test page does, once a frame.
+  function inspect() {
+    const pieces = [];
+    for (let n = 0; n < live; n++) {
+      const i = order[n], d = depth[i], k = radiusK(d);
+      const r = dbgMaxR * k;
+      const half = r * dbgSideK * (1 - dbgSizeVar * sizeRnd[i]) * 0.5 * (constBlend > 0 ? sizeLaw(k) : 1);
+      pieces.push({ u: phiU[i], r, half, born: clockS - bornT[i], atlas: atlasOf[i] });
+    }
+    return { pieces, span: spanNow, mirror: mirrorOn, maxR: dbgMaxR, holeR: dbgHoleR,
+             cx: dbgCx, cy: dbgCy, clock: clockS, live };
+  }
+
+  return { update, encodeChamber, draw, resize, inspect };
 }

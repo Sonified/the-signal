@@ -1,0 +1,202 @@
+<!doctype html>
+<!-- The kaleidoscope's visual test bench: `node tools/serve.mjs`, then
+     http://localhost:8000/tools/kaleido-test.html
+
+     The real layer (gpu/kaleido.js, the very module the app runs) renders
+     underneath at 20% opacity. Over it, a 2D overlay draws the truth of the
+     pool: the live slice (the wedge the fold samples) pointing straight up,
+     the copies' seams around the circle, the centre hole and the rim, and
+     EVERY live piece as a ring, including the ones outside the slice that
+     the chamber never draws. A piece born in the last moments wears a red
+     ring, so a birth landing anywhere visible is impossible to miss. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kaleidoscope test bench</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+               font: 13px -apple-system, system-ui, sans-serif; color: #ddd; }
+  #stage { position: fixed; inset: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #gpu { opacity: 0.2; }                 /* the kaleidoscope itself, dimmed */
+  #hud { position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.65);
+         padding: 10px 14px; border-radius: 8px; line-height: 1.9; z-index: 2; }
+  #hud input[type=range] { width: 180px; vertical-align: middle; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+        border: 2px solid; margin-right: 6px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gpu"></canvas>
+  <canvas id="ov"></canvas>
+</div>
+<div id="hud">
+  <div><b>Slices</b> <input id="folds" type="range" min="3" max="16" step="1" value="16">
+       <span id="foldsN">16</span></div>
+  <div><b>Kaleidoscope</b> <input id="kop" type="range" min="0" max="100" step="1" value="20">
+       <span id="kopN">20%</span></div>
+  <div><span class="sw" style="border-color:#ffd24d"></span>in the live slice (feeds every copy)</div>
+  <div><span class="sw" style="border-color:#8a8a8a"></span>outside the slice (waiting, never drawn)</div>
+  <div><span class="sw" style="border-color:#ff4d4d"></span>born in the last 1.5 s</div>
+  <div style="opacity:.8">cyan slice = the live one · faint lines = copy seams · dotted = hole and rim</div>
+  <div id="stats" style="opacity:.8"></div>
+</div>
+<script type="module">
+import { S } from '../js/state.js';
+import { createKaleido } from '../gpu/kaleido.js';
+// A standalone copy of the platform's image loader, so the bench pulls in
+// nothing beyond the layer itself.
+async function loadImagePixels(url) {
+  // the app resolves asset paths against the site root, not /tools/
+  const res = await fetch(new URL(url, location.origin + '/'));
+  if (!res.ok) throw new Error(url + ' answered ' + res.status);
+  const bmp = await createImageBitmap(await res.blob());
+  const c = new OffscreenCanvas(bmp.width, bmp.height);
+  const cc = c.getContext('2d', { willReadFrequently: true });
+  cc.drawImage(bmp, 0, 0);
+  const d = cc.getImageData(0, 0, bmp.width, bmp.height);
+  bmp.close();
+  return { width: d.width, height: d.height, data: d.data };
+}
+
+const UP = -Math.PI / 2;
+const gpuCanvas = document.getElementById('gpu');
+const ovCanvas = document.getElementById('ov');
+const ctx2d = ovCanvas.getContext('2d');
+const foldsEl = document.getElementById('folds');
+const foldsN = document.getElementById('foldsN');
+const stats = document.getElementById('stats');
+
+// Robert's regime, so the bench shows the same geometry as his sessions.
+S.layers = S.layers || {};
+S.layers.kaleido = true;
+S.running = true;
+S.kaleidoSet = 1;
+S.kaleidoFolds = 16; S.kaleidoMirror = true;
+S.kaleidoDensity = 0.45; S.kaleidoSpeed = 1;
+S.kaleidoSpeedVar = 0.65; S.kaleidoSpeedPeriod = 35;
+S.kaleidoSize = 2; S.kaleidoSizeVar = 0.6;
+S.kaleidoConstSize = true;
+S.kaleidoSpinMax = 1.47; S.kaleidoSpinVar = 0.66;
+S.kaleidoOrbitMax = 0.15; S.kaleidoOrbitVar = 0.7;
+S.kaleidoScatter = 0.01; S.kaleidoFade = 0.51;
+S.kaleidoOpacity = 0.92; S.kaleidoSetXfade = 0;
+S.kaleidoFadeInS = S.kaleidoFadeInS ?? 1.5;
+S.kaleidoFamilies = [];
+S.rgb = [212, 0, 255];
+S.edgeInset = 0;
+
+foldsEl.oninput = () => { S.kaleidoFolds = +foldsEl.value; foldsN.textContent = foldsEl.value; };
+const kopEl = document.getElementById('kop'), kopN = document.getElementById('kopN');
+kopEl.oninput = () => { gpuCanvas.style.opacity = kopEl.value / 100; kopN.textContent = kopEl.value + '%'; };
+
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice();
+const format = navigator.gpu.getPreferredCanvasFormat();
+const gctx = gpuCanvas.getContext('webgpu');
+gctx.configure({ device, format, alphaMode: 'premultiplied' });
+
+const k = createKaleido(device, format, { loadImagePixels });
+
+let dpr = 1;
+function resize() {
+  dpr = devicePixelRatio || 1;
+  const w = innerWidth, h = innerHeight;
+  S.W = w; S.H = h;
+  for (const c of [gpuCanvas, ovCanvas]) { c.width = w * dpr; c.height = h * dpr; }
+  k.resize(w * dpr, h * dpr, dpr);
+}
+resize();
+addEventListener('resize', resize);
+
+const passDesc = { colorAttachments: [{ view: null, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' }] };
+
+let last = 0;
+function frame(t) {
+  const dt = last ? Math.min(0.1, (t - last) / 1000) : 0;
+  last = t;
+
+  k.update(t, dt, 1);
+  const enc = device.createCommandEncoder();
+  k.encodeChamber(enc);
+  passDesc.colorAttachments[0].view = gctx.getCurrentTexture().createView();
+  const pass = enc.beginRenderPass(passDesc);
+  k.draw(pass);
+  pass.end();
+  device.queue.submit([enc.finish()]);
+
+  overlay(k.inspect());
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function overlay(info) {
+  const w = ovCanvas.width, h = ovCanvas.height;
+  ctx2d.clearRect(0, 0, w, h);
+  ctx2d.save();
+  ctx2d.translate(info.cx, info.cy);
+
+  // The live slice is the module's own sampled span: with mirror on that is
+  // half a wedge (the other half is its reflection), without it the whole
+  // wedge. Seams sit span apart all the way round, so mirrored mode shows
+  // twice as many seams as slices on screen.
+  const span = info.span;
+  const seams = Math.max(1, Math.round(2 * Math.PI / span));
+  const reach = Math.hypot(w / 2, h / 2);
+
+  ctx2d.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx2d.lineWidth = 1;
+  for (let i = 0; i < seams; i++) {
+    const a = UP + span / 2 + i * span;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, 0);
+    ctx2d.lineTo(Math.cos(a) * reach, Math.sin(a) * reach);
+    ctx2d.stroke();
+  }
+  // the live slice, pointing up: what the fold samples and every copy shows
+  ctx2d.strokeStyle = 'rgba(0,255,255,0.9)';
+  ctx2d.fillStyle = 'rgba(0,255,255,0.06)';
+  ctx2d.lineWidth = 2;
+  ctx2d.beginPath();
+  ctx2d.moveTo(0, 0);
+  ctx2d.arc(0, 0, reach, UP - span / 2, UP + span / 2);
+  ctx2d.closePath();
+  ctx2d.fill();
+  ctx2d.stroke();
+
+  // the hole (births hide inside it) and the rim (pieces retire there)
+  ctx2d.setLineDash([4, 4]);
+  ctx2d.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx2d.lineWidth = 1;
+  ctx2d.beginPath(); ctx2d.arc(0, 0, info.holeR, 0, 7); ctx2d.stroke();
+  ctx2d.beginPath(); ctx2d.arc(0, 0, info.maxR, 0, 7); ctx2d.stroke();
+  ctx2d.setLineDash([]);
+
+  // every live piece. The pool stores its angle in domain widths from the
+  // slice's centre line; the span is the mirrored half wedge or the whole
+  // wedge, exactly as the module reports it.
+  let births = 0;
+  for (const p of info.pieces) {
+    const th = UP + p.u * info.span;
+    const x = Math.cos(th) * p.r, y = Math.sin(th) * p.r;
+    const fresh = p.born < 1.5;
+    if (fresh) births++;
+    const inSlice = Math.abs(p.u) <= 0.5;   // u is in slice widths
+    ctx2d.strokeStyle = fresh ? '#ff4d4d' : inSlice ? '#ffd24d' : '#8a8a8a';
+    ctx2d.lineWidth = fresh ? 3 : 1.5;
+    ctx2d.beginPath();
+    ctx2d.arc(x, y, Math.max(2, p.half), 0, 7);
+    ctx2d.stroke();
+    if (fresh) {   // a spoke to the centre so a birth's position is unmissable
+      ctx2d.strokeStyle = 'rgba(255,77,77,0.35)';
+      ctx2d.lineWidth = 1;
+      ctx2d.beginPath(); ctx2d.moveTo(0, 0); ctx2d.lineTo(x, y); ctx2d.stroke();
+    }
+  }
+  ctx2d.restore();
+  stats.textContent = `live ${info.live} · fresh ${births} · hole ${Math.round(info.holeR / dpr)}px css`;
+}
+</script>
+</body>
+</html>

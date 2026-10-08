@@ -1,0 +1,113 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Kaleidoscope pixel continuity</title>
+<style>
+  body{margin:24px;background:#12151b;color:#e5e9f0;font:16px system-ui} button{padding:10px;margin:0 8px 16px 0}
+  canvas{width:min(43vw,640px);height:auto;background:#000;border:1px solid #546070} .views{display:flex;gap:24px}
+  pre{white-space:pre-wrap} p{max-width:1000px}
+</style>
+<h1>Kaleidoscope pixel continuity</h1>
+<p>The actual pool, atlas cleanup, chamber and fold shaders run on WebGPU. Both views start with the same settings and seeded randomness. The left restores the old radius sort; the right keeps birth order. Each pixel check renders one frozen frame twice, changing only its draw order. Pulse is disabled to isolate motion.</p>
+<button id="run">Run 180-second GPU check</button><button id="play">Play / pause A/B</button>
+<pre id="result">Loading atlas and GPU…</pre>
+<div class="views"><div>Original radius order<br><canvas id="old" width="640" height="640"></canvas></div><div>Fixed birth order<br><canvas id="fixed" width="640" height="640"></canvas></div></div>
+<script type="module">
+import { S } from '../js/state.js';
+import { instrumentKaleido, liveSettings, seededRandom, orderFlips } from './kaleido-continuity-harness.mjs';
+const result = document.querySelector('#result');
+window.addEventListener('unhandledrejection', e => { result.textContent = 'FAIL: ' + e.reason; });
+const adapter = await navigator.gpu?.requestAdapter();
+if (!adapter) throw new Error('WebGPU adapter unavailable');
+const device = await adapter.requestDevice();
+let gpuErrors = [];
+device.addEventListener('uncapturederror', e => { gpuErrors.push(e.error.message); result.textContent = e.error.message; });
+const format = navigator.gpu.getPreferredCanvasFormat();
+const source = await (await fetch('../gpu/kaleido.js')).text();
+const originalRandom = Math.random;
+const layers = [];
+Object.assign(S, liveSettings, { W: 640, H: 640, DPR: 1, kaleidoPulse: 0 });
+const platform = { async loadImagePixels(url) {
+  const image = await createImageBitmap(await (await fetch(new URL('../' + url, location.href))).blob());
+  const canvas = new OffscreenCanvas(image.width, image.height), ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0); const data = ctx.getImageData(0, 0, image.width, image.height).data;
+  return { width: image.width, height: image.height, data };
+} };
+for (const [id, reference] of [['old', true], ['fixed', false]]) {
+  const blob = new Blob([instrumentKaleido(source, reference, true)], { type: 'text/javascript' });
+  const url = URL.createObjectURL(blob), module = await import(url); URL.revokeObjectURL(url);
+  module.setKaleidoYield(() => Promise.resolve());
+  const layer = module.createKaleido(device, format, platform);
+  layer.resize(640, 640, 1);
+  const context = document.getElementById(id).getContext('webgpu');
+  context.configure({ device, format, alphaMode: 'opaque' });
+  layers.push({ layer, context, random: seededRandom(), previous: [], flips: 0, reference });
+  layer.update(0, 0, 1);
+}
+// Loading/repacking is async. Yield until both actual atlases installed.
+while (layers.some(x => x.layer.test.snapshot().live === 0)) {
+  await new Promise(r => setTimeout(r, 25));
+  for (const x of layers) { Math.random = x.random; x.layer.update(0, 0, 1); }
+  Math.random = originalRandom;
+}
+const target = device.createTexture({ size: [640,640], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+const read = device.createBuffer({ size: 640 * 640 * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+function draw(layer, texture) {
+  const encoder = device.createCommandEncoder(); layer.encodeChamber(encoder);
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view: texture.createView(), clearValue: [0,0,0,1], loadOp: 'clear', storeOp: 'store' }] });
+  layer.draw(pass); pass.end(); device.queue.submit([encoder.finish()]);
+}
+async function pixels(layer) {
+  draw(layer, target);
+  const encoder = device.createCommandEncoder();
+  encoder.copyTextureToBuffer({ texture: target }, { buffer: read, bytesPerRow: 640 * 4 }, [640,640]);
+  device.queue.submit([encoder.finish()]); await read.mapAsync(GPUMapMode.READ);
+  const bytes = new Uint8Array(read.getMappedRange()).slice(); read.unmap(); return bytes;
+}
+let frame = 0, playing = false, checking = false, checks = 0, affected = 0, maxDelta = 0;
+function step() {
+  frame++;
+  for (const x of layers) {
+    Math.random = x.random; x.layer.update(frame * 1000 / 60, 1 / 60, 1);
+    x.current = x.layer.test.snapshot().instances;
+    x.frameFlips = orderFlips(x.previous, x.current).length; x.flips += x.frameFlips;
+  }
+  Math.random = originalRandom;
+}
+function finishStep() { for (const x of layers) x.previous = x.current; }
+function show() { for (const x of layers) draw(x.layer, x.context.getCurrentTexture()); }
+function report(done = false) {
+  result.textContent = JSON.stringify({ status: done ? 'complete' : 'running', simulatedSeconds: +(frame/60).toFixed(2),
+    oldOpaqueOverlapSwaps: layers[0].flips, fixedOpaqueOverlapSwaps: layers[1].flips,
+    sameFrameOrderOnlyGPUComparisons: checks, pixelsChangedByAtLeast64Of255: affected,
+    largestChannelJumpOf255: maxDelta, gpuErrors }, null, 2);
+}
+async function checkSwap() {
+  const x = layers[0]; if (!x.frameFlips || checks >= 20) return;
+  const normal = await pixels(x.layer);
+  const restore = x.layer.test.previousOrder(x.previous.map(p => p.id));
+  const held = await pixels(x.layer);
+  restore();
+  let count = 0, jump = 0;
+  for (let b = 0; b < normal.length; b += 4) {
+    const delta = Math.max(...[0,1,2].map(c => Math.abs(normal[b+c] - held[b+c])));
+    if (delta >= 64) count++; jump = Math.max(jump, delta);
+  }
+  checks++; affected += count; maxDelta = Math.max(maxDelta, jump);
+}
+document.querySelector('#run').onclick = async () => {
+  if (checking) return; checking = true; playing = false;
+  try {
+    while (frame < 10800) {
+      for (let n = 0; n < 20 && frame < 10800; n++) { step(); await checkSwap(); finishStep(); }
+      show(); report(); await new Promise(r => setTimeout(r, 0));
+    }
+    report(true);
+    if (layers[1].flips || !affected || gpuErrors.length) throw new Error('GPU continuity check failed');
+    result.textContent += '\nPASS: large pixel jumps reproduced by order alone; fixed order has no continuing-piece swaps.';
+  } catch (e) { result.textContent += '\nFAIL: ' + e.message; } finally { checking = false; }
+};
+document.querySelector('#play').onclick = () => { playing = !playing; if (playing) animate(); };
+function animate() { if (!playing || checking) return; step(); finishStep(); show(); report(); requestAnimationFrame(animate); }
+show(); report();
+if (new URLSearchParams(location.search).has('run')) document.querySelector('#run').click();
+</script>
