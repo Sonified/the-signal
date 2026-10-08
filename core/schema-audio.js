@@ -466,6 +466,20 @@ const audioControls = [
     visible: s => s.toneOn
   },
   {
+    // The tone's Vary with strobe: how deep its pulse goes, times the master
+    // strobe, so bringing the strobe to 0 leaves the tone steady. The pulse
+    // is the Amplitude modulation envelope above (applyAmOn in js/audio.js),
+    // not a stage of its own; 100% is that envelope at its full depth, the
+    // tone as it always was, and 0 is no pulse. Unset reads as 100%.
+    id: 'toneStrobeAm', section: 'audio', label: 'Vary with strobe', kind: 'slider',
+    parent: 'audioToneDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: s => Math.round((typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * 100),
+    set: (s, pos) => { s.toneStrobeAm = pos / 100; applyAmOn(); save(); },
+    format: s => Math.round((typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * 100) + '%',
+    visible: s => s.toneOn
+  },
+  {
     id: 'aClick', section: 'audio', label: 'Click train', kind: 'toggle',
     get: s => s.clickOn,
     set: (s, on) => setClickOn(s, !!on),
@@ -1840,6 +1854,7 @@ const transportControls = [
       s.strobeScale = Math.max(0, Math.min(1, pos / 100));
       refreshStrobeAm();
       applyArp();
+      applyAmOn();
       save();
     },
     format: s => Math.round((typeof s.strobeScale === 'number' ? s.strobeScale : 1) * 100) + '%'

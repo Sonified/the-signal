@@ -115,6 +115,7 @@ function buildSettings() {
   return {
     freq: S.freq, depth: S.depth, bright: S.bright, strobeScale: S.strobeScale, wave: S.wave, fieldShape: S.fieldShape,
     fieldOpacity: S.fieldOpacity, fieldFade: S.fieldFade, fieldSoft: S.fieldSoft,
+    fieldFadeVar: S.fieldFadeVar, fieldFadeVarPeriod: S.fieldFadeVarPeriod,
     color: rgbHex(S.rgb),
     cornerOpacity: S.cornerOpacity, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
     ringSpeedMul: S.ringSpeedMul, ringSpeedVar: S.ringSpeedVar, ringSpeedVarPeriod: S.ringSpeedVarPeriod,
@@ -197,6 +198,7 @@ function buildSettings() {
     edgeSpeedVar: S.edgeSpeedVar, edgeSpeedVarPeriod: S.edgeSpeedVarPeriod,
     edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
     carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked, amModOn: S.amModOn,
+    toneStrobeAm: S.toneStrobeAm,
     toneOn: S.toneOn, clickOn: S.clickOn, toneVol: S.toneVol, clickVol: S.clickVol, pipMs: S.pipMs,
     // the Music window's trims over those levels (state.js)
     musTone: S.musTone, musPulse: S.musPulse, musPiano: S.musPiano, musClouds: S.musClouds,
@@ -782,6 +784,8 @@ function loadLive() {
 // it to answer format(S), the store never needs the label at all and only
 // restores the two numbers, so there is nothing here actually worth sharing.
 
+// Returns true on a first visit (no settings stored), so main.js can lay the
+// starting preset over the defaults (core/presets.js applyActivePresetState).
 export function load() {
   // v1-only defaults first, since js/state.js (v0's file) does not know
   // about them: the GPU reads these fields from the very first frame, stored
@@ -791,13 +795,14 @@ export function load() {
   initParticleState(S);
   initFireworkState(S);
   initConfettiState(S);
-  if (!storage) return;
+  if (!storage) return false;
   let s;
   try { s = JSON.parse(storage.get(STORE) || '{}'); } catch (e) { s = {}; }
   // A first visit has nothing stored. v0 leaves every S default as the
   // markup already ships it and just keeps the drawer shut; the drawer is
   // the toolkit's concern now, so all that is left to say is "closed".
-  if (!s || !Object.keys(s).length) S.panelOpen = false;
+  const first = !s || !Object.keys(s).length;
+  if (first) S.panelOpen = false;
   else applySettings(s, false);
   // Read separately and after, so the extra record wins over anything the
   // shared object might carry, and so a v1 record survives a v0 session
@@ -806,6 +811,7 @@ export function load() {
   try { x = JSON.parse(storage.get(EXTRA_KEY) || 'null'); } catch (e) { x = null; }
   applyExtra(x);
   loadLive();
+  return first;
 }
 
 // The edge's effects (gpu/scene.js) and the new effects' numbers as
@@ -851,6 +857,8 @@ function applySettings(s, live, scene) {
   if (typeof s.ringFade === 'number')     S.ringFade = s.ringFade;
   if (typeof s.fieldOpacity === 'number') S.fieldOpacity = Math.max(0, Math.min(1, s.fieldOpacity));
   if (typeof s.fieldFade === 'number')    S.fieldFade = s.fieldFade;
+  if (typeof s.fieldFadeVar === 'number' && isFinite(s.fieldFadeVar)) S.fieldFadeVar = Math.max(0, Math.min(1, s.fieldFadeVar));
+  if (typeof s.fieldFadeVarPeriod === 'number' && isFinite(s.fieldFadeVarPeriod)) S.fieldFadeVarPeriod = Math.max(1, Math.min(60, s.fieldFadeVarPeriod));
   if (typeof s.fieldSoft === 'number')    S.fieldSoft = s.fieldSoft;
   if (typeof s.edgeCount === 'number')    S.edgeCount = s.edgeCount;
   if (typeof s.edgeOpacity === 'number')  S.edgeOpacity = s.edgeOpacity;
@@ -927,6 +935,8 @@ function applySettings(s, live, scene) {
   if (typeof s.amRate === 'number')       S.amRate = s.amRate;
   if (typeof s.amLinked === 'boolean')    S.amLinked = s.amLinked;
   if (typeof s.amModOn === 'boolean')     S.amModOn = s.amModOn;
+  if (typeof s.toneStrobeAm === 'number' && Number.isFinite(s.toneStrobeAm))
+    S.toneStrobeAm = Math.max(0, Math.min(1, s.toneStrobeAm));
   if (typeof s.volume === 'number')       S.volume = s.volume;
   // the Music window's trims, each a share of its voice's level, 0 to 1
   for (const k of ['musTone', 'musPulse', 'musPiano', 'musClouds', 'musDrone', 'musArp', 'musChoir', 'musAmb']) {

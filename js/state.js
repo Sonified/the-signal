@@ -63,6 +63,7 @@ export const S = {
   fieldShape: 'full',
   fieldOpacity: 1,            // v1: the strobe field's own opacity, 0..1; Brightness still drives every layer
   fieldFade: 0,               // v1: the field's radial fade in, 0..1, the tunnel layers' curve
+  fieldFadeVar: 0, fieldFadeVarPeriod: 20, fieldFadeVarPhase: 0,   // v1: its variance (core/strobe.js writes effFieldFade)
   fieldSoft: 1,               // v1: how soft that fade's edge is, 1 the full ease, 0 a hard circle
   running: false,
 
@@ -190,6 +191,7 @@ export const S = {
   musTone: 1, musPulse: 1, musPiano: 1, musClouds: 1, musDrone: 1, musArp: 1, musChoir: 1, musAmb: 1,
   carrierHz: 40, amRate: 7.5, volume: 0.50, amLinked: true, lastAmSet: 0,
   amModOn: true,              // the pulse envelope on the tone; off plays it steady
+  toneStrobeAm: 1,            // 'Vary with strobe' on the tone: its pulse depth, 0..1, times the master strobe
   toneOn: true, clickOn: true,
   toneVol: 0.3, clickVol: 0.33,
   harmOn: true, harmVol: 0.4, harmCount: 9, harmBright: 0.45,

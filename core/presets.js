@@ -706,6 +706,23 @@ export function presetTargets(i, out) {
   return true;
 }
 
+// A first visit's starting settings: the lit chip's snapshot (the starting
+// row's Blooming Grace 2, platform/factory-presets.js) written into S at
+// boot, straight after store.js load() finds nothing stored and before
+// anything is drawn or sounds. State only, through store.js applySnapshot,
+// the same write a recall makes, so this machine's own settings (the Render
+// section, machineControl above) stay at their defaults and the drawer stays
+// shut; nothing is playing yet, so there is no replay pass to run. A built-in
+// lit without a snapshot of the viewer's is left alone: its v0 recipe works
+// through each control's set(), which a boot has nothing to hear yet.
+export function applyActivePresetState() {
+  ensureLoaded();
+  const e = row[presetActiveIndex()];
+  if (!e) return;
+  const snap = e.u ? e.u.snapshot : data.overrides[PRESET_LIST[e.b].name];
+  if (snap) applySnapshot(snap);
+}
+
 // Lights preset i's chip, as a click's recall does (applyPresetAt), for the
 // ramped recall, which plays the preset through a door of its own.
 export function presetMarkActive(i) {

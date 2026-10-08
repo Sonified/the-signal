@@ -49,7 +49,7 @@ import {
   packAtmosphere, ATMOSPHERE_SLOTS
 } from './atmosphere.js';
 import { initStore, load, syncFromStorage } from './store.js';
-import { replayLive } from './presets.js';
+import { replayLive, applyActivePresetState } from './presets.js';
 import { signal, unpackSignal, publishSignal } from './signal.js';
 import {
   M_FLAGS, M_DRIFT, M_ARP, M_HEAD, M_ATMOS, F_AUDIO, F_WORKLET, F_DRIFT,
@@ -65,7 +65,8 @@ const ARP_POST_MS = 15, METER_POST_MS = 33;
 // storage is { get(key) } over the page's localStorage; nothing is ever set.
 export function createAudioShell(storage) {
   initStore({ get: storage.get, set() {} });
-  load();
+  // a first visit starts on the lit chip's settings, as the worker's copy does
+  if (load()) applyActivePresetState();
   initAtmosphere();
 
   // Every control a call can name: the schema's, and the mixer's

@@ -5,6 +5,7 @@ import { S } from './state.js';
 import { $ } from './dom.js';
 import { buildChirp } from './chirp.js';
 import { chanGate, onChannelGates } from './mixgate.js';
+import { scaledStrobeDepth } from './strobe-scale.js';
 import { prepareAudioSession, startBackgroundKeepAlive, setBackgroundPlaying, setMediaWake } from './background.js';
 import { startHeart, ctxFor, masterFor, makeWorklet, heartEngine } from './heart/route.js';
 
@@ -708,7 +709,18 @@ export const setAmRate = hz => setAudioRate(hz);
 // left alone, so the linked strobe and a free Pulse rate keep steering it
 // underneath and the pips, timed from the same phase, carry on exactly as
 // before. Glided both ways (and along a preset's window), so it never clicks.
-export function applyAmOn(tc = 0.05) { setParam('amDepth', S.amModOn === false ? 0 : 1, tc); }
+//
+// On, the depth is the tone's Vary with strobe (S.toneStrobeAm, 1 when
+// unset, the full pulse it always had) times the master strobe, the same
+// scaledStrobeDepth every other Vary with strobe stage goes through
+// (js/strobe-am.js): the master brought to 0 leaves the tone steady, as it
+// leaves the drone, the choir, the clouds and the sequencer. The pulse is
+// still the engine's own envelope, already on the flash when linked, so no
+// second stage taps it and nothing pulses twice. The master's control calls
+// this again whenever it moves (schema-audio.js, strobeScale).
+const toneAmDepth = () => S.amModOn === false ? 0
+  : scaledStrobeDepth(typeof S.toneStrobeAm === 'number' ? S.toneStrobeAm : 1);
+export function applyAmOn(tc = 0.05) { setParam('amDepth', toneAmDepth(), tc); }
 
 // The click on first play was never our gain ramp. Starting an AudioContext
 // engages the output device, and Chrome compiling a worklet module the first
@@ -893,8 +905,13 @@ export async function warmDevice() {
 // Media Session's play (the lock screen, a headset) starts the transport,
 // and the context iOS suspended while the screen was locked has to wake with
 // it: nothing else on that path resumes it (js/background.js).
+// Every gesture while the sound is meant to be heard calls it too, which is
+// what starts a context an interruption (a call, Siri, another app) left
+// 'interrupted' or suspended; the session type goes first, as it may have
+// been started over.
 function resumeAudio() {
   if (audioCtx && audioCtx.state !== 'running' && audioCtx.state !== 'closed') {
+    prepareAudioSession();
     audioCtx.resume().catch(() => {});
   }
 }
@@ -911,6 +928,7 @@ export function audioOn() {
 
 async function startAudio() {
   S.audioEnabled = true;
+  followBackground();
   // A preset that switches audio on opens its transition before this awaits
   // anything, and the ramps below come after; the window's end carries over.
   const end = glideEnd();
@@ -940,16 +958,17 @@ export function audioOff() {
   applyAudioShape();
   closeAt = 0;   // muting the layer shuts the tails too, as it always has
   rampVol(0, 0.25);
+  followBackground();
 }
 
 // spacebar pauses the whole experience, sound included
 let hasRisen = false;
 export function applyAudioGain() {
-  setBackgroundPlaying(S.running);   // the lock screen's loop and controls follow the transport
   // If audio has somehow never started, start it here rather than going quiet.
   // This is the only place that knows the session is actually running, so it is
   // the right place to be self-healing about it.
   if (!audioHasPlayed) {
+    followBackground();
     if (S.running && audioLayerChecked()) audioOn();
     return;
   }
@@ -969,6 +988,7 @@ export function applyAudioGain() {
     const dur = hasRisen ? 0.12 : 2.0;
     hasRisen = true;
     rampVol(S.volume, dur);
+    followBackground();
     return;
   }
   const g = volGain.gain, now = audioCtx.currentTime;
@@ -983,6 +1003,21 @@ export function applyAudioGain() {
     closeAt = 0;
     rampVol(0, SRC_GATE_S);
   }
+  followBackground();
+}
+
+// The lock screen's silent loop (js/background.js) plays while anything can
+// be heard: the transport running with the sound on, and after a pause for
+// as long as the master stays open on the rooms' tails. Then it pauses, and
+// a paused session lets the phone sleep. On an iPhone without
+// navigator.audioSession the loop is what keeps the ring switch from
+// silencing the sound, so it must never stop while something still plays.
+// Media Session's play and pause follow the transport alone.
+function followBackground() {
+  const audible = !!(S.running && S.audioEnabled);
+  const ringS = !audible && closeAt > 0 && audioCtx
+    ? closeAt + TAIL_CLOSE_S - audioCtx.currentTime : 0;
+  setBackgroundPlaying(!!S.running, audible, ringS);
 }
 
 // ---------- the pause gate ----------

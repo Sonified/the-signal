@@ -262,7 +262,7 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   const cornersOn = layers.corners && (u[12] + u[13] + u[14] + u[15]) > 0;
   u[36] = cornersOn ? 1 : 0;
   u[37] = inset * dpr;                            // left edge, device px
-  u[38] = S.fieldFade || 0;                        // the field's radial fade in
+  u[38] = S.effFieldFade ?? S.fieldFade ?? 0;      // the field's radial fade in, as its variance breathes it
   u[39] = S.fieldSoft ?? 1;                        // and how soft its edge is
   u[40] = Math.max(0, CORNER_TYPES.indexOf(S.cornerType));   // corners' look
   // The ring records' radial bins: how many, and how many to a device px

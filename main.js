@@ -51,7 +51,8 @@ import { eye, stepEye } from './core/eye.js';
 import { initChores, choreRegister, choreRun, choreYield } from './core/chores.js';
 import { initWords, stepWords, wordsResume } from './core/words.js';
 import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame } from './core/store.js';
-import { replayLive, syncPresetsFromStorage } from './core/presets.js';
+import { replayLive, syncPresetsFromStorage, applyActivePresetState } from './core/presets.js';
+import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
@@ -122,6 +123,10 @@ async function boot() {
   // becomes its shell. Otherwise (the default, or no worker to be had) this
   // returns false and the engine boots here as always.
   console.log('[boot] boot() entered, worker:', inWorker);
+  // A first visit fetches the starting presets and writes them in before
+  // anything reads storage (the worker's copy of it included); a return
+  // visit, which already has a presets record, fetches nothing.
+  if (!inWorker) await seedFactoryPresets();
   if (!inWorker && await startWorkerShell(canvas)) return;
   console.log('[boot] engine stays on this thread');
   const platform = inWorker ? await host.platform : createPlatform(canvas);
@@ -130,7 +135,9 @@ async function boot() {
 
   // State first: v0 and v1 share one saved settings object.
   initStore(platform.storage);
-  load();
+  // A first visit starts on the lit chip's settings (the starting row's
+  // Blooming Grace 2) rather than the bare defaults.
+  if (load()) applyActivePresetState();
   // The colour walk needs hue, saturation and lightness seeded from the
   // current colour; v0 does this from its picker on every boot, saved or not.
   {
@@ -214,6 +221,8 @@ async function boot() {
   }
 
   const ui = createUI(text);
+  // a touch screen's keyboard for the text fields (platform/soft-keyboard.js)
+  ui.softKb = platform.softKeyboard || null;
   const overlayList = new DrawList(512);
   const uiList = new DrawList(4096);
   const topList = new DrawList(2048);

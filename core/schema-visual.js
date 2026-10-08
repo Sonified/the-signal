@@ -503,6 +503,12 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.fieldFade = pos / 100; save(); },
     format: S => Math.round((S.fieldFade || 0) * 100) + '%'
   },
+  // The fade radius breathes on the app's standard: over one rate cycle it
+  // eases from the setting down by this share and back, never above it.
+  ...varianceRows('fieldFade', {
+    name: 'Fade radius', parent: 'strobeBrightnessDrawer',
+    effective: S => (S.effFieldFade ?? S.fieldFade ?? 0) * 100
+  }),
   {
     // How soft the fade's edge is. At 100% the ease spans the whole way from
     // the centre to the fade radius, exactly the shared curve; lower values
