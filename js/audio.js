@@ -8,6 +8,8 @@ import { chanGate, onChannelGates } from './mixgate.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { prepareAudioSession, startBackgroundKeepAlive, setBackgroundPlaying, setMediaWake } from './background.js';
 import { startHeart, ctxFor, masterFor, makeWorklet, heartEngine } from './heart/route.js';
+import { every, clear } from './ticker.js';
+import { breath, breathState } from '../core/variance.js';
 
 let audioCtx = null, volGain = null, node = null;
 let harmDry = null, harmWet = null, convolver = null, clickWet = null;
@@ -611,11 +613,14 @@ function rampLevel(name, target, dur = 0.25, lead = 0) {
 // harmonics together and S.musPulse for the pulse, dry and send, click or
 // chirp. A trim of 1 plays exactly what the level says. v0 never sets the
 // trims, so an unset one reads as 1.
+//
+// The tone's level takes its variance's dip as a third stage (the tone's two
+// variances, below), so every move of it lands on the breath as it stands.
 const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
 const shapeVol  = chirp => Math.min(1, (chirp ? S.chirpVol : S.clickVol) * trimGain()) * perfTrim(S.musPulse ?? 1);
 const shapeLive = chirp => S.audioEnabled && S.clickOn && (S.clickMode === 'chirp') === chirp;
 const levelTargets = {
-  toneLevel:  () => S.audioEnabled && S.toneOn  ? S.toneVol * perfTrim(S.musTone ?? 1) * chanGate('fund') : 0,
+  toneLevel:  () => S.audioEnabled && S.toneOn  ? S.toneVol * (1 - toneVolDip) * perfTrim(S.musTone ?? 1) * chanGate('fund') : 0,
   clickLevel: () => shapeLive(false) ? shapeVol(false) * chanGate('pulse') : 0,
   chirpLevel: () => shapeLive(true)  ? shapeVol(true)  * chanGate('pulse') : 0,
   // Harmonics are the tone's own overtones, not a source of their own. With the
@@ -717,10 +722,68 @@ export const setAmRate = hz => setAudioRate(hz);
 // leaves the drone, the choir, the clouds and the sequencer. The pulse is
 // still the engine's own envelope, already on the flash when linked, so no
 // second stage taps it and nothing pulses twice. The master's control calls
-// this again whenever it moves (schema-audio.js, strobeScale).
+// this again whenever it moves (schema-audio.js, strobeScale). The depth's
+// variance dips the tone's setting before the master scales it, as every
+// stage's does (strobe-am.js applyDepth).
 const toneAmDepth = () => S.amModOn === false ? 0
-  : scaledStrobeDepth(typeof S.toneStrobeAm === 'number' ? S.toneStrobeAm : 1);
-export function applyAmOn(tc = 0.05) { setParam('amDepth', toneAmDepth(), tc); }
+  : scaledStrobeDepth((typeof S.toneStrobeAm === 'number' ? S.toneStrobeAm : 1) * (1 - toneAmDip));
+export function applyAmOn(tc = 0.05) { syncToneBreath(); setParam('amDepth', toneAmDepth(), tc); }
+
+// ---------- the tone's two variances ----------
+// Its Level and its Vary with strobe each breathe by the app's one law
+// (core/variance.js breath) on the audio clock, sinusoid or walk by their
+// Behavior toggles (schema-audio.js): each eases down from its setting by up
+// to its variance's share and back, once a speed cycle, never above it. The
+// dips multiply in where the targets are worked out (levelTargets.toneLevel
+// and toneAmDepth above), so a fader, a mute, a preset or the master strobe
+// lands on the breath as it stands, and a 10 Hz timer, running only while
+// either variance is above 0 and the engine is built, carries the two params
+// along between: the level on a straight ramp a step long, the depth on a
+// setTarget of the same length, so each step blends into the next and
+// nothing zips. Each is written only when its target has moved, so a silent
+// tone costs no automation at all. A param a preset's transition is still
+// carrying (glideTarget) is left to land first and picked up on the tick
+// after; cutting in would turn the preset's glide into a jump. Heart's
+// genus takes these same calls (js/heart/params.js), so both engines
+// breathe alike.
+const toneVolB = breathState(), toneAmB = breathState();
+let toneVolDip = 0, toneAmDip = 0, toneTimer = 0, toneVolSent = -1, toneAmSent = -1;
+const varAmt = v => Math.max(0, Math.min(1, +v || 0));
+function breatheTone(now) {
+  toneVolDip = breath(toneVolB, varAmt(S.toneVolVar), S.toneVolPeriod, now, S.toneVolVarMode);
+  toneAmDip = breath(toneAmB, varAmt(S.toneStrobeAmVar), S.toneStrobeAmPeriod, now, S.toneStrobeAmVarMode);
+}
+function toneBreathTick() {
+  if (!node || !audioCtx) { syncToneBreath(); return; }
+  const now = audioCtx.currentTime;
+  breatheTone(now);
+  const lvl = levelTargets.toneLevel(), dep = toneAmDepth();
+  if (lvl !== toneVolSent && !(now < glideT1 && glideTarget.has(node.parameters.get('toneLevel')))) {
+    toneVolSent = lvl;
+    rampLevel('toneLevel', lvl, 0.1);
+  }
+  if (dep !== toneAmSent && !(now < glideT1 && glideTarget.has(node.parameters.get('amDepth')))) {
+    toneAmSent = dep;
+    setParam('amDepth', dep, 0.1);
+  }
+}
+function syncToneBreath() {
+  const need = !!node && (varAmt(S.toneVolVar) > 0 || varAmt(S.toneStrobeAmVar) > 0);
+  if (need && !toneTimer) { toneVolSent = toneAmSent = -1; toneTimer = every(100, toneBreathTick); }
+  else if (!need && toneTimer) { clear(toneTimer); toneTimer = 0; }
+}
+// The variance rows' engine hook (schema-audio.js): the breath stepped to
+// now, so an amount brought to 0 hands the settings straight back, then both
+// params on their usual glides and the timer started or stopped to suit.
+export function applyToneBreath() {
+  if (audioCtx) breatheTone(audioCtx.currentTime);
+  applyLevel('toneLevel');
+  applyAmOn();
+}
+// The share of each setting its dip is leaving right now, 1 at the top of
+// the breath: the drawer's lit bars (core/audio-mirror.js, on either thread).
+export const toneVolMul = () => 1 - toneVolDip;
+export const toneAmMul = () => 1 - toneAmDip;
 
 // The click on first play was never our gain ramp. Starting an AudioContext
 // engages the output device, and Chrome compiling a worklet module the first

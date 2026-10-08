@@ -79,7 +79,7 @@ import { CHANNELS, applyMixGates } from '../js/mixgate.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
 import { byId } from './schema.js';
 import { REPLAY_CONTROLS, beginTransition, recallPresetForStep, machineControl } from './presets.js';
-import { readKey, saveKey, onSave, save, seqStateOf, applySeqState, mixStateOf, SEQ_NUM_RANGE } from './store.js';
+import { readKey, saveKey, onSave, save, seqStateOf, applySeqState, mixStateOf, SEQ_NUM_RANGE, oldRingSpeed } from './store.js';
 import { onWordAppear, wordSequenceOnce, cancelWordSequenceOnce } from './words.js';
 import { glideSkippingRiskBand } from './strobe.js';
 
@@ -247,10 +247,17 @@ function readRaw(key) {
 
 function readJourney(raw) {
   const d = { ver: 1, steps: [], autoPlay: false, loop: false, name: '', fullStart: false,
-              sizeLock: false, sizeLockValue: null, sizeRestore: null };
+              sizeLock: false, sizeLockValue: null, sizeRestore: null, ringV: 2 };
   if (raw && typeof raw === 'object') {
     if (Array.isArray(raw.steps)) {
       for (let i = 0; i < raw.steps.length && i < STEPS_MAX; i++) d.steps.push(readStep(raw.steps[i]));
+    }
+    // Steps saved before Ring speed's 1x became a fifth of the old pace
+    // (js/sim.js RING_SPEED_SCALE) hold the old units; ringV 2 marks a
+    // record already in the new ones (store.js oldRingSpeed).
+    if (raw.ringV !== 2) for (const st of d.steps) {
+      const v = st.overrides.ringSpeed;
+      if (typeof v === 'number') st.overrides.ringSpeed = oldRingSpeed(v);
     }
     d.autoPlay = raw.autoPlay === true;
     d.loop = raw.loop === true;

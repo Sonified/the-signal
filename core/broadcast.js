@@ -56,7 +56,7 @@
 // at boot: a demo survives the broadcaster's page refresh.
 import { S } from '../js/state.js';
 import { onSave, wireSettings, readKey, saveKey } from './store.js';
-import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl } from './presets.js';
+import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl, recallStreamScene } from './presets.js';
 import { setPerfGlideHooks, perfGlideWriting, perfEachGlide, perfFollowGlide, perfFollowDrop } from './perform.js';
 import { setJourneyGlideHooks, journeyGlideWriting, journeyEachGlide } from './journey.js';
 import { CONTROLS, byId } from './schema.js';
@@ -67,6 +67,9 @@ import { setRoomClockRoom, setRoomClockOffset } from './room-clock.js';
 import { initLiveAudio, liveAudioCheck, liveFollowNotice, liveFollowChunk, liveFollowEnd } from './live-audio.js';
 
 const REC_KEY = 'signal.broadcast.v1';
+// Each session's left-off scene (see "where a stream was left" below), by
+// room, under a record of its own so the sessions' record stays small.
+const SCENES_KEY = 'signal.broadcast.scenes.v1';
 const SEND_DELAY_MS = 250;
 // how long without a state send before a live session dozes, and how often
 // that is checked (see the doze section below)
@@ -82,8 +85,10 @@ const ROOM_MAX = 24;
 // A session also carries its mode (event: false is Open), its unlock moment
 // (unlock, wall-clock ms, 0 for none) with that countdown's cached label and
 // the whole second it was built for (unLabel, unSec), and stale: a change
-// was skipped for this room while nobody watched it (see dozing).
-let sessions = [];   // { name, room, active, sock, status:'off'|'wait'|'live'|'doze'|'dead', watchers, label, event, unlock, unLabel, unSec, stale }
+// was skipped for this room while nobody watched it (see dozing). sent is
+// the last state message this room was actually sent, and scene the scene
+// it was left on when last ended (see "where a stream was left").
+let sessions = [];   // { name, room, active, sock, status:'off'|'wait'|'live'|'doze'|'dead', watchers, label, event, unlock, unLabel, unSec, stale, sent, scene }
 let key = '';
 let linkTarget = 'live';
 let version = 0;
@@ -115,6 +120,21 @@ function ensureLoaded() {
       sessions.push(one);
     }
   }
+  let scenes = null;
+  try { scenes = JSON.parse(readKey(SCENES_KEY) || 'null'); } catch (e) { scenes = null; }
+  if (!scenes || typeof scenes !== 'object') return;
+  for (const s of sessions) {
+    const sc = scenes[s.room];
+    if (sc && sc.snap && typeof sc.snap === 'object' && Number.isFinite(sc.at)) s.scene = { snap: sc.snap, at: sc.at };
+  }
+}
+
+// Written only when a scene is kept or its session deleted, never with the
+// sessions' own record, so a click on a switch does not rewrite tens of KB.
+function persistScenes() {
+  const out = {};
+  for (const s of sessions) if (s.scene) out[s.room] = s.scene;
+  saveKey(SCENES_KEY, out);
 }
 
 function persist() {
@@ -130,7 +150,7 @@ function persist() {
 
 function makeSession(name, room, active) {
   return { name, room, active, sock: null, status: 'off', watchers: 0, label: '',
-           event: false, unlock: 0, unLabel: '', unSec: -1, stale: false };
+           event: false, unlock: 0, unLabel: '', unSec: -1, stale: false, sent: null, scene: null };
 }
 
 // The room a viewer's link names, made from the session's name: readable, so
@@ -259,6 +279,7 @@ function sendNow() {
     if (!s.sock || s.status !== 'live') continue;
     if (!s.watchers) { s.stale = true; continue; }
     s.sock.send(stateFor(s, body));
+    s.sent = body;
     s.stale = false;
     sent++;
   }
@@ -360,6 +381,7 @@ function checkDoze() {
     if (s.stale) {
       if (body === null) body = stateBody(0);
       s.sock.send(stateFor(s, body));
+      s.sent = body;
       s.stale = false;
     }
     s.sock.close();
@@ -820,24 +842,98 @@ export function broadcastAdd(name) {
 export function broadcastRemove(i) {
   const s = sessions[i];
   if (!s) return;
+  if (asking === s) { asking = null; version++; }
   closeSession(s, true);
   sessions.splice(i, 1);
   persist();
+  if (s.scene) persistScenes();
 }
 
 // The activate/deactivate switch. Activating without a key refuses, with the
-// notice saying why, so the drawer needs no state of its own for it.
+// notice saying why, so the drawer needs no state of its own for it. A
+// session with a left-off scene asks first (see below) and stays off until
+// the question is answered.
 export function broadcastToggle(i) {
   const s = sessions[i];
   if (!s) return;
   if (s.active) {
     s.active = false;
+    keepScene(s);
     closeSession(s, true);
   } else {
     if (!key) { hooks.notify('Set the broadcast key first'); return; }
+    if (s.scene) { askRecall(s); return; }
     s.active = true;
     openSession(s);
   }
+  persist();
+}
+
+// ---------- where a stream was left ----------
+// Ending a stream leaves its followers where they are: each keeps playing the
+// last state it was sent, and saves it as its own. So when the broadcaster
+// ends a session from its switch, the scene that room was last sent is kept
+// with the session (the snapshot out of sent, the exact state message, without
+// the run flag and timing that ride beside it), stamped with when. A reload, a lost link
+// and a doze are not endings and keep nothing, and a session that sent its
+// room nothing since the page loaded keeps whatever it already had, since
+// that is still what its followers last saw. Only the latest is kept, and
+// it stays through either answer below until the next ending replaces it,
+// so a mis-tap is undone by switching the session off and on again.
+//
+// Turning such a session back on from the switch first asks whether to go
+// back there. Recall lands that scene on this screen through the presets'
+// own door (presets.js recallStreamScene) and only then opens the session,
+// so its first state message carries it and a follower still sitting there
+// sees nothing move. Start from here opens it as it stands. Putting the
+// question away any other way (Escape, a press off the card) leaves the
+// session off. The question itself is the chrome's (ui/screens/chrome.js),
+// which reads it here. Sessions that come back up on their own at load, and
+// the URL's seeded one, never ask.
+let asking = null, askText = '';
+
+function keepScene(s) {
+  if (!s.sent) return;
+  let msg = null;
+  try { msg = JSON.parse(s.sent + '}'); } catch (e) { msg = null; }
+  s.sent = null;
+  if (!msg || !msg.snap || typeof msg.snap !== 'object') return;
+  s.scene = { snap: msg.snap, at: Date.now() };
+  persistScenes();
+}
+
+function askRecall(s) {
+  asking = s;
+  askText = 'Go back to where you left ' + s.name + ' (' + agoText(Date.now() - s.scene.at) +
+            ') so viewers pick up where they were.';
+  version++;
+}
+
+// How long ago, in the fewest words: '5 min ago', '2 h ago', '3 d ago'.
+function agoText(ms) {
+  const min = Math.floor(Math.max(0, ms) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return min + ' min ago';
+  const h = Math.floor(min / 60);
+  if (h < 24) return h + ' h ago';
+  return Math.floor(h / 24) + ' d ago';
+}
+
+export function broadcastAsking() { return asking !== null; }
+export function broadcastAskText() { return askText; }
+
+// The answer: 1 Recall, 0 Start from here, anything else put away unanswered.
+export function broadcastAnswer(choice) {
+  const s = asking;
+  if (!s) return;
+  asking = null;
+  version++;
+  if (choice !== 1 && choice !== 0) return;
+  if (s.active || sessions.indexOf(s) < 0) return;
+  if (!key) { hooks.notify('Set the broadcast key first'); return; }
+  if (choice === 1 && s.scene) recallStreamScene(s.scene.snap);
+  s.active = true;
+  openSession(s);
   persist();
 }
 
@@ -1059,7 +1155,10 @@ export function initBroadcast(bits_, hooks_) {
     if (intent.seed && /^[\w-]{1,64}$/.test(intent.seed)) {
       let at = sessions.findIndex(s => s.room === intent.seed);
       if (at < 0) { sessions.push(makeSession(intent.seed, intent.seed, false)); persist(); at = sessions.length - 1; }
-      if (!sessions[at].active) broadcastToggle(at);
+      // straight on, never asking: the URL already said what it wants
+      if (sessions[at].active) { /* already up */ }
+      else if (!key) hooks.notify('Set the broadcast key first');
+      else { sessions[at].active = true; openSession(sessions[at]); persist(); }
     }
   }
 

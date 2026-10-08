@@ -22,7 +22,9 @@
 //
 // The panel guard's notice lives here too (drawGuardNotice, at the end): a
 // frosted card in the middle of the field, on the top layer, shown when
-// js/panel-guard.js has paused the strobe to protect the display.
+// js/panel-guard.js has paused the strobe to protect the display, and beside
+// it the stream's recall question (streamAskHits, drawStreamAsk), the same card
+// with two answers.
 import { S } from '../../js/state.js';
 import { guard } from '../../js/panel-guard.js';
 import { byId } from '../../core/schema.js';
@@ -32,7 +34,7 @@ import { ICON } from '../drawlist.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, GLASS } from '../theme.js';
 import { mixColor } from '../anim.js';
 import { strobeLum } from '../../core/strobe.js';
-import { followStrobeOwned, followStrobeSync } from '../../core/broadcast.js';
+import { followStrobeOwned, followStrobeSync, broadcastAsking, broadcastAskText, broadcastAnswer } from '../../core/broadcast.js';
 
 const QUICK = [   // right to left after the full-screen button, with v0's min widths
   ['colorQuick', 118], ['textQuick', 86], ['clickQuick', 112], ['toneQuick', 86],
@@ -59,15 +61,21 @@ function chip(ui, key, label, x, y, w, h, frost) {
   const id = ui.id(key);
   ui.interact(id, x, y, w, h, false);
   if (ui.hover) ui.setCursorHint('pointer');
-  const hv = ui.spring(ui.idx(key, 1), ui.hover ? 1 : 0, MOTION.hover);
-  const pr = ui.spring(ui.idx(key, 2), ui.pressed ? 1 : 0, MOTION.press);
+  paintChip(ui, key, label, x, y, w, h, frost, ui.hover, ui.pressed);
+  return ui.clicked;
+}
+
+// The chip's look alone, for a caller that ran its hit test earlier in the
+// frame (the recall question, below) and hands in what that test found.
+function paintChip(ui, key, label, x, y, w, h, frost, hover, pressed) {
+  const hv = ui.spring(ui.idx(key, 1), hover ? 1 : 0, MOTION.hover);
+  const pr = ui.spring(ui.idx(key, 2), pressed ? 1 : 0, MOTION.press);
   const dl = ui.dl;
   dl.glass(x, y, w, h, RADIUS.md, COLOR.glassTint, frost, 1, hv > 0.5 ? COLOR.lineStrong : COLOR.line, 0, 0);
   hoverFill[3] = hv * 0.05 + pr * 0.06;
   if (hoverFill[3] > 0.002) dl.rect(x, y, w, h, RADIUS.md, hoverFill, 0, null, 0, 0);
   mixColor(ink, COLOR.inkDim, COLOR.ink, hv);
   ui.text.draw(dl, label, x + w / 2, y + h / 2 + 4, TYPE.sm, W.regular, ink, 1, TRACK.label, 1);
-  return ui.clicked;
 }
 
 // Same glass, an icon instead of a label.
@@ -301,17 +309,17 @@ export function openGuardNotice(msg) {
   guard.noticeOpen = true;
 }
 
-function wrapGuard(text, str, size, weight, maxW, kind) {
+function wrapGuard(text, str, size, weight, maxW, kind, into = gn) {
   const words = str.split(' ');
   let line = '';
   for (let i = 0; i < words.length; i++) {
     const next = line ? line + ' ' + words[i] : words[i];
     if (line && text.measure(next, size, weight) > maxW) {
-      gn.lines.push(line); gn.kinds.push(kind);
+      into.lines.push(line); into.kinds.push(kind);
       line = words[i];
     } else line = next;
   }
-  if (line) { gn.lines.push(line); gn.kinds.push(kind); }
+  if (line) { into.lines.push(line); into.kinds.push(kind); }
 }
 
 function layoutGuard(text, maxW) {
@@ -361,5 +369,109 @@ export function drawGuardNotice(ui, app) {
   if (chip(ui, 'guard.ok', 'OK', x + GN_PAD_X, by, w - GN_PAD_X * 2, CHIP_H, 1)) guard.noticeOpen = false;
   // once put away it lets go of the pointer at once, fade or no fade
   if (open) ui.interact(ui.id('guard.card'), x, y, w, gn.h, false);
+  dl.popAlpha();
+}
+
+// ---------- the stream's recall question ----------
+// A broadcast session that was ended somewhere asks, as it is switched back
+// on, whether to go back there first (core/broadcast.js, "where a stream was
+// left"). It is the guard's card with two answers, Recall and Start from
+// here, and a press anywhere off the card, or Escape (main.js), puts it away
+// with the session left off. It shows running or stopped: the card is glass,
+// opaque to the strobe, and nothing else is laid over the field for it.
+//
+// It has to be the first thing a press reaches and the last thing drawn, and
+// the floating windows are built in between on the same top layer. So it
+// comes in two halves: streamAskHits runs its hit tests at the very start of
+// the UI build, and drawStreamAsk paints it after the windows and the burger
+// from what those tests found. Its lines are wrapped only when the question
+// or the card's width changes, as the guard's are.
+const AK_TITLE = 'Recall stream preset?', AK_RECALL = 'Recall', AK_HERE = 'Start from here';
+const AK_BTN_GAP = 10;
+const ak = { body: '', wrapW: -1, lines: [], kinds: [], h: 0, a: 0, live: false,
+             x: 0, y: 0, w: 0, bx0: 0, by0: 0, bx1: 0, by1: 0, bw: 0, stack: false,
+             hv0: false, pr0: false, hv1: false, pr1: false };
+
+function layoutAsk(text, maxW, body) {
+  ak.wrapW = maxW; ak.body = body;
+  ak.lines.length = 0; ak.kinds.length = 0;
+  wrapGuard(text, AK_TITLE, GN_TITLE, W.semibold, maxW, 0, ak);
+  wrapGuard(text, body, GN_BODY, W.regular, maxW, 1, ak);
+  // the two answers side by side while both labels fit, stacked on a narrow
+  // screen
+  const half = (maxW - AK_BTN_GAP) / 2;
+  ak.stack = text.measure(AK_HERE, TYPE.sm, W.regular) + 32 > half;
+  let h = GN_PAD_Y;
+  for (let i = 0; i < ak.kinds.length; i++) {
+    if (i > 0 && ak.kinds[i] !== ak.kinds[i - 1]) h += GN_GAP;
+    h += ak.kinds[i] === 0 ? GN_TITLE_LH : GN_BODY_LH;
+  }
+  ak.h = h + GN_GAP + 8 + (ak.stack ? CHIP_H * 2 + AK_BTN_GAP : CHIP_H) + GN_PAD_Y;
+}
+
+// Called at the start of the UI build, on the top layer, before anything
+// else claims the pointer: the two answers, then the card (which swallows a
+// press so it reaches nothing behind it), then the whole screen, where a
+// finished press is the question put away.
+export function streamAskHits(ui, app) {
+  const open = broadcastAsking();
+  ak.a = ui.spring('stream.ask', open ? 1 : 0, MOTION.fade);
+  ak.live = ak.a >= 0.01;
+  ak.hv0 = ak.pr0 = ak.hv1 = ak.pr1 = false;
+  if (!ak.live) return;
+  const width = app.width, height = app.height, inset = S.edgeInset || 0;
+  // centred in the field beside the drawer when there is room for the card
+  // there, over the whole screen when the drawer fills it (a phone)
+  const room = width - inset - 32 >= 280 ? inset : 0;
+  const w = Math.min(GN_MAX_W, width - room - 32);
+  const maxW = w - GN_PAD_X * 2;
+  const body = open ? broadcastAskText() : ak.body;
+  if (maxW !== ak.wrapW || body !== ak.body) layoutAsk(ui.text, maxW, body);
+  ak.w = w;
+  ak.x = room + (width - room - w) / 2;
+  ak.y = Math.max(16, (height - ak.h) / 2);
+  const inner = ak.x + GN_PAD_X, bottom = ak.y + ak.h - GN_PAD_Y;
+  if (ak.stack) {
+    ak.bw = maxW;
+    ak.bx0 = ak.bx1 = inner;
+    ak.by1 = bottom - CHIP_H;
+    ak.by0 = ak.by1 - AK_BTN_GAP - CHIP_H;
+  } else {
+    ak.bw = (maxW - AK_BTN_GAP) / 2;
+    ak.bx0 = inner; ak.bx1 = inner + ak.bw + AK_BTN_GAP;
+    ak.by0 = ak.by1 = bottom - CHIP_H;
+  }
+  // once answered it lets go of the pointer at once, fade or no fade
+  if (!open) return;
+  ui.interact(ui.id('stream.ask.recall'), ak.bx0, ak.by0, ak.bw, CHIP_H, false);
+  ak.hv0 = ui.hover; ak.pr0 = ui.pressed;
+  if (ui.hover) ui.setCursorHint('pointer');
+  if (ui.clicked) { broadcastAnswer(1); return; }
+  ui.interact(ui.id('stream.ask.here'), ak.bx1, ak.by1, ak.bw, CHIP_H, false);
+  ak.hv1 = ui.hover; ak.pr1 = ui.pressed;
+  if (ui.hover) ui.setCursorHint('pointer');
+  if (ui.clicked) { broadcastAnswer(0); return; }
+  ui.interact(ui.id('stream.ask.card'), ak.x, ak.y, ak.w, ak.h, false);
+  ui.interact(ui.id('stream.ask.away'), 0, 0, width, height, false);
+  if (ui.clicked) broadcastAnswer(-1);
+}
+
+// Painted after everything else on the top layer, so no window covers it.
+export function drawStreamAsk(ui) {
+  if (!ak.live) return;
+  const dl = ui.dl, x = ak.x, y = ak.y, w = ak.w;
+  dl.pushAlpha(ak.a);
+  dl.glass(x, y, w, ak.h, RADIUS.lg, COLOR.paneTint, 1, 1, COLOR.line, GLASS.shadow, GLASS.shadowAlpha);
+  let ly = y + GN_PAD_Y;
+  for (let i = 0; i < ak.lines.length; i++) {
+    const k = ak.kinds[i];
+    if (i > 0 && k !== ak.kinds[i - 1]) ly += GN_GAP;
+    const lh = k === 0 ? GN_TITLE_LH : GN_BODY_LH;
+    ui.text.draw(dl, ak.lines[i], x + GN_PAD_X, ly + lh * 0.72, k === 0 ? GN_TITLE : GN_BODY,
+                 k === 0 ? W.semibold : W.regular, k === 0 ? COLOR.ink : COLOR.inkDim, 0, TRACK.tight, 1);
+    ly += lh;
+  }
+  paintChip(ui, 'stream.ask.recall', AK_RECALL, ak.bx0, ak.by0, ak.bw, CHIP_H, 1, ak.hv0, ak.pr0);
+  paintChip(ui, 'stream.ask.here', AK_HERE, ak.bx1, ak.by1, ak.bw, CHIP_H, 1, ak.hv1, ak.pr1);
   dl.popAlpha();
 }

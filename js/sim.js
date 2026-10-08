@@ -60,6 +60,12 @@ export function ringBirthZ() {
 // it so a paused scene holds its fade in (Ring fade in) where it is.
 // Seeded rings pass an age past any fade so the opening tunnel is simply
 // there, rather than every ring on screen fading up together.
+// The Ring speed readout is a multiplier the viewer reads (0.1x to 3x), and
+// this is what one 1x is worth in travel: a fifth of the rings' old pace, so
+// the whole range moves slower while the numbers, presets and saved settings
+// keep meaning the same positions on the slider.
+const RING_SPEED_SCALE = 0.2;
+
 export function emitRing(z, age = 0) {
   if (S.rings.length >= MAX_RINGS) return;
   // squared distribution biases hard toward slow, so the field keeps
@@ -98,7 +104,7 @@ export function updateRings(dt, t) {
   let w = 0;
   for (let i = 0; i < rings.length; i++) {
     const ring = rings[i];
-    ring.z -= ring.v * (S.effRingSpeedMul ?? S.ringSpeedMul) * dt;
+    ring.z -= ring.v * (S.effRingSpeedMul ?? S.ringSpeedMul) * RING_SPEED_SCALE * dt;
     ring.age += dt;
     if (S.perElementColor && S.colorWalk > 0) walkHue(ring, dt);
     if (ring.z > Z_NEAR) rings[w++] = ring;

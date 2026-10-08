@@ -24,7 +24,7 @@ import { chirpDurationMs } from '../js/chirp.js';
 import {
   setParam, applyLevel, applyAudioShape, applyHarmonics, applyReverbMix,
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
-  warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn
+  warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn, applyToneBreath
 } from '../js/audio.js';
 import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
 import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm } from '../js/clouds.js';
@@ -41,7 +41,7 @@ import {
   applyLiveRevTime, applyLiveComp, liveLatencyNow, liveReductionNow, liveInputs
 } from '../js/livesound.js';
 import { startDrift, stopDrift } from './atmosphere.js';
-import { pipDipNow } from './audio-mirror.js';
+import { pipDipNow, toneVolMulNow, toneAmMulNow } from './audio-mirror.js';
 import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows } from './schema-variance.js';
@@ -165,12 +165,11 @@ const pipSet = (s, which, v) => { s[pipKey(s, which)] = v; };
 // Where the level's bar sits with the variance's dip taken off it: the dip
 // is a share of the amplitude, and the fader spreads decibels evenly over its
 // travel, so the share comes off as that many decibels' worth of positions
-// below the set one. A dip to nothing is the foot of the bar.
-function pipDippedPos(s) {
-  const dip = pipDipNow();
-  const pos = ampToPos(pipGet(s, 'vol'));
-  return dip > 0 ? Math.max(0, pos + 20 * Math.log10(Math.min(1, dip)) / DB_PER_POS) : 0;
-}
+// below the set one. A dip to nothing is the foot of the bar. The tone's
+// level reads its own dip the same way.
+const dippedPos = (pos, dip) => dip > 0 ? Math.max(0, pos + 20 * Math.log10(Math.min(1, dip)) / DB_PER_POS) : 0;
+const pipDippedPos = s => dippedPos(ampToPos(pipGet(s, 'vol')), pipDipNow());
+const toneDippedPos = s => dippedPos(ampToPos(s.toneVol), toneVolMulNow());
 
 const TILT_NAMES = [[0, 'white'], [0.5, 'bright'], [1, 'pink'], [1.25, 'warm'], [1.5, 'dark']];
 function tiltName(v) {
@@ -466,6 +465,15 @@ const audioControls = [
     parse: parseDb,
     visible: s => s.toneOn
   },
+  // The level's dip, the choir's own: over one speed cycle it eases from the
+  // setting down by this share and back (js/audio.js, the tone's two
+  // variances). The bar's brighter fill is the level as it plays, read back
+  // from the page in worker mode (toneVolMulNow, core/audio-mirror.js).
+  ...varianceRows('toneVol', {
+    music: true, name: 'Level', mode: true, apply: applyToneBreath,
+    parent: 'audioToneDrawer', visible: s => s.toneOn,
+    effective: toneDippedPos
+  }),
   {
     // The tone's Vary with strobe: how deep its pulse goes, times the master
     // strobe, so bringing the strobe to 0 leaves the tone steady. The pulse
@@ -480,6 +488,13 @@ const audioControls = [
     format: s => Math.round((typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * 100) + '%',
     visible: s => s.toneOn
   },
+  // The pulse depth's dip, the choir's and drone's own, taken off the tone's
+  // setting before the master strobe scales it (js/audio.js, toneAmDepth).
+  ...varianceRows('toneStrobeAm', {
+    music: true, name: 'Pulse', mode: true, apply: applyToneBreath,
+    parent: 'audioToneDrawer', visible: s => s.toneOn,
+    effective: s => (typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * toneAmMulNow() * 100
+  }),
   {
     id: 'aClick', section: 'audio', label: 'Click train', kind: 'toggle',
     get: s => s.clickOn,

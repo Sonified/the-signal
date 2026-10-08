@@ -54,7 +54,7 @@ import { initWords, stepWords, wordsResume } from './core/words.js';
 import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame } from './core/store.js';
 import { replayLive, syncPresetsFromStorage, applyActivePresetState } from './core/presets.js';
 import { seedFactoryPresets } from './platform/factory-presets.js';
-import { initBroadcast, broadcastPoke, followMayStart } from './core/broadcast.js';
+import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
 import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume } from './core/journey.js';
@@ -76,7 +76,7 @@ import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION } from './ui/theme.js';
 import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow } from './ui/screens/overlay.js';
-import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice } from './ui/screens/chrome.js';
+import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
@@ -434,9 +434,11 @@ async function boot() {
     if (k === '`' || k === '~' || lk === 'h') { app.toggleDrawer(); return true; }
     // Escape shuts the front-most open floating window first and leaves the
     // drawer alone, as v0's mixer took the key before the drawer could see
-    // it; with no window up, it puts the drawer away. The panel guard's
-    // notice, when it is up, goes before any of them.
+    // it; with no window up, it puts the drawer away. The stream's recall
+    // question and the panel guard's notice, when up, go before any of them;
+    // the question goes unanswered, which leaves its session off.
     if (k === 'Escape') {
+      if (broadcastAsking()) { broadcastAnswer(-1); return true; }
       if (guard.noticeOpen) { guard.noticeOpen = false; return true; }
       for (let j = WIN_N - 1; j >= 0; j--) {
         if (zWin[j].open) { zWin[j].open = false; return true; }
@@ -597,7 +599,7 @@ async function boot() {
     // and only keep the build awake, like the drawer. A pointer resting on
     // any of the UI floating over the picture holds the chrome up; one
     // resting on the bare picture lets the chrome alone fade.
-    const chromeAwake = guard.noticeOpen || ui.activeId !== -1 || overUI || t - lastActivity < LAYOUT.idleMs;
+    const chromeAwake = guard.noticeOpen || broadcastAsking() || ui.activeId !== -1 || overUI || t - lastActivity < LAYOUT.idleMs;
     const awake = chromeAwake || S.panelOpen || mixer.open || sequencer.open || journey.open || performer.open || music.open || textbank.open;
     const idle = !awake && events.length === 0 && !uiUnsettled && ui.activeId === -1 && lastChromeA < 0.01;
     if (idle) {
@@ -614,6 +616,9 @@ async function boot() {
       lastChromeA = chromeA;
       stepDrawer(ui);   // the slide everything below reads this frame
 
+      // the stream's recall question takes the pointer before anything
+      // else and is painted last on this layer (see chrome.js)
+      streamAskHits(ui, app);
       drawGuardNotice(ui, app);
       // The floating windows (mixer, sequencer, journey) stack by last
       // touch: a press inside one, or its opening, brings it to the front,
@@ -638,6 +643,7 @@ async function boot() {
       }
       ui.clearOcclusion();
       drawBurger(ui, app, chromeA, frost);
+      drawStreamAsk(ui);
 
       ui.dl = uiList;
       drawDrawer(ui, app);

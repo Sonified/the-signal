@@ -119,7 +119,7 @@ export const S = {
   ringBrightVar: 0.55, ringBrightPeriod: 10, ringBrightPhase: 0.5, effRingBright: 0.70,
 
   // ---------- tunnel and edge ----------
-  ringSpeedMul: 0.5, edgeCount: 60, edgeSize: 6, trailMul: 1, ringFade: 0.55, ringThick: 3, ringThickVar: 1,
+  ringSpeedMul: 2.5, edgeCount: 60, edgeSize: 6, trailMul: 1, ringFade: 0.55, ringThick: 3, ringThickVar: 1,
   edgeOpacity: 1,             // v1: scales the edge particles' brightness
   edgePulse: 1,               // v1: how much the edge breathes with the strobe's flicker, 0 steady
   // v1: edge video feedback (gpu/scene.js). edgeFb 0..1 softens the edge
@@ -143,7 +143,7 @@ export const S = {
   // each on its own accumulator and started at a different phase so the two
   // never breathe in lockstep.
   edgeSpeedVar: 0.5, edgeSpeedVarPeriod: 22, edgeSpeedVarPhase: 0,    effEdgeSpeed: 1,
-  ringSpeedVar: 0, ringSpeedVarPeriod: 20, ringSpeedVarPhase: 0,      effRingSpeedMul: 0.5,
+  ringSpeedVar: 0, ringSpeedVarPeriod: 20, ringSpeedVarPhase: 0,      effRingSpeedMul: 2.5,
   edgeSizeVar:  0.5, edgeSizeVarPeriod:  18, edgeSizeVarPhase:  0.37, effEdgeSize:  1,
 
   rings: [], particles: [], lastRingEmit: -1,
@@ -192,6 +192,9 @@ export const S = {
   carrierHz: 40, amRate: 7.5, volume: 0.50, amLinked: true, lastAmSet: 0,
   amModOn: true,              // the pulse envelope on the tone; off plays it steady
   toneStrobeAm: 1,            // 'Vary with strobe' on the tone: its pulse depth, 0..1, times the master strobe
+  // the tone's level and pulse depth, each wandered below its setting by up
+  // to its var (0..1) over its period in seconds (js/audio.js)
+  toneVolVar: 0, toneVolPeriod: 20, toneStrobeAmVar: 0, toneStrobeAmPeriod: 20,
   toneOn: true, clickOn: true,
   toneVol: 0.3, clickVol: 0.33,
   harmOn: true, harmVol: 0.4, harmCount: 9, harmBright: 0.45,

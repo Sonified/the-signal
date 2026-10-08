@@ -39,8 +39,15 @@
 //
 // The motif atlas is loaded lazily, the first time the layer is switched on,
 // and nothing is drawn until it is ready. S.kaleidoSet picks which atlas
-// (assets/kaleidoscope/sets.mjs); changing it loads the other one in the background and swaps
-// it in under the live shapes once it is built. The atlas the renderer works
+// (assets/kaleidoscope/sets.mjs); changing it loads the other one in the
+// background. With Set crossfade at instant (S.kaleidoSetXfade 0) the new
+// atlas is swapped in under the live shapes once it is built. With a
+// crossfade time, nothing is swapped under anything: every piece remembers
+// the atlas it was born from and keeps drawing from it until it retires,
+// while the births tip over from the old set to the new across that time,
+// its clock starting only once the new atlas is ready. So two atlases can be
+// live at once, in two slots (see slots), and the sprite pass binds both.
+// The atlas the renderer works
 // with is 8 x 8 tiles of 128 px with 12 px of transparent padding. A smaller
 // square 8 x 8 atlas (set 1, the botanical atlas, is 512 px, 64 px
 // tiles with no padding) is first repacked into that layout, each tile
@@ -97,11 +104,21 @@ const MOTIF_INNER = 104;
 const MOTIF_PAD = (TILE - MOTIF_INNER) / 2;   // 12
 const DEFAULT_FILL = 0.41;
 const MAX_FOLDS = 16;
-const INST_FLOATS = 8;              // x y half alpha | upX upY motif unused
+const INST_FLOATS = 8;              // x y half alpha | upX upY motif atlas slot
 const UNIFORM_FLOATS = 24;          // see kaleido.wgsl.js's struct KU
 
 const TAU = Math.PI * 2;
 const UP = -Math.PI * 0.5;          // the domain's centre line, straight up the screen
+// ?kaldiag=1 in the page's address: one console line each time the drawn
+// instance count falls by more than a quarter in a frame (naming whatever
+// structural event last ran), one on every structural event itself (a set
+// change, a prewarm, a resize, a change of folds or mirror), and a
+// heartbeat every two seconds with the live count, the drawn count and how
+// many overlapping pairs swapped draw order since the last beat (an
+// overtake flips which piece is on top where they cross, which can read as
+// a pop). Page mode only, as confetti's confdiag; one boolean test a frame
+// when off.
+const KDIAG = (() => { try { return /[?&]kaldiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
 // Chamber texels per device pixel at the canvas's own half diagonal. The
 // fold reads it with bilinear filtering, so half resolution is soft only
 // where a motif is already large.
@@ -130,7 +147,8 @@ const BAND_EXTRA = 1;
 // centre and passes the rim in a rush, so few objects were ever large at
 // once; evenly spaced in log radius, every scale from the centre out holds
 // its fair share. An object is born at K_BIRTH of the rim radius, a few
-// device pixels out and too small to see, and retires at the rim. ZOOM_RATE
+// device pixels out, wholly inside the fold's hole (see HOLE_PAD_TEXELS), and
+// retires at the rim. ZOOM_RATE
 // is the growth in e-folds per second at kaleidoSpeed 1: 0.3 is a factor of
 // 1.35 a second, doubling in about 2.3 s, a whole flight of about 15 s.
 const K_BIRTH = 0.01;
@@ -141,13 +159,27 @@ const ZOOM_RATE = 0.3;
 const STILL_LIFE = 60;
 // An object's fade toward the centre is the rings' radial fade (core/fade.js)
 // at the Fade in setting, against the same rim, so the two layers ease in
-// together. Under it sits a small built-in birth fade over the first 0.7
-// e-folds of the flight, out to about twice the birth radius, multiplied in
-// as a floor: at Fade in 0 the radial fade is 1 all the way in, and without
-// this a shape would pop into being at K_BIRTH. At any higher setting the
-// radial fade is already near 0 there, so the floor changes nothing.
+// together. At Fade in 0 the radial fade is 1 all the way in, so on its own
+// a shape would pop into being at K_BIRTH, inside the very domain the fold
+// shows (the domain's apex is the centre). Nothing is born where the fold
+// can see it: the fold reads nothing inside a small hole about the centre
+// and opens to a full read by twice its radius (see kaleido.wgsl.js), and
+// the hole is sized every frame to hold the largest newborn whole, its
+// painted reach plus HOLE_PAD_TEXELS of the chamber for the fold's bilinear
+// read. A newborn then comes into view only by flying out across that edge.
+// The rim needs no such care: the radial fade out there is exactly 0, so an
+// object retiring at the rim was already wholly invisible.
+//
+// The coverage solve still treats the first FADE_IN_EFOLDS of the flight
+// (out to about twice the birth radius, much the same span as the hole and
+// its soft edge) as fading in, so the visible band it counts from is where
+// it has always been. No object's own alpha carries this any more; that was
+// a fade on the spot, inside the domain.
 const FADE_IN_EFOLDS = 0.7;
 const FADE_IN_D = FADE_IN_EFOLDS / LOG_SPAN;
+// Chamber texels of clearance between a newborn's farthest painted pixel and
+// the hole's edge: one for the fold's bilinear read, one to spare.
+const HOLE_PAD_TEXELS = 2;
 // Bisection steps for fadeHalfK, ample for float precision over log radius.
 const FADE_HALF_STEPS = 40;
 // When the target count moves (a density change, or a fold, mirror or size
@@ -236,8 +268,9 @@ function smoothstep(a, b, x) {
   const t = x <= a ? 0 : (x >= b ? 1 : (x - a) / (b - a));
   return t * t * (3 - 2 * t);
 }
-// An object's own fade toward the centre at travel d: the radial fade in at
-// setting f times the built-in birth fade. The fade out at the rim is not
+// How visible an object is toward the centre at travel d, for the coverage
+// solve: the radial fade in at setting f times the fold's hole, stood in for
+// by a fade over the first FADE_IN_EFOLDS. The fade out at the rim is not
 // part of it.
 function centreFade(f, d) {
   const birth = d < FADE_IN_D ? smoothstep(0, FADE_IN_D, d) : 1;
@@ -268,8 +301,9 @@ function timeoutTick(r) { setTimeout(r, 0); }
 function yieldTile() { return yieldFn ? yieldFn() : new Promise(timeoutTick); }
 
 export function createKaleido(device, format, platform) {
-  // One layout serves both halves: the sprite pass binds the motif atlas
-  // and its trilinear sampler, the fold binds the chamber and a bilinear one.
+  // The fold binds the chamber and a bilinear sampler; the sprite pass binds
+  // the motif atlas and its trilinear sampler, plus the second atlas a set
+  // crossfade keeps live (binding 3), so it has a layout of its own.
   const bgl = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
@@ -277,7 +311,16 @@ export function createKaleido(device, format, platform) {
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }
     ]
   });
+  const spriteBgl = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+    ]
+  });
   const layout = device.createPipelineLayout({ bindGroupLayouts: [bgl] });
+  const spriteLayout = device.createPipelineLayout({ bindGroupLayouts: [spriteBgl] });
   const mod = device.createShaderModule({ code: KALEIDO_WGSL });
   if (mod.getCompilationInfo) {
     mod.getCompilationInfo().then(info => {
@@ -295,7 +338,7 @@ export function createKaleido(device, format, platform) {
   };
   const CHAMBER_FORMAT = 'rgba8unorm';
   const spritePipe = device.createRenderPipeline({
-    layout,
+    layout: spriteLayout,
     vertex: {
       module: mod, entryPoint: 'vsSprite',
       buffers: [{
@@ -343,8 +386,7 @@ export function createKaleido(device, format, platform) {
   // little to fit.
   let chamber = null, chamberView = null, chamberW = 0, chamberH = 0;
   let chamberExt = 1, wantH = 1;
-  let spriteBind = null;           // set once the atlas exists
-  let atlasTex = null;             // the atlas spriteBind reads
+  let spriteBind = null;           // set once an atlas exists (see rebind)
   let foldBind = null;             // set with the chamber
   const chamberPassDesc = {
     colorAttachments: [{
@@ -364,6 +406,11 @@ export function createKaleido(device, format, platform) {
   // and orbitRnd are the object's own random draws, kept raw so the size,
   // spin and orbit sliders act on live objects at once.
   const depth = new Float32Array(MAX_SHAPES);
+  // When each piece was born, on the layer's own motion clock (clockS), for
+  // the Fade in time: a piece's first fadeInSNow seconds ease its alpha up
+  // from nothing, so no birth, whatever put it there, can land as a pop.
+  // Prewarmed and aged pieces are back-dated past it (age()).
+  const bornT = new Float32Array(MAX_SHAPES);
   const velPh = new Float32Array(MAX_SHAPES);   // speed phase (see SPEED_FLOOR)
   const velW = new Float32Array(MAX_SHAPES);    // its own share of the wander rate
   const phiU = new Float32Array(MAX_SHAPES);
@@ -372,6 +419,9 @@ export function createKaleido(device, format, platform) {
   const spinAng = new Float32Array(MAX_SHAPES);
   const orbitRnd = new Float32Array(MAX_SHAPES);
   const motifOf = new Uint8Array(MAX_SHAPES);
+  // The atlas slot (0 or 1, see slots) the object was born from. motifOf is
+  // a tile of that atlas, and the object draws from it until it retires.
+  const atlasOf = new Uint8Array(MAX_SHAPES);
   // How far an object has faded in on the spot (see APPEAR_SECONDS), and
   // which way it is going: 1 appearing, -1 leaving as surplus, 0 steady.
   // Objects born at the centre start at 1; the flight's own fade serves.
@@ -389,12 +439,43 @@ export function createKaleido(device, format, platform) {
   // filling, -1 thinning, 0 idle) and its fractional accumulator.
   let fillDir = 0, fillAcc = 0;
 
-  // The motifs the families setting allows, rebuilt only when it changes,
-  // with their mean painted share of the quad. motifFill is measured from
-  // the atlas as it is cleaned.
-  const allowed = new Uint8Array(MOTIFS);
-  const motifFill = new Float32Array(MOTIFS);
-  let allowedCount = 0, familyMask = -1, meanFill = DEFAULT_FILL;
+  // ---------- the atlases ----------
+  // Up to two motif atlases live at once, one per slot: the current set,
+  // which every birth comes from once a crossfade is over, and while one
+  // runs the set it is fading out of. Each slot keeps its own atlas, its
+  // motifs' painted share of the quad (fill, measured as the atlas is
+  // cleaned) and the motifs its families allow, with their mean fill,
+  // rebuilt only when the families change; tile indices mean different
+  // things in every set, so none of this can be shared. The outgoing slot's
+  // allowed list is frozen as it was at the switch. The sprite pass binds
+  // slot 0 at binding 1 and slot 1 at binding 3, an empty slot borrowing the
+  // other's view.
+  function makeSlot() {
+    return {
+      set: 0, tex: null, view: null,
+      fill: new Float32Array(MOTIFS),
+      allowed: new Uint8Array(MOTIFS),
+      allowedCount: 0, familyMask: -1, meanFill: DEFAULT_FILL
+    };
+  }
+  const slots = [makeSlot(), makeSlot()];
+  // Live objects drawing from each slot, so the outgoing atlas can go the
+  // moment the last of its pieces retires once the crossfade is done.
+  const users = new Int32Array(2);
+  let cur = 0;                     // the current set's slot; 1 - cur is the outgoing one
+  // The births' crossfade: its length and how far it has run, in seconds
+  // of the strobe's clock (it stands still while paused, as births do).
+  // Not running when xfadeAge >= xfadeLen.
+  let xfadeLen = 0, xfadeAge = 0;
+  // The crossfade time read when the set last changed, waiting on its atlas.
+  let pendingXfade = 0;
+  // A third set asked for mid-crossfade, built but waiting for the outgoing
+  // slot (drainSlot) to empty before it moves in (see install). drainSlot is
+  // -1 when nothing waits.
+  let drainSlot = -1, drainTex = null, drainFill = null, drainSet = 0;
+  // The mean fill the coverage solve uses: the current set's, or while a
+  // crossfade runs, blended from the outgoing set's as the births tip over.
+  let meanFillNow = DEFAULT_FILL;
 
   // The coverage target and the settings it was worked out from, so it is
   // recomputed only when one of them moves.
@@ -418,6 +499,14 @@ export function createKaleido(device, format, platform) {
   let velRefPh = 0;                // the Speed glow's reference swing phase
   let spawnAcc = 0, spawnGap = 1;  // spawn accumulator and the next (jittered) gap
   let wasOn = false, fade = 0;
+  // The layer's motion clock, seconds: steps with motionStep, so a pause
+  // holds every running fade in where it is.
+  let clockS = 0;
+  let fadeInSNow = 0;
+  // The diagnostic's state (see KDIAG).
+  let dgEvent = '', dgInst = 0, dgBeat = 0;
+  let dgPrev = new Map(), dgCur = new Map();
+  function dgLog(what, extra) { console.log('[kaldiag] ' + what, extra || ''); }
   // How far the size law has moved from growing with radius (0) to
   // constant (1), eased toward the toggle so live objects never pop.
   let constBlend = 0;
@@ -425,6 +514,7 @@ export function createKaleido(device, format, platform) {
   let active = false;
 
   function resize(pw, ph, d) {
+    if (KDIAG) { dgEvent = 'resize ' + pw + 'x' + ph + '@' + d; dgLog(dgEvent); }
     pixelW = Math.max(1, pw | 0);
     pixelH = Math.max(1, ph | 0);
     dpr = d || 1;
@@ -477,7 +567,7 @@ export function createKaleido(device, format, platform) {
     }
     const url = kaleidoscopeSet(set).image;
     platform.loadImagePixels(url)
-      .then(img => buildAtlas(img, token))
+      .then(img => buildAtlas(img, token, set))
       .catch(err => { console.warn('kaleido: could not load the motif atlas ' + url + ':', err && err.message ? err.message : err); });
   }
 
@@ -523,7 +613,7 @@ export function createKaleido(device, format, platform) {
     return { width: ATLAS, height: ATLAS, data: out };
   }
 
-  async function buildAtlas(img, token) {
+  async function buildAtlas(img, token, set) {
     if (img.width !== ATLAS || img.height !== ATLAS) {
       if (img.width !== img.height || img.width % GRID) {
         console.warn('kaleido: expected a square atlas of 8 x 8 tiles, got ' + img.width + ' x ' + img.height);
@@ -637,21 +727,117 @@ export function createKaleido(device, format, platform) {
     device.queue.writeTexture({ texture: tex }, out, { bytesPerRow: ATLAS * 4, rowsPerImage: ATLAS },
                               { width: ATLAS, height: ATLAS });
     buildMips(tex);
+    install(tex, fill, set);
+  }
 
+  // ---------- the atlas slots ----------
+  // The sprite pass's bind group over both slots, made again only when an
+  // atlas comes or goes, never in an ordinary frame. An empty slot borrows
+  // the other's view, so the shader always has two to read.
+  function rebind() {
+    const a = slots[0].view || slots[1].view, b = slots[1].view || slots[0].view;
+    if (!a) { spriteBind = null; return; }
     spriteBind = device.createBindGroup({
-      layout: bgl,
+      layout: spriteBgl,
       entries: [
         { binding: 0, resource: { buffer: uniBuf } },
-        { binding: 1, resource: tex.createView() },
-        { binding: 2, resource: sampler }
+        { binding: 1, resource: a },
+        { binding: 2, resource: sampler },
+        { binding: 3, resource: b }
       ]
     });
-    // Frames already submitted finish with the old atlas before it goes.
-    if (atlasTex) atlasTex.destroy();
-    atlasTex = tex;
-    motifFill.set(fill);
-    familyMask = -1;                       // re-measure the mean fill for the new motifs
+  }
+
+  // Frees a slot. Frames already submitted finish with its atlas before it
+  // goes; the caller rebinds before the next frame is encoded.
+  function dropSlot(sl) {
+    if (sl.tex) sl.tex.destroy();
+    sl.tex = null; sl.view = null; sl.set = 0;
+    sl.allowedCount = 0; sl.familyMask = -1;
+  }
+
+  // Makes slot s the current set. Instant, every live object moves onto its
+  // atlas keeping its motif index, the swap under the live shapes the layer
+  // has always made, and the other slot goes. Otherwise the set that was
+  // current becomes the outgoing one, keeping its pieces and its frozen
+  // families, and the births cross over to s across T seconds, starting p0
+  // of the way. Either way s re-reads the families setting against its own
+  // set (empty after a set change, so all of them).
+  function makeCurrent(s, instant, T, p0) {
+    cur = s;
+    slots[s].familyMask = -1;
+    if (instant) {
+      for (let n = 0; n < live; n++) atlasOf[order[n]] = s;
+      users[s] = live; users[1 - s] = 0;
+      dropSlot(slots[1 - s]);
+      xfadeLen = 0; xfadeAge = 0;
+    } else {
+      xfadeLen = T; xfadeAge = p0 * T;
+    }
+    rebind();
     ready = true;
+  }
+
+  // A freshly built atlas arrives. The first one, or one asked for with the
+  // crossfade at instant, replaces the current slot's atlas under the live
+  // shapes. With a crossfade time it goes into the other slot and the
+  // crossfade's clock starts now, so a slow load never eats into it. If that
+  // slot still holds a set from an earlier change (a second change made
+  // mid-crossfade) and pieces of that set are still flying, the new atlas
+  // waits rather than take a third binding: those pieces may not change
+  // image where the fold can see them, so each keeps its own atlas until it
+  // is out of sight (past a mirror, inside the hole, off the screen or faded
+  // to nothing; see hideSwap) and only then takes up the set that was
+  // current, with a motif that set allows. Births meanwhile all come from
+  // the current set, so the slot only empties. Once it has, the new atlas
+  // moves in and its crossfade starts (see update). At Speed 0 with no orbit
+  // nothing ever leaves sight, and the new set waits for motion.
+  function install(tex, fill, set) {
+    const T = pendingXfade;
+    const crossfade = !!slots[cur].tex && T > 0;
+    const s = crossfade ? 1 - cur : cur;
+    const sl = slots[s];
+    if (crossfade && sl.tex && users[s] > 0) {
+      drainSlot = s; drainTex = tex; drainFill = fill; drainSet = set;
+      xfadeAge = xfadeLen;
+      return;
+    }
+    if (sl.tex) sl.tex.destroy();
+    sl.tex = tex; sl.view = tex.createView(); sl.set = set;
+    sl.fill.set(fill);
+    makeCurrent(s, !crossfade, T, 0);
+  }
+
+  // The Image set has just changed to set. The crossfade time is read now,
+  // at the change, whether it came from the drawer, a recall, a journey step
+  // or a followed broadcast; with the layer off (or just coming on) nothing
+  // is on screen to cross over from, so the change is instant. A set already
+  // in a slot is taken from there rather than loaded again: back to the
+  // current one, the mix simply carries on (instant, the outgoing set goes);
+  // back to the outgoing one, the two swap roles with the mix carried over
+  // continuously, so the births do not jump.
+  function changeSet(set) {
+    if (KDIAG) { dgEvent = 'changeSet ' + set; dgLog(dgEvent); }
+    // A set still waiting on a draining slot is overtaken by this one.
+    if (drainSlot >= 0) {
+      drainTex.destroy();
+      drainSlot = -1; drainTex = null; drainFill = null;
+    }
+    const T = wasOn ? clampNum(S.kaleidoSetXfade, 0, 60, 0) : 0;
+    const o = 1 - cur;
+    if (slots[cur].tex && slots[cur].set === set) {
+      requestedSet = set; ++loadToken;
+      if (T <= 0) makeCurrent(cur, true, 0, 0);
+      return;
+    }
+    if (slots[o].tex && slots[o].set === set) {
+      requestedSet = set; ++loadToken;
+      const p = xfadeAge < xfadeLen ? xfadeAge / xfadeLen : 1;
+      makeCurrent(o, T <= 0, T, 1 - p);
+      return;
+    }
+    pendingXfade = T;
+    load(set);
   }
 
   // One small render pass per level, each reading the level above it, as
@@ -682,11 +868,13 @@ export function createKaleido(device, format, platform) {
   }
 
   // ---------- the pool, per frame ----------
-  // The families setting as a bitmask over this atlas's semantic groups;
+  // The families setting as a bitmask over slot sl's semantic groups;
   // empty, missing or nonsense means every group. Groups map to arbitrary
   // motif indices because photographed leaves and petals are interleaved.
-  function refreshFamilies() {
-    const groups = kaleidoscopeSet(requestedSet).groups;
+  // Only ever run for the current slot, and only while its set is the one
+  // asked for, so the outgoing set keeps the families it had at the switch.
+  function refreshFamilies(sl) {
+    const groups = kaleidoscopeSet(sl.set).groups;
     const fams = S.kaleidoFamilies;
     let mask = 0;
     if (fams && typeof fams.length === 'number') {
@@ -696,9 +884,10 @@ export function createKaleido(device, format, platform) {
       }
     }
     if (mask === 0) mask = (1 << groups.length) - 1;
-    if (mask === familyMask) return;
-    familyMask = mask;
-    allowedCount = 0;
+    if (mask === sl.familyMask) return;
+    sl.familyMask = mask;
+    const allowed = sl.allowed, motifFill = sl.fill;
+    let allowedCount = 0;
     let fillSum = 0;
     const seen = new Uint8Array(MOTIFS);
     for (let f = 0; f < groups.length; f++) {
@@ -712,9 +901,10 @@ export function createKaleido(device, format, platform) {
         fillSum += motifFill[m];
       }
     }
+    sl.allowedCount = allowedCount;
     // A family of very sparse motifs would ask for a huge pool; the floor
     // keeps the count sane, and the fallback covers an atlas never measured.
-    meanFill = allowedCount && fillSum > 0 ? Math.max(0.05, fillSum / allowedCount) : DEFAULT_FILL;
+    sl.meanFill = allowedCount && fillSum > 0 ? Math.max(0.05, fillSum / allowedCount) : DEFAULT_FILL;
   }
 
   function clearPool() {
@@ -722,13 +912,45 @@ export function createKaleido(device, format, platform) {
     freeTop = 0;
     dying = 0; fading = 0;
     fillDir = 0; fillAcc = 0;
+    users[0] = 0; users[1] = 0;
     for (let i = MAX_SHAPES - 1; i >= 0; i--) free[freeTop++] = i;
   }
 
-  function pickMotif() {
-    let m = (Math.random() * allowedCount) | 0;
-    if (m >= allowedCount) m = allowedCount - 1;
-    return allowed[m];
+  function pickMotif(sl) {
+    const count = sl.allowedCount;
+    let m = (Math.random() * count) | 0;
+    if (m >= count) m = count - 1;
+    return sl.allowed[m];
+  }
+
+  // Which set a newborn in slot i draws from, and its motif from that set's
+  // own allowed list. While a crossfade runs a birth comes from the current
+  // set with probability p, rising linearly from 0 to 1 across the
+  // crossfade time, and from the outgoing set otherwise: one random per
+  // birth. Linear is enough because each piece then lives a whole flight,
+  // so what is on screen is a running average of the births over the last
+  // flight, which already rounds the start and end of the change. Pieces
+  // already flying keep their own set until they retire. The slot i must
+  // not be counted in users yet (a re-entry takes itself off first).
+  function birth(i) {
+    let s = cur;
+    const o = 1 - cur;
+    if (xfadeAge < xfadeLen && slots[o].allowedCount && Math.random() * xfadeLen >= xfadeAge) s = o;
+    atlasOf[i] = s;
+    users[s]++;
+    motifOf[i] = pickMotif(slots[s]);
+  }
+
+  // Object i, which buildInstances has just found out of sight, gives up a
+  // draining atlas slot (see install) for the current set, with a motif that
+  // set allows. Out of sight, the new image cannot show as a swap; it comes
+  // into view only as the object moves back in. Anything else is left alone.
+  function hideSwap(i) {
+    if (atlasOf[i] !== drainSlot || !slots[cur].allowedCount) return;
+    users[drainSlot]--;
+    atlasOf[i] = cur;
+    users[cur]++;
+    motifOf[i] = pickMotif(slots[cur]);
   }
 
   // How far object i's half size is scaled against the radius law at radius
@@ -763,7 +985,7 @@ export function createKaleido(device, format, platform) {
   }
 
   function spawn(d) {
-    if (!freeTop || !allowedCount) return;
+    if (!freeTop || !slots[cur].allowedCount) return;
     const i = free[--freeTop];
     depth[i] = d;
     velPh[i] = Math.random() * TAU;
@@ -772,7 +994,8 @@ export function createKaleido(device, format, platform) {
     spinRnd[i] = Math.random() * 2 - 1;
     orbitRnd[i] = Math.random() * 2 - 1;
     spinAng[i] = 0;
-    motifOf[i] = pickMotif();
+    birth(i);
+    bornT[i] = clockS;
     appear[i] = 1;
     appearDir[i] = 0;
     // Its seat line (see SEAT_ON_MIRROR), then pulled Scatter of the way
@@ -805,6 +1028,7 @@ export function createKaleido(device, format, platform) {
   // size stay as drawn: a wrap would have redrawn them anyway.
   function age(i, lifeSec, spinMax, spinVar, orbitMax, orbitVar) {
     const secs = depth[i] * lifeSec;
+    bornT[i] = clockS - secs;
     spinAng[i] = (spinRate(i, spinMax, spinVar) * secs) % TAU;
     let u = phiU[i] + orbitRate(i, orbitMax, orbitVar) * secs / spanNow;
     if (mirrorOn) {
@@ -862,6 +1086,7 @@ export function createKaleido(device, format, platform) {
   // Frees slot i, keeping the fade counts true. The caller drops it from
   // order.
   function release(i) {
+    users[atlasOf[i]]--;
     if (appearDir[i] !== 0) fading--;
     if (appearDir[i] === -1) dying--;
     appearDir[i] = 0;
@@ -972,12 +1197,12 @@ export function createKaleido(device, format, platform) {
   function coverageTarget(density, h0, sizeVar, constWant, lifeSec, orbitMax, orbitVar) {
     if (tKey[0] === density && tKey[1] === spanNow && tKey[2] === h0 && tKey[3] === sizeVar &&
         tKey[4] === constWant && tKey[5] === lifeSec && tKey[6] === orbitMax &&
-        tKey[7] === orbitVar && tKey[8] === scatterNow && tKey[9] === meanFill &&
+        tKey[7] === orbitVar && tKey[8] === scatterNow && tKey[9] === meanFillNow &&
         tKey[10] === (mirrorOn ? 1 : 0) && tKey[11] === (seatMirror ? 1 : 0) &&
         tKey[12] === fadeNow) return targetNow;
     tKey[0] = density; tKey[1] = spanNow; tKey[2] = h0; tKey[3] = sizeVar;
     tKey[4] = constWant; tKey[5] = lifeSec; tKey[6] = orbitMax;
-    tKey[7] = orbitVar; tKey[8] = scatterNow; tKey[9] = meanFill;
+    tKey[7] = orbitVar; tKey[8] = scatterNow; tKey[9] = meanFillNow;
     tKey[10] = mirrorOn ? 1 : 0; tKey[11] = seatMirror ? 1 : 0; tKey[12] = fadeNow;
 
     if (!(density > 0) || !(h0 > 0)) return (targetNow = 0);
@@ -990,7 +1215,7 @@ export function createKaleido(device, format, platform) {
       const num = 0.5 * (c * c - lo * lo) + CONST_K * CONST_K * Math.log(hi / c);
       g2 = num / (0.5 * (hi * hi - lo * lo));
     }
-    const inside = density * COVER_FULL * LOG_SPAN * spanNow / (4 * meanFill * h0 * h0 * e2 * g2);
+    const inside = density * COVER_FULL * LOG_SPAN * spanNow / (4 * meanFillNow * h0 * h0 * e2 * g2);
 
     // The band an object of average size roams, as spawnBand() works it.
     const ratio = reachKNow * (1 - sizeVar * 0.5);
@@ -1032,7 +1257,10 @@ export function createKaleido(device, format, platform) {
           const side = u > 0 ? -1 : 1;
           sizeRnd[i] = Math.random();
           spinRnd[i] = Math.random() * 2 - 1;
-          motifOf[i] = pickMotif();
+          // a new object as far as the eye can tell, so it is a birth too,
+          // and takes its set from the crossfade as one
+          users[atlasOf[i]]--;
+          birth(i);
           u = side * spawnBand(i);
         }
       } else if (!mirrorOn) {
@@ -1065,7 +1293,7 @@ export function createKaleido(device, format, platform) {
     const lyr = S.layers;
     if (!lyr || !lyr.kaleido) { wasOn = false; return; }
     const wantSet = kaleidoscopeSet(S.kaleidoSet).id;
-    if (wantSet !== requestedSet) load(wantSet);
+    if (wantSet !== requestedSet) changeSet(wantSet);
     if (!ready) return;
 
     const folds = Math.round(clampNum(S.kaleidoFolds, 3, MAX_FOLDS, 8));
@@ -1093,7 +1321,14 @@ export function createKaleido(device, format, platform) {
     const sat = graded ? clampNum(S.kaleidoSat ?? 1, 0, 2, 1) : 1;
     const constWant = S.kaleidoConstSize === true ? 1 : 0;
     fadeNow = clampNum(S.kaleidoFade ?? 0.55, 0, 1, 0.55);
-    refreshFamilies();
+    // The current set follows the families setting live, except while a
+    // newer set is still loading: S.kaleidoFamilies already belongs to that
+    // one, and births meanwhile keep the families they had.
+    const curSlot = slots[cur], outSlot = slots[1 - cur];
+    if (curSlot.set === requestedSet) refreshFamilies(curSlot);
+    meanFillNow = xfadeAge < xfadeLen && outSlot.allowedCount
+      ? outSlot.meanFill + (curSlot.meanFill - outSlot.meanFill) * (xfadeAge / xfadeLen)
+      : curSlot.meanFill;
 
     // The domain: mirrored, half a wedge (mirror line to mirror line);
     // unmirrored, the whole wedge. The size law fits the largest object
@@ -1120,6 +1355,7 @@ export function createKaleido(device, format, platform) {
     if (!wasOn) {
       wasOn = true;
       constBlend = constWant;       // the prewarmed chamber starts under the chosen law
+      if (KDIAG) { dgEvent = 'prewarm'; dgLog('prewarm, target ' + Math.round(target)); }
       clearPool();
       prewarm(Math.round(target), lifeSec, spinMax, spinVar, orbitMax, orbitVar);
       spawnAcc = 0; spawnGap = 1;
@@ -1148,8 +1384,12 @@ export function createKaleido(device, format, platform) {
     }
 
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
+    fadeInSNow = clampNum(S.kaleidoFadeInS ?? 1.5, 0, 10, 1.5);
     const md = dt > 0 ? motionStep(dt) : 0;
     if (md > 0) {
+      clockS += md;
+      // The births' crossfade runs on the same clock as the births.
+      if (xfadeAge < xfadeLen) xfadeAge += md;
       twistAng = (twistAng + md * twist) % TAU;
       velRefPh = (velRefPh + md * TAU / speedPeriod) % TAU;
       advance(md, travel, spinMax, spinVar, orbitMax, orbitVar, speedVar, speedPeriod);
@@ -1176,6 +1416,16 @@ export function createKaleido(device, format, platform) {
     // Any on-the-spot fade left over from an older pool still runs out, but
     // nothing starts one any more (balance() is no longer called).
     if (dt > 0) settle(dt);
+    // The outgoing set's atlas goes once the crossfade is over and its last
+    // piece has retired.
+    if (outSlot.tex && users[1 - cur] <= 0 && !(xfadeAge < xfadeLen)) { dropSlot(outSlot); rebind(); }
+    // A set waiting on a draining slot moves in once its last piece is gone
+    // (see install).
+    if (drainSlot >= 0 && users[drainSlot] <= 0) {
+      const tex = drainTex, fill = drainFill, set = drainSet;
+      drainSlot = -1; drainTex = null; drainFill = null;
+      install(tex, fill, set);
+    }
     if (!live) return;
 
     // Pulse 0 keeps the layer at steady brightness whatever the strobe does
@@ -1183,7 +1433,11 @@ export function createKaleido(device, format, platform) {
     // The fold applies it, so the chamber itself never strobes.
     const l = lum > 0 ? (lum < 1 ? lum : 1) : 0;
     const gain = opacity * (1 - pulse + pulse * l) * fade;
-    if (gain < 0.002) return;
+    if (gain < 0.002) {
+      // Nothing is drawn, so every piece is out of sight.
+      if (drainSlot >= 0) for (let n = 0; n < live; n++) hideSwap(order[n]);
+      return;
+    }
 
     const cssW = S.W || pixelW / dpr, cssH = S.H || pixelH / dpr;
     const inset = S.edgeInset || 0;
@@ -1204,29 +1458,71 @@ export function createKaleido(device, format, platform) {
     const scaleUp = (chamberH - 2 * CHAMBER_PAD) / reachPx;
     const scaleAcross = (chamberW * 0.5 - CHAMBER_PAD) / (reachPx * halfSin);
     const s = scaleUp < scaleAcross ? scaleUp : scaleAcross;
+    // The rim, and the fold's hole about the centre (see HOLE_PAD_TEXELS):
+    // the newborn's radius plus the largest painted reach any object can
+    // have there (reachKNow of its radius; size variance and the constant
+    // size law only ever shrink it), plus the bilinear clearance.
+    const maxR = Math.hypot(visW, cssH) * 0.62 * dpr;
+    const holeR = K_BIRTH * maxR * (1 + reachKNow) + HOLE_PAD_TEXELS / s;
 
     const rgb = S.rgb;
     const peak = Math.max(rgb[0], rgb[1], rgb[2], 1);
     uni[0] = chamberW; uni[1] = chamberH; uni[2] = 1 / chamberW; uni[3] = 1 / chamberH;
-    uni[4] = chamberW * 0.5; uni[5] = chamberH - CHAMBER_PAD; uni[6] = s; uni[7] = 0;
+    uni[4] = chamberW * 0.5; uni[5] = chamberH - CHAMBER_PAD; uni[6] = s; uni[7] = holeR;
     uni[8] = rgb[0] / peak; uni[9] = rgb[1] / peak; uni[10] = rgb[2] / peak; uni[11] = tintAmt;
     uni[12] = cx; uni[13] = cy; uni[14] = wedge; uni[15] = twistAng;
     uni[16] = UP - spanNow * 0.5; uni[17] = mirror ? 1 : 0; uni[18] = gain; uni[19] = 0;
     uni[20] = bright; uni[21] = contrast; uni[22] = sat; uni[23] = 0;
 
     sortOrder();
-    instCount = buildInstances(sideK, sizeVar, Math.hypot(visW, cssH) * 0.62 * dpr, reachPx, s);
+    instCount = buildInstances(sideK, sizeVar, maxR, reachPx, s, holeR);
+    if (KDIAG) kaldiag(t);
     if (!instCount) return;
     device.queue.writeBuffer(instBuf, 0, inst, 0, instCount * INST_FLOATS);
     device.queue.writeBuffer(uniBuf, 0, uni);
     active = true;
   }
 
+  // The diagnostic's frame work (see KDIAG): the drop check, the heartbeat
+  // and the order-flip count. dgCur maps each drawn slot to its place in
+  // the draw order and its screen position; a pair drawn both frames whose
+  // order swapped while their quads overlap flipped who is on top.
+  let dgSpan = 0, dgFlips = 0;
+  const dgSlot = new Int32Array(MAX_INST);   // which pool slot drew instance n
+  function kaldiag(t) {
+    if (spanNow !== dgSpan) { dgSpan = spanNow; dgEvent = 'wedge change (folds or mirror)'; dgLog(dgEvent); }
+    if (instCount < dgInst * 0.75 && dgInst - instCount > 3) {
+      dgLog('drawn count fell ' + dgInst + ' -> ' + instCount + (dgEvent ? ' after ' + dgEvent : ''), 'live ' + live);
+    }
+    dgInst = instCount;
+    const tmp = dgPrev; dgPrev = dgCur; dgCur = tmp; dgCur.clear();
+    for (let n = 0; n < instCount; n++) {
+      const b = n * INST_FLOATS;
+      dgCur.set(dgSlot[n], { n, x: inst[b], y: inst[b + 1], h: inst[b + 2] });
+    }
+    for (const [ka, a] of dgCur) {
+      const pa = dgPrev.get(ka);
+      if (!pa) continue;
+      for (const [kb, c] of dgCur) {
+        if (kb <= ka) continue;
+        const pb = dgPrev.get(kb);
+        if (!pb) continue;
+        const dx = a.x - c.x, dy = a.y - c.y, rr = (a.h + c.h) * 1.2;
+        if (dx * dx + dy * dy < rr * rr && (a.n - c.n) * (pa.n - pb.n) < 0) dgFlips++;
+      }
+    }
+    if (t - dgBeat > 2000) {
+      dgLog('beat: live ' + live + ', drawn ' + instCount + ', order flips ' + dgFlips + ' in ' + ((t - dgBeat) / 1000).toFixed(1) + 's');
+      dgBeat = t; dgFlips = 0; dgEvent = '';
+    }
+  }
+
   // Every live object, far to near, as device px from the field centre.
   // Travel to radius is the continuous zoom (see radiusK), and the fade is
   // the rings' radialFade at the Fade in setting against maxR, the same rim
-  // as the ring layer (both are hypot(visible width, height) * 0.62), times
-  // the built-in birth fade over the first FADE_IN_EFOLDS of the flight; an
+  // as the ring layer (both are hypot(visible width, height) * 0.62); the
+  // newborn's own way into view is the fold's hole (holeR, see
+  // HOLE_PAD_TEXELS), not a fade of its own. An
   // object fading in or out on the spot (see balance) carries that too. Each object's
   // up axis is its own ray outward plus its spin. Its size follows the
   // radius, or at constant size the fixed CONST_K share of the rim, blended
@@ -1237,22 +1533,40 @@ export function createKaleido(device, format, platform) {
   // of its angle that overlaps the domain: once for most, twice while it
   // straddles an edge, so what slides out one side is already sliding in at
   // the other and the rotation closes without a seam.
-  function buildInstances(sideK, sizeVar, maxR, reachPx, s) {
+  //
+  // Every object left out here is out of sight, so one still drawing from a
+  // draining atlas slot may take its new image there (hideSwap); one inside
+  // the hole or past a mirror counts only when clear of the fold's bilinear
+  // reach as well (pad, in device px).
+  function buildInstances(sideK, sizeVar, maxR, reachPx, s, holeR) {
     const span = spanNow, whole = Math.PI / span;
+    const pad = HOLE_PAD_TEXELS / s;
     let n = 0;
     for (let q = 0; q < live; q++) {
       const i = order[q];
       const d = depth[i], k = radiusK(d);
-      const birth = d < FADE_IN_D ? smoothstep(0, FADE_IN_D, d) : 1;
       // The layer's gain (opacity, pulse, fade-in) is the fold's to apply,
       // so the chamber holds only each object's own fades.
-      const alpha = radialFade(fadeNow, k) * birth * appear[i];
-      if (alpha < 0.003) continue;
+      let alpha = radialFade(fadeNow, k) * appear[i];
+      // The piece's own fade in, by time: smooth over its first fadeInSNow
+      // seconds on the motion clock, however it was born. Pieces the
+      // prewarm aged mid-flight are back-dated past it (age()).
+      if (fadeInSNow > 0.05) {
+        const a01 = (clockS - bornT[i]) / fadeInSNow;
+        if (a01 < 1) alpha *= a01 <= 0 ? 0 : a01 * a01 * (3 - 2 * a01);
+      }
+      if (alpha < 0.003) { hideSwap(i); continue; }
 
       const r = maxR * k;
       const half = r * sideK * (1 - sizeVar * sizeRnd[i]) * 0.5 * (constBlend > 0 ? sizeLaw(k) : 1);
-      if (half * s < MIN_HALF_TEXELS) continue;
-      if (r - half * CORNER > reachPx) continue;   // wholly beyond every screen pixel
+      if (half * s < MIN_HALF_TEXELS) { hideSwap(i); continue; }
+      if (r - half * CORNER > reachPx) {                             // wholly beyond every screen pixel
+        if (r - half * CORNER - pad > reachPx) hideSwap(i);
+        continue;
+      }
+      // Wholly inside the hole, where the fold reads nothing: every newborn,
+      // until its flight carries it out across the hole's edge.
+      if (r + half * CORNER + pad <= holeR) { hideSwap(i); continue; }
 
       // The angular half width from this frame's size and radius, exactly
       // what reachU() gives but without working the depth out again.
@@ -1265,7 +1579,11 @@ export function createKaleido(device, format, platform) {
       if (mirrorOn) {
         if (u >= 0.5 || u <= -0.5) {
           e = ratio >= 1 ? Infinity : Math.asin(ratio) / span;
-          if (Math.abs(u) - e >= 0.5) continue;
+          if (Math.abs(u) - e >= 0.5) {
+            const rp = (half * CORNER + pad) / r;
+            if (rp < 1 && Math.abs(u) - Math.asin(rp) / span >= 0.5) hideSwap(i);
+            continue;
+          }
         }
       } else {
         e = ratio >= 1 ? Infinity : Math.asin(ratio) / span;
@@ -1279,8 +1597,9 @@ export function createKaleido(device, format, platform) {
         const th = UP + (u + kk) * span;
         const o = th + spin;
         const b = n * INST_FLOATS;
+        if (KDIAG) dgSlot[n] = i;
         inst[b] = Math.cos(th) * r; inst[b + 1] = Math.sin(th) * r; inst[b + 2] = half; inst[b + 3] = alpha;
-        inst[b + 4] = Math.cos(o); inst[b + 5] = Math.sin(o); inst[b + 6] = motif; inst[b + 7] = 0;
+        inst[b + 4] = Math.cos(o); inst[b + 5] = Math.sin(o); inst[b + 6] = motif; inst[b + 7] = atlasOf[i];
         n++;
       }
     }

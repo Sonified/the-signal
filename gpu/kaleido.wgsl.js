@@ -1,5 +1,6 @@
 // WGSL for the kaleidoscope layer, in two halves that share one uniform
-// block and one bind group layout (uniforms, a texture, a sampler).
+// block (uniforms, a texture, a sampler; the sprite half adds a second
+// texture, see tex2).
 //
 // The sprite half draws the object chamber: one instanced quad per object,
 // sampled from the 8 x 8 motif atlas that kaleido.js cleans, premultiplies
@@ -24,7 +25,7 @@
 export const KALEIDO_WGSL = `
 struct KU {
   chamber: vec4f, // chamber texture width, height, 1/width, 1/height (texels)
-  map: vec4f,     // the field centre's place in the chamber (texels), texels per device px, unused
+  map: vec4f,     // the field centre's place in the chamber (texels), texels per device px, hole radius (device px)
   tint: vec4f,    // strobe colour scaled so its brightest channel is 1, tint amount
   fold: vec4f,    // field centre x, y (device px), wedge angle, complete rotation (radians)
   dom: vec4f,     // the domain's starting angle, mirror (0 or 1), layer gain, unused
@@ -33,6 +34,12 @@ struct KU {
 @group(0) @binding(0) var<uniform> u: KU;
 @group(0) @binding(1) var tex: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
+// The sprite half only: the second motif atlas. While the Image set
+// crossfades, pieces born from the outgoing set keep drawing from its atlas
+// until they retire, so two atlases are live at once; each instance says
+// which of the two it reads. With one set live both bindings hold the same
+// atlas. The fold never reads it, so its layout leaves it out.
+@group(0) @binding(3) var tex2: texture_2d<f32>;
 
 // The atlas is 1024 texels square: 8 x 8 tiles of 128, each with 12 texels
 // of transparent padding around a 104 texel motif. The quad covers only that
@@ -49,12 +56,14 @@ struct SOut {
   @location(1) @interpolate(flat) lo: vec2f,
   @location(2) @interpolate(flat) hi: vec2f,
   @location(3) alpha: f32,
+  @location(4) @interpolate(flat) slot: f32,
 };
 
 // One instance per object: its centre as device px from the field centre,
 // half size and alpha; then its up axis (its own outward ray turned by its
-// spin) and the motif index. The chamber shares the screen's orientation and
-// scale about the field centre, shrunk by map.z texels per device px, so the
+// spin), the motif index and which atlas it reads (0 tex, 1 tex2); the
+// motif index is a tile of that atlas, not of the other. The chamber shares
+// the screen's orientation and scale about the field centre, shrunk by map.z texels per device px, so the
 // only step from screen space into it is that scale and an offset. Corners
 // come from vertex_index, as the flowers' do.
 @vertex
@@ -79,12 +88,27 @@ fn vsSprite(@builtin(vertex_index) vi: u32,
   o.lo = tile + vec2f(PAD_UV + HALF_TEXEL);
   o.hi = tile + vec2f(PAD_UV + INNER_UV - HALF_TEXEL);
   o.alpha = posHalfAlpha.w;
+  o.slot = upMotif.w;
   return o;
 }
 
+// The atlas is picked per instance, so the read sits in a branch that is
+// not uniform; textureSample would need uniform control flow for its
+// implicit derivatives, so they are taken first, outside the branch, and
+// handed to textureSampleGrad, which picks exactly the mip level the plain
+// read did. Only one atlas is read per fragment.
 @fragment
 fn fsSprite(o: SOut) -> @location(0) vec4f {
-  return textureSample(tex, samp, clamp(o.uv, o.lo, o.hi)) * o.alpha;
+  let uv = clamp(o.uv, o.lo, o.hi);
+  let gx = dpdx(uv);
+  let gy = dpdy(uv);
+  var c: vec4f;
+  if (o.slot > 0.5) {
+    c = textureSampleGrad(tex2, samp, uv, gx, gy);
+  } else {
+    c = textureSampleGrad(tex, samp, uv, gx, gy);
+  }
+  return c * o.alpha;
 }
 
 @vertex
@@ -103,10 +127,29 @@ fn vsFold(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
 // angle lands on the same chamber point there, so it is simply taken as 0.
 // Tint multiplies toward the strobe colour rather than replacing it, so each
 // motif's own shading survives at any amount.
+//
+// What the fold samples, in the chamber's own frame (straight up is the
+// domain's centre line, the complete rotation turns the screen's read, never
+// the chamber): every point whose angle from straight up is within half the
+// domain either side (the whole wedge 2 pi / folds unmirrored, half of it
+// mirrored) and whose radius runs from the hole out to the farthest screen
+// pixel, plus the one chamber texel a bilinear read reaches past each edge.
+// The hole is a small disk about the centre, map.w device px, that the fold
+// reads nothing from at all, opening to a full read by twice that radius.
+// Every object is born wholly inside it (kaleido.js sizes it so, sprite and
+// bilinear reach included), so nothing is ever born where the fold can see
+// it: a newborn comes into view only by flying out across that soft edge,
+// leading edge first, as anything entering past the screen's edge would.
+// The wedge's apex is a single point where every wedge meets, so the hole
+// costs the pattern nothing it could show.
 @fragment
 fn fsFold(@builtin(position) p: vec4f) -> @location(0) vec4f {
   let v = p.xy - u.fold.xy;
   let r = length(v);
+  if (r <= u.map.w) {
+    return vec4f(0.0);
+  }
+  let hole = smoothstep(u.map.w, 2.0 * u.map.w, r);
   let a = select(0.0, atan2(v.y, v.x), r > 1e-3);
   let w = u.fold.z;
   let rel = a - u.fold.w - u.dom.x;
@@ -135,6 +178,6 @@ fn fsFold(@builtin(position) p: vec4f) -> @location(0) vec4f {
     s = clamp(s * u.grade.x, vec3f(0.0), vec3f(1.0)) * c.a;
   }
   let rgb = mix(s, s * u.tint.rgb, u.tint.w);
-  return vec4f(rgb, c.a) * u.dom.z;
+  return vec4f(rgb, c.a) * (u.dom.z * hole);
 }
 `;

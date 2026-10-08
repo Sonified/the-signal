@@ -118,7 +118,7 @@ function buildSettings() {
     fieldFadeVar: S.fieldFadeVar, fieldFadeVarPeriod: S.fieldFadeVarPeriod,
     color: rgbHex(S.rgb),
     cornerOpacity: S.cornerOpacity, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
-    ringSpeedMul: S.ringSpeedMul, ringSpeedVar: S.ringSpeedVar, ringSpeedVarPeriod: S.ringSpeedVarPeriod,
+    ringSpeed5: S.ringSpeedMul, ringSpeedVar: S.ringSpeedVar, ringSpeedVarPeriod: S.ringSpeedVarPeriod,
     ringRate: S.ringRate, ringOrigin: S.ringOrigin, ringFadeInMs: S.ringFadeInMs, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
     edgeFb: S.edgeFb, edgeFbStream: S.edgeFbStream, edgeFbTwist: S.edgeFbTwist, edgeFbOpacity: S.edgeFbOpacity,
@@ -199,6 +199,9 @@ function buildSettings() {
     edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
     carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked, amModOn: S.amModOn,
     toneStrobeAm: S.toneStrobeAm,
+    toneVolVar: S.toneVolVar, toneVolPeriod: S.toneVolPeriod, toneVolVarMode: S.toneVolVarMode,
+    toneStrobeAmVar: S.toneStrobeAmVar, toneStrobeAmPeriod: S.toneStrobeAmPeriod,
+    toneStrobeAmVarMode: S.toneStrobeAmVarMode,
     toneOn: S.toneOn, clickOn: S.clickOn, toneVol: S.toneVol, clickVol: S.clickVol, pipMs: S.pipMs,
     // the Music window's trims over those levels (state.js)
     musTone: S.musTone, musPulse: S.musPulse, musPiano: S.musPiano, musClouds: S.musClouds,
@@ -835,13 +838,20 @@ const EDGE_FX_NUM = [
 // (MACHINE_KEYS, above wireSettings): a preset or a broadcast is the scene,
 // not the screen it plays on. Another tab's write is this same machine's,
 // so syncFromStorage takes them, and so does load().
+export const oldRingSpeed = v => Math.max(0.1, Math.min(3, Math.round(v * 5 * 100) / 100));
+
 function applySettings(s, live, scene) {
   if (typeof s.freq === 'number')   S.freq = s.freq;
   if (typeof s.depth === 'number')  S.depth = s.depth;
   if (typeof s.bright === 'number') S.bright = s.bright;
   if (typeof s.strobeScale === 'number' && isFinite(s.strobeScale)) S.strobeScale = Math.max(0, Math.min(1, s.strobeScale));
   if (s.color) setColorFromPicker(s.color);
-  if (typeof s.ringSpeedMul === 'number') S.ringSpeedMul = s.ringSpeedMul;
+  // Ring speed is saved as ringSpeed5 since its 1x became a fifth of the old
+  // pace (js/sim.js RING_SPEED_SCALE). A setting, preset or scene saved before
+  // carries ringSpeedMul in the old units, so it is taken at five times the
+  // number, which is the same speed on screen, within the slider's 0.1x-3x.
+  if (typeof s.ringSpeed5 === 'number' && isFinite(s.ringSpeed5)) S.ringSpeedMul = s.ringSpeed5;
+  else if (typeof s.ringSpeedMul === 'number' && isFinite(s.ringSpeedMul)) S.ringSpeedMul = oldRingSpeed(s.ringSpeedMul);
   if (typeof s.ringSpeedVar === 'number') S.ringSpeedVar = Math.max(0, Math.min(1, s.ringSpeedVar));
   if (typeof s.ringSpeedVarPeriod === 'number') S.ringSpeedVarPeriod = Math.max(1, Math.min(60, s.ringSpeedVarPeriod));
   if (typeof s.cornerOpacity === 'number' && isFinite(s.cornerOpacity)) S.cornerOpacity = Math.max(0, Math.min(1, s.cornerOpacity));
@@ -939,6 +949,12 @@ function applySettings(s, live, scene) {
   if (typeof s.amModOn === 'boolean')     S.amModOn = s.amModOn;
   if (typeof s.toneStrobeAm === 'number' && Number.isFinite(s.toneStrobeAm))
     S.toneStrobeAm = Math.max(0, Math.min(1, s.toneStrobeAm));
+  // the tone's two variances (js/audio.js), held to their sliders' ranges
+  for (const [k, lo, hi] of [['toneVolVar', 0, 1], ['toneVolPeriod', 0, 120],
+                             ['toneStrobeAmVar', 0, 1], ['toneStrobeAmPeriod', 0, 120]])
+    if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = Math.max(lo, Math.min(hi, s[k]));
+  for (const k of ['toneVolVarMode', 'toneStrobeAmVarMode'])
+    if (s[k] === 'walk' || s[k] === 'sine') S[k] = s[k];
   if (typeof s.volume === 'number')       S.volume = s.volume;
   // the Music window's trims, each a share of its voice's level, 0 to 1
   for (const k of ['musTone', 'musPulse', 'musPiano', 'musClouds', 'musDrone', 'musArp', 'musChoir', 'musAmb']) {

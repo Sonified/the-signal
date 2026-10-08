@@ -612,7 +612,7 @@ export const VISUAL_CONTROLS = [
     id: 'ringSpeed', section: 'tunnel', label: 'Ring speed', kind: 'slider',
     summaryLabel: 'Speed',
     parent: 'tunnelTimingDrawer',
-    min: 0.2, max: 3, step: 0.05, def: 0.5,
+    min: 0.1, max: 3, step: 0.05, def: 2.5,
     get: S => S.ringSpeedMul,
     set: (S, pos) => { S.ringSpeedMul = pos; save(); },
     format: S => S.ringSpeedMul.toFixed(1) + '×'

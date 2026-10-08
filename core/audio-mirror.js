@@ -1,9 +1,9 @@
-// Four live audio readings the drawn frame uses, read through here so they
+// The live audio readings the drawn frame uses, read through here so they
 // work on either thread: the sequencer channel's peak (the particles pulse
 // with it), the sequencer's step clock (its window lights the step that
 // last sounded, on the grid and on each line's row), the lines' swung
-// values (a swinging knob's lights follow them round its ring), and the
-// click level's dip (its bar breathes with it).
+// values (a swinging knob's lights follow them round its ring), the click
+// level's dip and the tone's two dips (their bars breathe with them).
 //
 // On the main thread they come straight from js/piano.js and js/audio.js,
 // exactly as before. In worker mode the audio lives on the page and the worker's copy of
@@ -15,7 +15,7 @@
 
 import { S } from '../js/state.js';
 import { arpPeak, seqPlayhead, seqClock, seqSwingRead, SEQ_COUNT, SEQ_SWINGS } from '../js/piano.js';
-import { pipDipRead } from '../js/audio.js';
+import { pipDipRead, toneVolMul, toneAmMul } from '../js/audio.js';
 
 // The layout of the Float32Array the page posts (core/audio-shell.js writes
 // it, core/audio-link.js reads it): a few fixed slots, then the read-backs
@@ -53,7 +53,8 @@ export const CALL_SLOTS = 5;
 //           for a run of values, which reads as null (the page then leaves
 //           the slots as they were and clears the live bit)
 // Order is the wire's contract between the two threads of one build, and
-// the bits read W_SWING 8 and W_PIP 16 as they always have.
+// the bits read W_SWING 8 and W_PIP 16 as they always have, then the tone's
+// level 32 and its pulse depth 64.
 export const SWING_SLOTS = SEQ_COUNT * SEQ_SWINGS;
 // main mode's own copy of the swings, read straight from js/piano.js
 const swingHere = new Float64Array(SWING_SLOTS);
@@ -69,7 +70,16 @@ const SWING = { width: SWING_SLOTS, rest: null,
 const PIP = { width: 1, rest: 1,
   pack: (out, at) => { out[at] = pipDipRead(); return true; },
   here: () => pipDipRead() };
-export const READBACKS = [SWING, PIP];
+// The tone's level and its pulse depth as their variances play them, the
+// share of each setting the dip leaves (audio.js toneVolMul, toneAmMul), 1
+// while nobody watches (the row showing with its variance set).
+const TONE_VOL = { width: 1, rest: 1,
+  pack: (out, at) => { out[at] = toneVolMul(); return true; },
+  here: () => toneVolMul() };
+const TONE_AM = { width: 1, rest: 1,
+  pack: (out, at) => { out[at] = toneAmMul(); return true; },
+  here: () => toneAmMul() };
+export const READBACKS = [SWING, PIP, TONE_VOL, TONE_AM];
 let slot = M_READBACKS;
 for (let i = 0; i < READBACKS.length; i++) {
   const r = READBACKS[i];
@@ -171,3 +181,9 @@ export const seqSwingNow = () => readback(SWING);
 // whenever there is nothing live to read. Asking is what switches the
 // worklet's report on, on this thread or the page's.
 export const pipDipNow = () => readback(PIP);
+
+// The tone's two variances as they play: the share of its set level, and of
+// its set pulse depth, each dip is leaving this moment, 1 at the top of the
+// breath and whenever there is nothing live to read.
+export const toneVolMulNow = () => readback(TONE_VOL);
+export const toneAmMulNow = () => readback(TONE_AM);

@@ -368,6 +368,17 @@ function recallSnapshot(snap, sec, hold) {
   }
 }
 
+// The broadcast's own door into it (core/broadcast.js): a stream turned back
+// on can first recall the scene its room was left on, and that is a recall on
+// this screen like a chip's click, so it keeps this machine's settings and
+// the swings' phase the same way. Over the snapshot's ordinary window, as a
+// chip's click is, with no chip lit, since what comes back is a stream's
+// place rather than a preset.
+export function recallStreamScene(snap) {
+  recallSnapshot(snap);
+  save();
+}
+
 // ---------- the viewer's own presets ----------
 
 // { overrides: { [builtinName]: snapshot }, user: [ { name, snapshot } ],

@@ -54,6 +54,10 @@ const NUM = [
   // How far out from the centre a shape eases in: the same 0 to 1 amount,
   // curve and default as the tunnel rings' Ring fade in (core/fade.js).
   ['kaleidoFade',        0,   1,   0.55, false],
+  // Each piece's own fade in, in seconds of motion: eased up from nothing
+  // over its first this-many seconds (gpu/kaleido.js bornT), so no birth
+  // can land as a pop whatever put the piece there. 0 turns it off.
+  ['kaleidoFadeInS',     0,   10,  1.5,  false],
   ['kaleidoTint',        0,   1,   0,    false],
   ['kaleidoPulse',       0,   1,   0,    false],
   // Which motif atlas the shapes come from (assets/kaleidoscope/sets.mjs): 1 the
@@ -62,6 +66,11 @@ const NUM = [
   // 7 colorful shapes, 8 flat colorful shapes, 9 confetti and sparkles,
   // 10 photoreal confetti and sparkles, 11 fireworks, 12 peaceful shapes.
   ['kaleidoSet',         1,   KALEIDOSCOPE_SET_COUNT, 1, true],
+  // Seconds over which a change of Image set crosses the births over from
+  // the old set to the new one (gpu/kaleido.js). 0 is instant, the swap
+  // under the live shapes the layer always made, so a preset from before
+  // this looks exactly as it did.
+  ['kaleidoSetXfade',    0,   60,  0,    false],
   // The layer's own colour grade, applied in the fold: 1 leaves the motifs
   // as they are, 0 is black, flat grey or greyscale, 2 doubles the effect.
   ['kaleidoBright',      0,   2,   1,    false],
@@ -84,6 +93,25 @@ function fit(v, min, max, integer) {
   if (!(v >= min)) v = min;          // also catches NaN
   if (v > max) v = max;
   return integer ? Math.round(v) : Math.round(v * 10000) / 10000;
+}
+
+// The Set crossfade slider's taper, the Performance window's ramp curve
+// (ui/screens/performer.js): an exponential through 0 over 0 to 60 s, so 0
+// to 5 s takes about the first 42% of the track. Fine positions, so every
+// value the snap below allows has a position of its own and a typed time
+// lands exactly; snapped to tenths of a second under 5 s and to half
+// seconds above, the precision a crossfade of that length can use.
+const XFADE_MAX = 60, XFADE_POS = 1000, XFADE_CURVE = 4, XFADE_EK = Math.exp(XFADE_CURVE) - 1;
+function xfadeToPos(v) {
+  if (!(v > 0)) return v === 0 || v < 0 ? 0 : NaN;
+  const u = Math.log(1 + (Math.min(v, XFADE_MAX) / XFADE_MAX) * XFADE_EK) / XFADE_CURVE;
+  return Math.round(u * XFADE_POS);
+}
+function posToXfade(pos) {
+  const u = pos > 0 ? (pos < XFADE_POS ? pos / XFADE_POS : 1) : 0;
+  const v = XFADE_MAX * (Math.exp(XFADE_CURVE * u) - 1) / XFADE_EK;
+  const q = v < 5 ? Math.round(v * 10) / 10 : Math.round(v * 2) / 2;
+  return q < XFADE_MAX ? q : XFADE_MAX;
 }
 
 function spec(key) {
@@ -280,9 +308,10 @@ export const KALEIDO_CONTROLS = [
 
   subDrawer('kaleidoShapesDrawer', 'Shapes', 'kaleido', ['kaleidoSet', 'kaleidoFolds']),
   {
-    // Which atlas the shapes are drawn from. Switching swaps the images
-    // under the live shapes once the new atlas is ready, so the pattern
-    // keeps flowing rather than restarting.
+    // Which atlas the shapes are drawn from. Switching never restarts the
+    // pattern: at Set crossfade instant it swaps the images under the live
+    // shapes once the new atlas is ready, and with a crossfade time the
+    // births cross over to the new set instead (see kaleidoSetXfade).
     id: 'kaleidoSet', section: 'kaleido', label: 'Image set', kind: 'segment', dropdown: true, def: 1,
     parent: 'kaleidoShapesDrawer',
     // the strip's summary says just 'Set 1'; the row keeps its full labels
@@ -302,6 +331,27 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoFamilies = [];
       save();
     },
+    enabled: layerOn
+  },
+  {
+    // How a change of Image set crosses over. Instant swaps the images
+    // under the live shapes, as the layer always did; a time keeps every
+    // shape already flying on its own set until it leaves, and tips the
+    // births over from the old set to the new across that many seconds,
+    // counted from when the new set has loaded. No opacity fade: the old
+    // shapes simply stop being born. The track is the Performance window's
+    // ramp taper (an exponential through 0, so the short times get most of
+    // the travel), snapped to half seconds.
+    id: 'kaleidoSetXfade', section: 'kaleido', label: 'Set crossfade', kind: 'slider',
+    parent: 'kaleidoShapesDrawer',
+    min: 0, max: XFADE_POS, step: 1, def: 0,
+    get: S => xfadeToPos(S.kaleidoSetXfade),
+    set: (S, pos) => { S.kaleidoSetXfade = posToXfade(pos); save(); },
+    format: S => {
+      const v = S.kaleidoSetXfade;
+      return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
+    },
+    parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
     enabled: layerOn
   },
   {
@@ -370,9 +420,11 @@ export const KALEIDO_CONTROLS = [
   // The layer's master opacity, its radial fade in from the centre (the
   // rings' Ring fade in for this layer: 0 is no fade, higher values ease the
   // shapes in further out), and how far it flickers with the strobe.
-  subDrawer('kaleidoBrightnessDrawer', 'Brightness', 'kaleido', ['kaleidoOpacity', 'kaleidoFade']),
+  subDrawer('kaleidoBrightnessDrawer', 'Brightness', 'kaleido', ['kaleidoOpacity', 'kaleidoFade', 'kaleidoFadeInS']),
   under('kaleidoBrightnessDrawer', percent('kaleidoOpacity', 'kaleidoOpacity', 'Opacity')),
   under('kaleidoBrightnessDrawer', percent('kaleidoFade', 'kaleidoFade', 'Center fade radius')),
+  under('kaleidoBrightnessDrawer', direct('kaleidoFadeInS', 'kaleidoFadeInS', 'Fade in time', 0.1,
+    S => (S.kaleidoFadeInS ?? 1.5) < 0.05 ? 'off' : (S.kaleidoFadeInS ?? 1.5).toFixed(1) + 's')),
   under('kaleidoBrightnessDrawer', percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
     S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%')),
 
