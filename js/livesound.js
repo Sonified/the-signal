@@ -43,6 +43,7 @@
 // liveGrFromPage, by way of platform/worker-bridge.js and worker-entry.js.
 import { S } from './state.js';
 import { createRoom, swapRoom } from './audio.js';
+import { setAudioSessionRecording } from './background.js';
 
 // The compressor. Its defaults are gentle glue rather than a limiter: a 3:1
 // ratio from about -24 dB, over a knee 30 dB wide, so it starts leaning on
@@ -285,6 +286,7 @@ function shut() {
   rebuildTimer = null;
   if (cap) { retire(cap, true); cap = null; }
   if (graph) { closeGraph(graph); graph = null; }
+  setAudioSessionRecording(false);
 }
 
 function notify(failed) {
@@ -311,6 +313,9 @@ async function acquire() {
   if (IN_WORKER) return;
   const md = media();
   if (!md || !md.getUserMedia) { failed(new Error('this browser offers no audio input here')); return; }
+  // An iPhone's session can only record as 'play-and-record', set before
+  // the context and the request (js/background.js); shut puts it back.
+  setAudioSessionRecording(true);
   if (!graph) graph = makeGraph();
   if (!graph) { failed(new Error('this browser offers no audio context here')); return; }
   const my = ++token;
