@@ -21,9 +21,11 @@
 // batches also grow the memory, so the transport's re-viewing is exercised.
 //
 // Two batches also act on the stage, for the lookahead tests: [0xF5, lo, hi]
-// stalls it where it lands, holding the worker busy for lo + 256·hi ms, as
-// an OS that parks the thread would; [0xF6, ms] makes every render from then
-// on take that long (0 to stop), a stage too heavy to keep up.
+// stalls it where it lands, holding the worker for lo + 256·hi ms, as an OS
+// that parks the thread would; [0xF6, ms] makes every render from then on
+// take that long (0 to stop), a stage too heavy to keep up. Both sleep
+// rather than spin: the stage looks the same from outside, and the other
+// test files running alongside keep their cores.
 
 import { parentPort, workerData } from 'node:worker_threads';
 
@@ -32,7 +34,8 @@ function fakeHeart() {
   const CH = 512;
   let top = 64, role = 0, seed = 0, frame = 0;
   let egress = 0, master = 0, upload = null, cost = 0;
-  const busy = ms => { const end = performance.now() + ms; while (performance.now() < end); };
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  const busy = ms => Atomics.wait(nap, 0, 0, ms);
   const ingress = new Map(), asked = [], pending = [];
   const alloc = bytes => {
     const at = top;

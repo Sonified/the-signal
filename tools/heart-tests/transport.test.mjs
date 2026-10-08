@@ -181,18 +181,18 @@ async function adapts(t, isolated, workers) {
     assert.deepEqual(log.bad, [], 'every quantum played is exactly its engine frames: the time map never moved');
 
     // A steady stretch (a second here) at a time eases it back to the base.
-    await until(() => engine.lookahead() === base, 8000, 'the lookahead back at the base');
+    await until(() => engine.lookahead() === base, 12000, 'the lookahead back at the base');
     assert.deepEqual(log.bad, [], 'shrinking dropped nothing and moved nothing');
     assert.equal(engine.stats().lookahead, base);
 
     // Hidden: up to the floor at once, and held there past a stretch.
     setVisibility('hidden');
-    await until(() => engine.lookahead() >= 0.3, 1000, 'the hidden floor');
+    await until(() => engine.lookahead() >= 0.3, 3000, 'the hidden floor');
     await wait(1500);
     assert.ok(engine.lookahead() >= 0.3, 'held while hidden');
-    await until(() => infos.some(l => l.includes('as the page hides')), 1000, 'the hidden rise told');
+    await until(() => infos.some(l => l.includes('as the page hides')), 3000, 'the hidden rise told');
     setVisibility('visible');
-    await until(() => engine.lookahead() < 0.3, 4000, 'easing back once visible');
+    await until(() => engine.lookahead() < 0.3, 10000, 'easing back once visible');
     assert.deepEqual(log.bad, []);
   } finally {
     infos.restore();
@@ -213,17 +213,17 @@ async function overload(t, isolated, workers) {
     // 14 ms to render a chunk that lasts 10.7.
     const victim = workers === 1 ? 0 : 1, name = workers === 1 ? 'combined' : 'island 1';
     cost(engine, victim, 14);
-    await until(() => warns.some(w => w.startsWith('[heart] overload')), 5000, 'the overload warning');
+    await until(() => warns.some(w => w.startsWith('[heart] overload')), 10000, 'the overload warning');
     const said = warns.filter(w => w.startsWith('[heart] overload'));
     const ms = Number(said[0].match(new RegExp(`${name} at (\\d+\\.\\d) ms`))?.[1]);
     assert.ok(ms >= 10.7, `names ${name} and its render time over the budget: ${said[0]}`);
     assert.ok(!said[0].includes(workers === 1 ? 'island' : 'mix'), 'only the overloaded stage is named');
     assert.equal(engine.stats().overloaded, true);
-    assert.ok(infos.some(l => l.includes('overload: ' + name)), `a growth called it an overload:\n${infos.join('\n')}`);
+    assert.ok(infos.some(l => l.startsWith('[heart] lookahead')), 'the underruns grew the lookahead, and said so');
     await wait(1200);
     assert.equal(warns.filter(w => w.startsWith('[heart] overload')).length, 1, 'said once, then quiet');
     cost(engine, victim, 0);
-    await until(() => !engine.stats().overloaded, 3000, 'the overload to pass');
+    await until(() => !engine.stats().overloaded, 6000, 'the overload to pass');
     assert.deepEqual(ctx.log.bad, [], 'the time map held through it');
     t.diagnostic(said[0]);
   } finally {

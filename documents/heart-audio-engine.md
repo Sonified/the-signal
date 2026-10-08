@@ -201,7 +201,11 @@ Every random choice inside the DSP (genus partial phases, LPF wander, IR noise i
 // Engine, or to null when this device cannot run it (no wasm SIMD, worklet
 // failed), in which case the caller keeps the native engine.
 export async function startEngine(nativeCtx, opts) -> Engine | null
-//   opts: { lookahead: seconds (default 0.045 with SAB, 0.09 without),
+//   opts: { lookahead: seconds, the base (default 0.045 with SAB, 0.09 without;
+//                      0.12 and 0.18 on a phone or tablet, §7.3),
+//           maxLookahead: seconds (default 0.5), hiddenLookahead: seconds (default 0.3),
+//           steadySeconds: the calm before each step down (default 30),
+//           handheld: boolean (default: detected, §7.3),
 //           workers: count (default: clamp(hardwareConcurrency − 2, 1, 4) island
 //                    workers + 1 mix worker; 1 combined worker on ≤ 2 cores),
 //           wasmUrl }
@@ -222,7 +226,8 @@ Engine = {
   ensureBuffer(id, stageId, audioBuffer?), // uploads sample buffer id to that stage unless it is there
   freeBuffer(id, stageIds?),// frees it there (all stages by default), behind every command already sent
   on(type, fn),             // 'events' (stage, raw event bytes), 'underrun', 'stats', 'error' (stage, message)
-  stats(),                  // { underruns, fill, renderMs per stage }
+  stats(),                  // { underruns, fill, renderMs per stage, lookahead (s), overloaded }
+  lookahead(),              // the lookahead now, in seconds (it adapts, §7.3)
   inspect(),                // Promise of each stage's heart_stats counters and memory, by name
   close()
 }
@@ -233,7 +238,8 @@ Engine = {
 ### 7.2 Time
 - The drain posts the native context frame `F` at which it played engine frame 0. From then on, engine frame n plays at native frame n + F, exactly. `frameAt(t) = t·sr − F`.
 - An underrun plays zeros for the missing frames and **never shifts the mapping**: late frames are dropped when they arrive. Time stays true, and the strobe and visual sync never drift.
-- Commands carry native context times (what the app already computes from `ctx.currentTime`). A param call or a start or stop behind the render horizon moves on by its lateness with the rest of its gesture (§6.1, late gestures); anything else whose frame is already rendered applies at the next frame to render. Scheduled music (the piano plans 1.5 s ahead, the sequencer 0.6 s) stays sample accurate; a slider move is heard about one lookahead later (some 65 ms with SAB, the horizon's chunks included).
+- Commands carry native context times (what the app already computes from `ctx.currentTime`). A param call or a start or stop behind the render horizon moves on by its lateness with the rest of its gesture (§6.1, late gestures); anything else whose frame is already rendered applies at the next frame to render. Scheduled music (the piano plans 1.5 s ahead, the sequencer 0.6 s) stays sample accurate; a slider move is heard about one lookahead later (some 65 ms with SAB at the desktop base, the horizon's chunks included, more while the lookahead has grown).
+- The adaptive lookahead (§7.3) never touches the mapping. Growing renders further ahead, shrinking renders less far ahead and lets what is buffered play out; nothing is dropped or skipped to change it, and the drain's clock counts every quantum either way.
 - `HeartContext.currentTime` is the native `ctx.currentTime`, so every clock bridge in the app (strobe-am's `performance.now` ↔ `currentTime`) stays correct.
 
 ### 7.3 Rings
@@ -241,7 +247,20 @@ Engine = {
 - **MessageRing:** the same interface over a MessageChannel, with chunks of 512 frames sent as transferables and a free-list returned the other way so steady state allocates nothing.
 - `crossOriginIsolated` picks the ring: SAB when true, messages otherwise. Both pass the same tests.
 - Each island stage has one egress ring carrying all its egress ports (up to 16 stereo ports per stage). The mix stage has one final ring (stereo).
-- Worker scheduling: an island renders while its egress ring has room and its frame is below `played + lookahead`; the mix renders block k once every island ring holds k.
+- Worker scheduling: an island renders while its egress ring has room and its frame is below `played + lookahead + lead` (a chunk with SAB; without, it keys on ring room alone); the mix and the combined stage render while their frame is below `played + lookahead`, the mix block k once every island ring holds k. A stage behind (catching up, or overloaded) returns to its event loop every four chunks, on a zero timer, so commands and buffers land meanwhile; in message mode a ring's message only schedules a pump on that timer.
+
+#### Adaptive lookahead
+The lookahead is not fixed. It grows when the drain underruns and when the page hides, and eases back after a steady stretch, live, in both modes.
+
+- **Base, by device.** Desktop: 45 ms with SAB, 90 ms without. A phone or tablet starts with a cushion: 120 ms with SAB, 180 ms without. The signal is a coarse primary pointer (`matchMedia('(pointer: coarse)')`), true of every phone and tablet, iPads included (whose Safari calls itself a Mac), and false of a touchscreen laptop, whose primary pointer is its trackpad; an iOS or Android user agent backs it up. The core count is not used: browsers round or cap it for privacy, and many desktops have few.
+- **Grow on underrun.** The first silent quantum of a run doubles the lookahead, up to the most, 0.5 s. One stall is one run, so one stall doubles it once; a later stall that still underruns doubles it again. The most is set by the music, not by memory: the sequencer books 0.6 s ahead, and a lookahead past 0.5 s plus the horizon's chunks would land its notes behind the horizon.
+- **Grow ahead of trouble.** When the page goes hidden (`visibilitychange`) the lookahead rises at once to the hidden floor, 0.3 s: nothing is interactive then, and that is when the OS slows the workers.
+- **Shrink only when safe.** After 30 s visible with no underrun it halves, step by step, never below the base, and never while hidden; coming back visible starts the stretch over.
+- **Who decides.** The drain: it is the first to know of an underrun and the one thread the browser keeps on time, so a growth does not wait on a busy or throttled page. The page only tells it when it hides. The rule costs a few integer comparisons a quantum.
+- **Announce, then obey.** A rise is written first to where the lookahead is going (the page's horizon reads this) and a chunk later to what the stages obey, after which the drain rings every stage's bell so a sleeping one wakes and fills the new room. So a command batch already on its way, anchored at a horizon read before the rise, still lands before any stage renders past it. A shrink needs no delay: the horizon takes the stages' heads into account.
+- **How the stages hear it.** With SAB, two control-block slots, `LOOKAHEAD` (obeyed) and `LOOKAHEAD_NEXT` (announced), both written only by the drain; every stage reads `LOOKAHEAD` before every chunk. Without, the drain puts the lookahead on every chunk it sends back to the mix, beside the clock (`{ buf, clock, ahead }`), and posts each change to the page for its horizon; islands key on ring room and need no news of it.
+- **Ring sizes.** SharedArrayBuffers cannot grow, so the final ring holds the most from the start: 2 channels × 4 bytes × (0.5 s + a chunk) ≈ 196 KB at 48 kHz (388 KB at 96 kHz). A message-mode final ring may make that many chunks, made only as first needed. An egress ring holds what it held before: the desktop SAB base plus two chunks, 32 channels × 4 bytes × 3201 frames ≈ 410 KB an island at 48 kHz, 1.6 MB for four. Sized for the most it would be 3.2 MB an island, 12.8 MB for four, too much for a phone. Past the base an island is held by ring room a little ahead of the mix, which loses nothing: the cushion that covers a stall, whichever stage stalls, is the final ring's.
+- **Stall or overload.** A stall is a stage that renders well inside a chunk's real-time duration (512 frames ≈ 10.7 ms at 48 kHz) yet underruns: the OS parked it, and the cushion fixes it. An overload is a stage whose smoothed render time per chunk is at or above that duration: no cushion can fix it. Each change of lookahead logs one `console.info('[heart] lookahead …')` with the new value, the underrun count, why (underruns or hiding), which of the two it looks like, and each stage's render time against the budget; a stage overloaded for a second running logs one `console.warn('[heart] overload: …')` naming it, then nothing more for 30 s. `Engine.stats()` carries `lookahead` and `overloaded`, and `Engine.lookahead()` the lookahead now.
 
 ### 7.4 Placement
 - An island is a named group of nodes (`'music'`, `'drone'`, `'arp'`, `'choir'`, `'clouds'`, `'ambience'`, `'genus'`). Its nodes all live on one stage. Shared buses live in the **mix**.
@@ -253,6 +272,8 @@ Engine = {
 - `heart-drain`: 0 inputs, 1 output of 2 channels. It copies the final ring into its output and nothing else, so it can never be the slow part.
 - It posts `F` once, and on underrun increments a shared counter (or posts, in message mode).
 - `Atomics.notify` on the read index after each block, so a waiting worker wakes.
+- It looks at the ring once per quantum: late frames are dropped, and the quantum plays only if a whole quantum is waiting behind them in that same look. A second look could find a chunk a stage committed in between and play it late, a shift of the mapping.
+- It steers the lookahead (§7.3, adaptive lookahead) and rings every stage's bell when a rise takes effect. No allocation: it posts only on a change, from one reused object.
 
 ---
 

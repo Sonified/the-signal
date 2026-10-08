@@ -98,11 +98,15 @@ export class Drain {
     // released below to carry back to the mix.
     ring.clock = (this.played + 1) * QUANTUM;
     ring.ahead = this.target;
+    // One look at the ring per quantum. A stage may commit between two
+    // looks, and a second look could then find a quantum's worth waiting
+    // behind late frames not yet dropped, and play them late.
+    let ready = ring.readable();
     if (this.debt > 0) {
-      const late = Math.min(this.debt, ring.readable());
-      if (late > 0) { ring.release(late); this.debt -= late; }
+      const late = Math.min(this.debt, ready);
+      if (late > 0) { ring.release(late); this.debt -= late; ready -= late; }
     }
-    if (ring.readable() >= n) {
+    if (ready >= n) {
       ring.read(0, L, 0, n);
       ring.read(1, R, 0, n);
       ring.release(n);
