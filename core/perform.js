@@ -36,7 +36,7 @@ import { S } from '../js/state.js';
 import { endGlide } from '../js/audio.js';
 import { byId } from './schema.js';
 import {
-  beginTransition, applyPresetAt, REPLAY_CONTROLS, machineControl,
+  beginTransition, applyPresetAt, REPLAY_CONTROLS, machineControl, TEXT_KEEP_IDS,
   presetTargets, presetMarkActive, presetLabel, presetCount, recallPresetForStep
 } from './presets.js';
 import { readKey, saveKey } from './store.js';
@@ -319,11 +319,12 @@ function idxOf(id) {
   const j = rIdx.get(id);
   return j === undefined ? -1 : j;
 }
-// The recall on its way, or null: { i, label, t0, durMs, offs, leave }. offs
+// The recall on its way, or null: { i, label, t0, durMs, offs, leave, keep }. offs
 // are the switches held on until the end, each { t, levels } with levels a
 // list of { c, to, floor } (to: where the level goes back to once the switch
 // is off), or null for a switch with none. leave is the ids left for the
-// landing. label is the preset's name, unique in the row, so a row
+// landing; keep (a Set, or null) is the ids neither the ramp nor its landing
+// moves (a preset turning the text off keeps the text's). label is the preset's name, unique in the row, so a row
 // rearranged or trimmed under the ramp still lands the preset that began it.
 let recall = null;
 
@@ -440,7 +441,11 @@ export function perfRecallPreset(i, sec) {
   // no preset at i: whatever was on its way carries on
   if (!presetTargets(i, to)) { recall = prev; return; }
   presetMarkActive(i);
-  const rec = { i, label: presetLabel(i), t0: nowT, durMs: sec * 1000, offs: [], leave: new Set() };
+  const rec = { i, label: presetLabel(i), t0: nowT, durMs: sec * 1000, offs: [], leave: new Set(), keep: null };
+  // a preset turning the text off leaves the text's own controls as they
+  // are, through the ramp and its landing (presets.js TEXT_KEEP_IDS)
+  const lt = idxOf('lText');
+  if (lt >= 0 && to[lt] === false) rec.keep = new Set(TEXT_KEEP_IDS);
   // each switch's level, claimed: down to nothing (a switch going off, which
   // wins over one coming on through the same trim) or up to its goal
   const down = new Set(), upTo = new Map();
@@ -492,7 +497,7 @@ export function perfRecallPreset(i, sec) {
   try {
     for (let j = 0; j < n; j++) {
       const c = R[j], v = to[j];
-      if (v === undefined || machineControl(c) || c.kind === 'slider' || c.kind === 'color') continue;
+      if (v === undefined || machineControl(c) || c.kind === 'slider' || c.kind === 'color' || (rec.keep && rec.keep.has(c.id))) continue;
       if (isSwitch(c)) { if (v && !c.mixKey && !c.get(S)) c.set(S, true); }
       else if (c.get(S) !== v) c.set(S, v);
     }
@@ -502,7 +507,7 @@ export function perfRecallPreset(i, sec) {
   // ---- the sliders and the colour, from where they now stand ----
   for (let j = 0; j < n; j++) {
     const c = R[j];
-    if ((c.kind !== 'slider' && c.kind !== 'color') || machineControl(c)) continue;
+    if ((c.kind !== 'slider' && c.kind !== 'color') || machineControl(c) || (rec.keep && rec.keep.has(c.id))) continue;
     let goal = to[j];
     if (down.has(c.id)) goal = floorOf(c);
     else if (upTo.has(c.id)) goal = upTo.get(c.id);
@@ -558,7 +563,7 @@ function landRecall(r) {
   let at = presetLabel(r.i) === r.label ? r.i : -1;
   for (let q = 0; at < 0 && q < presetCount(); q++) if (presetLabel(q) === r.label) at = q;
   if (at < 0) return;
-  const hold = new Set();
+  const hold = new Set(r.keep);
   for (let j = 0; j < R.length; j++) {
     const c = R[j], v = recallTo[j];
     if (v === undefined || r.leave.has(c.id)) continue;

@@ -580,9 +580,29 @@ export function applyPresetAt(i) {
   ensureLoaded();
   const e = row[i];
   if (!e) return;
-  if (e.u) applySnapshotLive(e.u.snapshot);
+  const hold = presetTurnsTextOff(i) ? TEXT_KEEP_IDS : null;
+  if (e.u) { recallSnapshot(e.u.snapshot, undefined, hold); save(); }
+  else if (hold) {
+    beginTransition();
+    try { applyPresetNow(PRESET_LIST[e.b].name, hold); } finally { endGlide(); }
+  }
   else applyPreset(PRESET_LIST[e.b].name);
   setActive(e);
+}
+
+// A preset that turns the text layer off leaves the text as it was: the
+// words already up fade out on what they were saying, rather than the
+// source and its timings switching under them as they go (an Off preset
+// saved on individual words dealt one plain word into a fade of
+// affirmations). These are the text's own controls, the journey's text lock
+// (core/journey.js TEXT_LOCK_IDS); the next preset that turns the text on
+// brings its own. perform.js perfRecallPreset keeps them through a ramp.
+export const TEXT_KEEP_IDS = ['textMode', 'textCustomText', 'textDwell', 'textFadeIn', 'textFadeOut', 'textPhraseGap', 'textSize'];
+const textTo = new Array(REPLAY.length);
+let textJ = -2;
+function presetTurnsTextOff(i) {
+  if (textJ === -2) textJ = REPLAY.findIndex(c => c.id === 'lText');
+  return textJ >= 0 && presetTargets(i, textTo) && textTo[textJ] === false;
 }
 
 // ---------- a preset loaded into a journey step ----------
