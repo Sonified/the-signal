@@ -112,10 +112,15 @@ import { eye } from '../core/eye.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 
 // The travel clock wraps at W travel-seconds, so it and the birth times
-// stay precise in the shader's f32 (a step of about 0.0005 s near the top).
-// W is far longer than any piece lives, so an age taken across the wrap is
-// never ambiguous.
-const W = 4096;
+// stay precise in the shader's f32: a step of about 0.00003 s near the top.
+// It was 4096, whose step near the top (about 0.0005 s) is a real share of
+// one frame's travel at 120 Hz with Speed dipped by its variance, so the
+// clock the shader sees advanced 4 ulps one frame and 5 the next and the
+// nearest pieces juddered, worse the longer a session ran, until the wrap
+// set it fine again an hour or two later. W only has to be more than twice
+// the longest age a listed piece can have (MAX_LIFE, 15), so an age taken
+// across the wrap is never ambiguous.
+const W = 256;
 // Births per travel-second at Amount 100%: the old steady stream's rate,
 // 4096 pieces spread evenly over one flight.
 const BASE_RATE = 4096 / FLIGHT;
