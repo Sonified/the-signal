@@ -59,8 +59,15 @@ function fire(handle) {
   const t = timers.get(handle);
   if (!t) return;
   if (!t.every) timers.delete(handle);
+  lastTick.ms = t.ms; lastTick.name = t.fn.name || '(anonymous)'; lastTick.at = performance.now();
   t.fn();
 }
+
+// The timer that fired last: its period, its function's name and when it
+// ran. Written in place, three stores a tick, and read only by Confetti's
+// opt-in diagnostic (gpu/confetti.js, ?confdiag=1), which reports it beside a
+// sudden loss of pieces to see whether a periodic job lines up with it.
+export const lastTick = { ms: 0, name: '', at: -1 };
 
 function clock() {
   if (worker !== undefined) return worker;

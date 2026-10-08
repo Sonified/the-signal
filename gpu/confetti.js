@@ -110,6 +110,20 @@ import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './fe
 import { motionStep } from '../core/motion.js';
 import { eye } from '../core/eye.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
+import { lastTick } from '../js/ticker.js';
+
+// The opt-in diagnostic for pieces vanishing all at once on a phone: with
+// ?confdiag=1 in the page's address, the console gets one line each time the
+// live list loses more than DIAG_DROP of its pieces in one frame, the field
+// is filled afresh (the prewarm, which swaps every piece for new ones while
+// the count stays about the same), the canvas is resized (which starts the
+// trail image clear), or the feedback route changes (which lets an image go).
+// Each line carries what the frame did and the last periodic timer that
+// fired, so a cause on a one second beat shows itself. Off, it costs one
+// boolean test a frame. Inside the engine worker the address is the
+// worker's own, so it only switches on with Engine thread set to Main.
+const DIAG = (() => { try { return /[?&]confdiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
+const DIAG_DROP = 0.3;
 
 // The travel clock wraps at W travel-seconds, so it and the birth times
 // stay precise in the shader's f32: a step of about 0.00003 s near the top.
@@ -439,7 +453,24 @@ export function createConfetti(device, format) {
   }
 
   function resize(pw, ph, d) {
+    if (DIAG && (pw !== pixelW || ph !== pixelH || (d || 1) !== dpr)) {
+      dgResized = pixelW + 'x' + pixelH + '@' + dpr + ' -> ' + pw + 'x' + ph + '@' + (d || 1);
+    }
     pixelW = Math.max(1, pw); pixelH = Math.max(1, ph); dpr = d || 1;
+  }
+
+  // The diagnostic's own state (see DIAG): a resize seen since the last
+  // frame, why this frame filled the field afresh, and the route last frame.
+  let dgResized = '', dgFill = '', dgRoute = '';
+  function diag(what, dt, travel0, n0, cursor0) {
+    console.log('[confdiag] ' + what, {
+      dtMs: +(dt * 1000).toFixed(1), travelBefore: travel0, travelAfter: travel,
+      piecesBefore: n0, piecesAfter: n, cursorBefore: cursor0, cursorAfter: cursor,
+      prewarm: dgFill || 'no', resize: dgResized || 'no', route: dgRoute,
+      thread: typeof window === 'undefined' ? 'worker' : 'page',
+      lastTimer: lastTick.at < 0 ? 'none yet' : lastTick.name + ' every/after ' + lastTick.ms + ' ms, ' +
+        Math.round(performance.now() - lastTick.at) + ' ms ago'
+    });
   }
 
   // The next free slot for a birth at travel time now, taking the ring in
@@ -679,6 +710,7 @@ export function createConfetti(device, format) {
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
     const step = dt > 0 ? motionStep(dt) : 0;
     const t0 = travel;
+    const dgN0 = n, dgCursor0 = cursor;
     // The Speed, dipped by its variance as the app's other variances dip:
     // over one rate cycle it eases from the setting down by the variance's
     // share and back, never above the dial, floored just off a dead stop,
@@ -741,6 +773,7 @@ export function createConfetti(device, format) {
     if (!wasOn || domainChanged) {
       // Just switched on, or onto a new domain: start from a full, moving
       // field.
+      if (DIAG) dgFill = !wasOn ? 'layer switched on' : 'fold domain changed';
       wasOn = true;
       prewarm(base, clump);
     } else if (stepT === 0) {
@@ -786,6 +819,17 @@ export function createConfetti(device, format) {
           device.queue.writeBuffer(slotBuf, 0, rec, 0, (end - N_MAX) * SLOT_FLOATS);
         }
       }
+    }
+
+    // The diagnostic (see DIAG): a big one-frame loss, a fresh fill or a
+    // resize, each said once, as it happens.
+    if (DIAG) {
+      const dropped = dgN0 > 10 && n < dgN0 * (1 - DIAG_DROP);
+      if (dropped || dgFill || dgResized) {
+        diag(dropped ? 'pieces dropped ' + dgN0 + ' -> ' + n : dgFill ? 'field filled afresh' : 'canvas resized',
+          dt, t0, dgN0, dgCursor0);
+      }
+      dgFill = ''; dgResized = '';
     }
 
     // The births and the list run whatever the look, so pieces keep flowing
@@ -903,6 +947,12 @@ export function createConfetti(device, format) {
     // The bypass (see its note above): the feedback not in use, and
     // unfolded, an opacity the pieces can carry exactly.
     bypass = !fbInUse && (kaleidoNow || fbOpacity === 1 || fbOpacity <= 0.002);
+    // A change of route lets a trail image go, which clears every trail.
+    if (DIAG) {
+      const route = bypass ? 'bypass' : before ? 'before fold' : 'after fold';
+      if (dgRoute && route !== dgRoute) { dgRoute = dgRoute + ' -> ' + route; diag('feedback route changed', dt, t0, dgN0, dgCursor0); }
+      dgRoute = route;
+    }
     // Before the fold the fold's colour gain carries it, and so on the
     // bypass, where the fold goes straight into the scene. After, the fold
     // draws into the feedback image, where a gain would be baked into the
