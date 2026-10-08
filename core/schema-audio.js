@@ -19,6 +19,7 @@ import { S } from '../js/state.js';
 import { refreshStrobeAm } from '../js/strobe-am.js';
 import { posToAmp, ampToPos, ampToDb, LEVEL_RANGE_DB } from '../js/util.js';
 import { setColorFromPicker } from '../js/color.js';
+import { onPhone } from '../js/handheld.js';
 import { chirpDurationMs } from '../js/chirp.js';
 import {
   setParam, applyLevel, applyAudioShape, applyHarmonics, applyReverbMix,
@@ -1445,16 +1446,27 @@ const musicControls = [
     // whose decay is one number, with a damping and a drift of its own
     // (js/piano.js applyRevType, js/fdn-worklet.js). Level and decay, and
     // their variances, are the same settings under either.
+    //
+    // On a phone the row is that phone's own choice instead (phoneRevType),
+    // Algorithmic until the viewer picks otherwise, since a long convolution
+    // is heavy on a phone's audio thread (js/piano.js applyRevType). It is a
+    // machine setting there (presets.js machineControl, store.js
+    // MACHINE_KEYS): no preset, step or broadcast moves it, and the show's
+    // own type is left as the show has it for the desktops that play it.
     id: 'musicRevType', section: 'music', label: 'Reverb type', kind: 'segment',
-    parent: 'musicReverbDrawer',
+    parent: 'musicReverbDrawer', machineOnPhone: true,
     options: [
       { value: 'conv', label: 'Convolution' },
       { value: 'algo', label: 'Algorithmic' }
     ],
     def: 'conv',
-    get: s => s.musicRevType === 'algo' ? 'algo' : 'conv',
-    set: (s, v) => { s.musicRevType = v === 'algo' ? 'algo' : 'conv'; applyRevType(); save(); },
-    format: s => s.musicRevType === 'algo' ? 'algorithmic' : 'convolution',
+    get: s => (onPhone() ? s.phoneRevType !== 'conv' : s.musicRevType === 'algo') ? 'algo' : 'conv',
+    set: (s, v) => {
+      if (onPhone()) s.phoneRevType = v === 'conv' ? 'conv' : 'algo';
+      else s.musicRevType = v === 'algo' ? 'algo' : 'conv';
+      applyRevType(); save();
+    },
+    format: s => (onPhone() ? s.phoneRevType !== 'conv' : s.musicRevType === 'algo') ? 'algorithmic' : 'convolution',
     visible: s => s.musicOn && s.musicRevOn !== false
   },
   {

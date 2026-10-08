@@ -7,6 +7,7 @@
 // number rather than merely compatible.
 import { S } from './state.js';
 import { getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, sourceGate } from './audio.js';
+import { onPhone } from './handheld.js';
 import { ctxFor, masterFor, makeWorklet } from './heart/route.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
@@ -139,17 +140,20 @@ function buildGraph() {
   if (!ctx || !master) return;
   fam = ctx;
   dry  = ctx.createGain(); dry.gain.value = 1;
-  // two convolvers, so a new decay fades in under the old tail (audio.js)
-  room = createRoom(ctx, revSec, 2.0);
   wet  = ctx.createGain(); wet.gain.value = revLevel();
   dry.connect(master);
-  room.output.connect(wet).connect(master);
+  wet.connect(master);
   // The way into the reverb, whichever type plays it: every voice feeds
   // revIn, and revIn feeds the convolution room through convFeed or the
   // algorithmic one through its own feed (applyRevType).
   revIn = ctx.createGain();
   convFeed = ctx.createGain();
-  revIn.connect(convFeed).connect(room.input);
+  revIn.connect(convFeed);
+  // two convolvers, so a new decay fades in under the old tail (audio.js).
+  // A phone plays this room on the algorithmic one whatever the type says
+  // (applyRevType), so it builds no convolution room unless that cannot be
+  // made.
+  if (!onPhone()) convRoom();
   // The pause gate (audio.js) on the way into the reverb and the dry bus
   // alike, the two points every note, the drone and the arp all pass, so a
   // pause stops them at once, notes already scheduled included, while the
@@ -239,7 +243,22 @@ function revBreathe(now) {
 // under the new one; once it has, the old one's feed is unplugged and it
 // falls idle. The network is made the first time it is chosen; if its module
 // did not load, the type stays on convolution.
+//
+// A phone plays the algorithmic one unless its viewer picked Convolution,
+// lighter on its audio thread than a long convolution: the phone's own
+// choice (S.phoneRevType, a machine setting), so the show's type is left as
+// the show has it (schema-audio.js). The damping and drift are the show's own only when the
+// show chose this reverb; under Convolution they are hidden and unheard on
+// a desktop, so a phone plays the network's defaults.
 let revAlgoNow = false, revUnplug = null;
+const wantAlgo = () => onPhone() ? S.phoneRevType !== 'conv' : S.musicRevType === 'algo';
+function convRoom() {
+  if (room) return room;
+  room = createRoom(famCtx(), revSec, 2.0);
+  room.output.connect(wet);
+  convFeed.connect(room.input);
+  return room;
+}
 function algoNode() {
   if (algo || algoDead) return algo;
   const ctx = famCtx();
@@ -260,13 +279,18 @@ function algoTune(tc) {
   if (!algo) return;
   const p = algo.parameters;
   glideParam(p.get('decay'), revDecay(), tc);
-  glideParam(p.get('damping'), revDip01(S.pianoRevDamp ?? 0.35), tc);
-  glideParam(p.get('mod'), revDip01(S.pianoRevMod ?? 0.3), tc);
+  const own = S.musicRevType === 'algo';
+  glideParam(p.get('damping'), own ? revDip01(S.pianoRevDamp ?? 0.35) : 0.35, tc);
+  glideParam(p.get('mod'), own ? revDip01(S.pianoRevMod ?? 0.3) : 0.3, tc);
 }
 export function applyRevType() {
   if (!revIn) return;
-  const toAlgo = S.musicRevType === 'algo' && !!algoNode();
-  if (toAlgo === revAlgoNow) return;
+  const toAlgo = wantAlgo() && !!algoNode();
+  // a phone whose network could not be made falls back to the room after all
+  if (!toAlgo) convRoom();
+  // On a phone the type can change while the network plays on, which moves
+  // only its damping and drift between the show's and the defaults.
+  if (toAlgo === revAlgoNow) { if (toAlgo && onPhone()) algoTune(0.05); return; }
   revAlgoNow = toAlgo;
   const on = toAlgo ? algoFeed : convFeed, off = toAlgo ? convFeed : algoFeed;
   // the incoming reverb catches up on any decay it missed while idle
@@ -1784,7 +1808,7 @@ function hfGain(i, written, jump) {
 }
 function arpStart() {
   const ctx = famCtx();
-  if (arp || !ctx || !dry || !room) return;
+  if (arp || !ctx || !dry || !revIn) return;
   // The bus's level chain (master level, strobe pulse, sweep, the 'arp'
   // channel gate) runs on a steady 1 rather than on the sound, and its output
   // drives the gain of the dry bus every line feeds, and of each line's own

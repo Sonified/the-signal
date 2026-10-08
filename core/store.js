@@ -167,7 +167,7 @@ function buildSettings() {
     arpVolVar: S.arpVolVar, arpVolPeriod: S.arpVolPeriod,
     pianoReverbVar: S.pianoReverbVar, pianoReverbPeriod: S.pianoReverbPeriod,
     pianoRevTimeVar: S.pianoRevTimeVar, pianoRevTimePeriod: S.pianoRevTimePeriod,
-    musicRevType: S.musicRevType, pianoRevDamp: S.pianoRevDamp, pianoRevMod: S.pianoRevMod,
+    musicRevType: S.musicRevType, phoneRevType: S.phoneRevType, pianoRevDamp: S.pianoRevDamp, pianoRevMod: S.pianoRevMod,
     arpStrobeAmVar: S.arpStrobeAmVar, arpStrobeAmPeriod: S.arpStrobeAmPeriod, arpWave: S.arpWave, arpAtk: S.arpAtk, arpDec: S.arpDec, arpOct: S.arpOct, arpRev: S.arpRev, arpSpread: S.arpSpread, arpStrobeAm: S.arpStrobeAm,
     arpHfCut: S.arpHfCut,
       arpSwOn: S.arpSwOn, arpSwLo: S.arpSwLo, arpSwHi: S.arpSwHi, arpSwPeriod: S.arpSwPeriod, arpSwWander: S.arpSwWander,
@@ -674,7 +674,7 @@ export function snapshot() {
 // rather than read off the schema, since this module must not depend on it.
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive',
-                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed'];
+                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -897,6 +897,8 @@ function applySettings(s, live, scene) {
     if (s.fbResScale === 1 || s.fbResScale === 0.75 || s.fbResScale === 0.5) S.fbResScale = s.fbResScale;
     // Trail switch: the two it offers; anything else stays at Keep.
     if (s.fbResSwitch === 'keep' || s.fbResSwitch === 'clear') S.fbResSwitch = s.fbResSwitch;
+    // A phone's own reverb type (js/piano.js applyRevType); unset is Algorithmic.
+    if (s.phoneRevType === 'algo' || s.phoneRevType === 'conv') S.phoneRevType = s.phoneRevType;
     // The parallax sim's sway (core/eye.js). Its switch is never saved, so a
     // load always starts with the head still.
     if (typeof s.parallaxAmount === 'number' && isFinite(s.parallaxAmount)) S.parallaxAmount = Math.max(0, Math.min(0.3, s.parallaxAmount));

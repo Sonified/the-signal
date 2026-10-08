@@ -18,6 +18,7 @@
 // so a built-in that has been saved over keeps its name and its place in the
 // row but recalls the viewer's version instead of the v0 recipe.
 import { S } from '../js/state.js';
+import { onPhone } from '../js/handheld.js';
 import { PRESETS } from '../js/presets.js';
 import { syncAmbLayers } from '../js/ambience.js';
 import { beginGlide, endGlide, PRESET_GLIDE_S } from '../js/audio.js';
@@ -234,7 +235,9 @@ export const REPLAY_CONTROLS = REPLAY;
 // them. The v0 recipe's helpers above pass them over, the journey leaves them
 // out of every step (its skip), and a followed glide refuses them
 // (perform.js perfFollowGlide).
-export function machineControl(c) { return c.section === 'render'; }
+// A control marked machineOnPhone is one on a phone only: there it holds the
+// phone's own choice (the Reverb type, core/schema-audio.js).
+export function machineControl(c) { return c.section === 'render' || (c.machineOnPhone === true && onPhone()); }
 
 // store.applySnapshot writes state and nothing else, which is all a boot
 // needs, but mid-session the audio graph, the edge particles and the rest

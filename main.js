@@ -24,6 +24,7 @@ import { seedParticles, seedTunnel } from './js/sim.js';
 import { setColorFromPicker } from './js/color.js';
 import { ensureAudioGraph, warmDevice, audioOn } from './js/audio.js';
 import { setMediaTransport } from './js/background.js';
+import { noteHandheld } from './js/handheld.js';
 import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from './js/panel-guard.js';
 import { display, displayChanged, clockCheck, clockMessage, displaySummary, DISPLAY_CHANGED } from './js/display-watch.js';
 
@@ -132,6 +133,8 @@ async function boot() {
   const platform = inWorker ? await host.platform : createPlatform(canvas);
   console.log('[boot] platform ready');
   setOverlayTouch(!!platform.coarse);
+  // the page's pointer, for the engine thread's phone readouts (js/handheld.js)
+  noteHandheld(!!platform.coarse);
 
   // State first: v0 and v1 share one saved settings object.
   initStore(platform.storage);

@@ -40,6 +40,7 @@ import {
 } from './ring.js';
 import { ROLE, defaultWorkers, planStages, Placement, spawnWorkers } from './pool.js';
 import { createUploader } from './buffers.js';
+import { handheld } from '../handheld.js';
 
 const DRAIN_URL = new URL('./drain-worklet.js', import.meta.url).href;
 const WORKER_URL = new URL('./render-worker.js', import.meta.url);
@@ -83,16 +84,9 @@ const STATS_MS = 250;
 // and not again for OVERLOAD_QUIET_MS.
 const OVERLOAD_TICKS = 4, OVERLOAD_QUIET_MS = 30000;
 
-// A phone or tablet. The primary pointer being coarse is the signal: it is
-// true of every phone and tablet, iPads included (whose Safari calls itself
-// a Mac), and false of a laptop with a touchscreen, whose primary pointer
-// is still its trackpad. The user agent backs it up where matchMedia is
-// missing. The core count is no help: browsers round or cap it for privacy,
-// and plenty of desktops have few.
-export function handheld(g = globalThis) {
-  try { if (g.matchMedia?.('(pointer: coarse)').matches) return true; } catch (err) { /* no media queries */ }
-  return /iPhone|iPad|iPod|Android/i.test(g.navigator?.userAgent || '');
-}
+// A phone or tablet (js/handheld.js, where the rule now lives so the audio
+// modules can ask it too), re-exported here for anything that asked Heart.
+export { handheld };
 
 // The mapping between native context time and engine frames.
 export function timeMap(sampleRate, now) {
