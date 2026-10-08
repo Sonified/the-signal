@@ -137,9 +137,22 @@
 //     caret, a double-click selects all. Cmd+V pastes, through the platform's
 //     paste event (code 'Paste', the text in `key`), each character through
 //     the same filter typing runs. The caret blinks off the clock, not
-//     a spring. Not supported: IME composition, drag selection.
+//     a spring. Not supported: IME composition (except on a touch screen,
+//     below), drag selection.
 //     While a field holds focus ui.textEditing is true (see imgui.js), so the
 //     app can keep its global shortcuts off the keyboard.
+//   ui.textTarget(x, y, w, h)
+//     Declares, every frame it is drawn, the rect of whatever opens a field
+//     on a click (the + chip, a readout, a field's resting box). A phone
+//     raises its keyboard only for a real input focused inside the tap
+//     itself, and the tap is read a frame later, so on a touch screen the
+//     page (platform/soft-keyboard.js) focuses its hidden input the moment
+//     a tap lands on one of these. Typing then arrives from that input, as
+//     whole-text updates (autocorrect, predictive text and composition
+//     included), not keys; its Enter commits, and the keyboard's Done, or
+//     the input losing focus any other way, commits as Tab does. A caller
+//     that opens a field from a click and forgets this still gets the
+//     field, with no keyboard on a phone. Does nothing on a desktop.
 //
 // `disabled` (every raw widget's trailing argument, defaulting to false) is
 // what makes a widget dim-and-inert rather than just dim: it is threaded
@@ -190,6 +203,7 @@ export function installWidgets(ui) {
   ui.control = control;
   ui.textBegin = textBegin;
   ui.textField = textField;
+  ui.textTarget = textTarget;
   // slider()'s readout report, written by every slider call and read by its
   // caller straight after (see the header). Declared here, once, so the
   // object's shape never changes in the frame loop.
@@ -257,9 +271,11 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
     roW = ui.text.measure(formatted, TYPE.sm, W.regular);
     if (inline) {
       ui.interact(combine2(nid, 14), fx + fw - roW - RO_PAD_X, ry, roW + RO_PAD_X, trackAreaH, false);
+      ui.textTarget(fx + fw - roW - RO_PAD_X, ry, roW + RO_PAD_X, trackAreaH);
     } else {
       const hy = ry - RO_PAD_Y;
       ui.interact(combine2(nid, 14), rx + rw - roW - RO_PAD_X, hy, roW + RO_PAD_X, trackY0 - 1 - hy, false);
+      ui.textTarget(rx + rw - roW - RO_PAD_X, hy, roW + RO_PAD_X, trackY0 - 1 - hy);
     }
     roHover = ui.hover;
     if (roHover) ui.setCursorHint('pointer');
@@ -1048,6 +1064,41 @@ function textBegin(st, initial, selectAll, numeric) {
   // Counts as editing from this frame on, so a key typed straight after the
   // click that opened the field never reaches a global shortcut.
   ui._textSeen = true;
+  // On a touch screen the page's hidden input takes the typing from here
+  // (platform/soft-keyboard.js), seeded with this text.
+  if (ui.softKb) ui.softKb.begin(st, numeric);
+}
+
+// A rect where a tap opens a text field, declared every frame it is drawn,
+// so a touch tap on it can raise the phone's keyboard inside the tap itself
+// (see the header). Cut to the current clip; nothing on a desktop.
+function textTarget(x, y, w, h) {
+  const ui = this, kb = ui.softKb;
+  if (!kb || ui._inert > 0) return;
+  const c = ui.dl._clip, i = (ui.dl._clipDepth - 1) * 4;
+  const x0 = Math.max(x, c[i]), y0 = Math.max(y, c[i + 1]);
+  const x1 = Math.min(x + w, c[i] + c[i + 2]), y1 = Math.min(y + h, c[i + 1] + c[i + 3]);
+  if (x1 > x0 && y1 > y0) kb.target(x0, y0, x1 - x0, y1 - y0);
+}
+
+// The page input's latest text into st, through the same filter typing runs
+// (numeric, maxLen, no control characters). The caret and a whole selection
+// come with it while nothing was refused; otherwise the caret goes to the end
+// and the next sync hands the page back the text as kept.
+function takeSoftText(st, kb) {
+  const v = kb.inText;
+  kb.inText = null;
+  kb.knownText = v; kb.knownCaret = kb.inCaret; kb.knownAll = kb.inAll;
+  st.text = ''; st.caret = 0; st.selAll = false;
+  for (let k = 0; k < v.length; k++) {
+    const ch = v.charAt(k);
+    if (ch >= ' ') insertChar(st, ch);
+  }
+  if (st.text === v) {
+    st.caret = Math.min(kb.inCaret, v.length);
+    st.selAll = kb.inAll && v.length > 0;
+  }
+  st.dirty = true;
 }
 
 function measureText(ui, st, size) {
@@ -1095,6 +1146,7 @@ function finishText(ui, st, nid, status) {
   st.active = false;
   st.focusPending = false;
   if (ui.focusId === nid) ui.focusId = -1;
+  if (ui.softKb && ui.softKb.st === st) ui.softKb.end();
   return status;
 }
 
@@ -1114,6 +1166,17 @@ function textField(id, x, y, w, h, st, size, align, radius) {
   const sz = size === undefined ? TYPE.xs : size;
   ui.registerFocusable(nid);
   if (st.focusPending) { st.focusPending = false; ui.focusId = nid; ui.focusVisible = false; }
+
+  // On a touch screen, what was typed into the page's input since the last
+  // frame (taken first, so a press that commits keeps it), then its Enter,
+  // Escape or Done. The field is a target too, so a tap on it can bring back
+  // a keyboard the field opened without.
+  const kb = ui.softKb && ui.softKb.st === st ? ui.softKb : null;
+  if (kb) {
+    ui.textTarget(x, y, w, h);
+    if (kb.inText !== null) { takeSoftText(st, kb); st.blinkT0 = ui.t; }
+    if (kb.inDone) return finishText(ui, st, nid, kb.inDone === 2 ? TEXT_CANCEL : TEXT_COMMIT);
+  }
 
   // A press anywhere else commits, like a browser field losing focus, and
   // so does focus moving on (Tab, or a press some widget drawn earlier this
@@ -1197,6 +1260,8 @@ function textField(id, x, y, w, h, st, size, align, radius) {
     st.blinkT0 = ui.t;
   }
   if (st.dirty) measureText(ui, st, sz);
+  // a tap that moved the caret, or a character the filter refused
+  if (kb) kb.sync(st);
 
   // ---- draw ----
   const ox = textOriginX(st, x, w, pad, avail, align);
@@ -1525,6 +1590,7 @@ function textControl(ui, ctrl, S, enabled) {
   let hover = false;
   if (!editing) {
     ui.interact(nid, rx, by, rw, boxH, !enabled);
+    if (enabled) ui.textTarget(rx, by, rw, boxH);
     hover = ui.hover;
     if (hover) ui.setCursorHint('text');
     const clicked = ui.clicked;

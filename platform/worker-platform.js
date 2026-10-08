@@ -21,6 +21,10 @@
 //   the page carries out; images are decoded here, against the page's base
 //   URL (relative to the page, which lives at the site root);
 //
+//   the phone's keyboard, on a touch screen (the hello says whether), is the
+//   engine's half of platform/soft-keyboard.js, talking to the page's hidden
+//   input over the same channel;
+//
 //   the screen's identity, which a worker cannot read, arrives whenever the
 //   page sees it change, and pollDisplay() reports that once, on the next
 //   frame, just as web.js's reports its own reading; the page's frame
@@ -38,11 +42,13 @@
 
 import { createInputQueue } from './input-queue.js';
 import { loadImagePixels } from './web.js';
+import { createKeyboardLink } from './soft-keyboard.js';
 import { displayUpdate, displayPageClock } from '../js/display-watch.js';
 
 export function createWorkerPlatform(init, post) {
   const resizeCbs = [], visCbs = [], storageCbs = [];
   const q = createInputQueue();
+  const kbLink = init.softKeyboard ? createKeyboardLink(post) : null;
 
   // The page reports event times on the shared absolute clock (its time
   // origin plus the event's timeStamp); this thread's performance.now()
@@ -133,7 +139,9 @@ export function createWorkerPlatform(init, post) {
     // started; the page then also puts the choice back to the main thread,
     // so a reload cannot land in the same dead end.
     message: text => post({ k: 'message', text, booted: framesStarted }),
-    loadImagePixels: url => loadImagePixels(new URL(url, init.baseURI).href)
+    loadImagePixels: url => loadImagePixels(new URL(url, init.baseURI).href),
+    // the text fields' keyboard on a touch screen, null elsewhere
+    softKeyboard: kbLink
   };
 
   function applySize(d) {
@@ -249,6 +257,9 @@ export function createWorkerPlatform(init, post) {
         break;
       }
       case 'size': applySize(d); break;
+      case 'kbArm': case 'kbText': case 'kbDone':
+        if (kbLink) kbLink.receive(d);
+        break;
       case 'vis':
         visible = d.visible;
         for (let i = 0; i < visCbs.length; i++) visCbs[i](visible);

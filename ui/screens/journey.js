@@ -672,6 +672,8 @@ function libChip(ui, k, px, py, w, isOpen, n) {
   }
   ui.dragHold = 0;
   ui.interact(id, px, py, w, CHIP_H, false);
+  // a tap renames it in edit mode (short of the × corner, for a phone's keyboard)
+  if (libEditing) ui.textTarget(px, py, canDel ? w - DEL_R * 2 : w, CHIP_H);
   const hover = ui.hover;
   if (libEditing) {
     if (hover) ui.setCursorHint(libDrag.k === k && libDrag.moved ? 'grabbing' : 'grab');
@@ -706,6 +708,7 @@ function libChip(ui, k, px, py, w, isOpen, n) {
 
 function libAddChip(ui, px, py) {
   const dl = ui.dl;
+  ui.textTarget(px, py, LIB_ADD_W, CHIP_H);
   if (btn(ui, 'jr.libAdd', px, py, LIB_ADD_W, CHIP_H)) ui.textBegin(libNameEdit, '', false, false);
   dl.rect(px, py, LIB_ADD_W, CHIP_H, CHIP_H / 2, C.btnBg, 1, btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
   // the plus in hairline bars, as the presets' + draws it
@@ -1033,6 +1036,7 @@ function drawSettings(ui, x0, sy) {
   }
   const name = journeyName();
   ui.interact(ui.id('jr.nameBox'), fx, fy, fw, fh, false);
+  ui.textTarget(fx, fy, fw, fh);
   const hover = ui.hover;
   if (hover) { ui.setCursorHint('text'); overBtn = true; }
   if (ui.clicked) ui.textBegin(nameEdit, name, false, false);
@@ -1058,6 +1062,7 @@ function drawTextField(ui, i, st, fx, cy, fw) {
   }
   const id = ui.idx('jr.textBox', i);
   ui.interact(id, fx, fy, fw, FIELD_H, false);
+  ui.textTarget(fx, fy, fw, FIELD_H);
   const hover = ui.hover;
   if (hover) { ui.setCursorHint('text'); overBtn = true; }
   if (ui.clicked) { textIdx = i; ui.textBegin(textEdit, st.text, false, false); }

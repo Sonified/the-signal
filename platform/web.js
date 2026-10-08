@@ -2,8 +2,10 @@
 // or DOM events (navigator.gpu is the one exception, and it lives in
 // gpu/engine.js). Everything above this layer works in CSS pixels and a
 // small set of pooled input events; this is where those numbers come from,
-// and where the handful of transient DOM writes v1 is allowed to make
-// (a clipboard-fallback textarea, and the one fatal-message paragraph) live.
+// and where the handful of DOM writes v1 is allowed to make (a
+// clipboard-fallback textarea, the one fatal-message paragraph, and on a
+// touch screen the hidden input that raises the phone's keyboard,
+// platform/soft-keyboard.js) live.
 //
 // It is also where images are decoded. loadImagePixels(url) fetches an image
 // (url relative to the page, which lives at the site root),
@@ -26,6 +28,7 @@
 // behaviour, while the engine and this file's createPlatform are not used on
 // the page at all.
 import { createInputQueue } from './input-queue.js';
+import { softKeyboardWanted, createSoftKeyboard, createKeyboardLink } from './soft-keyboard.js';
 import { settingsFile } from './settings-file.js';
 import { displayListenScreen, displaySampleScreen } from '../js/display-watch.js';
 
@@ -34,8 +37,9 @@ export const GUARDED_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft
 // The canvas is the only thing on this page that can hold focus, so keys
 // count whether it has focus or nothing does. On a fresh load focus sits on
 // the body until something is clicked, and requiring the canvas meant the
-// space bar did nothing until then. The only element that can legitimately
-// take keys away is the clipboard fallback's momentary textarea. meta/ctrl
+// space bar did nothing until then. The only elements that can legitimately
+// take keys away are the clipboard fallback's momentary textarea and, while a
+// field is typed in on a touch screen, the soft keyboard's input. meta/ctrl
 // combinations are left alone so the browser's own shortcuts keep working.
 export function canvasOwnsKeys(canvas) {
   const a = document.activeElement;
@@ -249,15 +253,26 @@ export function createPlatform(canvas) {
   const q = createInputQueue();
   const pollInput = q.pollInput;
 
+  // ---------- the phone's keyboard ----------
+  // On a touch screen only: the page's hidden input and the engine's link to
+  // it, which on this thread simply call each other (platform/soft-keyboard.js).
+  let kb = null, kbLink = null;
+  if (softKeyboardWanted()) {
+    kbLink = createKeyboardLink(m => kb.receive(m));
+    kb = createSoftKeyboard(canvas, m => kbLink.receive(m));
+  }
+
   // ---------- pointer ----------
+  // (the keyboard sees a touch's down and up first: its up is the tap that
+  // may focus the input, and a down while it is focused leaves it so)
   canvas.addEventListener('pointerdown', e => {
-    canvas.focus();
+    if (!(kb && kb.down(e))) canvas.focus();
     try { canvas.setPointerCapture(e.pointerId); } catch {}
     q.pointer('down', e);
   });
   canvas.addEventListener('pointermove', e => q.pointer('move', e));
-  canvas.addEventListener('pointerup', e => q.pointer('up', e));
-  canvas.addEventListener('pointercancel', e => q.pointer('cancel', e));
+  canvas.addEventListener('pointerup', e => { if (kb) kb.up(e); q.pointer('up', e); });
+  canvas.addEventListener('pointercancel', e => { if (kb) kb.cancel(e); q.pointer('cancel', e); });
   canvas.addEventListener('pointerleave', e => q.pointer('leave', e));
 
   // ---------- wheel ----------
@@ -379,7 +394,9 @@ export function createPlatform(canvas) {
     onVisibility(fn) { visCbs.push(fn); },
     fullscreen: { toggle: toggleFullscreen, active: fullscreenActive },
     message: showMessage,
-    loadImagePixels
+    loadImagePixels,
+    // the text fields' keyboard on a touch screen, null elsewhere
+    softKeyboard: kbLink
   };
   // Measured synchronously once, so the engine has real device-pixel
   // dimensions to configure the canvas with before the first (asynchronous)

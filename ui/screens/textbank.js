@@ -246,6 +246,7 @@ function textRow(ui, texts, i, top) {
   } else {
     const id = ui.idx('tb.textBox', i);
     ui.interact(id, bodyX, fy, fw, FIELD_H, false);
+    ui.textTarget(bodyX, fy, fw, FIELD_H);
     const hover = ui.hover;
     if (hover) ui.setCursorHint('text');
     if (ui.clicked) { editIdx = i; ui.textBegin(tEdit, texts[i], false, false); }

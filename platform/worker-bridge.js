@@ -12,7 +12,10 @@
 //   are caught here with the same guards web.js applies (focus and pointer
 //   capture on a press, Space and the arrows kept from scrolling, the
 //   gesture and context-menu guards) and posted to the worker as plain
-//   copies, which its platform feeds into the same pooled queue;
+//   copies, which its platform feeds into the same pooled queue; and on a
+//   touch screen the hidden input that raises the phone's keyboard for the
+//   worker's text fields (platform/soft-keyboard.js), whose focus has to
+//   happen here, inside the tap;
 //   its size, visibility and fullscreen state, posted as they change;
 //
 //   the truth about the display, which a worker cannot see: the screen's
@@ -47,6 +50,7 @@ import {
 } from './web.js';
 import { createProfileHost } from './profile-web.js';
 import { settingsFile } from './settings-file.js';
+import { softKeyboardWanted, createSoftKeyboard } from './soft-keyboard.js';
 import { getContext } from '../js/audio.js';
 import { ENGINE_THREAD_KEY, engineThread, initEngineThread } from '../core/engine-thread.js';
 import { createAudioShell } from '../core/audio-shell.js';
@@ -113,7 +117,7 @@ export async function startWorkerShell(canvas) {
     worker.postMessage({ k: 'hello', init: {
       storage, baseURI: document.baseURI, width: cssW, height: cssH, dpr: dpr0,
       hidden: document.hidden, fullscreen: !!fsElement(), env: env(), entryTypes,
-      display: readDisplay()
+      display: readDisplay(), softKeyboard: softKeyboardWanted()
     } });
   });
   // The sound's shell is made before the canvas goes over, so that if it
@@ -188,16 +192,22 @@ function runShell(canvas, worker, shell, size0, env) {
     metaKey: e.metaKey, timeStamp: e.timeStamp + T0
   });
 
+  // The phone's keyboard, on a touch screen: its input lives here and the
+  // text fields in the worker, so their messages ride this channel. It sees
+  // a touch's down and up before they are posted, as web.js's does, so the
+  // worker hears of an armed input before the up that answers it.
+  const kb = softKeyboardWanted() ? createSoftKeyboard(canvas, send) : null;
+
   canvas.addEventListener('pointerdown', e => {
-    canvas.focus();
+    if (!(kb && kb.down(e))) canvas.focus();
     try { canvas.setPointerCapture(e.pointerId); } catch {}
     // The first gesture wakes the sound here, inside the gesture itself.
     shell.wake();
     send({ k: 'in', t: 'down', e: pointerCopy(e) });
   });
   canvas.addEventListener('pointermove', e => send({ k: 'in', t: 'move', e: pointerCopy(e) }));
-  canvas.addEventListener('pointerup', e => send({ k: 'in', t: 'up', e: pointerCopy(e) }));
-  canvas.addEventListener('pointercancel', e => send({ k: 'in', t: 'cancel', e: pointerCopy(e) }));
+  canvas.addEventListener('pointerup', e => { if (kb) kb.up(e); send({ k: 'in', t: 'up', e: pointerCopy(e) }); });
+  canvas.addEventListener('pointercancel', e => { if (kb) kb.cancel(e); send({ k: 'in', t: 'cancel', e: pointerCopy(e) }); });
   canvas.addEventListener('pointerleave', e => send({ k: 'in', t: 'leave', e: pointerCopy(e) }));
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
@@ -297,6 +307,9 @@ function runShell(canvas, worker, shell, size0, env) {
         shell.storageChanged(d.key, d.value);
         break;
       case 'cursor': canvas.style.cursor = d.kind; break;
+      case 'kbTargets': case 'kbBegin': case 'kbSync': case 'kbEnd': case 'kbRelease':
+        if (kb) kb.receive(d);
+        break;
       case 'clip':
         clipboardWrite(d.text).then(() => reply(d.id, true), err => reply(d.id, false, err && err.message));
         break;

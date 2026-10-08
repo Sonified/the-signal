@@ -147,7 +147,7 @@
 //   Widgets (installed by widgets.js onto this same object; see that file's
 //   header for the full list and behaviour): ui.slider, ui.segment,
 //   ui.toggle, ui.button, ui.iconButton, ui.tooltip, ui.tooltipAt,
-//   ui.control, ui.textBegin, ui.textField.
+//   ui.control, ui.textBegin, ui.textField, ui.textTarget.
 //
 //   Engine surface widgets.js is written against (not for screens; anything
 //   below this line is the contract between imgui.js and widgets.js, both
@@ -491,6 +491,10 @@ class UI {
     // routes the next frame's keys before the UI is built.
     this._textSeen = false;
     this.textEditing = false;
+    // The phone keyboard's engine-side link (platform/soft-keyboard.js),
+    // set by main.js from the platform on a touch screen, null elsewhere;
+    // widgets.js's text fields feed it, and end() closes its frame.
+    this.softKb = null;
     this._result = { cursor: 'default', wantsFrames: false };
 
     this._wheelConsumed = false;
@@ -682,6 +686,7 @@ class UI {
     r.cursor = this.cursorHint;
     r.wantsFrames = this._unsettled;
     this.textEditing = this._textSeen;
+    if (this.softKb) this.softKb.frameEnd(this);
     return r;
   }
 

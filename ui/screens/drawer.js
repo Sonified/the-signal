@@ -837,6 +837,9 @@ function presetChip(ui, k, px, py, w, t) {
   }
   ui.interact(id, px, py, w, PRESET_H, false);
   const hover = ui.hover;
+  // a tap on one of the viewer's own names, while editing, opens it (short
+  // of the × corner, whose tap must not raise a phone's keyboard)
+  if (presetEditing && presetIsUser(k)) ui.textTarget(px, py, w - DEL_R * 2, PRESET_H);
   if (presetEditing) {
     if (hover) { ui.setCursorHint(drag.k === k ? 'grabbing' : 'grab'); noteTip(id, px, py, w, TIP_EDITING); }
     if (ui.pressed && ui.activeId === id) {
@@ -912,6 +915,7 @@ function presetHeart(ui, x, y, w, h) {
 function addChip(ui, px, py) {
   const id = ui.id('drawer.presetAdd');
   ui.interact(id, px, py, ADD_W, PRESET_H, false);
+  ui.textTarget(px, py, ADD_W, PRESET_H);
   const hover = ui.hover;
   if (hover) { ui.setCursorHint('pointer'); noteTip(id, px, py, ADD_W, TIP_ADD); }
   if (ui.clicked) ui.textBegin(nameEdit, '', false, false);
@@ -1160,6 +1164,7 @@ function unlockRow(ui, i) {
   }
   const id = ui.id('drawer.bcUnlockRow');
   ui.interact(id, x, y, w, h, bcEditing);
+  if (!bcEditing) ui.textTarget(x, y, w, h);
   const hover = ui.hover;
   if (hover) { ui.setCursorHint('pointer'); noteTip(id, x, y, w, TIP_BC_UNLOCK, h); }
   if (ui.clicked) { bcUnlockRow = i; ui.textBegin(unlockEdit, '', false, false); }
@@ -1191,6 +1196,7 @@ function addSessionRow(ui, n) {
 function addSessionChip(ui, px, py) {
   const id = ui.id('drawer.bcAdd');
   ui.interact(id, px, py, bcAddW, PRESET_H, false);
+  ui.textTarget(px, py, bcAddW, PRESET_H);
   const hover = ui.hover;
   if (hover) { ui.setCursorHint('pointer'); noteTip(id, px, py, bcAddW, TIP_BC_ADD); }
   if (ui.clicked) ui.textBegin(sessionEdit, '', false, false);
@@ -1238,6 +1244,7 @@ function keyRow(ui) {
   }
   const id = ui.id('drawer.bcKeyRow');
   ui.interact(id, x, y, w, h, false);
+  ui.textTarget(x, y, w, h);
   const hover = ui.hover;
   if (hover) { ui.setCursorHint('pointer'); noteTip(id, x, y, w, TIP_BC_KEY, h); }
   if (ui.clicked) ui.textBegin(keyEdit, '', false, false);

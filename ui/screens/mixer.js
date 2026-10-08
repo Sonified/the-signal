@@ -363,6 +363,12 @@ function faderCells(ui, f, cy, textAlpha) {
 
   // the readout's own click target: the whole value column
   hit(ui, ui.idx(ctrl.id, 7), x5 - 2, cy - FADER_H / 2, c5 + 4, FADER_H);
+  // the same rect, cut to the body as hit() cuts it, opens the field on a
+  // phone's tap with its keyboard
+  if (!editing) {
+    const ty0 = Math.max(cy - FADER_H / 2, viewTop), ty1 = Math.min(cy + FADER_H / 2, viewBot);
+    if (ty1 > ty0) ui.textTarget(x5 - 2, ty0, c5 + 4, ty1 - ty0);
+  }
   const valueHover = ui.hover && !editing;
   if (valueHover) ui.setCursorHint('pointer');
   const openEdit = ui.clicked && !editing;
