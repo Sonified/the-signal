@@ -65,8 +65,8 @@ let prevLit = false;
 // entry's sync never changes with the table.
 const edgePulseSet = S => typeof S.edgePulse === 'number' ? S.edgePulse : 1;
 const VARIANCES = [
-  { amount: 'depthVar', on: 'depthVarOn', period: 'varPeriod', phase: 'varPhase', eff: 'effDepth', set: 'depth', beacon: 'vp' },
-  { amount: 'brightVar', on: 'brightVarOn', period: 'brightVarPeriod', phase: 'brightVarPhase', eff: 'effBright', set: 'bright', beacon: 'bp' },
+  { amount: 'depthVar', period: 'varPeriod', phase: 'varPhase', eff: 'effDepth', set: 'depth', beacon: 'vp' },
+  { amount: 'brightVar', period: 'brightVarPeriod', phase: 'brightVarPhase', eff: 'effBright', set: 'bright', beacon: 'bp' },
   { amount: 'edgeSpeedVar', period: 'edgeSpeedVarPeriod', phase: 'edgeSpeedVarPhase', eff: 'effEdgeSpeed', set: 'edgeSpeedMul', beacon: 'sp' },
   // the rings' Speed (js/sim.js reads the effective in place of the dial
   // while the variance is up)

@@ -448,10 +448,8 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.depth = pos / 100; save(); },
     format: S => Math.round(S.depth * 100) + '%'
   },
-  // Off holds the depth at its set value; the amount and rate keep their
-  // values for when it comes back on.
   ...varianceRows('depth', {
-    name: 'Depth', on: true, period: 'varPeriod', amountDef: 80, periodDef: 10,
+    name: 'Depth', period: 'varPeriod', amountDef: 80, periodDef: 10,
     effective: S => S.effDepth * 100
   }),
   {
@@ -463,10 +461,8 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.bright = pos / 100; save(); },
     format: S => Math.round(S.bright * 100) + '%'
   },
-  // Off holds the brightness at its set value; the amount and rate keep
-  // their values for when it comes back on.
   ...varianceRows('bright', {
-    name: 'Brightness', on: true, amountDef: 85, periodDef: 22,
+    name: 'Brightness', amountDef: 85, periodDef: 22,
     effective: S => S.effBright * 100
   }),
   {

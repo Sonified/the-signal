@@ -185,12 +185,12 @@ function buildSettings() {
     pipLpfOn: S.pipLpfOn, pipLpfLo: S.pipLpfLo, pipLpfHi: S.pipLpfHi, pipLpfPeriod: S.pipLpfPeriod,
     pipLpfQ: S.pipLpfQ, pipLpfWander: S.pipLpfWander,
     textRestFreq: S.textRestFreq, textRestSec: S.textRestSec, textRestVar: S.textRestVar,
-    depthVar: S.depthVar, depthVarOn: S.depthVarOn, varPeriod: S.varPeriod, panelOpen: S.panelOpen,
+    depthVar: S.depthVar, varPeriod: S.varPeriod, panelOpen: S.panelOpen,
     freqDrift: S.freqDrift, freqDriftOn: S.freqDriftOn, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
     frameLock: S.frameLock, spareMode: S.spareMode, pauseWindDown: S.pauseWindDown, pauseFlickerStop: S.pauseFlickerStop !== false,
     hintFadeMs: S.hintFadeMs, hintSweep: S.hintSweep, hintFadeInMs: S.hintFadeInMs, hintArrive: S.hintArrive,
     fbResScale: S.fbResScale, fbResSwitch: S.fbResSwitch,
-    parallaxAmount: S.parallaxAmount, parallaxSpeed: S.parallaxSpeed, walkPeriod: S.walkPeriod, brightVar: S.brightVar, brightVarOn: S.brightVarOn,
+    parallaxAmount: S.parallaxAmount, parallaxSpeed: S.parallaxSpeed, walkPeriod: S.walkPeriod, brightVar: S.brightVar,
     skipRiskBand: S.skipRiskBand !== false,
     brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
     hueLo: S.hueLo, hueSpan: S.hueSpan,
@@ -917,10 +917,12 @@ function applySettings(s, live, scene) {
   if (typeof s.freqDriftOn === 'boolean') S.freqDriftOn = s.freqDriftOn;
   if (typeof s.driftPeriod === 'number')  S.driftPeriod = s.driftPeriod;
   if (typeof s.depthVar === 'number')     S.depthVar = s.depthVar;
-  if (typeof s.depthVarOn === 'boolean')  S.depthVarOn = s.depthVarOn;
+  // The old variance switches: a record with one off meant "no variance",
+  // which the amount alone says now, so off folds into amount 0.
+  if (s.depthVarOn === false)  S.depthVar = 0;
   if (typeof s.varPeriod === 'number')    S.varPeriod = s.varPeriod;
   if (typeof s.brightVar === 'number')    S.brightVar = s.brightVar;
-  if (typeof s.brightVarOn === 'boolean') S.brightVarOn = s.brightVarOn;
+  if (s.brightVarOn === false) S.brightVar = 0;
   if (typeof s.skipRiskBand === 'boolean') S.skipRiskBand = s.skipRiskBand;
   if (typeof s.brightVarPeriod === 'number') S.brightVarPeriod = s.brightVarPeriod;
   if (typeof s.colorWalk === 'number')    S.colorWalk = s.colorWalk;

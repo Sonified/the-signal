@@ -103,13 +103,11 @@ export const S = {
   // strobe rate. It only ever subtracts: effDepth swings from the set depth down
   // toward zero and back, never above what the slider says.
   depthVar: 0.80, varPeriod: 10, varPhase: 0, effDepth: 0.80,
-  depthVarOn: true,          // v1's switch over the depth variance
 
   // Brightness drift is deliberately applied to the FIELD only. As the centre
   // dims, the periphery keeps its level and attention drifts outward, which is
   // the whole point of an open-focus tool.
   brightVar: 0.85, brightVarPeriod: 22, brightVarPhase: 0, effBright: 1.0,
-  brightVarOn: true,         // v1's switch over the brightness variance
 
   // Rings run the same variance amount and rate on their own accumulator, started
   // half a cycle out, so the centre and the tunnel breathe against each other
