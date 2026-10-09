@@ -62,7 +62,9 @@
 
 import { S, Z_NEAR, MAX_RINGS } from '../js/state.js';
 import { SCENE_WGSL } from './scene.wgsl.js';
-import { SceneData, LUT_N, UNIFORM_FLOATS, RING_FLOATS, RING_BIN_WORDS } from './scene-data.js';
+// RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+// import { SceneData, LUT_N, UNIFORM_FLOATS, RING_FLOATS, RING_BIN_WORDS } from './scene-data.js';
+import { SceneData, UNIFORM_FLOATS, RING_FLOATS, RING_BIN_WORDS } from './scene-data.js';
 import { createFeedback, feedbackRes, feedbackKeep } from './feedback.js';
 import { createEdgeFx } from './edge-fx.js';
 import { motionStep } from '../core/motion.js';
@@ -102,8 +104,10 @@ export function createScene(device, format) {
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-      // TEMPORARY A/B: the old ring lookup (S.ringDraw, the Render section's Ring draw).
-      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+      // Binding 2 stays empty; 3 keeps its number, matching scene.wgsl.js.
+      // // TEMPORARY A/B: the old ring lookup (S.ringDraw, the Render section's Ring draw).
+      // { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
       // The ring records' radial bin index.
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
     ]
@@ -113,13 +117,15 @@ export function createScene(device, format) {
   const uniBuf = device.createBuffer({ size: UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const ringBuf = device.createBuffer({ size: MAX_RINGS * RING_FLOATS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const binBuf = device.createBuffer({ size: RING_BIN_WORDS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-  const lutBuf = device.createBuffer({ size: LUT_N * 3 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });   // temporary A/B
+  // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+  // const lutBuf = device.createBuffer({ size: LUT_N * 3 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });   // temporary A/B
   const bind = device.createBindGroup({
     layout: bgl,
     entries: [
       { binding: 0, resource: { buffer: uniBuf } },
       { binding: 1, resource: { buffer: ringBuf } },
-      { binding: 2, resource: { buffer: lutBuf } },
+      // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+      // { binding: 2, resource: { buffer: lutBuf } },
       { binding: 3, resource: { buffer: binBuf } }
     ]
   });
@@ -270,11 +276,12 @@ export function createScene(device, format) {
     const q = device.queue;
     q.writeBuffer(uniBuf, 0, data.uniform);
     if (data.ringsAny) {
-      if (data.ringsLut) q.writeBuffer(lutBuf, 0, data.lut);   // temporary A/B
-      else {
-        q.writeBuffer(ringBuf, 0, data.rings, 0, data.ringCount * RING_FLOATS);
-        q.writeBuffer(binBuf, 0, data.ringBins, 0, data.ringBinsLen);
-      }
+      // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+      // if (data.ringsLut) q.writeBuffer(lutBuf, 0, data.lut);   // temporary A/B
+      // else {
+      q.writeBuffer(ringBuf, 0, data.rings, 0, data.ringCount * RING_FLOATS);
+      q.writeBuffer(binBuf, 0, data.ringBins, 0, data.ringBinsLen);
+      // }
     }
     if (data.tailVertCount) q.writeBuffer(tailBuf, 0, data.tailVerts, 0, data.tailVertCount * 8);
     if (data.capInstCount) q.writeBuffer(capBuf, 0, data.capInsts, 0, data.capInstCount * 12);

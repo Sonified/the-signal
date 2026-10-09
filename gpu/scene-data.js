@@ -69,18 +69,20 @@ export const RING_BIN_WORDS = RING_BINS + 1 + MAX_RINGS * RING_BINS;
 const binCursor = new Uint32Array(RING_BINS);
 const binLo = new Int32Array(MAX_RINGS), binHi = new Int32Array(MAX_RINGS);
 
-// TEMPORARY A/B switch, to be removed once the ring records are signed off.
-// With S.ringDraw 'lookup' the rings go back to being splatted into the old
-// radial lookup and read through it, so the two can be compared by eye, live.
-// It is the Render section's Ring draw control (core/schema-visual.js).
-// Removing it means deleting that control, LUT_N, SceneData.lut, the splat
-// branch in buildUniform, the lookup's buffer in scene.js and its binding and
-// branch in scene.wgsl.js.
+// RETIRED 2026-10-08, the ring records signed off: the TEMPORARY A/B switch
+// that splatted the rings into the old radial lookup instead (S.ringDraw
+// 'lookup', the Render section's Ring draw) is gone. Its drawer control is
+// removed outright; LUT_N, SceneData.lut, the splat branch in buildUniform,
+// the lookup's buffer and upload in scene.js and its binding (2, left empty,
+// binding 3 keeps its number) and branch in scene.wgsl.js are kept commented
+// out for one release, each under a RETIRED line, then delete them all.
+// A saved S.ringDraw is never read now (store.js never saved it anyway).
 // How many rings the last frame actually drew: the ones past the cull (not
 // yet beyond the rim, bright enough to move a pixel), out of all S.rings.
 // The drawer's Rings header shows it beside the total.
 export const ringStats = { drawn: 0 };
-export const LUT_N = 4096;                 // radial samples, old lookup (temporary)
+// RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+// export const LUT_N = 4096;                 // radial samples, old lookup (temporary)
 
 // A tail is sampled at 25 evenly spaced points along the perimeter plus one
 // extra sample at every screen corner it passes, so each corner gets its own
@@ -145,8 +147,9 @@ export class SceneData {
     // The records' radial bin index (see RING_BINS), ringBinsLen words live.
     this.ringBins = new Uint32Array(RING_BIN_WORDS);
     this.ringBinsLen = 0;
-    this.lut = new Float32Array(LUT_N * 3);   // old lookup, rgb per radial sample (temporary A/B)
-    this.ringsLut = false;                    // this frame's rings went into lut, not rings (temporary A/B)
+    // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+    // this.lut = new Float32Array(LUT_N * 3);   // old lookup, rgb per radial sample (temporary A/B)
+    // this.ringsLut = false;                    // this frame's rings went into lut, not rings (temporary A/B)
     // Whether the full-screen field/rings/corners pass has anything to add
     // this frame, and whether there is any ring to draw at all. With every
     // term off the pass would write opaque black over a target already
@@ -273,10 +276,12 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   u[43] = 0;
 
   let ringsAny = false, nr = 0, drawn = 0;
-  const useLut = S.ringDraw === 'lookup';   // temporary A/B, see LUT_N
+  // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+  // const useLut = S.ringDraw === 'lookup';   // temporary A/B, see LUT_N
   if (layers.rings) {
-    if (useLut) sd.lut.fill(0);
-    const rings = S.rings, lut = sd.lut, rec = sd.rings;
+    // if (useLut) sd.lut.fill(0);
+    // const rings = S.rings, lut = sd.lut, rec = sd.rings;
+    const rings = S.rings, rec = sd.rings;
     // Every ring is centred where the shader centres the field, inside the
     // area the drawer leaves visible: (inset + width) / 2 across, half the
     // height down, from the very uniform values fsFull reads (u[37] the
@@ -295,7 +300,8 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
       : ringBase;
     const fadeInS = (S.ringFadeInMs ?? 1000) / 1000;
     const FOCAL = maxR * Z_NEAR;
-    const step = (maxR * dpr) / LUT_N, inv = step > 0 ? 1 / step : 0;
+    // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+    // const step = (maxR * dpr) / LUT_N, inv = step > 0 ? 1 / step : 0;
     for (let i = 0; i < rings.length; i++) {
       const ring = rings[i];
       const r = FOCAL / ring.z;
@@ -321,47 +327,53 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
       // apply here exactly as they do in canvas2d's ctx.lineWidth, which the
       // original WebGPU port left out entirely.
       const hw = (0.7 + k * 3.4) * S.ringThick * ring.tw * dpr * 0.5;
-      if (!useLut) {
-        if (nr >= MAX_RINGS) break;
-        // Each ring's centre moves with the eye (core/eye.js, parallax):
-        // centre - eye * FOCAL / ring.z, in device px. FOCAL / ring.z is the
-        // ring's own radius r, so the shift is simply eye times rd: nearer
-        // rings, being larger, slide further than the far ones and the tunnel
-        // gains depth. Its fade and cull above stay on the ring's own radius,
-        // as the particles' and confetti's do. At eye 0 every ring sits on
-        // the field centre, as it always did. The old lookup cannot shift.
-        const o = nr * RING_FLOATS;
-        rec[o] = cx - eye.x * rd; rec[o + 1] = cy - eye.y * rd; rec[o + 2] = rd; rec[o + 3] = hw;
-        rec[o + 4] = rr * a; rec[o + 5] = gg * a; rec[o + 6] = bb * a; rec[o + 7] = 0;
-        nr++;
-        continue;
-      }
-      let lo = Math.floor((rd - hw - 1) * inv - 0.5);
-      let hi = Math.ceil((rd + hw + 1) * inv - 0.5);
-      if (lo < 0) lo = 0;
-      if (hi > LUT_N - 1) hi = LUT_N - 1;
-      if (lo <= hi) ringsAny = true;
-      for (let j = lo; j <= hi; j++) {
-        let cov = hw + 0.5 - Math.abs((j + 0.5) * step - rd);
-        if (cov <= 0) continue;
-        if (cov > 1) cov = 1;
-        const w = a * cov, o = j * 3;
-        lut[o] += w * rr; lut[o + 1] += w * gg; lut[o + 2] += w * bb;
-      }
+      // RETIRED 2026-10-08: the old ring lookup's gate; the records below are unconditional now.
+      // if (!useLut) {
+      if (nr >= MAX_RINGS) break;
+      // Each ring's centre moves with the eye (core/eye.js, parallax):
+      // centre - eye * FOCAL / ring.z, in device px. FOCAL / ring.z is the
+      // ring's own radius r, so the shift is simply eye times rd: nearer
+      // rings, being larger, slide further than the far ones and the tunnel
+      // gains depth. Its fade and cull above stay on the ring's own radius,
+      // as the particles' and confetti's do. At eye 0 every ring sits on
+      // the field centre, as it always did.
+      const o = nr * RING_FLOATS;
+      rec[o] = cx - eye.x * rd; rec[o + 1] = cy - eye.y * rd; rec[o + 2] = rd; rec[o + 3] = hw;
+      rec[o + 4] = rr * a; rec[o + 5] = gg * a; rec[o + 6] = bb * a; rec[o + 7] = 0;
+      nr++;
+      //   continue;
+      // }
+      // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+      // let lo = Math.floor((rd - hw - 1) * inv - 0.5);
+      // let hi = Math.ceil((rd + hw + 1) * inv - 0.5);
+      // if (lo < 0) lo = 0;
+      // if (hi > LUT_N - 1) hi = LUT_N - 1;
+      // if (lo <= hi) ringsAny = true;
+      // for (let j = lo; j <= hi; j++) {
+      //   let cov = hw + 0.5 - Math.abs((j + 0.5) * step - rd);
+      //   if (cov <= 0) continue;
+      //   if (cov > 1) cov = 1;
+      //   const w = a * cov, o = j * 3;
+      //   lut[o] += w * rr; lut[o + 1] += w * gg; lut[o + 2] += w * bb;
+      // }
     }
   }
-  // With no ring to draw the shader would loop over nothing (or read an
-  // all-zero lookup) for nothing; off is the same picture without the work.
-  // u[35] is 1 for the ring records (read through their bin index), 2 for
-  // the old lookup (temporary A/B), and u[34] how many records, or the
-  // lookup's sample count.
-  if (!useLut) ringsAny = nr > 0;
+  // With no ring to draw the shader would loop over nothing for nothing;
+  // off is the same picture without the work. u[35] is 1 for the ring
+  // records (read through their bin index), 0 for none, and u[34] how many
+  // records.
+  ringsAny = nr > 0;
   sd.ringCount = nr;
-  sd.ringBinsLen = !useLut && nr > 0 ? buildRingBins(sd, nr, u) : 0;
+  sd.ringBinsLen = nr > 0 ? buildRingBins(sd, nr, u) : 0;
   ringStats.drawn = drawn;
-  sd.ringsLut = useLut;
-  u[34] = useLut ? LUT_N : nr;
-  u[35] = ringsAny ? (useLut ? 2 : 1) : 0;
+  // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+  // if (!useLut) ringsAny = nr > 0;
+  // sd.ringBinsLen = !useLut && nr > 0 ? buildRingBins(sd, nr, u) : 0;
+  // sd.ringsLut = useLut;
+  // u[34] = useLut ? LUT_N : nr;
+  // u[35] = ringsAny ? (useLut ? 2 : 1) : 0;
+  u[34] = nr;
+  u[35] = ringsAny ? 1 : 0;
   sd.ringsAny = ringsAny;
   sd.fullActive = u[11] > 0 || ringsAny || cornersOn;
 }

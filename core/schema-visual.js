@@ -1655,21 +1655,6 @@ export const VISUAL_CONTROLS = [
     format: S => 'spare frame ' + S.spareMode
   },
   {
-    // TEMPORARY A/B for the tunnel rings, to go once the per-ring records
-    // are signed off (gpu/scene-data.js, see LUT_N). Records draws each ring
-    // from its own centre, radius and width, the way parallax will need, a
-    // pixel measuring only the rings its radial bin lists (RING_BINS);
-    // Lookup is the old shared radial table, kept only for comparing by eye.
-    id: 'ringDraw', section: 'render', label: 'Ring draw', kind: 'segment', def: 'records',
-    options: [
-      { value: 'records', label: 'Records', domId: null },
-      { value: 'lookup',  label: 'Lookup',  domId: null }
-    ],
-    get: S => S.ringDraw === 'lookup' ? 'lookup' : 'records',
-    set: (S, v) => { S.ringDraw = v === 'lookup' ? 'lookup' : 'records'; save(); },
-    format: S => S.ringDraw === 'lookup' ? 'Lookup' : 'Records'
-  },
-  {
     // Where the engine runs: on the page's main thread, or in a worker where
     // nothing else the page does can hold up a frame (core/engine-thread.js).
     // A WebGPU device cannot move between threads, so a change is stored and

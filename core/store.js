@@ -672,8 +672,8 @@ export function snapshot() {
 // saved with everything else, so a reload keeps them, and another tab of
 // this machine still takes them (syncFromStorage), but a preset recall and a
 // followed broadcast leave them where this machine has them (applySnapshot).
-// The Render rows with no field here (Ring draw, the parallax switch, the
-// engine's thread) are never written into this object at all. Listed by name
+// The Render rows with no field here (the parallax switch, the engine's
+// thread) are never written into this object at all. Listed by name
 // rather than read off the schema, since this module must not depend on it.
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive',

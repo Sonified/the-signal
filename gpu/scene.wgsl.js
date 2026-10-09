@@ -47,7 +47,7 @@ struct U {
   fieldP: vec4f,              // mode (0 disc, 1 panel, 2 full), radius/half-extent, panel corner radius, fieldOn
   cornerA: vec4f,              // per-corner glow alpha, order matches canvas2d: TL(inset), TR, BR, BL(inset)
   cornerCol: array<vec4f, 4>,   // per-corner glow colour, same order
-  misc: vec4f,                  // corner glow radius, ring outer rim, ring count (lookup: its samples), rings (0 off, 1 records, 2 old lookup)
+  misc: vec4f,                  // corner glow radius, ring outer rim, ring count, rings (0 off, 1 records; 2 was the retired lookup)
   misc2: vec4f,                  // cornersOn, left inset in device px, field fade radius, fade softness
   cornerP: vec4f,                // corner look (0 glow, 1 beam, 2 bracket, 3 arc), ring bin count, ring bins per device px, unused
 };
@@ -59,9 +59,11 @@ struct U {
 // Bin b's rings are entries ringBins[b] up to ringBins[b + 1], counted from
 // the start of this array (scene-data.js's RING_BINS).
 @group(0) @binding(3) var<storage, read> ringBins: array<u32>;
-// TEMPORARY A/B: the old radial lookup, rgb triples, one per radial sample,
-// read only when misc.w is 2 (S.ringDraw, the Render section's Ring draw). Goes when that does.
-@group(0) @binding(2) var<storage, read> lut: array<f32>;
+// RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+// Binding 2 is left empty rather than renumbering binding 3 (scene.js's layout skips it too).
+// // TEMPORARY A/B: the old radial lookup, rgb triples, one per radial sample,
+// // read only when misc.w is 2 (S.ringDraw, the Render section's Ring draw). Goes when that does.
+// @group(0) @binding(2) var<storage, read> lut: array<f32>;
 ${RADIAL_FADE_WGSL}
 
 fn sdRoundBox(p: vec2f, b: f32, r: f32) -> f32 {
@@ -176,18 +178,19 @@ fn fsFull(@builtin(position) fc: vec4f) -> @location(0) vec4f {
     }
   }
 
-  // TEMPORARY A/B: the old radial lookup read, kept only to compare against.
-  if (u.misc.w > 1.5) {
-    let n = u.misc.z;
-    let x = length(p - ctr) / u.misc.y * n - 0.5;
-    if (x > -1.0 && x < n) {
-      let i0 = u32(clamp(floor(x), 0.0, n - 2.0));
-      let f = clamp(x - f32(i0), 0.0, 1.0);
-      let a0 = vec3f(lut[i0 * 3u], lut[i0 * 3u + 1u], lut[i0 * 3u + 2u]);
-      let a1 = vec3f(lut[(i0 + 1u) * 3u], lut[(i0 + 1u) * 3u + 1u], lut[(i0 + 1u) * 3u + 2u]);
-      rgb = rgb + mix(a0, a1, f);
-    }
-  }
+  // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)
+  // // TEMPORARY A/B: the old radial lookup read, kept only to compare against.
+  // if (u.misc.w > 1.5) {
+  //   let n = u.misc.z;
+  //   let x = length(p - ctr) / u.misc.y * n - 0.5;
+  //   if (x > -1.0 && x < n) {
+  //     let i0 = u32(clamp(floor(x), 0.0, n - 2.0));
+  //     let f = clamp(x - f32(i0), 0.0, 1.0);
+  //     let a0 = vec3f(lut[i0 * 3u], lut[i0 * 3u + 1u], lut[i0 * 3u + 2u]);
+  //     let a1 = vec3f(lut[(i0 + 1u) * 3u], lut[(i0 + 1u) * 3u + 1u], lut[(i0 + 1u) * 3u + 2u]);
+  //     rgb = rgb + mix(a0, a1, f);
+  //   }
+  // }
 
   if (u.misc2.x > 0.5) {
     let R = u.misc.x;
