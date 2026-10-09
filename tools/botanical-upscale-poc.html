@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Botanical atlas · 3× proof of concept</title>
+<style>
+  :root{color-scheme:dark} body{margin:0;background:#101417;color:#e8ece8;font:16px system-ui}
+  main{max-width:1200px;margin:auto;padding:32px} h1{font-size:28px;margin:0 0 12px} p{max-width:850px;color:#b8c3ba;line-height:1.5}
+  .toolbar{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:24px 0} select,button{font:inherit;padding:8px 12px;background:#25312b;color:inherit;border:1px solid #587361;border-radius:8px}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:24px} figure{margin:0;background:#1c2420;border:1px solid #35463a;border-radius:12px;padding:20px}
+  figcaption{margin-bottom:16px} canvas{display:block;margin:auto;width:192px;height:192px;background:var(--preview-bg,#111)} small{color:#a3b6a8;display:block;margin-top:12px}
+  .sheet{display:block;width:100%;height:auto;margin-top:16px;background:var(--preview-bg,#111)} a{color:#a8e6bc} #status{font-size:14px}
+  @media(max-width:600px){main{padding:16px}.pair{grid-template-columns:1fr} figure{padding:12px}}
+</style>
+<main>
+  <h1>Botanical atlas · 3× proof of concept</h1>
+  <p>Compare the original 64-pixel motifs with the enhanced atlas at the same displayed size. Check the petal and leaf texture, silhouettes, transparency, and all 64 tile identities before replacing the production asset.</p>
+  <div class="toolbar">
+    <label>Motif <select id="motif"></select></label>
+    <label>Preview size <select id="scale"><option value="3">3× · 192 pixels</option><option value="6">6× · 384 pixels</option></select></label>
+    <label>Background <select id="background"><option value="#111">Dark</option><option value="#fff">White</option><option value="#408746">Green</option></select></label>
+  </div>
+  <div class="pair">
+    <figure><figcaption>Original · 512 × 512 atlas</figcaption><canvas id="original"></canvas><small>64 × 64 source pixels per motif</small></figure>
+    <figure><figcaption>3× enhancement · <span id="dimensions">loading</span></figcaption><canvas id="enhanced"></canvas><small id="tile-size"></small></figure>
+  </div>
+  <p id="status" role="status">Loading the two atlases…</p>
+  <p>The production renderer currently repacks atlases into fixed 128-pixel tiles. This page displays the source images directly, preserving the added resolution.</p>
+  <p><a href="../assets/kaleidoscope/botanical-atlas-meditation-draft-upscaled-3x-poc.png" download>Download the enhanced PNG</a></p>
+  <div class="pair">
+    <figure><figcaption>Original · all 64 motifs</figcaption><img id="original-sheet" class="sheet" alt="Original botanical atlas"></figure>
+    <figure><figcaption>Enhanced · all 64 motifs</figcaption><img id="enhanced-sheet" class="sheet" alt="Enhanced botanical atlas"></figure>
+  </div>
+</main>
+<script type="module">
+const base = '../assets/kaleidoscope/';
+const paths = ['botanical-atlas-meditation-draft.png', 'botanical-atlas-meditation-draft-upscaled-3x-poc.png'];
+const status = document.querySelector('#status');
+try {
+  const manifest = await (await fetch(base + 'botanical-atlas-meditation-draft.manifest.json')).json();
+  const entries = Object.values(manifest).find(value => Array.isArray(value) && value[0]?.index === 0) || [];
+  const images = await Promise.all(paths.map(path => new Promise((resolve,reject) => {
+    const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error('Could not load ' + path)); img.src = base + path;
+  })));
+  const motif = document.querySelector('#motif'), scale = document.querySelector('#scale');
+  for(let index=0;index<64;index++) {
+    const option = document.createElement('option'); option.value = index;
+    option.textContent = `${index + 1}. ${(entries.find(entry=>entry.index===index)?.id || 'Motif').replaceAll('-',' ')}`;
+    motif.append(option);
+  }
+  document.querySelector('#dimensions').textContent = `${images[1].width} × ${images[1].height} atlas`;
+  document.querySelector('#tile-size').textContent = `${images[1].width/8} × ${images[1].height/8} source pixels per motif`;
+  document.querySelector('#original-sheet').src = images[0].src;
+  document.querySelector('#enhanced-sheet').src = images[1].src;
+  function redraw() {
+    const index=+motif.value, side=64*+scale.value;
+    for(const [n,id] of ['original','enhanced'].entries()) {
+      const canvas=document.getElementById(id), tile=images[n].width/8, dpr=devicePixelRatio || 1;
+      canvas.width=canvas.height=Math.round(side*dpr); canvas.style.width=canvas.style.height=side+'px';
+      const ctx=canvas.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+      ctx.drawImage(images[n], (index%8)*tile, Math.floor(index/8)*tile,tile,tile,0,0,canvas.width,canvas.height);
+    }
+  }
+  motif.onchange=scale.onchange=redraw;
+  document.querySelector('#background').onchange=e=>document.documentElement.style.setProperty('--preview-bg',e.target.value);
+  redraw(); status.textContent='Loaded. Both motifs are displayed at identical sizes; the original asset remains unchanged.';
+} catch(error) { status.textContent=error.message; }
+</script>
+</html>

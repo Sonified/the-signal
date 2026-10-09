@@ -64,6 +64,13 @@ import {
 const STATS_EVERY = 96;
 // How long a rise of the lookahead is announced before it is obeyed: the
 // chunk the horizon already allows for a command batch's trip.
+// How the cushion grows: an underrun raises the lookahead by this factor,
+// and the session floor the ratchet leaves is the failed size times it,
+// the one growth step that stopped the underruns. Half again, not double:
+// growth lands near what the stall needed without overshooting the latency
+// for the rest of the session (Robert, 2026-10-08). The one knob for both,
+// so a retuning changes everything together.
+const GROW = 1.5;
 const RISE_DELAY = CHUNK / QUANTUM;
 
 export class Drain {
@@ -145,9 +152,7 @@ export class Drain {
       this.calm = 0;
       if (!this.dry) {
         this.runFrom = this.underruns;
-        // Half again, not double: growth lands near what the stall needed
-        // without overshooting the latency for the rest of the session.
-        if (this.policy) { this.learn(); this.raise(Math.ceil(this.next * 1.5 / QUANTUM) * QUANTUM); }
+        if (this.policy) { this.learn(); this.raise(Math.ceil(this.next * GROW / QUANTUM) * QUANTUM); }
         if (this.diag) this.tellDiag('dry', ready);
       }
       this.dry = true;
@@ -210,7 +215,7 @@ export class Drain {
   learn() {
     if (this.held <= this.bad) return;
     this.bad = this.held;
-    this.learned = Math.min(this.policy.max, Math.ceil(this.bad * 1.5 / QUANTUM) * QUANTUM);
+    this.learned = Math.min(this.policy.max, Math.ceil(this.bad * GROW / QUANTUM) * QUANTUM);
   }
 
   // The least the lookahead may step down to now.
