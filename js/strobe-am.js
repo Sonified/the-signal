@@ -80,6 +80,10 @@ const CLOCK_LEAK_MS = 0.01, CLOCK_JUMP_MS = 250, CLOCK_REPOST_MS = 1;
 // or out mid-session (the reported latency jumping) re-anchors at once.
 const LAT_REPOST_S = 0.002;
 let clockEst = NaN, clockPosted = NaN, latPosted = NaN, clockCtx = null;
+// The latency the anchor should allow for now: the output's reported
+// latency, or nothing with the drawer's Output latency toggle off
+// (schema-visual.js outputLatComp, this machine's own).
+const wantLat = ctx => S.outputLatComp !== false && ctx ? ctx.outputLatency || 0 : 0;
 function sampleClock(ctx) {
   if (ctx.state !== 'running') return;
   const s = performance.now() - ctx.currentTime * 1000;
@@ -149,7 +153,7 @@ function postSignal() {
   // for the moment it is shown. Uncompensated, a constant time lag reads as
   // a phase offset that scales with the rate, which is why Drift made the
   // pulse visibly wander off the flash (found 2026-10-08, syncdiag).
-  const heardLateS = clockCtx.outputLatency || 0;
+  const heardLateS = wantLat(clockCtx);
   latPosted = heardLateS;
   const at = (signal.at - SIGNAL_ORIGIN - est) / 1000 - heardLateS;
   if (sigNodes.size) {
@@ -283,7 +287,7 @@ function track() {
   if (clockCtx) {
     sampleClock(clockCtx);
     if (clockEst === clockEst && (!(Math.abs(clockEst - clockPosted) <= CLOCK_REPOST_MS) ||
-        !(Math.abs((clockCtx ? clockCtx.outputLatency || 0 : 0) - latPosted) <= LAT_REPOST_S))) postSignal();
+        !(Math.abs(wantLat(clockCtx) - latPosted) <= LAT_REPOST_S))) postSignal();
   }
   for (const am of live) applyDepth(am);
 }

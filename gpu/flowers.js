@@ -82,8 +82,8 @@ function smoothstep(a, b, x) {
 // manifest-32.json's sourceFrameSequence as arithmetic: steps 0..31 play
 // slots 0..31, steps 32..62 play 30..0 (62 - m), and step 63 holds 0. The
 // sheet's slot 31 is a copy of 30, so the full bloom is held three steps
-// (30, 31, 30) and the bud three (62, 63, 0), as the old 15, 15 and 0, 0
-// held two steps of twice the length. Every even step 2k is old step k.
+// (30, 31, 30) and the bud three (62, 63, 0), where the old 15, 15 and
+// 0, 0 held two steps of twice the length. Every even step 2k is old step k.
 function seqFrame(n) {
   const m = ((n % SEQ_STEPS) + SEQ_STEPS) % SEQ_STEPS;
   return m < FRAMES ? m : Math.max(62 - m, 0);
@@ -176,7 +176,7 @@ export function createFlowers(device, format, platform) {
   // ---------- loading ----------
   // Decoding goes through the platform (the one place allowed to touch
   // fetch and canvases); the cleanup yields between frames of the sheet so
-  // the million-odd pixel loop never lands as one long stall mid-strobe.
+  // the four-million-odd pixel loop never lands as one long stall mid-strobe.
   function load() {
     requested = true;
     if (!platform || !platform.loadImagePixels) {
@@ -190,42 +190,39 @@ export function createFlowers(device, format, platform) {
 
   async function buildAtlas(img) {
     const w = img.width, h = img.height, src = img.data;
-    const out = new Uint8Array(ATLAS * ATLAS * 4);
-    const cw = w / GRID, ch = h / GRID;
+    // The sheet's cells are already whole and in atlas order, so each one is
+    // copied straight across; a sheet of any other size would misaddress
+    // every frame, so it is refused rather than drawn wrong.
+    if (w !== ATLAS_W || h !== ATLAS_H) {
+      console.warn('flowers: the lotus sheet is ' + w + ' x ' + h + ', expected ' + ATLAS_W + ' x ' + ATLAS_H + '; the layer stays empty');
+      return;
+    }
+    const out = new Uint8Array(ATLAS_W * ATLAS_H * 4);
     for (let f = 0; f < FRAMES; f++) {
-      const col = f % GRID, row = (f / GRID) | 0;
-      // The sheet's cells are 313.5 px, so each one is cut with floor and
-      // ceil of its own edges; the half-pixel overlap between neighbours
-      // lands on transparent border either way.
-      const sx0 = Math.floor(col * cw), sx1 = Math.min(w, Math.ceil((col + 1) * cw));
-      const sy0 = Math.floor(row * ch), sy1 = Math.min(h, Math.ceil((row + 1) * ch));
-      const cwid = Math.min(CELL, sx1 - sx0), chei = Math.min(CELL, sy1 - sy0);
-      const dx0 = col * CELL + ((CELL - cwid) >> 1);
-      const dy0 = row * CELL + ((CELL - chei) >> 1);
-      for (let y = 0; y < chei; y++) {
-        let si = ((sy0 + y) * w + sx0) * 4;
-        let di = ((dy0 + y) * ATLAS + dx0) * 4;
-        for (let x = 0; x < cwid; x++, si += 4, di += 4) {
-          const a = src[si + 3];
+      const x0 = (f % COLS) * CELL, y0 = ((f / COLS) | 0) * CELL;
+      for (let y = 0; y < CELL; y++) {
+        let i = ((y0 + y) * w + x0) * 4;        // same index in both
+        for (let x = 0; x < CELL; x++, i += 4) {
+          const a = src[i + 3];
           if (a < ALPHA_CUT) continue;          // speckle: leave it transparent
           const k = a / 255;
-          out[di] = Math.round(src[si] * k);
-          out[di + 1] = Math.round(src[si + 1] * k);
-          out[di + 2] = Math.round(src[si + 2] * k);
-          out[di + 3] = a;
+          out[i] = Math.round(src[i] * k);
+          out[i + 1] = Math.round(src[i + 1] * k);
+          out[i + 2] = Math.round(src[i + 2] * k);
+          out[i + 3] = a;
         }
       }
       await new Promise(r => setTimeout(r, 0));
     }
 
     const tex = device.createTexture({
-      size: { width: ATLAS, height: ATLAS },
+      size: { width: ATLAS_W, height: ATLAS_H },
       format: 'rgba8unorm',
       mipLevelCount: MIP_LEVELS,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
     });
-    device.queue.writeTexture({ texture: tex }, out, { bytesPerRow: ATLAS * 4, rowsPerImage: ATLAS },
-                              { width: ATLAS, height: ATLAS });
+    device.queue.writeTexture({ texture: tex }, out, { bytesPerRow: ATLAS_W * 4, rowsPerImage: ATLAS_H },
+                              { width: ATLAS_W, height: ATLAS_H });
     buildMips(tex);
 
     bind = device.createBindGroup({
@@ -395,8 +392,11 @@ export function createFlowers(device, format, platform) {
       const pa = seqFrame(pn), pb = seqFrame(pn + 1);
       const env = 0.3 + 0.7 * smoothstep(0.03, 0.3, k);
       const F = (pa + (pb - pa) * (pos - pn)) * env;
-      const fa = Math.floor(F), fb = fa < 15 ? fa + 1 : 15;
-      const framesAB = fa + fb * 16, blend = F - fa;
+      // The pair rides one float as fa + 32 fb: 5 bits each, at most
+      // 31 + 31 * 32 = 1023, an integer float32 holds exactly, and the
+      // shader unpacks it with & 31 and >> 5.
+      const fa = Math.floor(F), fb = fa < LAST ? fa + 1 : LAST;
+      const framesAB = fa + fb * FRAMES, blend = F - fa;
 
       for (let j = 0; j < count; j++) {
         const th = ang0 + j * slot;

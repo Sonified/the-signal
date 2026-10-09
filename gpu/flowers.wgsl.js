@@ -30,15 +30,36 @@ const TAU = 6.283185307;
 const LOG_PERIOD = 1.0986123;
 // Where the petal fans start inside a frame's cell (the base of the lotus, a
 // little above the bottom of the flower) and how long the middle ray is.
+// Like every cell-local position here, these are measured in the old 320 px
+// cell; cellUV carries them onto the sheet.
 const FAN_ORIGIN = vec2f(0.5, 0.80);
 const FAN_BASE = 0.36;
-const CELL_TEXELS = 320.0;
+// The old cell inside the 384 px cell. The packer (tools/pack-lotus-tweens.mjs)
+// took the old cell's art window, 314 px at 3 px in (942 at 9 on the 3x
+// master), shrank it to 336 px and inset it 24 px, so one old cell is
+//   scale  = 960 / 942 * 336 / 384 = 140 / 157 = 0.8917197
+// of the new one. The offset is pinned by the base-petal anchor, which the
+// manifests give in both cells: 801 / 960 = 0.834375 in the old (the 3x
+// master is the old cell exactly) and 0.7981687898 in the 384 sheet, so
+//   offset = 0.7981687898 - 0.834375 * 140 / 157 = 17 / 314 = 0.0541401,
+// the same 17 / 314 the 24 px inset gives (24 - 9 * 336 / 942) / 384 for x.
+// So the old window spans 0.054..0.946 of each cell, which takes in all of
+// the art (0.0625..0.9375) and only transparent border around it, and the
+// flowers keep their old size and place to the pixel.
+const OLD_ANCHOR = 0.834375;
+const NEW_ANCHOR = 0.7981687898;
+const CELL_SCALE = 140.0 / 157.0;
+const CELL_OFFSET = NEW_ANCHOR - OLD_ANCHOR * CELL_SCALE;
+// Texels of the 384 sheet across one old cell, for the mip level maths.
+const CELL_TEXELS = 384.0 * CELL_SCALE;
 const MAX_LOD = 6.0;
 ${RADIAL_FADE_WGSL}
 
-// Frame f of the 4 x 4 atlas, local 0..1 inside its cell.
+// Frame f of the 8 x 4 atlas (column f & 7, row f >> 3), local 0..1 inside
+// the old cell, mapped onto the sheet's cell as above.
 fn cellUV(f: u32, local: vec2f) -> vec2f {
-  return (vec2f(f32(f & 3u), f32(f >> 2u)) + local) * 0.25;
+  let inCell = local * CELL_SCALE + CELL_OFFSET;
+  return (vec2f(f32(f & 7u), f32(f >> 3u)) + inCell) * vec2f(0.125, 0.25);
 }
 
 // Tint multiplies toward the strobe colour rather than replacing it, so the
@@ -50,7 +71,8 @@ fn tintRGB(c: vec3f) -> vec3f {
 // ---- bloom tunnel ----
 // One instance per flower: centre, half size, alpha; the outward radial unit
 // vector (the flower's "up", so petals always face away from the centre);
-// the two atlas frames to cross-fade (packed a + 16 b) and the mix between
+// the two atlas frames to cross-fade (packed a + 32 b, 5 bits each, at most
+// 1023 so the float carries it exactly) and the mix between
 // them. Corners come from vertex_index, as the scene's head caps do.
 
 struct TOut {
@@ -78,7 +100,7 @@ fn vsTunnel(@builtin(vertex_index) vi: u32,
   o.pos = vec4f(wp.x * u.res.z * 2.0 - 1.0, 1.0 - wp.y * u.res.w * 2.0, 0.0, 1.0);
   o.uv = vec2f(sx, sy) * 0.5 + 0.5;
   let fab = u32(upFramesBlend.z + 0.5);
-  o.frames = vec2u(fab & 15u, (fab >> 4u) & 15u);
+  o.frames = vec2u(fab & 31u, (fab >> 5u) & 31u);
   o.blend = upFramesBlend.w;
   o.alpha = cxyHalfAlpha.w;
   return o;
@@ -108,11 +130,11 @@ fn vsFull(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
   return vec4f(pts[vi], 0.0, 1.0);
 }
 
-// The manifest's 32-step ping-pong (0..15 then 15..0, each end held one
-// step) as a continuous frame number.
+// manifest-32.json's 64-step sequence (0..31, 30..0, 0; slot 31 holds slot
+// 30) as a frame number, for whole n as flowers.js's seqFrame.
 fn seqFrame(n: f32) -> f32 {
-  let m = n - 32.0 * floor(n / 32.0);
-  return select(31.0 - m, m, m < 16.0);
+  let m = n - 64.0 * floor(n / 64.0);
+  return select(max(62.0 - m, 0.0), m, m < 32.0);
 }
 
 fn sampleBloom(q: vec2f, pos: f32, lod: f32) -> vec4f {
@@ -124,7 +146,7 @@ fn sampleBloom(q: vec2f, pos: f32, lod: f32) -> vec4f {
   let n = floor(pos);
   let F = mix(seqFrame(n), seqFrame(n + 1.0), pos - n);
   let a = floor(F);
-  let b = min(a + 1.0, 15.0);
+  let b = min(a + 1.0, 31.0);
   let ca = textureSampleLevel(atlas, samp, cellUV(u32(a), q), lod);
   let cb = textureSampleLevel(atlas, samp, cellUV(u32(b), q), lod);
   return mix(ca, cb, F - a);
@@ -199,10 +221,10 @@ fn fsMandala(@builtin(position) fc: vec4f) -> @location(0) vec4f {
 }
 `;
 
-// Box-filter downsample of one mip level into the next. The atlas's 320 px
-// cells halve cleanly six times (to 5 px), so a 2 x 2 box never straddles two
-// frames and no frame ever bleeds into its neighbour. Premultiplied texels
-// average correctly as they are.
+// Box-filter downsample of one mip level into the next. The flower atlas's
+// 384 px cells halve cleanly six times (to 6 px), so a 2 x 2 box never
+// straddles two frames and no frame ever bleeds into its neighbour.
+// Premultiplied texels average correctly as they are.
 export const MIP_WGSL = `
 @group(0) @binding(0) var src: texture_2d<f32>;
 

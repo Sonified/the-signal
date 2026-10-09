@@ -1713,6 +1713,19 @@ export const VISUAL_CONTROLS = [
     set: (S, v) => { S.heartGrowX = Math.max(1.1, Math.min(2, v)); applyHeartGrow(); save(); },
     format: S => '×' + (S.heartGrowX ?? 1.5).toFixed(1)
   },
+  {
+    // Whether the strobe's audio allows for the output's latency (js/
+    // strobe-am.js postSignal): on, a sample carries the signal's value for
+    // the moment it is HEARD, so the pulse sits on the flash on Bluetooth's
+    // quarter second as on wired's twenty milliseconds. Off is the old
+    // render-time match, for comparing. This machine's own, like the rest
+    // of this drawer; the change lands within a tick of the toggle.
+    id: 'outputLatComp', section: 'render', label: 'Output latency', kind: 'toggle', parent: 'renderAudioDrawer',
+    def: true,
+    get: S => S.outputLatComp !== false,
+    set: (S, on) => { S.outputLatComp = !!on; save(); },
+    format: S => S.outputLatComp !== false ? 'compensated' : 'raw'
+  },
   subDrawer('renderPauseDrawer', 'Pause', 'render', ['pauseWindDown', 'pauseFlickerStop']),
   {
     // How long the visuals take to coast to a stop when paused (core/motion.js).

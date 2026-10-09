@@ -57,6 +57,7 @@ export const S = {
   rendererPref: 'canvas2d',   // auto | webgpu | webgl2 | canvas2d
   heartLookaheadS: 0.3,       // the engine's cushion, seconds; this machine's own (never a preset's)
   heartGrowX: 1.5,            // how the cushion grows on underrun; this machine's own too
+  outputLatComp: true,        // the strobe audio allows for the output's latency (strobe-am.js)
 
   // ---------- strobe ----------
   strobeScale: 1,            // emergency master over every visual/audio strobe depth
