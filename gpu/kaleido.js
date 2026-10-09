@@ -1315,8 +1315,8 @@ export function createKaleido(device, format, platform) {
     const orbitMax = clampNum(S.kaleidoOrbitMax ?? 0.25, 0, 2, 0.25);
     const orbitVar = clampNum(S.kaleidoOrbitVar ?? 0.7, 0, 1, 0.7);
     const scatter = clampNum(S.kaleidoScatter ?? 0, 0, 1, 0);
-    const opacity = clampNum(S.kaleidoOpacity, 0, 1, 0.9);
-    const tintAmt = clampNum(S.kaleidoTint, 0, 1, 0);
+    const opacity = clampNum(S.effKaleidoOpacity ?? S.kaleidoOpacity, 0, 1, 0.9);
+    const tintAmt = clampNum(S.effKaleidoTint ?? S.kaleidoTint, 0, 1, 0);
     const pulse = scaledStrobeDepth(clampNum(S.kaleidoPulse, 0, 1, 0));
     // With the Color switch off the grade is the identity, whatever the
     // sliders hold.
@@ -1325,7 +1325,7 @@ export function createKaleido(device, format, platform) {
     const contrast = graded ? clampNum(S.kaleidoContrast ?? 1, 0, 2, 1) : 1;
     const sat = graded ? clampNum(S.kaleidoSat ?? 1, 0, 2, 1) : 1;
     const constWant = S.kaleidoConstSize === true ? 1 : 0;
-    fadeNow = clampNum(S.kaleidoFade ?? 0.55, 0, 1, 0.55);
+    fadeNow = clampNum(S.effKaleidoFade ?? S.kaleidoFade ?? 0.55, 0, 1, 0.55);
     // The current set follows the families setting live, except while a
     // newer set is still loading: S.kaleidoFamilies already belongs to that
     // one, and births meanwhile keep the families they had.

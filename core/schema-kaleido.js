@@ -52,9 +52,19 @@ const NUM = [
   // outward; 1 throws it anywhere across the wedge and beyond, as before.
   ['kaleidoScatter',     0,   1,   0,    false],
   ['kaleidoOpacity',    0,   1,   0.9,  false],
+  // the Opacity's variance: the standard percent dip on the room clock, as
+  // the flowers' Opacity has (core/strobe.js VARIANCES)
+  ['kaleidoOpacityVar',  0,   1,   0,    false],
+  ['kaleidoOpacityPeriod', 1, 60,  10,   true ],
+  ['kaleidoOpacityPeriodOff', 0, 1, 0,   false],
   // How far out from the centre a shape eases in: the same 0 to 1 amount,
   // curve and default as the tunnel rings' Ring fade in (core/fade.js).
   ['kaleidoFade',        0,   1,   0.55, false],
+  // the fade radius's variance: the same percent dip on the room clock
+  // (core/strobe.js VARIANCES)
+  ['kaleidoFadeVar',     0,   1,   0,    false],
+  ['kaleidoFadePeriod',  1,   60,  10,   true ],
+  ['kaleidoFadePeriodOff', 0, 1,   0,    false],
   // Each piece's own fade in, in seconds of motion: eased up from nothing
   // over its first this-many seconds (gpu/kaleido.js bornT), so no birth
   // can land as a pop whatever put the piece there. 0 turns it off.
@@ -428,7 +438,39 @@ export const KALEIDO_CONTROLS = [
   // shapes in further out), and how far it flickers with the strobe.
   subDrawer('kaleidoBrightnessDrawer', 'Brightness', 'kaleido', ['kaleidoOpacity', 'kaleidoFade', 'kaleidoFadeInS']),
   under('kaleidoBrightnessDrawer', percent('kaleidoOpacity', 'kaleidoOpacity', 'Opacity')),
+  varianceOf('kaleidoOpacity', under('kaleidoBrightnessDrawer',
+    percent('kaleidoOpacityVar', 'kaleidoOpacityVar', 'Opacity variance'))),
+  varianceOf('kaleidoOpacity', under('kaleidoBrightnessDrawer', {
+    // the rate on the room clock, retimed as the tint's is below
+    id: 'kaleidoOpacityPeriod', section: 'kaleido', label: 'Opacity variance rate', kind: 'slider',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.kaleidoOpacityPeriod,
+    set: (S, pos) => {
+      const v = fit(pos, 1, 60, true);
+      retimeRoomPhase(S, 'kaleidoOpacityPeriodOff', S.kaleidoOpacityPeriod, v);
+      S.kaleidoOpacityPeriod = v;
+      save();
+    },
+    format: S => S.kaleidoOpacityPeriod + 's / cycle',
+    enabled: layerOn
+  })),
   under('kaleidoBrightnessDrawer', percent('kaleidoFade', 'kaleidoFade', 'Center fade radius')),
+  varianceOf('kaleidoFade', under('kaleidoBrightnessDrawer',
+    percent('kaleidoFadeVar', 'kaleidoFadeVar', 'Fade radius variance'))),
+  varianceOf('kaleidoFade', under('kaleidoBrightnessDrawer', {
+    // the rate on the room clock, retimed as the tint's is below
+    id: 'kaleidoFadePeriod', section: 'kaleido', label: 'Fade radius variance rate', kind: 'slider',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.kaleidoFadePeriod,
+    set: (S, pos) => {
+      const v = fit(pos, 1, 60, true);
+      retimeRoomPhase(S, 'kaleidoFadePeriodOff', S.kaleidoFadePeriod, v);
+      S.kaleidoFadePeriod = v;
+      save();
+    },
+    format: S => S.kaleidoFadePeriod + 's / cycle',
+    enabled: layerOn
+  })),
   under('kaleidoBrightnessDrawer', direct('kaleidoFadeInS', 'kaleidoFadeInS', 'Fade in time', 0.1,
     S => (S.kaleidoFadeInS ?? 1.5) < 0.05 ? 'off' : (S.kaleidoFadeInS ?? 1.5).toFixed(1) + 's')),
   under('kaleidoBrightnessDrawer', percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',

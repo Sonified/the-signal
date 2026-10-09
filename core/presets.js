@@ -348,7 +348,10 @@ const SWINGS = [
   ['confFbPulseRate',       'confFbPulseRateOff',       carryRoomPhase],
   ['flowerOpacityPeriod',   'flowerOpacityPeriodOff',   carryRoomPhase],
   ['flowerTintPeriod',      'flowerTintPeriodOff',      carryRoomPhase],
+  ['kaleidoTintPeriod',     'kaleidoTintPeriodOff',     carryRoomPhase],
   ['flowerPulsePeriod',     'flowerPulsePeriodOff',     carryRoomPhase],
+  ['kaleidoOpacityPeriod',  'kaleidoOpacityPeriodOff',  carryRoomPhase],
+  ['kaleidoFadePeriod',     'kaleidoFadePeriodOff',     carryRoomPhase],
   ['textOpacityVarPeriod',  'textOpacityVarPeriodOff',  carryWordOpacity]
 ];
 const swingRate = new Array(SWINGS.length);
