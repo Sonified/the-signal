@@ -56,7 +56,13 @@
 // with is 8 x 8 tiles of 128 px with 12 px of transparent padding. A smaller
 // square 8 x 8 atlas (set 1, the botanical atlas, is 512 px, 64 px
 // tiles with no padding) is first repacked into that layout, each tile
-// scaled into the 104 px inner square (see repack).
+// scaled into the 104 px inner square (see repack). A set's high resolution
+// sheet (sets.mjs imageHi, drawn while S.kaleidoHiRes is on) is repacked
+// into a layout half again as large instead, 192 px tiles round a 156 px
+// inner square, so its detail survives (see LAYOUT_HI). Each atlas slot
+// carries its own layout to the shader, so one of each can be live at once.
+// The high resolution atlas with its mips is about 12 MB of GPU memory,
+// against 5.6 MB for an ordinary one.
 // Its background removal left a faint matte around every motif: tens of
 // thousands of nearly transparent, nearly white pixels. One of them is
 // nothing; the same rim folded into dozens of copies is white fuzz around
@@ -83,13 +89,7 @@ import { motionStep } from '../core/motion.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 
 const GRID = 8;                     // every atlas is an 8 x 8 tile sheet
-const TILE = 128;
-const ATLAS = TILE * GRID;          // 1024
 const MOTIFS = GRID * GRID;
-// 1024 down to 128. The 12 px padding is still a texel and a half at the
-// last of these, which with the shader's clamp keeps every tap inside its
-// own motif; below it the padding runs out and neighbours would bleed.
-const MIP_LEVELS = 4;
 const SOLID = 200;                  // alpha at or above this keeps its own colour
 const ALPHA_CUT = 40;               // alpha below this goes fully transparent
 
@@ -102,15 +102,48 @@ const MAX_SHAPES = 2048;
 // Room for every live shape's copies with margin, so paint order cannot
 // cause a piece to be dropped at the instance limit.
 const MAX_INST = 4 * MAX_SHAPES;
-// The square of each atlas tile the quad covers (see kaleido.wgsl.js), and
-// the motifs' mean painted share of it if the atlas has not said: measured
-// over the v1 atlas it is 0.41.
-const MOTIF_INNER = 104;
-const MOTIF_PAD = (TILE - MOTIF_INNER) / 2;   // 12
+// The packed layouts an atlas is built into: its tile, the transparent
+// padding round each motif and the inner square inside it that the quad
+// covers (see kaleido.wgsl.js), the atlas's side, its mip levels, whether a
+// sheet already that size is taken as already in the layout (otherwise it
+// is always repacked), and the same as UV for the shader. A motif's fill is
+// measured against its own layout's inner square, as a share, so the
+// coverage solve reads both layouts alike.
+function atlasLayout(tile, pad, mips, prepadded) {
+  const atlas = tile * GRID, inner = tile - 2 * pad;
+  return Object.freeze({ tile, pad, inner, atlas, mips, prepadded,
+                         padUV: pad / atlas, innerUV: inner / atlas, halfTexel: 0.5 / atlas });
+}
+// Every ordinary set: 128 px tiles round a 104 px motif, 1024 square, as
+// the 128 px sheets come. Mips 1024 down to 128. The 12 px padding is still
+// a texel and a half at the last of these, which with the shader's clamp
+// keeps every tap inside its own motif; below it the padding runs out and
+// neighbours would bleed.
+const LAYOUT_STD = atlasLayout(128, 12, 4, true);
+// A high resolution sheet: the same proportions half again as large, 192 px
+// tiles round a 156 px motif with 18 px of padding, 1536 square, so a
+// motif's framing in its quad is the same in both and only its detail
+// changes. The sheet's 192 px tiles are whole motifs with their own margin
+// (as the 64 px tiles of set 1's ordinary sheet are), so it is always
+// repacked, each tile scaled into the inner square. One mip level more,
+// 1536 down to 96 (192 px tiles halve cleanly at every level), so a
+// far-off motif is never sampled coarser than an ordinary set's smallest;
+// the 18 px padding is still 1.125 texels at the last, and the shader's
+// clamp sits half a texel inside the motif, so a bilinear tap is 1.16
+// texels from the tile's edge there and stays inside its own motif.
+const LAYOUT_HI = atlasLayout(192, 18, 5, false);
+// The sampler is shared by both atlases, so it may reach the deepest level
+// either layout has; an ordinary atlas's own view has only its four, and
+// the read is clamped to those as it always was.
+const MAX_MIP_LEVELS = LAYOUT_HI.mips;
+// The motifs' mean painted share of the inner square if the atlas has not
+// said: measured over the v1 atlas it is 0.41.
 const DEFAULT_FILL = 0.41;
 const MAX_FOLDS = 32;
 const INST_FLOATS = 8;              // x y half alpha | upX upY motif atlas slot
-const UNIFORM_FLOATS = 24;          // see kaleido.wgsl.js's struct KU
+const UNIFORM_FLOATS = 32;          // see kaleido.wgsl.js's struct KU
+// Where the two slots' layouts sit in the uniforms (KU's lay0 and lay1).
+const U_LAY0 = 24, U_LAY1 = 28;
 
 const TAU = Math.PI * 2;
 const UP = -Math.PI * 0.5;          // the domain's centre line, straight up the screen
@@ -254,6 +287,17 @@ const FADE_IN_SECONDS = 1.2;
 const CONST_K = 0.35;
 const CONST_EASE_SECONDS = 0.25;
 
+// The sheet a set is drawn from: its high resolution one while the High
+// resolution toggle is on (missing means on) and it has one, else its own.
+function atlasUrl(set) {
+  return S.kaleidoHiRes !== false && set.imageHi ? set.imageHi : set.image;
+}
+// The layout a sheet is packed into (see LAYOUT_HI).
+function layoutFor(set, url) {
+  const def = kaleidoscopeSet(set);
+  return def.imageHi && url === def.imageHi ? LAYOUT_HI : LAYOUT_STD;
+}
+
 function clampNum(v, lo, hi, def) {
   if (typeof v !== 'number' || !(v === v)) return def;
   return v < lo ? lo : (v > hi ? hi : v);
@@ -373,7 +417,7 @@ export function createKaleido(device, format, platform) {
   const sampler = device.createSampler({
     magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear',
     addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge',
-    lodMaxClamp: MIP_LEVELS - 1
+    lodMaxClamp: MAX_MIP_LEVELS - 1
   });
   // The chamber has one level; the fold reads it bilinearly.
   const chamberSampler = device.createSampler({
@@ -461,10 +505,13 @@ export function createKaleido(device, format, platform) {
   // things in every set, so none of this can be shared. The outgoing slot's
   // allowed list is frozen as it was at the switch. The sprite pass binds
   // slot 0 at binding 1 and slot 1 at binding 3, an empty slot borrowing the
-  // other's view.
+  // other's view, and its layout with it. Each slot also keeps the sheet it
+  // was built from (url) and that sheet's layout (lay), since one set can be
+  // built from two sheets (see atlasUrl) and the two need not be packed
+  // alike.
   function makeSlot() {
     return {
-      set: 0, tex: null, view: null,
+      set: 0, url: '', lay: LAYOUT_STD, tex: null, view: null,
       fill: new Float32Array(MOTIFS),
       allowed: new Uint8Array(MOTIFS),
       allowedCount: 0, familyMask: -1, meanFill: DEFAULT_FILL
@@ -485,6 +532,7 @@ export function createKaleido(device, format, platform) {
   // slot (drainSlot) to empty before it moves in (see install). drainSlot is
   // -1 when nothing waits.
   let drainSlot = -1, drainTex = null, drainFill = null, drainSet = 0;
+  let drainUrl = '', drainLay = LAYOUT_STD;
   // The mean fill the coverage solve uses: the current set's, or while a
   // crossfade runs, blended from the outgoing set's as the births tip over.
   let meanFillNow = DEFAULT_FILL;
@@ -494,9 +542,10 @@ export function createKaleido(device, format, platform) {
   const tKey = new Float64Array(13).fill(NaN);
   let targetNow = 0;
 
-  // The atlas set last asked for, and a count that makes a load finishing
-  // after a newer one was asked for throw itself away.
-  let requestedSet = 0, loadToken = 0, ready = false;
+  // The atlas set last asked for, the sheet it was asked from (the High
+  // resolution toggle moves that without moving the set), and a count that
+  // makes a load finishing after a newer one was asked for throw itself away.
+  let requestedSet = 0, requestedUrl = '', loadToken = 0, ready = false;
   let pixelW = 1, pixelH = 1, dpr = 1;
 
   // The domain as this frame's settings shape it, shared by spawning,
@@ -599,29 +648,29 @@ export function createKaleido(device, format, platform) {
   // Decoding goes through the platform; the repack and the cleanup yield
   // after each tile so the million-pixel pass never lands as one long stall
   // mid strobe.
-  function load(set) {
-    requestedSet = set;
+  function load(set, url) {
+    requestedSet = set; requestedUrl = url;
     const token = ++loadToken;
     if (!platform || !platform.loadImagePixels) {
       console.warn('kaleido: the platform has no loadImagePixels; the layer stays empty');
       return;
     }
-    const url = kaleidoscopeSet(set).image;
     platform.loadImagePixels(url)
-      .then(img => buildAtlas(img, token, set))
+      .then(img => buildAtlas(img, token, set, url))
       .catch(err => { console.warn('kaleido: could not load the motif atlas ' + url + ':', err && err.message ? err.message : err); });
   }
 
-  // A square 8 x 8 atlas of any other size, repacked into the 1024 px layout
-  // the renderer and the shader expect: each source tile scaled to fill its
-  // tile's 104 px inner square, with the 12 px padding left transparent.
+  // A square 8 x 8 atlas of any other size, repacked into layout L (the
+  // 1024 px one for an ordinary set): each source tile scaled to fill its
+  // tile's inner square (104 px there), with the padding left transparent.
   // Bilinear, weighted by alpha so transparent texels lend no colour to the
   // edge, and clamped to the source tile so neighbours never bleed in. It
   // yields after every tile, as the cleanup below does, so the repack never
   // lands as one long stall mid strobe; null if another set was asked for
   // meanwhile.
-  async function repack(img, token) {
+  async function repack(img, token, L) {
     const T = img.width / GRID, src = img.data;
+    const TILE = L.tile, ATLAS = L.atlas, MOTIF_INNER = L.inner, MOTIF_PAD = L.pad;
     const out = new Uint8ClampedArray(ATLAS * ATLAS * 4);
     const step = T / MOTIF_INNER;
     for (let t = 0; t < MOTIFS; t++) {
@@ -654,13 +703,16 @@ export function createKaleido(device, format, platform) {
     return { width: ATLAS, height: ATLAS, data: out };
   }
 
-  async function buildAtlas(img, token, set) {
-    if (img.width !== ATLAS || img.height !== ATLAS) {
+  async function buildAtlas(img, token, set, url) {
+    // Everything below works in this sheet's own layout.
+    const L = layoutFor(set, url);
+    const TILE = L.tile, ATLAS = L.atlas;
+    if (!L.prepadded || img.width !== ATLAS || img.height !== ATLAS) {
       if (img.width !== img.height || img.width % GRID) {
         console.warn('kaleido: expected a square atlas of 8 x 8 tiles, got ' + img.width + ' x ' + img.height);
         return;
       }
-      img = await repack(img, token);
+      img = await repack(img, token, L);
       if (!img) return;
     }
     const src = img.data;
@@ -752,7 +804,7 @@ export function createKaleido(device, format, platform) {
           painted += k;
         }
       }
-      fill[t] = Math.min(1, painted / (MOTIF_INNER * MOTIF_INNER));
+      fill[t] = Math.min(1, painted / (L.inner * L.inner));
       // Yield after every tile, not every row: a row of eight dilations is
       // several milliseconds of main thread, a dropped strobe frame each.
       await yieldTile();
@@ -762,22 +814,27 @@ export function createKaleido(device, format, platform) {
     const tex = device.createTexture({
       size: { width: ATLAS, height: ATLAS },
       format: 'rgba8unorm',
-      mipLevelCount: MIP_LEVELS,
+      mipLevelCount: L.mips,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
     });
     device.queue.writeTexture({ texture: tex }, out, { bytesPerRow: ATLAS * 4, rowsPerImage: ATLAS },
                               { width: ATLAS, height: ATLAS });
-    buildMips(tex);
-    install(tex, fill, set);
+    buildMips(tex, L.mips);
+    install(tex, fill, set, url, L);
   }
 
   // ---------- the atlas slots ----------
   // The sprite pass's bind group over both slots, made again only when an
   // atlas comes or goes, never in an ordinary frame. An empty slot borrows
-  // the other's view, so the shader always has two to read.
+  // the other's view, so the shader always has two to read, and its layout
+  // with it. The layouts go into the uniforms here, and ride every frame's
+  // uniform write from then on.
   function rebind() {
-    const a = slots[0].view || slots[1].view, b = slots[1].view || slots[0].view;
+    const sa = slots[0].view ? slots[0] : slots[1], sb = slots[1].view ? slots[1] : slots[0];
+    const a = sa.view, b = sb.view;
     if (!a) { spriteBind = null; return; }
+    putLayout(U_LAY0, sa.lay);
+    putLayout(U_LAY1, sb.lay);
     spriteBind = device.createBindGroup({
       layout: spriteBgl,
       entries: [
@@ -789,11 +846,15 @@ export function createKaleido(device, format, platform) {
     });
   }
 
+  function putLayout(at, L) {
+    uni[at] = L.padUV; uni[at + 1] = L.innerUV; uni[at + 2] = L.halfTexel; uni[at + 3] = 0;
+  }
+
   // Frees a slot. Frames already submitted finish with its atlas before it
   // goes; the caller rebinds before the next frame is encoded.
   function dropSlot(sl) {
     if (sl.tex) sl.tex.destroy();
-    sl.tex = null; sl.view = null; sl.set = 0;
+    sl.tex = null; sl.view = null; sl.set = 0; sl.url = ''; sl.lay = LAYOUT_STD;
     sl.allowedCount = 0; sl.familyMask = -1;
   }
 
@@ -833,18 +894,20 @@ export function createKaleido(device, format, platform) {
   // the current set, so the slot only empties. Once it has, the new atlas
   // moves in and its crossfade starts (see update). At Speed 0 with no orbit
   // nothing ever leaves sight, and the new set waits for motion.
-  function install(tex, fill, set) {
+  function install(tex, fill, set, url, L) {
     const T = pendingXfade;
     const crossfade = !!slots[cur].tex && T > 0;
     const s = crossfade ? 1 - cur : cur;
     const sl = slots[s];
     if (crossfade && sl.tex && users[s] > 0) {
       drainSlot = s; drainTex = tex; drainFill = fill; drainSet = set;
+      drainUrl = url; drainLay = L;
       xfadeAge = xfadeLen;
       return;
     }
     if (sl.tex) sl.tex.destroy();
     sl.tex = tex; sl.view = tex.createView(); sl.set = set;
+    sl.url = url; sl.lay = L;
     sl.fill.set(fill);
     makeCurrent(s, !crossfade, T, 0);
   }
@@ -856,9 +919,13 @@ export function createKaleido(device, format, platform) {
   // in a slot is taken from there rather than loaded again: back to the
   // current one, the mix simply carries on (instant, the outgoing set goes);
   // back to the outgoing one, the two swap roles with the mix carried over
-  // continuously, so the births do not jump.
-  function changeSet(set) {
-    if (KDIAG) { dgEvent = 'changeSet ' + set; dgLog(dgEvent); }
+  // continuously, so the births do not jump. A slot counts as holding the
+  // set only if it was built from the same sheet (url), so the High
+  // resolution toggle reloads the current set from its other sheet and
+  // swaps it in exactly as a change of set would; toggling back mid
+  // crossfade finds the other sheet still in its slot.
+  function changeSet(set, url) {
+    if (KDIAG) { dgEvent = 'changeSet ' + set + ' ' + url; dgLog(dgEvent); }
     // A set still waiting on a draining slot is overtaken by this one.
     if (drainSlot >= 0) {
       drainTex.destroy();
@@ -866,25 +933,25 @@ export function createKaleido(device, format, platform) {
     }
     const T = wasOn ? clampNum(S.kaleidoSetXfade, 0, 60, 0) : 0;
     const o = 1 - cur;
-    if (slots[cur].tex && slots[cur].set === set) {
-      requestedSet = set; ++loadToken;
+    if (slots[cur].tex && slots[cur].set === set && slots[cur].url === url) {
+      requestedSet = set; requestedUrl = url; ++loadToken;
       if (T <= 0) makeCurrent(cur, true, 0, 0);
       return;
     }
-    if (slots[o].tex && slots[o].set === set) {
-      requestedSet = set; ++loadToken;
+    if (slots[o].tex && slots[o].set === set && slots[o].url === url) {
+      requestedSet = set; requestedUrl = url; ++loadToken;
       const p = xfadeAge < xfadeLen ? xfadeAge / xfadeLen : 1;
       makeCurrent(o, T <= 0, T, 1 - p);
       return;
     }
     pendingXfade = T;
-    load(set);
+    load(set, url);
   }
 
   // One small render pass per level, each reading the level above it, as
-  // flowers.js builds its chain. 128 px tiles halve cleanly at every level
-  // here, so a 2 x 2 box never straddles two motifs.
-  function buildMips(tex) {
+  // flowers.js builds its chain. 128 px tiles (and 192 px ones) halve
+  // cleanly at every level here, so a 2 x 2 box never straddles two motifs.
+  function buildMips(tex, levels) {
     const mipMod = device.createShaderModule({ label: 'kaleido.mip', code: MIP_WGSL });
     const mp = device.createRenderPipeline({
       layout: 'auto',
@@ -893,7 +960,7 @@ export function createKaleido(device, format, platform) {
       primitive: { topology: 'triangle-list' }
     });
     const enc = device.createCommandEncoder();
-    for (let l = 1; l < MIP_LEVELS; l++) {
+    for (let l = 1; l < levels; l++) {
       const srcView = tex.createView({ baseMipLevel: l - 1, mipLevelCount: 1 });
       const dstView = tex.createView({ baseMipLevel: l, mipLevelCount: 1 });
       const bg = device.createBindGroup({ layout: mp.getBindGroupLayout(0), entries: [{ binding: 0, resource: srcView }] });
@@ -1390,8 +1457,9 @@ export function createKaleido(device, format, platform) {
     instCount = 0;
     const lyr = S.layers;
     if (!lyr || !lyr.kaleido) { wasOn = false; return; }
-    const wantSet = kaleidoscopeSet(S.kaleidoSet).id;
-    if (wantSet !== requestedSet) changeSet(wantSet);
+    const wantDef = kaleidoscopeSet(S.kaleidoSet);
+    const wantUrl = atlasUrl(wantDef);
+    if (wantDef.id !== requestedSet || wantUrl !== requestedUrl) changeSet(wantDef.id, wantUrl);
     if (!ready) return;
 
     const folds = Math.round(clampNum(S.kaleidoFolds, 3, MAX_FOLDS, 8));
@@ -1527,9 +1595,9 @@ export function createKaleido(device, format, platform) {
     // A set waiting on a draining slot moves in once its last piece is gone
     // (see install).
     if (drainSlot >= 0 && users[drainSlot] <= 0) {
-      const tex = drainTex, fill = drainFill, set = drainSet;
+      const tex = drainTex, fill = drainFill, set = drainSet, url = drainUrl, lay = drainLay;
       drainSlot = -1; drainTex = null; drainFill = null;
-      install(tex, fill, set);
+      install(tex, fill, set, url, lay);
     }
     if (!live) return;
 

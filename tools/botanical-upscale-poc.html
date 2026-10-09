@@ -14,27 +14,28 @@
 </style>
 <main>
   <h1>Botanical atlas · 3× proof of concept</h1>
-  <p>Compare the original 64-pixel motifs with the enhanced atlas at the same displayed size. Check the petal and leaf texture, silhouettes, transparency, and all 64 tile identities before replacing the production asset.</p>
+  <p>Compare the rebuilt high-resolution cutouts with the first POC or the original atlas at the same displayed size. Check fine leaf margins, petal tips, transparency, and all 64 tile identities.</p>
   <div class="toolbar">
+    <label>Compare against <select id="baseline"><option value="1">First POC · soft edges</option><option value="0">Original atlas</option></select></label>
     <label>Motif <select id="motif"></select></label>
     <label>Preview size <select id="scale"><option value="3">3× · 192 pixels</option><option value="6">6× · 384 pixels</option></select></label>
     <label>Background <select id="background"><option value="#111">Dark</option><option value="#fff">White</option><option value="#408746">Green</option></select></label>
   </div>
   <div class="pair">
-    <figure><figcaption>Original · 512 × 512 atlas</figcaption><canvas id="original"></canvas><small>64 × 64 source pixels per motif</small></figure>
-    <figure><figcaption>3× enhancement · <span id="dimensions">loading</span></figcaption><canvas id="enhanced"></canvas><small id="tile-size"></small></figure>
+    <figure><figcaption id="baseline-caption">First POC · soft edges</figcaption><canvas id="original"></canvas><small id="baseline-size"></small></figure>
+    <figure><figcaption>Rebuilt edges · <span id="dimensions">loading</span></figcaption><canvas id="enhanced"></canvas><small id="tile-size"></small></figure>
   </div>
   <p id="status" role="status">Loading the two atlases…</p>
   <p>The production renderer currently repacks atlases into fixed 128-pixel tiles. This page displays the source images directly, preserving the added resolution.</p>
-  <p><a href="../assets/kaleidoscope/botanical-atlas-meditation-draft-upscaled-3x-poc.png" download>Download the enhanced PNG</a></p>
+  <p><a href="../assets/kaleidoscope/botanical-atlas-meditation-draft-upscaled-3x-edges-v2.png" download>Download the rebuilt-edge PNG</a></p>
   <div class="pair">
-    <figure><figcaption>Original · all 64 motifs</figcaption><img id="original-sheet" class="sheet" alt="Original botanical atlas"></figure>
-    <figure><figcaption>Enhanced · all 64 motifs</figcaption><img id="enhanced-sheet" class="sheet" alt="Enhanced botanical atlas"></figure>
+    <figure><figcaption id="baseline-sheet-caption">First POC · all 64 motifs</figcaption><img id="original-sheet" class="sheet" alt="Baseline botanical atlas"></figure>
+    <figure><figcaption>Rebuilt edges · all 64 motifs</figcaption><img id="enhanced-sheet" class="sheet" alt="Botanical atlas with rebuilt edges"></figure>
   </div>
 </main>
 <script type="module">
 const base = '../assets/kaleidoscope/';
-const paths = ['botanical-atlas-meditation-draft.png', 'botanical-atlas-meditation-draft-upscaled-3x-poc.png'];
+const paths = ['botanical-atlas-meditation-draft.png', 'botanical-atlas-meditation-draft-upscaled-3x-poc.png', 'botanical-atlas-meditation-draft-upscaled-3x-edges-v2.png'];
 const status = document.querySelector('#status');
 try {
   const manifest = await (await fetch(base + 'botanical-atlas-meditation-draft.manifest.json')).json();
@@ -42,26 +43,30 @@ try {
   const images = await Promise.all(paths.map(path => new Promise((resolve,reject) => {
     const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error('Could not load ' + path)); img.src = base + path;
   })));
-  const motif = document.querySelector('#motif'), scale = document.querySelector('#scale');
+  const motif = document.querySelector('#motif'), scale = document.querySelector('#scale'), baseline = document.querySelector('#baseline');
   for(let index=0;index<64;index++) {
     const option = document.createElement('option'); option.value = index;
     option.textContent = `${index + 1}. ${(entries.find(entry=>entry.index===index)?.id || 'Motif').replaceAll('-',' ')}`;
     motif.append(option);
   }
-  document.querySelector('#dimensions').textContent = `${images[1].width} × ${images[1].height} atlas`;
-  document.querySelector('#tile-size').textContent = `${images[1].width/8} × ${images[1].height/8} source pixels per motif`;
-  document.querySelector('#original-sheet').src = images[0].src;
-  document.querySelector('#enhanced-sheet').src = images[1].src;
+  document.querySelector('#dimensions').textContent = `${images[2].width} × ${images[2].height} atlas`;
+  document.querySelector('#tile-size').textContent = `${images[2].width/8} × ${images[2].height/8} source pixels per motif`;
+  document.querySelector('#enhanced-sheet').src = images[2].src;
   function redraw() {
     const index=+motif.value, side=64*+scale.value;
-    for(const [n,id] of ['original','enhanced'].entries()) {
+    const left=+baseline.value, name=left===0?'Original':'First POC';
+    document.querySelector('#baseline-caption').textContent = `${name} · ${left===0?'original edges':'soft edges'}`;
+    document.querySelector('#baseline-sheet-caption').textContent = `${name} · all 64 motifs`;
+    document.querySelector('#baseline-size').textContent = `${images[left].width/8} × ${images[left].height/8} source pixels per motif`;
+    document.querySelector('#original-sheet').src = images[left].src;
+    for(const [n,id] of [[left,'original'],[2,'enhanced']]) {
       const canvas=document.getElementById(id), tile=images[n].width/8, dpr=devicePixelRatio || 1;
       canvas.width=canvas.height=Math.round(side*dpr); canvas.style.width=canvas.style.height=side+'px';
       const ctx=canvas.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
       ctx.drawImage(images[n], (index%8)*tile, Math.floor(index/8)*tile,tile,tile,0,0,canvas.width,canvas.height);
     }
   }
-  motif.onchange=scale.onchange=redraw;
+  motif.onchange=scale.onchange=baseline.onchange=redraw;
   document.querySelector('#background').onchange=e=>document.documentElement.style.setProperty('--preview-bg',e.target.value);
   redraw(); status.textContent='Loaded. Both motifs are displayed at identical sizes; the original asset remains unchanged.';
 } catch(error) { status.textContent=error.message; }

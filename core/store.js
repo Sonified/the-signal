@@ -177,6 +177,7 @@ function buildSettings() {
     cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb,
     ambOn: S.ambOn, ambVol: S.ambVol, ambDrift: S.ambDrift, ambDriftFadeS: S.ambDriftFadeS, ambKidsFreq: S.ambKidsFreq,
     ambReverb: S.ambReverb, ambRevTime: S.ambRevTime, ambRevType: S.ambRevType, ambRevDamp: S.ambRevDamp, ambRevMod: S.ambRevMod,
+    ambReverbVar: S.ambReverbVar, ambReverbPeriod: S.ambReverbPeriod, ambRevTimeVar: S.ambRevTimeVar, ambRevTimePeriod: S.ambRevTimePeriod,
     ambLayers: S.ambLayers,
     pipTrimDb: S.pipTrimDb, biOn: S.biOn, chirpVol: S.chirpVol, chirpReverb: S.chirpReverb, chirpRevTime: S.chirpRevTime,
     chirpModDepth: S.chirpModDepth, chirpModPeriod: S.chirpModPeriod,
@@ -1078,6 +1079,11 @@ function applySettings(s, live, scene) {
   if (s.ambRevType === 'conv' || s.ambRevType === 'algo') S.ambRevType = s.ambRevType;
   for (const k of ['ambRevDamp', 'ambRevMod'])
     if (typeof s[k] === 'number' && isFinite(s[k])) S[k] = Math.max(0, Math.min(1, s[k]));
+  // the room's two variances (js/ambience.js revBreathe)
+  for (const k of ['ambReverbVar', 'ambRevTimeVar'])
+    if (typeof s[k] === 'number' && isFinite(s[k])) S[k] = Math.max(0, Math.min(1, s[k]));
+  for (const k of ['ambReverbPeriod', 'ambRevTimePeriod'])
+    if (typeof s[k] === 'number' && isFinite(s[k])) S[k] = Math.max(0, Math.min(120, s[k]));
   if (typeof s.bedOn === 'boolean') S.bedOn = s.bedOn;
   if (typeof s.pianoOn === 'boolean') S.pianoOn = s.pianoOn;
   // arpSwOn is no longer restored: the sequencer's volume sweep lost its

@@ -1,0 +1,364 @@
+{
+  "version": 1,
+  "pack": "lotus-bloom-upscaled-3x",
+  "status": "proof-of-concept",
+  "alpha": "straight",
+  "colorSpace": "srgb",
+  "originalSource": "../celestial-v1/source/lotus-bloom.png",
+  "originalSourceSha256": "946e5a2db9af38947874e3dfbbc7ae8311bef8057ce7bbe57f51791c3c95a4f0",
+  "method": "ImageGen texture and contour reconstruction in four 2x2 groups; high-resolution alpha foreground cleanup, original placement bounds only, Lanczos packing",
+  "assets": [
+    {
+      "id": "lotus-bloom-master",
+      "image": "lotus-bloom-960.png",
+      "tileSize": 960,
+      "columns": 4,
+      "rows": 4,
+      "frameCount": 16,
+      "padding": 9,
+      "width": 3840,
+      "height": 3840,
+      "fps": 8,
+      "loop": true,
+      "playback": "ping-pong",
+      "durationSeconds": 4,
+      "frameOrder": "row-major",
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "sourceFrameSequence": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        15,
+        14,
+        13,
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0
+      ],
+      "sha256": "5f44f5cf25240c0f1b03fb5b8cf5fbcefb7b5e8ff8d7bc5a774bc8243fcb421b"
+    },
+    {
+      "id": "lotus-bloom-packed",
+      "image": "lotus-bloom-384.png",
+      "tileSize": 384,
+      "columns": 8,
+      "rows": 4,
+      "frameCount": 32,
+      "padding": 24,
+      "width": 3072,
+      "height": 1536,
+      "fps": 8,
+      "loop": true,
+      "playback": "ping-pong",
+      "durationSeconds": 4,
+      "frameOrder": "row-major",
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "sourceFrameSequence": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        15,
+        14,
+        13,
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0
+      ],
+      "sha256": "d63a902d3c4b341c2f9fa3f6151c86a579e518dfe71977f89fdd0df4ef77b315"
+    }
+  ],
+  "placement": [
+    {
+      "frame": 0,
+      "sourceBounds": {
+        "x": 86,
+        "y": 76,
+        "width": 148,
+        "height": 188
+      },
+      "masterBounds": {
+        "x": 267,
+        "y": 237,
+        "width": 444,
+        "height": 564
+      }
+    },
+    {
+      "frame": 1,
+      "sourceBounds": {
+        "x": 84,
+        "y": 68,
+        "width": 150,
+        "height": 196
+      },
+      "masterBounds": {
+        "x": 261,
+        "y": 213,
+        "width": 450,
+        "height": 588
+      }
+    },
+    {
+      "frame": 2,
+      "sourceBounds": {
+        "x": 79,
+        "y": 66,
+        "width": 157,
+        "height": 198
+      },
+      "masterBounds": {
+        "x": 246,
+        "y": 207,
+        "width": 471,
+        "height": 594
+      }
+    },
+    {
+      "frame": 3,
+      "sourceBounds": {
+        "x": 66,
+        "y": 66,
+        "width": 182,
+        "height": 198
+      },
+      "masterBounds": {
+        "x": 207,
+        "y": 207,
+        "width": 546,
+        "height": 594
+      }
+    },
+    {
+      "frame": 4,
+      "sourceBounds": {
+        "x": 52,
+        "y": 69,
+        "width": 213,
+        "height": 200
+      },
+      "masterBounds": {
+        "x": 165,
+        "y": 216,
+        "width": 639,
+        "height": 600
+      }
+    },
+    {
+      "frame": 5,
+      "sourceBounds": {
+        "x": 47,
+        "y": 68,
+        "width": 222,
+        "height": 201
+      },
+      "masterBounds": {
+        "x": 150,
+        "y": 213,
+        "width": 666,
+        "height": 603
+      }
+    },
+    {
+      "frame": 6,
+      "sourceBounds": {
+        "x": 34,
+        "y": 67,
+        "width": 245,
+        "height": 202
+      },
+      "masterBounds": {
+        "x": 111,
+        "y": 210,
+        "width": 735,
+        "height": 606
+      }
+    },
+    {
+      "frame": 7,
+      "sourceBounds": {
+        "x": 32,
+        "y": 66,
+        "width": 252,
+        "height": 203
+      },
+      "masterBounds": {
+        "x": 105,
+        "y": 207,
+        "width": 756,
+        "height": 609
+      }
+    },
+    {
+      "frame": 8,
+      "sourceBounds": {
+        "x": 18,
+        "y": 62,
+        "width": 281,
+        "height": 204
+      },
+      "masterBounds": {
+        "x": 63,
+        "y": 195,
+        "width": 843,
+        "height": 612
+      }
+    },
+    {
+      "frame": 9,
+      "sourceBounds": {
+        "x": 16,
+        "y": 60,
+        "width": 285,
+        "height": 206
+      },
+      "masterBounds": {
+        "x": 57,
+        "y": 189,
+        "width": 855,
+        "height": 618
+      }
+    },
+    {
+      "frame": 10,
+      "sourceBounds": {
+        "x": 16,
+        "y": 60,
+        "width": 289,
+        "height": 206
+      },
+      "masterBounds": {
+        "x": 57,
+        "y": 189,
+        "width": 867,
+        "height": 618
+      }
+    },
+    {
+      "frame": 11,
+      "sourceBounds": {
+        "x": 14,
+        "y": 60,
+        "width": 287,
+        "height": 207
+      },
+      "masterBounds": {
+        "x": 51,
+        "y": 189,
+        "width": 861,
+        "height": 621
+      }
+    },
+    {
+      "frame": 12,
+      "sourceBounds": {
+        "x": 15,
+        "y": 53,
+        "width": 287,
+        "height": 206
+      },
+      "masterBounds": {
+        "x": 54,
+        "y": 168,
+        "width": 861,
+        "height": 618
+      }
+    },
+    {
+      "frame": 13,
+      "sourceBounds": {
+        "x": 14,
+        "y": 52,
+        "width": 288,
+        "height": 207
+      },
+      "masterBounds": {
+        "x": 51,
+        "y": 165,
+        "width": 864,
+        "height": 621
+      }
+    },
+    {
+      "frame": 14,
+      "sourceBounds": {
+        "x": 13,
+        "y": 53,
+        "width": 288,
+        "height": 205
+      },
+      "masterBounds": {
+        "x": 48,
+        "y": 168,
+        "width": 864,
+        "height": 615
+      }
+    },
+    {
+      "frame": 15,
+      "sourceBounds": {
+        "x": 14,
+        "y": 54,
+        "width": 285,
+        "height": 205
+      },
+      "masterBounds": {
+        "x": 51,
+        "y": 171,
+        "width": 855,
+        "height": 615
+      }
+    }
+  ]
+}

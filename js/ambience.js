@@ -5,6 +5,8 @@ import {
   sourceGate
 } from './audio.js';
 import { layerGate, layerSoloChanged, onLayerGates } from './mixgate.js';
+import { every } from './ticker.js';
+import { breath, breathState } from '../core/variance.js';
 import { ctxFor, masterFor, makeWorklet } from './heart/route.js';
 
 export const WORLDS = [
@@ -148,6 +150,7 @@ function ensureOut() {
   convFeed = ctx.createGain();
   revIn.connect(convFeed);
   applyAmbRevType();
+  if (!breatheTimer) breatheTimer = every(100, revBreathe);
   return out;
 }
 // Both glide: a straight line over a preset's transition, the usual short
@@ -156,7 +159,7 @@ export function applyAmbVol() {
   if (out) glideParam(out.gain, outLevel(), 0.2);
 }
 export function applyAmbReverb() {
-  if (wet) glideParam(wet.gain, S.ambReverb, 0.12);
+  if (wet) glideParam(wet.gain, ambEffectiveReverb(), 0.12);
 }
 
 // Unlike the piano, the bed is always sounding, so there is never a quiet
@@ -184,12 +187,37 @@ export function rebuildAmbIR() {
 let revAlgoNow = false, revUnplug = null;
 const wantAlgo = () => S.ambRevType !== 'conv';
 const rev01 = v => Math.max(0, Math.min(1, +v || 0));
+
+// The room's two variances, the music room's own (js/piano.js revBreathe):
+// the level and the decay ease down from their settings by the amount's
+// share and back, one cycle per their speed (unset reads as 20 s), stepped
+// ten times a second on the ambience context's clock. The decay plays in
+// half seconds under convolution, so the room builds a new impulse only
+// when the dip crosses a step; the algorithmic one takes it as it moves.
+// schema-audio.js reads the two effectives for the sliders' glowing bars.
+const revLevelB = breathState(), revTimeB = breathState();
+let effRevLevelDepth = 0, effRevTimeDepth = 0;
+const revDecay = () => Math.max(1, S.ambRevTime * (1 - effRevTimeDepth));
+const revSec = () => Math.round(revDecay() * 2) / 2;
+export const ambEffectiveReverb = () => Math.max(0, S.ambReverb || 0) * (1 - effRevLevelDepth);
+export const ambEffectiveRevTime = () => revAlgoNow ? revDecay() : revSec();
+let breatheTimer = 0;
+function revBreathe() {
+  if (!outCtx) return;
+  const now = outCtx.currentTime;
+  const level0 = effRevLevelDepth, time0 = effRevTimeDepth, sec0 = revSec();
+  effRevLevelDepth = breath(revLevelB, rev01(S.ambReverbVar), S.ambReverbPeriod, now, 'sine', 20);
+  effRevTimeDepth = breath(revTimeB, rev01(S.ambRevTimeVar), S.ambRevTimePeriod, now, 'sine', 20);
+  if (wet && effRevLevelDepth !== level0) glideParam(wet.gain, ambEffectiveReverb(), 0.25);
+  if (revAlgoNow) { if (effRevTimeDepth !== time0) algoTune(0.25); }
+  else if (room && revSec() !== sec0) swapRoom(room, 200);
+}
 // On Heart a gesture is heard about a lookahead after currentTime (js/piano.js
 // lateBy), which the unplug waits on top.
 const lateBy = ctx => ctx.presentTime === undefined ? 0 : Math.max(0, ctx.presentTime - ctx.currentTime);
 function convRoom() {
   if (room) return room;
-  room = createRoom(outCtx, () => S.ambRevTime, 2.0);
+  room = createRoom(outCtx, () => revSec(), 2.0);
   room.output.connect(wet);
   convFeed.connect(room.input);
   return room;
@@ -212,7 +240,7 @@ function algoNode() {
 function algoTune(tc) {
   if (!algo) return;
   const p = algo.parameters;
-  glideParam(p.get('decay'), Math.max(1, S.ambRevTime), tc);
+  glideParam(p.get('decay'), revDecay(), tc);
   glideParam(p.get('damping'), rev01(S.ambRevDamp ?? 0.35), tc);
   glideParam(p.get('mod'), rev01(S.ambRevMod ?? 0.3), tc);
 }

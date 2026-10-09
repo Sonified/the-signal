@@ -32,6 +32,9 @@ const DEF_CONST_SIZE = false;
 // Off by default: the Color sliders do nothing, and stay hidden, until the
 // viewer turns the grade on.
 const DEF_GRADE = false;
+// On by default: a set with a high resolution sheet (sets.mjs imageHi) is
+// drawn from it. Records from before the toggle existed leave it on.
+const DEF_HI_RES = true;
 const NUM = [
   // key,               min,  max, def,  integer
   ['kaleidoFolds',       3,   32,  8,    true ],
@@ -171,6 +174,7 @@ export function initKaleidoState(S) {
   if (typeof S.kaleidoMirror !== 'boolean') S.kaleidoMirror = DEF_MIRROR;
   if (typeof S.kaleidoConstSize !== 'boolean') S.kaleidoConstSize = DEF_CONST_SIZE;
   if (typeof S.kaleidoGrade !== 'boolean') S.kaleidoGrade = DEF_GRADE;
+  if (typeof S.kaleidoHiRes !== 'boolean') S.kaleidoHiRes = DEF_HI_RES;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -183,7 +187,7 @@ export function initKaleidoState(S) {
 // as flowersOn does, so the record does not look like a partial v0 layers
 // object. The family list is copied so the record never aliases S.
 export function kaleidoStateOf(S) {
-  const out = { kaleidoOn: !!S.layers.kaleido, kaleidoMirror: !!S.kaleidoMirror, kaleidoConstSize: !!S.kaleidoConstSize, kaleidoGrade: !!S.kaleidoGrade };
+  const out = { kaleidoOn: !!S.layers.kaleido, kaleidoMirror: !!S.kaleidoMirror, kaleidoConstSize: !!S.kaleidoConstSize, kaleidoGrade: !!S.kaleidoGrade, kaleidoHiRes: !!S.kaleidoHiRes };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   out.kaleidoFamilies = Array.isArray(S.kaleidoFamilies) ? S.kaleidoFamilies.slice() : [];
   return out;
@@ -200,6 +204,7 @@ export function applyKaleidoState(S, o) {
   if (typeof o.kaleidoMirror === 'boolean') S.kaleidoMirror = o.kaleidoMirror;
   if (typeof o.kaleidoConstSize === 'boolean') S.kaleidoConstSize = o.kaleidoConstSize;
   if (typeof o.kaleidoGrade === 'boolean') S.kaleidoGrade = o.kaleidoGrade;
+  if (typeof o.kaleidoHiRes === 'boolean') S.kaleidoHiRes = o.kaleidoHiRes;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -352,6 +357,18 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoFamilies = [];
       save();
     },
+    enabled: layerOn
+  },
+  {
+    // Whether a set with a high resolution sheet (sets.mjs imageHi; set 1
+    // so far) is drawn from it rather than from its ordinary one. Switching
+    // it reloads the current set's atlas and swaps it in as a change of
+    // Image set does (instant, or across the Set crossfade). Sets without
+    // one ignore it.
+    id: 'kaleidoHiRes', section: 'kaleido', label: 'High resolution', kind: 'toggle', def: DEF_HI_RES,
+    parent: 'kaleidoShapesDrawer',
+    get: S => !!S.kaleidoHiRes,
+    set: (S, on) => { S.kaleidoHiRes = !!on; save(); },
     enabled: layerOn
   },
   {

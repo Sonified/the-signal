@@ -52,6 +52,9 @@ export const KALEIDOSCOPE_SETS = Object.freeze([
     name: 'Botanical atlas',
     image: 'assets/kaleidoscope/botanical-atlas-meditation-draft.png',
     manifest: 'assets/kaleidoscope/botanical-atlas-meditation-draft.manifest.json',
+    // The same motifs at three times the size (192 px tiles, 1536 square),
+    // drawn instead of image while the High resolution toggle is on.
+    imageHi: 'assets/kaleidoscope/botanical-atlas-meditation-draft-upscaled-3x-edges-v2.png',
     groups: [
       group('petals', 'Petals', set1Petals),
       group('ferns', 'Ferns', set1Ferns),

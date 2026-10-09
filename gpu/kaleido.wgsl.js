@@ -30,6 +30,8 @@ struct KU {
   fold: vec4f,    // field centre x, y (device px), wedge angle, complete rotation (radians)
   dom: vec4f,     // the domain's starting angle, mirror (0 or 1), layer gain, unused
   grade: vec4f,   // brightness, contrast, saturation (1 leaves each alone), unused
+  lay0: vec4f,    // tex's layout as UV: tile padding, motif inner square, half a texel, unused
+  lay1: vec4f,    // the same for tex2 (see the layout note below)
 };
 @group(0) @binding(0) var<uniform> u: KU;
 @group(0) @binding(1) var tex: texture_2d<f32>;
@@ -41,14 +43,15 @@ struct KU {
 // atlas. The fold never reads it, so its layout leaves it out.
 @group(0) @binding(3) var tex2: texture_2d<f32>;
 
-// The atlas is 1024 texels square: 8 x 8 tiles of 128, each with 12 texels
-// of transparent padding around a 104 texel motif. The quad covers only that
-// inner square, and sampling is clamped half a texel inside it, so bilinear
-// taps and the first few mip levels never reach a neighbouring motif.
+// Every atlas is 8 x 8 tiles, each a motif's inner square inside a frame of
+// transparent padding: 1024 texels square with 12 round 104 for an ordinary
+// set, 1536 with 18 round 156 for a high resolution one. The two share
+// proportions, but each atlas says its own (lay0 for tex, lay1 for tex2),
+// because during a set crossfade the two bindings can hold one of each. The
+// quad covers only the inner square, and sampling is clamped half a texel
+// inside it, so bilinear taps and every mip level the sampler reaches never
+// touch a neighbouring motif.
 const TILE_UV = 0.125;
-const PAD_UV = 0.01171875;          // 12 / 1024
-const INNER_UV = 0.1015625;         // 104 / 1024
-const HALF_TEXEL = 0.00048828125;   // 0.5 / 1024
 
 struct SOut {
   @builtin(position) pos: vec4f,
@@ -83,10 +86,11 @@ fn vsSprite(@builtin(vertex_index) vi: u32,
 
   var o: SOut;
   o.pos = vec4f(t.x * u.chamber.z * 2.0 - 1.0, 1.0 - t.y * u.chamber.w * 2.0, 0.0, 1.0);
+  let lay = select(u.lay0, u.lay1, upMotif.w > 0.5);
   let tile = vec2f(f32(motif & 7u), f32(motif >> 3u)) * TILE_UV;
-  o.uv = tile + vec2f(PAD_UV) + (vec2f(sx, sy) * 0.5 + 0.5) * INNER_UV;
-  o.lo = tile + vec2f(PAD_UV + HALF_TEXEL);
-  o.hi = tile + vec2f(PAD_UV + INNER_UV - HALF_TEXEL);
+  o.uv = tile + vec2f(lay.x) + (vec2f(sx, sy) * 0.5 + 0.5) * lay.y;
+  o.lo = tile + vec2f(lay.x + lay.z);
+  o.hi = tile + vec2f(lay.x + lay.y - lay.z);
   o.alpha = posHalfAlpha.w;
   o.slot = upMotif.w;
   return o;

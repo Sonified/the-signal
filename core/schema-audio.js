@@ -32,7 +32,7 @@ import {
   applyChoir, applyChoirVol, applyChoirOn, applyChoirAm, choirEffectiveAm,
   choirEffectiveLevel, choirEffectiveStack, choirEffectiveDensity
 } from '../js/choir.js';
-import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, applyAmbRevType, applyAmbRevShape, AMBIENCE_SOURCES } from '../js/ambience.js';
+import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, applyAmbRevType, applyAmbRevShape, ambEffectiveReverb, ambEffectiveRevTime, AMBIENCE_SOURCES } from '../js/ambience.js';
 import { applyMixGates } from '../js/mixgate.js';
 import { MUSIC_LAYERS, applyLayerOn, applyLayerVol } from '../js/layers.js';
 import { layerOnKey, layerVolKey, layerMixId, layerDrawerId } from '../js/layer-defs.js';
@@ -1575,11 +1575,13 @@ const atmosphereControls = [
   // (togglePanel(false)) before dispatching the open event; the drawer's
   // open flag is plain S state, so it is set directly here rather than
   // routed through a visual-side helper.
+  subDrawer('ambLayersDrawer', 'Layers', 'atmosphere', ['ambMixerOpen', 'ambKidsFreq']),
   {
-    id: 'ambMixerOpen', section: 'atmosphere', label: 'Open levels', kind: 'action',
+    id: 'ambMixerOpen', section: 'atmosphere', label: 'Open levels', kind: 'action', parent: 'ambLayersDrawer',
     act: s => { s.panelOpen = false; mixerOpenHook(true); },
     visible: s => s.ambOn
   },
+  subDrawer('ambReverbDrawer', 'Reverb', 'atmosphere', ['ambReverb', 'ambRevTime']),
   {
     // What plays the atmosphere's room, as the music's Reverb type does:
     // Convolution, a fixed impulse (a new decay is a new impulse, crossfaded
@@ -1587,7 +1589,7 @@ const atmosphereControls = [
     // number, with a damping and a drift of its own (js/ambience.js
     // applyAmbRevType). Reverb and Reverb decay are the same settings under
     // either. Unset is Algorithmic.
-    id: 'ambRevType', section: 'atmosphere', label: 'Reverb type', kind: 'segment',
+    id: 'ambRevType', section: 'atmosphere', label: 'Reverb type', kind: 'segment', parent: 'ambReverbDrawer',
     options: [
       { value: 'conv', label: 'Convolution' },
       { value: 'algo', label: 'Algorithmic' }
@@ -1599,27 +1601,37 @@ const atmosphereControls = [
     visible: s => s.ambOn
   },
   {
-    id: 'ambReverb', section: 'atmosphere', label: 'Reverb', kind: 'slider',
+    id: 'ambReverb', section: 'atmosphere', label: 'Reverb', kind: 'slider', parent: 'ambReverbDrawer',
     min: 0, max: 150, step: 1, def: 100,
     get: s => Math.round(s.ambReverb * 100),
     set: (s, pos) => { s.ambReverb = pos / 100; applyAmbReverb(); save(); },
     format: s => Math.round(s.ambReverb * 100) + '%',
     visible: s => s.ambOn
   },
+  // The level's dip, the music room's own (js/ambience.js revBreathe).
+  ...varianceRows('ambReverb', {
+    music: true, name: 'Level', parent: 'ambReverbDrawer', visible: s => s.ambOn,
+    effective: () => ambEffectiveReverb() * 100
+  }),
   {
-    id: 'ambRevTime', section: 'atmosphere', label: 'Reverb decay', kind: 'slider',
+    id: 'ambRevTime', section: 'atmosphere', label: 'Reverb decay', kind: 'slider', parent: 'ambReverbDrawer',
     min: 1, max: 15, step: 0.5, def: 4.5,
     get: s => s.ambRevTime,
     set: (s, pos) => { s.ambRevTime = pos; rebuildAmbIR(); save(); },
     format: s => s.ambRevTime.toFixed(1) + 's',
     visible: s => s.ambOn
   },
+  // And the decay's, as the music room has (js/ambience.js revBreathe).
+  ...varianceRows('ambRevTime', {
+    music: true, name: 'Decay', parent: 'ambReverbDrawer', visible: s => s.ambOn,
+    periodMin: 5, effective: ambEffectiveRevTime
+  }),
   {
     // The algorithmic room's own two, as the music's Damping and Modulation:
     // how much sooner the highs die than the decay, and the slow drift of
     // the network's delay lengths that keeps a held tone from ringing
     // metallic.
-    id: 'ambRevDamp', section: 'atmosphere', label: 'Reverb damping', kind: 'slider',
+    id: 'ambRevDamp', section: 'atmosphere', label: 'Damping', kind: 'slider', parent: 'ambReverbDrawer',
     min: 0, max: 100, step: 1, def: 35,
     get: s => Math.round((s.ambRevDamp ?? 0.35) * 100),
     set: (s, pos) => { s.ambRevDamp = pos / 100; applyAmbRevShape(); save(); },
@@ -1627,7 +1639,7 @@ const atmosphereControls = [
     visible: s => s.ambOn && s.ambRevType !== 'conv'
   },
   {
-    id: 'ambRevMod', section: 'atmosphere', label: 'Reverb modulation', kind: 'slider',
+    id: 'ambRevMod', section: 'atmosphere', label: 'Modulation', kind: 'slider', parent: 'ambReverbDrawer',
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round((s.ambRevMod ?? 0.3) * 100),
     set: (s, pos) => { s.ambRevMod = pos / 100; applyAmbRevShape(); save(); },
@@ -1638,7 +1650,7 @@ const atmosphereControls = [
     // How long the drift's crossfade from one place to the next takes. Read
     // by js/ambience.js each time a crossfade starts, so a change applies
     // from the next move on.
-    id: 'ambDriftFade', section: 'atmosphere', label: 'Drift transition', kind: 'slider',
+    id: 'ambDriftFade', section: 'atmosphere', label: 'Drift transition', kind: 'slider', parent: 'ambLayersDrawer',
     min: 4, max: 120, step: 1, def: 12,
     get: s => s.ambDriftFadeS,
     set: (s, pos) => { s.ambDriftFadeS = pos; save(); },
@@ -1649,7 +1661,7 @@ const atmosphereControls = [
     // How much of the time the children are there while the drift runs
     // (js/ambience.js kidsShare): 0 never, 100% always, and the default the
     // two thirds the visits and absences always averaged.
-    id: 'ambKidsFreq', section: 'atmosphere', label: 'Children', kind: 'slider',
+    id: 'ambKidsFreq', section: 'atmosphere', label: 'Children', kind: 'slider', parent: 'ambLayersDrawer',
     min: 0, max: 100, step: 1, def: 67,
     get: s => Math.round(s.ambKidsFreq * 100),
     set: (s, pos) => { s.ambKidsFreq = pos / 100; save(); },

@@ -395,6 +395,7 @@ export const S = {
   ambDriftFadeS: 12,   // seconds one drift crossfade between places takes
   // The ambience room at full by default (100%), as it was dialled in by ear.
   ambReverb: 1.0, ambRevTime: 4.5,
+  ambReverbVar: 0, ambReverbPeriod: 20, ambRevTimeVar: 0, ambRevTimePeriod: 20,
   // Its type, Algorithmic unless Convolution is chosen, and the algorithmic
   // one's damping and drift (js/ambience.js applyAmbRevType).
   ambRevType: 'algo', ambRevDamp: 0.35, ambRevMod: 0.3,

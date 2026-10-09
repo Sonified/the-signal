@@ -1,0 +1,1221 @@
+{
+  "version": 1,
+  "pack": "botanical-atlas-meditation-draft-upscaled-3x-edges-v2",
+  "image": "botanical-atlas-meditation-draft-upscaled-3x-edges-v2.png",
+  "sha256": "9313d1f868937a6877b49e686880a7225b0899ab2ad63f81fcadc93cac4aae3c",
+  "width": 1536,
+  "height": 1536,
+  "tileSize": 192,
+  "padding": 15,
+  "columns": 8,
+  "rows": 8,
+  "frameOrder": "row-major",
+  "alpha": "straight",
+  "colorSpace": "srgb",
+  "defaultAnchor": [
+    0.5,
+    0.5
+  ],
+  "defaultOrientation": "up",
+  "coordinateSystem": {
+    "atlasRows": "top-to-bottom, zero-based",
+    "atlasColumns": "left-to-right, zero-based",
+    "chessColumns": "A-H, left-to-right",
+    "chessRows": "1-8, bottom-to-top"
+  },
+  "name": "Botanical atlas",
+  "groups": [
+    {
+      "id": "petals",
+      "label": "Petals",
+      "assetIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        60
+      ]
+    },
+    {
+      "id": "ferns",
+      "label": "Ferns",
+      "assetIndices": [
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        23
+      ]
+    },
+    {
+      "id": "leaves",
+      "label": "Leaves",
+      "assetIndices": [
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ]
+    },
+    {
+      "id": "sprigs-shoots",
+      "label": "Sprigs & shoots",
+      "assetIndices": [
+        32,
+        33,
+        34,
+        35,
+        48,
+        49,
+        50,
+        52,
+        54,
+        59,
+        63
+      ]
+    },
+    {
+      "id": "flowers",
+      "label": "Flowers",
+      "assetIndices": [
+        22,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        51,
+        53,
+        55,
+        56,
+        57,
+        58,
+        61,
+        62
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": "pink-lotus-petal",
+      "index": 0,
+      "row": 0,
+      "column": 0,
+      "x": 0,
+      "y": 0,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "A8",
+      "group": "petals"
+    },
+    {
+      "id": "white-lotus-petal",
+      "index": 1,
+      "row": 0,
+      "column": 1,
+      "x": 192,
+      "y": 0,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "B8",
+      "group": "petals"
+    },
+    {
+      "id": "rose-petal",
+      "index": 2,
+      "row": 0,
+      "column": 2,
+      "x": 384,
+      "y": 0,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "C8",
+      "group": "petals"
+    },
+    {
+      "id": "peony-petal",
+      "index": 3,
+      "row": 0,
+      "column": 3,
+      "x": 576,
+      "y": 0,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "D8",
+      "group": "petals"
+    },
+    {
+      "id": "magnolia-petal",
+      "index": 4,
+      "row": 0,
+      "column": 4,
+      "x": 768,
+      "y": 0,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "E8",
+      "group": "petals"
+    },
+    {
+      "id": "poppy-petal",
+      "index": 5,
+      "row": 0,
+      "column": 5,
+      "x": 960,
+      "y": 0,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "F8",
+      "group": "petals"
+    },
+    {
+      "id": "lily-petal",
+      "index": 6,
+      "row": 0,
+      "column": 6,
+      "x": 1152,
+      "y": 0,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "G8",
+      "group": "petals"
+    },
+    {
+      "id": "hibiscus-petal",
+      "index": 7,
+      "row": 0,
+      "column": 7,
+      "x": 1344,
+      "y": 0,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "H8",
+      "group": "petals"
+    },
+    {
+      "id": "tightly-folded-petal",
+      "index": 8,
+      "row": 1,
+      "column": 0,
+      "x": 0,
+      "y": 192,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "A7",
+      "group": "petals"
+    },
+    {
+      "id": "slightly-opening-petal",
+      "index": 9,
+      "row": 1,
+      "column": 1,
+      "x": 192,
+      "y": 192,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "B7",
+      "group": "petals"
+    },
+    {
+      "id": "gently-curved-petal",
+      "index": 10,
+      "row": 1,
+      "column": 2,
+      "x": 384,
+      "y": 192,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "C7",
+      "group": "petals"
+    },
+    {
+      "id": "broad-open-petal",
+      "index": 11,
+      "row": 1,
+      "column": 3,
+      "x": 576,
+      "y": 192,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "D7",
+      "group": "petals"
+    },
+    {
+      "id": "backward-curling-petal",
+      "index": 12,
+      "row": 1,
+      "column": 4,
+      "x": 768,
+      "y": 192,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "E7",
+      "group": "petals"
+    },
+    {
+      "id": "translucent-side-petal",
+      "index": 13,
+      "row": 1,
+      "column": 5,
+      "x": 960,
+      "y": 192,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "F7",
+      "group": "petals"
+    },
+    {
+      "id": "narrow-inner-petal",
+      "index": 14,
+      "row": 1,
+      "column": 6,
+      "x": 1152,
+      "y": 192,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "G7",
+      "group": "petals"
+    },
+    {
+      "id": "pale-outer-petal",
+      "index": 15,
+      "row": 1,
+      "column": 7,
+      "x": 1344,
+      "y": 192,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "H7",
+      "group": "petals"
+    },
+    {
+      "id": "maidenhair-leaflet",
+      "index": 16,
+      "row": 2,
+      "column": 0,
+      "x": 0,
+      "y": 384,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "A6",
+      "group": "ferns"
+    },
+    {
+      "id": "silver-fern-leaflet",
+      "index": 17,
+      "row": 2,
+      "column": 1,
+      "x": 192,
+      "y": 384,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "B6",
+      "group": "ferns"
+    },
+    {
+      "id": "fiddlehead-tip",
+      "index": 18,
+      "row": 2,
+      "column": 2,
+      "x": 384,
+      "y": 384,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "C6",
+      "group": "ferns"
+    },
+    {
+      "id": "unfurling-fern-segment",
+      "index": 19,
+      "row": 2,
+      "column": 3,
+      "x": 576,
+      "y": 384,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "D6",
+      "group": "ferns"
+    },
+    {
+      "id": "woodland-fern-tip",
+      "index": 20,
+      "row": 2,
+      "column": 4,
+      "x": 768,
+      "y": 384,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "E6",
+      "group": "ferns"
+    },
+    {
+      "id": "delicate-branching-fern",
+      "index": 21,
+      "row": 2,
+      "column": 5,
+      "x": 960,
+      "y": 384,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "F6",
+      "group": "ferns"
+    },
+    {
+      "id": "violet-pansy-face",
+      "index": 22,
+      "row": 2,
+      "column": 6,
+      "x": 1152,
+      "y": 384,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "G6",
+      "group": "flowers"
+    },
+    {
+      "id": "mature-tapered-frond",
+      "index": 23,
+      "row": 2,
+      "column": 7,
+      "x": 1344,
+      "y": 384,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "H6",
+      "group": "ferns"
+    },
+    {
+      "id": "sage-leaf",
+      "index": 24,
+      "row": 3,
+      "column": 0,
+      "x": 0,
+      "y": 576,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "A5",
+      "group": "leaves"
+    },
+    {
+      "id": "eucalyptus-leaf",
+      "index": 25,
+      "row": 3,
+      "column": 1,
+      "x": 192,
+      "y": 576,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "B5",
+      "group": "leaves"
+    },
+    {
+      "id": "clover-leaf",
+      "index": 26,
+      "row": 3,
+      "column": 2,
+      "x": 384,
+      "y": 576,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "C5",
+      "group": "leaves"
+    },
+    {
+      "id": "olive-leaf",
+      "index": 27,
+      "row": 3,
+      "column": 3,
+      "x": 576,
+      "y": 576,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "D5",
+      "group": "leaves"
+    },
+    {
+      "id": "bodhi-leaf",
+      "index": 28,
+      "row": 3,
+      "column": 4,
+      "x": 768,
+      "y": 576,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "E5",
+      "group": "leaves"
+    },
+    {
+      "id": "willow-leaf",
+      "index": 29,
+      "row": 3,
+      "column": 5,
+      "x": 960,
+      "y": 576,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "F5",
+      "group": "leaves"
+    },
+    {
+      "id": "mint-leaf",
+      "index": 30,
+      "row": 3,
+      "column": 6,
+      "x": 1152,
+      "y": 576,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "G5",
+      "group": "leaves"
+    },
+    {
+      "id": "small-monstera-leaf",
+      "index": 31,
+      "row": 3,
+      "column": 7,
+      "x": 1344,
+      "y": 576,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "H5",
+      "group": "leaves"
+    },
+    {
+      "id": "lavender-tip",
+      "index": 32,
+      "row": 4,
+      "column": 0,
+      "x": 0,
+      "y": 768,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "A4",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "rosemary-tip",
+      "index": 33,
+      "row": 4,
+      "column": 1,
+      "x": 192,
+      "y": 768,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "B4",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "white-sage-sprig",
+      "index": 34,
+      "row": 4,
+      "column": 2,
+      "x": 384,
+      "y": 768,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "C4",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "tulsi-flower-tip",
+      "index": 35,
+      "row": 4,
+      "column": 3,
+      "x": 576,
+      "y": 768,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "D4",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "jasmine-bud",
+      "index": 36,
+      "row": 4,
+      "column": 4,
+      "x": 768,
+      "y": 768,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "E4",
+      "group": "flowers"
+    },
+    {
+      "id": "tiny-clover-blossom",
+      "index": 37,
+      "row": 4,
+      "column": 5,
+      "x": 960,
+      "y": 768,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "F4",
+      "group": "flowers"
+    },
+    {
+      "id": "blue-forget-me-not-face",
+      "index": 38,
+      "row": 4,
+      "column": 6,
+      "x": 1152,
+      "y": 768,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "G4",
+      "group": "flowers"
+    },
+    {
+      "id": "small-wildflower-cluster",
+      "index": 39,
+      "row": 4,
+      "column": 7,
+      "x": 1344,
+      "y": 768,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "H4",
+      "group": "flowers"
+    },
+    {
+      "id": "pale-pink-lotus-face",
+      "index": 40,
+      "row": 5,
+      "column": 0,
+      "x": 0,
+      "y": 960,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "A3",
+      "group": "flowers"
+    },
+    {
+      "id": "sunflower-face",
+      "index": 41,
+      "row": 5,
+      "column": 1,
+      "x": 192,
+      "y": 960,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "B3",
+      "group": "flowers"
+    },
+    {
+      "id": "white-anemone-face",
+      "index": 42,
+      "row": 5,
+      "column": 2,
+      "x": 384,
+      "y": 960,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "C3",
+      "group": "flowers"
+    },
+    {
+      "id": "passionflower-face",
+      "index": 43,
+      "row": 5,
+      "column": 3,
+      "x": 576,
+      "y": 960,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "D3",
+      "group": "flowers"
+    },
+    {
+      "id": "lily-stamens",
+      "index": 44,
+      "row": 5,
+      "column": 4,
+      "x": 768,
+      "y": 960,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "E3",
+      "group": "flowers"
+    },
+    {
+      "id": "peony-stamens",
+      "index": 45,
+      "row": 5,
+      "column": 5,
+      "x": 960,
+      "y": 960,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "F3",
+      "group": "flowers"
+    },
+    {
+      "id": "soft-pollen-cluster",
+      "index": 46,
+      "row": 5,
+      "column": 6,
+      "x": 1152,
+      "y": 960,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "G3",
+      "group": "flowers"
+    },
+    {
+      "id": "blue-flax-flower-face",
+      "index": 47,
+      "row": 5,
+      "column": 7,
+      "x": 1344,
+      "y": 960,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "H3",
+      "group": "flowers"
+    },
+    {
+      "id": "curling-vine-tendril",
+      "index": 48,
+      "row": 6,
+      "column": 0,
+      "x": 0,
+      "y": 1152,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "A2",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "young-green-shoot",
+      "index": 49,
+      "row": 6,
+      "column": 1,
+      "x": 192,
+      "y": 1152,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "B2",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "curved-grass-blade",
+      "index": 50,
+      "row": 6,
+      "column": 2,
+      "x": 384,
+      "y": 1152,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "C2",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "pink-cosmos-flower-face",
+      "index": 51,
+      "row": 6,
+      "column": 3,
+      "x": 576,
+      "y": 1152,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "D2",
+      "group": "flowers"
+    },
+    {
+      "id": "mossy-sprig",
+      "index": 52,
+      "row": 6,
+      "column": 4,
+      "x": 768,
+      "y": 1152,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "E2",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "lavender-phlox-flower-face",
+      "index": 53,
+      "row": 6,
+      "column": 5,
+      "x": 960,
+      "y": 1152,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "F2",
+      "group": "flowers"
+    },
+    {
+      "id": "floating-seed-fiber",
+      "index": 54,
+      "row": 6,
+      "column": 6,
+      "x": 1152,
+      "y": 1152,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "G2",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "coral-impatiens-flower-face",
+      "index": 55,
+      "row": 6,
+      "column": 7,
+      "x": 1344,
+      "y": 1152,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "H2",
+      "group": "flowers"
+    },
+    {
+      "id": "pink-five-petal-flower-face",
+      "index": 56,
+      "row": 7,
+      "column": 0,
+      "x": 0,
+      "y": 1344,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "A1",
+      "group": "flowers"
+    },
+    {
+      "id": "tiny-white-blossom-face",
+      "index": 57,
+      "row": 7,
+      "column": 1,
+      "x": 192,
+      "y": 1344,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "B1",
+      "group": "flowers"
+    },
+    {
+      "id": "ivory-jasmine-flower-face",
+      "index": 58,
+      "row": 7,
+      "column": 2,
+      "x": 384,
+      "y": 1344,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "C1",
+      "group": "flowers"
+    },
+    {
+      "id": "soft-moss-tuft",
+      "index": 59,
+      "row": 7,
+      "column": 3,
+      "x": 576,
+      "y": 1344,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "D1",
+      "group": "sprigs-shoots"
+    },
+    {
+      "id": "pair-small-pink-petals",
+      "index": 60,
+      "row": 7,
+      "column": 4,
+      "x": 768,
+      "y": 1344,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "E1",
+      "group": "petals"
+    },
+    {
+      "id": "scattered-pollen-grains",
+      "index": 61,
+      "row": 7,
+      "column": 5,
+      "x": 960,
+      "y": 1344,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "F1",
+      "group": "flowers"
+    },
+    {
+      "id": "pale-yellow-primrose-face",
+      "index": 62,
+      "row": 7,
+      "column": 6,
+      "x": 1152,
+      "y": 1344,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "front",
+      "chessCoordinate": "G1",
+      "group": "flowers"
+    },
+    {
+      "id": "translucent-green-bud",
+      "index": 63,
+      "row": 7,
+      "column": 7,
+      "x": 1344,
+      "y": 1344,
+      "width": 192,
+      "height": 192,
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "orientation": "up",
+      "chessCoordinate": "H1",
+      "group": "sprigs-shoots"
+    }
+  ],
+  "status": "proof-of-concept",
+  "source": [
+    "botanical-upscale-edges-v2-source/quadrant-0.png",
+    "botanical-upscale-edges-v2-source/quadrant-1.png",
+    "botanical-upscale-edges-v2-source/quadrant-2.png",
+    "botanical-upscale-edges-v2-source/quadrant-3.png"
+  ],
+  "method": "ImageGen rebuilt photographic RGBA cutouts in four groups; high-resolution foreground contour from alpha >= 200, isolated speck removal, Lanczos antialiasing; original bounds only"
+}

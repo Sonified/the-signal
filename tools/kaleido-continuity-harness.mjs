@@ -12,6 +12,7 @@ export function instrumentKaleido(source, reference = false, browser = false) {
   source = source.replace(/return \{ update, encodeChamber, draw, resize(?:, inspect)? \};/, `return { update, encodeChamber, draw, resize,
     test: {
       init() { ready = true; requestedSet = slots[cur].set = 1;
+        requestedUrl = slots[cur].url = atlasUrl(kaleidoscopeSet(1));
         slots[cur].allowedCount = 64; slots[cur].meanFill = DEFAULT_FILL;
         for (let i = 0; i < 64; i++) slots[cur].allowed[i] = i;
         slots[cur].familyMask = 31; },
