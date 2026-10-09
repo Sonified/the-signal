@@ -37,6 +37,11 @@
 // wider than the domain on each side, re-entering from the far side of the
 // band once they have wandered out of it.
 //
+// A change of fold count or of mirror is instant at Symmetry slide 0
+// (S.kaleidoFoldXfade). With a slide time the fold is drawn twice for that
+// long, the symmetry it left fading out under the new one fading in, both
+// reading the one chamber (see trackSymmetry).
+//
 // The motif atlas is loaded lazily, the first time the layer is switched on,
 // and nothing is drawn until it is ready. S.kaleidoSet picks which atlas
 // (assets/kaleidoscope/sets.mjs); changing it loads the other one in the
@@ -388,6 +393,11 @@ export function createKaleido(device, format, platform) {
   let chamberExt = 1, wantH = 1;
   let spriteBind = null;           // set once an atlas exists (see rebind)
   let foldBind = null;             // set with the chamber
+  // The symmetry slide's second fold (see trackSymmetry): its own uniforms,
+  // made the first time a slide runs, and its bind group over the same
+  // chamber, made then and again only after the chamber is.
+  let uniBuf2 = null, foldBind2 = null;
+  const uni2 = new Float32Array(UNIFORM_FLOATS);
   const chamberPassDesc = {
     colorAttachments: [{
       view: null,
@@ -517,6 +527,17 @@ export function createKaleido(device, format, platform) {
   let instCount = 0;
   let active = false;
 
+  // ---------- the symmetry slide ----------
+  // symFolds and symMirror are the symmetry last seen, the one the pattern
+  // is at or sliding to; oldFolds, oldMirror and oldSpan the one it is
+  // sliding from. The slide runs while slideAge < slideLen, seconds of wall
+  // time, and slideK is the new symmetry's eased weight this frame.
+  // slideDraw says this frame's draw() folds twice.
+  let symFolds = 0, symMirror = true;
+  let oldFolds = 0, oldMirror = true, oldSpan = 1;
+  let slideLen = 0, slideAge = 0, slideK = 1;
+  let slideDraw = false;
+
   function resize(pw, ph, d) {
     if (KDIAG) { dgEvent = 'resize ' + pw + 'x' + ph + '@' + d; dgLog(dgEvent); }
     pixelW = Math.max(1, pw | 0);
@@ -527,7 +548,7 @@ export function createKaleido(device, format, platform) {
     wantH = Math.min(maxDim, Math.ceil(chamberExt) + 2 * CHAMBER_PAD);
     // The old chamber's contents mean nothing at the new size; it is made
     // again the next time the layer draws, and not at all while it is off.
-    if (chamber) { chamber.destroy(); chamber = null; chamberView = null; foldBind = null; }
+    if (chamber) { chamber.destroy(); chamber = null; chamberView = null; foldBind = null; foldBind2 = null; }
   }
 
   // halfSin is the sine of the domain's half angle. Only the domain is ever
@@ -552,6 +573,22 @@ export function createKaleido(device, format, platform) {
       layout: bgl,
       entries: [
         { binding: 0, resource: { buffer: uniBuf } },
+        { binding: 1, resource: chamberView },
+        { binding: 2, resource: chamberSampler }
+      ]
+    });
+    foldBind2 = null;              // made again over this chamber when a slide wants it
+  }
+
+  // The second fold's bind group, over the chamber as it now is. Called
+  // only on a frame a slide runs and the group is missing: the first slide,
+  // or the first slide frame after a new chamber.
+  function makeFoldBind2() {
+    if (!uniBuf2) uniBuf2 = device.createBuffer({ size: UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    foldBind2 = device.createBindGroup({
+      layout: bgl,
+      entries: [
+        { binding: 0, resource: { buffer: uniBuf2 } },
         { binding: 1, resource: chamberView },
         { binding: 2, resource: chamberSampler }
       ]
@@ -1291,9 +1328,65 @@ export function createKaleido(device, format, platform) {
     }
   }
 
+  // Notices a change of symmetry and runs the slide (see S.kaleidoFoldXfade).
+  // The slide time is read at the change, whatever made it; with the layer
+  // off or just coming on there is nothing on screen to slide from, so the
+  // change is instant, as changeSet's is. It runs on wall time, as the
+  // Constant size ease does, so a change made while paused still lands.
+  // While it runs the fold is drawn twice, the old symmetry at weight 1 - k
+  // and then the new at k, with k the smoothstep of the time gone, so the
+  // dissolve starts and lands gently. Both folds read the one chamber, laid
+  // out for the new symmetry: phiU is in domain widths, so the pieces take
+  // their new seats and sizes at the change, under the old mirrors, while
+  // the mirrors themselves dissolve.
+  //
+  // A second change mid-slide never draws a third fold. Back to the
+  // symmetry fading out, the two simply swap roles with the mix carried
+  // over, so nothing jumps. To a third symmetry, whichever of the two was
+  // winning (k past one half or not) becomes the old one and the slide
+  // starts again from nothing; dragging the slider through several fold
+  // counts in a moment so stays on the pattern it started from, rather than
+  // flickering through each count it passes, and dissolves once to where it
+  // stops.
+  function trackSymmetry(folds, mirror, dt) {
+    if (slideAge < slideLen && dt > 0) slideAge += dt;
+    if (!wasOn) {
+      symFolds = folds; symMirror = mirror;
+      slideLen = 0; slideAge = 0;
+    } else if (folds !== symFolds || mirror !== symMirror) {
+      const T = clampNum(S.kaleidoFoldXfade, 0, 60, 0);
+      const running = slideAge < slideLen;
+      const x = running ? slideAge / slideLen : 1;
+      let from = symFolds, fromMirror = symMirror;
+      if (T <= 0) {
+        slideLen = 0; slideAge = 0;
+      } else if (running && folds === oldFolds && mirror === oldMirror) {
+        // smoothstep(1 - x) is 1 - smoothstep(x), so the mix is unbroken
+        oldFolds = symFolds; oldMirror = symMirror;
+        slideLen = T; slideAge = (1 - x) * T;
+      } else {
+        if (!(running && x < 0.5)) { oldFolds = symFolds; oldMirror = symMirror; }
+        slideLen = T; slideAge = 0;
+      }
+      if (T > 0) {
+        from = oldFolds; fromMirror = oldMirror;
+        oldSpan = oldMirror ? Math.PI / oldFolds : TAU / oldFolds;
+      }
+      symFolds = folds; symMirror = mirror;
+      if (KDIAG) {
+        dgEvent = 'symmetry ' + from + (fromMirror ? ' mirrored' : '') + ' -> ' + folds + (mirror ? ' mirrored' : '') +
+          (T > 0 ? ', slide ' + T + 's' : ', instant');
+        dgLog(dgEvent);
+      }
+    }
+    slideK = slideAge < slideLen ? smoothstep(0, 1, slideAge / slideLen) : 1;
+    return slideAge < slideLen;
+  }
+
   // t is the rAF timestamp (ms), dt seconds, lum this frame's strobe level.
   function update(t, dt, lum) {
     active = false;
+    slideDraw = false;
     instCount = 0;
     const lyr = S.layers;
     if (!lyr || !lyr.kaleido) { wasOn = false; return; }
@@ -1350,6 +1443,13 @@ export function createKaleido(device, format, platform) {
     const fitK = Math.min(Math.sin(fitAng) * (1 - FIT_MARGIN) / CORNER, SIZE_CAP * 0.5);
     const sideK = 2 * fitK * sizeMul;
     reachKNow = sideK * 0.5 * CORNER;
+    // While a symmetry slide runs, the chamber is sized, and filled, for
+    // the wider of the two domains, so each fold finds content across all
+    // it reads. Both are centred on straight up, so the narrower one's read
+    // is a part of the wider one's. Everything else (motion, births, the
+    // coverage target, the size law) is the new symmetry's alone.
+    const sliding = trackSymmetry(folds, mirror, dt);
+    const readSpan = sliding && oldSpan > spanNow ? oldSpan : spanNow;
 
     // Travel per second (a whole flight is LOG_SPAN e-folds), a flight's
     // length in seconds, and the live count density's coverage asks for.
@@ -1458,8 +1558,9 @@ export function createKaleido(device, format, platform) {
     const farY = cy > pixelH - cy ? cy : pixelH - cy;
     const reachPx = Math.max(1, Math.hypot(farX, farY));
 
-    const halfSin = Math.sin(spanNow * 0.5);
+    const halfSin = Math.sin(readSpan * 0.5);
     ensureChamber(halfSin);
+    if (sliding && !foldBind2) makeFoldBind2();
     const scaleUp = (chamberH - 2 * CHAMBER_PAD) / reachPx;
     const scaleAcross = (chamberW * 0.5 - CHAMBER_PAD) / (reachPx * halfSin);
     const s = scaleUp < scaleAcross ? scaleUp : scaleAcross;
@@ -1480,13 +1581,24 @@ export function createKaleido(device, format, platform) {
     uni[12] = cx; uni[13] = cy; uni[14] = wedge; uni[15] = twistAng;
     uni[16] = UP - spanNow * 0.5; uni[17] = mirror ? 1 : 0; uni[18] = gain; uni[19] = 0;
     uni[20] = bright; uni[21] = contrast; uni[22] = sat; uni[23] = 0;
+    // The slide's old fold: the same chamber, seat, scale, hole, colour and
+    // rotation, folded to the old symmetry. Each fold's gain carries its
+    // weight, so the hole and the strobe pulse ride both alike.
+    if (sliding) {
+      uni2.set(uni);
+      uni2[14] = TAU / oldFolds; uni2[16] = UP - oldSpan * 0.5; uni2[17] = oldMirror ? 1 : 0;
+      uni2[18] = gain * (1 - slideK);
+      uni[18] = gain * slideK;
+    }
 
     sortOrder();
-    instCount = buildInstances(sideK, sizeVar, maxR, reachPx, s, holeR);
+    instCount = buildInstances(sideK, sizeVar, maxR, reachPx, s, holeR, readSpan);
     if (KDIAG) kaldiag(t);
     if (!instCount) return;
     device.queue.writeBuffer(instBuf, 0, inst, 0, instCount * INST_FLOATS);
     device.queue.writeBuffer(uniBuf, 0, uni);
+    if (sliding) device.queue.writeBuffer(uniBuf2, 0, uni2);
+    slideDraw = sliding;
     active = true;
   }
 
@@ -1494,10 +1606,11 @@ export function createKaleido(device, format, platform) {
   // and the order-flip count. dgCur maps each drawn slot to its place in
   // the draw order and its screen position; a pair drawn both frames whose
   // order swapped while their quads overlap flipped who is on top.
-  let dgSpan = 0, dgFlips = 0;
+  // A change of folds or mirror logs itself once, at the change, naming
+  // the old and new symmetry and the slide time (see trackSymmetry).
+  let dgFlips = 0;
   const dgSlot = new Int32Array(MAX_INST);   // which pool slot drew instance n
   function kaldiag(t) {
-    if (spanNow !== dgSpan) { dgSpan = spanNow; dgEvent = 'wedge change (folds or mirror)'; dgLog(dgEvent); }
     if (instCount < dgInst * 0.75 && dgInst - instCount > 3) {
       dgLog('drawn count fell ' + dgInst + ' -> ' + instCount + (dgEvent ? ' after ' + dgEvent : ''), 'live ' + live);
     }
@@ -1545,8 +1658,17 @@ export function createKaleido(device, format, platform) {
   // draining atlas slot may take its new image there (hideSwap); one inside
   // the hole or past a mirror counts only when clear of the fold's bilinear
   // reach as well (pad, in device px).
-  function buildInstances(sideK, sizeVar, maxR, reachPx, s, holeR) {
-    const span = spanNow, whole = Math.PI / span;
+  //
+  // readSpan is the angle the folds read: the domain itself, or while a
+  // symmetry slide runs the wider of the old and new domains. Pieces keep
+  // their seats in the new domain (span); only how far out they count as
+  // seen widens, to rh domain widths either side of the centre line, so
+  // the old fold finds the pieces, or mirrored the band, across its whole
+  // wedge. Unmirrored, the copies past the new domain feed only the old
+  // fold, so near the instance limit they give way, keeping room for every
+  // piece still to come to show in the new one.
+  function buildInstances(sideK, sizeVar, maxR, reachPx, s, holeR, readSpan) {
+    const span = spanNow, whole = Math.PI / span, rh = 0.5 * readSpan / span;
     const pad = HOLE_PAD_TEXELS / s;
     let n = 0;
     for (let q = 0; q < live; q++) {
@@ -1583,24 +1705,28 @@ export function createKaleido(device, format, platform) {
       const ratio = half * CORNER / r;
       let e = 0;
       let kLo = 0, kHi = 0;
+      let nLo = 0, nHi = 0;
       if (mirrorOn) {
-        if (u >= 0.5 || u <= -0.5) {
+        if (u >= rh || u <= -rh) {
           e = ratio >= 1 ? Infinity : Math.asin(ratio) / span;
-          if (Math.abs(u) - e >= 0.5) {
+          if (Math.abs(u) - e >= rh) {
             const rp = (half * CORNER + pad) / r;
-            if (rp < 1 && Math.abs(u) - Math.asin(rp) / span >= 0.5) hideSwap(i);
+            if (rp < 1 && Math.abs(u) - Math.asin(rp) / span >= rh) hideSwap(i);
             continue;
           }
         }
       } else {
         e = ratio >= 1 ? Infinity : Math.asin(ratio) / span;
         if (e > whole) e = whole;
-        kLo = Math.ceil(-0.5 - e - u);
-        kHi = Math.floor(0.5 + e - u);
+        kLo = Math.ceil(-rh - e - u);
+        kHi = Math.floor(rh + e - u);
+        nLo = Math.ceil(-0.5 - e - u);
+        nHi = Math.floor(0.5 + e - u);
       }
       const spin = spinAng[i], motif = motifOf[i];
       for (let kk = kLo; kk <= kHi; kk++) {
         if (n >= MAX_INST) return n;
+        if ((kk < nLo || kk > nHi) && n >= MAX_INST - 2 * (live - q)) continue;
         const th = UP + (u + kk) * span;
         const o = th + spin;
         const b = n * INST_FLOATS;
@@ -1627,9 +1753,15 @@ export function createKaleido(device, format, platform) {
 
   // The fold, inside the scene pass where the kaleidoscope sits in the
   // layer order: one fullscreen triangle, one chamber read per pixel.
+  // While a symmetry slide runs, the old symmetry is folded first and the
+  // new one over it, each at its own weight (see trackSymmetry).
   function draw(pass) {
     if (!active || !foldBind) return;
     pass.setPipeline(foldPipe);
+    if (slideDraw && foldBind2) {
+      pass.setBindGroup(0, foldBind2);
+      pass.draw(3);
+    }
     pass.setBindGroup(0, foldBind);
     pass.draw(3);
   }

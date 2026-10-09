@@ -87,6 +87,11 @@ const NUM = [
   // under the live shapes the layer always made, so a preset from before
   // this looks exactly as it did.
   ['kaleidoSetXfade',    0,   60,  0,    false],
+  // Seconds over which a change of Symmetry (the fold count, or Mirror)
+  // dissolves from the old pattern into the new one (gpu/kaleido.js). 0 is
+  // instant, the snap the layer always made, so a preset from before this
+  // looks exactly as it did.
+  ['kaleidoFoldXfade',   0,   60,  0,    false],
   // The layer's own colour grade, applied in the fold: 1 leaves the motifs
   // as they are, 0 is black, flat grey or greyscale, 2 doubles the effect.
   ['kaleidoBright',      0,   2,   1,    false],
@@ -404,6 +409,24 @@ export const KALEIDO_CONTROLS = [
   // How many wedges the circle is cut into. The readout keeps the number
   // first, so clicking it to type opens on the fold count itself.
   under('kaleidoShapesDrawer', direct('kaleidoFolds', 'kaleidoFolds', 'Symmetry', 1, S => S.kaleidoFolds + '-fold')),
+  {
+    // How a change of Symmetry (the fold count or Mirror) arrives. Instant
+    // snaps to the new pattern, as the layer always did; a time draws the
+    // old symmetry and the new one together and dissolves from the one to
+    // the other across that many seconds. The same taper and snap as Set
+    // crossfade.
+    id: 'kaleidoFoldXfade', section: 'kaleido', label: 'Symmetry slide', kind: 'slider',
+    parent: 'kaleidoShapesDrawer',
+    min: 0, max: XFADE_POS, step: 1, def: 0,
+    get: S => xfadeToPos(S.kaleidoFoldXfade),
+    set: (S, pos) => { S.kaleidoFoldXfade = posToXfade(pos); save(); },
+    format: S => {
+      const v = S.kaleidoFoldXfade;
+      return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
+    },
+    parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
+    enabled: layerOn
+  },
   {
     // Whether alternate wedges are reflected, the way a real kaleidoscope's
     // mirrors fold the image, or simply repeated around the circle.

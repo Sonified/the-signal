@@ -36,6 +36,8 @@
        <span id="foldsN">16</span></div>
   <div><b>Kaleidoscope</b> <input id="kop" type="range" min="0" max="100" step="1" value="20">
        <span id="kopN">20%</span></div>
+  <div><b>Symmetry slide</b> <input id="slide" type="range" min="0" max="60" step="0.5" value="8">
+       <span id="slideN">8s</span></div>
   <div><span class="sw" style="border-color:#ffd24d"></span>in the live slice (feeds every copy)</div>
   <div><span class="sw" style="border-color:#8a8a8a"></span>outside the slice (waiting, never drawn)</div>
   <div><span class="sw" style="border-color:#ff4d4d"></span>born in the last 1.5 s</div>
@@ -90,6 +92,9 @@ S.edgeInset = 0;
 foldsEl.oninput = () => { S.kaleidoFolds = +foldsEl.value; foldsN.textContent = foldsEl.value; };
 const kopEl = document.getElementById('kop'), kopN = document.getElementById('kopN');
 kopEl.oninput = () => { gpuCanvas.style.opacity = kopEl.value / 100; kopN.textContent = kopEl.value + '%'; };
+const slideEl = document.getElementById('slide'), slideN = document.getElementById('slideN');
+S.kaleidoSetXfade = 0; S.kaleidoFoldXfade = 8;
+slideEl.oninput = () => { S.kaleidoFoldXfade = +slideEl.value; slideN.textContent = (+slideEl.value ? slideEl.value + 's' : 'instant'); };
 
 const adapter = await navigator.gpu.requestAdapter();
 const device = await adapter.requestDevice();
