@@ -348,6 +348,7 @@ const SWINGS = [
   ['confFbPulseRate',       'confFbPulseRateOff',       carryRoomPhase],
   ['flowerOpacityPeriod',   'flowerOpacityPeriodOff',   carryRoomPhase],
   ['flowerTintPeriod',      'flowerTintPeriodOff',      carryRoomPhase],
+  ['flowerBloomRatePeriod', 'flowerBloomRatePeriodOff', carryRoomPhase],
   ['kaleidoTintPeriod',     'kaleidoTintPeriodOff',     carryRoomPhase],
   ['flowerPulsePeriod',     'flowerPulsePeriodOff',     carryRoomPhase],
   ['kaleidoOpacityPeriod',  'kaleidoOpacityPeriodOff',  carryRoomPhase],

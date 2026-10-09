@@ -281,7 +281,7 @@ export function createFlowers(device, format, platform) {
     if (!ready) return;
 
     const speed = clampNum(S.flowerSpeed, 0, 3, 1);
-    const bloomRate = clampNum(S.flowerBloomRate, 0, 4, 1);
+    const bloomRate = clampNum(S.effFlowerBloomRate ?? S.flowerBloomRate, 0, 4, 1);
     const spinRate = clampNum(S.flowerSpin, -2, 2, 0.12);
     const count = Math.round(clampNum(S.flowerCount, 3, MAX_COUNT, 12));
     const rings = Math.round(clampNum(S.flowerRings, 1, MAX_RINGS, 6));

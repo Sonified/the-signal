@@ -34,6 +34,10 @@ const NUM = [
   ['flowerSize',         0.2, 3,   1,    false],
   ['flowerSpeed',        0,   3,   1,    false],
   ['flowerBloomRate',    0,   4,   1,    false],
+  // the bloom speed's variance: the standard percent dip on the room clock,
+  // as Opacity's, Tint's and Pulse's below
+  ['flowerBloomRateVar', 0,   1,   0,    false],
+  ['flowerBloomRatePeriod', 1, 60, 10,   true ],
   ['flowerSpin',        -2,   2,   0.12, false],
   ['flowerSpiral',       0,   1,   0.38, false],
   ['flowerRipple',       0,   1,   0.6,  false],
@@ -53,6 +57,7 @@ const NUM = [
   // each period above. State, not controls: a period's set() writes its
   // offset, and they are saved and sent with the rest so every screen in a
   // room derives the same phase.
+  ['flowerBloomRatePeriodOff', 0, 1, 0,   false],
   ['flowerOpacityPeriodOff', 0, 1,  0,    false],
   ['flowerTintPeriodOff', 0,  1,   0,    false],
   ['flowerPulsePeriodOff', 0,   1,  0,    false]
@@ -214,6 +219,11 @@ export const FLOWER_CONTROLS = [
     direct('flowerFlow', 'flowerSpeed', 'Outward speed', 0.05, times2('flowerSpeed'), isMandala)),
   under('flowersMotionDrawer',
     direct('flowerBloomRate', 'flowerBloomRate', 'Bloom speed', 0.05, times2('flowerBloomRate'))),
+  // A multiplier, not a percent, so its bar glows in the row's own units
+  ...swing('flowerBloomRate', {
+    labels: ['Bloom speed variance', 'Bloom variance rate'], parent: 'flowersMotionDrawer',
+    effective: S => S.effFlowerBloomRate ?? S.flowerBloomRate
+  }),
   // Signed: negative turns the other way. A step of 0.01 so the default,
   // 0.12, is a position the slider can actually land on.
   under('flowersMotionDrawer',

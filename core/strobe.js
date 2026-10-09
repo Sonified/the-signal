@@ -92,6 +92,7 @@ const VARIANCES = [
   { amount: 'flowerPulseVar', period: 'flowerPulsePeriod', fallback: 10, phase: 'flowerPulsePhase', eff: 'effFlowerPulse', set: 'flowerPulse', room: roomPhaseState() },
   { amount: 'flowerOpacityVar', period: 'flowerOpacityPeriod', fallback: 10, phase: 'flowerOpacityPhase', eff: 'effFlowerOpacity', set: 'flowerOpacity', room: roomPhaseState() },
   { amount: 'flowerTintVar', period: 'flowerTintPeriod', fallback: 10, phase: 'flowerTintPhase', eff: 'effFlowerTint', set: 'flowerTint', room: roomPhaseState() },
+  { amount: 'flowerBloomRateVar', period: 'flowerBloomRatePeriod', fallback: 10, phase: 'flowerBloomRatePhase', eff: 'effFlowerBloomRate', set: 'flowerBloomRate', room: roomPhaseState() },
   { amount: 'kaleidoTintVar', period: 'kaleidoTintPeriod', fallback: 10, phase: 'kaleidoTintPhase', eff: 'effKaleidoTint', set: 'kaleidoTint', room: roomPhaseState() },
   // the kaleidoscope's Opacity and Center fade radius (gpu/kaleido.js reads
   // the effectives in place of the dials), on the room clock as the flowers'
