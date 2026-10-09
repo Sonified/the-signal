@@ -8,8 +8,8 @@ const h = await load();
 const { parseHeartFlag, ctxFor, masterFor, makeWorklet, heartOn, heartEngine, startHeart } = h.route;
 const flag = (search, stored) => [...parseHeartFlag(search, stored)].sort();
 
-test('absent or off is native', () => {
-  assert.deepEqual(flag('', null), []);
+test('absent is every family (Heart is the engine); off is native', () => {
+  assert.deepEqual(flag('', null), ['ambience', 'clouds', 'genus', 'music']);
   assert.deepEqual(flag('', 'off'), []);
   assert.deepEqual(flag('?heart=off', 'all'), [], 'the URL overrides storage');
 });
@@ -22,8 +22,8 @@ test('all, and comma lists of families, forgiving of case and spaces', () => {
   assert.deepEqual(flag('?heart=', 'genus'), ['genus'], 'an empty URL value leaves storage in charge');
 });
 
-test('with no page to read (node), the flag is simply off', () => {
-  assert.deepEqual([...parseHeartFlag()], []);
+test('with no page to read (node), the default still stands', () => {
+  assert.deepEqual([...parseHeartFlag()].sort(), ['ambience', 'clouds', 'genus', 'music']);
 });
 
 test('Heart off: every family gets the native context and master', async () => {

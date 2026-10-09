@@ -1,9 +1,10 @@
 // Which engine each family of voices plays through.
 //
 // A family moves to Heart as a whole, because its nodes connect to each
-// other: music (the piano, its drone and sequencer, the choir, the layers
-// and the strobe stages they wear), clouds, ambience, and genus (the pulse
-// engine and its rooms). A module switches by asking here instead of
+// other: music (the piano, its drone and sequencer, the choir, the clouds
+// and the strobe stages they wear), ambience, and genus (the pulse
+// engine and its rooms). Clouds keeps its own flag name but lives in the
+// music island, since it plays into the music's master reverb. A module switches by asking here instead of
 // audio.js, and changes nothing else (spec 12):
 //
 //   getContext()                 ->  ctxFor('clouds')
@@ -12,9 +13,11 @@
 //
 // With Heart off for a family, each of these answers with the native
 // object it replaces, so the module cannot tell. The flag is
-// localStorage.signal_heart, overridden by ?heart= in the URL: absent or
-// 'off' is native, 'all' is every family, and a comma list names some
-// ('music,clouds'). Heart is loaded only when some family asks for it.
+// localStorage.signal_heart, overridden by ?heart= in the URL: absent is
+// every family (Heart is the engine, 2026-10-08), 'off' is native, 'all'
+// says the default outright, and a comma list names some ('music,clouds').
+// A device that cannot run Heart (no wasm SIMD, a worklet that will not
+// load) still goes native on its own (startHeart).
 //
 // startHeart has to have settled before a flagged family builds its graph:
 // until it does, ctxFor answers with the native context, and a graph built
@@ -52,7 +55,8 @@ export function parseHeartFlag(search, stored) {
   try { raw = new URLSearchParams(search || '').get('heart'); } catch (e) {}
   if (!raw) raw = stored;
   const on = new Set();
-  if (!raw) return on;
+  if (!raw) { for (const f of FAMILIES) on.add(f); return on; }
+  if (String(raw).toLowerCase().trim() === 'off') return on;
   for (const part of String(raw).toLowerCase().split(',')) {
     const name = part.trim();
     if (name === 'all') for (const f of FAMILIES) on.add(f);
@@ -90,7 +94,16 @@ async function boot(ctx, master) {
     // the engine's compiled module when it offers one, else heart.wasm afresh
     const shadow = await Shadow.create(eng.sampleRate, eng.module);
     eng.output.connect(master);
-    for (const family of flagged) contexts.set(family, new HeartContext(eng, ctx, shadow, family));
+    // Clouds is a standard music voice and plays in the music island, as
+    // the choir does: one context, so it sings into the same master reverb
+    // on Heart exactly as it does natively (js/clouds.js setCloudBus).
+    const made = new Map();
+    for (const family of flagged) {
+      const isle = family === 'clouds' ? 'music' : family;
+      let hc = made.get(isle);
+      if (!hc) { hc = new HeartContext(eng, ctx, shadow, isle); made.set(isle, hc); }
+      contexts.set(family, hc);
+    }
     eng.on('error', fallBack);
     engine = eng;
     return eng;
