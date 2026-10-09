@@ -100,6 +100,8 @@ const VARIANCES = [
   // the confetti's feedback Opacity (gpu/confetti.js lays the image over
   // the scene at the effective)
   { amount: 'confFbOpacityVar', period: 'confFbOpacityVarPeriod', fallback: 20, phase: 'confFbOpacityVarPhase', eff: 'effConfFbOpacity', set: 'confFbOpacity' },
+  // the kaleidoscope's Trails Opacity, as confetti's (gpu/kaleido.js)
+  { amount: 'kaleidoFbOpacityVar', period: 'kaleidoFbOpacityVarPeriod', fallback: 20, phase: 'kaleidoFbOpacityVarPhase', eff: 'effKaleidoFbOpacity', set: 'kaleidoFbOpacity' },
   // the particles' Speed, Opacity and their kaleidoscope's Rotation (gpu/particles.js
   // reads the effectives in place of the dials)
   { amount: 'partSpeedVar', period: 'partSpeedVarPeriod', fallback: 20, phase: 'partSpeedVarPhase', eff: 'effPartSpeed', set: 'partSpeed' },

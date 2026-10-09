@@ -19,6 +19,7 @@ import { save } from './store.js';
 import { retimeRoomPhase } from './room-clock.js';
 import { KALEIDOSCOPE_SETS, KALEIDOSCOPE_SET_COUNT, kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { subDrawer } from './schema-visual.js';
+import { varianceRows } from './schema-variance.js';
 
 // The layer switch, the mirror flag and constant size are plain booleans;
 // every numeric field
@@ -99,7 +100,36 @@ const NUM = [
   // as they are, 0 is black, flat grey or greyscale, 2 doubles the effect.
   ['kaleidoBright',      0,   2,   1,    false],
   ['kaleidoContrast',    0,   2,   1,    false],
-  ['kaleidoSat',         0,   2,   1,    false]
+  ['kaleidoSat',         0,   2,   1,    false],
+  // The Trails drawer: video feedback of the folded pattern (gpu/kaleido.js,
+  // after the fold), the same rows, ranges and defaults as the Confetti
+  // layer's Feedback drawer (core/schema-confetti.js). Everything at its
+  // default leaves the layer exactly as it was: no trails, no image.
+  ['kaleidoFbAmt',       0,   1,   0,    false],   // how long the pattern leaves a trail
+  ['kaleidoFbOpacity',   0,   1,   1,    false],   // how solidly the feedback image lands on the scene
+  ['kaleidoFbOpacityVar', 0,  1,   0,    false],   // how far that Opacity dips below its setting over time
+  ['kaleidoFbOpacityVarPeriod', 1, 120, 20, true],  // seconds for one swing of it
+  ['kaleidoFbStream',   -2,   2,   0,    false],   // the trails stream outward (+) or inward (-), signed
+  ['kaleidoFbTwist',    -1,   1,   0,    false],   // the trails turn about the centre, + clockwise, signed
+  // Amount dips, Stream and Twist swing (down as far as Lo, up as far as
+  // Hi, in the owner's own units), once every Rate seconds.
+  ['kaleidoFbAmtVar',    0,   1,   0,    false],
+  ['kaleidoFbAmtVarRate', 1, 120,  20,   true ],
+  ['kaleidoFbStreamVarLo', -4, 0,  0,    false],
+  ['kaleidoFbStreamVarHi', 0,  4,  0,    false],
+  ['kaleidoFbStreamVarRate', 1, 120, 20, true ],
+  ['kaleidoFbTwistVarLo', -2, 0,   0,    false],
+  ['kaleidoFbTwistVarHi', 0,  2,   0,    false],
+  ['kaleidoFbTwistVarRate', 1, 120, 20,  true ],
+  ['kaleidoFbPulse',     0,   1,   0,    false],   // how far the whole feedback image brightens and darkens with the strobe
+  ['kaleidoFbPulseVar',  0,   1,   0,    false],   // how far that pulse amount swings down from its setting and back
+  ['kaleidoFbPulseRate', 1,   60,  10,   true ],   // seconds for one swing of the pulse variance
+  // The room-clocked swings' phase offsets (core/room-clock.js), as
+  // confetti's: state, not controls, written by each rate's set().
+  ['kaleidoFbAmtVarRateOff', 0, 1, 0,    false],
+  ['kaleidoFbStreamVarRateOff', 0, 1, 0, false],
+  ['kaleidoFbTwistVarRateOff', 0, 1, 0,  false],
+  ['kaleidoFbPulseRateOff', 0, 1,  0,    false]
 ];
 
 // Each atlas names and maps its own semantic groups in sets.mjs. Generated
@@ -175,6 +205,7 @@ export function initKaleidoState(S) {
   if (typeof S.kaleidoConstSize !== 'boolean') S.kaleidoConstSize = DEF_CONST_SIZE;
   if (typeof S.kaleidoGrade !== 'boolean') S.kaleidoGrade = DEF_GRADE;
   if (typeof S.kaleidoHiRes !== 'boolean') S.kaleidoHiRes = DEF_HI_RES;
+  if (typeof S.kaleidoFbTwistVarOn !== 'boolean') S.kaleidoFbTwistVarOn = true;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -187,7 +218,8 @@ export function initKaleidoState(S) {
 // as flowersOn does, so the record does not look like a partial v0 layers
 // object. The family list is copied so the record never aliases S.
 export function kaleidoStateOf(S) {
-  const out = { kaleidoOn: !!S.layers.kaleido, kaleidoMirror: !!S.kaleidoMirror, kaleidoConstSize: !!S.kaleidoConstSize, kaleidoGrade: !!S.kaleidoGrade, kaleidoHiRes: !!S.kaleidoHiRes };
+  const out = { kaleidoOn: !!S.layers.kaleido, kaleidoMirror: !!S.kaleidoMirror, kaleidoConstSize: !!S.kaleidoConstSize, kaleidoGrade: !!S.kaleidoGrade, kaleidoHiRes: !!S.kaleidoHiRes,
+    kaleidoFbTwistVarOn: S.kaleidoFbTwistVarOn !== false };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   out.kaleidoFamilies = Array.isArray(S.kaleidoFamilies) ? S.kaleidoFamilies.slice() : [];
   return out;
@@ -205,6 +237,7 @@ export function applyKaleidoState(S, o) {
   if (typeof o.kaleidoConstSize === 'boolean') S.kaleidoConstSize = o.kaleidoConstSize;
   if (typeof o.kaleidoGrade === 'boolean') S.kaleidoGrade = o.kaleidoGrade;
   if (typeof o.kaleidoHiRes === 'boolean') S.kaleidoHiRes = o.kaleidoHiRes;
+  if (typeof o.kaleidoFbTwistVarOn === 'boolean') S.kaleidoFbTwistVarOn = o.kaleidoFbTwistVarOn;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -270,6 +303,56 @@ function grade(id, key, label) {
     enabled: layerOn,
     visible: S => !!S.kaleidoGrade
   };
+}
+
+// The Trails drawer's helpers, confetti's own (core/schema-confetti.js).
+// A room-clocked swing's rate: the change is folded into the swing's phase
+// offset before the write (core/room-clock.js), so in a broadcast room it
+// carries on from where it is at the new rate.
+function setRate(S, key, v) {
+  retimeRoomPhase(S, key + 'Off', S[key], v);
+  S[key] = v;
+}
+// A range row's readout: 'none' while both knobs sit on the centre, else
+// how far down, then how far up, each with its sign, in the owner's units.
+function sideText(v) {
+  const num = Math.abs(v).toFixed(2);
+  if (v === 0) return num;
+  return (v < 0 ? '−' : '+') + num;
+}
+function rangeText(lo, hi) {
+  return lo === 0 && hi === 0 ? 'none' : sideText(lo) + ' / ' + sideText(hi);
+}
+// The variance fold under Stream or Twist: how far it swings each way, and
+// how long one swing takes, folded out from under its owner (drawer.js,
+// varianceOf). key is the NUM prefix; span the owner's whole slider span,
+// so either knob can carry it from any setting to either end.
+// gpu/kaleido.js does the swinging and clamps to the owner's range.
+function fbVariance(owner, key, span, switchId) {
+  const lo = key + 'Lo', hi = key + 'Hi', rate = key + 'Rate';
+  const visible = switchId ? S => S[switchId] !== false : undefined;
+  return [
+    {
+      id: key, section: 'kaleido', label: 'Variance', kind: 'range',
+      varianceOf: owner,
+      min: -span, max: span, step: 0.01, defLo: 0, defHi: 0,
+      getLo: S => S[lo],
+      getHi: S => S[hi],
+      setLo: (S, v) => { S[lo] = fit(v, -span, 0); save(); },
+      setHi: (S, v) => { S[hi] = fit(v, 0, span); save(); },
+      format: S => rangeText(S[lo], S[hi]),
+      enabled: layerOn, parent: switchId || 'kaleidoTrailsDrawer', visible
+    },
+    {
+      id: rate, section: 'kaleido', label: 'Variance rate', kind: 'slider',
+      varianceOf: owner,
+      min: 1, max: 120, step: 1, def: spec(rate)[3],
+      get: S => S[rate],
+      set: (S, pos) => { setRate(S, rate, fit(pos, 1, 120, true)); save(); },
+      format: S => S[rate] + 's / cycle',
+      enabled: layerOn, parent: switchId || 'kaleidoTrailsDrawer', visible
+    }
+  ];
 }
 
 export const KALEIDO_CONTROLS = [
@@ -515,6 +598,83 @@ export const KALEIDO_CONTROLS = [
     S => (S.kaleidoFadeInS ?? 1.5) < 0.05 ? 'off' : (S.kaleidoFadeInS ?? 1.5).toFixed(1) + 's')),
   under('kaleidoBrightnessDrawer', percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
     S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%')),
+
+  // Video feedback of the folded pattern, the Confetti layer's Feedback
+  // drawer row for row (core/schema-confetti.js has the long notes): each
+  // frame keeps a fading copy of the last, streamed and turned about the
+  // field centre, so the whole pattern leaves trails. Shut, its strip shows
+  // the amount and the Stream.
+  subDrawer('kaleidoTrailsDrawer', 'Trails', 'kaleido', ['kaleidoFbAmt', 'kaleidoFbStream']),
+  // How solidly the whole feedback image lands on the scene, a true
+  // opacity; the trails inside it build and fade the same at any setting.
+  under('kaleidoTrailsDrawer', percent('kaleidoFbOpacity', 'kaleidoFbOpacity', 'Opacity')),
+  // Its dip, the app's standard (stepped with the strobe's own variances,
+  // core/strobe.js), as confetti's.
+  ...varianceRows('kaleidoFbOpacity', {
+    name: 'Opacity', periodMax: 120, parent: 'kaleidoTrailsDrawer', enabled: layerOn,
+    effective: S => (S.effKaleidoFbOpacity ?? S.kaleidoFbOpacity) * 100
+  }),
+  // At 0 no trail; at 100% a trail takes about two seconds to fade to half,
+  // the time growing with the square of the slider.
+  under('kaleidoTrailsDrawer', Object.assign(percent('kaleidoFbAmt', 'kaleidoFbAmt', 'Amount'), {
+    effective: S => S.kaleidoFbAmtVar > 0
+      ? (typeof S.effKaleidoFbAmt === 'number' ? S.effKaleidoFbAmt : S.kaleidoFbAmt) * 100 : undefined
+  })),
+  // Amount's dip: over one rate cycle the trails ease from the setting down
+  // by this share and back, never above it.
+  varianceOf('kaleidoFbAmt', under('kaleidoTrailsDrawer', percent('kaleidoFbAmtVar', 'kaleidoFbAmtVar', 'Variance'))),
+  varianceOf('kaleidoFbAmt', under('kaleidoTrailsDrawer', {
+    id: 'kaleidoFbAmtVarRate', section: 'kaleido', label: 'Variance rate', kind: 'slider',
+    min: 1, max: 120, step: 1, def: 20,
+    get: S => S.kaleidoFbAmtVarRate,
+    set: (S, pos) => { setRate(S, 'kaleidoFbAmtVarRate', fit(pos, 1, 120, true)); save(); },
+    format: S => S.kaleidoFbAmtVarRate + 's / cycle',
+    enabled: layerOn
+  })),
+  // The trails' own motion: each frame's faded copy is taken a little
+  // larger or smaller about the field centre (Stream) and turned about it
+  // (Twist), the same way in every direction.
+  under('kaleidoTrailsDrawer', Object.assign(
+    direct('kaleidoFbStream', 'kaleidoFbStream', 'Stream', 0.01, S => S.kaleidoFbStream === 0 ? 'none'
+      : (S.kaleidoFbStream > 0 ? '+' + S.kaleidoFbStream.toFixed(2) + ' out' : S.kaleidoFbStream.toFixed(2) + ' in')),
+    { effective: S => (S.kaleidoFbStreamVarLo !== 0 || S.kaleidoFbStreamVarHi !== 0)
+        ? (typeof S.effKaleidoFbStream === 'number' ? S.effKaleidoFbStream : S.kaleidoFbStream) : undefined })),
+  ...fbVariance('kaleidoFbStream', 'kaleidoFbStreamVar', 4),
+  under('kaleidoTrailsDrawer', Object.assign(
+    direct('kaleidoFbTwist', 'kaleidoFbTwist', 'Twist', 0.01, S => S.kaleidoFbTwist === 0 ? 'none'
+      : (S.kaleidoFbTwist > 0 ? '+' + S.kaleidoFbTwist.toFixed(2) + ' clockwise' : S.kaleidoFbTwist.toFixed(2) + ' counter')),
+    { effective: S => S.kaleidoFbTwistVarOn !== false && (S.kaleidoFbTwistVarLo !== 0 || S.kaleidoFbTwistVarHi !== 0)
+        ? (typeof S.effKaleidoFbTwist === 'number' ? S.effKaleidoFbTwist : S.kaleidoFbTwist) : undefined })),
+  {
+    id: 'kaleidoFbTwistVarOn', section: 'kaleido', label: 'Twist variance', kind: 'toggle', def: true,
+    varianceOf: 'kaleidoFbTwist',
+    // The performance window crossfades this switch over its ramp time
+    // (perform.js startMix) through S.kaleidoFbTwistVarMix, 0 the plain
+    // Twist and 1 the full swing; runtime only, never saved, 1 when unset.
+    mixKey: 'kaleidoFbTwistVarMix',
+    get: S => S.kaleidoFbTwistVarOn !== false,
+    set: (S, on) => { S.kaleidoFbTwistVarOn = !!on; save(); },
+    format: S => S.kaleidoFbTwistVarOn !== false ? 'On' : 'Off',
+    enabled: layerOn, parent: 'kaleidoTrailsDrawer'
+  },
+  ...fbVariance('kaleidoFbTwist', 'kaleidoFbTwistVar', 2, 'kaleidoFbTwistVarOn'),
+  // The whole feedback image brightens and darkens with the strobe's
+  // flicker by this much, its colour only, so trails darken rather than
+  // turning see-through.
+  under('kaleidoTrailsDrawer', Object.assign(percent('kaleidoFbPulse', 'kaleidoFbPulse', 'Pulse with strobe',
+    S => S.kaleidoFbPulse === 0 ? 'never flickers' : Math.round(S.kaleidoFbPulse * 100) + '%'), {
+    effective: S => S.kaleidoFbPulseVar > 0
+      ? (typeof S.effKaleidoFbPulse === 'number' ? S.effKaleidoFbPulse : S.kaleidoFbPulse) * 100 : undefined
+  })),
+  varianceOf('kaleidoFbPulse', under('kaleidoTrailsDrawer', percent('kaleidoFbPulseVar', 'kaleidoFbPulseVar', 'Pulse variance'))),
+  varianceOf('kaleidoFbPulse', under('kaleidoTrailsDrawer', {
+    id: 'kaleidoFbPulseRate', section: 'kaleido', label: 'Variance rate', kind: 'slider',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.kaleidoFbPulseRate,
+    set: (S, pos) => { setRate(S, 'kaleidoFbPulseRate', fit(pos, 1, 60, true)); save(); },
+    format: S => S.kaleidoFbPulseRate + 's / cycle',
+    enabled: layerOn
+  })),
 
   // The motifs' own color, graded before any tint toward the strobe, then
   // how far the layer takes on the strobe's colour. The grade's switch heads

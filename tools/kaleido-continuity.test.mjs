@@ -8,6 +8,8 @@ import { radialFade, radialFadeIn, RADIAL_FADE_OUT_K } from '../core/fade.js';
 import { motionStep } from '../core/motion.js';
 import { scaledStrobeDepth } from '../js/strobe-scale.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
+import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from '../gpu/feedback.js';
+import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { instrumentKaleido, liveSettings, seededRandom, orderFlips } from './kaleido-continuity-harness.mjs';
 
 globalThis.GPUShaderStage = { VERTEX: 1, FRAGMENT: 2 };
@@ -27,8 +29,10 @@ function run(reference) {
   Math.random = seededRandom();
   const { createKaleido } = new Function('S', 'scaledStrobeDepth', 'KALEIDO_WGSL', 'MIP_WGSL',
     'radialFade', 'radialFadeIn', 'RADIAL_FADE_OUT_K', 'motionStep', 'kaleidoscopeSet',
+    'createFeedback', 'feedbackRes', 'feedbackKeep', 'FEEDBACK_FORMAT', 'roomPhase', 'roomPhaseState',
     instrumentKaleido(source, reference))(S, scaledStrobeDepth, '', '', radialFade,
-      radialFadeIn, RADIAL_FADE_OUT_K, motionStep, kaleidoscopeSet);
+      radialFadeIn, RADIAL_FADE_OUT_K, motionStep, kaleidoscopeSet,
+      createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT, roomPhase, roomPhaseState);
   const layer = createKaleido(device, 'rgba8unorm', null);
   layer.test.init(); layer.resize(S.W * 2, S.H * 2, 2);
   let previous = [], flips = 0, allFlips = 0, births = 0, retires = 0;

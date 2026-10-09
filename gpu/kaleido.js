@@ -79,6 +79,29 @@
 // block into buffers allocated once. The chamber texture is made the first
 // time the layer draws after a resize, never in an ordinary frame. No
 // allocation in update(), encodeChamber() or draw().
+//
+// Trails (the Trails drawer) are the Confetti layer's video feedback, the
+// same rows, ranges and clocks (gpu/confetti.js has the long notes). The
+// feedback sits after the fold: the folded output, the whole pattern, is
+// drawn into a feedback image of the layer's own (feedback.js) instead of
+// the scene, and the image is laid over the scene in the fold's place, so
+// trails stream and turn across the whole pattern about its centre, the
+// view as it is seen. Before the fold, the chamber itself would trail, in
+// the wedge only; but the chamber is resized by every change of fold
+// count, mirror or symmetry slide, which would clear the trails each time,
+// and a slide's two folds read one chamber, so after the fold is both the
+// simpler route and the one that carries the Symmetry slide and the Set
+// crossfade through unbroken (both simply change what is folded in). The
+// route is chosen from Amount's setting alone, not its dipped value, so a
+// dip through 0 clears for those frames without letting the image go. At
+// Amount 0 there is no image at all: the fold draws straight into the
+// scene as it always did, with the Trails Opacity on its gain and the
+// Trails pulse on its colour alone (the shader's colour gain), the same
+// picture the image would have made. Amount, Stream, Twist and Pulse swing
+// on the layer's own clocks, pulled onto the room clock in a broadcast
+// room, and the Opacity dips with the strobe's own variances, each exactly
+// as confetti's do. The image is made the first frame trails are in use and
+// let go when Amount goes back to 0 or the layer goes off.
 
 import { S } from '../js/state.js';
 import { scaledStrobeDepth } from '../js/strobe-scale.js';
@@ -87,6 +110,8 @@ import { MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade, radialFadeIn, RADIAL_FADE_OUT_K } from '../core/fade.js';
 import { motionStep } from '../core/motion.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
+import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './feedback.js';
+import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 
 const GRID = 8;                     // every atlas is an 8 x 8 tile sheet
 const MOTIFS = GRID * GRID;
@@ -296,6 +321,23 @@ function atlasUrl(set) {
 function layoutFor(set, url) {
   const def = kaleidoscopeSet(set);
   return def.imageHi && url === def.imageHi ? LAYOUT_HI : LAYOUT_STD;
+}
+
+// Trails, confetti's own constants (gpu/confetti.js): the half-life in
+// seconds at Amount 100% (HL_MAX times the slider's square), the stream's
+// e-folds a second at full either way, and the twist's radians a second.
+const HL_MAX = 2.0;
+const STREAM_MAX = 0.5;
+const TWIST_MAX = 0.8;
+
+// One setting swung by its variance at a phase (0 to 1) of its cycle,
+// confetti's swing: the positive half of a sine carries it up by as much
+// as hi, the negative half down by as much as -lo, clamped to min..max.
+function swing(base, lo, hi, phase, min, max) {
+  if (lo === 0 && hi === 0) return base;
+  const osc = Math.sin(TAU * phase);
+  const v = base + (osc >= 0 ? osc * hi : -osc * lo);
+  return v < min ? min : v > max ? max : v;
 }
 
 function clampNum(v, lo, hi, def) {
@@ -586,6 +628,22 @@ export function createKaleido(device, format, platform) {
   let oldFolds = 0, oldMirror = true, oldSpan = 1;
   let slideLen = 0, slideAge = 0, slideK = 1;
   let slideDraw = false;
+
+  // ---------- trails ----------
+  // The feedback image (see the top of this file) and the fold pipeline
+  // that draws into it (its own target format), both made the first frame
+  // trails are in use. fbOn says this frame folds into the image rather
+  // than the scene; fbParams is its frame for feedback.js, fbGain the
+  // pulse's colour gain and fbOpacity the image's opacity, applied as it is
+  // laid over (or, with no image, on the fold itself).
+  let fbScreen = null, fbFoldPipe = null, fbOn = false;
+  const fbParams = { keepHalfLife: 0, zoomRate: 0, twistRate: 0, cx: 0, cy: 0, unit: 1, dt: 0 };
+  let fbGain = 1, fbOpacity = 1, fbScale = 1;
+  // The swings' phases (0 to 1), each its own, and their room bookkeeping
+  // (core/room-clock.js), as confetti's.
+  let fbAmtPhase = 0, fbStreamPhase = 0, fbTwistPhase = 0, fbPulsePhase = 0;
+  const fbAmtRoom = roomPhaseState(), fbStreamRoom = roomPhaseState();
+  const fbTwistRoom = roomPhaseState(), fbPulseRoom = roomPhaseState();
 
   function resize(pw, ph, d) {
     if (KDIAG) { dgEvent = 'resize ' + pw + 'x' + ph + '@' + d; dgLog(dgEvent); }
@@ -1450,13 +1508,107 @@ export function createKaleido(device, format, platform) {
     return slideAge < slideLen;
   }
 
+  // This frame's trails, confetti's clocks and route (gpu/confetti.js). Each
+  // swing's phase steps by the frame's motion step over its rate, so a
+  // stopped scene holds it, and in a room it is then pulled onto the room
+  // clock with its offset (a no-op outside one). Amount dips, Stream and
+  // Twist swing both ways, Pulse dips; the Opacity's dip is the strobe's
+  // (core/strobe.js VARIANCES writes effKaleidoFbOpacity). The effectives go
+  // out for the Trails rows' lit bars. With trails the layer's own opacity
+  // rides the image as it lands (so trails already laid dim with it, and a
+  // layer faded out takes them along); without, it stays on the fold.
+  function stepTrails(t, md, lum, opacity) {
+    const amtRate = clampNum(S.kaleidoFbAmtVarRate, 1, 120, 20);
+    const streamRate = clampNum(S.kaleidoFbStreamVarRate, 1, 120, 20);
+    const twistRate = clampNum(S.kaleidoFbTwistVarRate, 1, 120, 20);
+    const pulseRate = clampNum(S.kaleidoFbPulseRate, 1, 60, 10);
+    fbAmtPhase += md / amtRate;
+    fbAmtPhase -= Math.floor(fbAmtPhase);
+    fbStreamPhase += md / streamRate;
+    fbStreamPhase -= Math.floor(fbStreamPhase);
+    fbTwistPhase += md / twistRate;
+    fbTwistPhase -= Math.floor(fbTwistPhase);
+    fbPulsePhase += md / pulseRate;
+    fbPulsePhase -= Math.floor(fbPulsePhase);
+    fbAmtPhase = roomPhase(fbAmtRoom, fbAmtPhase, t, md, amtRate, S.kaleidoFbAmtVarRateOff || 0);
+    fbStreamPhase = roomPhase(fbStreamRoom, fbStreamPhase, t, md, streamRate, S.kaleidoFbStreamVarRateOff || 0);
+    fbTwistPhase = roomPhase(fbTwistRoom, fbTwistPhase, t, md, twistRate, S.kaleidoFbTwistVarRateOff || 0);
+    fbPulsePhase = roomPhase(fbPulseRoom, fbPulsePhase, t, md, pulseRate, S.kaleidoFbPulseRateOff || 0);
+
+    const fbBase = clampNum(S.kaleidoFbAmt, 0, 1, 0);
+    const amtVar = clampNum(S.kaleidoFbAmtVar, 0, 1, 0);
+    const fbS = fbBase * (1 - amtVar * 0.5 * (1 - Math.cos(TAU * fbAmtPhase)));
+    const fbStream = swing(clampNum(S.kaleidoFbStream, -2, 2, 0),
+      clampNum(S.kaleidoFbStreamVarLo, -4, 0, 0), clampNum(S.kaleidoFbStreamVarHi, 0, 4, 0), fbStreamPhase, -2, 2);
+    const twistBase = clampNum(S.kaleidoFbTwist, -1, 1, 0);
+    // kaleidoFbTwistVarMix crossfades the plain setting into the swing while
+    // the performance window brings the variance in or out (1 when unset)
+    const twistMix = clampNum(S.kaleidoFbTwistVarMix, 0, 1, 1);
+    const fbTwist = S.kaleidoFbTwistVarOn === false ? twistBase
+      : twistBase + (swing(twistBase, clampNum(S.kaleidoFbTwistVarLo, -2, 0, 0),
+        clampNum(S.kaleidoFbTwistVarHi, 0, 2, 0), fbTwistPhase, -1, 1) - twistBase) * twistMix;
+    S.effKaleidoFbAmt = fbS;
+    S.effKaleidoFbStream = fbStream;
+    S.effKaleidoFbTwist = fbTwist;
+
+    let pulse = clampNum(S.kaleidoFbPulse, 0, 1, 0);
+    const pulseVar = clampNum(S.kaleidoFbPulseVar, 0, 1, 0);
+    if (pulseVar > 0) pulse *= 1 - pulseVar * 0.5 * (1 - Math.cos(TAU * fbPulsePhase));
+    pulse = scaledStrobeDepth(pulse);
+    S.effKaleidoFbPulse = pulse;
+    const l = lum > 0 ? (lum < 1 ? lum : 1) : 0;
+    fbGain = 1 - pulse + pulse * l;
+    fbOpacity = clampNum(S.effKaleidoFbOpacity ?? S.kaleidoFbOpacity, 0, 1, 1);
+
+    // The route keys off the setting, not this frame's dip, so a dip to 0
+    // clears for those frames (keepHalfLife 0) without letting the image go.
+    fbOn = fbBase > 0;
+    if (!fbOn) {
+      if (fbScreen) fbScreen.release();
+      return;
+    }
+    fbOpacity *= opacity;
+    if (!fbScreen) {
+      fbScreen = createFeedback(device, format, { label: 'kaleido.feedback' });
+      fbFoldPipe = device.createRenderPipeline({
+        layout,
+        vertex: { module: mod, entryPoint: 'vsFold' },
+        fragment: { module: mod, entryPoint: 'fsFold', targets: [{ format: FEEDBACK_FORMAT, blend: over }] },
+        primitive: { topology: 'triangle-list' }
+      });
+    }
+    // The image stands for the canvas at the Render section's Trail res,
+    // its centre the field centre and its unit the pattern's rim radius, so
+    // a drawer slide carries and rescales the trails with the pattern
+    // (feedback.js). The fold drawing into it takes the same scale (fbScale,
+    // applied to its uniforms in update).
+    const cssW = S.W || pixelW / dpr, cssH = S.H || pixelH / dpr;
+    const inset = S.edgeInset || 0;
+    const visW = Math.max(1, cssW - inset);
+    fbScale = feedbackRes(S.fbResScale);
+    fbScreen.ensure(pixelW, pixelH, fbScale, feedbackKeep(S.fbResSwitch));
+    fbParams.keepHalfLife = HL_MAX * fbS * fbS;
+    fbParams.zoomRate = STREAM_MAX * fbStream;
+    fbParams.twistRate = TWIST_MAX * fbTwist;
+    fbParams.cx = (inset + visW * 0.5) * dpr;
+    fbParams.cy = cssH * 0.5 * dpr;
+    fbParams.unit = Math.hypot(visW, cssH) * 0.62 * dpr;
+    fbParams.dt = md;
+  }
+
   // t is the rAF timestamp (ms), dt seconds, lum this frame's strobe level.
   function update(t, dt, lum) {
     active = false;
     slideDraw = false;
     instCount = 0;
+    fbOn = false;
     const lyr = S.layers;
-    if (!lyr || !lyr.kaleido) { wasOn = false; return; }
+    if (!lyr || !lyr.kaleido) {
+      // Off: the trails go with the layer, so it comes back from a clear image.
+      wasOn = false;
+      if (fbScreen) fbScreen.release();
+      return;
+    }
     const wantDef = kaleidoscopeSet(S.kaleidoSet);
     const wantUrl = atlasUrl(wantDef);
     if (wantDef.id !== requestedSet || wantUrl !== requestedUrl) changeSet(wantDef.id, wantUrl);
@@ -1599,13 +1751,18 @@ export function createKaleido(device, format, platform) {
       drainSlot = -1; drainTex = null; drainFill = null;
       install(tex, fill, set, url, lay);
     }
+    // The trails run whether or not anything is drawn this frame, so trails
+    // already made keep fading, streaming and turning.
+    stepTrails(t, md, lum, opacity);
     if (!live) return;
 
     // Pulse 0 keeps the layer at steady brightness whatever the strobe does
     // (the photosensitive-safe default); 1 lets it follow lum all the way.
-    // The fold applies it, so the chamber itself never strobes.
+    // The fold applies it, so the chamber itself never strobes. With trails
+    // the layer's opacity rides the image instead (stepTrails); without, the
+    // Trails opacity joins it here on the fold.
     const l = lum > 0 ? (lum < 1 ? lum : 1) : 0;
-    const gain = opacity * (1 - pulse + pulse * l) * fade;
+    const gain = (fbOn ? 1 : opacity * fbOpacity) * (1 - pulse + pulse * l) * fade;
     if (gain < 0.002) {
       // Nothing is drawn, so every piece is out of sight.
       if (drainSlot >= 0) for (let n = 0; n < live; n++) hideSwap(order[n]);
@@ -1643,11 +1800,17 @@ export function createKaleido(device, format, platform) {
 
     const rgb = S.rgb;
     const peak = Math.max(rgb[0], rgb[1], rgb[2], 1);
+    // Folding into the trails image, the fold's pixels are the image's
+    // texels, Trail res to a device pixel, so the centre and hole scale by it
+    // and the chamber's texels per pixel by its inverse (as fold.js fit).
+    // The Trails pulse goes on the fold's colour only with no image; with
+    // one, the composite carries it.
+    const into = fbOn ? fbScale : 1;
     uni[0] = chamberW; uni[1] = chamberH; uni[2] = 1 / chamberW; uni[3] = 1 / chamberH;
-    uni[4] = chamberW * 0.5; uni[5] = chamberH - CHAMBER_PAD; uni[6] = s; uni[7] = holeR;
+    uni[4] = chamberW * 0.5; uni[5] = chamberH - CHAMBER_PAD; uni[6] = s / into; uni[7] = holeR * into;
     uni[8] = rgb[0] / peak; uni[9] = rgb[1] / peak; uni[10] = rgb[2] / peak; uni[11] = tintAmt;
-    uni[12] = cx; uni[13] = cy; uni[14] = wedge; uni[15] = twistAng;
-    uni[16] = UP - spanNow * 0.5; uni[17] = mirror ? 1 : 0; uni[18] = gain; uni[19] = 0;
+    uni[12] = cx * into; uni[13] = cy * into; uni[14] = wedge; uni[15] = twistAng;
+    uni[16] = UP - spanNow * 0.5; uni[17] = mirror ? 1 : 0; uni[18] = gain; uni[19] = fbOn ? 1 : fbGain;
     uni[20] = bright; uni[21] = contrast; uni[22] = sat; uni[23] = 0;
     // The slide's old fold: the same chamber, seat, scale, hole, colour and
     // rotation, folded to the old symmetry. Each fold's gain carries its
@@ -1810,6 +1973,7 @@ export function createKaleido(device, format, platform) {
   // The chamber pass, encoded by the engine before the scene pass on any
   // frame the layer draws: cleared to transparent, then every object once.
   function encodeChamber(encoder) {
+    if (fbOn) { encodeTrails(encoder); return; }
     if (!active || !spriteBind || !chamberView) return;
     const pass = encoder.beginRenderPass(chamberPassDesc);
     pass.setPipeline(spritePipe);
@@ -1819,11 +1983,47 @@ export function createKaleido(device, format, platform) {
     pass.end();
   }
 
+  // With trails: the chamber as ever, then the trails image's own pass,
+  // which fades, streams and turns the last image in (feedback.js begin),
+  // and the fold, both symmetries while a slide runs, drawn into it rather
+  // than the scene. The image's pass runs with nothing to fold too, so
+  // trails keep dying away while the layer is dimmed out. Held (stopped
+  // with trails), begin only carries the image with the field.
+  function encodeTrails(encoder) {
+    if (fbScreen.holds(fbParams)) { fbScreen.begin(encoder, fbParams, false); return; }
+    const drawing = active && !!spriteBind && !!chamberView && !!foldBind;
+    if (drawing) {
+      const cp = encoder.beginRenderPass(chamberPassDesc);
+      cp.setPipeline(spritePipe);
+      cp.setBindGroup(0, spriteBind);
+      cp.setVertexBuffer(0, instBuf);
+      cp.draw(6, instCount);
+      cp.end();
+    }
+    // An image already faded to nothing with nothing to add is skipped, and
+    // so is its composite (feedback.js).
+    const lp = fbScreen.begin(encoder, fbParams, drawing);
+    if (!lp) return;
+    if (drawing) {
+      lp.setPipeline(fbFoldPipe);
+      if (slideDraw && foldBind2) {
+        lp.setBindGroup(0, foldBind2);
+        lp.draw(3);
+      }
+      lp.setBindGroup(0, foldBind);
+      lp.draw(3);
+    }
+    fbScreen.end(lp);
+  }
+
   // The fold, inside the scene pass where the kaleidoscope sits in the
   // layer order: one fullscreen triangle, one chamber read per pixel.
   // While a symmetry slide runs, the old symmetry is folded first and the
-  // new one over it, each at its own weight (see trackSymmetry).
+  // new one over it, each at its own weight (see trackSymmetry). With
+  // trails the fold has already gone into the trails image, which goes
+  // over the scene here instead, its colour scaled by the Trails pulse.
   function draw(pass) {
+    if (fbOn) { fbScreen.composite(pass, fbGain, fbOpacity); return; }
     if (!active || !foldBind) return;
     pass.setPipeline(foldPipe);
     if (slideDraw && foldBind2) {

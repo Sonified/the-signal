@@ -208,6 +208,10 @@ const LAYERS = [
   ]),
   makeLayer('lKaleido', 'Kaleid', [
     stdCell('kaleidoOpacity'), stdCell('kaleidoSpeed'), stdCell('kaleidoPulse'), stdCell('kaleidoFade'),
+    cell('kaleidoFbAmt', 'FB'),
+    cell('kaleidoFbStream', 'STRM'),
+    cell('kaleidoFbTwist', 'TWST'),
+    cell('kaleidoFbTwistVarOn', 'VAR', 'toggle', TOGGLE_W),
     cell('kaleidoSet', '', 'dd', DD_W)
   ]),
   makeLayer('lFlowers', 'Flower', [

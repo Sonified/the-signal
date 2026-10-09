@@ -352,6 +352,10 @@ const SWINGS = [
   ['flowerPulsePeriod',     'flowerPulsePeriodOff',     carryRoomPhase],
   ['kaleidoOpacityPeriod',  'kaleidoOpacityPeriodOff',  carryRoomPhase],
   ['kaleidoFadePeriod',     'kaleidoFadePeriodOff',     carryRoomPhase],
+  ['kaleidoFbAmtVarRate',   'kaleidoFbAmtVarRateOff',   carryRoomPhase],
+  ['kaleidoFbStreamVarRate', 'kaleidoFbStreamVarRateOff', carryRoomPhase],
+  ['kaleidoFbTwistVarRate', 'kaleidoFbTwistVarRateOff', carryRoomPhase],
+  ['kaleidoFbPulseRate',    'kaleidoFbPulseRateOff',    carryRoomPhase],
   ['textOpacityVarPeriod',  'textOpacityVarPeriodOff',  carryWordOpacity]
 ];
 const swingRate = new Array(SWINGS.length);
