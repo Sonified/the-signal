@@ -750,8 +750,8 @@ const toneVolB = breathState(), toneAmB = breathState();
 let toneVolDip = 0, toneAmDip = 0, toneTimer = 0, toneVolSent = -1, toneAmSent = -1;
 const varAmt = v => Math.max(0, Math.min(1, +v || 0));
 function breatheTone(now) {
-  toneVolDip = breath(toneVolB, varAmt(S.toneVolVar), S.toneVolPeriod, now, S.toneVolVarMode);
-  toneAmDip = breath(toneAmB, varAmt(S.toneStrobeAmVar), S.toneStrobeAmPeriod, now, S.toneStrobeAmVarMode);
+  toneVolDip = breath(toneVolB, varAmt(S.toneVolVar), S.toneVolPeriod, now);
+  toneAmDip = breath(toneAmB, varAmt(S.toneStrobeAmVar), S.toneStrobeAmPeriod, now);
 }
 function toneBreathTick() {
   if (!node || !audioCtx) { syncToneBreath(); return; }

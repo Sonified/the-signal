@@ -199,9 +199,8 @@ function buildSettings() {
     edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
     carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked, amModOn: S.amModOn,
     toneStrobeAm: S.toneStrobeAm,
-    toneVolVar: S.toneVolVar, toneVolPeriod: S.toneVolPeriod, toneVolVarMode: S.toneVolVarMode,
+    toneVolVar: S.toneVolVar, toneVolPeriod: S.toneVolPeriod,
     toneStrobeAmVar: S.toneStrobeAmVar, toneStrobeAmPeriod: S.toneStrobeAmPeriod,
-    toneStrobeAmVarMode: S.toneStrobeAmVarMode,
     toneOn: S.toneOn, clickOn: S.clickOn, toneVol: S.toneVol, clickVol: S.clickVol, pipMs: S.pipMs,
     // the Music window's trims over those levels (state.js)
     musTone: S.musTone, musPulse: S.musPulse, musPiano: S.musPiano, musClouds: S.musClouds,
@@ -953,8 +952,6 @@ function applySettings(s, live, scene) {
   for (const [k, lo, hi] of [['toneVolVar', 0, 1], ['toneVolPeriod', 0, 120],
                              ['toneStrobeAmVar', 0, 1], ['toneStrobeAmPeriod', 0, 120]])
     if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = Math.max(lo, Math.min(hi, s[k]));
-  for (const k of ['toneVolVarMode', 'toneStrobeAmVarMode'])
-    if (s[k] === 'walk' || s[k] === 'sine') S[k] = s[k];
   if (typeof s.volume === 'number')       S.volume = s.volume;
   // the Music window's trims, each a share of its voice's level, 0 to 1
   for (const k of ['musTone', 'musPulse', 'musPiano', 'musClouds', 'musDrone', 'musArp', 'musChoir', 'musAmb']) {

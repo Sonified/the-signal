@@ -470,7 +470,7 @@ const audioControls = [
   // variances). The bar's brighter fill is the level as it plays, read back
   // from the page in worker mode (toneVolMulNow, core/audio-mirror.js).
   ...varianceRows('toneVol', {
-    music: true, name: 'Level', mode: true, apply: applyToneBreath,
+    music: true, name: 'Level', apply: applyToneBreath,
     parent: 'audioToneDrawer', visible: s => s.toneOn,
     effective: toneDippedPos
   }),
@@ -491,7 +491,7 @@ const audioControls = [
   // The pulse depth's dip, the choir's and drone's own, taken off the tone's
   // setting before the master strobe scales it (js/audio.js, toneAmDepth).
   ...varianceRows('toneStrobeAm', {
-    music: true, name: 'Pulse', mode: true, apply: applyToneBreath,
+    music: true, name: 'Pulse', apply: applyToneBreath,
     parent: 'audioToneDrawer', visible: s => s.toneOn,
     effective: s => (typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * toneAmMulNow() * 100
   }),
