@@ -816,12 +816,25 @@ function walkEval(n) {
 // a relayed word or a performer's phrase) shows it exactly where every other
 // screen has it, fade included. A word on screen is never cut for it; the
 // step simply goes by, as a local word holds its slot.
+// The walk joined afresh at this local ms: a change of the step length or
+// the fade times re-maps the whole shared schedule (planStep divides an
+// epoch clock, so the step index lands anywhere), and without a seam every
+// re-map dealt a "new" word back-dated into the middle of its fade, one
+// per notch of a dragged Dwell or Fade slider: words popping in, far too
+// fast. So a re-map works like the session's start: the word up finishes
+// the life it was born with, nothing back-dated goes up, and the walk joins
+// at the first step that begins after the change, on every screen alike,
+// since followers re-map on the same settings at the same moment.
+let walkJoinAt = 0;
+
 function walkTick(t) {
   if (!walkPlan()) return;
   const shared = t + walkClock;
   const n = Math.floor(shared / planStep);
-  if (n !== walkEvalN || planStep !== walkEvalStepMs ||
-      planFin !== walkEvalFin || planHold !== walkEvalHold || planFout !== walkEvalFout) walkEval(n);
+  const remap = walkEvalStepMs !== 0 && (planStep !== walkEvalStepMs ||
+      planFin !== walkEvalFin || planHold !== walkEvalHold || planFout !== walkEvalFout);
+  if (remap) walkJoinAt = t;
+  if (n !== walkEvalN || remap) walkEval(n);
   // The word the walk deals next, for the smoke to record its arrival
   // (gpu/word-smoke.js): this step's, if it has yet to go up, otherwise the
   // next step's. Kept current every frame rather than only as a word goes
@@ -835,6 +848,7 @@ function walkTick(t) {
   // (its fade began inside the quiet, or before this screen was live at
   // all) is passed over, and the walk joins at the first step after it
   if (startQuiet && t - (shared - walkEvalStart) < startQuiet) return;
+  if (walkJoinAt && t - (shared - walkEvalStart) < walkJoinAt) return;
   wdiag('walk step', walkEvalText);
   current = walkEvalText; shownAt = t - (shared - walkEvalStart); showing = true;
   // The life is the step's own: the plan's times (walkPlan read them from
