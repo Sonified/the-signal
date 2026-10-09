@@ -483,6 +483,7 @@ export function triggerPhrase(text) {
 function showLocal(t) {
   const p = pendingLocal;
   p.has = false;
+  wdiag('performer phrase', p.w);
   current = p.w; shownAt = t; showing = true;
   bornWith(fadeRoll(S.textFadeInVar), fadeRoll(S.textFadeOutVar), fadeRoll(S.textDwellVar));
   wordState.text = p.w;
@@ -498,6 +499,7 @@ function showLocal(t) {
 function showRemote(t) {
   const p = pendingRemote;
   p.has = false;
+  wdiag('remote (followed broadcast)', p.w);
   current = p.w; shownAt = t; showing = true;
   bornWith(p.fi, p.fo, 1);
   wordState.text = p.w;
@@ -517,6 +519,7 @@ function showWord(t) {
   if (oneShotRemaining === 0) return false;
   const w = nextPick || pick();
   if (!w) return false;
+  wdiag(forceNext ? 'forced (wordNow)' : oneShotRemaining > 0 ? 'journey one-shot' : 'roll', w);
   current = w; shownAt = t; showing = true;
   bornWith(fadeRoll(S.textFadeInVar), fadeRoll(S.textFadeOutVar), fadeRoll(S.textDwellVar));
   wordState.text = w;
@@ -832,6 +835,7 @@ function walkTick(t) {
   // (its fade began inside the quiet, or before this screen was live at
   // all) is passed over, and the walk joins at the first step after it
   if (startQuiet && t - (shared - walkEvalStart) < startQuiet) return;
+  wdiag('walk step', walkEvalText);
   current = walkEvalText; shownAt = t - (shared - walkEvalStart); showing = true;
   // The life is the step's own: the plan's times (walkPlan read them from
   // the settings this very frame) under the step's hashed rolls, so it is
@@ -870,6 +874,16 @@ export function wordsResume(away) {
 const START_QUIET_MS = 1000;
 let startQuiet = 0;
 let wasLive = false;
+// ?worddiag=1 in the page's address: one console line as the session goes
+// live and one each time a word goes up, naming the path that put it there
+// and the seconds since the session started, so a word arriving at once on
+// a real screen says which door it came through. Page mode only; one
+// boolean test when off.
+const WDIAG = (() => { try { return /[?&]worddiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
+let liveAt = 0;
+function wdiag(path, text) {
+  if (WDIAG) console.log('[worddiag] ' + path + ' at ' + ((lastT - liveAt) / 1000).toFixed(2) + 's: "' + String(text).slice(0, 40) + '"');
+}
 
 export function stepWords(t, dt) {
   lastT = t;
@@ -884,6 +898,8 @@ export function stepWords(t, dt) {
     // the start's quiet second: the roll waits through a rest (which also
     // starts the deterministic slot afresh), and the walk holds below
     wasLive = true;
+    liveAt = t;
+    if (WDIAG) console.log('[worddiag] session live, quiet until +' + (START_QUIET_MS / 1000) + 's');
     startQuiet = t + START_QUIET_MS;
     schedPhase = 0;
     if (restUntil < startQuiet) restUntil = startQuiet;
