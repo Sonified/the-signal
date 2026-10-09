@@ -448,9 +448,13 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.depth = pos / 100; save(); },
     format: S => Math.round(S.depth * 100) + '%'
   },
+  // The overlay shows the dip the variance makes on the Depth setting
+  // itself, not S.effDepth, which also carries the Master strobe (strobe.js
+  // scales it on the way to the engine, so at Master strobe 0 it reads 0
+  // however the variance breathes).
   ...varianceRows('depth', {
     name: 'Depth', period: 'varPeriod', amountDef: 80, periodDef: 10,
-    effective: S => S.effDepth * 100
+    effective: S => varied(S.depth, S.depthVar, S.varPhase || 0) * 100
   }),
   {
     id: 'bright', section: 'strobe', label: 'Brightness', kind: 'slider',
