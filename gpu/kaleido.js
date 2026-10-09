@@ -751,8 +751,15 @@ export function createKaleido(device, format, platform) {
       console.warn('kaleido: the platform has no loadImagePixels; the layer stays empty');
       return;
     }
+    // the boot profile: when the fetch+decode began and how long it took,
+    // beside main.js's [boot] stamps, since this atlas is megabytes
+    const t0 = performance.now();
+    console.log('[boot] kaleido atlas fetch begins (' + url + ') +' + Math.round(t0) + 'ms');
     platform.loadImagePixels(url)
-      .then(img => buildAtlas(img, token, set, url))
+      .then(img => {
+        console.log('[boot] kaleido atlas decoded in ' + Math.round(performance.now() - t0) + 'ms, repacking');
+        return buildAtlas(img, token, set, url);
+      })
       .catch(err => { console.warn('kaleido: could not load the motif atlas ' + url + ':', err && err.message ? err.message : err); });
   }
 
@@ -916,6 +923,7 @@ export function createKaleido(device, format, platform) {
     device.queue.writeTexture({ texture: tex }, out, { bytesPerRow: ATLAS * 4, rowsPerImage: ATLAS },
                               { width: ATLAS, height: ATLAS });
     buildMips(tex, L.mips);
+    console.log('[boot] kaleido atlas on the GPU (set ' + set + ') +' + Math.round(performance.now()) + 'ms');
     install(tex, fill, set, url, L);
   }
 

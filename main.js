@@ -112,7 +112,7 @@ if (!host.worker && typeof document !== 'undefined') {
   }
 }
 
-console.log('[boot] modules evaluated');
+console.log('[boot] modules evaluated +' + Math.round(performance.now()) + 'ms');
 // A boot that throws inside the worker is reported to the page (see
 // worker-entry.js); on the page it surfaces as it always has.
 boot().catch(err => { console.error('[boot] FAILED', err); if (host.bootFailed) host.bootFailed(err); else throw err; });
@@ -123,15 +123,15 @@ async function boot() {
   // Worker mode, page side: the engine goes to the worker and this page
   // becomes its shell. Otherwise (the default, or no worker to be had) this
   // returns false and the engine boots here as always.
-  console.log('[boot] boot() entered, worker:', inWorker);
+  console.log('[boot] boot() entered, worker: +' + Math.round(performance.now()) + 'ms', inWorker);
   // A first visit fetches the starting presets and writes them in before
   // anything reads storage (the worker's copy of it included); a return
   // visit, which already has a presets record, fetches nothing.
   if (!inWorker) await seedFactoryPresets();
   if (!inWorker && await startWorkerShell(canvas)) return;
-  console.log('[boot] engine stays on this thread');
+  console.log('[boot] engine stays on this thread +' + Math.round(performance.now()) + 'ms');
   const platform = inWorker ? await host.platform : createPlatform(canvas);
-  console.log('[boot] platform ready');
+  console.log('[boot] platform ready +' + Math.round(performance.now()) + 'ms');
   setOverlayTouch(!!platform.coarse);
   // the page's pointer, for the engine thread's phone readouts (js/handheld.js)
   noteHandheld(!!platform.coarse);
@@ -156,9 +156,9 @@ async function boot() {
   // boolean test for it and nothing else.
   perf.on = platform.storage.get('signal_perf') === '1';
 
-  console.log('[boot] settings loaded, requesting engine (adapter/device)');
+  console.log('[boot] settings loaded, requesting engine (adapter/device) +' + Math.round(performance.now()) + 'ms');
   const engine = await createEngine(platform, { perf: perf.on });
-  console.log('[boot] engine ready:', !!engine);
+  console.log('[boot] engine ready: +' + Math.round(performance.now()) + 'ms', !!engine);
   if (!engine) {
     // Two different failures, two different truths: a browser with no
     // WebGPU at all, or a browser whose GPU process stopped answering (the
@@ -174,7 +174,7 @@ async function boot() {
   const { device, format } = engine;
   if (perf.on) perfAttachGpu(engine.gpu);
   const text = createText(device, platform);
-  console.log('[boot] text atlas created');
+  console.log('[boot] text atlas created +' + Math.round(performance.now()) + 'ms');
   // Dark-frame chores (core/chores.js): the after-submit work that can stall
   // or allocate waits for a slot where a stall would only lengthen a dark
   // gap. Glyph rasterising goes in slices; the settings write is one piece.
@@ -730,6 +730,6 @@ async function boot() {
     }
   }
 
-  console.log('[boot] layers registered, starting frame loop');
+  console.log('[boot] layers registered, starting frame loop +' + Math.round(performance.now()) + 'ms');
   engine.start(frame);
 }

@@ -183,8 +183,15 @@ export function createFlowers(device, format, platform) {
       console.warn('flowers: the platform has no loadImagePixels; the layer stays empty');
       return;
     }
+    // the boot profile, beside main.js's [boot] stamps: this sheet is the
+    // app's biggest single asset, so its cost should be visible
+    const t0 = performance.now();
+    console.log('[boot] lotus sheet fetch begins +' + Math.round(t0) + 'ms');
     platform.loadImagePixels(SHEET_URL)
-      .then(buildAtlas)
+      .then(img => {
+        console.log('[boot] lotus sheet decoded in ' + Math.round(performance.now() - t0) + 'ms, building atlas');
+        return buildAtlas(img);
+      })
       .catch(err => { console.warn('flowers: could not load the lotus sheet:', err && err.message ? err.message : err); });
   }
 
@@ -224,6 +231,7 @@ export function createFlowers(device, format, platform) {
     device.queue.writeTexture({ texture: tex }, out, { bytesPerRow: ATLAS_W * 4, rowsPerImage: ATLAS_H },
                               { width: ATLAS_W, height: ATLAS_H });
     buildMips(tex);
+    console.log('[boot] lotus atlas on the GPU +' + Math.round(performance.now()) + 'ms');
 
     bind = device.createBindGroup({
       layout: bgl,
