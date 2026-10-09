@@ -37,7 +37,7 @@ import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 import { varianceRows } from './schema-variance.js';
 import { varied } from './variance.js';
-import { applyHeartLookahead } from '../js/heart/route.js';
+import { applyHeartLookahead, applyHeartGrow } from '../js/heart/route.js';
 
 // S stores colour as an [r,g,b] triple (js/color.js's setColorFromPicker
 // writes S.rgb, S.hue, S.hueSat, S.hueLight from it); v0 kept the hex string
@@ -1662,6 +1662,17 @@ export const VISUAL_CONTROLS = [
     get: S => S.heartLookaheadS ?? 0.3,
     set: (S, v) => { S.heartLookaheadS = Math.max(0.05, Math.min(0.5, v)); applyHeartLookahead(); save(); },
     format: S => Math.round((S.heartLookaheadS ?? 0.3) * 1000) + ' ms'
+  },
+  {
+    // How the cushion grows when it runs dry: the lookahead, and the floor
+    // the ratchet leaves, both multiply by this (js/heart/drain-worklet.js
+    // GROW). Gentler grows in smaller steps and may underrun again on the
+    // way up; steeper settles in one leap at more latency.
+    id: 'heartGrowX', section: 'render', label: 'Cushion growth', kind: 'slider',
+    min: 1.1, max: 2, step: 0.1, def: 1.5,
+    get: S => S.heartGrowX ?? 1.5,
+    set: (S, v) => { S.heartGrowX = Math.max(1.1, Math.min(2, v)); applyHeartGrow(); save(); },
+    format: S => '×' + (S.heartGrowX ?? 1.5).toFixed(1)
   },
   {
     // How long the visuals take to coast to a stop when paused (core/motion.js).

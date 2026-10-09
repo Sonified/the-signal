@@ -171,6 +171,7 @@ async function assemble(engine, ctx, module, opts) {
     max: maxAhead,
     hidden: Math.min(maxAhead, Math.max(lookahead, toFrames(opts.hiddenLookahead ?? LOOKAHEAD_HIDDEN))),
     fullscreen: Math.min(maxAhead, Math.max(lookahead, toFrames(opts.fullscreenLookahead ?? LOOKAHEAD_FULLSCREEN))),
+    grow: Math.min(2, Math.max(1.1, opts.grow ?? 1.5)),
     steady: Math.ceil((opts.steadySeconds ?? STEADY_SECONDS) * sampleRate / QUANTUM),
     startHidden: doc?.visibilityState === 'hidden',
     startFullscreen: fullscreenNow()
@@ -463,6 +464,12 @@ async function assemble(engine, ctx, module, opts) {
       policy.base = frames;
       if (!control) drainNews.next = Math.max(drainNews.next, frames);
       output.port.postMessage({ type: 'base', frames });
+    },
+    // The viewer's growth factor, live (the drawer's Cushion growth).
+    setGrow(x) {
+      if (closed || !(x >= 1.1 && x <= 2)) return;
+      policy.grow = x;
+      output.port.postMessage({ type: 'grow', x });
     },
     inspect,
     close

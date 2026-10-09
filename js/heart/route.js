@@ -83,6 +83,14 @@ function lookaheadSetting() {
 export function applyHeartLookahead() {
   if (engine) engine.setLookahead(lookaheadSetting());
 }
+// The cushion's growth factor on underrun (the drawer's Cushion growth).
+function growSetting() {
+  const v = S.heartGrowX;
+  return typeof v === 'number' && isFinite(v) ? Math.max(1.1, Math.min(2, v)) : 1.5;
+}
+export function applyHeartGrow() {
+  if (engine) engine.setGrow(growSetting());
+}
 
 export function startHeart(ctx, master) {
   nativeCtx = ctx;
@@ -99,7 +107,7 @@ async function boot(ctx, master) {
     const [{ startEngine }, { HeartContext, Shadow }] = await Promise.all([
       import('./engine.js'), import('./heart.js')
     ]);
-    eng = await startEngine(ctx, { lookahead: lookaheadSetting() });
+    eng = await startEngine(ctx, { lookahead: lookaheadSetting(), grow: growSetting() });
     if (!eng) {
       console.warn('Heart: this device cannot run it, so every family plays natively');
       return null;

@@ -69,7 +69,9 @@ const STATS_EVERY = 96;
 // the one growth step that stopped the underruns. Half again, not double:
 // growth lands near what the stall needed without overshooting the latency
 // for the rest of the session (Robert, 2026-10-08). The one knob for both,
-// so a retuning changes everything together.
+// so a retuning changes everything together. The viewer sets it in the
+// drawer (Render, Cushion growth); policy.grow carries it, and this is
+// only the fallback.
 const GROW = 1.5;
 const RISE_DELAY = CHUNK / QUANTUM;
 
@@ -152,7 +154,7 @@ export class Drain {
       this.calm = 0;
       if (!this.dry) {
         this.runFrom = this.underruns;
-        if (this.policy) { this.learn(); this.raise(Math.ceil(this.next * GROW / QUANTUM) * QUANTUM); }
+        if (this.policy) { this.learn(); this.raise(Math.ceil(this.next * (this.policy.grow || GROW) / QUANTUM) * QUANTUM); }
         if (this.diag) this.tellDiag('dry', ready);
       }
       this.dry = true;
@@ -193,6 +195,11 @@ export class Drain {
   // schema-visual.js): the base moves live. A bigger base is rendered now;
   // a smaller one lets the steady step-downs settle onto it, and the
   // session's learned floor still stands above it.
+  // The viewer's growth factor (the drawer's Cushion growth), live.
+  setGrow(x) {
+    if (this.policy && x >= 1.1 && x <= 2) this.policy.grow = x;
+  }
+
   setBase(frames) {
     if (!this.policy || !(frames > 0)) return;
     this.policy.base = frames;
@@ -215,7 +222,7 @@ export class Drain {
   learn() {
     if (this.held <= this.bad) return;
     this.bad = this.held;
-    this.learned = Math.min(this.policy.max, Math.ceil(this.bad * GROW / QUANTUM) * QUANTUM);
+    this.learned = Math.min(this.policy.max, Math.ceil(this.bad * (this.policy.grow || GROW) / QUANTUM) * QUANTUM);
   }
 
   // The least the lookahead may step down to now.
@@ -311,6 +318,7 @@ if (typeof registerProcessor === 'function') {
         if (d.type === 'ring') this.drain.attach(openRing(d.ring, 'reader'));
         else if (d.type === 'hidden') this.drain.setHidden(d.hidden === true);
         else if (d.type === 'base') this.drain.setBase(d.frames | 0);
+        else if (d.type === 'grow') this.drain.setGrow(+d.x);
         else if (d.type === 'fullscreen') this.drain.setFullscreen(d.on === true);
         else if (d.type === 'close') { this.alive = false; this.drain.close(); }
       };
