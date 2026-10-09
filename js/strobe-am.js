@@ -42,7 +42,7 @@ import { scaledStrobeDepth } from './strobe-scale.js';
 import { breath, breathState } from '../core/variance.js';
 import { every, clear } from './ticker.js';
 import {
-  signal, SIGNAL_ORIGIN, signalNow, steerSignal, setSignalShape, waveCode, onSignal, publishSignal
+  signal, SIGNAL_ORIGIN, signalNow, steerSignal, setSignalShape, waveCode, onSignal, publishSignal, phaseAt, rateAt
 } from '../core/signal.js';
 
 // The strobe's flash rate as it is actually shown (the frame-locked rate
@@ -215,9 +215,38 @@ function dropOsc(o) {
   try { o.disconnect(); } catch (e) {}
 }
 
+// ?syncdiag=1: every 2 s, the numbers that decide whether a sample and a
+// frame agree about the signal. `bridge` is the page ms at context time 0
+// (clockEst) and how far it moved since the last beat; `outputLatency` and
+// `baseLatency` are how long after currentTime a sample is actually heard,
+// which the bridge DELIBERATELY does not compensate (see the audio clock
+// note above); `heart ahead` is presentTime - currentTime on a Heart
+// context; `latency as phase` is outputLatency times the live rate: the
+// cycles the ear hears late even with a perfect bridge.
+const SYNCDIAG = (() => { try { return /[?&]syncdiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
+let sdLast = 0, sdEst = NaN;
+function syncdiag() {
+  const now = performance.now();
+  if (now - sdLast < 2000 || !clockCtx) return;
+  sdLast = now;
+  const raw = clockCtx;
+  const outL = (raw.outputLatency || 0) * 1000, baseL = (raw.baseLatency || 0) * 1000;
+  const heartAhead = raw.presentTime !== undefined ? (raw.presentTime - raw.currentTime) * 1000 : 0;
+  const rate = rateAt(signal, now);
+  const moved = sdEst === sdEst ? (clockEst - sdEst).toFixed(2) : 'first';
+  sdEst = clockEst;
+  console.log('[syncdiag] bridge est ' + clockEst.toFixed(2) + ' ms (moved ' + moved +
+    '); outputLatency ' + outL.toFixed(1) + ' ms, baseLatency ' + baseL.toFixed(1) +
+    ' ms; heart ahead ' + heartAhead.toFixed(1) + ' ms; rate ' + rate.toFixed(3) +
+    ' Hz; latency as phase ' + (outL / 1000 * rate).toFixed(3) + ' cyc (' +
+    (outL / 1000 * rate * 360).toFixed(0) + ' deg); visual phase now ' +
+    phaseAt(signal, now).toFixed(3));
+}
+
 function track() {
   const ctx = getContext();
   if (!ctx) return;
+  if (SYNCDIAG) syncdiag();
   // nothing writes the signal: steer it here (steerFromS)
   if (!signal.driven) steerFromS();
   // a link switched with no rate set alongside it
