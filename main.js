@@ -37,6 +37,7 @@ import { createFlowers } from './gpu/flowers.js';
 import { createKaleido, setKaleidoYield } from './gpu/kaleido.js';
 import { createParticles } from './gpu/particles.js';
 import { createFireworks } from './gpu/fireworks.js';
+import { FIREWORKS_ENABLED } from './core/schema-fireworks.js';
 import { createConfetti } from './gpu/confetti.js';
 import { createWordCloud } from './gpu/word-cloud.js';
 import { createWordSmoke } from './gpu/word-smoke.js';
@@ -191,8 +192,10 @@ async function boot() {
   engine.registerKaleido(createKaleido(device, format, platform));
   // And the particle generator; it builds nothing until first switched on.
   engine.registerParticles(createParticles(device, format, platform));
-  // The fireworks; they build nothing until first switched on.
-  engine.registerFireworks(createFireworks(device, format));
+  // The fireworks; they build nothing until first switched on, and are not
+  // made at all while FIREWORKS_ENABLED (core/schema-fireworks.js) is off,
+  // so the engine's draw and update skip them.
+  if (FIREWORKS_ENABLED) engine.registerFireworks(createFireworks(device, format));
   // The confetti; it too builds nothing until first switched on.
   engine.registerConfetti(createConfetti(device, format));
   // The word's Cloud transition; it builds nothing until a word first clouds.

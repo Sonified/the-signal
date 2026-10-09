@@ -10,6 +10,13 @@
 // applyFireworkState().
 import { save } from './store.js';
 
+// The whole layer's internal switch, for a developer, not the drawer. Off,
+// the fireworks are gone as an option everywhere: core/schema.js leaves out
+// their controls and section, and main.js never builds or registers the GPU
+// layer. Their state on S is still seeded, saved and applied as ever, so
+// flipping this back to true brings the whole layer back as it was left.
+export const FIREWORKS_ENABLED = false;
+
 // The presets, as gpu/fireworks.js reads S.fwMode: Scatter (one show at a
 // time toward a corner, falling down the screen), Four corners (four
 // identical shows at once, symmetric about the centre) and Centre out

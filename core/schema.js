@@ -11,7 +11,7 @@ import { AUDIO_CONTROLS, AUDIO_SECTIONS } from './schema-audio.js';
 import { FLOWER_CONTROLS, FLOWER_SECTIONS } from './schema-flowers.js';
 import { KALEIDO_CONTROLS, KALEIDO_SECTIONS } from './schema-kaleido.js';
 import { PARTICLE_CONTROLS, PARTICLE_SECTIONS } from './schema-particles.js';
-import { FIREWORK_CONTROLS, FIREWORK_SECTIONS } from './schema-fireworks.js';
+import { FIREWORK_CONTROLS, FIREWORK_SECTIONS, FIREWORKS_ENABLED } from './schema-fireworks.js';
 import { CONFETTI_CONTROLS, CONFETTI_SECTIONS } from './schema-confetti.js';
 import { wireVariances } from './schema-variance.js';
 
@@ -19,8 +19,11 @@ import { wireVariances } from './schema-variance.js';
 // follows Field, Rings, Corners, Edge and Text within the Layers section, and
 // the kaleidoscope follows the flowers, so lKaleido comes right after it,
 // and the particles follow the kaleidoscope, so lParticles comes after that,
-// then the fireworks' lFireworks, with the confetti's lConfetti last.
-export const CONTROLS = [...VISUAL_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONTROLS, ...PARTICLE_CONTROLS, ...FIREWORK_CONTROLS, ...CONFETTI_CONTROLS, ...AUDIO_CONTROLS];
+// then the fireworks' lFireworks, with the confetti's lConfetti last. With
+// FIREWORKS_ENABLED off (schema-fireworks.js) the fireworks' controls and
+// section are left out here, so every screen, picker and recall that walks
+// these lists simply never meets them.
+export const CONTROLS = [...VISUAL_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONTROLS, ...PARTICLE_CONTROLS, ...(FIREWORKS_ENABLED ? FIREWORK_CONTROLS : []), ...CONFETTI_CONTROLS, ...AUDIO_CONTROLS];
 
 // The Flowers section slots in after Edge, the Kaleidoscope section right
 // after it, then the Particles, Fireworks and Confetti sections, all before
@@ -28,7 +31,7 @@ export const CONTROLS = [...VISUAL_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONT
 const visualSections = VISUAL_SECTIONS.slice();
 {
   const at = visualSections.findIndex(s => s.id === 'edge');
-  visualSections.splice(at < 0 ? visualSections.length : at + 1, 0, ...FLOWER_SECTIONS, ...KALEIDO_SECTIONS, ...PARTICLE_SECTIONS, ...FIREWORK_SECTIONS, ...CONFETTI_SECTIONS);
+  visualSections.splice(at < 0 ? visualSections.length : at + 1, 0, ...FLOWER_SECTIONS, ...KALEIDO_SECTIONS, ...PARTICLE_SECTIONS, ...(FIREWORKS_ENABLED ? FIREWORK_SECTIONS : []), ...CONFETTI_SECTIONS);
 }
 export const SECTIONS = [...visualSections, ...AUDIO_SECTIONS];
 
