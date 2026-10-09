@@ -28,7 +28,7 @@ struct KU {
   map: vec4f,     // the field centre's place in the chamber (texels), texels per device px, hole radius (device px)
   tint: vec4f,    // strobe colour scaled so its brightest channel is 1, tint amount
   fold: vec4f,    // field centre x, y (device px), wedge angle, complete rotation (radians)
-  dom: vec4f,     // the domain's starting angle, mirror (0 or 1), layer gain, colour gain (the Trails pulse)
+  dom: vec4f,     // the domain's starting angle, mirror (0 or 1), layer gain, unused
   grade: vec4f,   // brightness, contrast, saturation (1 leaves each alone), unused
   lay0: vec4f,    // tex's layout as UV: tile padding, motif inner square, half a texel, unused
   lay1: vec4f,    // the same for tex2 (see the layout note below)
@@ -181,9 +181,7 @@ fn fsFold(@builtin(position) p: vec4f) -> @location(0) vec4f {
     s = (s - 0.5) * u.grade.y + 0.5;
     s = clamp(s * u.grade.x, vec3f(0.0), vec3f(1.0)) * c.a;
   }
-  // The Trails pulse with no trails image (gpu/kaleido.js): the colour
-  // alone scales, the coverage kept, as the feedback composite's gain does.
-  let rgb = mix(s, s * u.tint.rgb, u.tint.w) * u.dom.w;
+  let rgb = mix(s, s * u.tint.rgb, u.tint.w);
   return vec4f(rgb, c.a) * (u.dom.z * hole);
 }
 `;
