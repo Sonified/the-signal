@@ -828,6 +828,10 @@ function walkTick(t) {
   wordState.nextText = n === walkShown || walkEvalSilent ? walkEvalNext : walkEvalText;
   if (showing || walkEvalSilent || !walkEvalText || n === walkShown) return;
   if (shared < walkEvalStart || shared >= walkEvalEnd) return;
+  // the start's quiet: a step already under way when the experience started
+  // (its fade began inside the quiet, or before this screen was live at
+  // all) is passed over, and the walk joins at the first step after it
+  if (startQuiet && t - (shared - walkEvalStart) < startQuiet) return;
   current = walkEvalText; shownAt = t - (shared - walkEvalStart); showing = true;
   // The life is the step's own: the plan's times (walkPlan read them from
   // the settings this very frame) under the step's hashed rolls, so it is
@@ -858,13 +862,31 @@ export function wordsResume(away) {
   if (goneAt >= 0) goneAt += away;
 }
 
+// A session's first moments are quiet: no word for at least this long after
+// the experience starts (play pressed, or the text layer switched on), so
+// the scene opens clean and the first word arrives by the ordinary rolls
+// (or, on the shared walk, with the first step that begins after the quiet)
+// rather than always being there at once.
+const START_QUIET_MS = 1000;
+let startQuiet = 0;
+let wasLive = false;
+
 export function stepWords(t, dt) {
   lastT = t;
   if (!S.layers.text || !S.running) {
     if (showing || wordState.opacity > 0) hide();
     rateAcc = 0;
     goneAt = -1;   // a restart's first phrase comes on the next tick, not a gap after the last
+    wasLive = false;
     return;
+  }
+  if (!wasLive) {
+    // the start's quiet second: the roll waits through a rest (which also
+    // starts the deterministic slot afresh), and the walk holds below
+    wasLive = true;
+    startQuiet = t + START_QUIET_MS;
+    schedPhase = 0;
+    if (restUntil < startQuiet) restUntil = startQuiet;
   }
 
   // A rest stops the roll entirely rather than suppressing its result, so the
