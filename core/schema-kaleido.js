@@ -604,7 +604,7 @@ export const KALEIDO_CONTROLS = [
   // frame keeps a fading copy of the last, streamed and turned about the
   // field centre, so the whole pattern leaves trails. Shut, its strip shows
   // the amount and the Stream.
-  subDrawer('kaleidoTrailsDrawer', 'Trails', 'kaleido', ['kaleidoFbAmt', 'kaleidoFbStream']),
+  subDrawer('kaleidoTrailsDrawer', 'Feedback', 'kaleido', ['kaleidoFbAmt', 'kaleidoFbStream']),
   // How solidly the whole feedback image lands on the scene, a true
   // opacity; the trails inside it build and fade the same at any setting.
   under('kaleidoTrailsDrawer', percent('kaleidoFbOpacity', 'kaleidoFbOpacity', 'Opacity')),
