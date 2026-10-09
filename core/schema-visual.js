@@ -1640,18 +1640,19 @@ export const VISUAL_CONTROLS = [
   // The rows that stand alone come first; the rest sit in sub-drawers by
   // what they govern: Audio engine, Pause, Hint, Trails and Parallax.
   {
-    // Only matters when frame lock lands on an odd frame count; see the
-    // comment above spLit/spDark in index.html for why 'lit' and 'dark' are
-    // the only two options and there is no third, alternating one.
-    id: 'spareMode', section: 'render', label: 'Spare frame', kind: 'segment', def: 'lit',
-    hideLabel: true,
+    // Only matters when frame lock lands on an odd number of display
+    // frames per strobe cycle (40 Hz on a 120 Hz screen is 3), where the
+    // halves cannot split evenly: the spare frame joins the lit half or
+    // the dark. 'lit' and 'dark' are the only two options; a third,
+    // alternating one would read as flicker at half the rate.
+    id: 'spareMode', section: 'render', label: 'Odd frame bias', kind: 'segment', def: 'lit',
     options: [
       { value: 'lit',  label: 'Lit',  domId: 'spLit'  },
       { value: 'dark', label: 'Dark', domId: 'spDark' }
     ],
     get: S => S.spareMode,
     set: (S, mode) => { S.spareMode = mode; save(); },
-    format: S => S.spareMode
+    format: S => 'spare frame ' + S.spareMode
   },
   {
     // TEMPORARY A/B for the tunnel rings, to go once the per-ring records
