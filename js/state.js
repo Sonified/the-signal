@@ -58,6 +58,7 @@ export const S = {
   heartLookaheadS: 0.3,       // the engine's cushion, seconds; this machine's own (never a preset's)
   heartGrowX: 1.5,            // how the cushion grows on underrun; this machine's own too
   outputLatComp: true,        // the strobe audio allows for the output's latency (strobe-am.js)
+  syncDiagLog: false,         // print [syncdiag] sync and latency lines to the console (strobe-am.js)
 
   // ---------- strobe ----------
   strobeScale: 1,            // emergency master over every visual/audio strobe depth

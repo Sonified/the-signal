@@ -1712,6 +1712,16 @@ export const VISUAL_CONTROLS = [
     set: (S, on) => { S.outputLatComp = !!on; save(); },
     format: S => S.outputLatComp !== false ? 'compensated' : 'raw'
   },
+  {
+    // The [syncdiag] console lines (js/strobe-am.js syncdiag): every 2 s,
+    // the audio clock bridge, output and base latency, and the phase the
+    // ear would hear late. Off by default; this machine's own.
+    id: 'syncDiagLog', section: 'render', label: 'Console print sync and latency', kind: 'toggle', parent: 'renderAudioDrawer',
+    def: false,
+    get: S => S.syncDiagLog === true,
+    set: (S, on) => { S.syncDiagLog = !!on; save(); },
+    format: S => S.syncDiagLog === true ? 'printing' : 'off'
+  },
   subDrawer('renderPauseDrawer', 'Pause', 'render', ['pauseWindDown', 'pauseFlickerStop']),
   {
     // How long the visuals take to coast to a stop when paused (core/motion.js).

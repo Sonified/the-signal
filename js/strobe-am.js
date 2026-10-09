@@ -233,7 +233,8 @@ function dropOsc(o) {
   try { o.disconnect(); } catch (e) {}
 }
 
-// ?syncdiag=1: every 2 s, the numbers that decide whether a sample and a
+// Audio engine > Console print sync and latency (S.syncDiagLog,
+// schema-visual.js): every 2 s, the numbers that decide whether a sample and a
 // frame agree about the signal. `bridge` is the page ms at context time 0
 // (clockEst) and how far it moved since the last beat; `outputLatency` and
 // `baseLatency` are how long after currentTime a sample is actually heard,
@@ -241,7 +242,6 @@ function dropOsc(o) {
 // note above); `heart ahead` is presentTime - currentTime on a Heart
 // context; `latency as phase` is outputLatency times the live rate: the
 // cycles the ear hears late even with a perfect bridge.
-const SYNCDIAG = (() => { try { return /[?&]syncdiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
 let sdLast = 0, sdEst = NaN;
 function syncdiag() {
   const now = performance.now();
@@ -265,7 +265,7 @@ function syncdiag() {
 function track() {
   const ctx = getContext();
   if (!ctx) return;
-  if (SYNCDIAG) syncdiag();
+  if (S.syncDiagLog === true) syncdiag();
   // nothing writes the signal: steer it here (steerFromS)
   if (!signal.driven) steerFromS();
   // a link switched with no rate set alongside it
