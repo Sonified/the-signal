@@ -24,6 +24,7 @@
 //! | `heart_buffer_free(id)` | JS is done with buffer `id`; it goes once no node holds it |
 //! | `heart_param_value(node, param, frame) -> f32` | the shadow's intrinsic value of a param at a frame (a stage answers with its last computed value); NaN for an unknown param |
 //! | `heart_frame() -> f64` | the next frame to render |
+//! | `heart_skip(frames)` | a render stage's present moves on by `frames` (whole quanta) without rendering them; every node keeps its state (graph.rs, skip). The shadow ignores it. |
 //! | `heart_now(frame)` | the shadow's present moves up to `frame` (a stage's present is its render head, and it ignores this) |
 //! | `heart_stats() -> u32` | the address of eight u32 counters, below |
 //!
@@ -100,6 +101,12 @@ impl Engine {
 
     pub fn frame(&self) -> u64 {
         match &self.stage { Stage::Render(g) => g.frame(), Stage::Shadow(_) => 0 }
+    }
+
+    /// Moves a render stage's present on by `frames` without rendering them
+    /// (graph.rs, skip). The shadow has no present of its own to move.
+    pub fn skip(&mut self, frames: u64) -> u64 {
+        match &mut self.stage { Stage::Render(g) => g.skip(frames), Stage::Shadow(_) => 0 }
     }
 
     pub fn port(&mut self, kind: u32, port: u32) -> Option<&mut [f32]> {
@@ -246,6 +253,11 @@ mod abi {
     #[unsafe(no_mangle)]
     pub extern "C" fn heart_frame() -> f64 {
         engine().map_or(0.0, |e| e.frame() as f64)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn heart_skip(frames: f64) {
+        if let Some(e) = engine() { if frames > 0.0 { e.skip(frames as u64); } }
     }
 
     #[unsafe(no_mangle)]

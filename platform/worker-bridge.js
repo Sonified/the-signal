@@ -51,7 +51,7 @@ import {
 import { createProfileHost } from './profile-web.js';
 import { settingsFile } from './settings-file.js';
 import { softKeyboardWanted, createSoftKeyboard } from './soft-keyboard.js';
-import { getContext } from '../js/audio.js';
+import { getContext, heartNudge } from '../js/audio.js';
 import { ENGINE_THREAD_KEY, engineThread, initEngineThread } from '../core/engine-thread.js';
 import { createAudioShell } from '../core/audio-shell.js';
 import { setMediaTransport } from '../js/background.js';
@@ -203,14 +203,18 @@ function runShell(canvas, worker, shell, size0, env) {
     try { canvas.setPointerCapture(e.pointerId); } catch {}
     // The first gesture wakes the sound here, inside the gesture itself.
     shell.wake();
+    heartNudge();
     send({ k: 'in', t: 'down', e: pointerCopy(e) });
   });
-  canvas.addEventListener('pointermove', e => send({ k: 'in', t: 'move', e: pointerCopy(e) }));
+  // Any hand wakes a resting Heart here, where the sound lives, before the
+  // click that may resume (js/audio.js, Heart's rest).
+  canvas.addEventListener('pointermove', e => { heartNudge(); send({ k: 'in', t: 'move', e: pointerCopy(e) }); });
   canvas.addEventListener('pointerup', e => { if (kb) kb.up(e); send({ k: 'in', t: 'up', e: pointerCopy(e) }); });
   canvas.addEventListener('pointercancel', e => { if (kb) kb.cancel(e); send({ k: 'in', t: 'cancel', e: pointerCopy(e) }); });
   canvas.addEventListener('pointerleave', e => send({ k: 'in', t: 'leave', e: pointerCopy(e) }));
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
+    heartNudge();
     const c = pointerCopy(e);
     c.deltaX = e.deltaX; c.deltaY = e.deltaY; c.deltaMode = e.deltaMode;
     send({ k: 'in', t: 'wheel', e: c });
@@ -219,6 +223,7 @@ function runShell(canvas, worker, shell, size0, env) {
     if (!canvasOwnsKeys(canvas)) return;
     if (!e.metaKey && !e.ctrlKey && GUARDED_KEYS.has(e.code)) e.preventDefault();
     shell.wake();
+    heartNudge();
     send({ k: 'in', t: 'key', e: keyCopy(e) });
   });
   window.addEventListener('keyup', e => {

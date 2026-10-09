@@ -382,3 +382,123 @@ test('lookahead, message mode: every change is posted, and the lookahead rides t
     w.close();
   }
 });
+
+// ---------- the rest ----------
+// A paused session's master shut (js/audio.js): the drain rests, and a stage
+// that obeys the clock and the ring finds no room and renders nothing. The
+// wake moves the stage's present just ahead of now without rendering the
+// gap (render-worker.js skipTo), its chunks carry their engine frames
+// (ring.js labels), and the drain drops what was rendered before the rest
+// as late and plays the first frame after the jump exactly at its moment.
+function writeLabelled(ring, start) {
+  const src = new Float32Array(CHUNK);
+  for (let i = 0; i < CHUNK; i++) src[i] = start + i;
+  ring.write(0, src, 0, CHUNK);
+  for (let i = 0; i < CHUNK; i++) src[i] = -(start + i);
+  ring.write(1, src, 0, CHUNK);
+  ring.commit(CHUNK, start);
+}
+
+test('rest: nothing consumed, counted or rung while resting; a wake plays the jumped stage exactly on time, nothing shifted', () => {
+  const policy = { base: 2048, max: 8192, hidden: 4096, steady: 1e9 };
+  const ctl = makeControl(2, policy.base);
+  const ring = new SharedRing(SharedRing.describe(2, policy.max + CHUNK));
+  const drain = new Drain({ control: ctl, stages: 2, post: () => {}, lookahead: policy });
+  drain.attach(ring);
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  let head = 0, chunks = 0;
+  // The stage: renders while the next chunk ends within the clock it can
+  // see plus the lookahead, and the ring has room.
+  const render = () => {
+    const limit = Atomics.load(ctl, PLAYED) * QUANTUM + Atomics.load(ctl, LOOKAHEAD);
+    while (ring.writable() >= CHUNK && head + CHUNK <= limit) { writeLabelled(ring, head); head += CHUNK; chunks++; }
+  };
+  // One quantum: silence, or exactly the engine frames its count says.
+  const play = () => {
+    const frame = drain.played * QUANTUM;
+    render();
+    drain.play(L, R, 0);
+    if (L.every(v => v === 0) && R.every(v => v === 0) && frame !== 0) return -1;
+    for (let i = 0; i < QUANTUM; i++) {
+      if (L[i] !== frame + i || R[i] !== -(frame + i)) assert.fail(`frame ${frame + i} played as ${L[i]}`);
+    }
+    return frame;
+  };
+
+  for (let q = 0; q < 300; q++) play();
+  assert.equal(drain.underruns, 0, 'a steady start');
+
+  drain.setResting(true);
+  render();   // the stage catches up with the last count it was shown
+  const p0 = Atomics.load(ctl, PLAYED), r0 = ring.readable(), c0 = chunks, played0 = drain.played;
+  Atomics.store(ctl, wakeOf(0), p0 + 1);   // a stage asking to be woken on the next quantum
+  for (let q = 0; q < 2000; q++) assert.equal(play(), -1, 'silence while resting');
+  assert.equal(chunks, c0, 'no chunk rendered while resting');
+  assert.equal(ring.readable(), r0, 'nothing consumed');
+  assert.equal(Atomics.load(ctl, PLAYED), p0, 'the count the stages read stands still');
+  assert.equal(Atomics.load(ctl, bellOf(0)), 0, 'no bell rung');
+  assert.equal(drain.played, played0 + 2000, 'yet every quantum is counted: the time map holds');
+  assert.equal(drain.underruns, 0, 'resting is not underrunning');
+
+  // The wake: the stage lands four chunks past now, then the drain goes.
+  const clock = drain.played * QUANTUM;
+  const landed = Math.ceil((clock + 4 * CHUNK) / CHUNK) * CHUNK;
+  head = Math.max(head, landed);
+  drain.setResting(false);
+  assert.equal(Atomics.load(ctl, PLAYED), drain.played, 'the count published at once');
+  assert.ok(Atomics.load(ctl, bellOf(0)) > 0 && Atomics.load(ctl, bellOf(1)) > 0, 'every stage rung');
+  const c1 = chunks;
+  let first = -1, silentAfter = 0;
+  for (let q = 0; q < 2000; q++) {
+    const f = play();
+    if (f < 0) silentAfter++;
+    else if (first < 0) first = f;
+  }
+  assert.equal(first, landed, 'the first sound is the first frame after the jump, at its own moment');
+  assert.equal(silentAfter, (landed - clock) / QUANTUM, 'silent only until then');
+  assert.equal(drain.underruns, 0, 'the refill is not an underrun');
+  assert.equal(Atomics.load(ctl, UNDERRUNS), 0);
+  assert.equal(chunks - c1, (head - landed) / CHUNK, 'the gap was skipped, never rendered');
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), policy.base, 'nothing grown or learned from the rest');
+});
+
+test('rest, message mode: the jump rides the chunks\' labels, and the clock goes back with the dropped ones', async () => {
+  const { writer, reader } = MessageRing.describe(2, 8 * CHUNK);
+  const w = openRing(writer, 'writer');
+  const drain = new Drain({ post: () => {} });
+  drain.attach(openRing(reader, 'reader'));
+  const r = drain.ring;
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  let head = 0;
+  // The writer fills whatever has come back until the reader holds all of it.
+  const feed = () => until(() => {
+    while (w.writable() >= CHUNK) { writeLabelled(w, head); head += CHUNK; }
+    return r.readable() >= 8 * CHUNK;
+  });
+  try {
+    await feed();
+    for (let q = 0; q < 16; q++) drain.play(L, R, 0);
+    await feed();
+    drain.setResting(true);
+    for (let q = 0; q < 500; q++) drain.play(L, R, 0);
+    assert.equal(r.readable(), 8 * CHUNK, 'nothing consumed while resting');
+    const clock = drain.played * QUANTUM, landed = Math.ceil((clock + 4 * CHUNK) / CHUNK) * CHUNK;
+    head = landed;
+    drain.setResting(false);
+    drain.play(L, R, 0);                     // drops every chunk from before the rest
+    assert.ok(L.every(v => v === 0), 'silence while the jump is on its way');
+    await until(() => w.clock === clock + QUANTUM && w.writable() === 8 * CHUNK);
+    await feed();
+    let first = -1;
+    for (let q = 0; q < 64 && first < 0; q++) {
+      const frame = drain.played * QUANTUM;
+      drain.play(L, R, 0);
+      if (L[0] !== 0) { first = frame; assert.equal(L[5], frame + 5, 'exactly its engine frames'); }
+    }
+    assert.equal(first, landed, 'the first frame after the jump plays at its own moment');
+    assert.equal(drain.underruns, 0);
+  } finally {
+    drain.close();
+    w.close();
+  }
+});

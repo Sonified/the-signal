@@ -114,7 +114,9 @@ function fakeHeart() {
       new Uint32Array(memory.buffer)[ptrOut >> 2] = at;
       return len;
     },
-    heart_frame() { return frame; }
+    heart_frame() { return frame; },
+    // A rest's jump: the present moves on, nothing is rendered.
+    heart_skip(frames) { frame += frames; }
   };
 }
 

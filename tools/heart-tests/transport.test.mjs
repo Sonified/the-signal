@@ -20,7 +20,8 @@
 // there, going fullscreen raises it to the fullscreen floor and holds it
 // there, and once both are over it eases back to the ratchet's floor and
 // no further. And a stage made too slow to keep up is told apart from a
-// stall: reported as an overload, once.
+// stall: reported as an overload, once. Last, the rest: nothing rendered
+// while it lasts, and the time map unmoved across it.
 //
 //   node tools/heart-tests/transport.test.mjs
 
@@ -273,10 +274,51 @@ async function overload(t, isolated, workers) {
   }
 }
 
+// The rest (engine.js rest and wake): while it lasts no stage renders a
+// chunk and the drain plays silence without counting an underrun; the wake
+// lands every stage just ahead of now, and every quantum played after it is
+// still exactly its engine frames, islands in step with the mix: the frame
+// mapping is the same across the sleep.
+async function rests(t, isolated, workers) {
+  globalThis.crossOriginIsolated = isolated;
+  const ctx = fakeContext();
+  const engine = await startEngine(ctx, { workers, seed: 0, wasmUrl: WASM_URL, handheld: false });
+  try {
+    const log = ctx.log;
+    await wait(600);
+    await until(() => log.F !== null && engine.frameAt(log.F / SR) === 0, 3000, 'F');
+    const when = log.F / SR + 60, mapped = engine.frameAt(when);
+    const underruns = engine.stats().underruns;
+    engine.rest();
+    assert.equal(engine.isResting(), true);
+    await wait(300);                      // the stages fill what room is left and stop
+    const heads = engine.heads(), silent = log.silent, quanta = log.quanta;
+    await wait(1500);
+    assert.equal(engine.heads(), heads, 'no stage rendered while resting');
+    assert.ok(log.quanta - quanta > 400, 'the clock ran on');
+    assert.equal(log.silent - silent, log.quanta - quanta, 'silence while resting');
+    engine.wake();
+    assert.equal(engine.isResting(), false);
+    const woke = log.quanta;
+    await until(() => log.quanta - log.silent > woke - silent + 50, 3000, 'sound again');
+    await wait(800);
+    assert.deepEqual(log.bad, [], 'every quantum played is exactly its engine frames, across the rest and the wake');
+    assert.equal(engine.frameAt(when), mapped, 'the frame mapping is the same across the sleep');
+    assert.equal(engine.stats().underruns, underruns, 'neither the rest nor the refill counted as an underrun');
+    assert.deepEqual([...log.rights], [workers === 3 ? 3 : 0], 'the islands reached the mix in step');
+    t.diagnostic(`${log.quanta - woke} quanta since the wake, ${log.silent} silent in all`);
+  } finally {
+    engine?.close();
+    await wait(20);
+    ctx.stop();
+  }
+}
+
 for (const [isolated, workers] of [[true, 3], [false, 3], [true, 1], [false, 1]]) {
   const mode = `${isolated ? 'SAB' : 'message'} mode, ${workers === 1 ? 'one combined worker' : 'a mix and two islands'}`;
   test(`lookahead adapts: ${mode}`, t => adapts(t, isolated, workers));
   test(`overload told apart: ${mode}`, t => overload(t, isolated, workers));
+  test(`rest and wake: ${mode}`, t => rests(t, isolated, workers));
 }
 
 test('no wasm: null and the native engine stays', async () => {

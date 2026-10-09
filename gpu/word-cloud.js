@@ -379,5 +379,8 @@ export function createWordCloud(device, format, text) {
     pass.draw(6);
   }
 
-  return { update, encode, draw, resize };
+  // A cloud or its departing tail still moving, for the still frame (main.js).
+  const busy = () => active;
+
+  return { update, encode, draw, resize, busy };
 }

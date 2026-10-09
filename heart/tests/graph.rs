@@ -188,6 +188,28 @@ fn a_gain_follows_its_automation() {
 }
 
 #[test]
+fn a_skip_moves_the_present_without_rendering_and_what_fell_due_meets_the_next_frame() {
+    let mut g = graph();
+    // A source that lives entirely inside the gap, and one that outlives it.
+    g.add_node(1, dc(1.0));
+    g.add_node(2, dc(0.5));
+    make(&mut g, 3, kind::GAIN, &[]);
+    connect(&mut g, 1, MASTER);
+    connect(&mut g, 2, 3);
+    connect(&mut g, 3, MASTER);
+    start(&mut g, 1, 1000.0);
+    g.apply(1, Command::Stop { time: 2000.0 });
+    start(&mut g, 2, 1500.0);
+    set(&mut g, 3, 0, 1200.0, 0.25);
+    all(&play(&mut g, 256).0, 0.0);
+    assert_eq!(g.skip(4000), 4096 + 128, "whole quanta only, from 256");
+    assert_eq!(g.frame(), 4224);
+    // The first source never sounds; the second plays through the gain
+    // its event set inside the gap.
+    all(&play(&mut g, 128).0, 0.125);
+}
+
+#[test]
 fn audio_into_a_param_is_added_then_clamped() {
     let mut g = graph();
     let (p, _, _) = probe(&A_PARAM);

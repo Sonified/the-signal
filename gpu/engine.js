@@ -401,6 +401,11 @@ export async function createEngine(platform, opts) {
     pixelWidth: 0, pixelHeight: 0,
     // What the last render() did, for the perf counters in main.js.
     lastDirect: false, lastCapture: false,
+    // Frames encoded so far, for the idle diagnostic (main.js).
+    frames: 0,
+    // The still frame (start, below): sleep() stops asking for frames,
+    // wake() asks again and says whether it was asleep.
+    sleep() {}, wake() { return false; }, busy,
     gpu, gpuInfo,
     start, render, registerScene, registerFlowers, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
     onGpuError: fn => { gpuErrorCbs.push(fn); },
@@ -633,6 +638,10 @@ export async function createEngine(platform, opts) {
     }
     engine.lastDirect = direct;
     engine.lastCapture = doCapture;
+    engine.frames++;
+    // The glass owes the picture a fresh capture (one is taken at most every
+    // CAPTURE_INTERVAL_MS), so the frame is not yet the last one it needs.
+    captureOwed = !!blur && glassVisible && (!captureValid || captureStale);
 
     if (pk >= 0) {
       encoder.resolveQuerySet(profQS, pk * PROF_TS_PER, PROF_TS_PER, profResolve, pk * 256);
@@ -674,6 +683,16 @@ export async function createEngine(platform, opts) {
     }
   }
 
+  // Whether anything the engine draws is still on the move by itself while
+  // the scene stands still: a layer's own change of setting running out on
+  // the frame's clock (the edge's crossfade, a word's cloud or smoke tail),
+  // or the glass owing a capture. main.js asks before letting the loop rest.
+  let captureOwed = false;
+  function busy() {
+    return captureOwed || !!(scene && scene.busy && scene.busy()) ||
+      !!(wordCloud && wordCloud.busy && wordCloud.busy()) || !!(wordSmoke && wordSmoke.busy && wordSmoke.busy());
+  }
+
   let rafHandle = 0;
   function start(frameFn) {
     let lastFrameT = null;
@@ -684,8 +703,32 @@ export async function createEngine(platform, opts) {
     // back asks for the next frame, and the wake rule (core/wake.js) makes
     // that first frame advance nothing.
     let pageHidden = platform.hidden ? platform.hidden() : false;
+    // The still frame (main.js): asleep, no frame is asked for and the
+    // canvas keeps showing the last one presented, since a WebGPU canvas
+    // changes only when a frame takes its texture and submits. The first
+    // frame after a sleep is an ordinary frame with nothing to advance (dt
+    // zero), not a wake from an absence: nothing was moving while it slept,
+    // so nothing is owed, and no contrast ramp is needed (core/wake.js).
+    let asleep = false, slept = false;
+    engine.sleep = () => {
+      if (asleep) return;
+      asleep = true;
+      if (rafHandle) cancelAnimationFrame(rafHandle);
+      rafHandle = 0;
+    };
+    engine.wake = () => {
+      if (!asleep) return false;
+      asleep = false;
+      slept = true;
+      if (!rafHandle && !deviceLost && !pageHidden) rafHandle = requestAnimationFrame(raf);
+      return true;
+    };
     platform.onVisibility(visible => {
       pageHidden = !visible;
+      // Coming back into view is the absence's own wake, whatever the
+      // loop was doing before it went.
+      asleep = false;
+      slept = false;
       if (pageHidden) {
         if (rafHandle) cancelAnimationFrame(rafHandle);
         rafHandle = 0;
@@ -700,8 +743,8 @@ export async function createEngine(platform, opts) {
       // to, and integration is responsible for deciding whether to build a
       // new engine. Every other frame requests its successor first thing, as
       // v0 does, so a slow frame never pushes the next one further out than
-      // it has to be.
-      if (deviceLost || pageHidden) return;
+      // it has to be; a frame that puts the loop to sleep cancels it again.
+      if (deviceLost || pageHidden || asleep) return;
       rafHandle = requestAnimationFrame(raf);
       frameT = t;
       // The wake rule (core/wake.js): a frame after an absence, the first
@@ -709,8 +752,9 @@ export async function createEngine(platform, opts) {
       // nothing. Its dt is zero, for the frame function and for every layer
       // render() updates below, and away (the ms spent gone, else -1) tells
       // the frame function to re-anchor its schedulers by that much.
-      const away = wakeGap(t, lastFrameT);
-      let dt = away >= 0 ? 0 : (t - lastFrameT) / 1000;
+      const away = slept ? -1 : wakeGap(t, lastFrameT);
+      let dt = away >= 0 || slept ? 0 : (t - lastFrameT) / 1000;
+      slept = false;
       lastFrameT = t;
       if (dt < 0) dt = 0;
       frameDt = dt;

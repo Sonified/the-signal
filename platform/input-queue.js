@@ -9,11 +9,15 @@
 // Every filler reads its source by the DOM event's own field names (clientX,
 // shiftKey, deltaMode, timeStamp and the rest), which is what lets a posted
 // copy stand in for the real event without a translation step of its own.
+//
+// onInput(type), when given, hears every event as it is queued, before any
+// frame polls it: the frame loop may be resting (main.js, the still frame),
+// and an event is what wakes it.
 
 const POOL_SIZE = 256;
 const LINE_PX = 16;       // wheel deltaMode 1 (line) to px, matching typical UA default
 
-export function createInputQueue() {
+export function createInputQueue(onInput = null) {
   // A fixed ring of reused event objects, so a burst of pointer or key
   // activity never asks the GC for anything. pollInput hands back one of two
   // ping-ponged arrays: the caller reads the one just filled while the next
@@ -68,6 +72,7 @@ export function createInputQueue() {
   // 'leave' is reported as it comes and leaves a pending move alone; 'move'
   // reuses the pointer's pending move event when there is one.
   function pointer(type, e) {
+    if (onInput) onInput(type);
     if (type === 'move') {
       let o = moveByPointer.get(e.pointerId);
       if (!o) {
@@ -84,6 +89,7 @@ export function createInputQueue() {
   // pageW and pageH are the surface's size in css px, which a page-mode
   // (deltaMode 2) scroll is measured in.
   function wheel(e, pageW, pageH) {
+    if (onInput) onInput('wheel');
     const o = pushEvent();
     o.type = 'wheel';
     o.x = e.clientX; o.y = e.clientY;
@@ -97,6 +103,7 @@ export function createInputQueue() {
 
   // type is 'key' or 'keyup'.
   function key(type, e) {
+    if (onInput) onInput(type);
     const o = pushEvent();
     o.type = type;
     o.key = e.key; o.code = e.code;
@@ -110,6 +117,7 @@ export function createInputQueue() {
   // ring comes round again.
   const PASTE_MAX = 512;
   function paste(text, time) {
+    if (onInput) onInput('key');
     const o = pushEvent();
     o.type = 'key';
     o.key = String(text).slice(0, PASTE_MAX);

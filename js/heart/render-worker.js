@@ -59,6 +59,16 @@
 // returned chunks would otherwise be a turn that never ends. Until the
 // timer fires every other wake-up returns at once.
 //
+// Resting. While the session is paused and its master shut, the drain stops
+// consuming (drain-worklet.js, the rest), so every stage soon finds itself
+// as far ahead as it may go and sleeps, rendering nothing. The wake is a
+// 'skip' from the page naming a frame just ahead of now: a stage behind it
+// moves its present there without rendering the frames in between
+// (heart_skip), and renders on from it. Every chunk carries the engine
+// frame it starts at (ring.js, labels), so the mix drops whatever of an
+// island's ring is older than its own frame, and the drain lines the final
+// ring up with its clock, whichever stage woke first.
+//
 // Memory. Every ABI call that can allocate can grow the wasm memory, which
 // detaches the typed arrays over the old one, so they are re-taken through
 // view() after each such call and indices, not views, are kept.
@@ -104,6 +114,7 @@ function apply(d) {
     else if (d.type === 'buffer') upload(d);
     else if (d.type === 'free') wasm.heart_buffer_free(d.id);
     else if (d.type === 'inspect') inspect(d.ask);
+    else if (d.type === 'skip') skipTo(d.to, d.clock);
   } catch (err) { fail(err); }
 }
 
@@ -207,8 +218,41 @@ function ahead() {
 function ready() {
   if (out.writable() < chunk) return false;
   if (frame + chunk > played() + ahead()) return false;
-  for (const i of ins) if (i.ring.readable() < chunk) return false;
+  for (const i of ins) {
+    dropStale(i);
+    if (i.ring.readable() < chunk) return false;
+  }
   return true;
+}
+
+// The mix only: an island's frames older than the mix's own present, left
+// in its ring from before a wake's jump, are dropped, a labelled run at a
+// time, and the island rung for the room. Ordinarily the next frame waiting
+// is exactly the mix's own and nothing is dropped.
+function dropStale(i) {
+  const ring = i.ring;
+  for (let at = ring.label(); at >= 0 && at < frame; at = ring.label()) {
+    const n = Math.min(ring.run(), frame - at, ring.readable());
+    if (!(n > 0)) return;
+    ring.release(n);
+    if (ctl) ringBell(ctl, i.stage);
+  }
+}
+
+// A wake (engine.js): the present moves to `to` without rendering the frames
+// between, if it is not there already. A stage that got there first (it
+// rendered up to it before the rest) carries on as it is; either way its
+// frames stay labelled with the truth. Without the control block the mix
+// knows the clock only from the chunks the drain sends back, and none came
+// back while it rested, so the page's reading of it comes along.
+function skipTo(to, clock) {
+  if (!ctl && clock > out.clock) out.clock = clock;
+  if (!(to > frame)) return;
+  wasm.heart_skip(to - frame);
+  frame = to;
+  report(renderMs);
+  if (ctl) ringBell(ctl, stage);
+  else soon();
 }
 
 function soon() {
@@ -267,13 +311,13 @@ function render() {
   if (ins.length) pullIngress();
   // The frame is counted here rather than taken from heart_render's u32,
   // which JS reads as a signed i32 that would wrap after twelve hours.
-  const t0 = performance.now();
+  const t0 = performance.now(), at = frame;
   wasm.heart_render(chunk);
   const ms = performance.now() - t0;
   frame += chunk;
   view();
   if (role === ROLE_ISLAND) pushEgress(); else pushMaster();
-  out.commit(chunk);
+  out.commit(chunk, at);
   if (ctl && role === ROLE_ISLAND) ringBell(ctl, 0);
   events();
   report(ms);

@@ -118,6 +118,7 @@ import { KALEIDO_WGSL } from './kaleido.wgsl.js';
 import { MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade, radialFadeIn, RADIAL_FADE_OUT_K } from '../core/fade.js';
 import { motionStep } from '../core/motion.js';
+import { idleHold, idleRelease } from '../core/idle.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './feedback.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
@@ -755,12 +756,16 @@ export function createKaleido(device, format, platform) {
     // beside main.js's [boot] stamps, since this atlas is megabytes
     const t0 = performance.now();
     console.log('[boot] kaleido atlas fetch begins (' + url + ') +' + Math.round(t0) + 'ms');
+    // A paused frame loop stays awake until the atlas is in, then draws it
+    // (core/idle.js).
+    idleHold();
     platform.loadImagePixels(url)
       .then(img => {
         console.log('[boot] kaleido atlas decoded in ' + Math.round(performance.now() - t0) + 'ms, repacking');
         return buildAtlas(img, token, set, url);
       })
-      .catch(err => { console.warn('kaleido: could not load the motif atlas ' + url + ':', err && err.message ? err.message : err); });
+      .catch(err => { console.warn('kaleido: could not load the motif atlas ' + url + ':', err && err.message ? err.message : err); })
+      .finally(() => idleRelease('the kaleidoscope atlas'));
   }
 
   // A square 8 x 8 atlas of any other size, repacked into layout L (the

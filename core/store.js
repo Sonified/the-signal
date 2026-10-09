@@ -41,6 +41,7 @@
 
 import { S, layers, STORE, SKIP_KEY, seqSeat, CORNER_TYPES } from '../js/state.js';
 import { setColorFromPicker } from '../js/color.js';
+import { idleWake } from './idle.js';
 import { applyEdgeDir } from '../js/sim.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
 import { CHANNELS, applyMixGates } from '../js/mixgate.js';
@@ -477,6 +478,11 @@ function saveDue() {
   if (hidden) { writeNow(); return; }
   writeDue = true;
 }
+// A change not yet written: its timer still running, or due after the next
+// frame. The still frame (main.js) waits for it, since the write itself
+// rides a frame.
+export function savePending() { return writeDue || !!saveTimer; }
+
 export function writeDueAfterFrame() {
   if (!writeDue) return;
   writeDue = false;
@@ -484,6 +490,8 @@ export function writeDueAfterFrame() {
 }
 
 export function save() {
+  // a change while the frame loop rests must be drawn (core/idle.js)
+  idleWake('a setting changed');
   if (applyingRemote) return;
   dirtyShared = dirtyExtra = true;
   lastSaveCall = Date.now();

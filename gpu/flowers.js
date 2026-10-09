@@ -32,6 +32,7 @@ import { scaledStrobeDepth } from '../js/strobe-scale.js';
 import { FLOWERS_WGSL, MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade } from '../core/fade.js';
 import { motionStep } from '../core/motion.js';
+import { idleHold, idleRelease } from '../core/idle.js';
 
 // Relative to the page, which lives at the site root, so this resolves from
 // the repo root.
@@ -187,12 +188,16 @@ export function createFlowers(device, format, platform) {
     // app's biggest single asset, so its cost should be visible
     const t0 = performance.now();
     console.log('[boot] lotus sheet fetch begins +' + Math.round(t0) + 'ms');
+    // A paused frame loop stays awake until the atlas is in, then draws it
+    // (core/idle.js).
+    idleHold();
     platform.loadImagePixels(SHEET_URL)
       .then(img => {
         console.log('[boot] lotus sheet decoded in ' + Math.round(performance.now() - t0) + 'ms, building atlas');
         return buildAtlas(img);
       })
-      .catch(err => { console.warn('flowers: could not load the lotus sheet:', err && err.message ? err.message : err); });
+      .catch(err => { console.warn('flowers: could not load the lotus sheet:', err && err.message ? err.message : err); })
+      .finally(() => idleRelease('the lotus atlas'));
   }
 
   async function buildAtlas(img) {

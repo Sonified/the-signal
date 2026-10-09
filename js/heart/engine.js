@@ -35,6 +35,17 @@
 // (a few milliseconds after start, or after the context first runs) they
 // assume engine frame 0 plays at the next native quantum, which is right to
 // within the time the first block takes to render.
+//
+// The rest (drain-worklet.js says how it works). rest() is for when nothing
+// Heart renders can be heard, a paused session with its master shut
+// (js/audio.js decides): the drain stops consuming, the stages run out of
+// room and sleep, and nothing is rendered for as long as it lasts. wake()
+// moves every stage's present to a frame WAKE_LEAD ahead of now and lets
+// the drain go, so what was rendered before the rest is dropped as late and
+// the first frame after the jump plays exactly at its moment: the time map
+// never moves. The cushion is back about WAKE_LEAD later, so the page wakes
+// it on the first sign of a hand (a pointer moving), before the click that
+// resumes.
 
 import {
   QUANTUM, CHUNK, EGRESS_CHANNELS, PLAYED, UNDERRUNS, LOOKAHEAD_NEXT, headOf, renderOf,
@@ -92,6 +103,11 @@ const STEADY_SECONDS = 30;
 // why islands key on ring room there).
 const ISLAND_CHUNKS = 3;
 const START_TIMEOUT_MS = 10000;
+// How far ahead of now a wake lands every stage, in chunks: the time a
+// sleeping worker takes to hear the message and render its first chunk,
+// with room to spare. About 43 ms at 48 kHz, heard only if the wake is the
+// resume itself.
+const WAKE_LEAD_CHUNKS = 4;
 const STATS_MS = 250;
 // A stage overloaded this many stats ticks running (a second) is told of,
 // and not again for OVERLOAD_QUIET_MS.
@@ -279,12 +295,34 @@ async function assemble(engine, ctx, module, opts) {
   // own heads keep the horizon beyond what they rendered under the old one.
   const lead = stages.length === 1 ? 0 : shared ? CHUNK : ISLAND_CHUNKS * CHUNK;
   const aheadFrames = () => control ? Atomics.load(control, LOOKAHEAD_NEXT) : drainNews.next;
+  // While the drain rests its count stands still, so the clock is read off
+  // the context instead; and no horizon falls short of the last wake's
+  // landing, which the stages may not have published yet.
   function horizon() {
-    const played = control ? Atomics.load(control, PLAYED) * QUANTUM : Math.max(0, time.frameAt(ctx.currentTime));
-    let h = played + aheadFrames() + lead;
+    const played = control && !resting ? Atomics.load(control, PLAYED) * QUANTUM : Math.max(0, time.frameAt(ctx.currentTime));
+    let h = Math.max(played + aheadFrames() + lead, landed);
     for (const st of stages) h = Math.max(h, headFrame(st.id));
     return h + CHUNK;
   }
+
+  // ---------- the rest ----------
+  let resting = false, landed = 0;
+  function rest() {
+    if (closed || resting) return;
+    resting = true;
+    output.port.postMessage({ type: 'rest', on: true });
+  }
+  function wake() {
+    if (closed || !resting) return;
+    resting = false;
+    const clock = Math.max(0, time.frameAt(ctx.currentTime));
+    landed = Math.max(landed, Math.ceil((clock + WAKE_LEAD_CHUNKS * CHUNK) / CHUNK) * CHUNK);
+    for (const w of workers) w.postMessage({ type: 'skip', to: landed, clock });
+    output.port.postMessage({ type: 'rest', on: false });
+  }
+  // Every frame the stages have rendered or skipped, summed: for the idle
+  // diagnostic, whose heartbeat reads its growth while resting (none).
+  const headsSum = () => { let n = 0; for (const st of stages) n += headFrame(st.id); return n; };
 
   // Each stage's own counters (lib.rs heart_stats) and memory, asked for and
   // answered over its port: for tests and for a look under the hood.
@@ -471,6 +509,10 @@ async function assemble(engine, ctx, module, opts) {
       policy.grow = x;
       output.port.postMessage({ type: 'grow', x });
     },
+    rest,
+    wake,
+    isResting: () => resting,
+    heads: headsSum,
     inspect,
     close
   });

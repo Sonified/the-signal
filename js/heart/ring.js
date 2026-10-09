@@ -26,6 +26,20 @@
 //   read(c, dst, to, frames, at)        copies channel c into dst[to..],
 //                                       `at` frames past the read index
 //   release(frames)                     gives them back to the writer
+//   label()                             the engine frame of the next frame
+//                                       to read, or -1 when unknown
+//   run()                               frames to read before the label
+//                                       may jump
+//
+// Labels. A stage passes commit() the engine frame of the chunk's first
+// sample, and the ring carries it to the reader beside the samples, so the
+// reader knows which moment it holds without counting. Counting is all it
+// needed while every stage rendered every frame; a stage that rests
+// (render-worker.js, skipTo) jumps its present forward instead, and the
+// frames after the jump are labelled with where it landed. The drain then
+// lines them up with its clock and the mix with its own frame, both
+// exactly, whatever order the stages woke in. A commit without a label
+// (the tests' hand-written chunks) leaves the reader counting as before.
 //
 // Copies are plain loops over (array, index) pairs rather than set() over
 // subarray views, because a view is an allocation and the drain reads its
@@ -56,6 +70,13 @@ export const ingressKey = (stage, port) => stage * MAX_PORTS + port;
 // so read === write means empty and never full. Each channel is a plane of
 // `size` floats after the 8-byte header of the two indices.
 const READ = 0, WRITE = 1, HEADER_BYTES = 8;
+// The labels ride a small queue of their own after the planes: one entry per
+// labelled commit (its first frame's label, f64, and its length), with its
+// own read and write indices, published before the samples' write index so
+// a reader never sees frames whose label has not landed. Room for a commit
+// as small as a quantum all the way round, and two over.
+const labelSlots = capacity => Math.ceil(capacity / QUANTUM) + 2;
+const labelsAt = (channels, capacity) => (HEADER_BYTES + 4 * channels * (capacity + 1) + 7) & ~7;
 
 export class SharedRing {
   constructor({ sab, channels, capacity }) {
@@ -64,6 +85,12 @@ export class SharedRing {
     this.size = capacity + 1;
     this.at = new Int32Array(sab, 0, 2);
     this.data = new Float32Array(sab, HEADER_BYTES, channels * this.size);
+    const n = labelSlots(capacity), at = labelsAt(channels, capacity);
+    this.lab = new Int32Array(sab, at, 2);
+    this.labFrame = new Float64Array(sab, at + 8, n);
+    this.labLen = new Int32Array(sab, at + 8 + 8 * n, n);
+    this.labSlots = n;
+    this.labUsed = 0;      // reader: frames already read of the head entry
     // The clock and the lookahead ride the control block in this mode;
     // kept so the two rings read the same to their users.
     this.clock = 0;
@@ -72,7 +99,7 @@ export class SharedRing {
   }
 
   static describe(channels, capacity) {
-    const sab = new SharedArrayBuffer(HEADER_BYTES + 4 * channels * (capacity + 1));
+    const sab = new SharedArrayBuffer(labelsAt(channels, capacity) + 8 + 12 * labelSlots(capacity));
     return { kind: 'shared', sab, channels, capacity };
   }
 
@@ -96,7 +123,13 @@ export class SharedRing {
     data.fill(0, base + pos, base + pos + first);
     data.fill(0, base, base + frames - first);
   }
-  commit(frames) {
+  commit(frames, label = -1) {
+    if (label >= 0) {
+      const w = Atomics.load(this.lab, WRITE);
+      this.labFrame[w] = label;
+      this.labLen[w] = frames;
+      Atomics.store(this.lab, WRITE, (w + 1) % this.labSlots);
+    }
     Atomics.store(this.at, WRITE, (Atomics.load(this.at, WRITE) + frames) % this.size);
   }
 
@@ -110,6 +143,23 @@ export class SharedRing {
   }
   release(frames) {
     Atomics.store(this.at, READ, (Atomics.load(this.at, READ) + frames) % this.size);
+    let r = Atomics.load(this.lab, READ);
+    if (r === Atomics.load(this.lab, WRITE)) return;
+    this.labUsed += frames;
+    while (r !== Atomics.load(this.lab, WRITE) && this.labUsed >= this.labLen[r]) {
+      this.labUsed -= this.labLen[r];
+      r = (r + 1) % this.labSlots;
+    }
+    Atomics.store(this.lab, READ, r);
+  }
+
+  label() {
+    const r = Atomics.load(this.lab, READ);
+    return r === Atomics.load(this.lab, WRITE) ? -1 : this.labFrame[r] + this.labUsed;
+  }
+  run() {
+    const r = Atomics.load(this.lab, READ);
+    return r === Atomics.load(this.lab, WRITE) ? Infinity : this.labLen[r] - this.labUsed;
   }
 
   close() {}
@@ -124,7 +174,8 @@ export class SharedRing {
 // (the frames the drain has played, as far as the reader knows) and its
 // lookahead (the frames the writer may render past that clock, 0 for none
 // to give) ride each returned chunk, which is how the mix hears the drain's
-// progress and its lookahead without a channel of its own.
+// progress and its lookahead without a channel of its own. Going the other
+// way, towards the reader, `clock` carries the chunk's label (-1 for none).
 export class MessageRing {
   constructor({ port, channels, chunk, slots }, side) {
     this.port = port;
@@ -142,6 +193,7 @@ export class MessageRing {
     this.filling = null;
     // reader
     this.queue = new Array(slots).fill(null);
+    this.labels = new Float64Array(slots).fill(-1);
     this.head = 0;
     this.queued = 0;
     this.offset = 0;
@@ -166,7 +218,9 @@ export class MessageRing {
       this.clock = clock;
       this.ahead = ahead;
     } else {
-      this.queue[(this.head + this.queued) % this.slots] = buf;
+      const k = (this.head + this.queued) % this.slots;
+      this.queue[k] = buf;
+      this.labels[k] = clock;
       this.queued++;
     }
     if (this.onchange) this.onchange();
@@ -192,15 +246,21 @@ export class MessageRing {
     this.fill().fill(0, base, base + frames);
   }
   // A chunk travels whole, so a commit is always exactly one chunk.
-  commit(frames) {
+  commit(frames, label = -1) {
     if (frames !== this.chunk) throw new Error(`heart: MessageRing commits whole chunks of ${this.chunk}, not ${frames}`);
-    this.send(this.fill(), 0, 0);
+    this.send(this.fill(), label, 0);
     this.filling = null;
     this.inFlight++;
   }
 
   // ----- reader -----
   readable() { return this.queued * this.chunk - this.offset; }
+  label() {
+    if (!this.queued) return -1;
+    const at = this.labels[this.head];
+    return at >= 0 ? at + this.offset : -1;
+  }
+  run() { return this.queued ? this.chunk - this.offset : 0; }
 
   read(c, dst, to, frames, at = 0) {
     const { chunk, slots, queue } = this;

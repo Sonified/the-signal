@@ -900,5 +900,10 @@ export function createWordSmoke(device, format, text) {
     }
   }
 
-  return { update, encode, draw, resize };
+  // A word's smoke still playing out on the frame's own clock, for the still
+  // frame (main.js). The hint's smoke steps with the motion, so a paused
+  // hint holds where it is and keeps nothing awake.
+  const busy = () => liveMode !== 0 && !live.hint;
+
+  return { update, encode, draw, resize, busy };
 }

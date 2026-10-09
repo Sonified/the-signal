@@ -386,5 +386,9 @@ export function createScene(device, format) {
     drawFront(pass);
   }
 
-  return { update, encode, draw, drawBack, drawFront, resize };
+  // Still fading between edge modes: the crossfade runs on the frame's own
+  // clock, paused or not, so the still frame (main.js) waits for it.
+  const busy = () => mode >= 0 && share[mode] < 1;
+
+  return { update, encode, draw, drawBack, drawFront, resize, busy };
 }

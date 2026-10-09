@@ -890,6 +890,10 @@ export function perfResume(away) {
   if (!tweens.size) return;
   for (const tw of tweens.values()) tw.t0 += away;
 }
+// Any glide in flight, a preset's ramp or a layer's fade: the still frame
+// (main.js) keeps the loop awake until they have all landed.
+export function perfBusy() { return tweens.size > 0 || layerFades.size > 0 || recall !== null; }
+
 export function perfTick(t) {
   nowT = t;
   if (tweens.size) {

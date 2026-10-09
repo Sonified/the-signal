@@ -579,6 +579,20 @@ impl Graph {
         frames
     }
 
+    /// Moves the present on by `frames` (whole quanta) without rendering
+    /// them: the stage's rest (js/heart/render-worker.js, a paused session
+    /// whose master is shut). Every node keeps the state it had, so this is
+    /// the same gap a node skipped as silent sees, on every node at once:
+    /// whatever falls due in between (a start, a stop, a param event) is
+    /// met at the next frame rendered, a source started and stopped inside
+    /// the gap never sounds, and a tail that would have rung out has.
+    /// Returns the new frame.
+    pub fn skip(&mut self, frames: u64) -> u64 {
+        self.frame += frames / QUANTUM as u64 * QUANTUM as u64;
+        self.release_done();
+        self.frame
+    }
+
     /// One step of one quantum; `at` is the quantum's offset in the ports.
     fn step(&mut self, step: Step, at: usize) {
         let Graph { slots, outs, ended, ports, block, scratch, buffers, events, stats, frame, sample_rate, .. } = self;

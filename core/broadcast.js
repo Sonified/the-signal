@@ -55,6 +55,7 @@
 // the drawer's list survives a reload, and a session left active reconnects
 // at boot: a demo survives the broadcaster's page refresh.
 import { S } from '../js/state.js';
+import { idleWake } from './idle.js';
 import { onSave, wireSettings, readKey, saveKey } from './store.js';
 import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl, recallStreamScene } from './presets.js';
 import { setPerfGlideHooks, perfGlideWriting, perfEachGlide, perfFollowGlide, perfFollowDrop } from './perform.js';
@@ -739,6 +740,8 @@ function openSession(s) {
       let msg;
       try { msg = JSON.parse(str); } catch (e) { return; }
       if (!msg) return;
+      // the session's label may change under a resting frame loop
+      idleWake('broadcast');
       if (msg.t === 'count' && Number.isFinite(msg.n)) {
         const had = s.watchers;
         s.watchers = msg.n | 0;
@@ -752,6 +755,7 @@ function openSession(s) {
       }
     },
     onStatus: st => {
+      idleWake('broadcast');
       if (st === 'open') {
         s.status = 'live';
         setLabel(s);
@@ -1055,6 +1059,10 @@ export function initBroadcast(bits_, hooks_) {
         let msg;
         try { msg = JSON.parse(str); } catch (e) { return; }
         if (!msg || typeof msg !== 'object') return;
+        // A follower paused and at rest still takes the room's state, so a
+        // resume shows the current truth; the loop wakes to draw it and
+        // rests again once it is still (core/idle.js, main.js).
+        idleWake('broadcast');
         if (msg.t === 'state' && msg.snap && typeof msg.snap === 'object') {
           // Deadline alignment (see sendNow): a message carrying a recall
           // says how long its glide was; this side runs what the network

@@ -46,8 +46,8 @@ import { createKeyboardLink } from './soft-keyboard.js';
 import { displayUpdate, displayPageClock } from '../js/display-watch.js';
 
 export function createWorkerPlatform(init, post) {
-  const resizeCbs = [], visCbs = [], storageCbs = [];
-  const q = createInputQueue();
+  const resizeCbs = [], visCbs = [], storageCbs = [], inputCbs = [];
+  const q = createInputQueue(type => { for (let i = 0; i < inputCbs.length; i++) inputCbs[i](type); });
   const kbLink = init.softKeyboard ? createKeyboardLink(post) : null;
 
   // The page reports event times on the shared absolute clock (its time
@@ -114,6 +114,7 @@ export function createWorkerPlatform(init, post) {
     coarse: !!(init.env && init.env.coarse),
     onResize(fn) { resizeCbs.push(fn); },
     pollInput() { framesStarted = true; return q.pollInput(); },
+    onInput(fn) { inputCbs.push(fn); },
     pollDisplay() {
       if (!displayPending) return false;
       displayPending = false;

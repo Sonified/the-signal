@@ -51,6 +51,28 @@
 // Without SharedArrayBuffer the lookahead rides each chunk going back to
 // the mix, beside the clock, and every change is posted to the page.
 //
+// The rest. A paused session whose master has shut (js/audio.js) needs
+// nothing from Heart, yet the stages would go on rendering gated silence
+// for as long as the pause lasts. So the page tells the drain to rest, and
+// it stops being the stages' clock: it still counts every quantum, so the
+// time map holds, but it reads nothing from the ring, publishes no new
+// count and rings no bell. With nothing consumed and the count standing
+// still, every stage finds itself as far ahead as it may go and sleeps on
+// its bell (message mode: no chunk comes back, so the mix's clock stands
+// still too). The quanta it rests through are counted as owed, like an
+// underrun's, without being one: nothing is learned or grown from them.
+//
+// A wake ends it. The page moves every stage's present to a frame just
+// ahead of now (render-worker.js, skipTo), and the frames that follow are
+// labelled with where they landed (ring.js, labels). Before each read the
+// drain compares the label of the next frame waiting with the frame it is
+// about to play: behind, it is late and dropped, as ever; ahead, the drain
+// plays silence until its moment comes. So the frames rendered before the
+// rest are dropped as late and the first frame after the jump plays
+// exactly when its engine frame falls due: time never shifts, and nothing
+// slept through is rendered at all. Until the ring has been filled back to
+// the lookahead, a dry quantum is the refill, not an underrun.
+//
 // Loaded with addModule by js/heart/engine.js. The logic is the Drain class,
 // which knows nothing of AudioWorkletProcessor, so it can be tested in node
 // (tools/heart-tests/drain.test.mjs); the processor at the bottom only hands
@@ -106,6 +128,9 @@ export class Drain {
     this.bad = 0;
     this.learned = 0;
     this.fullscreen = false;
+    // The rest (see the top): resting, and refilling after a wake.
+    this.resting = false;
+    this.refill = false;
     this.news = { type: 'lookahead', next: 0, target: 0, underruns: 0 };
     this.diag = diag ? { type: 'diag', what: '', played: 0, underruns: 0, run: 0, ready: 0, target: 0, next: 0, held: 0, floor: 0 } : null;
     this.runFrom = 0;
@@ -124,21 +149,51 @@ export class Drain {
       this.started = true;
       this.post({ type: 'start', F: now });
     }
+    if (this.resting) {
+      L.fill(0);
+      R.fill(0);
+      this.debt += n;
+      this.played++;
+      return;
+    }
     // The clock as it will stand once this quantum is out, for the chunks
     // released below to carry back to the mix.
     ring.clock = (this.played + 1) * QUANTUM;
     ring.ahead = this.target;
     // One look at the ring per quantum. A stage may commit between two
     // looks, and a second look could then find a quantum's worth waiting
-    // behind late frames not yet dropped, and play them late.
+    // behind late frames not yet dropped, and play them late. Late frames
+    // go a labelled run at a time, so a jump in the labels is seen before
+    // the frames after it are judged.
     let ready = ring.readable();
-    if (this.debt > 0) {
-      const late = Math.min(this.debt, ready);
-      if (late > 0) { ring.release(late); this.debt -= late; ready -= late; }
+    this.align();
+    while (this.debt > 0 && ready > 0) {
+      const late = Math.min(this.debt, ready, ring.run ? ring.run() : ready);
+      ring.release(late); this.debt -= late; ready -= late;
+      this.align();
+    }
+    // The next frame waiting is ahead of its moment: a wake's first frame,
+    // which plays when its engine frame falls due, silence until then.
+    if (this.debt < 0) {
+      L.fill(0);
+      R.fill(0);
+      this.debt += n;
+      this.tick();
+      return;
     }
     // The stages render to within a chunk of the lookahead, so a ring that
     // holds that much has been filled to it: that cushion is now held.
-    if (ready + CHUNK >= this.target) this.held = this.target;
+    if (ready + CHUNK >= this.target) {
+      this.held = this.target;
+      if (ready >= n) this.refill = false;
+    }
+    if (this.refill && ready < n) {
+      L.fill(0);
+      R.fill(0);
+      this.debt += n;
+      this.tick();
+      return;
+    }
     if (ready >= n) {
       ring.read(0, L, 0, n);
       ring.read(1, R, 0, n);
@@ -160,6 +215,32 @@ export class Drain {
       this.dry = true;
     }
     this.tick();
+  }
+
+  // The label of the next frame waiting, when the ring carries one, is
+  // the truth about which engine frame it is; the count of what was played
+  // and dropped agrees with it until a stage jumps (a wake), and then the
+  // debt takes the difference: positive, frames to drop as late; negative,
+  // quanta to wait.
+  align() {
+    const at = this.ring.label ? this.ring.label() : -1;
+    if (at >= 0) this.debt = this.played * QUANTUM - at;
+  }
+
+  // The page's word (engine.js rest and wake). Resting, the count the stages
+  // read stands still; waking, it is published at once and the stages,
+  // already told where to jump, are rung so a sleeping one hears it.
+  setResting(on) {
+    if (on === this.resting) return;
+    this.resting = on;
+    if (on) return;
+    this.refill = true;
+    this.dry = false;
+    this.calm = 0;
+    const ctl = this.ctl;
+    if (!ctl) return;
+    Atomics.store(ctl, PLAYED, this.played);
+    for (let s = 0; s < this.stages; s++) ringBell(ctl, s);
   }
 
   tick() {
@@ -248,7 +329,7 @@ export class Drain {
   steer() {
     const p = this.policy;
     if (this.rising > 0 && --this.rising === 0) this.obey(true);
-    if (this.hidden || this.rising > 0 || this.dry) return;
+    if (this.hidden || this.rising > 0 || this.dry || this.refill) return;
     const floor = this.floor();
     if (this.target <= floor) { this.calm = 0; return; }
     if (++this.calm < p.steady) return;
@@ -320,6 +401,7 @@ if (typeof registerProcessor === 'function') {
         else if (d.type === 'base') this.drain.setBase(d.frames | 0);
         else if (d.type === 'grow') this.drain.setGrow(+d.x);
         else if (d.type === 'fullscreen') this.drain.setFullscreen(d.on === true);
+        else if (d.type === 'rest') this.drain.setResting(d.on === true);
         else if (d.type === 'close') { this.alive = false; this.drain.close(); }
       };
     }

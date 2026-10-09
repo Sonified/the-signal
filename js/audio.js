@@ -8,8 +8,9 @@ import { chanGate, onChannelGates } from './mixgate.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { prepareAudioSession, startBackgroundKeepAlive, setBackgroundPlaying, setMediaWake } from './background.js';
 import { startHeart, ctxFor, masterFor, makeWorklet, heartEngine } from './heart/route.js';
-import { every, clear } from './ticker.js';
+import { every, after, clear } from './ticker.js';
 import { breath, breathState } from '../core/variance.js';
+import { IDLE_DIAG } from '../core/idle.js';
 
 let audioCtx = null, volGain = null, node = null;
 let harmDry = null, harmWet = null, convolver = null, clickWet = null;
@@ -472,6 +473,7 @@ function rampVol(target, dur, startAt) {
       anchorParam(g, now);
       g.linearRampToValueAtTime(target, glideT1);
       glideTarget.set(g, target);
+      masterTo(target, glideT1);
       return;
     }
     if (now < glideT1 && glideTarget.get(g) === target) return;
@@ -482,6 +484,7 @@ function rampVol(target, dur, startAt) {
   g.setValueAtTime(g.value, now);
   if (t > now) g.setValueAtTime(g.value, t);
   g.linearRampToValueAtTime(target, t + dur);
+  masterTo(target, t + dur);
 }
 
 // Rebuilt whenever a chirp control moves, then shipped to the worklet. Cheap:
@@ -1144,4 +1147,74 @@ function holdMaster(level, until) {
   g.linearRampToValueAtTime(level, now + SRC_GATE_S);
   g.setValueAtTime(level, until);
   g.linearRampToValueAtTime(0, until + TAIL_CLOSE_S);
+  masterTo(0, until + TAIL_CLOSE_S);
+}
+
+// ---------- Heart's rest ----------
+// While the master is shut nothing Heart renders can be heard, and paused
+// that lasts as long as the pause does, yet its stages would go on
+// rendering the gated silence the whole time. So once the master has
+// closed (a pause's tails rung out, holdMaster; or any ramp to nothing) and
+// no hand has moved for REST_QUIET_MS, Heart rests (js/heart/engine.js):
+// the drain stops consuming and every render worker sleeps. Anything that
+// opens the master wakes it, and so does any sign of a hand (heartNudge,
+// from the page's input), which is the one that matters: a pointer moving
+// towards the field wakes it some way ahead of the click that resumes, and
+// the cushion has refilled long before the gates open. A wake that is the
+// resume itself (a tap on a phone) loses the first ~43 ms of the 0.12 s
+// fade in to the refill. The time map never moves either way.
+const REST_QUIET_MS = 2000;
+let quietAt = Infinity;   // audio clock time from which the master holds at 0; Infinity while it opens
+let restTimer = 0, lastNudge = -Infinity;
+function masterTo(level, at) {
+  if (level > 0) {
+    quietAt = Infinity;
+    const eng = heartEngine();
+    if (eng && eng.isResting()) {
+      eng.wake();
+      if (IDLE_DIAG) console.log('[idlediag] Heart wakes: the master opens');
+    }
+    return;
+  }
+  quietAt = at;
+  armRest();
+}
+function armRest() {
+  if (restTimer || quietAt === Infinity || !audioCtx) return;
+  const eng = heartEngine();
+  if (!eng || eng.isResting()) return;
+  const wait = Math.max(0, (quietAt - audioCtx.currentTime) * 1000, REST_QUIET_MS - (performance.now() - lastNudge));
+  restTimer = after(Math.ceil(wait) + 50, restCheck);
+}
+function restCheck() {
+  restTimer = 0;
+  const eng = heartEngine();
+  // a context not running renders nothing to rest from; the next master
+  // move or hand arms the check again
+  if (!eng || eng.isResting() || quietAt === Infinity || !audioCtx || audioCtx.state !== 'running') return;
+  if (audioCtx.currentTime >= quietAt && performance.now() - lastNudge >= REST_QUIET_MS) {
+    eng.rest();
+    if (IDLE_DIAG) console.log('[idlediag] Heart rests: the master is shut and no hand has moved for ' + (REST_QUIET_MS / 1000) + ' s');
+    return;
+  }
+  armRest();
+}
+// Any input, as it happens (main.js; the worker shell's page, in worker
+// mode): a resting Heart wakes, and rests again once the hand has been
+// still for REST_QUIET_MS with the master still shut. A pointer move costs
+// a clock read and a store.
+export function heartNudge() {
+  lastNudge = performance.now();
+  const eng = heartEngine();
+  if (eng && eng.isResting()) {
+    eng.wake();
+    if (IDLE_DIAG) console.log('[idlediag] Heart wakes: a hand');
+  }
+  armRest();
+}
+// The idle diagnostic's reading (main.js): whether Heart rests, and every
+// frame its stages have rendered or skipped, summed; null without Heart.
+export function heartRestInfo() {
+  const eng = heartEngine();
+  return eng ? { resting: eng.isResting(), heads: eng.heads() } : null;
 }

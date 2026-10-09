@@ -112,6 +112,14 @@ export function choreYield() {
   return new Promise(enqueue);
 }
 
+// Any chore that said, the last time it ran, that it had more to do (glyphs
+// still to rasterise, an atlas build waiting for its slot). The still frame
+// (main.js) keeps the loop awake for them, since chores run only in frames.
+export function choreBusy() {
+  for (let i = 0; i < count; i++) if (more[i]) return true;
+  return waiters.length > 0;
+}
+
 // For the diagnostics text: each chore's runs, and how many of those the
 // wait cap forced onto a lit slot. Runs on a click, so it may allocate.
 export function choreSummary() {

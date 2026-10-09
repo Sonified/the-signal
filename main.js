@@ -22,7 +22,7 @@
 import { S, STORE } from './js/state.js';
 import { seedParticles, seedTunnel } from './js/sim.js';
 import { setColorFromPicker } from './js/color.js';
-import { ensureAudioGraph, warmDevice, audioOn } from './js/audio.js';
+import { ensureAudioGraph, warmDevice, audioOn, heartNudge, heartRestInfo } from './js/audio.js';
 import { setMediaTransport } from './js/background.js';
 import { noteHandheld } from './js/handheld.js';
 import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from './js/panel-guard.js';
@@ -48,17 +48,18 @@ import { createBlur } from './gpu/blur.js';
 import { stepStrobe, resetStrobeClock, resetRefreshMeasure, darkSlot, strobeResume } from './core/strobe.js';
 import { gentleResume, armResume } from './core/wake.js';
 import { roomClockSnap } from './core/room-clock.js';
-import { motionTick, motionHalt, winding } from './core/motion.js';
+import { motionTick, motionHalt, winding, motionScale } from './core/motion.js';
+import { setIdleWaker, idleWake, idleHeld, IDLE_DIAG } from './core/idle.js';
 import { eye, stepEye } from './core/eye.js';
-import { initChores, choreRegister, choreRun, choreYield } from './core/chores.js';
-import { initWords, stepWords, wordsResume } from './core/words.js';
-import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame } from './core/store.js';
-import { replayLive, syncPresetsFromStorage, applyActivePresetState } from './core/presets.js';
+import { initChores, choreRegister, choreRun, choreYield, choreBusy } from './core/chores.js';
+import { initWords, stepWords, wordsResume, wordState } from './core/words.js';
+import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame, savePending } from './core/store.js';
+import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionRemaining } from './core/presets.js';
 import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
-import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume } from './core/journey.js';
+import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
 import { setSettingsFileHandler } from './core/schema-visual.js';
@@ -85,7 +86,7 @@ import { drawJourney, journey } from './ui/screens/journey.js';
 import { drawPerformer, performer } from './ui/screens/performer.js';
 import { drawMusic, music } from './ui/screens/music.js';
 import { drawTextbank, textbank } from './ui/screens/textbank.js';
-import { perfTick, perfResume } from './core/perform.js';
+import { perfTick, perfResume, perfBusy } from './core/perform.js';
 
 // Mobile browsers require a user gesture before audio can leave a suspended
 // AudioContext. A broadcast follower must keep running while it waits, so the
@@ -148,7 +149,8 @@ async function boot() {
     const c = S.rgb, hex = '#' + ((1 << 24) | (c[0] << 16) | (c[1] << 8) | c[2]).toString(16).slice(1);
     setColorFromPicker(hex);
   }
-  const syncSize = (w, h, dpr) => { S.W = w; S.H = h; S.DPR = dpr; };
+  // A resize clears the canvas, so a resting frame loop must draw again.
+  const syncSize = (w, h, dpr) => { S.W = w; S.H = h; S.DPR = dpr; idleWake('resize'); };
   syncSize(platform.width, platform.height, platform.dpr);
   platform.onResize(syncSize);
   seedParticles(S.edgeCount);
@@ -248,6 +250,7 @@ async function boot() {
     flipRun();
   }
   function flipRun() {
+    idleWake('run');
     S.running = !S.running;
     if (S.running) {
       if (!S.rings.length) seedTunnel(16);
@@ -348,10 +351,14 @@ async function boot() {
     if (!visible) flush();
     else { armResume(); backInView = true; }
     setHidden(!visible);
+    // The engine's own loop has already let go of any rest (gpu/engine.js);
+    // showing again is the absence's wake, not the still frame's.
+    if (resting) { resting = false; if (IDLE_DIAG) idleLeft(visible ? 'the page came back into view' : 'the page went out of sight'); }
   });
   // Another tab's write lands in this tab's state at once, live, so this tab
   // can never later save its older copy over it.
   platform.onStorage((key, value) => {
+    idleWake('another tab');
     if (syncFromStorage(key, value, replayLive)) return;
     if (syncPresetsFromStorage(key)) return;
     syncJourneyFromStorage(key);
@@ -370,7 +377,8 @@ async function boot() {
         // the live sound's recorder and player (core/live-audio.js)
         media: { record: recordLiveAudio, canRecord: canRecordLiveAudio, player: livePlayer } },
       {
-        notify: flashNotice,
+        // a notice shows on the overlay, which a resting loop must draw
+        notify: msg => { flashNotice(msg); idleWake('a notice'); },
         isRunning: () => S.running,
         setRunning: on => { if (on !== !!S.running) flipRun(); },
         copy: txt => platform.clipboardWrite(txt),
@@ -414,6 +422,71 @@ async function boot() {
   // starts on its first tap ('Tap to resume').
   let wakeTap = false;
   let lastEyeX = 0, lastEyeY = 0;
+  // ---- the still frame ----
+  // Paused, wound down and left alone, the picture stops changing, yet the
+  // loop would go on encoding every layer's passes at the display's rate to
+  // draw the same image again. So once nothing on screen can change, the
+  // frame asks the engine for no more frames (gpu/engine.js sleep) and the
+  // canvas keeps showing the last one. Still means all of: stopped, the
+  // pause wind-down finished (core/motion.js), the scene unchanged this
+  // frame by input, the drawer's slide, the overlay or the eye (exactly the
+  // test that keeps the glass's capture fresh, below), no input for
+  // IDLE_QUIET_MS and no press held, every spring and scroll in the UI
+  // settled and no text field holding the caret, no meters showing, no
+  // profiler or perf mode measuring frames, no glide in flight (a preset's
+  // window, the performer's, a journey walking or its authoring diff), no
+  // word up, no settings write or chore waiting for a frame, no load
+  // holding the loop (core/idle.js), and nothing the engine draws still on
+  // the move by itself (a crossfade, a word's tail, the glass owing a
+  // capture). And at least IDLE_MIN_FRAMES since the last wake, so whatever
+  // woke it is drawn.
+  // Anything that could change the picture wakes it (core/idle.js lists
+  // who): input, a resume, a resize, a setting saved, another tab, a
+  // broadcast message, a notice, a load finishing. Input also wakes a
+  // resting Heart (js/audio.js), so the sound's cushion refills while the
+  // hand travels to the click. The page going out of sight stops the loop
+  // as it always did, and its return is the ordinary wake from an absence.
+  const IDLE_QUIET_MS = 2000, IDLE_MIN_FRAMES = 2;
+  let resting = false, lastInputT = -Infinity, framesAwake = 0;
+  // ?idlediag=1: when the rest began, the frames encoded by then, and the
+  // Heart reading at the last heartbeat.
+  let restSince = 0, restFrames = 0, beatHeads = 0, beatTimer = 0;
+  function wakeLoop(why) {
+    framesAwake = 0;
+    if (!engine.wake()) return;
+    resting = false;
+    if (IDLE_DIAG) idleLeft(why);
+  }
+  setIdleWaker(wakeLoop);
+  platform.onInput(type => {
+    wakeLoop(type);
+    // in worker mode the page nudges the sound itself (platform/worker-bridge.js)
+    if (!inWorker) heartNudge();
+  });
+  function idleEntered() {
+    restSince = performance.now();
+    restFrames = engine.frames;
+    const h = heartRestInfo();
+    beatHeads = h ? h.heads : 0;
+    console.log('[idlediag] rest: paused, wound down, ' + (IDLE_QUIET_MS / 1000) + ' s without input, nothing on screen moving; frames encoded so far ' + engine.frames);
+    beatTimer = setInterval(idleBeat, 60000);
+  }
+  function idleLeft(why) {
+    clearInterval(beatTimer);
+    console.log('[idlediag] wake: ' + why + ', after ' + ((performance.now() - restSince) / 1000).toFixed(1) + ' s at rest, ' + (engine.frames - restFrames) + ' frames encoded meanwhile');
+  }
+  // Once a minute at rest: the frames encoded since the rest began, and the
+  // Heart chunks rendered in the last minute, both 0 once everything sleeps
+  // (Heart rests a little after the picture, once the pause's tails have
+  // rung out, so its first minute may show the last of them).
+  function idleBeat() {
+    const h = heartRestInfo();
+    const chunks = h ? Math.round((h.heads - beatHeads) / 512) : -1;
+    console.log('[idlediag] at rest ' + ((performance.now() - restSince) / 60000).toFixed(0) + ' min: frames encoded since the rest began ' + (engine.frames - restFrames) +
+      ', Heart chunks rendered this minute ' + (h ? chunks + (h.resting ? ' (resting)' : ' (awake)') : 'n/a (no Heart on this thread)'));
+    if (h) beatHeads = h.heads;
+  }
+
   // The platform's key events carry no repeat flag, so M remembers that it is
   // held and ignores the auto-repeats, as v0's !e.repeat did; otherwise a
   // held key would flap the window open and shut. Its keyup clears it.
@@ -529,6 +602,7 @@ async function boot() {
         backInView = false;
       }
       if (e.type === 'move' || e.type === 'down' || e.type === 'wheel' || e.type === 'key') lastActivity = t;
+      lastInputT = t;
       // (in worker mode the page wakes the sound inside the gesture itself)
       if (!audioWoken && !inWorker && (e.type === 'down' || e.type === 'key')) {
         audioWoken = true;
@@ -714,6 +788,18 @@ async function boot() {
     // the pending settings save and queued glyphs, on a dark slot (or once
     // they have waited 250 ms, whatever the pattern)
     choreRun(t, darkSlot());
+
+    // The still frame (see its note above): the last frame drawn stays up.
+    framesAwake++;
+    if (pageVisible && !S.running && motionScale() === 0 && !renderArgs.sceneChanged &&
+        framesAwake >= IDLE_MIN_FRAMES && t - lastInputT >= IDLE_QUIET_MS &&
+        !uiUnsettled && ui.activeId === -1 && !ui.textEditing && !metersShown && !profOn && !perf.on &&
+        !perfBusy() && !journeyBusy() && !(transitionRemaining() > 0) && !wordState.visible &&
+        !savePending() && !choreBusy() && !idleHeld() && !engine.busy()) {
+      engine.sleep();
+      resting = true;
+      if (IDLE_DIAG) idleEntered();
+    }
 
     if (perfOn) {
       const t5 = platform.now();

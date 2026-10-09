@@ -2042,6 +2042,11 @@ export function journeyResume(away) {
   if (tw.active) tw.t0 += away;
 }
 
+// A walk playing, or an authoring diff waiting its turn: the still frame
+// (main.js) keeps the loop awake for either, since both move on the
+// frame's clock.
+export function journeyBusy() { return play.playing || diffPending; }
+
 // Once a frame, from main.js, straight after the words step: the throttled
 // authoring diff, the ramp, the step's text at its moment, and auto-play's
 // clock. Nothing here allocates; a paused walk, its ramp included, waits.

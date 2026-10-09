@@ -250,7 +250,8 @@ export function createPlatform(canvas) {
   // The ring of reused event objects and the queue pollInput drains live in
   // input-queue.js, shared with the engine worker's platform so both hand the
   // engine events made by the same code.
-  const q = createInputQueue();
+  const inputCbs = [];
+  const q = createInputQueue(type => { for (let i = 0; i < inputCbs.length; i++) inputCbs[i](type); });
   const pollInput = q.pollInput;
 
   // ---------- the phone's keyboard ----------
@@ -384,6 +385,8 @@ export function createPlatform(canvas) {
     dpr: 1, width: 0, height: 0,
     onResize(fn) { resizeCbs.push(fn); },
     pollInput,
+    // hears every input event as it is queued (input-queue.js says why)
+    onInput(fn) { inputCbs.push(fn); },
     pollDisplay: displaySampleScreen,
     now: () => performance.now(),
     setCursor(kind) { if (canvas.style.cursor !== kind) canvas.style.cursor = kind; },
