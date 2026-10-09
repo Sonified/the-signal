@@ -59,13 +59,15 @@ const SIMD_PROBE = new Uint8Array([
   0x41, 0x00, 0xfd, 0x0f, 0xfd, 0x62, 0x0b          // i32.const 0, i8x16.splat, i8x16.popcnt, end
 ]);
 
-// The base lookahead, in seconds, where it starts and the least it eases
-// back to. SharedArrayBuffer wakes a worker the moment it can render;
-// messages queue behind whatever else the threads are doing, so they get
-// twice the margin. A phone or tablet starts with a cushion: slower cores,
-// a page thread busy with the visuals, and an OS quick to park a thread.
-const LOOKAHEAD_SAB = 0.045, LOOKAHEAD_MESSAGE = 0.09;
-const HANDHELD_SAB = 0.12, HANDHELD_MESSAGE = 0.18;
+// The base lookahead, in seconds: 0.3 everywhere, always pre-rendered
+// (Robert's call, 2026-10-08). The cushion costs nothing but control
+// latency: every sample is stamped to the clock, so scheduled sound and
+// the strobe lock land exactly on time however far ahead they were
+// rendered, and the one thing heard late is a hand on a control, by this
+// much. A fat standing cushion beats a slim adaptive one, whose growth
+// needed exactly the warning a Space swipe never gives.
+const LOOKAHEAD_SAB = 0.3, LOOKAHEAD_MESSAGE = 0.3;
+const HANDHELD_SAB = 0.3, HANDHELD_MESSAGE = 0.3;
 // The most it grows to. Scheduled music is booked at most 0.6 s ahead
 // (the sequencer, §7.2), and the horizon is the lookahead plus a chunk or
 // four; past 0.5 s those notes would land behind it and be heard late.
@@ -452,6 +454,16 @@ async function assemble(engine, ctx, module, opts) {
     stats,
     // The lookahead now, in seconds: where the drain has set it going.
     lookahead: lookaheadNow,
+    // The viewer's cushion length, live (the drawer's Audio cushion): the
+    // drain owns the policy, so this only tells it. Message mode also lifts
+    // the horizon at once, as the hidden rise does.
+    setLookahead(sec) {
+      if (closed || !(sec > 0)) return;
+      const frames = Math.min(maxAhead, toFrames(sec));
+      policy.base = frames;
+      if (!control) drainNews.next = Math.max(drainNews.next, frames);
+      output.port.postMessage({ type: 'base', frames });
+    },
     inspect,
     close
   });

@@ -166,7 +166,7 @@ test('message mode, a mix and two islands', t => run(t, false, 3));
 test('SAB mode, one combined worker', t => run(t, true, 1));
 test('message mode, one combined worker', t => run(t, false, 1));
 // The base as the engine rounds it, to whole quanta.
-const baseFor = isolated => Math.ceil((isolated ? 0.045 : 0.09) * SR / 128) * 128 / SR;
+const baseFor = isolated => Math.ceil((isolated ? 0.045 : 0.09) * SR / 128) * 128 / SR;   // the small base these tests hand in
 
 async function adapts(t, isolated, workers) {
   globalThis.crossOriginIsolated = isolated;
@@ -176,11 +176,13 @@ async function adapts(t, isolated, workers) {
   // 363 ms), so hiding and fullscreen each visibly raise it.
   const engine = await startEngine(ctx, {
     workers, seed: 0, wasmUrl: WASM_URL, handheld: false, steadySeconds: 1,
+    lookahead: isolated ? 0.045 : 0.09,   // small on purpose: the stalls must dent it
     hiddenLookahead: 0.45, fullscreenLookahead: 0.5
   });
   try {
     const base = baseFor(isolated), log = ctx.log, last = workers - 1;
     assert.equal(engine.lookahead(), base, 'starts at the desktop base');
+    globalThis.__raiseLog = (f, st) => console.log('RAISE to', Math.round(1000 * f * 128 / (128 * 48000) * 48000 / 1) , 'frames:', st.split('\n')[2].trim(), st.split('\n')[3].trim());
     await wait(300);
 
     // Stalls of 200 ms on the last stage (an island, or the combined

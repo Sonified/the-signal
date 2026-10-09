@@ -55,6 +55,7 @@ export const S = {
   // the stall this app was chasing turned out to be system load rather than the
   // rendering path, so the GPU backends buy nothing until they are finished.
   rendererPref: 'canvas2d',   // auto | webgpu | webgl2 | canvas2d
+  heartLookaheadS: 0.3,       // the engine's cushion, seconds; this machine's own (never a preset's)
 
   // ---------- strobe ----------
   strobeScale: 1,            // emergency master over every visual/audio strobe depth

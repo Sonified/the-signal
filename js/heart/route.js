@@ -33,6 +33,8 @@
 // context to connect the old nodes into, which throws. Only the module
 // itself could rebuild its graph natively, so it stays on Heart, and the
 // console says which families that leaves.
+import { S } from '../state.js';
+
 export const FAMILIES = ['music', 'clouds', 'ambience', 'genus'];
 
 let nativeCtx = null, nativeMaster = null, engine = null, starting = null;
@@ -71,6 +73,17 @@ export function parseHeartFlag(search, stored) {
 // engine, or to null when every family stays native: none flagged, or a
 // device that cannot run Heart, which is said once in the console. Called
 // again, it answers with the first call's result.
+// The viewer's Audio cushion (the drawer's render section, a machine
+// setting): seconds the engine renders ahead. Read at start and applied
+// live when the slider moves (schema-visual.js calls applyHeartLookahead).
+function lookaheadSetting() {
+  const v = S.heartLookaheadS;
+  return typeof v === 'number' && isFinite(v) ? Math.max(0.05, Math.min(0.5, v)) : 0.3;
+}
+export function applyHeartLookahead() {
+  if (engine) engine.setLookahead(lookaheadSetting());
+}
+
 export function startHeart(ctx, master) {
   nativeCtx = ctx;
   nativeMaster = master;
@@ -86,7 +99,7 @@ async function boot(ctx, master) {
     const [{ startEngine }, { HeartContext, Shadow }] = await Promise.all([
       import('./engine.js'), import('./heart.js')
     ]);
-    eng = await startEngine(ctx);
+    eng = await startEngine(ctx, { lookahead: lookaheadSetting() });
     if (!eng) {
       console.warn('Heart: this device cannot run it, so every family plays natively');
       return null;

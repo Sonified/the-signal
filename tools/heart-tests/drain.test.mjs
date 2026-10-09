@@ -185,7 +185,7 @@ function steered(policy, stages = 3) {
   return rig;
 }
 
-test('lookahead: a run of underruns doubles it once, announced at once and obeyed a chunk later, up to the most', () => {
+test('lookahead: a run of underruns grows it by half again, announced at once and obeyed a chunk later, up to the most', () => {
   const rig = steered({ base: 2048, max: 8192, hidden: 4096, steady: 100000 });
   const { ctl, drain } = rig;
   writeChunk(rig.ring, 0); rig.written = CHUNK;
@@ -194,28 +194,31 @@ test('lookahead: a run of underruns doubles it once, announced at once and obeye
 
   // The ring is dry: silence, and the rise is announced at once.
   assert.equal(rig.play(), false);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 4096, 'announced');
+  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 3072, 'announced');
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 2048, 'not yet obeyed');
   const bells = [0, 1, 2].map(s => Atomics.load(ctl, bellOf(s)));
   rig.play(); rig.play();
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 2048, 'still not');
-  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 4096, 'one run, one doubling');
+  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 3072, 'one run, one growth');
   rig.play();
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096, 'obeyed a chunk (four quanta) after the underrun');
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 3072, 'obeyed a chunk (four quanta) after the underrun');
   assert.deepEqual([0, 1, 2].map(s => Atomics.load(ctl, bellOf(s)) - bells[s]), [1, 1, 1], 'every stage woken');
   rig.play();
-  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 4096, 'a run that goes on grows it no further');
+  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 3072, 'a run that goes on grows it no further');
 
   // Audio again, then a second run: 8192; a third: still 8192, the most.
   rig.render();
   while (rig.play());
-  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 8192);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 4608);
   for (let q = 0; q < 4; q++) rig.play();
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4608);
   rig.render();
   while (rig.play());
   for (let q = 0; q < 8; q++) rig.play();
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192, 'capped');
+  rig.render();
+  while (rig.play());
+  for (let q = 0; q < 8; q++) rig.play();
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192, 'capped at the most');
   assert.equal(Atomics.load(ctl, UNDERRUNS), drain.underruns);
 });
 
@@ -268,23 +271,23 @@ test('lookahead: the ratchet, a size that underran is never returned to', () => 
   rig.render();
   run(8);
 
-  // A stall at the base, filled: 2048 is bad, the floor is 4096.
+  // A stall at the base, filled: 2048 is bad, the floor is half again, 3072.
   stallAt(rig);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096, 'grown');
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 3072, 'grown');
   run(8);
-  assert.deepEqual(seen(5 * steady), [4096], 'stretch after stretch, never back to 2048');
+  assert.deepEqual(seen(5 * steady), [3072], 'stretch after stretch, never back to 2048');
 
-  // Hidden, then visible: up to 8192 and back down, to 4096 and no further.
+  // Hidden, then visible: up to 8192 and back down, to 3072 and no further.
   drain.setHidden(true); run(4); drain.setHidden(false);
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192);
-  assert.ok(seen(5 * steady).every(l => l >= 4096), 'back down only to the floor');
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096);
+  assert.ok(seen(5 * steady).every(l => l >= 3072), 'back down only to the floor');
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 3072);
 
-  // A stall at 4096: that is bad too, and the floor is 8192, for good.
+  // A stall at 3072: that is bad too, and the floor is half again, 4608.
   stallAt(rig);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4608);
   run(8);
-  assert.deepEqual(seen(5 * steady), [8192], 'never back to 4096, nor 2048');
+  assert.deepEqual(seen(5 * steady), [4608], 'never back to 3072, nor 2048');
 
   // A rise not yet filled when the ring runs dry blames the size the ring
   // really held, not the one it was going to.
@@ -298,7 +301,7 @@ test('lookahead: the ratchet, a size that underran is never returned to', () => 
   fresh.drain.setHidden(false);
   const sizes = new Set();
   for (let q = 0; q < 6 * steady; q++) { fresh.render(); fresh.play(); sizes.add(Atomics.load(fresh.ctl, LOOKAHEAD)); }
-  assert.deepEqual([...sizes], [16384, 8192, 4096], 'eases back to twice the 2048 it held, and stops there');
+  assert.deepEqual([...sizes], [16384, 8192, 4096, 3072], 'eases back to half again the 2048 it held, and stops there');
 });
 
 test('lookahead: fullscreen raises it to its floor and holds it while visible; leaving lets it ease back', () => {
@@ -342,7 +345,8 @@ test('lookahead: a stage that stalls longer than the lookahead underruns until i
     if (q % 400 === 399) { perStall.push(rig.silent - before); before = rig.silent; }
   }
   assert.ok(perStall[0] > 0, `the first stall underran (${perStall})`);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192, 'grown to the first doubling past the stall');
+  const grown = Atomics.load(ctl, LOOKAHEAD);
+  assert.ok(grown > 5120 && grown <= 16384, `grown past the stall (${grown})`);
   assert.deepEqual(perStall.slice(-4), [0, 0, 0, 0], `once grown, stalls no longer underrun (${perStall})`);
 });
 
@@ -363,16 +367,16 @@ test('lookahead, message mode: every change is posted, and the lookahead rides t
     await feed(1);
     for (let q = 0; q < 4; q++) drain.play(L, R, 0);
     drain.play(L, R, 0);                                   // dry: an underrun
-    assert.deepEqual(posts.at(-1), { type: 'lookahead', next: 2048, target: 1024, underruns: 1 });
+    assert.deepEqual(posts.at(-1), { type: 'lookahead', next: 1536, target: 1024, underruns: 1 });
     for (let q = 0; q < 3; q++) drain.play(L, R, 0);
-    assert.deepEqual(posts.at(-1), { type: 'lookahead', next: 2048, target: 2048, underruns: 4 });
+    assert.deepEqual(posts.at(-1), { type: 'lookahead', next: 1536, target: 1536, underruns: 4 });
     // The next chunk the drain empties carries 2048 back to the writer.
     await feed(3);
     for (let q = 0; q < 8; q++) drain.play(L, R, 0);
-    await until(() => w.ahead === 2048);
+    await until(() => w.ahead === 1536);
     drain.setHidden(true);
-    assert.equal(posts.at(-1).next, 2048, 'already at the hidden floor: no rise');
-    assert.equal(posts.filter(p => p.type === 'lookahead').length, 2);
+    assert.equal(posts.at(-1).next, 2048, 'hiding rises to the hidden floor');
+    assert.equal(posts.filter(p => p.type === 'lookahead').length, 3);
   } finally {
     drain.close();
     w.close();

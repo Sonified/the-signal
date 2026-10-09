@@ -37,6 +37,7 @@ import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 import { varianceRows } from './schema-variance.js';
 import { varied } from './variance.js';
+import { applyHeartLookahead } from '../js/heart/route.js';
 
 // S stores colour as an [r,g,b] triple (js/color.js's setColorFromPicker
 // writes S.rgb, S.hue, S.hueSat, S.hueLight from it); v0 kept the hex string
@@ -1648,6 +1649,19 @@ export const VISUAL_CONTROLS = [
     get: S => S.spareMode,
     set: (S, mode) => { S.spareMode = mode; save(); },
     format: S => S.spareMode
+  },
+  {
+    // The engine's cushion: how far ahead the sound is rendered
+    // (js/heart/route.js, js/heart/engine.js). Bigger rides out stalls (a
+    // fullscreen Space swipe, a busy machine); the cost is a control heard
+    // this much later. Scheduled sound and the strobe lock are stamped to
+    // the clock and never late. This machine's own setting, like the rest
+    // of this section.
+    id: 'heartLookaheadS', section: 'render', label: 'Audio cushion', kind: 'slider',
+    min: 0.05, max: 0.5, step: 0.01, def: 0.3,
+    get: S => S.heartLookaheadS ?? 0.3,
+    set: (S, v) => { S.heartLookaheadS = Math.max(0.05, Math.min(0.5, v)); applyHeartLookahead(); save(); },
+    format: S => Math.round((S.heartLookaheadS ?? 0.3) * 1000) + ' ms'
   },
   {
     // How long the visuals take to coast to a stop when paused (core/motion.js).

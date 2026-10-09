@@ -210,7 +210,7 @@ function buildSettings() {
     shimDepth: S.shimDepth, shimRate: S.shimRate, clickReverb: S.clickReverb,
     clickRevTime: S.clickRevTime, clickModDepth: S.clickModDepth, clickModPeriod: S.clickModPeriod,
     biDepth: S.biDepth, biPeriod: S.biPeriod, biHardSwitch: S.biHardSwitch,
-    rendererPref: S.rendererPref,
+    rendererPref: S.rendererPref, heartLookaheadS: S.heartLookaheadS,
     // v0 reads this straight off the <input id=lAudio> checkbox, which v1 has
     // no equivalent of. Lane E2's audio-layer control is the one write path
     // for it here, stashing the boot preference on S.audioOnBoot (see the
@@ -676,7 +676,7 @@ export function snapshot() {
 // rather than read off the schema, since this module must not depend on it.
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive',
-                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType'];
+                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -912,6 +912,8 @@ function applySettings(s, live, scene) {
     if (s.fbResSwitch === 'keep' || s.fbResSwitch === 'clear') S.fbResSwitch = s.fbResSwitch;
     // A phone's own reverb type (js/piano.js applyRevType); unset is Algorithmic.
     if (s.phoneRevType === 'algo' || s.phoneRevType === 'conv') S.phoneRevType = s.phoneRevType;
+    // The engine's cushion (js/heart/route.js applyHeartLookahead)
+    if (typeof s.heartLookaheadS === 'number' && isFinite(s.heartLookaheadS)) S.heartLookaheadS = Math.max(0.05, Math.min(0.5, s.heartLookaheadS));
     // The parallax sim's sway (core/eye.js). Its switch is never saved, so a
     // load always starts with the head still.
     if (typeof s.parallaxAmount === 'number' && isFinite(s.parallaxAmount)) S.parallaxAmount = Math.max(0, Math.min(0.3, s.parallaxAmount));

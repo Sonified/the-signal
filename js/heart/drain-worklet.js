@@ -145,7 +145,9 @@ export class Drain {
       this.calm = 0;
       if (!this.dry) {
         this.runFrom = this.underruns;
-        if (this.policy) { this.learn(); this.raise(2 * this.next); }
+        // Half again, not double: growth lands near what the stall needed
+        // without overshooting the latency for the rest of the session.
+        if (this.policy) { this.learn(); this.raise(Math.ceil(this.next * 1.5 / QUANTUM) * QUANTUM); }
         if (this.diag) this.tellDiag('dry', ready);
       }
       this.dry = true;
@@ -182,6 +184,17 @@ export class Drain {
     if (hidden && this.policy) this.raise(this.policy.hidden);
   }
 
+  // The viewer's own cushion length (the drawer's Audio cushion,
+  // schema-visual.js): the base moves live. A bigger base is rendered now;
+  // a smaller one lets the steady step-downs settle onto it, and the
+  // session's learned floor still stands above it.
+  setBase(frames) {
+    if (!this.policy || !(frames > 0)) return;
+    this.policy.base = frames;
+    this.calm = 0;
+    if (frames > this.target) this.raise(frames);
+  }
+
   // The page went fullscreen or left it. Fullscreen, the cushion goes up to
   // the fullscreen floor now, while the page is in front and the workers
   // run at full speed, and stays there until the page leaves fullscreen.
@@ -197,7 +210,7 @@ export class Drain {
   learn() {
     if (this.held <= this.bad) return;
     this.bad = this.held;
-    this.learned = Math.min(this.policy.max, 2 * this.bad);
+    this.learned = Math.min(this.policy.max, Math.ceil(this.bad * 1.5 / QUANTUM) * QUANTUM);
   }
 
   // The least the lookahead may step down to now.
@@ -292,6 +305,7 @@ if (typeof registerProcessor === 'function') {
         const d = e.data;
         if (d.type === 'ring') this.drain.attach(openRing(d.ring, 'reader'));
         else if (d.type === 'hidden') this.drain.setHidden(d.hidden === true);
+        else if (d.type === 'base') this.drain.setBase(d.frames | 0);
         else if (d.type === 'fullscreen') this.drain.setFullscreen(d.on === true);
         else if (d.type === 'close') { this.alive = false; this.drain.close(); }
       };
