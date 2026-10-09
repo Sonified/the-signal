@@ -1583,6 +1583,28 @@ const atmosphereControls = [
     act: s => { s.panelOpen = false; mixerOpenHook(true); },
     visible: s => s.ambOn
   },
+  {
+    // How long the drift's crossfade from one place to the next takes. Read
+    // by js/ambience.js each time a crossfade starts, so a change applies
+    // from the next move on.
+    id: 'ambDriftFade', section: 'atmosphere', label: 'Drift transition', kind: 'slider', parent: 'ambLayersDrawer',
+    min: 4, max: 120, step: 1, def: 12,
+    get: s => s.ambDriftFadeS,
+    set: (s, pos) => { s.ambDriftFadeS = pos; save(); },
+    format: s => s.ambDriftFadeS + 's',
+    visible: s => s.ambOn
+  },
+  {
+    // How much of the time the children are there while the drift runs
+    // (js/ambience.js kidsShare): 0 never, 100% always, and the default the
+    // two thirds the visits and absences always averaged.
+    id: 'ambKidsFreq', section: 'atmosphere', label: 'Children', kind: 'slider', parent: 'ambLayersDrawer',
+    min: 0, max: 100, step: 1, def: 67,
+    get: s => Math.round(s.ambKidsFreq * 100),
+    set: (s, pos) => { s.ambKidsFreq = pos / 100; save(); },
+    format: s => s.ambKidsFreq <= 0 ? 'never' : s.ambKidsFreq >= 1 ? 'always' : Math.round(s.ambKidsFreq * 100) + '%',
+    visible: s => s.ambOn
+  },
   subDrawer('ambReverbDrawer', 'Reverb', 'atmosphere', ['ambReverb', 'ambRevTime']),
   {
     // What plays the atmosphere's room, as the music's Reverb type does:
@@ -1647,28 +1669,6 @@ const atmosphereControls = [
     set: (s, pos) => { s.ambRevMod = pos / 100; applyAmbRevShape(); save(); },
     format: s => Math.round((s.ambRevMod ?? 0.3) * 100) + '%',
     visible: s => s.ambOn && s.ambRevType !== 'conv'
-  },
-  {
-    // How long the drift's crossfade from one place to the next takes. Read
-    // by js/ambience.js each time a crossfade starts, so a change applies
-    // from the next move on.
-    id: 'ambDriftFade', section: 'atmosphere', label: 'Drift transition', kind: 'slider', parent: 'ambLayersDrawer',
-    min: 4, max: 120, step: 1, def: 12,
-    get: s => s.ambDriftFadeS,
-    set: (s, pos) => { s.ambDriftFadeS = pos; save(); },
-    format: s => s.ambDriftFadeS + 's',
-    visible: s => s.ambOn
-  },
-  {
-    // How much of the time the children are there while the drift runs
-    // (js/ambience.js kidsShare): 0 never, 100% always, and the default the
-    // two thirds the visits and absences always averaged.
-    id: 'ambKidsFreq', section: 'atmosphere', label: 'Children', kind: 'slider', parent: 'ambLayersDrawer',
-    min: 0, max: 100, step: 1, def: 67,
-    get: s => Math.round(s.ambKidsFreq * 100),
-    set: (s, pos) => { s.ambKidsFreq = pos / 100; save(); },
-    format: s => s.ambKidsFreq <= 0 ? 'never' : s.ambKidsFreq >= 1 ? 'always' : Math.round(s.ambKidsFreq * 100) + '%',
-    visible: s => s.ambOn
   }
 ];
 
