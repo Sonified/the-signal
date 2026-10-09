@@ -32,7 +32,7 @@ import {
   applyChoir, applyChoirVol, applyChoirOn, applyChoirAm, choirEffectiveAm,
   choirEffectiveLevel, choirEffectiveStack, choirEffectiveDensity
 } from '../js/choir.js';
-import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, AMBIENCE_SOURCES } from '../js/ambience.js';
+import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, applyAmbRevType, applyAmbRevShape, AMBIENCE_SOURCES } from '../js/ambience.js';
 import { applyMixGates } from '../js/mixgate.js';
 import { MUSIC_LAYERS, applyLayerOn, applyLayerVol } from '../js/layers.js';
 import { layerOnKey, layerVolKey, layerMixId, layerDrawerId } from '../js/layer-defs.js';
@@ -1581,6 +1581,24 @@ const atmosphereControls = [
     visible: s => s.ambOn
   },
   {
+    // What plays the atmosphere's room, as the music's Reverb type does:
+    // Convolution, a fixed impulse (a new decay is a new impulse, crossfaded
+    // in), or Algorithmic, the feedback delay network, whose decay is one
+    // number, with a damping and a drift of its own (js/ambience.js
+    // applyAmbRevType). Reverb and Reverb decay are the same settings under
+    // either. Unset is Algorithmic.
+    id: 'ambRevType', section: 'atmosphere', label: 'Reverb type', kind: 'segment',
+    options: [
+      { value: 'conv', label: 'Convolution' },
+      { value: 'algo', label: 'Algorithmic' }
+    ],
+    def: 'algo',
+    get: s => s.ambRevType === 'conv' ? 'conv' : 'algo',
+    set: (s, v) => { s.ambRevType = v === 'conv' ? 'conv' : 'algo'; applyAmbRevType(); save(); },
+    format: s => s.ambRevType === 'conv' ? 'convolution' : 'algorithmic',
+    visible: s => s.ambOn
+  },
+  {
     id: 'ambReverb', section: 'atmosphere', label: 'Reverb', kind: 'slider',
     min: 0, max: 150, step: 1, def: 100,
     get: s => Math.round(s.ambReverb * 100),
@@ -1595,6 +1613,26 @@ const atmosphereControls = [
     set: (s, pos) => { s.ambRevTime = pos; rebuildAmbIR(); save(); },
     format: s => s.ambRevTime.toFixed(1) + 's',
     visible: s => s.ambOn
+  },
+  {
+    // The algorithmic room's own two, as the music's Damping and Modulation:
+    // how much sooner the highs die than the decay, and the slow drift of
+    // the network's delay lengths that keeps a held tone from ringing
+    // metallic.
+    id: 'ambRevDamp', section: 'atmosphere', label: 'Reverb damping', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 35,
+    get: s => Math.round((s.ambRevDamp ?? 0.35) * 100),
+    set: (s, pos) => { s.ambRevDamp = pos / 100; applyAmbRevShape(); save(); },
+    format: s => Math.round((s.ambRevDamp ?? 0.35) * 100) + '%',
+    visible: s => s.ambOn && s.ambRevType !== 'conv'
+  },
+  {
+    id: 'ambRevMod', section: 'atmosphere', label: 'Reverb modulation', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 30,
+    get: s => Math.round((s.ambRevMod ?? 0.3) * 100),
+    set: (s, pos) => { s.ambRevMod = pos / 100; applyAmbRevShape(); save(); },
+    format: s => Math.round((s.ambRevMod ?? 0.3) * 100) + '%',
+    visible: s => s.ambOn && s.ambRevType !== 'conv'
   },
   {
     // How long the drift's crossfade from one place to the next takes. Read

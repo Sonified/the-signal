@@ -5,7 +5,7 @@ import {
   sourceGate
 } from './audio.js';
 import { layerGate, layerSoloChanged, onLayerGates } from './mixgate.js';
-import { ctxFor, masterFor } from './heart/route.js';
+import { ctxFor, masterFor, makeWorklet } from './heart/route.js';
 
 export const WORLDS = [
   { id: 'ocean',    bed: 'ocean-waves',    kids: 'kids-beach' },
@@ -76,6 +76,7 @@ const EXT = canOpus ? '.opus' : '.mp3';
 
 const cache = new Map();
 let out = null, room = null, wet = null;
+let revIn = null, convFeed = null, algo = null, algoFeed = null, algoDead = false;
 let running = false;
 const mixVoices = new Map();
 // One event object, dispatched again on every sync (a finished dispatch can
@@ -135,12 +136,18 @@ function ensureOut() {
   // the room is added behind it, so turning this up moves the place further
   // off rather than washing it out -- the ocean heard from inside a cavern,
   // not an ocean with the detail smeared out of it.
-  room = createRoom(ctx, () => S.ambRevTime, 2.0);
+  // The way into the room, whichever type plays it: the bus feeds revIn, and
+  // revIn feeds the convolution room through convFeed or the algorithmic one
+  // through its own feed (applyAmbRevType), both into wet.
   wet = ctx.createGain();
   wet.gain.value = S.ambReverb;
-  sourceGate(room.input.gain);
-  out.connect(room.input);
-  room.output.connect(wet).connect(master);
+  wet.connect(master);
+  revIn = ctx.createGain();
+  sourceGate(revIn.gain);
+  out.connect(revIn);
+  convFeed = ctx.createGain();
+  revIn.connect(convFeed);
+  applyAmbRevType();
   return out;
 }
 // Both glide: a straight line over a preset's transition, the usual short
@@ -159,7 +166,81 @@ export function applyAmbReverb() {
 // The room is a pair of convolvers now (createRoom in audio.js), so the new
 // impulse is crossfaded in under the old one's tail instead.
 export function rebuildAmbIR() {
-  swapRoom(room, 200);
+  if (revAlgoNow) algoTune(0.05); else swapRoom(room, 200);
+}
+
+// The Reverb type, as the music's (js/piano.js applyRevType): Convolution,
+// the room above, or Algorithmic, the feedback delay network in
+// fdn-worklet.js, whose decay is a number, so a new decay is heard as it
+// moves rather than built and crossfaded in. Both are fed from revIn and both
+// play into wet, so the level and the decay are the same settings either
+// way. A change crossfades the feeds, not the outputs, so the old reverb's
+// tail rings out under the new one; once it has, the old one's feed is
+// unplugged and it falls idle. Each is made the first time it is chosen. On
+// Heart the network is Heart's own twin, made in the ambience island
+// (route.js makeWorklet); natively it is the module audio.js loads beside
+// the engine's, and if that did not load the type stays on convolution.
+// Unset is Algorithmic.
+let revAlgoNow = false, revUnplug = null;
+const wantAlgo = () => S.ambRevType !== 'conv';
+const rev01 = v => Math.max(0, Math.min(1, +v || 0));
+// On Heart a gesture is heard about a lookahead after currentTime (js/piano.js
+// lateBy), which the unplug waits on top.
+const lateBy = ctx => ctx.presentTime === undefined ? 0 : Math.max(0, ctx.presentTime - ctx.currentTime);
+function convRoom() {
+  if (room) return room;
+  room = createRoom(outCtx, () => S.ambRevTime, 2.0);
+  room.output.connect(wet);
+  convFeed.connect(room.input);
+  return room;
+}
+function algoNode() {
+  if (algo || algoDead) return algo;
+  try {
+    algo = makeWorklet(outCtx, 'fdn-reverb', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  } catch (e) {
+    console.warn('ambience: algorithmic reverb unavailable, staying on convolution', e);
+    algoDead = true;
+    return null;
+  }
+  algoFeed = outCtx.createGain();
+  algoFeed.gain.value = 0;
+  revIn.connect(algoFeed);
+  algo.connect(wet);
+  return algo;
+}
+function algoTune(tc) {
+  if (!algo) return;
+  const p = algo.parameters;
+  glideParam(p.get('decay'), Math.max(1, S.ambRevTime), tc);
+  glideParam(p.get('damping'), rev01(S.ambRevDamp ?? 0.35), tc);
+  glideParam(p.get('mod'), rev01(S.ambRevMod ?? 0.3), tc);
+}
+export function applyAmbRevType() {
+  if (!revIn) return;
+  const toAlgo = wantAlgo() && !!algoNode();
+  if (!toAlgo) convRoom();
+  if (toAlgo === revAlgoNow) return;
+  revAlgoNow = toAlgo;
+  const on = toAlgo ? algoFeed : convFeed, off = toAlgo ? convFeed : algoFeed;
+  // the incoming reverb catches up on any decay it missed while idle
+  if (toAlgo) algoTune(0.02); else swapRoom(room);
+  clearTimeout(revUnplug);
+  on.connect(toAlgo ? algo : room.input);
+  glideParam(on.gain, 1, 0.05);
+  glideParam(off.gain, 0, 0.05);
+  // after the old tail has rung out, and after a transition's line has
+  // carried its feed down, if one is running
+  const ctx = getContext(), end = glideEnd();
+  const wait = (end ? Math.max(0, end - ctx.currentTime) : 0) + S.ambRevTime + 1.5 + lateBy(outCtx);
+  revUnplug = setTimeout(() => {
+    revUnplug = null;
+    try { off.disconnect(); } catch (e) {}
+  }, wait * 1000);
+}
+// The algorithmic reverb's own two: its damping and its drift.
+export function applyAmbRevShape() {
+  algoTune(0.05);
 }
 
 // A voice is a looping source with its own gain, so two can overlap during a

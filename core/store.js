@@ -176,7 +176,7 @@ function buildSettings() {
     cloudsOn: S.cloudsOn, cloudVol: S.cloudVol, cloudDensity: S.cloudDensity,
     cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb,
     ambOn: S.ambOn, ambVol: S.ambVol, ambDrift: S.ambDrift, ambDriftFadeS: S.ambDriftFadeS, ambKidsFreq: S.ambKidsFreq,
-    ambReverb: S.ambReverb, ambRevTime: S.ambRevTime,
+    ambReverb: S.ambReverb, ambRevTime: S.ambRevTime, ambRevType: S.ambRevType, ambRevDamp: S.ambRevDamp, ambRevMod: S.ambRevMod,
     ambLayers: S.ambLayers,
     pipTrimDb: S.pipTrimDb, biOn: S.biOn, chirpVol: S.chirpVol, chirpReverb: S.chirpReverb, chirpRevTime: S.chirpRevTime,
     chirpModDepth: S.chirpModDepth, chirpModPeriod: S.chirpModPeriod,
@@ -1070,6 +1070,11 @@ function applySettings(s, live, scene) {
   if (typeof s.arpOn === 'boolean') S.arpOn = s.arpOn;
   if (typeof s.musicRevOn === 'boolean') S.musicRevOn = s.musicRevOn;
   if (s.musicRevType === 'conv' || s.musicRevType === 'algo') S.musicRevType = s.musicRevType;
+  // The atmosphere's reverb type (js/ambience.js applyAmbRevType); unset is
+  // Algorithmic. Its damping and drift held to their sliders' 0 to 1.
+  if (s.ambRevType === 'conv' || s.ambRevType === 'algo') S.ambRevType = s.ambRevType;
+  for (const k of ['ambRevDamp', 'ambRevMod'])
+    if (typeof s[k] === 'number' && isFinite(s[k])) S[k] = Math.max(0, Math.min(1, s[k]));
   if (typeof s.bedOn === 'boolean') S.bedOn = s.bedOn;
   if (typeof s.pianoOn === 'boolean') S.pianoOn = s.pianoOn;
   // arpSwOn is no longer restored: the sequencer's volume sweep lost its
