@@ -499,7 +499,7 @@ function buildEdge(sd, dpr, surf) {
     // Edge opacity alone sets the edge's level: the Strobe section's
     // Brightness is the field's, not the scene's, so the edge stopped
     // riding it (it did in v0, and until early on in v1).
-    const a = breath * 0.75 * (S.edgeOpacity ?? 1) * surf;
+    const a = breath * 0.75 * (S.effEdgeOpacity ?? S.edgeOpacity ?? 1) * surf;
     if (a < 0.004) continue;
 
     let r, g, b;

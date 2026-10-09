@@ -120,7 +120,7 @@ function buildSettings() {
     cornerOpacity: S.cornerOpacity, cornerOpacityVar: S.cornerOpacityVar, cornerOpacityVarPeriod: S.cornerOpacityVarPeriod, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
     ringSpeed5: S.ringSpeedMul, ringSpeedVar: S.ringSpeedVar, ringSpeedVarPeriod: S.ringSpeedVarPeriod,
     ringRate: S.ringRate, ringOrigin: S.ringOrigin, ringFadeInMs: S.ringFadeInMs, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
-    edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
+    edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, edgeOpacityVar: S.edgeOpacityVar, edgeOpacityVarPeriod: S.edgeOpacityVarPeriod, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
     edgeFb: S.edgeFb, edgeFbStream: S.edgeFbStream, edgeFbTwist: S.edgeFbTwist, edgeFbOpacity: S.edgeFbOpacity,
     edgeMode: S.edgeMode, edgePulse: S.edgePulse, edgePulseVar: S.edgePulseVar, edgePulseVarPeriod: S.edgePulseVarPeriod,
     edgePartRate: S.edgePartRate, edgePartSize: S.edgePartSize, edgePartDrift: S.edgePartDrift, edgePartSparkle: S.edgePartSparkle,
@@ -873,6 +873,8 @@ function applySettings(s, live, scene) {
   if (typeof s.fieldSoft === 'number')    S.fieldSoft = s.fieldSoft;
   if (typeof s.edgeCount === 'number')    S.edgeCount = s.edgeCount;
   if (typeof s.edgeOpacity === 'number')  S.edgeOpacity = s.edgeOpacity;
+  if (typeof s.edgeOpacityVar === 'number' && isFinite(s.edgeOpacityVar)) S.edgeOpacityVar = Math.max(0, Math.min(1, s.edgeOpacityVar));
+  if (typeof s.edgeOpacityVarPeriod === 'number' && isFinite(s.edgeOpacityVarPeriod)) S.edgeOpacityVarPeriod = Math.max(1, Math.min(60, s.edgeOpacityVarPeriod));
   if (typeof s.edgePulse === 'number' && isFinite(s.edgePulse)) S.edgePulse = Math.max(0, Math.min(1, s.edgePulse));
   if (typeof s.edgePulseVar === 'number' && isFinite(s.edgePulseVar)) S.edgePulseVar = Math.max(0, Math.min(1, s.edgePulseVar));
   if (typeof s.edgePulseVarPeriod === 'number' && isFinite(s.edgePulseVarPeriod)) S.edgePulseVarPeriod = Math.max(1, Math.min(60, s.edgePulseVarPeriod));

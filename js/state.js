@@ -119,6 +119,7 @@ export const S = {
   // ---------- tunnel and edge ----------
   ringSpeedMul: 2.5, edgeCount: 60, edgeSize: 6, trailMul: 1, ringFade: 0.55, ringThick: 3, ringThickVar: 1,
   edgeOpacity: 1,             // v1: scales the edge particles' brightness
+  edgeOpacityVar: 0, edgeOpacityVarPeriod: 20, edgeOpacityVarPhase: 0,
   edgePulse: 1,               // v1: how much the edge breathes with the strobe's flicker, 0 steady
   // v1: edge video feedback (gpu/scene.js). edgeFb 0..1 softens the edge
   // into trails, 0 off; edgeFbStream -2..2 streams them out (+) or in (-);

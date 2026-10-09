@@ -205,7 +205,7 @@ export function createEdgeFx(device, format, fbFormat) {
     }
     // Edge opacity alone, never the Strobe section's Brightness: the edge
     // is its own layer (see the same note in scene-data.js buildEdge).
-    const base = EDGE_ALPHA * (S.edgeOpacity ?? 1);
+    const base = EDGE_ALPHA * (S.effEdgeOpacity ?? S.edgeOpacity ?? 1);
     // The bands shimmer as one, on the field's own phase.
     const level0 = uni[44];
 

@@ -84,6 +84,9 @@ const VARIANCES = [
   { amount: 'fieldFadeVar', period: 'fieldFadeVarPeriod', fallback: 20, phase: 'fieldFadeVarPhase', eff: 'effFieldFade', set: S => S.fieldFade || 0 },
   // the corners' Opacity (gpu/scene-data.js reads the effective)
   { amount: 'cornerOpacityVar', period: 'cornerOpacityVarPeriod', fallback: 20, phase: 'cornerOpacityVarPhase', eff: 'effCornerOpacity', set: S => S.cornerOpacity ?? 1 },
+  // the edge's Opacity (gpu/scene-data.js buildEdge and gpu/edge-fx.js read
+  // the effective)
+  { amount: 'edgeOpacityVar', period: 'edgeOpacityVarPeriod', fallback: 20, phase: 'edgeOpacityVarPhase', eff: 'effEdgeOpacity', set: S => S.edgeOpacity ?? 1 },
   // the flowers' Pulse with strobe and Opacity (gpu/flowers.js), pulled onto
   // the room clock in a broadcast room rather than riding the beacon
   { amount: 'flowerPulseVar', period: 'flowerPulsePeriod', fallback: 10, phase: 'flowerPulsePhase', eff: 'effFlowerPulse', set: 'flowerPulse', room: roomPhaseState() },

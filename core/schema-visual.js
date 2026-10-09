@@ -732,6 +732,12 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.edgeOpacity = pos / 100; save(); },
     format: S => Math.round(S.edgeOpacity * 100) + '%'
   },
+  // The opacity breathes on the app's standard: over one rate cycle it
+  // eases from the setting down by this share and back, never above it.
+  ...varianceRows('edgeOpacity', {
+    name: 'Opacity',
+    effective: S => (S.effEdgeOpacity ?? S.edgeOpacity ?? 1) * 100
+  }),
   {
     // How much the edge breathes with the strobe's flicker, whichever effect
     // it shows: at 100% it dips with every flash as it always has, lower
