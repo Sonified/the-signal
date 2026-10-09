@@ -1575,7 +1575,9 @@ const atmosphereControls = [
   // (togglePanel(false)) before dispatching the open event; the drawer's
   // open flag is plain S state, so it is set directly here rather than
   // routed through a visual-side helper.
-  subDrawer('ambLayersDrawer', 'Layers', 'atmosphere', ['ambMixerOpen', 'ambKidsFreq']),
+  // The strip's summary reads values, so it names the sliders, not the
+  // Open levels action (an action row has no get to read).
+  subDrawer('ambLayersDrawer', 'Layers', 'atmosphere', ['ambDriftFade', 'ambKidsFreq']),
   {
     id: 'ambMixerOpen', section: 'atmosphere', label: 'Open levels', kind: 'action', parent: 'ambLayersDrawer',
     act: s => { s.panelOpen = false; mixerOpenHook(true); },
