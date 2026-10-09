@@ -42,6 +42,10 @@ const NUM = [
   ['flowerOpacityPeriod', 1,  60,  10,   true ],
   ['flowerFade',         0,   1,   0.55, false],
   ['flowerTint',         0,   1,   0,    false],
+  // the tint's variance: the standard percent dip on the room clock, as
+  // Opacity's and Pulse's above
+  ['flowerTintVar',      0,   1,   0,    false],
+  ['flowerTintPeriod',   1,   60,  10,   true ],
   ['flowerPulse',        0,   1,   0,    false],
   ['flowerPulseVar',     0,   1,   0,    false],
   ['flowerPulsePeriod',  1,   60,  10,   true ],
@@ -50,6 +54,7 @@ const NUM = [
   // offset, and they are saved and sent with the rest so every screen in a
   // room derives the same phase.
   ['flowerOpacityPeriodOff', 0, 1,  0,    false],
+  ['flowerTintPeriodOff', 0,  1,   0,    false],
   ['flowerPulsePeriodOff', 0,   1,  0,    false]
 ];
 
@@ -243,7 +248,8 @@ export const FLOWER_CONTROLS = [
       S => S.flowerPulse === 0 ? 'never flickers' : Math.round(S.flowerPulse * 100) + '%')),
   ...swing('flowerPulse', { labels: ['Pulse variance', 'Pulse variance rate'] }),
   under('flowersBrightnessDrawer', percent('flowerTint', 'flowerTint', 'Tint to strobe colour',
-    S => S.flowerTint === 0 ? 'own colour' : Math.round(S.flowerTint * 100) + '%'))
+    S => S.flowerTint === 0 ? 'own colour' : Math.round(S.flowerTint * 100) + '%')),
+  ...swing('flowerTint', { labels: ['Tint variance', 'Tint variance rate'] })
 ];
 
 // Shorthand names for the shut sub-drawer strips' summaries (see summary in

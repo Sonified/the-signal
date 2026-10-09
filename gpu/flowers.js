@@ -269,7 +269,7 @@ export function createFlowers(device, format, platform) {
     const ripple = clampNum(S.flowerRipple, 0, 1, 0.6);
     const opacity = clampNum(S.effFlowerOpacity ?? S.flowerOpacity, 0, 1, 0.85);
     const fade = clampNum(S.flowerFade, 0, 1, 0.55);
-    const tintAmt = clampNum(S.flowerTint, 0, 1, 0);
+    const tintAmt = clampNum(S.effFlowerTint ?? S.flowerTint, 0, 1, 0);
     const pulse = scaledStrobeDepth(clampNum(S.effFlowerPulse ?? S.flowerPulse, 0, 1, 0));
     mode = S.flowerMode === 'mandala' ? 1 : 0;
 

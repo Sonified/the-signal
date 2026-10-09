@@ -86,6 +86,7 @@ const VARIANCES = [
   // the room clock in a broadcast room rather than riding the beacon
   { amount: 'flowerPulseVar', period: 'flowerPulsePeriod', fallback: 10, phase: 'flowerPulsePhase', eff: 'effFlowerPulse', set: 'flowerPulse', room: roomPhaseState() },
   { amount: 'flowerOpacityVar', period: 'flowerOpacityPeriod', fallback: 10, phase: 'flowerOpacityPhase', eff: 'effFlowerOpacity', set: 'flowerOpacity', room: roomPhaseState() },
+  { amount: 'flowerTintVar', period: 'flowerTintPeriod', fallback: 10, phase: 'flowerTintPhase', eff: 'effFlowerTint', set: 'flowerTint', room: roomPhaseState() },
   // the confetti's feedback Opacity (gpu/confetti.js lays the image over
   // the scene at the effective)
   { amount: 'confFbOpacityVar', period: 'confFbOpacityVarPeriod', fallback: 20, phase: 'confFbOpacityVarPhase', eff: 'effConfFbOpacity', set: 'confFbOpacity' },

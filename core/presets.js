@@ -347,6 +347,7 @@ const SWINGS = [
   ['confFbTwistVarRate',    'confFbTwistVarRateOff',    carryRoomPhase],
   ['confFbPulseRate',       'confFbPulseRateOff',       carryRoomPhase],
   ['flowerOpacityPeriod',   'flowerOpacityPeriodOff',   carryRoomPhase],
+  ['flowerTintPeriod',      'flowerTintPeriodOff',      carryRoomPhase],
   ['flowerPulsePeriod',     'flowerPulsePeriodOff',     carryRoomPhase],
   ['textOpacityVarPeriod',  'textOpacityVarPeriodOff',  carryWordOpacity]
 ];
