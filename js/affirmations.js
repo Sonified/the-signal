@@ -137,7 +137,6 @@ const RAW = [
   'Nothing to carry.',
   'Nothing to solve.',
   'Nothing to change.',
-  'Nothing to become.',
   'Nothing to hold.',
   'Nowhere to go.',
   'No one to be.',
