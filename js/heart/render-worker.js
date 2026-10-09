@@ -20,8 +20,9 @@
 // An island never waits on the mix, only on room in its ring.
 //
 // The lookahead is live (§7.3, adaptive lookahead): the drain grows it on
-// an underrun or when the page goes hidden and eases it back after a steady
-// stretch, and a stage reads it before every chunk, from the control block
+// an underrun, when the page goes hidden and while it is fullscreen, and
+// eases it back after a steady stretch, never to a size that has run dry,
+// and a stage reads it before every chunk, from the control block
 // or, without one, from the last chunk the drain sent back. An island's
 // egress ring is sized for the base lookahead only, so once the lookahead
 // grows an island stays as far ahead of the mix as its ring holds, and the

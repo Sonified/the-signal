@@ -38,6 +38,7 @@ import * as real from '${ROUTE}';
 const pick = f => f === 'ambience' ? globalThis.__ambienceRoute : null;
 export const ctxFor = f => pick(f) ? pick(f).ctx : real.ctxFor(f);
 export const masterFor = f => pick(f) ? pick(f).master : real.masterFor(f);
+export const makeWorklet = (ctx, name, opts) => real.makeWorklet(ctx, name, opts);
 `);
 registerHooks({
   resolve(spec, context, next) {

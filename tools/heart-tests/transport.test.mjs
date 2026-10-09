@@ -15,9 +15,12 @@
 // longer than the lookahead, again and again: the stalls underrun, each
 // grows the lookahead, until a stall no longer underruns; every quantum
 // played is still exactly its engine frames, so the time map never moved;
-// a steady stretch brings it back to the base; hiding the page raises it to
-// the hidden floor and holds it there. And a stage made too slow to keep
-// up is told apart from a stall: reported as an overload, once.
+// a steady stretch never brings it back to a size that underran (the
+// ratchet); hiding the page raises it to the hidden floor and holds it
+// there, going fullscreen raises it to the fullscreen floor and holds it
+// there, and once both are over it eases back to the ratchet's floor and
+// no further. And a stage made too slow to keep up is told apart from a
+// stall: reported as an overload, once.
 //
 //   node tools/heart-tests/transport.test.mjs
 
@@ -31,10 +34,21 @@ const { startEngine } = await import('../../js/heart/engine.js');
 // A page that can hide.
 const doc = new EventTarget();
 doc.visibilityState = 'visible';
+doc.fullscreenElement = null;
 globalThis.document = doc;
 function setVisibility(state) {
   doc.visibilityState = state;
   doc.dispatchEvent(new Event('visibilitychange'));
+}
+function setFullscreen(on) {
+  doc.fullscreenElement = on ? {} : null;
+  doc.dispatchEvent(new Event('fullscreenchange'));
+}
+// Samples the lookahead every 50 ms for `ms`, and answers the least seen.
+async function leastOver(engine, ms) {
+  let least = Infinity;
+  for (const end = Date.now() + ms; Date.now() < end;) { least = Math.min(least, engine.lookahead()); await wait(50); }
+  return least;
 }
 
 // The fake heart's two levers (stage-harness.mjs): a stall of `ms` where
@@ -158,21 +172,29 @@ async function adapts(t, isolated, workers) {
   globalThis.crossOriginIsolated = isolated;
   const ctx = fakeContext();
   const infos = capture('info');
-  const engine = await startEngine(ctx, { workers, seed: 0, wasmUrl: WASM_URL, handheld: false, steadySeconds: 1 });
+  // The floors sit above where 200 ms stalls leave the ratchet (about
+  // 363 ms), so hiding and fullscreen each visibly raise it.
+  const engine = await startEngine(ctx, {
+    workers, seed: 0, wasmUrl: WASM_URL, handheld: false, steadySeconds: 1,
+    hiddenLookahead: 0.45, fullscreenLookahead: 0.5
+  });
   try {
     const base = baseFor(isolated), log = ctx.log, last = workers - 1;
     assert.equal(engine.lookahead(), base, 'starts at the desktop base');
     await wait(300);
 
     // Stalls of 200 ms on the last stage (an island, or the combined
-    // stage), until one no longer underruns.
-    const perStall = [];
+    // stage), until one no longer underruns. A stall that underran did so
+    // at the lookahead it found, filled over the half second before it.
+    const perStall = [], levels = [];
     for (let k = 0; k < 8 && perStall.at(-1) !== 0; k++) {
       const before = log.silent;
+      levels.push(engine.lookahead());
       stall(engine, last, 200);
       await wait(500);
       perStall.push(log.silent - before);
     }
+    const worst = Math.max(...levels.filter((_, k) => perStall[k] > 0));
     t.diagnostic(`silent quanta per stall: ${perStall.join(', ')}; lookahead now ${(engine.lookahead() * 1000).toFixed(0)} ms`);
     assert.ok(perStall[0] > 0, 'the first stall underran');
     assert.equal(perStall.at(-1), 0, 'growth stopped the underruns');
@@ -180,23 +202,37 @@ async function adapts(t, isolated, workers) {
     assert.ok(infos.some(l => l.startsWith('[heart] lookahead') && l.includes('a stall')), infos.join('\n'));
     assert.deepEqual(log.bad, [], 'every quantum played is exactly its engine frames: the time map never moved');
 
-    // A steady stretch (a second here) at a time eases it back to the base.
-    await until(() => engine.lookahead() === base, 12000, 'the lookahead back at the base');
+    // The ratchet: steady stretches (a second each here) never take it
+    // back to a size that underran, so never back to the base.
+    const settled = await leastOver(engine, 3500);
+    assert.ok(settled > worst, `never back to a size that underran (${worst} s): least ${settled} s`);
+    assert.ok(settled > base, 'not back at the base');
     assert.deepEqual(log.bad, [], 'shrinking dropped nothing and moved nothing');
-    assert.equal(engine.stats().lookahead, base);
 
     // Hidden: up to the floor at once, and held there past a stretch.
     setVisibility('hidden');
-    await until(() => engine.lookahead() >= 0.3, 3000, 'the hidden floor');
+    await until(() => engine.lookahead() >= 0.45, 3000, 'the hidden floor');
     await wait(1500);
-    assert.ok(engine.lookahead() >= 0.3, 'held while hidden');
+    assert.ok(engine.lookahead() >= 0.45, 'held while hidden');
     await until(() => infos.some(l => l.includes('as the page hides')), 3000, 'the hidden rise told');
     setVisibility('visible');
-    await until(() => engine.lookahead() < 0.3, 10000, 'easing back once visible');
+    await until(() => engine.lookahead() < 0.45, 10000, 'easing back once visible');
+    assert.ok(await leastOver(engine, 2500) > worst, 'and again no further than the ratchet allows');
+
+    // Fullscreen: up to its floor at once, and held there, visible, past
+    // many a stretch; out of it, back down to the ratchet's floor.
+    setFullscreen(true);
+    await until(() => engine.lookahead() >= 0.5, 3000, 'the fullscreen floor');
+    await until(() => infos.some(l => l.includes('while the page is fullscreen')), 3000, 'the fullscreen rise told');
+    assert.ok(await leastOver(engine, 2500) >= 0.5, 'held while fullscreen');
+    setFullscreen(false);
+    await until(() => engine.lookahead() < 0.5, 10000, 'easing back out of fullscreen');
+    assert.ok(await leastOver(engine, 2500) > worst, 'to the ratchet and no further');
     assert.deepEqual(log.bad, []);
   } finally {
     infos.restore();
     setVisibility('visible');
+    setFullscreen(false);
     engine?.close();
     await wait(20);
     ctx.stop();

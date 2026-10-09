@@ -4,8 +4,10 @@
 // Then the lookahead it steers (§7.3, adaptive lookahead), quantum by
 // quantum: a run of underruns doubles it once, a rise is announced at once
 // and obeyed a chunk later with every bell rung, a steady stretch halves it
-// back to the base and no further, hiding raises it and holds it, and a
-// stage that obeys it stops underrunning once it has grown past its stalls.
+// back towards the base but never to a size that has underrun (the
+// ratchet), hiding raises it and holds it, fullscreen raises it and holds
+// it while visible, and a stage that obeys it stops underrunning once it
+// has grown past its stalls.
 //
 //   node tools/heart-tests/drain.test.mjs
 
@@ -219,21 +221,23 @@ test('lookahead: a run of underruns doubles it once, announced at once and obeye
 
 test('lookahead: a steady stretch halves it back to the base and no further; hidden raises it and holds it', () => {
   const steady = 500;
-  const rig = steered({ base: 2048, max: 8192, hidden: 4096, steady });
+  const rig = steered({ base: 2048, max: 16384, hidden: 8192, steady });
   const { ctl, drain } = rig;
   const run = quanta => { for (let q = 0; q < quanta; q++) { rig.render(); assert.ok(rig.play(), `quantum ${drain.played} played`); } };
-  // Grown to 8192 by two stalls.
   rig.render();
-  for (const _ of [1, 2]) { while (rig.play()); for (let q = 0; q < 4; q++) rig.play(); run(4); }
-  rig.render();
-  while (rig.play());
-  for (let q = 0; q < 4; q++) rig.play();
+  run(8);
+  // Grown by hiding alone, with no underrun: every size on the way down is
+  // still good, so it eases all the way back.
+  drain.setHidden(true);
+  run(4);
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192);
+  run(3 * steady);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192, 'never shrinks while hidden');
+  drain.setHidden(false);
   const silent = rig.silent;
-
-  run(steady - 10);
+  run(steady - 1);
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192, 'not before the stretch is over');
-  run(10);
+  run(1);
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096, 'halved');
   assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 4096);
   run(steady);
@@ -241,29 +245,87 @@ test('lookahead: a steady stretch halves it back to the base and no further; hid
   run(3 * steady);
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 2048, 'never below the base');
   assert.equal(rig.silent, silent, 'shrinking dropped nothing: every quantum played its frames');
+});
 
-  // Hidden: up to the floor at once (obeyed a chunk on), and held there.
-  drain.setHidden(true);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 4096);
-  run(4);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096);
-  run(3 * steady);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096, 'never shrinks while hidden');
-  // Visible again: a whole stretch first, then down.
-  drain.setHidden(false);
-  run(steady - 1);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096);
-  run(1);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 2048);
-  // An underrun starts the stretch over.
-  drain.setHidden(true); run(4); drain.setHidden(false);
-  run(steady - 50);
-  while (rig.play());                        // a stall: grows to 8192
+// The ratchet: a size the ring really held when it ran dry is bad for the
+// session, and so is every size below it.
+function stallAt(rig) {
+  while (rig.play());
   for (let q = 0; q < 4; q++) rig.play();
-  run(steady - 1);
-  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192, 'the underrun restarted the stretch');
-  run(1);
+}
+
+test('lookahead: the ratchet, a size that underran is never returned to', () => {
+  const steady = 500;
+  const rig = steered({ base: 2048, max: 16384, hidden: 8192, steady });
+  const { ctl, drain } = rig;
+  const run = quanta => { for (let q = 0; q < quanta; q++) { rig.render(); assert.ok(rig.play(), `quantum ${drain.played} played`); } };
+  // Every size the lookahead takes over a stretch of quanta.
+  const seen = quanta => {
+    const sizes = new Set();
+    for (let q = 0; q < quanta; q++) { rig.render(); assert.ok(rig.play()); sizes.add(Atomics.load(ctl, LOOKAHEAD)); }
+    return [...sizes];
+  };
+  rig.render();
+  run(8);
+
+  // A stall at the base, filled: 2048 is bad, the floor is 4096.
+  stallAt(rig);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096, 'grown');
+  run(8);
+  assert.deepEqual(seen(5 * steady), [4096], 'stretch after stretch, never back to 2048');
+
+  // Hidden, then visible: up to 8192 and back down, to 4096 and no further.
+  drain.setHidden(true); run(4); drain.setHidden(false);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192);
+  assert.ok(seen(5 * steady).every(l => l >= 4096), 'back down only to the floor');
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 4096);
+
+  // A stall at 4096: that is bad too, and the floor is 8192, for good.
+  stallAt(rig);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192);
+  run(8);
+  assert.deepEqual(seen(5 * steady), [8192], 'never back to 4096, nor 2048');
+
+  // A rise not yet filled when the ring runs dry blames the size the ring
+  // really held, not the one it was going to.
+  const fresh = steered({ base: 2048, max: 16384, hidden: 16384, steady });
+  fresh.render();
+  for (let q = 0; q < 8; q++) { fresh.render(); fresh.play(); }
+  fresh.drain.setHidden(true);
+  for (let q = 0; q < 4; q++) fresh.play();          // obeyed, never rendered to
+  assert.equal(Atomics.load(fresh.ctl, LOOKAHEAD), 16384);
+  stallAt(fresh);
+  fresh.drain.setHidden(false);
+  const sizes = new Set();
+  for (let q = 0; q < 6 * steady; q++) { fresh.render(); fresh.play(); sizes.add(Atomics.load(fresh.ctl, LOOKAHEAD)); }
+  assert.deepEqual([...sizes], [16384, 8192, 4096], 'eases back to twice the 2048 it held, and stops there');
+});
+
+test('lookahead: fullscreen raises it to its floor and holds it while visible; leaving lets it ease back', () => {
+  const steady = 500;
+  const rig = steered({ base: 2048, max: 16384, hidden: 8192, fullscreen: 8192, steady });
+  const { ctl, drain } = rig;
+  const run = quanta => { for (let q = 0; q < quanta; q++) { rig.render(); assert.ok(rig.play(), `quantum ${drain.played} played`); } };
+  rig.render();
+  run(8);
+  drain.setFullscreen(true);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD_NEXT), 8192, 'announced at once');
+  run(4);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192, 'obeyed a chunk on');
+  run(5 * steady);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192, 'held, visible, stretch after stretch');
+  // A hide and a show while fullscreen (a swipe away and back) keep it.
+  drain.setHidden(true); run(10); drain.setHidden(false);
+  run(3 * steady);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 8192);
+  drain.setFullscreen(false);
+  run(2 * steady);
+  assert.equal(Atomics.load(ctl, LOOKAHEAD), 2048, 'out of fullscreen it eases back to the base');
+  assert.equal(rig.silent, 0, 'nothing dropped');
+
+  // Started fullscreen: at the floor from the first quantum.
+  const at = steered({ base: 2048, max: 16384, hidden: 8192, fullscreen: 8192, steady, startFullscreen: true });
+  assert.equal(Atomics.load(at.ctl, LOOKAHEAD_NEXT), 8192);
 });
 
 test('lookahead: a stage that stalls longer than the lookahead underruns until it has grown past the stall, and the time map never moves', () => {

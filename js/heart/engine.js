@@ -20,11 +20,13 @@
 // caller keeps the native engine.
 //
 // The lookahead adapts (§7.3, adaptive lookahead). The drain grows it when
-// it underruns and the page goes hidden, and eases it back after a steady
-// stretch; the stages obey it chunk by chunk; this file picks the base for
-// the device, tells the drain when the page hides, reads the result for the
-// horizon, and says in the console what happened and why: a stall, which
-// the cushion cures, or an overload, which it cannot.
+// it underruns, when the page goes hidden and while it is fullscreen, and
+// eases it back after a steady stretch, never to a size that has run dry
+// this session; the stages obey it chunk by chunk; this file picks the base
+// for the device, tells the drain when the page hides or goes fullscreen,
+// reads the result for the horizon, and says in the console what happened
+// and why: a stall, which the cushion cures, or an overload, which it
+// cannot.
 //
 // The engine's time is frames from the moment the drain first plays. The
 // drain posts the native frame F at which engine frame 0 played, and from
@@ -73,6 +75,15 @@ const LOOKAHEAD_MAX = 0.5;
 // Where it rises to the moment the page is hidden: nothing is interactive
 // then, and that is when the OS slows our workers.
 const LOOKAHEAD_HIDDEN = 0.3;
+// Where it rises to, and stays, while the page is fullscreen. A fullscreen
+// window on macOS is a Space of its own, and a three-finger swipe hides it
+// with no warning: the page hears visibilitychange only once it is gone,
+// the moment Chrome lowers its threads' priority, so a cushion grown then
+// is grown by workers already slowed (and some Chrome versions occlude it
+// without the event at all). So the hidden cushion is rendered in advance,
+// while the page is still in front. The cost is a slider heard this much
+// later while fullscreen.
+const LOOKAHEAD_FULLSCREEN = 0.3;
 // How long it must stay visible and free of underruns before each halving.
 const STEADY_SECONDS = 30;
 // An island's egress ring in message mode, in chunks (render-worker.js says
@@ -83,6 +94,15 @@ const STATS_MS = 250;
 // A stage overloaded this many stats ticks running (a second) is told of,
 // and not again for OVERLOAD_QUIET_MS.
 const OVERLOAD_TICKS = 4, OVERLOAD_QUIET_MS = 30000;
+
+// ?heartdiag=1 in the page's address: console lines for every hide, show
+// and fullscreen change, every run of underruns as the drain meets it (how
+// many, what the ring held, the lookahead, the floor), every step of the
+// lookahead, and a heartbeat every two seconds (fill, lookahead, each
+// stage's ms a chunk). Page only, as ?confdiag (gpu/confetti.js); off, it is
+// one boolean.
+const DIAG = (() => { try { return /[?&]heartdiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
+const DIAG_BEAT_MS = 2000;
 
 // A phone or tablet (js/handheld.js, where the rule now lives so the audio
 // modules can ask it too), re-exported here for anything that asked Heart.
@@ -142,12 +162,16 @@ async function assemble(engine, ctx, module, opts) {
   const small = opts.handheld ?? handheld();
   const lookahead = toFrames(opts.lookahead ?? (shared ? (small ? HANDHELD_SAB : LOOKAHEAD_SAB) : (small ? HANDHELD_MESSAGE : LOOKAHEAD_MESSAGE)));
   const maxAhead = Math.max(lookahead, toFrames(opts.maxLookahead ?? LOOKAHEAD_MAX));
+  const doc = globalThis.document;
+  const fullscreenNow = () => !!(doc && (doc.fullscreenElement || doc.webkitFullscreenElement));
   const policy = {
     base: lookahead,
     max: maxAhead,
     hidden: Math.min(maxAhead, Math.max(lookahead, toFrames(opts.hiddenLookahead ?? LOOKAHEAD_HIDDEN))),
+    fullscreen: Math.min(maxAhead, Math.max(lookahead, toFrames(opts.fullscreenLookahead ?? LOOKAHEAD_FULLSCREEN))),
     steady: Math.ceil((opts.steadySeconds ?? STEADY_SECONDS) * sampleRate / QUANTUM),
-    startHidden: globalThis.document?.visibilityState === 'hidden'
+    startHidden: doc?.visibilityState === 'hidden',
+    startFullscreen: fullscreenNow()
   };
   const stages = planStages(opts.workers ?? defaultWorkers(globalThis.navigator?.hardwareConcurrency));
   const placement = new Placement(stages);
@@ -161,7 +185,8 @@ async function assemble(engine, ctx, module, opts) {
   // What message mode learns by post rather than reading shared memory.
   const heads = new Float64Array(stages.length);
   const renderMs = new Float64Array(stages.length);
-  const drainNews = { underruns: 0, next: lookahead };
+  const drainNews = { underruns: 0, next: Math.max(lookahead,
+    policy.startHidden ? policy.hidden : 0, policy.startFullscreen ? policy.fullscreen : 0) };
 
   // The final ring holds the most lookahead and the chunk being written, so
   // its room never binds before the clock however far the lookahead grows.
@@ -183,7 +208,7 @@ async function assemble(engine, ctx, module, opts) {
     numberOfInputs: 0,
     numberOfOutputs: 1,
     outputChannelCount: [2],
-    processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy }
+    processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG }
   });
   if (!shared) output.port.postMessage({ type: 'ring', ring: finalRing.reader }, transfer(finalRing.reader));
   output.port.onmessage = e => {
@@ -191,6 +216,7 @@ async function assemble(engine, ctx, module, opts) {
     if (d.type === 'start') time.set(d.F);
     else if (d.type === 'stats') drainNews.underruns = Math.max(drainNews.underruns, d.underruns);
     else if (d.type === 'lookahead') { drainNews.next = d.next; drainNews.underruns = Math.max(drainNews.underruns, d.underruns); }
+    else if (d.type === 'diag') diagDrain(d);
   };
   output.onprocessorerror = () => { console.warn('heart: the drain stopped'); emit('error', -1, 'drain'); };
 
@@ -303,7 +329,8 @@ async function assemble(engine, ctx, module, opts) {
     if (ahead !== saidAhead) {
       const was = Math.round(1000 * saidAhead / sampleRate), now = Math.round(1000 * ahead / sampleRate);
       if (ahead > saidAhead) {
-        const why = fresh ? `after ${s.underruns} underrun quanta` : hidden ? 'as the page hides' : 'raised';
+        const why = fresh ? `after ${s.underruns} underrun quanta` : hidden ? 'as the page hides'
+          : full ? 'while the page is fullscreen' : 'raised';
         const over = stages.filter(st => s.renderMs[st.id] >= budgetMs).map(stageName);
         const kind = over.length ? `overload: ${over.join(', ')} cannot keep up, so more cushion will not help`
           : 'a stall: every stage renders well inside its budget, so the cushion covers it';
@@ -328,6 +355,9 @@ async function assemble(engine, ctx, module, opts) {
     }
   }
   function tick() {
+    // A missed visibilitychange or fullscreenchange is caught here, a
+    // quarter second late at worst (or as late as the throttled timer).
+    if (doc && ((doc.visibilityState === 'hidden') !== hidden || fullscreenNow() !== full)) onVisibility(MISSED);
     const s = stats();
     watch(s);
     if (s.underruns > lastUnderruns) { lastUnderruns = s.underruns; emit('underrun', s.underruns); }
@@ -339,25 +369,60 @@ async function assemble(engine, ctx, module, opts) {
     return () => listeners.get(type)?.delete(fn);
   }
 
-  // The drain owns the lookahead; the page only tells it when it hides. In
-  // message mode the horizon rises at once rather than waiting for the
-  // drain's answer, as a batch sent meanwhile must allow for it.
-  const doc = globalThis.document;
-  let hidden = policy.startHidden;
-  function onVisibility() {
-    const now = doc.visibilityState === 'hidden';
-    if (now === hidden || closed) return;
-    hidden = now;
-    if (hidden && !control) drainNews.next = Math.max(drainNews.next, policy.hidden);
-    output.port.postMessage({ type: 'hidden', hidden });
+  // The drain owns the lookahead; the page only tells it when it hides or
+  // goes fullscreen. In message mode the horizon rises at once rather than
+  // waiting for the drain's answer, as a batch sent meanwhile must allow
+  // for it. One handler for both events, and for the tick's check.
+  let hidden = policy.startHidden, full = policy.startFullscreen;
+  function onVisibility(e) {
+    if (closed) return;
+    const nowHidden = doc.visibilityState === 'hidden', nowFull = fullscreenNow();
+    if (DIAG && e) diagPage(e.type, nowHidden, nowFull);
+    if (nowHidden !== hidden) {
+      hidden = nowHidden;
+      if (hidden && !control) drainNews.next = Math.max(drainNews.next, policy.hidden);
+      output.port.postMessage({ type: 'hidden', hidden });
+    }
+    if (nowFull !== full) {
+      full = nowFull;
+      if (full && !control) drainNews.next = Math.max(drainNews.next, policy.fullscreen);
+      output.port.postMessage({ type: 'fullscreen', on: full });
+    }
   }
-  doc?.addEventListener?.('visibilitychange', onVisibility);
+  const MISSED = { type: 'a change no event told of, seen by the stats tick' };
+  const PAGE_EVENTS = ['visibilitychange', 'fullscreenchange', 'webkitfullscreenchange'];
+  for (const type of PAGE_EVENTS) doc?.addEventListener?.(type, onVisibility);
+
+  // ---------- ?heartdiag=1 ----------
+  // Every line starts with the page's clock, in seconds, and the audio
+  // clock, so a swipe's events, the drain's underruns and the heartbeats
+  // line up in one read of the console.
+  let beat = null;
+  const stamp = () => `[heartdiag] ${(performance.now() / 1000).toFixed(3)} s (audio ${ctx.currentTime.toFixed(3)})`;
+  const msOf = frames => Math.round(1000 * frames / sampleRate);
+  function diagPage(type, nowHidden, nowFull) {
+    const s = stats();
+    console.log(`${stamp()} ${type}: ${nowHidden ? 'hidden' : 'visible'}${nowFull ? ', fullscreen' : ''}; fill ${Math.round(1000 * s.fill)} ms, lookahead ${Math.round(1000 * s.lookahead)} ms, underruns ${s.underruns}`);
+  }
+  function diagDrain(d) {
+    const head = `${stamp()} drain at quantum ${d.played}:`;
+    const where = `lookahead ${msOf(d.target)} ms (going to ${msOf(d.next)}), held ${msOf(d.held)} ms, floor ${msOf(d.floor)} ms`;
+    if (d.what === 'dry') console.log(`${head} UNDERRUN, ring held ${msOf(d.ready)} ms; ${d.underruns} silent quanta so far; ${where}`);
+    else if (d.what === 'wet') console.log(`${head} sound again after ${d.run - 1} silent quanta; ${where}`);
+    else console.log(`${head} lookahead ${d.what}; ${where}`);
+  }
+  function diagBeat() {
+    const s = stats();
+    const load = stages.map(st => `${stageName(st)} ${ms1(s.renderMs[st.id])}`).join(' · ');
+    console.log(`${stamp()} beat: ${engine.mode}, ${hidden ? 'hidden' : 'visible'}${full ? ', fullscreen' : ''}; fill ${Math.round(1000 * s.fill)} ms, lookahead ${Math.round(1000 * s.lookahead)} ms, underruns ${s.underruns}; ms a chunk (budget ${ms1(budgetMs)}): ${load}`);
+  }
 
   function close() {
     if (closed) return;
     closed = true;
     clearInterval(ticker);
-    doc?.removeEventListener?.('visibilitychange', onVisibility);
+    clearInterval(beat);
+    for (const type of PAGE_EVENTS) doc?.removeEventListener?.(type, onVisibility);
     for (const w of workers) w.terminate();
     uploader.close();
     output.port.postMessage({ type: 'close' });
@@ -422,4 +487,8 @@ async function assemble(engine, ctx, module, opts) {
     });
   });
   if (!closed) ticker = setInterval(tick, STATS_MS);
+  if (!closed && DIAG) {
+    console.log(`${stamp()} Heart started: ${engine.mode} mode, ${stages.length} stage(s), base ${msOf(policy.base)} ms, hidden ${msOf(policy.hidden)} ms, fullscreen ${msOf(policy.fullscreen)} ms, most ${msOf(policy.max)} ms`);
+    beat = setInterval(diagBeat, DIAG_BEAT_MS);
+  }
 }

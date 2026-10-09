@@ -27,10 +27,19 @@
 //
 //   grow     the first silent quantum of a run doubles the lookahead, up to
 //            the most; one stall is one run, so one stall doubles it once
+//   learn    that same quantum marks the cushion the ring really held when
+//            it ran dry as bad, and every size up to it with it; the
+//            session floor becomes twice the largest bad size, the step the
+//            growth took from it, and the lookahead never comes back below
 //   hidden   the page says when it goes hidden (visibilitychange), and the
 //            lookahead rises to the hidden floor at once
+//   full     the page says when it goes fullscreen; while it is, the
+//            lookahead holds the fullscreen floor, rendered while the page
+//            is still in front, because a fullscreen window on macOS is a
+//            Space of its own, a swipe away from hidden with no warning
 //   shrink   after a steady stretch, visible and without an underrun, it
-//            halves, never below the base; a shrink drops nothing, the
+//            halves, never below the base, the session floor or, while
+//            fullscreen, the fullscreen floor; a shrink drops nothing, the
 //            stages simply render less far ahead while what is buffered
 //            plays out
 //   delay    a rise is announced first (LOOKAHEAD_NEXT, which the page's
@@ -59,8 +68,10 @@ const RISE_DELAY = CHUNK / QUANTUM;
 
 export class Drain {
   // `lookahead`, all in frames but `steady` (quanta): { base, max, hidden,
-  // steady, startHidden }, or null to keep it fixed.
-  constructor({ control = null, stages = 1, post, lookahead = null }) {
+  // fullscreen, steady, startHidden, startFullscreen }, or null to keep it
+  // fixed. `diag` (?heartdiag=1, engine.js) posts each run of underruns and
+  // each step of the lookahead to the page.
+  constructor({ control = null, stages = 1, post, lookahead = null, diag = false }) {
     this.ctl = control;
     this.stages = stages;
     this.post = post;
@@ -79,7 +90,17 @@ export class Drain {
     this.hidden = false;
     this.calm = 0;
     this.dry = false;
+    // The ratchet: the cushion the ring has really held (the lookahead once
+    // the stages have filled it), the largest one that has run dry this
+    // session, and the floor that leaves.
+    this.held = 0;
+    this.bad = 0;
+    this.learned = 0;
+    this.fullscreen = false;
     this.news = { type: 'lookahead', next: 0, target: 0, underruns: 0 };
+    this.diag = diag ? { type: 'diag', what: '', played: 0, underruns: 0, run: 0, ready: 0, target: 0, next: 0, held: 0, floor: 0 } : null;
+    this.runFrom = 0;
+    if (lookahead && lookahead.startFullscreen) this.setFullscreen(true);
     if (lookahead && lookahead.startHidden) this.setHidden(true);
   }
 
@@ -106,10 +127,14 @@ export class Drain {
       const late = Math.min(this.debt, ready);
       if (late > 0) { ring.release(late); this.debt -= late; ready -= late; }
     }
+    // The stages render to within a chunk of the lookahead, so a ring that
+    // holds that much has been filled to it: that cushion is now held.
+    if (ready + CHUNK >= this.target) this.held = this.target;
     if (ready >= n) {
       ring.read(0, L, 0, n);
       ring.read(1, R, 0, n);
       ring.release(n);
+      if (this.dry && this.diag) this.tellDiag('wet', ready);
       this.dry = false;
     } else {
       L.fill(0);
@@ -118,7 +143,11 @@ export class Drain {
       this.underruns++;
       if (this.ctl) Atomics.add(this.ctl, UNDERRUNS, 1);
       this.calm = 0;
-      if (!this.dry && this.policy) this.raise(2 * this.next);
+      if (!this.dry) {
+        this.runFrom = this.underruns;
+        if (this.policy) { this.learn(); this.raise(2 * this.next); }
+        if (this.diag) this.tellDiag('dry', ready);
+      }
       this.dry = true;
     }
     this.tick();
@@ -153,6 +182,32 @@ export class Drain {
     if (hidden && this.policy) this.raise(this.policy.hidden);
   }
 
+  // The page went fullscreen or left it. Fullscreen, the cushion goes up to
+  // the fullscreen floor now, while the page is in front and the workers
+  // run at full speed, and stays there until the page leaves fullscreen.
+  setFullscreen(on) {
+    this.fullscreen = on;
+    if (on && this.policy && this.policy.fullscreen) this.raise(this.policy.fullscreen);
+  }
+
+  // The ring ran dry holding `held`: that size, and every size below it,
+  // has failed this session, and the floor rises to the step above it.
+  // An underrun before the stages ever filled the ring (held 0, the start)
+  // teaches nothing.
+  learn() {
+    if (this.held <= this.bad) return;
+    this.bad = this.held;
+    this.learned = Math.min(this.policy.max, 2 * this.bad);
+  }
+
+  // The least the lookahead may step down to now.
+  floor() {
+    const p = this.policy;
+    let f = Math.max(p.base, this.learned);
+    if (this.fullscreen && p.fullscreen) f = Math.max(f, p.fullscreen);
+    return Math.min(p.max, f);
+  }
+
   // Announces a rise, to be obeyed RISE_DELAY quanta on.
   raise(frames) {
     frames = Math.min(this.policy.max, frames);
@@ -169,16 +224,18 @@ export class Drain {
     const p = this.policy;
     if (this.rising > 0 && --this.rising === 0) this.obey(true);
     if (this.hidden || this.rising > 0 || this.dry) return;
-    if (this.target <= p.base) { this.calm = 0; return; }
+    const floor = this.floor();
+    if (this.target <= floor) { this.calm = 0; return; }
     if (++this.calm < p.steady) return;
     this.calm = 0;
-    this.next = Math.max(p.base, Math.ceil(this.target / 2 / QUANTUM) * QUANTUM);
+    this.next = Math.max(floor, Math.ceil(this.target / 2 / QUANTUM) * QUANTUM);
     this.obey(false);
   }
 
   obey(rose) {
     this.target = this.next;
     const ctl = this.ctl;
+    if (this.diag) this.tellDiag(rose ? 'rise' : 'step down', 0);
     if (!ctl) { this.tell(); return; }
     Atomics.store(ctl, LOOKAHEAD_NEXT, this.next);
     Atomics.store(ctl, LOOKAHEAD, this.target);
@@ -194,6 +251,24 @@ export class Drain {
     this.post(n);
   }
 
+  // ?heartdiag=1 only: a run of underruns starting ('dry', with what the
+  // ring held) or ending ('wet', with its length), or the lookahead
+  // obeyed anew, told from the audio thread as it happens, so the page
+  // can stamp it even when its own timers are throttled.
+  tellDiag(what, ready) {
+    const d = this.diag, p = this.policy;
+    d.what = what;
+    d.played = this.played;
+    d.underruns = this.underruns;
+    d.run = this.underruns - this.runFrom + 1;
+    d.ready = ready;
+    d.target = this.target;
+    d.next = this.next;
+    d.held = this.held;
+    d.floor = p ? this.floor() : 0;
+    this.post(d);
+  }
+
   close() {
     if (this.ring) this.ring.close();
     this.ring = null;
@@ -207,7 +282,7 @@ if (typeof registerProcessor === 'function') {
       const o = options.processorOptions;
       this.alive = true;
       this.drain = new Drain({
-        control: o.control, stages: o.stages, lookahead: o.lookahead || null,
+        control: o.control, stages: o.stages, lookahead: o.lookahead || null, diag: o.diag === true,
         post: m => this.port.postMessage(m)
       });
       // A shared ring comes in the options; a message ring's port has to be
@@ -217,6 +292,7 @@ if (typeof registerProcessor === 'function') {
         const d = e.data;
         if (d.type === 'ring') this.drain.attach(openRing(d.ring, 'reader'));
         else if (d.type === 'hidden') this.drain.setHidden(d.hidden === true);
+        else if (d.type === 'fullscreen') this.drain.setFullscreen(d.on === true);
         else if (d.type === 'close') { this.alive = false; this.drain.close(); }
       };
     }
