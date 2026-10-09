@@ -1,0 +1,609 @@
+{
+  "version": 1,
+  "pack": "lotus-bloom-upscaled-3x-stabilized-32",
+  "status": "proof-of-concept",
+  "source": "lotus-bloom-960-stable.png",
+  "method": "Bidirectional macOS Vision optical flow (revision 2, veryHigh); inverse halfway warping; premultiplied RGBA synthesis; fixed front-petal registration; unchanged original keyframes",
+  "openingFrameCount": 32,
+  "originalKeyframeCount": 16,
+  "generatedIntermediateCount": 15,
+  "endpointHoldCount": 1,
+  "assets": [
+    {
+      "image": "lotus-bloom-960-stable-32.png",
+      "width": 7680,
+      "height": 3840,
+      "tileSize": 960,
+      "columns": 8,
+      "rows": 4,
+      "frameCount": 32,
+      "fps": 16,
+      "durationSeconds": 4,
+      "loop": true,
+      "playback": "explicit-sequence",
+      "sourceFrameSequence": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        30,
+        29,
+        28,
+        27,
+        26,
+        25,
+        24,
+        23,
+        22,
+        21,
+        20,
+        19,
+        18,
+        17,
+        16,
+        15,
+        14,
+        13,
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0,
+        0
+      ],
+      "frameOrder": "row-major",
+      "alpha": "straight",
+      "colorSpace": "srgb",
+      "registrationAnchor": [
+        0.5,
+        0.834375
+      ],
+      "sha256": "17ed2a1117c03fb2bc5f1cc9edecab6ac5b31321503290cb982c1042f052753c"
+    },
+    {
+      "image": "lotus-bloom-384-stable-32.png",
+      "width": 3072,
+      "height": 1536,
+      "tileSize": 384,
+      "columns": 8,
+      "rows": 4,
+      "frameCount": 32,
+      "fps": 16,
+      "durationSeconds": 4,
+      "loop": true,
+      "playback": "explicit-sequence",
+      "sourceFrameSequence": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        30,
+        29,
+        28,
+        27,
+        26,
+        25,
+        24,
+        23,
+        22,
+        21,
+        20,
+        19,
+        18,
+        17,
+        16,
+        15,
+        14,
+        13,
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0,
+        0
+      ],
+      "frameOrder": "row-major",
+      "alpha": "straight",
+      "colorSpace": "srgb",
+      "registrationAnchor": [
+        0.5,
+        0.7981687898089173
+      ],
+      "sha256": "16c39630734f1931aa137ac5e78e57e3e7012e1053c00447cab1b5ca748138c4"
+    },
+    {
+      "image": "lotus-bloom-384-stable-64-loop.png",
+      "width": 3072,
+      "height": 3072,
+      "tileSize": 384,
+      "columns": 8,
+      "rows": 8,
+      "frameCount": 64,
+      "fps": 16,
+      "durationSeconds": 4,
+      "loop": true,
+      "playback": "forward",
+      "sourceFrameSequence": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ],
+      "frameOrder": "row-major",
+      "alpha": "straight",
+      "colorSpace": "srgb",
+      "registrationAnchor": [
+        0.5,
+        0.7981687898089173
+      ],
+      "sha256": "1f01b4c2c659fc9f0dcb6fec87be88a926d7f975b2a2fa9a9250a86fb4cfedb6"
+    }
+  ],
+  "provenance": [
+    {
+      "frame": 0,
+      "kind": "original-keyframe",
+      "originalFrame": 0,
+      "registrationAnchorPixels": {
+        "x": 479.70241204223976,
+        "y": 801
+      }
+    },
+    {
+      "frame": 1,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        0,
+        1
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.85902157002806,
+        "y": 801
+      }
+    },
+    {
+      "frame": 2,
+      "kind": "original-keyframe",
+      "originalFrame": 1,
+      "registrationAnchorPixels": {
+        "x": 480.1274083095848,
+        "y": 801
+      }
+    },
+    {
+      "frame": 3,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        1,
+        2
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.65049165707785,
+        "y": 801
+      }
+    },
+    {
+      "frame": 4,
+      "kind": "original-keyframe",
+      "originalFrame": 2,
+      "registrationAnchorPixels": {
+        "x": 479.7426095060122,
+        "y": 801
+      }
+    },
+    {
+      "frame": 5,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        2,
+        3
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.68454074077846,
+        "y": 801
+      }
+    },
+    {
+      "frame": 6,
+      "kind": "original-keyframe",
+      "originalFrame": 3,
+      "registrationAnchorPixels": {
+        "x": 479.7768088643504,
+        "y": 801
+      }
+    },
+    {
+      "frame": 7,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        3,
+        4
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.89119896599874,
+        "y": 801
+      }
+    },
+    {
+      "frame": 8,
+      "kind": "original-keyframe",
+      "originalFrame": 4,
+      "registrationAnchorPixels": {
+        "x": 479.79429612270116,
+        "y": 801
+      }
+    },
+    {
+      "frame": 9,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        4,
+        5
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.6192016047176,
+        "y": 801
+      }
+    },
+    {
+      "frame": 10,
+      "kind": "original-keyframe",
+      "originalFrame": 5,
+      "registrationAnchorPixels": {
+        "x": 479.58717608651295,
+        "y": 801
+      }
+    },
+    {
+      "frame": 11,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        5,
+        6
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.89586404983345,
+        "y": 801
+      }
+    },
+    {
+      "frame": 12,
+      "kind": "original-keyframe",
+      "originalFrame": 6,
+      "registrationAnchorPixels": {
+        "x": 480.0357065465401,
+        "y": 801
+      }
+    },
+    {
+      "frame": 13,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        6,
+        7
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.81863212371246,
+        "y": 801
+      }
+    },
+    {
+      "frame": 14,
+      "kind": "original-keyframe",
+      "originalFrame": 7,
+      "registrationAnchorPixels": {
+        "x": 479.62202109748307,
+        "y": 801
+      }
+    },
+    {
+      "frame": 15,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        7,
+        8
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.6768850906467,
+        "y": 801
+      }
+    },
+    {
+      "frame": 16,
+      "kind": "original-keyframe",
+      "originalFrame": 8,
+      "registrationAnchorPixels": {
+        "x": 480.42829493048987,
+        "y": 801
+      }
+    },
+    {
+      "frame": 17,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        8,
+        9
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.84386198298114,
+        "y": 801
+      }
+    },
+    {
+      "frame": 18,
+      "kind": "original-keyframe",
+      "originalFrame": 9,
+      "registrationAnchorPixels": {
+        "x": 480.49640127755134,
+        "y": 801
+      }
+    },
+    {
+      "frame": 19,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        9,
+        10
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.58712161607275,
+        "y": 801
+      }
+    },
+    {
+      "frame": 20,
+      "kind": "original-keyframe",
+      "originalFrame": 10,
+      "registrationAnchorPixels": {
+        "x": 479.95135771204406,
+        "y": 801
+      }
+    },
+    {
+      "frame": 21,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        10,
+        11
+      ],
+      "registrationAnchorPixels": {
+        "x": 480.2205777986674,
+        "y": 801
+      }
+    },
+    {
+      "frame": 22,
+      "kind": "original-keyframe",
+      "originalFrame": 11,
+      "registrationAnchorPixels": {
+        "x": 480.49092710419814,
+        "y": 801
+      }
+    },
+    {
+      "frame": 23,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        11,
+        12
+      ],
+      "registrationAnchorPixels": {
+        "x": 480.190884236912,
+        "y": 801
+      }
+    },
+    {
+      "frame": 24,
+      "kind": "original-keyframe",
+      "originalFrame": 12,
+      "registrationAnchorPixels": {
+        "x": 480.21785428202617,
+        "y": 801
+      }
+    },
+    {
+      "frame": 25,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        12,
+        13
+      ],
+      "registrationAnchorPixels": {
+        "x": 480.2674419293606,
+        "y": 801
+      }
+    },
+    {
+      "frame": 26,
+      "kind": "original-keyframe",
+      "originalFrame": 13,
+      "registrationAnchorPixels": {
+        "x": 480.1350985021674,
+        "y": 801
+      }
+    },
+    {
+      "frame": 27,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        13,
+        14
+      ],
+      "registrationAnchorPixels": {
+        "x": 479.51015087348685,
+        "y": 801
+      }
+    },
+    {
+      "frame": 28,
+      "kind": "original-keyframe",
+      "originalFrame": 14,
+      "registrationAnchorPixels": {
+        "x": 480.3954410903628,
+        "y": 801
+      }
+    },
+    {
+      "frame": 29,
+      "kind": "motion-interpolated-halfway-pose",
+      "betweenOriginalFrames": [
+        14,
+        15
+      ],
+      "registrationAnchorPixels": {
+        "x": 480.3925696598742,
+        "y": 801
+      }
+    },
+    {
+      "frame": 30,
+      "kind": "original-keyframe",
+      "originalFrame": 15,
+      "registrationAnchorPixels": {
+        "x": 479.7220431537391,
+        "y": 801
+      }
+    },
+    {
+      "frame": 31,
+      "kind": "endpoint-hold",
+      "originalFrame": 15,
+      "registrationAnchorPixels": {
+        "x": 479.7220431537391,
+        "y": 801
+      }
+    }
+  ]
+}

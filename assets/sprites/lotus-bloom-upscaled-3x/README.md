@@ -1,10 +1,17 @@
 # Blooming opal lotus: 3× POC
 
+The newer **32-frame opening animation with baked in-between poses** is
+documented in [README-32.md](README-32.md). Its filenames end in
+`-stable-32.png`; the full opening/closing export ends in `-stable-64-loop.png`.
+
 All files are in this shared repository directory:
 `assets/sprites/lotus-bloom-upscaled-3x/`.
 
 | File | Layout | Cell size | Meaning |
 | --- | --- | --- | --- |
+| `lotus-bloom-960-stable.png` | 3840×3840, 4×4 | 960×960 | **Use this master:** all 16 opening frames registered to a fixed bottom centre |
+| `lotus-bloom-384-stable.png` | 3072×1536, 8×4 | 384×384 | **Use this packed export:** same stabilized frames, opening then closing |
+| `manifest-stable.json` | metadata | — | Stabilized hashes, anchor, and per-frame translation offsets |
 | `lotus-bloom-960.png` | 3840×3840, 4×4 | 960×960 | 16 unique opening frames; master for the live flower renderer, 3× its existing 320px cells |
 | `lotus-bloom-384.png` | 3072×1536, 8×4 | 384×384 | 32 physical frames, opening then closing; 3× the existing packed 128px animation |
 | `manifest.json` | metadata | — | Dimensions, hashes, placement, and original frame sequence |
@@ -27,11 +34,23 @@ POC; it is not an exact recovery of photographic detail.
 
 Original assets and production flower rendering are unchanged by this POC.
 
+## Stabilization
+
+The first pack inherited frame offsets from the original sheet, including a
+33px vertical range at the flower base. The stabilized version measures the
+opaque bottom of the front petal and the centre of its bottom 5% in each frame.
+It translates existing pixels to the common master anchor `(480, 801)`.
+Registration keeps the vertical anchor exact and the horizontal anchor within
+half a master pixel. No art is regenerated, resized per frame, or clipped;
+the natural changing shape of the opening flower is retained. The 384px export
+is rebuilt from the registered master, with the same exact reverse copies.
+The first versions remain saved for comparison.
+
 ## Integration handoff
 
 The current `gpu/flowers.js` reads the 4×4 source atlas, not the packed 128px
-export. Use the **960px master** for that renderer. Update `SHEET_URL` to
-`assets/sprites/lotus-bloom-upscaled-3x/lotus-bloom-960.png` and `CELL` to 960,
+export. Use the **stabilized 960px master** for that renderer. Update `SHEET_URL` to
+`assets/sprites/lotus-bloom-upscaled-3x/lotus-bloom-960-stable.png` and `CELL` to 960,
 which makes `ATLAS` 3840. Update `CELL_TEXELS` in `gpu/flowers.wgsl.js` to 960
 so its mip LOD calculation matches the texture. Keep `GRID = 4`, `FRAMES = 16`,
 `BASE_FPS = 8`, and the existing 32-step sequence. Seven mip levels still have
@@ -52,6 +71,7 @@ Rebuild from the repo root (requires ImageMagick):
 
 ```sh
 node tools/pack-lotus-upscale-poc.mjs assets/sprites/lotus-bloom-upscaled-3x/source/quadrant-{0,1,2,3}.png
+node tools/stabilize-lotus-atlas.mjs
 ```
 
 The four source groups correspond to top-left, top-right, bottom-left, and

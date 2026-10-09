@@ -1,0 +1,591 @@
+{
+  "version": 1,
+  "pack": "lotus-bloom-upscaled-3x-stabilized",
+  "status": "proof-of-concept",
+  "alpha": "straight",
+  "colorSpace": "srgb",
+  "originalSource": "../celestial-v1/source/lotus-bloom.png",
+  "originalSourceSha256": "946e5a2db9af38947874e3dfbbc7ae8311bef8057ce7bbe57f51791c3c95a4f0",
+  "method": "ImageGen texture and contour reconstruction in four 2x2 groups; high-resolution alpha foreground cleanup, original placement bounds only, Lanczos packing; fixed base-petal registration",
+  "assets": [
+    {
+      "id": "lotus-bloom-master",
+      "image": "lotus-bloom-960-stable.png",
+      "tileSize": 960,
+      "columns": 4,
+      "rows": 4,
+      "frameCount": 16,
+      "padding": 9,
+      "width": 3840,
+      "height": 3840,
+      "fps": 8,
+      "loop": true,
+      "playback": "ping-pong",
+      "durationSeconds": 4,
+      "frameOrder": "row-major",
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "sourceFrameSequence": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        15,
+        14,
+        13,
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0
+      ],
+      "sha256": "09ca573bf8a64f53712fa150e1e9706511920572c30321e1e18f21f2a7608be1",
+      "registrationAnchor": [
+        0.5,
+        0.834375
+      ]
+    },
+    {
+      "id": "lotus-bloom-packed",
+      "image": "lotus-bloom-384-stable.png",
+      "tileSize": 384,
+      "columns": 8,
+      "rows": 4,
+      "frameCount": 32,
+      "padding": 24,
+      "width": 3072,
+      "height": 1536,
+      "fps": 8,
+      "loop": true,
+      "playback": "ping-pong",
+      "durationSeconds": 4,
+      "frameOrder": "row-major",
+      "anchor": [
+        0.5,
+        0.5
+      ],
+      "sourceFrameSequence": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        15,
+        14,
+        13,
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0
+      ],
+      "sha256": "8f4db43ad4e805e6267d8113c714fdc216ef8f2f7e1acec9a969447698c98a9f",
+      "registrationAnchor": [
+        0.5,
+        0.7981687898089173
+      ]
+    }
+  ],
+  "placement": [
+    {
+      "frame": 0,
+      "sourceBounds": {
+        "x": 86,
+        "y": 76,
+        "width": 148,
+        "height": 188
+      },
+      "masterBounds": {
+        "x": 258,
+        "y": 237,
+        "width": 444,
+        "height": 564
+      }
+    },
+    {
+      "frame": 1,
+      "sourceBounds": {
+        "x": 84,
+        "y": 68,
+        "width": 150,
+        "height": 196
+      },
+      "masterBounds": {
+        "x": 256,
+        "y": 213,
+        "width": 450,
+        "height": 588
+      }
+    },
+    {
+      "frame": 2,
+      "sourceBounds": {
+        "x": 79,
+        "y": 66,
+        "width": 157,
+        "height": 198
+      },
+      "masterBounds": {
+        "x": 247,
+        "y": 207,
+        "width": 471,
+        "height": 594
+      }
+    },
+    {
+      "frame": 3,
+      "sourceBounds": {
+        "x": 66,
+        "y": 66,
+        "width": 182,
+        "height": 198
+      },
+      "masterBounds": {
+        "x": 205,
+        "y": 207,
+        "width": 546,
+        "height": 594
+      }
+    },
+    {
+      "frame": 4,
+      "sourceBounds": {
+        "x": 52,
+        "y": 69,
+        "width": 213,
+        "height": 200
+      },
+      "masterBounds": {
+        "x": 160,
+        "y": 201,
+        "width": 639,
+        "height": 600
+      }
+    },
+    {
+      "frame": 5,
+      "sourceBounds": {
+        "x": 47,
+        "y": 68,
+        "width": 222,
+        "height": 201
+      },
+      "masterBounds": {
+        "x": 147,
+        "y": 198,
+        "width": 666,
+        "height": 603
+      }
+    },
+    {
+      "frame": 6,
+      "sourceBounds": {
+        "x": 34,
+        "y": 67,
+        "width": 245,
+        "height": 202
+      },
+      "masterBounds": {
+        "x": 115,
+        "y": 195,
+        "width": 735,
+        "height": 606
+      }
+    },
+    {
+      "frame": 7,
+      "sourceBounds": {
+        "x": 32,
+        "y": 66,
+        "width": 252,
+        "height": 203
+      },
+      "masterBounds": {
+        "x": 106,
+        "y": 192,
+        "width": 756,
+        "height": 609
+      }
+    },
+    {
+      "frame": 8,
+      "sourceBounds": {
+        "x": 18,
+        "y": 62,
+        "width": 281,
+        "height": 204
+      },
+      "masterBounds": {
+        "x": 55,
+        "y": 189,
+        "width": 843,
+        "height": 612
+      }
+    },
+    {
+      "frame": 9,
+      "sourceBounds": {
+        "x": 16,
+        "y": 60,
+        "width": 285,
+        "height": 206
+      },
+      "masterBounds": {
+        "x": 49,
+        "y": 183,
+        "width": 855,
+        "height": 618
+      }
+    },
+    {
+      "frame": 10,
+      "sourceBounds": {
+        "x": 16,
+        "y": 60,
+        "width": 289,
+        "height": 206
+      },
+      "masterBounds": {
+        "x": 45,
+        "y": 183,
+        "width": 867,
+        "height": 618
+      }
+    },
+    {
+      "frame": 11,
+      "sourceBounds": {
+        "x": 14,
+        "y": 60,
+        "width": 287,
+        "height": 207
+      },
+      "masterBounds": {
+        "x": 54,
+        "y": 180,
+        "width": 861,
+        "height": 621
+      }
+    },
+    {
+      "frame": 12,
+      "sourceBounds": {
+        "x": 15,
+        "y": 53,
+        "width": 287,
+        "height": 206
+      },
+      "masterBounds": {
+        "x": 50,
+        "y": 183,
+        "width": 861,
+        "height": 618
+      }
+    },
+    {
+      "frame": 13,
+      "sourceBounds": {
+        "x": 14,
+        "y": 52,
+        "width": 288,
+        "height": 207
+      },
+      "masterBounds": {
+        "x": 45,
+        "y": 180,
+        "width": 864,
+        "height": 621
+      }
+    },
+    {
+      "frame": 14,
+      "sourceBounds": {
+        "x": 13,
+        "y": 53,
+        "width": 288,
+        "height": 205
+      },
+      "masterBounds": {
+        "x": 47,
+        "y": 186,
+        "width": 864,
+        "height": 615
+      }
+    },
+    {
+      "frame": 15,
+      "sourceBounds": {
+        "x": 14,
+        "y": 54,
+        "width": 285,
+        "height": 205
+      },
+      "masterBounds": {
+        "x": 54,
+        "y": 186,
+        "width": 855,
+        "height": 615
+      }
+    }
+  ],
+  "stabilization": {
+    "method": "Integer translation only, bottom front-petal centre; no per-frame resizing or regenerated art",
+    "source": "lotus-bloom-960.png",
+    "targetAnchorPixels": {
+      "x": 480,
+      "y": 801
+    },
+    "maxHorizontalErrorPixels": 0.5,
+    "translations": [
+      {
+        "frame": 0,
+        "dx": -9,
+        "dy": 0,
+        "before": {
+          "x": 488.70241204223976,
+          "y": 801
+        },
+        "after": {
+          "x": 479.70241204223976,
+          "y": 801
+        }
+      },
+      {
+        "frame": 1,
+        "dx": -5,
+        "dy": 0,
+        "before": {
+          "x": 485.1274083095848,
+          "y": 801
+        },
+        "after": {
+          "x": 480.1274083095848,
+          "y": 801
+        }
+      },
+      {
+        "frame": 2,
+        "dx": 1,
+        "dy": 0,
+        "before": {
+          "x": 478.7426095060122,
+          "y": 801
+        },
+        "after": {
+          "x": 479.7426095060122,
+          "y": 801
+        }
+      },
+      {
+        "frame": 3,
+        "dx": -2,
+        "dy": 0,
+        "before": {
+          "x": 481.7768088643504,
+          "y": 801
+        },
+        "after": {
+          "x": 479.7768088643504,
+          "y": 801
+        }
+      },
+      {
+        "frame": 4,
+        "dx": -5,
+        "dy": -15,
+        "before": {
+          "x": 484.79429612270116,
+          "y": 816
+        },
+        "after": {
+          "x": 479.79429612270116,
+          "y": 801
+        }
+      },
+      {
+        "frame": 5,
+        "dx": -3,
+        "dy": -15,
+        "before": {
+          "x": 482.58717608651295,
+          "y": 816
+        },
+        "after": {
+          "x": 479.58717608651295,
+          "y": 801
+        }
+      },
+      {
+        "frame": 6,
+        "dx": 4,
+        "dy": -15,
+        "before": {
+          "x": 476.0357065465401,
+          "y": 816
+        },
+        "after": {
+          "x": 480.0357065465401,
+          "y": 801
+        }
+      },
+      {
+        "frame": 7,
+        "dx": 1,
+        "dy": -15,
+        "before": {
+          "x": 478.62202109748307,
+          "y": 816
+        },
+        "after": {
+          "x": 479.62202109748307,
+          "y": 801
+        }
+      },
+      {
+        "frame": 8,
+        "dx": -8,
+        "dy": -6,
+        "before": {
+          "x": 488.42829493048987,
+          "y": 807
+        },
+        "after": {
+          "x": 480.42829493048987,
+          "y": 801
+        }
+      },
+      {
+        "frame": 9,
+        "dx": -8,
+        "dy": -6,
+        "before": {
+          "x": 488.49640127755134,
+          "y": 807
+        },
+        "after": {
+          "x": 480.49640127755134,
+          "y": 801
+        }
+      },
+      {
+        "frame": 10,
+        "dx": -12,
+        "dy": -6,
+        "before": {
+          "x": 491.95135771204406,
+          "y": 807
+        },
+        "after": {
+          "x": 479.95135771204406,
+          "y": 801
+        }
+      },
+      {
+        "frame": 11,
+        "dx": 3,
+        "dy": -9,
+        "before": {
+          "x": 477.49092710419814,
+          "y": 810
+        },
+        "after": {
+          "x": 480.49092710419814,
+          "y": 801
+        }
+      },
+      {
+        "frame": 12,
+        "dx": -4,
+        "dy": 15,
+        "before": {
+          "x": 484.21785428202617,
+          "y": 786
+        },
+        "after": {
+          "x": 480.21785428202617,
+          "y": 801
+        }
+      },
+      {
+        "frame": 13,
+        "dx": -6,
+        "dy": 15,
+        "before": {
+          "x": 486.1350985021674,
+          "y": 786
+        },
+        "after": {
+          "x": 480.1350985021674,
+          "y": 801
+        }
+      },
+      {
+        "frame": 14,
+        "dx": -1,
+        "dy": 18,
+        "before": {
+          "x": 481.3954410903628,
+          "y": 783
+        },
+        "after": {
+          "x": 480.3954410903628,
+          "y": 801
+        }
+      },
+      {
+        "frame": 15,
+        "dx": 3,
+        "dy": 15,
+        "before": {
+          "x": 476.7220431537391,
+          "y": 786
+        },
+        "after": {
+          "x": 479.7220431537391,
+          "y": 801
+        }
+      }
+    ]
+  }
+}
