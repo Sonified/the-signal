@@ -16,6 +16,7 @@
 // Every set() ends with the debounced save(). The state-only helpers never
 // call save(); store.js decides when to write.
 import { save } from './store.js';
+import { retimeRoomPhase } from './room-clock.js';
 import { KALEIDOSCOPE_SETS, KALEIDOSCOPE_SET_COUNT, kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { subDrawer } from './schema-visual.js';
 
@@ -59,6 +60,11 @@ const NUM = [
   // can land as a pop whatever put the piece there. 0 turns it off.
   ['kaleidoFadeInS',     0,   10,  1.5,  false],
   ['kaleidoTint',        0,   1,   0,    false],
+  // the tint's variance: the standard percent dip on the room clock, as
+  // the flowers' tint has (core/strobe.js VARIANCES)
+  ['kaleidoTintVar',     0,   1,   0,    false],
+  ['kaleidoTintPeriod',  1,   60,  10,   true ],
+  ['kaleidoTintPeriodOff', 0, 1,   0,    false],
   ['kaleidoPulse',       0,   1,   0,    false],
   // Which motif atlas the shapes come from (assets/kaleidoscope/sets.mjs): 1 the
   // botanical atlas, 2 petal specimens, 3 petals and green leaves, 4 ferns
@@ -444,7 +450,25 @@ export const KALEIDO_CONTROLS = [
   grade('kaleidoContrast', 'kaleidoContrast', 'Contrast'),
   grade('kaleidoSat', 'kaleidoSat', 'Saturation'),
   under('kaleidoColorDrawer', percent('kaleidoTint', 'kaleidoTint', 'Tint to strobe colour',
-    S => S.kaleidoTint === 0 ? 'own colour' : Math.round(S.kaleidoTint * 100) + '%'))
+    S => S.kaleidoTint === 0 ? 'own colour' : Math.round(S.kaleidoTint * 100) + '%')),
+  varianceOf('kaleidoTint', under('kaleidoColorDrawer',
+    percent('kaleidoTintVar', 'kaleidoTintVar', 'Tint variance'))),
+  varianceOf('kaleidoTint', under('kaleidoColorDrawer', {
+    // the rate on the room clock: a new rate folds into the swing's phase
+    // offset first (core/room-clock.js), so the dip carries on rather than
+    // jumping, as every room-clocked variance rate does
+    id: 'kaleidoTintPeriod', section: 'kaleido', label: 'Tint variance rate', kind: 'slider',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.kaleidoTintPeriod,
+    set: (S, pos) => {
+      const v = fit(pos, 1, 60, true);
+      retimeRoomPhase(S, 'kaleidoTintPeriodOff', S.kaleidoTintPeriod, v);
+      S.kaleidoTintPeriod = v;
+      save();
+    },
+    format: S => S.kaleidoTintPeriod + 's / cycle',
+    enabled: layerOn
+  }))
 ];
 
 // Shorthand names for the shut sub-drawer strips' summaries (see summary in
