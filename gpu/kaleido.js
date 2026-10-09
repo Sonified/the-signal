@@ -103,7 +103,7 @@ const MAX_INST = 4 * MAX_SHAPES;
 const MOTIF_INNER = 104;
 const MOTIF_PAD = (TILE - MOTIF_INNER) / 2;   // 12
 const DEFAULT_FILL = 0.41;
-const MAX_FOLDS = 16;
+const MAX_FOLDS = 32;
 const INST_FLOATS = 8;              // x y half alpha | upX upY motif atlas slot
 const UNIFORM_FLOATS = 24;          // see kaleido.wgsl.js's struct KU
 

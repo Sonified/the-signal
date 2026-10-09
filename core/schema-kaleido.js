@@ -33,7 +33,7 @@ const DEF_CONST_SIZE = false;
 const DEF_GRADE = false;
 const NUM = [
   // key,               min,  max, def,  integer
-  ['kaleidoFolds',       3,   16,  8,    true ],
+  ['kaleidoFolds',       3,   32,  8,    true ],
   ['kaleidoDensity',     0,   1,   0.5,  false],
   ['kaleidoSpeed',       0,   3,   1,    false],
   // How far each shape's speed strays from Speed, and the seconds one

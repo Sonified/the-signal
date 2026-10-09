@@ -29,7 +29,7 @@ const MODES = ['tunnel', 'mandala'];
 const DEF_MODE = 'tunnel';
 const NUM = [
   // key,               min,  max, def,  integer
-  ['flowerCount',        3,   36,  12,   true ],
+  ['flowerCount',        3,   32,  12,   true ],
   ['flowerRings',        1,   12,  6,    true ],
   ['flowerSize',         0.2, 3,   1,    false],
   ['flowerSpeed',        0,   3,   1,    false],

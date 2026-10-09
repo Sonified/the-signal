@@ -38,7 +38,7 @@ const ATLAS = CELL * GRID;          // 1280
 const MIP_LEVELS = 7;
 const ALPHA_CUT = 48;
 
-const MAX_RINGS = 12, MAX_COUNT = 36;
+const MAX_RINGS = 12, MAX_COUNT = 32;
 const MAX_INST = MAX_RINGS * MAX_COUNT;
 const INST_FLOATS = 8;              // cx cy half alpha | upX upY framesAB blend
 const UNIFORM_FLOATS = 24;          // see flowers.wgsl.js's struct FU
