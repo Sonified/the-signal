@@ -247,7 +247,7 @@ function readRaw(key) {
 
 function readJourney(raw) {
   const d = { ver: 1, steps: [], autoPlay: false, loop: false, name: '', fullStart: false,
-              sizeLock: false, sizeLockValue: null, sizeRestore: null, ringV: 2 };
+              sizeLock: false, sizeLockValue: null, sizeRestore: null, ringV: 2, partV: 2 };
   if (raw && typeof raw === 'object') {
     if (Array.isArray(raw.steps)) {
       for (let i = 0; i < raw.steps.length && i < STEPS_MAX; i++) d.steps.push(readStep(raw.steps[i]));
@@ -258,6 +258,12 @@ function readJourney(raw) {
     if (raw.ringV !== 2) for (const st of d.steps) {
       const v = st.overrides.ringSpeed;
       if (typeof v === 'number') st.overrides.ringSpeed = oldRingSpeed(v);
+    }
+    // and from before the particle Speed's unit halved (schema-particles.js
+    // PART_SPEED_SCALE): doubled, the same speed on screen
+    if (raw.partV !== 2) for (const st of d.steps) {
+      const v = st.overrides.partSpeed;
+      if (typeof v === 'number') st.overrides.partSpeed = Math.min(0.5, v * 2);
     }
     d.autoPlay = raw.autoPlay === true;
     d.loop = raw.loop === true;

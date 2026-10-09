@@ -74,6 +74,7 @@
 // size, or the feedback moves before or after the fold, and let go when the
 // layer goes off.
 
+import { PART_SPEED_SCALE } from '../core/schema-particles.js';
 import { S, Z_NEAR, Z_FAR } from '../js/state.js';
 import { scaledStrobeDepth } from '../js/strobe-scale.js';
 import { SIM_WGSL, RENDER_WGSL } from './particles.wgsl.js';
@@ -432,7 +433,10 @@ export function createParticles(device, format, platform) {
     const emitter = EMITTER_IDS[S.partEmitter] ?? 0;
     const colour = COLOUR_IDS[S.partColor] ?? 0;
     const rate = clampNum(S.partRate, 0, 1, 0.5);
-    const speed = clampNum(S.effPartSpeed ?? S.partSpeed, 0, 0.5, 0.25);
+    // The Speed dial's unit halved (schema-particles.js PART_SPEED_SCALE):
+    // the number reads as before, the motion is half of it, so the lower
+    // half of the dial is twice as fine and the old top speed is gone.
+    const speed = clampNum(S.effPartSpeed ?? S.partSpeed, 0, 0.5, 0.25) * PART_SPEED_SCALE;
     let sizeMul = clampNum(S.partSize, 0.2, 3, 1);
     if (style === STYLE_IDS.dust) sizeMul *= DUST_SIZE;
     const sizeVar = clampNum(S.partSizeVar, 0, 1, 0.5);

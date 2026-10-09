@@ -50,7 +50,7 @@ const DEF_FB_BLEND = 'add';
 const NUM = [
   // key,            min,  max, def,  integer
   ['partRate',        0,   1,   0.5,  false],
-  ['partSpeed',       0,   0.5, 0.25, false],   // 0.5 is the top: faster read as far too fast
+  ['partSpeed',       0,   0.5, 0.5,  false],   // halved units (PART_SPEED_SCALE); 0.5 is the old default's speed and the top
   ['partSpeedVar',    0,   1,   0,    false],   // how far Speed dips below its setting over time
   ['partSpeedVarPeriod', 1, 120, 20,  true ],   // seconds for one swing of it
   ['partSize',        0.2, 3,   1,    false],
@@ -150,6 +150,7 @@ export function initParticleState(S) {
 // object.
 export function particleStateOf(S) {
   const out = {
+    partV: 2,   // Speed in halved units (PART_SPEED_SCALE); absent is old units
     particlesOn: !!S.layers.particles,
     partEmitter: S.partEmitter,
     partStyle: S.partStyle,
@@ -172,6 +173,11 @@ export function particleStateOf(S) {
 // does not know is skipped rather than guessed at.
 export function applyParticleState(S, o) {
   if (!o || typeof o !== 'object') return;
+  // A record from before the Speed unit halved holds old units: doubled
+  // here, the same speed on screen, the top clamped at the dial's end.
+  if (o.partV !== 2 && typeof o.partSpeed === 'number' && isFinite(o.partSpeed)) {
+    o = Object.assign({}, o, { partSpeed: Math.min(0.5, o.partSpeed * 2) });
+  }
   if (typeof o.particlesOn === 'boolean') S.layers.particles = o.particlesOn;
   if (EMITTERS.indexOf(o.partEmitter) >= 0) S.partEmitter = o.partEmitter;
   if (STYLES.indexOf(o.partStyle) >= 0) S.partStyle = o.partStyle;
@@ -304,6 +310,13 @@ const tip = (str, c) => { c.tip = str; return c; };
 // no longer caps the rate there and the whole of the slider's travel counts.
 export const PARTICLE_MAX_RATE = 2850, PARTICLE_DUST_RATE = 2.5;
 export const PARTICLE_MEAN_VZ = 0.8;          // tunnel units per second at Speed 1
+// What one unit of the Speed dial is worth in motion: halved on 2026-10-08
+// so the low end dials in twice as fine and the old top speed is gone,
+// while the numbers on the dial keep meaning what they did. Records from
+// before (partV absent, see particleStateOf) are doubled as they load, the
+// same speed on screen under the new unit; the journey does the same to its
+// steps (core/journey.js).
+export const PART_SPEED_SCALE = 0.5;
 export const PARTICLE_FLIGHT = 4.0 * 0.925 - 0.1 * 0.6;   // Z_FAR to past the viewer, tunnel units
 export function particleBirthsPerSec(rate, style) {
   if (!(rate > 0)) return 0;
@@ -323,7 +336,7 @@ const perSecText = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k/s' : Math.round(n
 // Rate reads its percentage and what that means in births per second.
 const rateText = S => Math.round(S.partRate * 100) + '% · ' + (S.partRate > 0 ? perSecText(particleBirthsPerSec(S.partRate, S.partStyle)) : 'none');
 // Speed reads its multiplier and how long a particle takes to fly the tunnel.
-const speedText = S => S.partSpeed.toFixed(2) + '× · ' + (S.partSpeed > 0.001 ? particleFlightSec(S.partSpeed).toFixed(1) + ' s' : 'frozen');
+const speedText = S => S.partSpeed.toFixed(2) + '× · ' + (S.partSpeed > 0.001 ? particleFlightSec(S.partSpeed * PART_SPEED_SCALE).toFixed(1) + ' s' : 'frozen');
 // A signed amount reads 'none' at 0 and carries its sign otherwise, so the
 // direction is plain without a second label.
 const signed = key => S => S[key] === 0 ? 'none' : (S[key] > 0 ? '+' : '') + S[key].toFixed(2);
