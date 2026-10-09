@@ -59,10 +59,12 @@ let timer = null;
 
 // ---------- the audio clock ----------
 // The signal's t is absolute milliseconds (core/signal.js); the worklet's
-// is this context's currentTime. The two are matched in real time, as Robert
-// asked, with no allowance for output latency on either side: a sample is
-// given the signal's value for the moment it is rendered, as a frame is
-// given the value for the moment it is drawn. clockEst is the page's
+// is this context's currentTime. The two are matched in real time, and the
+// anchor then allows for the output latency (postSignal): a sample carries
+// the signal's value for the moment it is heard, as a frame carries the
+// value for the moment it is shown. (It used to be matched render-to-draw
+// with no latency allowance; on Bluetooth that was a 232 ms lag the eye
+// read as a rate-scaled phase offset, worst under Drift.) clockEst is the page's
 // performance.now() at context time 0. currentTime moves in bursts, a
 // callback's worth of audio at a time, so a single reading can sit up to a
 // burst behind; the lowest reading is the one taken right as a burst lands,
@@ -74,7 +76,10 @@ let timer = null;
 // the estimate has moved by more than CLOCK_REPOST_MS, so the two clocks can
 // never drift apart over a long session.
 const CLOCK_LEAK_MS = 0.01, CLOCK_JUMP_MS = 250, CLOCK_REPOST_MS = 1;
-let clockEst = NaN, clockPosted = NaN, clockCtx = null;
+// The output latency folded into the last post, so plugging headphones in
+// or out mid-session (the reported latency jumping) re-anchors at once.
+const LAT_REPOST_S = 0.002;
+let clockEst = NaN, clockPosted = NaN, latPosted = NaN, clockCtx = null;
 function sampleClock(ctx) {
   if (ctx.state !== 'running') return;
   const s = performance.now() - ctx.currentTime * 1000;
@@ -137,7 +142,16 @@ function postSignal() {
   let est = clockEst;
   if (!(est === est)) est = performance.now() - clockCtx.currentTime * 1000;
   else clockPosted = est;
-  const at = (signal.at - SIGNAL_ORIGIN - est) / 1000;
+  // The ear is the reader. A sample rendered at context time c is heard
+  // outputLatency later (232 ms on Bluetooth, tens of milliseconds wired),
+  // so the anchor is pulled back by it: the sample then carries the
+  // signal's value for the moment it is HEARD, as a frame carries the value
+  // for the moment it is shown. Uncompensated, a constant time lag reads as
+  // a phase offset that scales with the rate, which is why Drift made the
+  // pulse visibly wander off the flash (found 2026-10-08, syncdiag).
+  const heardLateS = clockCtx.outputLatency || 0;
+  latPosted = heardLateS;
+  const at = (signal.at - SIGNAL_ORIGIN - est) / 1000 - heardLateS;
   if (sigNodes.size) {
     sigMsg.at = at;
     sigMsg.p = signal.offset; sigMsg.r0 = signal.r0; sigMsg.r1 = signal.r1; sigMsg.dur = signal.dur;
@@ -236,11 +250,12 @@ function syncdiag() {
   const moved = sdEst === sdEst ? (clockEst - sdEst).toFixed(2) : 'first';
   sdEst = clockEst;
   console.log('[syncdiag] bridge est ' + clockEst.toFixed(2) + ' ms (moved ' + moved +
-    '); outputLatency ' + outL.toFixed(1) + ' ms, baseLatency ' + baseL.toFixed(1) +
+    '); outputLatency ' + outL.toFixed(1) + ' ms (compensated ' +
+    (latPosted === latPosted ? (latPosted * 1000).toFixed(1) : 'not yet') +
+    ' ms), baseLatency ' + baseL.toFixed(1) +
     ' ms; heart ahead ' + heartAhead.toFixed(1) + ' ms; rate ' + rate.toFixed(3) +
-    ' Hz; latency as phase ' + (outL / 1000 * rate).toFixed(3) + ' cyc (' +
-    (outL / 1000 * rate * 360).toFixed(0) + ' deg); visual phase now ' +
-    phaseAt(signal, now).toFixed(3));
+    ' Hz; uncompensated would be ' + (outL / 1000 * rate * 360).toFixed(0) +
+    ' deg off; visual phase now ' + phaseAt(signal, now).toFixed(3));
 }
 
 function track() {
@@ -267,7 +282,8 @@ function track() {
   }
   if (clockCtx) {
     sampleClock(clockCtx);
-    if (clockEst === clockEst && !(Math.abs(clockEst - clockPosted) <= CLOCK_REPOST_MS)) postSignal();
+    if (clockEst === clockEst && (!(Math.abs(clockEst - clockPosted) <= CLOCK_REPOST_MS) ||
+        !(Math.abs((clockCtx ? clockCtx.outputLatency || 0 : 0) - latPosted) <= LAT_REPOST_S))) postSignal();
   }
   for (const am of live) applyDepth(am);
 }

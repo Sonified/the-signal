@@ -6,15 +6,22 @@
 // work at all while S.layers.flowers is off.
 //
 // The sprite sheet is loaded lazily, the first time the layer is switched
-// on, and nothing is drawn until the atlas is ready. The sheet on disk is a
-// 4 x 4 grid of 16 bloom frames with a non-integer cell size, and it carries
-// tens of thousands of nearly invisible red and yellow speckles around the
-// flowers. One speckle at 5% is nothing; the same speckle in four hundred
-// flowers, or folded into every wedge of a mandala, is a red haze. So the
-// sheet is cleaned on the way in (anything under ALPHA_CUT goes fully
-// transparent), premultiplied, repacked into whole 320 px cells, and given
-// a proper mip chain, because the flowers are mostly drawn small and moving
-// and an unfiltered minified sprite shimmers.
+// on, and nothing is drawn until the atlas is ready. The sheet on disk is the
+// stabilized 32-frame opening (assets/sprites/lotus-bloom-upscaled-3x,
+// README-32.md): an 8 x 4 grid of whole 384 px cells, the 16 original poses
+// in the even slots, a baked halfway pose in each odd slot, and slot 31
+// holding slot 30. Each cell is the old 320 px cell's art window, 3x
+// upscaled, shrunk to 336 px and inset 24 px, so the art sits a little
+// smaller inside its cell than it used to; flowers.wgsl.js's cellUV maps
+// the old cell onto the new one so every flower lands at the old size and
+// place. The sheet is still cleaned on the way in (anything under ALPHA_CUT
+// goes fully transparent: the old sheet carried thousands of faint speckles
+// that a mandala folds into a red haze, and the cut is harmless on clean
+// art), premultiplied, and given a proper mip chain, because the flowers are
+// mostly drawn small and moving and an unfiltered minified sprite shimmers.
+// The atlas is the sheet's own 3072 x 1536, about 25 MB with its mips. (The
+// 960 px master, lotus-bloom-960-stable-32.png, is the hi-res step for later;
+// its cell is the old cell exactly, 3x, so cellUV's map would become 1 and 0.)
 //
 // Per frame the CPU side writes one small uniform block and, in tunnel mode,
 // at most MAX_INST instances into a buffer allocated once. No allocation in
@@ -28,13 +35,15 @@ import { motionStep } from '../core/motion.js';
 
 // Relative to the page, which lives at the site root, so this resolves from
 // the repo root.
-const SHEET_URL = 'assets/sprites/celestial-v1/source/lotus-bloom.png';
-const GRID = 4;                     // the sheet and the atlas are both 4 x 4
-const FRAMES = GRID * GRID;
-const CELL = 320;                   // atlas cell, a little over the sheet's 313.5
-const ATLAS = CELL * GRID;          // 1280
-// 1280 down to 20: the last level whose cells are still whole texels (5 px),
-// so the box filter never mixes two frames. See flowers.wgsl.js's MIP_WGSL.
+const SHEET_URL = 'assets/sprites/lotus-bloom-upscaled-3x/lotus-bloom-384-stable-32.png';
+const COLS = 8, ROWS = 4;           // the sheet and the atlas are both 8 x 4
+const FRAMES = COLS * ROWS;         // 32: slots 0..31, keyframe i at slot 2i
+const CELL = 384;                   // whole cells, the art inset 24 px in each
+const ATLAS_W = CELL * COLS;        // 3072
+const ATLAS_H = CELL * ROWS;        // 1536
+// 3072 x 1536 down to 48 x 24: 384 = 3 x 2^7, so every level here keeps its
+// cells whole texels (6 px at the last), and the box filter never mixes two
+// frames. See flowers.wgsl.js's MIP_WGSL.
 const MIP_LEVELS = 7;
 const ALPHA_CUT = 48;
 
@@ -44,8 +53,9 @@ const INST_FLOATS = 8;              // cx cy half alpha | upX upY framesAB blend
 const UNIFORM_FLOATS = 24;          // see flowers.wgsl.js's struct FU
 
 const TAU = Math.PI * 2;
-const BASE_FPS = 8;                 // the manifest's playback rate
-const SEQ_STEPS = 32;               // 0..15 then 15..0
+const BASE_FPS = 16;                // the manifest's playback rate
+const SEQ_STEPS = 64;               // 0..31, 30..0, 0: the same four seconds
+const LAST = FRAMES - 1;            // 31, the hold slot
 // Seconds for one ring of flowers to travel from the vanishing point to the
 // rim at flowerSpeed 1. The tunnel rings' median crossing is longer, but most
 // of theirs is spent too small to see; this is about the visible part.
@@ -55,8 +65,10 @@ const CROSS_SECONDS = 12;
 // far and rushes past at the end. 0.8 keeps most of the evenness, which is
 // what lets every ring stay readable, with a little of that final rush.
 const DEPTH_EASE = 0.8;
-const TUNNEL_RIPPLE_STEPS = 32;     // ripple 1: one whole open and close across the depth
-const MANDALA_RIPPLE_STEPS = 6;     // ripple 1: six steps of bloom between neighbouring tiles
+// Both ripples count sequence steps, which are half as long since the 32
+// frame sheet, so both doubled to keep the same spread of bloom.
+const TUNNEL_RIPPLE_STEPS = 64;     // ripple 1: one whole open and close across the depth
+const MANDALA_RIPPLE_STEPS = 12;    // ripple 1: six old (twelve new) steps of bloom between neighbouring tiles
 const MANDALA_ZOOM_RATE = 0.09;     // tiles per second at flowerSpeed 1
 
 function clampNum(v, lo, hi, def) {
@@ -67,10 +79,14 @@ function smoothstep(a, b, x) {
   const t = x <= a ? 0 : (x >= b ? 1 : (x - a) / (b - a));
   return t * t * (3 - 2 * t);
 }
-// The manifest's sourceFrameSequence as arithmetic: 0..15, then 15..0.
+// manifest-32.json's sourceFrameSequence as arithmetic: steps 0..31 play
+// slots 0..31, steps 32..62 play 30..0 (62 - m), and step 63 holds 0. The
+// sheet's slot 31 is a copy of 30, so the full bloom is held three steps
+// (30, 31, 30) and the bud three (62, 63, 0), as the old 15, 15 and 0, 0
+// held two steps of twice the length. Every even step 2k is old step k.
 function seqFrame(n) {
   const m = ((n % SEQ_STEPS) + SEQ_STEPS) % SEQ_STEPS;
-  return m < 16 ? m : 31 - m;
+  return m < FRAMES ? m : Math.max(62 - m, 0);
 }
 
 export function createFlowers(device, format, platform) {
@@ -143,7 +159,7 @@ export function createFlowers(device, format, platform) {
   // new rate says the pattern would have been.
   let flow = 0;                    // tunnel: rings travelled, in ring spacings
   let spin = 0;                    // rotation, radians, kept within one turn
-  let bloom = 0;                   // position in the 32-step bloom sequence
+  let bloom = 0;                   // position in the 64-step bloom sequence
   let zoomWhole = 0, zoomFrac = 0; // mandala: tiles zoomed, split to keep float32 precise
   let breath = 0;                  // mandala: slow size breathing phase
 
