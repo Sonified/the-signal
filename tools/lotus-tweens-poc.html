@@ -14,9 +14,10 @@
 </style>
 <main>
   <h1>Blooming lotus · 32-frame animation</h1>
-  <p>The stabilized flower with new opening poses between its original frames. Both versions take four seconds to open and close.</p>
+  <p>The stabilized flower with new opening poses between its original frames. At 1× speed, both versions take four seconds to open and close.</p>
   <div class="toolbar">
     <button id="play" disabled>Pause</button>
+    <label>Speed <input id="speed" type="range" min="0.1" max="2" step="0.1" value="0.5"> <output id="speed-value" for="speed">0.5×</output></label>
     <label>Loop step <input id="frame" type="range" min="0" max="63" value="0"> <output id="step">1 / 64</output></label>
     <label>Size <select id="size"><option value="384">384 pixels</option><option value="640">640 pixels</option></select></label>
     <label>Background <select id="background"><option value="#111">Dark</option><option value="#fff">White</option><option value="#408746">Green</option></select></label>
@@ -41,9 +42,10 @@ try{
   if(images[0].width!==3840||images[1].width!==7680||images.some(img=>img.height!==3840))throw new Error('Unexpected atlas dimensions');
   const canvases=['original','enhanced'].map(id=>document.getElementById(id));
   const frame=document.getElementById('frame'),play=document.getElementById('play'),blend=document.getElementById('blend'),anchor=document.getElementById('anchor');
+  const speed=document.getElementById('speed'),speedValue=document.getElementById('speed-value');
   const old=[...Array(16).keys(),...Array.from({length:16},(_,i)=>15-i)];
   const added=[...Array(32).keys(),...Array.from({length:31},(_,i)=>30-i),0];
-  let playing=true,position=0,previous=performance.now();
+  let playing=true,position=0,previous=performance.now(),playbackRate=+speed.value;
   function resize(){const side=+document.getElementById('size').value;for(const c of canvases){c.width=c.height=Math.round(side*(devicePixelRatio||1));c.style.width=c.style.height=side+'px';}}
   function draw(){
     const step=Math.floor(position)%64;
@@ -61,9 +63,10 @@ try{
     frame.value=step;const pose=added[step];
     document.getElementById('step').textContent=`${step+1} / 64 · pose ${pose+1}${pose<31&&pose%2?' (new)':''}`;
   }
-  function tick(now){if(playing)position=(position+Math.min((now-previous)/1000,.1)*16)%64;previous=now;draw();requestAnimationFrame(tick);}
+  function tick(now){if(playing)position=(position+Math.min((now-previous)/1000,.1)*16*playbackRate)%64;previous=now;draw();requestAnimationFrame(tick);}
   function setPlaying(value){playing=value;play.textContent=value?'Pause':'Play';}
   play.disabled=false;play.onclick=()=>setPlaying(!playing);frame.oninput=()=>{setPlaying(false);position=+frame.value;draw();};
+  speed.oninput=()=>{playbackRate=+speed.value;speedValue.textContent=playbackRate+'×';previous=performance.now();};
   document.getElementById('size').onchange=()=>{resize();draw();};anchor.onchange=blend.onchange=draw;
   document.getElementById('background').onchange=e=>document.documentElement.style.setProperty('--preview-bg',e.target.value);
   document.getElementById('sheet').src=images[1].src;

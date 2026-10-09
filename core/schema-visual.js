@@ -58,9 +58,10 @@ import { applyHeartLookahead, applyHeartGrow } from '../js/heart/route.js';
 // The sub-drawers (Text's Timing, Styling and Fades; Strobe's Timing,
 // Brightness and Color; Tunnel's Motion, Brightness and Style; Edge's Motion
 // and Style; Flowers' Motion, Shape and Brightness; Kaleidoscope's Motion,
-// Shapes, Brightness and Color; Particles' Motion, Shape and Color; and the
-// Audio and Music voices, whose strips carry the voice's switch): each a toggle
-// whose rows nest under it, open while it is on. They are disclosures, not
+// Shapes, Brightness and Color; Particles' Motion, Shape and Color; Render's
+// Audio engine, Pause, Hint, Trails and Parallax; and the Audio and Music
+// voices, whose strips carry the voice's switch): each a toggle whose rows
+// nest under it, open while it is on. They are disclosures, not
 // features, so whether one is open is how the interface was arranged, not
 // how the session looks or sounds. It lives beside the drawer's own open
 // sections in the UI record (store.js saveUiState), never in S, so no preset,
@@ -1636,6 +1637,8 @@ export const VISUAL_CONTROLS = [
   // not have (it is WebGPU only, per ARCHITECTURE.md), so it is left out.
   // v0's strobe thread became v1's Engine thread below, which moves the
   // whole engine, UI included, since v1 draws everything in one canvas.
+  // The rows that stand alone come first; the rest sit in sub-drawers by
+  // what they govern: Audio engine, Pause, Hint, Trails and Parallax.
   {
     // Only matters when frame lock lands on an odd frame count; see the
     // comment above spLit/spDark in index.html for why 'lit' and 'dark' are
@@ -1651,100 +1654,6 @@ export const VISUAL_CONTROLS = [
     format: S => S.spareMode
   },
   {
-    // The engine's cushion: how far ahead the sound is rendered
-    // (js/heart/route.js, js/heart/engine.js). Bigger rides out stalls (a
-    // fullscreen Space swipe, a busy machine); the cost is a control heard
-    // this much later. Scheduled sound and the strobe lock are stamped to
-    // the clock and never late. This machine's own setting, like the rest
-    // of this section.
-    id: 'heartLookaheadS', section: 'render', label: 'Audio cushion', kind: 'slider',
-    min: 0.05, max: 0.5, step: 0.01, def: 0.3,
-    get: S => S.heartLookaheadS ?? 0.3,
-    set: (S, v) => { S.heartLookaheadS = Math.max(0.05, Math.min(0.5, v)); applyHeartLookahead(); save(); },
-    format: S => Math.round((S.heartLookaheadS ?? 0.3) * 1000) + ' ms'
-  },
-  {
-    // How the cushion grows when it runs dry: the lookahead, and the floor
-    // the ratchet leaves, both multiply by this (js/heart/drain-worklet.js
-    // GROW). Gentler grows in smaller steps and may underrun again on the
-    // way up; steeper settles in one leap at more latency.
-    id: 'heartGrowX', section: 'render', label: 'Cushion growth', kind: 'slider',
-    min: 1.1, max: 2, step: 0.1, def: 1.5,
-    get: S => S.heartGrowX ?? 1.5,
-    set: (S, v) => { S.heartGrowX = Math.max(1.1, Math.min(2, v)); applyHeartGrow(); save(); },
-    format: S => '×' + (S.heartGrowX ?? 1.5).toFixed(1)
-  },
-  {
-    // How long the visuals take to coast to a stop when paused (core/motion.js).
-    // 0 is a hard stop, and resuming is always instant. What the flicker
-    // does meanwhile is the toggle below.
-    id: 'pauseWindDown', section: 'render', label: 'Pause wind-down', kind: 'slider',
-    min: 0, max: 5, step: 0.1, def: 1,
-    get: S => S.pauseWindDown ?? 1,
-    set: (S, v) => { S.pauseWindDown = v; save(); },
-    format: S => (S.pauseWindDown ?? 1).toFixed(1) + ' s'
-  },
-  {
-    // Whether pressing pause ends the flashing on that very frame. On (the
-    // default) the strobe holds steady at once and only the motion coasts
-    // through the wind-down; off, the flicker fades out over the wind-down
-    // at its own frequency, never slowing. Its own switch, apart from the
-    // time, so a viewer who pauses because the flashing is too much never
-    // waits on it.
-    id: 'pauseFlickerStop', section: 'render', label: 'Pause stops flicker', kind: 'toggle', def: true,
-    get: S => S.pauseFlickerStop !== false,
-    set: (S, on) => { S.pauseFlickerStop = !!on; save(); },
-    format: S => S.pauseFlickerStop !== false ? 'On' : 'Off'
-  },
-  {
-    // How long the hint takes to appear, at boot and on every pause
-    // (ui/screens/overlay.js). It replaces the fade spring's own pace for
-    // the appearance only; leaving is still the smoke on a start. 0 shows
-    // it at once.
-    id: 'hintFadeInMs', section: 'render', label: 'Hint fade in', kind: 'slider',
-    min: 0, max: 10000, step: 50, def: 2000,
-    get: S => S.hintFadeInMs ?? 2000,
-    set: (S, v) => { S.hintFadeInMs = v; save(); },
-    format: S => Math.round(S.hintFadeInMs ?? 2000) + ' ms'
-  },
-  {
-    // How long the resting screen's hint takes to smoke away on a start
-    // (gpu/word-smoke.js beginHint). Its own time, not the words' Leave
-    // fade, and fixed with no variance: the hint is chrome, not a word.
-    // Below the smoke's 0.3 s floor it simply runs at the floor.
-    id: 'hintFadeMs', section: 'render', label: 'Hint fade out', kind: 'slider',
-    min: 0, max: 10000, step: 50, def: 5000,
-    get: S => S.hintFadeMs ?? 5000,
-    set: (S, v) => { S.hintFadeMs = v; save(); },
-    format: S => Math.round(S.hintFadeMs ?? 5000) + ' ms'
-  },
-  {
-    // How fast the hint's dissolve crosses it left to right, as a multiple
-    // of the words' Leave sweep at its default speed. The default is twice
-    // that, so the hint clears briskly; at the top the front crosses in
-    // about an eighth of the fade, at the bottom most of it.
-    id: 'hintSweep', section: 'render', label: 'Hint sweep', kind: 'slider',
-    min: 0.6, max: 4, step: 0.05, def: 2,
-    get: S => S.hintSweep ?? 2,
-    set: (S, v) => { S.hintSweep = v; save(); },
-    format: S => (S.hintSweep ?? 2).toFixed(2) + '×'
-  },
-  {
-    // How the hint appears over its fade in. Left to right sends a soft
-    // front across the letters, at Hint sweep's speed and by the same
-    // front maths as its smoke out (core/word-fx.js hintSweepShare), so the
-    // arrival and the departure feel like one gesture. All at once fades
-    // the whole hint together.
-    id: 'hintArrive', section: 'render', label: 'Hint arrive', kind: 'segment', def: 'sweep',
-    options: [
-      { value: 'sweep', label: 'Left to right', domId: null },
-      { value: 'all',   label: 'All at once',   domId: null }
-    ],
-    get: S => S.hintArrive === 'all' ? 'all' : 'sweep',
-    set: (S, v) => { S.hintArrive = v === 'all' ? 'all' : 'sweep'; save(); },
-    format: S => S.hintArrive === 'all' ? 'All at once' : 'Left to right'
-  },
-  {
     // TEMPORARY A/B for the tunnel rings, to go once the per-ring records
     // are signed off (gpu/scene-data.js, see LUT_N). Records draws each ring
     // from its own centre, radius and width, the way parallax will need, a
@@ -1758,77 +1667,6 @@ export const VISUAL_CONTROLS = [
     get: S => S.ringDraw === 'lookup' ? 'lookup' : 'records',
     set: (S, v) => { S.ringDraw = v === 'lookup' ? 'lookup' : 'records'; save(); },
     format: S => S.ringDraw === 'lookup' ? 'Lookup' : 'Records'
-  },
-  {
-    // The size of the trail images laid over the whole screen (the edge's,
-    // and Particles' and Confetti's after the fold or unfolded), as a share
-    // of the canvas a side: at 75% they hold about half the memory and
-    // fill, at 50% a quarter, stretched back over the screen with a filtered
-    // read (gpu/feedback.js). For weighing the trails' cost by eye; the
-    // chamber-sized images before the fold are already small and keep their
-    // size. A change makes the images afresh; Trail switch below says
-    // whether the trails in them carry over or start clear.
-    id: 'fbResScale', section: 'render', label: 'Trail res', kind: 'segment', def: 1,
-    options: [
-      { value: 1,    label: 'Full', domId: null },
-      { value: 0.75, label: '75%',  domId: null },
-      { value: 0.5,  label: '50%',  domId: null }
-    ],
-    get: S => S.fbResScale === 0.75 || S.fbResScale === 0.5 ? S.fbResScale : 1,
-    set: (S, v) => { S.fbResScale = v === 0.75 || v === 0.5 ? v : 1; save(); },
-    format: S => S.fbResScale === 0.75 ? '75%' : S.fbResScale === 0.5 ? '50%' : 'Full'
-  },
-  {
-    // What a Trail res change does to the trails already on screen. Keep
-    // hands each image over to the new size (gpu/feedback.js, the hand-off),
-    // so A/B-ing the sizes, or anything that changes them on its own, never
-    // blanks the trails: going up they arrive soft and sharpen as new light
-    // replaces them, going down they just shrink. Clear starts them afresh,
-    // as Trail res always used to. A resized window starts them clear
-    // either way.
-    id: 'fbResSwitch', section: 'render', label: 'Trail switch', kind: 'segment', def: 'keep',
-    options: [
-      { value: 'keep',  label: 'Keep',  domId: null },
-      { value: 'clear', label: 'Clear', domId: null }
-    ],
-    get: S => S.fbResSwitch === 'clear' ? 'clear' : 'keep',
-    set: (S, v) => { S.fbResSwitch = v === 'clear' ? 'clear' : 'keep'; save(); },
-    format: S => S.fbResSwitch === 'clear' ? 'Clear' : 'Keep'
-  },
-  {
-    // A stand-in for head tracking: the viewer's eye (core/eye.js) sways
-    // slowly side to side, so the near layers slide against the far ones and
-    // the tunnel shows its depth. It runs on wall-clock time, so it keeps
-    // swaying while the scene is paused, the easiest way to look at it. A
-    // viewing aid, not a setting: never saved, so every load starts still,
-    // and journeys leave it be (core/journey.js).
-    id: 'parallaxSim', section: 'render', label: 'Parallax sim', kind: 'toggle', def: false,
-    get: S => S.parallaxSim === true,
-    set: (S, on) => { S.parallaxSim = !!on; },
-    format: S => S.parallaxSim === true ? 'On' : 'Off'
-  },
-  {
-    // How far the head sways each way, as a share of the tunnel's radius:
-    // at 100% the nearest things would shift by a whole rim radius, so the
-    // default 10% moves them a tenth of one and the far end hardly at all.
-    id: 'parallaxAmount', section: 'render', label: 'Parallax amount', kind: 'slider',
-    parent: 'parallaxSim',
-    min: 0, max: 30, step: 1, def: 10,
-    get: S => Math.round((S.parallaxAmount ?? 0.1) * 100),
-    set: (S, pos) => { S.parallaxAmount = pos / 100; save(); },
-    format: S => Math.round((S.parallaxAmount ?? 0.1) * 100) + '%',
-    visible: S => S.parallaxSim === true
-  },
-  {
-    // How often the head sways, one side to the other and back: 0.25 Hz is
-    // a slow four seconds a sway.
-    id: 'parallaxSpeed', section: 'render', label: 'Head speed', kind: 'slider',
-    parent: 'parallaxSim',
-    min: 0.05, max: 2, step: 0.05, def: 0.25,
-    get: S => S.parallaxSpeed ?? 0.25,
-    set: (S, v) => { S.parallaxSpeed = v; save(); },
-    format: S => (S.parallaxSpeed ?? 0.25).toFixed(2) + ' Hz',
-    visible: S => S.parallaxSim === true
   },
   {
     // Where the engine runs: on the page's main thread, or in a worker where
@@ -1847,6 +1685,186 @@ export const VISUAL_CONTROLS = [
     get: () => engineThread.wanted,
     set: (S, v) => setEngineThreadWanted(v),
     format: () => engineThreadStatus()
+  },
+  subDrawer('renderAudioDrawer', 'Audio engine', 'render', ['heartLookaheadS', 'heartGrowX']),
+  {
+    // The engine's cushion: how far ahead the sound is rendered
+    // (js/heart/route.js, js/heart/engine.js). Bigger rides out stalls (a
+    // fullscreen Space swipe, a busy machine); the cost is a control heard
+    // this much later. Scheduled sound and the strobe lock are stamped to
+    // the clock and never late. This machine's own setting, like the rest
+    // of this section.
+    id: 'heartLookaheadS', section: 'render', label: 'Audio cushion', kind: 'slider', parent: 'renderAudioDrawer',
+    summaryLabel: 'Cushion',
+    min: 0.05, max: 0.5, step: 0.01, def: 0.3,
+    get: S => S.heartLookaheadS ?? 0.3,
+    set: (S, v) => { S.heartLookaheadS = Math.max(0.05, Math.min(0.5, v)); applyHeartLookahead(); save(); },
+    format: S => Math.round((S.heartLookaheadS ?? 0.3) * 1000) + ' ms'
+  },
+  {
+    // How the cushion grows when it runs dry: the lookahead, and the floor
+    // the ratchet leaves, both multiply by this (js/heart/drain-worklet.js
+    // GROW). Gentler grows in smaller steps and may underrun again on the
+    // way up; steeper settles in one leap at more latency.
+    id: 'heartGrowX', section: 'render', label: 'Cushion growth', kind: 'slider', parent: 'renderAudioDrawer',
+    summaryLabel: 'Growth',
+    min: 1.1, max: 2, step: 0.1, def: 1.5,
+    get: S => S.heartGrowX ?? 1.5,
+    set: (S, v) => { S.heartGrowX = Math.max(1.1, Math.min(2, v)); applyHeartGrow(); save(); },
+    format: S => '×' + (S.heartGrowX ?? 1.5).toFixed(1)
+  },
+  subDrawer('renderPauseDrawer', 'Pause', 'render', ['pauseWindDown', 'pauseFlickerStop']),
+  {
+    // How long the visuals take to coast to a stop when paused (core/motion.js).
+    // 0 is a hard stop, and resuming is always instant. What the flicker
+    // does meanwhile is the toggle below.
+    id: 'pauseWindDown', section: 'render', label: 'Pause wind-down', kind: 'slider', parent: 'renderPauseDrawer',
+    summaryLabel: 'Wind-down',
+    min: 0, max: 5, step: 0.1, def: 1,
+    get: S => S.pauseWindDown ?? 1,
+    set: (S, v) => { S.pauseWindDown = v; save(); },
+    format: S => (S.pauseWindDown ?? 1).toFixed(1) + ' s'
+  },
+  {
+    // Whether pressing pause ends the flashing on that very frame. On (the
+    // default) the strobe holds steady at once and only the motion coasts
+    // through the wind-down; off, the flicker fades out over the wind-down
+    // at its own frequency, never slowing. Its own switch, apart from the
+    // time, so a viewer who pauses because the flashing is too much never
+    // waits on it.
+    id: 'pauseFlickerStop', section: 'render', label: 'Pause stops flicker', kind: 'toggle', def: true, parent: 'renderPauseDrawer',
+    summaryLabel: 'Flicker stop',
+    get: S => S.pauseFlickerStop !== false,
+    set: (S, on) => { S.pauseFlickerStop = !!on; save(); },
+    format: S => S.pauseFlickerStop !== false ? 'On' : 'Off'
+  },
+  subDrawer('renderHintDrawer', 'Hint', 'render', ['hintFadeInMs', 'hintFadeMs']),
+  {
+    // How long the hint takes to appear, at boot and on every pause
+    // (ui/screens/overlay.js). It replaces the fade spring's own pace for
+    // the appearance only; leaving is still the smoke on a start. 0 shows
+    // it at once.
+    id: 'hintFadeInMs', section: 'render', label: 'Hint fade in', kind: 'slider', parent: 'renderHintDrawer',
+    summaryLabel: 'In',
+    min: 0, max: 10000, step: 50, def: 2000,
+    get: S => S.hintFadeInMs ?? 2000,
+    set: (S, v) => { S.hintFadeInMs = v; save(); },
+    format: S => Math.round(S.hintFadeInMs ?? 2000) + ' ms'
+  },
+  {
+    // How long the resting screen's hint takes to smoke away on a start
+    // (gpu/word-smoke.js beginHint). Its own time, not the words' Leave
+    // fade, and fixed with no variance: the hint is chrome, not a word.
+    // Below the smoke's 0.3 s floor it simply runs at the floor.
+    id: 'hintFadeMs', section: 'render', label: 'Hint fade out', kind: 'slider', parent: 'renderHintDrawer',
+    summaryLabel: 'Out',
+    min: 0, max: 10000, step: 50, def: 5000,
+    get: S => S.hintFadeMs ?? 5000,
+    set: (S, v) => { S.hintFadeMs = v; save(); },
+    format: S => Math.round(S.hintFadeMs ?? 5000) + ' ms'
+  },
+  {
+    // How fast the hint's dissolve crosses it left to right, as a multiple
+    // of the words' Leave sweep at its default speed. The default is twice
+    // that, so the hint clears briskly; at the top the front crosses in
+    // about an eighth of the fade, at the bottom most of it.
+    id: 'hintSweep', section: 'render', label: 'Hint sweep', kind: 'slider', parent: 'renderHintDrawer',
+    min: 0.6, max: 4, step: 0.05, def: 2,
+    get: S => S.hintSweep ?? 2,
+    set: (S, v) => { S.hintSweep = v; save(); },
+    format: S => (S.hintSweep ?? 2).toFixed(2) + '×'
+  },
+  {
+    // How the hint appears over its fade in. Left to right sends a soft
+    // front across the letters, at Hint sweep's speed and by the same
+    // front maths as its smoke out (core/word-fx.js hintSweepShare), so the
+    // arrival and the departure feel like one gesture. All at once fades
+    // the whole hint together.
+    id: 'hintArrive', section: 'render', label: 'Hint arrive', kind: 'segment', def: 'sweep', parent: 'renderHintDrawer',
+    options: [
+      { value: 'sweep', label: 'Left to right', domId: null },
+      { value: 'all',   label: 'All at once',   domId: null }
+    ],
+    get: S => S.hintArrive === 'all' ? 'all' : 'sweep',
+    set: (S, v) => { S.hintArrive = v === 'all' ? 'all' : 'sweep'; save(); },
+    format: S => S.hintArrive === 'all' ? 'All at once' : 'Left to right'
+  },
+  subDrawer('renderTrailsDrawer', 'Trails', 'render', ['fbResScale', 'fbResSwitch']),
+  {
+    // The size of the trail images laid over the whole screen (the edge's,
+    // and Particles' and Confetti's after the fold or unfolded), as a share
+    // of the canvas a side: at 75% they hold about half the memory and
+    // fill, at 50% a quarter, stretched back over the screen with a filtered
+    // read (gpu/feedback.js). For weighing the trails' cost by eye; the
+    // chamber-sized images before the fold are already small and keep their
+    // size. A change makes the images afresh; Trail switch below says
+    // whether the trails in them carry over or start clear.
+    id: 'fbResScale', section: 'render', label: 'Trail res', kind: 'segment', def: 1, parent: 'renderTrailsDrawer',
+    summaryLabel: 'Res',
+    options: [
+      { value: 1,    label: 'Full', domId: null },
+      { value: 0.75, label: '75%',  domId: null },
+      { value: 0.5,  label: '50%',  domId: null }
+    ],
+    get: S => S.fbResScale === 0.75 || S.fbResScale === 0.5 ? S.fbResScale : 1,
+    set: (S, v) => { S.fbResScale = v === 0.75 || v === 0.5 ? v : 1; save(); },
+    format: S => S.fbResScale === 0.75 ? '75%' : S.fbResScale === 0.5 ? '50%' : 'Full'
+  },
+  {
+    // What a Trail res change does to the trails already on screen. Keep
+    // hands each image over to the new size (gpu/feedback.js, the hand-off),
+    // so A/B-ing the sizes, or anything that changes them on its own, never
+    // blanks the trails: going up they arrive soft and sharpen as new light
+    // replaces them, going down they just shrink. Clear starts them afresh,
+    // as Trail res always used to. A resized window starts them clear
+    // either way.
+    id: 'fbResSwitch', section: 'render', label: 'Trail switch', kind: 'segment', def: 'keep', parent: 'renderTrailsDrawer',
+    summaryLabel: 'Switch',
+    options: [
+      { value: 'keep',  label: 'Keep',  domId: null },
+      { value: 'clear', label: 'Clear', domId: null }
+    ],
+    get: S => S.fbResSwitch === 'clear' ? 'clear' : 'keep',
+    set: (S, v) => { S.fbResSwitch = v === 'clear' ? 'clear' : 'keep'; save(); },
+    format: S => S.fbResSwitch === 'clear' ? 'Clear' : 'Keep'
+  },
+  subDrawer('renderParallaxDrawer', 'Parallax', 'render', ['parallaxSim', 'parallaxAmount']),
+  {
+    // A stand-in for head tracking: the viewer's eye (core/eye.js) sways
+    // slowly side to side, so the near layers slide against the far ones and
+    // the tunnel shows its depth. It runs on wall-clock time, so it keeps
+    // swaying while the scene is paused, the easiest way to look at it. A
+    // viewing aid, not a setting: never saved, so every load starts still,
+    // and journeys leave it be (core/journey.js).
+    id: 'parallaxSim', section: 'render', label: 'Parallax sim', kind: 'toggle', def: false, parent: 'renderParallaxDrawer',
+    summaryLabel: 'Sim',
+    get: S => S.parallaxSim === true,
+    set: (S, on) => { S.parallaxSim = !!on; },
+    format: S => S.parallaxSim === true ? 'On' : 'Off'
+  },
+  {
+    // How far the head sways each way, as a share of the tunnel's radius:
+    // at 100% the nearest things would shift by a whole rim radius, so the
+    // default 10% moves them a tenth of one and the far end hardly at all.
+    id: 'parallaxAmount', section: 'render', label: 'Parallax amount', kind: 'slider',
+    summaryLabel: 'Amount',
+    parent: 'parallaxSim',
+    min: 0, max: 30, step: 1, def: 10,
+    get: S => Math.round((S.parallaxAmount ?? 0.1) * 100),
+    set: (S, pos) => { S.parallaxAmount = pos / 100; save(); },
+    format: S => Math.round((S.parallaxAmount ?? 0.1) * 100) + '%',
+    visible: S => S.parallaxSim === true
+  },
+  {
+    // How often the head sways, one side to the other and back: 0.25 Hz is
+    // a slow four seconds a sway.
+    id: 'parallaxSpeed', section: 'render', label: 'Head speed', kind: 'slider',
+    parent: 'parallaxSim',
+    min: 0.05, max: 2, step: 0.05, def: 0.25,
+    get: S => S.parallaxSpeed ?? 0.25,
+    set: (S, v) => { S.parallaxSpeed = v; save(); },
+    format: S => (S.parallaxSpeed ?? 0.25).toFixed(2) + ' Hz',
+    visible: S => S.parallaxSim === true
   },
   {
     // Everything this app keeps (settings, presets, journeys, the broadcast
