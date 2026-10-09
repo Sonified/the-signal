@@ -174,7 +174,7 @@ function buildSettings() {
     pianoDensity: S.pianoDensity, pianoCentre: S.pianoCentre,
     pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
     cloudsOn: S.cloudsOn, cloudVol: S.cloudVol, cloudDensity: S.cloudDensity,
-    cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb, cloudRevTime: S.cloudRevTime,
+    cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb,
     ambOn: S.ambOn, ambVol: S.ambVol, ambDrift: S.ambDrift, ambDriftFadeS: S.ambDriftFadeS, ambKidsFreq: S.ambKidsFreq,
     ambReverb: S.ambReverb, ambRevTime: S.ambRevTime,
     ambLayers: S.ambLayers,
@@ -1030,12 +1030,10 @@ function applySettings(s, live, scene) {
     const next = normalizeAmbLayers(s.ambLayers);
     if (!live || JSON.stringify(next) !== JSON.stringify(S.ambLayers)) S.ambLayers = next;
   }
-  // cloudRevTime is v0's list too (js/settings.js); it was missing here, so a
-  // saved clouds reverb decay never came back after a reload.
   ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','arpVol','arpRate','arpAtk','arpDec','arpOct','arpRev','arpSpread','arpStrobeAm','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
    'arpVolVar','arpVolPeriod','pianoReverbVar','pianoReverbPeriod','pianoRevTimeVar','pianoRevTimePeriod','pianoRevDamp','pianoRevMod','arpStrobeAmVar','arpStrobeAmPeriod','arpHfCut',
    'pianoSpread','pianoHold','pianoBass','ambVol','ambReverb','ambRevTime','ambDriftFadeS','ambKidsFreq',
-   'cloudVol','cloudDensity','cloudPhrase','cloudReverb','cloudRevTime'].forEach(k => {
+   'cloudVol','cloudDensity','cloudPhrase','cloudReverb'].forEach(k => {
     if (typeof s[k] === 'number') S[k] = s[k];
   });
 

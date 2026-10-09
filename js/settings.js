@@ -42,7 +42,7 @@ export function saveSettings() {
       pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
       pianoRubato: S.pianoRubato,
       cloudsOn: S.cloudsOn, cloudVol: S.cloudVol, cloudDensity: S.cloudDensity,
-      cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb, cloudRevTime: S.cloudRevTime,
+      cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb,
       ambOn: S.ambOn, ambVol: S.ambVol, ambDrift: S.ambDrift, ambDriftFadeS: S.ambDriftFadeS,
       ambReverb: S.ambReverb, ambRevTime: S.ambRevTime,
       ambLayers: S.ambLayers,
@@ -265,7 +265,7 @@ export function applySettings() {
   if (Array.isArray(s.ambLayers)) S.ambLayers = normalizeAmbLayers(s.ambLayers);
   ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','arpVol','arpRate','arpAtk','arpDec','arpOct','arpRev','arpSpread','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
    'pianoSpread','pianoHold','pianoRubato','pianoBass','ambVol','ambReverb','ambRevTime','ambDriftFadeS',
-   'cloudVol','cloudDensity','cloudPhrase','cloudReverb','cloudRevTime'].forEach(k => num(k));
+   'cloudVol','cloudDensity','cloudPhrase','cloudReverb'].forEach(k => num(k));
   {
     const pc = (id, v) => { const e = $(id); if (e) e.value = v; };
     const tx = (id, v) => { const e = $(id); if (e) e.textContent = v; };

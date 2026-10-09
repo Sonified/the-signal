@@ -27,7 +27,7 @@ import {
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn, applyToneBreath
 } from '../js/audio.js';
 import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
-import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm } from '../js/clouds.js';
+import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm, rebuildCloudIR } from '../js/clouds.js';
 import {
   applyChoir, applyChoirVol, applyChoirOn, applyChoirAm, choirEffectiveAm,
   choirEffectiveLevel, choirEffectiveStack, choirEffectiveDensity
@@ -1504,7 +1504,7 @@ const musicControls = [
     parent: 'musicReverbDrawer',
     min: 1, max: 15, step: 0.5, def: 4.5,
     get: s => s.pianoRevTime,
-    set: (s, pos) => { s.pianoRevTime = pos; rebuildPianoIR(); save(); },
+    set: (s, pos) => { s.pianoRevTime = pos; rebuildPianoIR(); rebuildCloudIR(); save(); },
     format: s => s.pianoRevTime.toFixed(1) + 's',
     visible: s => s.musicOn && s.musicRevOn !== false
   },

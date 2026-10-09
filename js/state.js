@@ -375,7 +375,7 @@ export const S = {
   // cloudDensity sits at 1.0 = the rate of the take as played; the slider's
   // range runs well below that, which is the direction it wants to move.
   cloudsOn: true, cloudVol: 0.60, cloudDensity: 1.0, cloudPhrase: 0.35,
-  cloudReverb: 1.0, cloudRevTime: 5.0,
+  cloudReverb: 1.0,
 
   // ---------- ambience ----------
   // Fixed recording levels for balancing the atmosphere in the browser.

@@ -105,7 +105,7 @@ const CLOUD_SPARSE = 1.6;
 
 const pads = new Map();                // semitone offset -> AudioBuffer
 let ready = false, loading = null;
-let dry = null, room = null, wet = null, padTap = null, bus = null;
+let dry = null, send = null, room = null, padTap = null, bus = null;
 let cloudAm = null;                    // vary with strobe (strobe-am.js)
 let running = false, clock = 0, timer = null;
 
@@ -178,25 +178,66 @@ export function loadClouds() {
   return loading;
 }
 
-// On Heart the clouds are one island: everything here, the room and the
-// strobe stage included, lives in it, and only dry and wet cross into the
-// mix, into the master's input.
+// The clouds are a music voice, so they play into the music's own reverb,
+// the master room the piano, drone, choir and arp share (js/piano.js), the
+// way the choir does: piano.js hands over its context and the room's input
+// once its graph is built (setCloudBus). The pads reach it through send,
+// whose gain is the Clouds reverb slider: how much cloud goes to the shared
+// room. That room's level, decay, type and switch then govern the tail.
+//
+// The room's input only takes nodes of its own context. On Heart each
+// flagged family is an island with a context of its own (js/heart/route.js),
+// so whenever exactly one of music and clouds is flagged, or both are (two
+// islands), the clouds cannot reach it and play a room of their own
+// instead, set to the master's decay so it sounds like the shared one.
+// Only dry and the room cross into the mix, into the master's input.
+//
+// Either side may be built first (js/load-order.js plays the piano's turn
+// before the clouds', but a turn that fails moves on): a send with nowhere
+// to go yet waits unplugged, and the hand-over plugs it in.
+let musicCtx = null, musicRevIn = null;  // the music's context and room input (piano.js)
+let sendTo = null;                       // what send plays into now
+// piano.js, once its graph is built.
+export function setCloudBus(ctx, roomIn) {
+  musicCtx = ctx; musicRevIn = roomIn;
+  plugSend();
+}
+function plugSend() {
+  if (!send || !musicRevIn) return;
+  if (actx === musicCtx) {
+    if (sendTo === musicRevIn) return;
+    if (sendTo) try { send.disconnect(); } catch (e) {}
+    // revIn carries the music's pause gate (piano.js), so the send needs
+    // none of its own: a pause stops the pads reaching the room there.
+    send.connect(musicRevIn);
+    sendTo = musicRevIn;
+    return;
+  }
+  if (sendTo) return;
+  // An island: a room of the clouds' own, on the master's decay. The pause
+  // gate (audio.js) sits on its input, so a pause stops the pads, the long
+  // ones still ringing too, and leaves the room its tail. Two convolvers, so
+  // a new decay fades in under the old tail (audio.js).
+  room = createRoom(actx, () => S.pianoRevTime, 2.0);
+  sourceGate(room.input.gain);
+  room.output.connect(familyMaster());
+  send.connect(room.input);
+  sendTo = room.input;
+}
+
 function buildGraph() {
   const ctx = familyCtx(), master = familyMaster();
   actx = ctx;
   if (!ctx || !master) return;
   dry  = ctx.createGain(); dry.gain.value = 1;
-  // two convolvers, so a new decay fades in under the old tail (audio.js)
-  room = createRoom(ctx, () => S.cloudRevTime, 2.2);
-  wet  = ctx.createGain(); wet.gain.value = S.cloudReverb;
+  send = ctx.createGain(); send.gain.value = S.cloudReverb;
   dry.connect(master);
-  room.output.connect(wet).connect(master);
-  // The pause gate (audio.js), on the dry bus and the room's input, so a
-  // pause stops the pads, the long ones still ringing too, and leaves the
-  // room its tail.
+  // The pause gate (audio.js) on the dry bus, so a pause stops the pads, the
+  // long ones still ringing too. The way into the reverb is gated where it
+  // lands (plugSend).
   sourceGate(dry.gain);
-  sourceGate(room.input.gain);
-  padTap = meterTap(ctx, dry, room.input); // the mixer's clouds meter
+  padTap = meterTap(ctx, dry, send); // the mixer's clouds meter
+  plugSend();
   // Every pad passes through this bus on its way in: the mix gate's mute and
   // solo (mixgate.js). S.cloudVol is baked into each pad as it starts, so the
   // gate lives here instead, where it also reaches the pads already sounding.
@@ -240,12 +281,14 @@ export const cloudPeak = () =>
   S.running && S.audioEnabled && getContext()?.state === 'running' ? tapPeak(padTap) : 0;
 
 export function applyCloudReverb() {
-  if (wet) glideParam(wet.gain, S.cloudReverb, 0.08);
+  if (send) glideParam(send.gain, S.cloudReverb, 0.08);
 }
 export function applyCloudAm() {
   if (cloudAm) cloudAm.apply();
 }
-// Crossfaded into the room rather than swapped under a ringing tail.
+// An island's own room following the master's decay (plugSend), crossfaded
+// rather than swapped under a ringing tail. Sharing the master room, there
+// is nothing of the clouds' own to rebuild.
 export function rebuildCloudIR() {
   swapRoom(room, 200);
 }

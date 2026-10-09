@@ -1114,8 +1114,8 @@ function setSources(open) {
 // shaped by (1 - t / length) to a power (fillIR), so it is exactly its
 // length long and then silent: nothing rings past the longest impulse in
 // play. That is the harmonics' fixed room, the live pip shape's room, the
-// piano's, the clouds' and the atmosphere's rooms at their current decay
-// settings, and each sequencer line's own room (js/piano.js lineRoom), all
+// piano's (the clouds' too, shared or, on a Heart island, copied: js/clouds.js)
+// and the atmosphere's rooms at their current decay settings, and each sequencer line's own room (js/piano.js lineRoom), all
 // counted whether or not they are sounding, since holding a silent master
 // open a few seconds longer costs nothing. On top
 // of that: the gates' own ramp, the last sound fed in on its way down, and
@@ -1128,7 +1128,7 @@ const TAIL_CLOSE_S = 0.3;
 let closeAt = 0;   // audio clock time the master starts closing; 0 when none is pending
 function tailSeconds() {
   const n = x => (typeof x === 'number' && x > 0) ? x : 0;
-  let t = Math.max(HARM_IR_S, n(pipRevTime()), n(S.pianoRevTime), n(S.cloudRevTime), n(S.ambRevTime));
+  let t = Math.max(HARM_IR_S, n(pipRevTime()), n(S.pianoRevTime), n(S.ambRevTime));
   const qs = S.seqs;
   if (qs) for (let i = 0; i < qs.length; i++) if (qs[i]) t = Math.max(t, Math.min(15, n(qs[i].revTime)));
   return t + SRC_GATE_S + TAIL_MARGIN_S;
