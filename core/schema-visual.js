@@ -322,6 +322,12 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.cornerOpacity = Math.max(0, Math.min(1, pos / 100)); save(); },
     format: S => Math.round((S.cornerOpacity ?? 1) * 100) + '%'
   },
+  // The opacity breathes on the app's standard: over one rate cycle it
+  // eases from the setting down by this share and back, never above it.
+  ...varianceRows('cornerOpacity', {
+    name: 'Opacity',
+    effective: S => (S.effCornerOpacity ?? S.cornerOpacity ?? 1) * 100
+  }),
   {
     id: 'cornerSpeed', section: 'corners', label: 'Speed', kind: 'slider',
     min: 0, max: 4, step: 0.05, def: 1,

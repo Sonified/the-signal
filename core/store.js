@@ -117,7 +117,7 @@ function buildSettings() {
     fieldOpacity: S.fieldOpacity, fieldFade: S.fieldFade, fieldSoft: S.fieldSoft,
     fieldFadeVar: S.fieldFadeVar, fieldFadeVarPeriod: S.fieldFadeVarPeriod,
     color: rgbHex(S.rgb),
-    cornerOpacity: S.cornerOpacity, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
+    cornerOpacity: S.cornerOpacity, cornerOpacityVar: S.cornerOpacityVar, cornerOpacityVarPeriod: S.cornerOpacityVarPeriod, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
     ringSpeed5: S.ringSpeedMul, ringSpeedVar: S.ringSpeedVar, ringSpeedVarPeriod: S.ringSpeedVarPeriod,
     ringRate: S.ringRate, ringOrigin: S.ringOrigin, ringFadeInMs: S.ringFadeInMs, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
@@ -854,6 +854,8 @@ function applySettings(s, live, scene) {
   if (typeof s.ringSpeedVar === 'number') S.ringSpeedVar = Math.max(0, Math.min(1, s.ringSpeedVar));
   if (typeof s.ringSpeedVarPeriod === 'number') S.ringSpeedVarPeriod = Math.max(1, Math.min(60, s.ringSpeedVarPeriod));
   if (typeof s.cornerOpacity === 'number' && isFinite(s.cornerOpacity)) S.cornerOpacity = Math.max(0, Math.min(1, s.cornerOpacity));
+  if (typeof s.cornerOpacityVar === 'number' && isFinite(s.cornerOpacityVar)) S.cornerOpacityVar = Math.max(0, Math.min(1, s.cornerOpacityVar));
+  if (typeof s.cornerOpacityVarPeriod === 'number' && isFinite(s.cornerOpacityVarPeriod)) S.cornerOpacityVarPeriod = Math.max(1, Math.min(60, s.cornerOpacityVarPeriod));
   if (typeof s.cornerSpeed === 'number' && isFinite(s.cornerSpeed)) S.cornerSpeed = Math.max(0, Math.min(4, s.cornerSpeed));
   if (typeof s.cornerPulse === 'number' && isFinite(s.cornerPulse)) S.cornerPulse = Math.max(0, Math.min(1, s.cornerPulse));
   if (typeof s.cornerSize === 'number' && isFinite(s.cornerSize)) S.cornerSize = Math.max(0.05, Math.min(1, s.cornerSize));

@@ -159,7 +159,8 @@ export const S = {
   // The corners' own controls (v1): opacity, their chase clock against the
   // strobe's (1 = in step), how much they flash with it, their reach as a
   // share of the shorter side, and their look.
-  cornerOpacity: 1, cornerSpeed: 1, cornerPulse: 1, cornerSize: 0.46, cornerType: 'glow',
+  cornerOpacity: 1, cornerOpacityVar: 0, cornerOpacityVarPeriod: 20, cornerOpacityVarPhase: 0,
+  cornerSpeed: 1, cornerPulse: 1, cornerSize: 0.46, cornerType: 'glow',
   // The walk can be confined to an arc of the wheel. Full turn by default;
   // warm is roughly magenta-red through amber, which is the half of the
   // spectrum that does not suppress melatonin.

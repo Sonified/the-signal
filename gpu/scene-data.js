@@ -234,7 +234,7 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
   if (!(cornerPhase >= 0)) cornerPhase = S.phase;
   else cornerPhase = (cornerPhase + dPh * (S.cornerSpeed ?? 1)) % 1;
   const cPulse = scaledStrobeDepth(Math.max(0, Math.min(1, S.cornerPulse ?? 1)));
-  const cPeak = 0.4 * (S.cornerOpacity ?? 1);
+  const cPeak = 0.4 * (S.effCornerOpacity ?? S.cornerOpacity ?? 1);
   for (let i = 0; i < 4; i++) {
     const cs = 1 + (shape((cornerPhase + i / 4) % 1) - 1) * fl * cPulse;
     u[12 + i] = cs * cPeak;

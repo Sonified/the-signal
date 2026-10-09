@@ -82,6 +82,8 @@ const VARIANCES = [
   // the strobe field's Center fade radius (gpu/scene-data.js hands the
   // effective to the shader in place of the dial)
   { amount: 'fieldFadeVar', period: 'fieldFadeVarPeriod', fallback: 20, phase: 'fieldFadeVarPhase', eff: 'effFieldFade', set: S => S.fieldFade || 0 },
+  // the corners' Opacity (gpu/scene-data.js reads the effective)
+  { amount: 'cornerOpacityVar', period: 'cornerOpacityVarPeriod', fallback: 20, phase: 'cornerOpacityVarPhase', eff: 'effCornerOpacity', set: S => S.cornerOpacity ?? 1 },
   // the flowers' Pulse with strobe and Opacity (gpu/flowers.js), pulled onto
   // the room clock in a broadcast room rather than riding the beacon
   { amount: 'flowerPulseVar', period: 'flowerPulsePeriod', fallback: 10, phase: 'flowerPulsePhase', eff: 'effFlowerPulse', set: 'flowerPulse', room: roomPhaseState() },
