@@ -18,6 +18,7 @@
 import { save } from './store.js';
 import { retimeRoomPhase } from './room-clock.js';
 import { subDrawer } from './schema-visual.js';
+import * as hum from './sun-hum.js';
 
 // The layer switch, the kaleidoscope switch and the mirror flag are plain
 // booleans; every numeric field carries its range here. gpu/sun.js reads
@@ -32,6 +33,11 @@ const DEF_FB_LINK = true;
 // Off by default: the Color sliders do nothing, and stay hidden, until the
 // viewer turns the grade on.
 const DEF_GRADE = false;
+// Off by default: the standard stream. On streams the site's original
+// snapshot, at roughly twice the bytes (gpu/sun.js swaps it in place).
+const DEF_HI_RES = false;
+// Off by default: the Rotational hum is heard only once the viewer asks.
+const DEF_HUM_ON = false;
 const NUM = [
   // key,               min,  max, def,  integer
   // the sun video's playback rate, the site's 1x to 16x
@@ -47,6 +53,10 @@ const NUM = [
   // how far the breath travels the Atmosphere: the breath modulates which
   // channel shows, around the Atmosphere slider's position
   ['sunBreathAmt',       0,   1,   0.5,  false],
+  // how far the breath carries the video's playback rate: Speed times
+  // 1 - link * (1 - breath), so at 1 the full inhale runs the set Speed and
+  // the full exhale comes to a stop (gpu/sun.js). 0 is off.
+  ['sunSpeedLink',       0,   1,   0,    false],
   // The Feedback drawer's video feedback, the same amount and opacity as the
   // Kaleidoscope's Feedback drawer: how long the sun leaves a trail, and how
   // solidly that image lands on the scene.
@@ -87,7 +97,14 @@ const NUM = [
   ['sunFoldsPeriod',     1,   60,  10,   true ],
   // the room-clocked swing's phase offset (core/room-clock.js): state, not a
   // control, written by the rate's set()
-  ['sunFoldsPeriodOff',  0,   1,   0,    false]
+  ['sunFoldsPeriodOff',  0,   1,   0,    false],
+  // The Rotational hum (core/sun-hum.js), the site's own: its loudness, and
+  // its cutoff and speed as the site's log maps read them (humHz, humRate
+  // below). The cutoff's 0.25 is the site's resting x, its speed's 0 the
+  // site's resting rate.
+  ['sunHumAmp',          0,   1,   0.9,  false],
+  ['sunHumCutoff',       0,   1,   0.25, false],
+  ['sunHumRate',         0,   1,   0,    false]
 ];
 
 // A slider's rounded position can come back as 1.1500000000000001; this
@@ -147,6 +164,8 @@ export function initSunState(S) {
   if (typeof S.sunMirror !== 'boolean') S.sunMirror = DEF_MIRROR;
   if (typeof S.sunFbLink !== 'boolean') S.sunFbLink = DEF_FB_LINK;
   if (typeof S.sunGrade !== 'boolean') S.sunGrade = DEF_GRADE;
+  if (typeof S.sunHumOn !== 'boolean') S.sunHumOn = DEF_HUM_ON;
+  if (typeof S.sunHiRes !== 'boolean') S.sunHiRes = DEF_HI_RES;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -158,7 +177,7 @@ export function initSunState(S) {
 // kaleidoOn does, so the record does not look like a partial v0 layers
 // object.
 export function sunStateOf(S) {
-  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade };
+  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade, sunHumOn: !!S.sunHumOn, sunHiRes: !!S.sunHiRes };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
 }
@@ -174,10 +193,42 @@ export function applySunState(S, o) {
   if (typeof o.sunMirror === 'boolean') S.sunMirror = o.sunMirror;
   if (typeof o.sunFbLink === 'boolean') S.sunFbLink = o.sunFbLink;
   if (typeof o.sunGrade === 'boolean') S.sunGrade = o.sunGrade;
+  if (typeof o.sunHumOn === 'boolean') S.sunHumOn = o.sunHumOn;
+  if (typeof o.sunHiRes === 'boolean') S.sunHiRes = o.sunHiRes;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
   }
+  // A preset, a journey step, a followed broadcast or another tab's write
+  // also moves the controls through their set() (presets.js replayLive, the
+  // worker's audio link), which syncs the hum there; this catches the one
+  // path that writes state alone, the boot's load, so a hum left on comes
+  // back on. Harmless in the engine worker, which has no AudioContext.
+  syncHum(S);
+}
+
+// ---------- the Rotational hum ----------
+// The site's maps, exactly: the cutoff 100 Hz to 10 kHz and the speed
+// (AUD_SPAN_LO 0.5 to HI 16) both logarithmic over the 0 to 1 setting.
+const HUM_HZ_LO = 100, HUM_HZ_HI = 10000, HUM_HZ_LN = Math.log(HUM_HZ_HI / HUM_HZ_LO);
+const HUM_RATE_LO = 0.5, HUM_RATE_HI = 16, HUM_RATE_LN = Math.log(HUM_RATE_HI / HUM_RATE_LO);
+const humHz = v => HUM_HZ_LO * Math.pow(HUM_HZ_HI / HUM_HZ_LO, v);
+const humRate = v => HUM_RATE_LO * Math.pow(HUM_RATE_HI / HUM_RATE_LO, v);
+// The fine sliders' positions (0 to 1000 over the 0 to 1 setting), and a
+// typed Hz or rate read back to one, clamped to the span.
+const HUM_POS = 1000;
+const hzToPos = hz => hz === hz ? Math.round(Math.min(1, Math.max(0, Math.log(hz / HUM_HZ_LO) / HUM_HZ_LN)) * HUM_POS) : NaN;
+const rateToPos = r => r === r ? Math.round(Math.min(1, Math.max(0, Math.log(r / HUM_RATE_LO) / HUM_RATE_LN)) * HUM_POS) : NaN;
+
+// The hum plays only while its own switch AND the Sun layer are on; either
+// going off pauses it through its output gate. Every setting is pushed too,
+// each setter a no-op when nothing moved, so one call puts the hum wherever
+// S says. Called by every hum and layer set(), and by applySunState.
+function syncHum(S) {
+  hum.setVolume(S.sunHumAmp);
+  hum.setCutoffHz(humHz(S.sunHumCutoff));
+  hum.setRate(humRate(S.sunHumRate));
+  if (S.sunHumOn && S.layers.sun) hum.play(); else hum.pause();
 }
 
 // Every control in the Sun section dims while the layer is off, the same way
@@ -266,7 +317,7 @@ export const SUN_CONTROLS = [
   {
     id: 'lSun', section: 'layers', label: 'Sun', kind: 'toggle', def: false,
     get: S => !!S.layers.sun,
-    set: (S, on) => { S.layers.sun = on; save(); }
+    set: (S, on) => { S.layers.sun = on; syncHum(S); save(); }
   },
   // The same switch again at the head of the Sun section. Every other control
   // here dims while the layer is off, so without this one the section had no
@@ -274,12 +325,22 @@ export const SUN_CONTROLS = [
   {
     id: 'sunOn', section: 'sun', label: 'On', kind: 'toggle', def: false,
     get: S => !!S.layers.sun,
-    set: (S, on) => { S.layers.sun = on; save(); }
+    set: (S, on) => { S.layers.sun = on; syncHum(S); save(); }
   },
 
   // ---- Solar Parameters, first of the section's drawers: the picture
   // itself ----
   subDrawer('sunSolarDrawer', 'Solar Parameters', 'sun', ['sunSize', 'sunAtmo']),
+  {
+    // High quality: the site's original snapshot, streamed at roughly twice
+    // the bytes of the standard file. A change swaps the source in place,
+    // keeping the place and the play state (gpu/sun.js swapSource).
+    id: 'sunHiRes', section: 'sun', label: 'High quality', kind: 'toggle', def: DEF_HI_RES,
+    parent: 'sunSolarDrawer',
+    get: S => !!S.sunHiRes,
+    set: (S, on) => { S.sunHiRes = !!on; save(); },
+    enabled: layerOn
+  },
   under('sunSolarDrawer', percent('sunOpacity', 'sunOpacity', 'Opacity')),
   {
     // The playback rate, 1x to 16x, on a log taper so each doubling gets the
@@ -318,6 +379,9 @@ export const SUN_CONTROLS = [
   under('sunBreathDrawer', direct('sunBreathRate', 'sunBreathRate', 'Rate', 0.1,
     S => S.sunBreathRate.toFixed(1) + ' / min')),
   under('sunBreathDrawer', percent('sunBreathAmt', 'sunBreathAmt', 'Amount')),
+  // How far the breath carries the video's speed, to a stop at the exhale.
+  under('sunBreathDrawer', percent('sunSpeedLink', 'sunSpeedLink', 'Speed link',
+    S => S.sunSpeedLink > 0 ? Math.round(S.sunSpeedLink * 100) + '%' : 'off')),
 
   // ---- Feedback: the trails the sun leaves, and a Stream that can ride the
   // breath ----
@@ -429,6 +493,51 @@ export const SUN_CONTROLS = [
       return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
     },
     parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
+    enabled: layerOn
+  },
+
+  // ---- Rotational hum, last of the section's drawers: the site's sound,
+  // the solar wind's 62.8 years as one looping tone (core/sun-hum.js). Its
+  // switch rides the drawer's strip, as the Audio voices' do; it plays only
+  // while the Sun layer is on too. Every set() pushes straight into the hum
+  // (syncHum), whose own ramps keep a drag from zippering ----
+  {
+    id: 'sunHumOn', section: 'sun', label: 'Rotational hum', kind: 'toggle', def: DEF_HUM_ON,
+    get: S => !!S.sunHumOn,
+    set: (S, on) => { S.sunHumOn = !!on; syncHum(S); save(); },
+    enabled: layerOn
+  },
+  subDrawer('sunHumDrawer', 'Rotational hum', 'sun', ['sunHumAmp', 'sunHumCutoff'], 'sunHumOn'),
+  {
+    id: 'sunHumAmp', section: 'sun', label: 'Amplitude', kind: 'slider',
+    parent: 'sunHumDrawer',
+    min: 0, max: 100, step: 1, def: Math.round(spec('sunHumAmp')[3] * 100),
+    get: S => Math.round(S.sunHumAmp * 100),
+    set: (S, pos) => { S.sunHumAmp = fit(pos / 100, 0, 1, false); syncHum(S); save(); },
+    format: S => Math.round(S.sunHumAmp * 100) + '%',
+    enabled: layerOn
+  },
+  {
+    // The lowpass's corner, 100 Hz to 10 kHz on the site's log map.
+    id: 'sunHumCutoff', section: 'sun', label: 'Cutoff', kind: 'slider',
+    parent: 'sunHumDrawer',
+    min: 0, max: HUM_POS, step: 1, def: Math.round(spec('sunHumCutoff')[3] * HUM_POS),
+    get: S => Math.round(S.sunHumCutoff * HUM_POS),
+    set: (S, pos) => { S.sunHumCutoff = fit(pos / HUM_POS, 0, 1, false); syncHum(S); save(); },
+    format: S => Math.round(humHz(S.sunHumCutoff)) + ' Hz',
+    parse: (S, text) => hzToPos(parseFloat(text)),
+    enabled: layerOn
+  },
+  {
+    // How fast the series plays, 0.5x to 16x on the site's log map (1 hour
+    // of sun is one sample at 48 kHz, so 1x is about 5.5 years a second).
+    id: 'sunHumRate', section: 'sun', label: 'Speed', kind: 'slider',
+    parent: 'sunHumDrawer',
+    min: 0, max: HUM_POS, step: 1, def: Math.round(spec('sunHumRate')[3] * HUM_POS),
+    get: S => Math.round(S.sunHumRate * HUM_POS),
+    set: (S, pos) => { S.sunHumRate = fit(pos / HUM_POS, 0, 1, false); syncHum(S); save(); },
+    format: S => humRate(S.sunHumRate).toFixed(2) + 'x',
+    parse: (S, text) => rateToPos(parseFloat(text)),
     enabled: layerOn
   }
 ];

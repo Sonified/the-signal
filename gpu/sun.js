@@ -54,6 +54,19 @@
 // sight also pause it (doze), and the next frame awake resumes it. The
 // first load holds the loop awake until a frame is in (core/idle.js).
 //
+// Speed link (S.sunSpeedLink) lets the breath carry the playback rate:
+// Speed times 1 - link * (1 - breath), the breath 0 at full exhale and 1 at
+// full inhale, so at link 1 the full inhale runs the set Speed and the full
+// exhale comes to a stop. A rate no browser accepts is a stop, so below
+// 1/32 the video pauses, one more reason beside the layer, the doze and the
+// still scene; syncVideo is the one place that plays it, and only with no
+// reason left, so no reason's end can undo another's pause.
+//
+// High quality (S.sunHiRes) streams the site's original snapshot, about
+// twice the bytes, from another stem on the same base. A change swaps the
+// element's source in place (swapSource): the place and the play state
+// carry over, and the play waits for the seek.
+//
 // Allocation per frame: the external texture and its bind group, which
 // WebGPU makes new by design. Nothing else.
 
@@ -67,9 +80,13 @@ import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
 
 const VIDEO_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
-const VIDEO_STEM = 'sun_mosaic_20260915_23289r';
-const URL_X264 = VIDEO_BASE + VIDEO_STEM + '.mp4';
-const URL_HEVC = VIDEO_BASE + VIDEO_STEM + '_hevc.mp4';
+// The standard stem and the High quality one, the site's original snapshot
+// (both carry a plain x264 file and an _hevc one).
+const STEM_STD = 'sun_mosaic_20260915_23289r';
+const STEM_HI = 'sun_mosaic_20260904_23284';
+const stemFor = hi => hi ? STEM_HI : STEM_STD;
+const urlX264 = stem => VIDEO_BASE + stem + '.mp4';
+const urlHevc = stem => VIDEO_BASE + stem + '_hevc.mp4';
 const HEVC_TYPE = 'video/mp4; codecs="hvc1.1.6.L120.B0"';
 // The photosphere's radius in tile half widths: the square is drawn this
 // much larger than the photosphere, so Size sets the photosphere's diameter
@@ -92,6 +109,10 @@ const GATE_BAND_MIN = 0.003;
 // The video's playback rates: Speed's range, and the slowest rate browsers
 // accept (Chrome refuses below 1/16), the floor of the pause's coast.
 const SPEED_MIN = 1, SPEED_MAX = 16, RATE_FLOOR = 0.0625;
+// Speed link's stop: the breath's rate below this pauses the video, which
+// plays again once the rate has climbed past BREATH_GO (a little above, so
+// the edge cannot flutter between the two).
+const BREATH_STOP = 1 / 32, BREATH_GO = 1.25 / 32;
 // A refused play() is tried again no sooner than this, ms.
 const PLAY_RETRY_MS = 1000;
 // The uniform slots, one per target, 256 bytes apart (dynamic offsets): see
@@ -182,6 +203,10 @@ export function createSun(device, format) {
   let video = null, videoFailed = false, triedX264 = false, holding = false;
   let playPending = false, retryAt = 0, nowMs = 0, dozing = false;
   let warnedImport = false, warnedPlay = false;
+  // The stem the element is loading or playing, whether the breath has
+  // stopped the video (Speed link), and a swap's place to seek back to
+  // (-1 none) while the play waits for it.
+  let stemNow = '', breathStopped = false, seekTo = -1;
   function onLoaded() {
     if (holding) { holding = false; idleRelease('the sun video'); }
   }
@@ -191,7 +216,7 @@ export function createSun(device, format) {
       triedX264 = true;
       console.warn('sun: the HEVC video failed; falling back to x264');
       playPending = false;
-      video.src = URL_X264;
+      video.src = urlX264(stemNow);
       return;
     }
     videoFailed = true;
@@ -202,6 +227,9 @@ export function createSun(device, format) {
   function onPlayed() { playPending = false; }
   function onPlayFailed(err) {
     playPending = false;
+    // A play cut short by a pause or a new source (a swap) is not a
+    // refusal: the next frame decides afresh, with no retry wait.
+    if (err && err.name === 'AbortError') return;
     retryAt = nowMs + PLAY_RETRY_MS;
     if (!warnedPlay) {
       warnedPlay = true;
@@ -227,25 +255,54 @@ export function createSun(device, format) {
     video.loop = true;                 // a plain cut at the loop (see the top of this file)
     video.preload = 'auto';
     video.addEventListener('loadeddata', onLoaded);
+    video.addEventListener('loadedmetadata', onMetadata);
     video.addEventListener('error', onVideoError);
+    stemNow = stemFor(S.sunHiRes === true);
     const hevc = !!video.canPlayType(HEVC_TYPE);
     triedX264 = !hevc;
     // A paused frame loop stays awake until the first picture is in.
     holding = true;
     idleHold();
-    video.src = hevc ? URL_HEVC : URL_X264;
+    video.src = hevc ? urlHevc(stemNow) : urlX264(stemNow);
   }
-  // Plays while the layer is on, awake and the scene moving, at Speed times
-  // the motion scale (so the pause coasts it down with everything else);
-  // pauses otherwise.
-  function syncVideo(on) {
+  // High quality changed: the other stem into the same element, the HEVC
+  // choice and its one x264 fallback made afresh for it. The place is kept
+  // and sought back to once the new file's metadata is in; until then
+  // syncVideo holds off playing, and after it plays only if no pause reason
+  // holds, so a swap made while paused stays paused at that place.
+  function swapSource(stem) {
+    seekTo = video.readyState >= 1 ? video.currentTime : (seekTo >= 0 ? seekTo : 0);
+    stemNow = stem;
+    videoFailed = false;
+    playPending = false;
+    retryAt = 0;
+    const hevc = !!video.canPlayType(HEVC_TYPE);
+    triedX264 = !hevc;
+    if (!holding) { holding = true; idleHold(); }
+    video.src = hevc ? urlHevc(stem) : urlX264(stem);
+  }
+  function onMetadata() {
+    if (seekTo < 0) return;
+    const d = video.duration;
+    const t = d > 0 && isFinite(d) ? seekTo % d : seekTo;
+    seekTo = -1;
+    try { video.currentTime = t; } catch (e) {}
+  }
+  // Plays while the layer is on, awake, the scene moving and the breath not
+  // stopped, at Speed times the breath's share (Speed link) times the
+  // motion scale (so the pause coasts it down with everything else);
+  // pauses otherwise. pos is the breath, 0 full exhale to 1 full inhale.
+  function syncVideo(on, pos) {
     if (!video || videoFailed) return;
     const scale = motionScale();
-    if (!on || dozing || !(scale > 0)) {
+    const link = clampNum(S.sunSpeedLink, 0, 1, 0);
+    const breathRate = clampNum(S.sunSpeed, SPEED_MIN, SPEED_MAX, 1) * (1 - link * (1 - pos));
+    breathStopped = link > 0 && breathRate < (breathStopped ? BREATH_GO : BREATH_STOP);
+    if (!on || dozing || !(scale > 0) || breathStopped || seekTo >= 0) {
       if (!video.paused) video.pause();
       return;
     }
-    let rate = clampNum(S.sunSpeed, SPEED_MIN, SPEED_MAX, 1) * scale;
+    let rate = breathRate * scale;
     if (rate < RATE_FLOOR) rate = RATE_FLOOR;
     if (Math.abs(video.playbackRate - rate) > rate * 0.01) video.playbackRate = rate;
     if (video.paused && !playPending && nowMs >= retryAt) {
@@ -378,12 +435,12 @@ export function createSun(device, format) {
         if (fb) fb.release();
         releaseFolds();
       }
-      syncVideo(false);
+      syncVideo(false, 1);
       return;
     }
     wasOn = true;
     ensureVideo();
-    syncVideo(true);
+    if (video && stemNow !== stemFor(S.sunHiRes === true)) swapSource(stemFor(S.sunHiRes === true));
 
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
     const md = dt > 0 ? motionStep(dt) : 0;
@@ -398,6 +455,8 @@ export function createSun(device, format) {
     // rising (inhaling). Transient, like effSunFolds: never saved.
     S.effSunBreathPos = 0.5 + 0.5 * breathSin;
     S.effSunBreathIn = Math.cos(TAU * breathPh) >= 0;
+    // The video, its rate riding this breath (Speed link).
+    syncVideo(true, S.effSunBreathPos);
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
     // the pair the live position falls between crossfaded by smoothstep.
