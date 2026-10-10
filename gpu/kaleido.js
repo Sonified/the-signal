@@ -680,6 +680,10 @@ export function createKaleido(device, format, platform) {
   // Symmetry's variance: its breath (core/variance.js) on the layer's motion
   // clock and its room bookkeeping, as the trails' swings have.
   const foldsB = breathState(), foldsRoom = roomPhaseState();
+  // The breath's last issued count and the setting it was issued under: a
+  // new step waits out a slide in flight, a new setting never does (see the
+  // Symmetry read in update()). 0 means nothing issued yet.
+  let foldsIssued = 0, foldsSetLast = -1;
 
   // ---------- trails ----------
   // The feedback image (see the top of this file) and the fold pipeline
@@ -1816,6 +1820,15 @@ export function createKaleido(device, format, platform) {
     // slide. At amount 0 none of it runs and the set count goes straight
     // through; the breath is set back to the top of its cycle once, so
     // turning the amount up eases in from the set count.
+    //
+    // A drag mid-slide restarts the slide, deliberately (trackSymmetry):
+    // right for a hand that is still moving, wrong for a breath that never
+    // stops, which would reset the dissolve at every whole count it crossed
+    // and let it land only where the sine turns. So the breath holds its
+    // next step while a slide is in flight and issues it, wherever the
+    // breath has got to by then, once the slide lands: the dissolves chain
+    // whole instead of resetting. A change of the setting itself still goes
+    // straight through, drag behaviour untouched.
     const setFolds = Math.round(clampNum(S.kaleidoFolds, 3, MAX_FOLDS, 8));
     const foldsVar = clampNum(S.kaleidoFoldsVar ?? 0, 0, 1, 0);
     let folds = setFolds;
@@ -1825,9 +1838,13 @@ export function createKaleido(device, format, platform) {
       foldsB.phase = roomPhase(foldsRoom, foldsB.phase, t, md, foldsPeriod, S.kaleidoFoldsPeriodOff || 0);
       folds = Math.round(setFolds - dipDepth(foldsVar, foldsB.phase) * (setFolds - 3));
       if (folds < 3) folds = 3; else if (folds > setFolds) folds = setFolds;
+      if (foldsIssued && setFolds === foldsSetLast && slideAge < slideLen) folds = foldsIssued;
+      else foldsIssued = folds;
     } else if (foldsB.at !== -1) {
       resetBreath(foldsB, -1);
+      foldsIssued = 0;
     }
+    foldsSetLast = setFolds;
     const mirror = S.kaleidoMirror !== false;   // missing means on
     const density = clampNum(S.kaleidoDensity, 0, 1, 0.5);
     const speed = clampNum(S.kaleidoSpeed, 0, 3, 1);
