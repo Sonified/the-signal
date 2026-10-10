@@ -47,6 +47,7 @@ const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'edge', 'corners', 'tunnel'
 const SECTION_SWITCH = {
   strobe: 'fieldOn', corners: 'cornersOn', tunnel: 'ringsOn', edge: 'edgeOn', text: 'textOn',
   flowers: 'flowersOn', kaleido: 'kaleidoOn', particles: 'particlesOn', fireworks: 'fireworksOn', confetti: 'confettiOn',
+  sun: 'sunOn',
   audio: 'audioOn', music: 'musicOn', atmosphere: 'ambOn'
 };
 
