@@ -369,6 +369,8 @@ export function createSun(device, format) {
         wasOn = false;
         foldWasOn = false;
         S.effSunFolds = undefined;
+        S.effSunBreathPos = undefined;
+        S.effSunBreathIn = undefined;
         if (fb) fb.release();
         releaseFolds();
       }
@@ -387,6 +389,11 @@ export function createSun(device, format) {
     breathPh += md * breathRate / 60;
     breathPh -= Math.floor(breathPh);
     const breathSin = Math.sin(TAU * breathPh);
+    // The Breath drawer's live gauge (schema-sun.js sunBreathGauge): where
+    // the breath is, 0 full exhale to 1 full inhale, and whether it is
+    // rising (inhaling). Transient, like effSunFolds: never saved.
+    S.effSunBreathPos = 0.5 + 0.5 * breathSin;
+    S.effSunBreathIn = Math.cos(TAU * breathPh) >= 0;
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
     // the pair the live position falls between crossfaded by smoothstep.

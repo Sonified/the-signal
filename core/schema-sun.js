@@ -272,6 +272,22 @@ export const SUN_CONTROLS = [
   // ---- Breath: the sun swelling and settling at a breathing rate, and the
   // trails it leaves ----
   subDrawer('sunBreathDrawer', 'Breath', 'sun', ['sunBreathRate', 'sunBreathAmt']),
+  {
+    // A live gauge, not a setting: the knob rides the breath gpu/sun.js
+    // publishes each frame (S.effSunBreathPos), right on the inhale and left
+    // on the exhale, so the cycle can be followed by eye. Its set does
+    // nothing, so a drag springs back to the breath and a typed value is
+    // refused (parse NaN), and with no def the label click resets nothing.
+    // uiOnly keeps it out of presets, journeys, the broadcast and the store.
+    id: 'sunBreathGauge', section: 'sun', label: 'Breath', kind: 'slider',
+    parent: 'sunBreathDrawer', uiOnly: true,
+    min: 0, max: 1000, step: 1,
+    get: S => Math.round((S.effSunBreathPos ?? 0.5) * 1000),
+    set: () => {},
+    format: S => S.effSunBreathIn === true ? 'Inhaling' : S.effSunBreathIn === false ? 'Exhaling' : '—',
+    parse: () => NaN,
+    enabled: layerOn
+  },
   under('sunBreathDrawer', direct('sunBreathRate', 'sunBreathRate', 'Rate', 0.1,
     S => S.sunBreathRate.toFixed(1) + ' / min')),
   under('sunBreathDrawer', percent('sunBreathAmt', 'sunBreathAmt', 'Amount')),
