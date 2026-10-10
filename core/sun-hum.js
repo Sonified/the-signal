@@ -580,7 +580,9 @@ export function setCutoffHz(hz) {
       Math.min(hz, 0.45 * ctx.sampleRate), ctx.currentTime, 0.01);
 }
 
-/** Master volume, 0..1. Smoothed so slider drags never zipper. */
+/** Master volume, 0..2: above 1 the gain simply boosts past the source's
+    own level (the tone is a smooth rumble with headroom, so a clean 2x).
+    Smoothed so slider drags never zipper. */
 export function setVolume(v) {
   if (v === volume) return;
   volume = v;

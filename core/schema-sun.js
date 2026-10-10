@@ -102,7 +102,7 @@ const NUM = [
   // its cutoff and speed as the site's log maps read them (humHz, humRate
   // below). The cutoff's 0.25 is the site's resting x, its speed's 0 the
   // site's resting rate.
-  ['sunHumAmp',          0,   1,   0.9,  false],
+  ['sunHumAmp',          0,   2,   0.9,  false],
   ['sunHumCutoff',       0,   1,   0.25, false],
   ['sunHumRate',         0,   1,   0,    false]
 ];
@@ -511,9 +511,9 @@ export const SUN_CONTROLS = [
   {
     id: 'sunHumAmp', section: 'sun', label: 'Amplitude', kind: 'slider',
     parent: 'sunHumDrawer',
-    min: 0, max: 100, step: 1, def: Math.round(spec('sunHumAmp')[3] * 100),
+    min: 0, max: 200, step: 1, def: Math.round(spec('sunHumAmp')[3] * 100),
     get: S => Math.round(S.sunHumAmp * 100),
-    set: (S, pos) => { S.sunHumAmp = fit(pos / 100, 0, 1, false); syncHum(S); save(); },
+    set: (S, pos) => { S.sunHumAmp = fit(pos / 100, 0, 2, false); syncHum(S); save(); },
     format: S => Math.round(S.sunHumAmp * 100) + '%',
     enabled: layerOn
   },
