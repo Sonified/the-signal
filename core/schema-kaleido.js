@@ -56,6 +56,12 @@ const NUM = [
   ['kaleidoTwist',      -1,   1,   0.04, false],
   ['kaleidoOrbitMax',    0,   2,   0.25, false],
   ['kaleidoOrbitVar',    0,   1,   0.7,  false],
+  // the internal rotation ceiling's variance: the standard percent dip on
+  // the room clock (core/strobe.js VARIANCES). Not kaleidoOrbitVar, which
+  // is the Internal randomness spread above.
+  ['kaleidoOrbitMaxVar', 0,   1,   0,    false],
+  ['kaleidoOrbitMaxPeriod', 1, 60, 10,   true ],
+  ['kaleidoOrbitMaxPeriodOff', 0, 1, 0,  false],
   // 0 seats every new shape on its wedge's axis, whole and pointing
   // outward; 1 throws it anywhere across the wedge and beyond, as before.
   ['kaleidoScatter',     0,   1,   0,    false],
@@ -419,6 +425,22 @@ export const KALEIDO_CONTROLS = [
   // to each shape taking its own speed and direction (100%).
   under('kaleidoMotionDrawer', direct('kaleidoOrbitMax', 'kaleidoOrbitMax', 'Max internal rotation', 0.01,
     S => S.kaleidoOrbitMax === 0 ? 'still' : S.kaleidoOrbitMax.toFixed(2) + ' rad/s')),
+  varianceOf('kaleidoOrbitMax', under('kaleidoMotionDrawer',
+    percent('kaleidoOrbitMaxVar', 'kaleidoOrbitMaxVar', 'Internal rotation variance'))),
+  varianceOf('kaleidoOrbitMax', under('kaleidoMotionDrawer', {
+    // the rate on the room clock, retimed as the tint's is below
+    id: 'kaleidoOrbitMaxPeriod', section: 'kaleido', label: 'Internal rotation variance rate', kind: 'slider',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.kaleidoOrbitMaxPeriod,
+    set: (S, pos) => {
+      const v = fit(pos, 1, 60, true);
+      retimeRoomPhase(S, 'kaleidoOrbitMaxPeriodOff', S.kaleidoOrbitMaxPeriod, v);
+      S.kaleidoOrbitMaxPeriod = v;
+      save();
+    },
+    format: S => S.kaleidoOrbitMaxPeriod + 's / cycle',
+    enabled: layerOn
+  })),
   under('kaleidoMotionDrawer', percent('kaleidoOrbitVar', 'kaleidoOrbitVar', 'Internal randomness')),
   // Shape spin is each shape turning about its own centre, at its own rate
   // up to the ceiling set here; the randomness spreads the shapes between

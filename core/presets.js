@@ -354,6 +354,7 @@ const SWINGS = [
   ['kaleidoOpacityPeriod',  'kaleidoOpacityPeriodOff',  carryRoomPhase],
   ['kaleidoFadePeriod',     'kaleidoFadePeriodOff',     carryRoomPhase],
   ['kaleidoPulsePeriod',    'kaleidoPulsePeriodOff',    carryRoomPhase],
+  ['kaleidoOrbitMaxPeriod', 'kaleidoOrbitMaxPeriodOff', carryRoomPhase],
   ['kaleidoFbAmtVarRate',   'kaleidoFbAmtVarRateOff',   carryRoomPhase],
   ['kaleidoFbStreamVarRate', 'kaleidoFbStreamVarRateOff', carryRoomPhase],
   ['kaleidoFbTwistVarRate', 'kaleidoFbTwistVarRateOff', carryRoomPhase],

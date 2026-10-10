@@ -1808,7 +1808,7 @@ export function createKaleido(device, format, platform) {
     const spinMax = clampNum(S.kaleidoSpinMax, 0, 3, 0.35);
     const spinVar = clampNum(S.kaleidoSpinVar, 0, 1, 0.7);
     const twist = clampNum(S.kaleidoTwist, -1, 1, 0.04);
-    const orbitMax = clampNum(S.kaleidoOrbitMax ?? 0.25, 0, 2, 0.25);
+    const orbitMax = clampNum(S.effKaleidoOrbitMax ?? S.kaleidoOrbitMax ?? 0.25, 0, 2, 0.25);
     const orbitVar = clampNum(S.kaleidoOrbitVar ?? 0.7, 0, 1, 0.7);
     const scatter = clampNum(S.kaleidoScatter ?? 0, 0, 1, 0);
     const depthSet = clampNum(S.kaleidoDepth ?? 0, 0, 1, 0);

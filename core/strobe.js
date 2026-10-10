@@ -100,6 +100,9 @@ const VARIANCES = [
   // room clock as the flowers'
   { amount: 'kaleidoOpacityVar', period: 'kaleidoOpacityPeriod', fallback: 10, phase: 'kaleidoOpacityPhase', eff: 'effKaleidoOpacity', set: 'kaleidoOpacity', room: roomPhaseState() },
   { amount: 'kaleidoPulseVar', period: 'kaleidoPulsePeriod', fallback: 10, phase: 'kaleidoPulsePhase', eff: 'effKaleidoPulse', set: 'kaleidoPulse', room: roomPhaseState() },
+  // the kaleidoscope's Max internal rotation (gpu/kaleido.js steps each
+  // shape's orbit by the effective, so a moving ceiling never jumps one)
+  { amount: 'kaleidoOrbitMaxVar', period: 'kaleidoOrbitMaxPeriod', fallback: 10, phase: 'kaleidoOrbitMaxPhase', eff: 'effKaleidoOrbitMax', set: 'kaleidoOrbitMax', room: roomPhaseState() },
   { amount: 'kaleidoFadeVar', period: 'kaleidoFadePeriod', fallback: 10, phase: 'kaleidoFadePhase', eff: 'effKaleidoFade', set: 'kaleidoFade', room: roomPhaseState() },
   // the confetti's feedback Opacity (gpu/confetti.js lays the image over
   // the scene at the effective)
