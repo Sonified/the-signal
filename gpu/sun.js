@@ -95,8 +95,8 @@ const SPEED_MIN = 1, SPEED_MAX = 16, RATE_FLOOR = 0.0625;
 // A refused play() is tried again no sooner than this, ms.
 const PLAY_RETRY_MS = 1000;
 // The uniform slots, one per target, 256 bytes apart (dynamic offsets): see
-// sun.wgsl.js's struct SU, 16 floats of each slot used.
-const SLOT_BYTES = 256, SLOT_FLOATS = SLOT_BYTES / 4, SU_FLOATS = 16;
+// sun.wgsl.js's struct SU, 20 floats of each slot used.
+const SLOT_BYTES = 256, SLOT_FLOATS = SLOT_BYTES / 4, SU_FLOATS = 20;
 const SLOT_SCENE = 0, SLOT_CHAMBER = 1, SLOT_FB = 2, SLOTS = 3;
 const TAU = Math.PI * 2;
 
@@ -353,8 +353,12 @@ export function createSun(device, format) {
     uni[b + 4] = tw; uni[b + 5] = th; uni[b + 6] = gate; uni[b + 7] = gain;
     uni[b + 8] = g[0]; uni[b + 9] = g[1]; uni[b + 10] = g[2]; uni[b + 11] = g[3];
     uni[b + 12] = g[4]; uni[b + 13] = band; uni[b + 14] = 0; uni[b + 15] = 0;
+    uni[b + 16] = grade[0]; uni[b + 17] = grade[1]; uni[b + 18] = grade[2]; uni[b + 19] = grade[3];
   }
   const gains = new Float32Array(5);
+  // This frame's Color grade, the same in every slot: brightness, contrast,
+  // saturation, on. Off, the identity and 0, kaleido.js's discipline.
+  const grade = new Float32Array(4);
 
   // t is the rAF timestamp (ms), dt seconds; lum is unused (the sun keeps
   // steady brightness through the strobe).
@@ -400,6 +404,11 @@ export function createSun(device, format) {
     let atmo = clampNum(S.sunAtmo, 0, 1, 0.25) + 0.5 * clampNum(S.sunBreathAmt, 0, 1, 0.5) * breathSin;
     atmo = atmo < 0 ? 0 : (atmo > 1 ? 1 : atmo);
     gains.fill(0);
+    const graded = S.sunGrade === true;
+    grade[0] = graded ? clampNum(S.sunBright ?? 1, 0, 2, 1) : 1;
+    grade[1] = graded ? clampNum(S.sunContrast ?? 1, 0, 2, 1) : 1;
+    grade[2] = graded ? clampNum(S.sunSat ?? 1, 0, 2, 1) : 1;
+    grade[3] = graded ? 1 : 0;
     const x = atmo * 4;
     const i = Math.floor(x);
     if (i >= 4) gains[4] = 1;

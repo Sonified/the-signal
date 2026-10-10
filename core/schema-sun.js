@@ -29,6 +29,9 @@ const DEF_MIRROR = true;
 // On by default: the trails' Stream follows the breath, swinging between the
 // Breath range's two ends, and the manual Stream is greyed out.
 const DEF_FB_LINK = true;
+// Off by default: the Color sliders do nothing, and stay hidden, until the
+// viewer turns the grade on.
+const DEF_GRADE = false;
 const NUM = [
   // key,               min,  max, def,  integer
   // the sun video's playback rate, the site's 1x to 16x
@@ -66,6 +69,11 @@ const NUM = [
   // (Lo) at the breath's bottom to out (Hi) at its top.
   ['sunFbStreamLo',     -1,   1,   -0.5, false],
   ['sunFbStreamHi',     -1,   1,   0.5,  false],
+  // The sun's own colour grade, the site's: 1 leaves the picture as it is,
+  // 0 is black, flat grey or greyscale, 2 doubles the effect.
+  ['sunBright',          0,   2,   1,    false],
+  ['sunContrast',        0,   2,   1,    false],
+  ['sunSat',             0,   2,   1,    false],
   // How many wedges the sun is folded into
   ['sunFolds',           3,   32,  8,    true ],
   // the fold's turning, in RPM, positive clockwise
@@ -138,6 +146,7 @@ export function initSunState(S) {
   if (typeof S.sunKaleidoOn !== 'boolean') S.sunKaleidoOn = DEF_KALEIDO_ON;
   if (typeof S.sunMirror !== 'boolean') S.sunMirror = DEF_MIRROR;
   if (typeof S.sunFbLink !== 'boolean') S.sunFbLink = DEF_FB_LINK;
+  if (typeof S.sunGrade !== 'boolean') S.sunGrade = DEF_GRADE;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -149,7 +158,7 @@ export function initSunState(S) {
 // kaleidoOn does, so the record does not look like a partial v0 layers
 // object.
 export function sunStateOf(S) {
-  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false };
+  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
 }
@@ -164,6 +173,7 @@ export function applySunState(S, o) {
   if (typeof o.sunKaleidoOn === 'boolean') S.sunKaleidoOn = o.sunKaleidoOn;
   if (typeof o.sunMirror === 'boolean') S.sunMirror = o.sunMirror;
   if (typeof o.sunFbLink === 'boolean') S.sunFbLink = o.sunFbLink;
+  if (typeof o.sunGrade === 'boolean') S.sunGrade = o.sunGrade;
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -212,6 +222,23 @@ function sideText(v) {
 }
 function rangeText(lo, hi) {
   return lo === 0 && hi === 0 ? 'none' : sideText(lo) + ' / ' + sideText(hi);
+}
+
+// One whole-percent slider over a 0 to 2 grade field, 100% unchanged,
+// shown only while the Color switch is on, and drawn as that switch's child
+// (schema-kaleido.js's grade, for the sun).
+function grade(id, key, label) {
+  const n = spec(key);
+  return {
+    id, section: 'sun', label, kind: 'slider',
+    parent: 'sunGrade',
+    min: 0, max: 200, step: 1, def: Math.round(n[3] * 100),
+    get: S => Math.round(S[key] * 100),
+    set: (S, pos) => { S[key] = fit(pos / 100, n[1], n[2], false); save(); },
+    format: S => Math.round(S[key] * 100) + '%',
+    enabled: layerOn,
+    visible: S => !!S.sunGrade
+  };
 }
 
 const times2 = key => S => S[key].toFixed(2) + '×';
@@ -330,6 +357,22 @@ export const SUN_CONTROLS = [
     format: S => rangeText(S.sunFbStreamLo, S.sunFbStreamHi),
     enabled: S => layerOn(S) && S.sunFbLink !== false
   },
+
+  // ---- Color: the site's own grade of the picture, before the feather, so
+  // the live sun, the fold and the trails all carry it. The grade's switch
+  // heads its sliders, indented under it; off, the grade is not applied and
+  // the sliders are hidden, keeping their values for when it comes back on.
+  subDrawer('sunColorDrawer', 'Color', 'sun', ['sunBright', 'sunContrast', 'sunSat']),
+  {
+    id: 'sunGrade', section: 'sun', label: 'Color', kind: 'toggle', def: DEF_GRADE,
+    parent: 'sunColorDrawer',
+    get: S => !!S.sunGrade,
+    set: (S, on) => { S.sunGrade = !!on; save(); },
+    enabled: layerOn
+  },
+  grade('sunBright', 'sunBright', 'Brightness'),
+  grade('sunContrast', 'sunContrast', 'Contrast'),
+  grade('sunSat', 'sunSat', 'Saturation'),
 
   // ---- Kaleidoscope: the sun folded into wedges ----
   subDrawer('sunKaleidoDrawer', 'Kaleidoscope', 'sun', ['sunKaleidoOn', 'sunFolds']),

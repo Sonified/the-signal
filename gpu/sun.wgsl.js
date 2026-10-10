@@ -36,6 +36,16 @@
 // the live picture is never gated. r is in the sun's own square, so the gate
 // grows with Size and the look holds.
 //
+// The Color grade, the site's own brightness and colorization, taken on the
+// summed picture before the feather and the Center fade, so every target
+// (scene, chamber, feedback image) carries it: brightness scales, contrast
+// pivots about mid grey, saturation mixes from the Rec. 709 luma, then a
+// clamp, in the site's order. grade.w says it is on; off, the branch is
+// skipped and the picture is exactly as without it. Note the layer adds
+// light: a contrast below 1 lifts black toward grey, so the whole square
+// lays a faint wash over the scene (only the feather takes it away). That
+// is the site's math, kept faithfully.
+//
 // One shader serves three targets (the scene, the fold's chamber, the
 // feedback image), each with its own uniform slot (a dynamic offset):
 // place.xy is the centre in the target's own texels and place.z the target's
@@ -49,6 +59,7 @@ struct SU {
   look: vec4f,  // target width, height (texels), Center fade G (0 off), gain
   g0: vec4f,    // channel gains: 1700, 0304, 0171, 0193
   g1: vec4f,    // channel gain 0211, Center fade band half width w (square units), unused x2
+  grade: vec4f, // Color grade: brightness, contrast, saturation, on (0 or 1)
 };
 @group(0) @binding(0) var<uniform> u: SU;
 @group(0) @binding(1) var sunTex: texture_external;
@@ -87,6 +98,14 @@ fn fsSun(@builtin(position) p: vec4f) -> @location(0) vec4f {
   if (u.g0.w > 0.0) { c += tileAt(uv, 0.0, 1.0) * (vec3f(201.0, 138.0, 75.0) / 255.0) * u.g0.w; }
   if (u.g1.x > 0.0) { c += tileAt(uv, 1.0, 1.0) * (vec3f(180.0, 140.0, 255.0) / 255.0) * u.g1.x; }
   c = min(c, vec3f(1.0));
+  // The Color grade (see the top of this file); a uniform branch.
+  if (u.grade.w > 0.5) {
+    c = c * u.grade.x;
+    c = (c - vec3f(0.5)) * u.grade.y + vec3f(0.5);
+    let lum = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    c = mix(vec3f(lum), c, u.grade.z);
+    c = clamp(c, vec3f(0.0), vec3f(1.0));
+  }
   // The feather (see the top of this file).
   let r = length(uv - vec2f(0.5)) * 2.0;
   let w = max(mix(0.6, 0.0, FEATHER_HARD), 0.003);
