@@ -16,7 +16,7 @@ import { save } from './store.js';
 const NUM = [
   // key,          min, max, def, integer
   ['heartMaster',  0,   1,   1,   false],
-  ['heartAudio',   0,   1,   0.8, false],
+  ['heartAudio',   0,   2,   0.8, false],
   ['heartVisual',  0,   1,   0.8, false]
 ];
 
@@ -65,14 +65,16 @@ export function applyHeartbeatState(S, o) {
 // Every row dims while the layer is off, as the Sun section's do.
 const layerOn = S => !!S.layers.heartbeat;
 
-// One whole-percent slider over a 0 to 1 field.
+// One whole-percent slider over the field's own span from the NUM table,
+// so a row whose range reaches past 1 (Audio level runs to 200%) shows and
+// stores the whole of it.
 function percent(id, key, label) {
   const n = spec(key);
   return {
     id, section: 'heartbeat', label, kind: 'slider',
-    min: 0, max: 100, step: 1, def: Math.round(n[3] * 100),
+    min: 0, max: Math.round(n[2] * 100), step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
-    set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
+    set: (S, pos) => { S[key] = fit(pos / 100, n[1], n[2], false); save(); },
     format: S => Math.round(S[key] * 100) + '%',
     enabled: layerOn
   };
