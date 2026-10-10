@@ -128,6 +128,12 @@ export function varianceRows(owner, o = {}) {
     if (x.varianceOf === undefined) x.varianceOf = owner;
     rows.push(x);
   }
+  // An audio variance plays on its voice's own clock (core/variance.js
+  // breath, js/strobe-am.js), which no table here can read, so its owner's
+  // bar is only ever the effective given: one left out is said at load
+  // rather than found later as a bar that never moves. A visual variance
+  // without one is lit from the strobe's own (wireVariances below).
+  if (music && !o.effective) console.error('schema: ' + owner + "'s variance has no effective, so its bar will never move");
   const shown = onKey ? S => S[onKey] !== false && S[aKey(S)] > 0 : S => S[aKey(S)] > 0;
   const effective = o.effective ? S => shown(S) ? o.effective(S) : undefined : null;
   VARIANCE_WIRES.set(rows[0], { owner, rows, effective });
