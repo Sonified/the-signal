@@ -217,6 +217,8 @@ function buildSettings() {
     biDepth: S.biDepth, biPeriod: S.biPeriod, biHardSwitch: S.biHardSwitch,
     rendererPref: S.rendererPref, heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, outputLatComp: S.outputLatComp,
     syncDiagLog: S.syncDiagLog,
+    // Settings > Control overlays and its key (main.js), this machine's own
+    overlayMode: S.overlayMode, overlayKey: S.overlayKey,
     // v0 reads this straight off the <input id=lAudio> checkbox, which v1 has
     // no equivalent of. Lane E2's audio-layer control is the one write path
     // for it here, stashing the boot preference on S.audioOnBoot (see the
@@ -681,7 +683,8 @@ export function snapshot() {
 // (schema-visual.js), by the S fields this file saves for it. How this
 // screen draws (the spare frame, the trail images' size and what a change
 // of it does to the trails), how its pause and
-// its hint behave, the parallax sim's sway: plumbing for the machine the
+// its hint behave, the parallax sim's sway, and the Settings section's
+// control overlays (how the floating controls come up): plumbing for the machine the
 // session runs on, not part of the scene an audience is shown. They are
 // saved with everything else, so a reload keeps them, and another tab of
 // this machine still takes them (syncFromStorage), but a preset recall and a
@@ -691,7 +694,8 @@ export function snapshot() {
 // rather than read off the schema, since this module must not depend on it.
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive',
-                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog'];
+                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog',
+                      'overlayMode', 'overlayKey'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -934,6 +938,10 @@ function applySettings(s, live, scene) {
     if (typeof s.heartGrowX === 'number' && isFinite(s.heartGrowX)) S.heartGrowX = Math.max(1.1, Math.min(2, s.heartGrowX));
     if (typeof s.outputLatComp === 'boolean') S.outputLatComp = s.outputLatComp;
     if (typeof s.syncDiagLog === 'boolean') S.syncDiagLog = s.syncDiagLog;
+    // Settings > Control overlays: how this screen's floating controls come
+    // up, and the key that toggles them in Key mode (any one event.key).
+    if (s.overlayMode === 'auto' || s.overlayMode === 'key') S.overlayMode = s.overlayMode;
+    if (typeof s.overlayKey === 'string' && s.overlayKey.length > 0 && s.overlayKey.length <= 32) S.overlayKey = s.overlayKey;
     // The parallax sim's sway (core/eye.js). Its switch is never saved, so a
     // load always starts with the head still.
     if (typeof s.parallaxAmount === 'number' && isFinite(s.parallaxAmount)) S.parallaxAmount = Math.max(0, Math.min(0.3, s.parallaxAmount));

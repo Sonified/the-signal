@@ -237,7 +237,9 @@ export const REPLAY_CONTROLS = REPLAY;
 // (perform.js perfFollowGlide).
 // A control marked machineOnPhone is one on a phone only: there it holds the
 // phone's own choice (the Reverb type, core/schema-audio.js).
-export function machineControl(c) { return c.section === 'render' || (c.machineOnPhone === true && onPhone()); }
+// The Settings section is this machine's own too (its Control overlays rows:
+// how this screen's floating controls come up).
+export function machineControl(c) { return c.section === 'render' || c.section === 'settings' || (c.machineOnPhone === true && onPhone()); }
 
 // store.applySnapshot writes state and nothing else, which is all a boot
 // needs, but mid-session the audio graph, the edge particles and the rest

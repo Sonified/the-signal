@@ -64,7 +64,7 @@ import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from
 import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
-import { setSettingsFileHandler } from './core/schema-visual.js';
+import { setSettingsFileHandler, overlayKeyCapture, OVERLAY_KEY_DEF } from './core/schema-visual.js';
 import { byId } from './core/schema.js';
 import { buildDiagnostics } from './core/diagnostics.js';
 import { perf, perfAttachGpu, perfFrameStart, perfRecord } from './core/perf.js';
@@ -421,6 +421,14 @@ async function boot() {
   // skip building one at all: the chrome's fade, and whether any spring,
   // momentum scroll or tooltip was still moving.
   let lastChromeA = 1, uiUnsettled = true, lastInset = -1;
+  // Settings > Control overlays (S.overlayMode). In Key mode the floating
+  // controls (drawChrome: the top right cluster and the bottom right quick
+  // bar) leave the idle rule and follow overlaysShown alone, which only the
+  // overlay key flips; the burger, the drawer and the cursor keep the idle
+  // rule. lastOverlayA is their spring's last value, as lastChromeA is the
+  // burger's. Back in Auto, overlaysShown is let go, so the next Key mode
+  // starts with them hidden.
+  let overlaysShown = false, overlayKeyHeld = false, overlayKeyCode = '', lastOverlayA = 1;
   // A touch that lands while the chrome has faded away (the last build left
   // it under half shown), or the first touch since the page came back into
   // view (a phone unlocked, whatever was showing when it went dark), is a
@@ -508,6 +516,17 @@ async function boot() {
     if (e.code === 'Paste') return false;
     const k = e.key, lk = k.length === 1 ? k.toLowerCase() : k;
     if (e.meta || e.ctrl) return false;
+    // Key mode's overlay key (Settings > Control overlays) toggles the
+    // floating controls, ahead of every other key; a hide is at once, not
+    // a fade. Held, it toggles once, as M does.
+    if (S.overlayMode === 'key' && k === (S.overlayKey || OVERLAY_KEY_DEF)) {
+      if (!overlayKeyHeld) {
+        overlayKeyHeld = true; overlayKeyCode = e.code;
+        overlaysShown = !overlaysShown;
+        if (!overlaysShown) { anim.reset('chrome.overlay', 0); lastOverlayA = 0; }
+      }
+      return true;
+    }
     // With the journey window open and journey mode ACTIVE, Space plays and
     // pauses the walk (a resume carries on where it paused) and the left and
     // right arrows step it; a journey with no steps leaves Space to the app.
@@ -627,6 +646,18 @@ async function boot() {
       if (e.type === 'keyup' && (e.key === 'j' || e.key === 'J')) journeyKeyHeld = false;
       if (e.type === 'keyup' && (e.key === 'p' || e.key === 'P')) perfKeyHeld = false;
       if (e.type === 'keyup' && (e.key === 't' || e.key === 'T')) textKeyHeld = false;
+      // (matched by its physical key, since a Shift let go first changes the key's name)
+      if (e.type === 'keyup' && overlayKeyHeld && e.code === overlayKeyCode) overlayKeyHeld = false;
+      // The Overlay key row's capture (Settings): armed, the next key down
+      // is the new overlay key, taken before any shortcut or widget sees it.
+      // Escape gives up; a modifier alone, or a paste, is not a key and the
+      // capture waits on.
+      if (e.type === 'key' && overlayKeyCapture.armed && e.code !== 'Paste' &&
+          e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Alt' && e.key !== 'Meta' && e.key !== 'CapsLock') {
+        overlayKeyCapture.armed = false;
+        if (e.key !== 'Escape' && e.key && e.key !== 'Unidentified') { S.overlayKey = e.key; overlayKeyHeld = true; overlayKeyCode = e.code; save(); }
+        continue;
+      }
       if (e.type === 'key' && !ui.textEditing && globalKey(e)) continue;
       uiEvents.push(e);
     }
@@ -685,8 +716,14 @@ async function boot() {
     // any of the UI floating over the picture holds the chrome up; one
     // resting on the bare picture lets the chrome alone fade.
     const chromeAwake = guard.noticeOpen || broadcastAsking() || ui.activeId !== -1 || overUI || t - lastActivity < LAYOUT.idleMs;
-    const awake = chromeAwake || S.panelOpen || mixer.open || sequencer.open || journey.open || performer.open || music.open || textbank.open;
-    const idle = !awake && events.length === 0 && !uiUnsettled && ui.activeId === -1 && lastChromeA < 0.01;
+    // Key mode (see overlaysShown): the floating controls answer to the key
+    // alone, though the guard's notice and the stream's question still
+    // bring them up, as they hold the chrome up today.
+    const keyMode = S.overlayMode === 'key';
+    if (!keyMode) overlaysShown = false;
+    const overlayAwake = keyMode ? (overlaysShown || guard.noticeOpen || broadcastAsking()) : chromeAwake;
+    const awake = chromeAwake || overlayAwake || S.panelOpen || mixer.open || sequencer.open || journey.open || performer.open || music.open || textbank.open;
+    const idle = !awake && events.length === 0 && !uiUnsettled && ui.activeId === -1 && lastChromeA < 0.01 && lastOverlayA < 0.01;
     if (idle) {
       // ui.begin normally hands the springs this frame's dt; the overlay's
       // own springs still run, so they get it here instead.
@@ -699,6 +736,10 @@ async function boot() {
       // the chrome chips frost only while a window that needs the capture is up
       const frost = ui.spring('chrome.frost', S.panelOpen || mixer.open ? 1 : 0, MOTION.fade);
       lastChromeA = chromeA;
+      // the floating controls' own fade: in Auto the same target as the
+      // burger's, so the two move as one; in Key mode the key's
+      const overlayA = ui.spring('chrome.overlay', overlayAwake ? 1 : 0, MOTION.fade);
+      lastOverlayA = overlayA;
       stepDrawer(ui);   // the slide everything below reads this frame
 
       // the stream's recall question takes the pointer before anything
@@ -732,7 +773,7 @@ async function boot() {
 
       ui.dl = uiList;
       drawDrawer(ui, app);
-      drawChrome(ui, app, chromeA, frost);
+      drawChrome(ui, app, overlayA, frost);
 
       // Everything above the field has run its hit tests, so a hot widget
       // here is UI under the pointer; the window and drawer rects catch the

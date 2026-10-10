@@ -1885,8 +1885,48 @@ export const VISUAL_CONTROLS = [
   {
     id: 'settingsLoad', section: 'settings', label: 'Load settings', kind: 'action',
     act: () => settingsFileHook('load')
+  },
+  {
+    // How the floating controls (the transport, volume and strobe dial at
+    // the top right, the quick bar at the bottom right) come up. Auto: on
+    // any pointer move or key, fading once the pointer settles, as ever.
+    // Key: only the overlay key (below) brings them up, and it toggles them:
+    // one press shows them and they stay, the next hides them at once.
+    // main.js reads it in the frame. This machine's own, as every Settings
+    // row is (presets.js machineControl): never a preset's, a journey's or a
+    // broadcast's.
+    id: 'overlayMode', section: 'settings', label: 'Control overlays', kind: 'segment', def: 'auto',
+    options: [
+      { value: 'auto', label: 'Auto', domId: null },
+      { value: 'key',  label: 'Key',  domId: null }
+    ],
+    get: S => S.overlayMode === 'key' ? 'key' : 'auto',
+    set: (S, v) => {
+      S.overlayMode = v === 'key' ? 'key' : 'auto';
+      if (S.overlayMode !== 'key') overlayKeyCapture.armed = false;
+      save();
+    },
+    format: S => S.overlayMode === 'key' ? 'Key' : 'Auto'
+  },
+  {
+    // The key that toggles the overlays in Key mode. A click arms a capture
+    // and the next key pressed (main.js takes it before any shortcut) becomes
+    // the key; Escape gives up and keeps the old one. Stored as event.key.
+    id: 'overlayKey', section: 'settings', label: 'Overlay key', kind: 'action',
+    parent: 'overlayMode', visible: S => S.overlayMode === 'key',
+    act: () => { overlayKeyCapture.armed = !overlayKeyCapture.armed; },
+    format: S => overlayKeyCapture.armed ? 'Overlay key: press a key…' : 'Overlay key: ' + overlayKeyName(S.overlayKey)
   }
 ];
+
+// The overlay key's capture, armed by its row and settled by main.js's
+// input loop on the next keydown. Runtime only, never saved.
+export const overlayKeyCapture = { armed: false };
+export const OVERLAY_KEY_DEF = '\\';
+function overlayKeyName(k) {
+  if (typeof k !== 'string' || !k) k = OVERLAY_KEY_DEF;
+  return k === ' ' ? 'Space' : k.length === 1 ? k.toUpperCase() : k;
+}
 
 // The page's settings-file handler, set by main.js (platform.settingsFile).
 let settingsFileHook = () => {};
