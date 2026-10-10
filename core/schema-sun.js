@@ -213,10 +213,12 @@ export function applySunState(S, o) {
 const HUM_HZ_LO = 100, HUM_HZ_HI = 10000, HUM_HZ_LN = Math.log(HUM_HZ_HI / HUM_HZ_LO);
 const HUM_RATE_LO = 0.5, HUM_RATE_HI = 16, HUM_RATE_LN = Math.log(HUM_RATE_HI / HUM_RATE_LO);
 // The whole speed axis is retuned by this factor before it reaches the
-// engine: the sound that used to play at a displayed 2.15x now sits at the
-// 2x mark (Robert's call, 2026-10-10). The slider, readouts, presets and
-// saved settings all keep their positions; only the sound under them shifts.
-const HUM_RETUNE = 2.15 / 2;
+// engine, two calls of Robert's stacked (both 2026-10-10): first the sound
+// at a displayed 2.15x moved to the 2x mark (2.15/2), then the sound at the
+// 0.5x mark moved to 1x (a further halving). The slider, readouts, presets
+// and saved settings all keep their positions; only the sound under them
+// shifts.
+const HUM_RETUNE = (2.15 / 2) * 0.5;
 const humHz = v => HUM_HZ_LO * Math.pow(HUM_HZ_HI / HUM_HZ_LO, v);
 const humRate = v => HUM_RATE_LO * Math.pow(HUM_RATE_HI / HUM_RATE_LO, v);
 // The fine sliders' positions (0 to 1000 over the 0 to 1 setting), and a
