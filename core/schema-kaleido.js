@@ -84,6 +84,11 @@ const NUM = [
   ['kaleidoTintPeriod',  1,   60,  10,   true ],
   ['kaleidoTintPeriodOff', 0, 1,   0,    false],
   ['kaleidoPulse',       0,   1,   0,    false],
+  // the pulse's variance: the standard percent dip on the room clock, as
+  // the flowers' pulse has (core/strobe.js VARIANCES)
+  ['kaleidoPulseVar',    0,   1,   0,    false],
+  ['kaleidoPulsePeriod', 1,   60,  10,   true ],
+  ['kaleidoPulsePeriodOff', 0, 1,  0,    false],
   // Which motif atlas the shapes come from (assets/kaleidoscope/sets.mjs): 1 the
   // botanical atlas, 2 petal specimens, 3 petals and green leaves, 4 ferns
   // and wildflower petals, 5 botanical specimens, 6 the original motifs,
@@ -609,6 +614,22 @@ export const KALEIDO_CONTROLS = [
     S => (S.kaleidoFadeInS ?? 1.5) < 0.05 ? 'off' : (S.kaleidoFadeInS ?? 1.5).toFixed(1) + 's')),
   under('kaleidoBrightnessDrawer', percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
     S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%')),
+  varianceOf('kaleidoPulse', under('kaleidoBrightnessDrawer',
+    percent('kaleidoPulseVar', 'kaleidoPulseVar', 'Pulse variance'))),
+  varianceOf('kaleidoPulse', under('kaleidoBrightnessDrawer', {
+    // the rate on the room clock, retimed as the tint's is below
+    id: 'kaleidoPulsePeriod', section: 'kaleido', label: 'Pulse variance rate', kind: 'slider',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.kaleidoPulsePeriod,
+    set: (S, pos) => {
+      const v = fit(pos, 1, 60, true);
+      retimeRoomPhase(S, 'kaleidoPulsePeriodOff', S.kaleidoPulsePeriod, v);
+      S.kaleidoPulsePeriod = v;
+      save();
+    },
+    format: S => S.kaleidoPulsePeriod + 's / cycle',
+    enabled: layerOn
+  })),
 
   // Video feedback of the folded pattern, the Confetti layer's Feedback
   // drawer row for row (core/schema-confetti.js has the long notes): each

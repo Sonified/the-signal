@@ -94,9 +94,11 @@ const VARIANCES = [
   { amount: 'flowerTintVar', period: 'flowerTintPeriod', fallback: 10, phase: 'flowerTintPhase', eff: 'effFlowerTint', set: 'flowerTint', room: roomPhaseState() },
   { amount: 'flowerBloomRateVar', period: 'flowerBloomRatePeriod', fallback: 10, phase: 'flowerBloomRatePhase', eff: 'effFlowerBloomRate', set: 'flowerBloomRate', room: roomPhaseState() },
   { amount: 'kaleidoTintVar', period: 'kaleidoTintPeriod', fallback: 10, phase: 'kaleidoTintPhase', eff: 'effKaleidoTint', set: 'kaleidoTint', room: roomPhaseState() },
-  // the kaleidoscope's Opacity and Center fade radius (gpu/kaleido.js reads
-  // the effectives in place of the dials), on the room clock as the flowers'
+  // the kaleidoscope's Opacity, Pulse with strobe and Center fade radius
+  // (gpu/kaleido.js reads the effectives in place of the dials), on the
+  // room clock as the flowers'
   { amount: 'kaleidoOpacityVar', period: 'kaleidoOpacityPeriod', fallback: 10, phase: 'kaleidoOpacityPhase', eff: 'effKaleidoOpacity', set: 'kaleidoOpacity', room: roomPhaseState() },
+  { amount: 'kaleidoPulseVar', period: 'kaleidoPulsePeriod', fallback: 10, phase: 'kaleidoPulsePhase', eff: 'effKaleidoPulse', set: 'kaleidoPulse', room: roomPhaseState() },
   { amount: 'kaleidoFadeVar', period: 'kaleidoFadePeriod', fallback: 10, phase: 'kaleidoFadePhase', eff: 'effKaleidoFade', set: 'kaleidoFade', room: roomPhaseState() },
   // the confetti's feedback Opacity (gpu/confetti.js lays the image over
   // the scene at the effective)

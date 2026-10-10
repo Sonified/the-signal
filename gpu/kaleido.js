@@ -1814,7 +1814,7 @@ export function createKaleido(device, format, platform) {
     const depthSet = clampNum(S.kaleidoDepth ?? 0, 0, 1, 0);
     const opacity = clampNum(S.effKaleidoOpacity ?? S.kaleidoOpacity, 0, 1, 0.9);
     const tintAmt = clampNum(S.effKaleidoTint ?? S.kaleidoTint, 0, 1, 0);
-    const pulse = scaledStrobeDepth(clampNum(S.kaleidoPulse, 0, 1, 0));
+    const pulse = scaledStrobeDepth(clampNum(S.effKaleidoPulse ?? S.kaleidoPulse, 0, 1, 0));
     // With the Color switch off the grade is the identity, whatever the
     // sliders hold.
     const graded = S.kaleidoGrade === true;
