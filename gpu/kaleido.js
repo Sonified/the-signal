@@ -128,6 +128,7 @@ import { idleHold, idleRelease } from '../core/idle.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './feedback.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
+import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
 
 const GRID = 8;                     // every atlas is an 8 x 8 tile sheet
 const MOTIFS = GRID * GRID;
@@ -676,6 +677,9 @@ export function createKaleido(device, format, platform) {
   let oldFolds = 0, oldMirror = true, oldSpan = 1;
   let slideLen = 0, slideAge = 0, slideK = 1;
   let slideDraw = false;
+  // Symmetry's variance: its breath (core/variance.js) on the layer's motion
+  // clock and its room bookkeeping, as the trails' swings have.
+  const foldsB = breathState(), foldsRoom = roomPhaseState();
 
   // ---------- trails ----------
   // The feedback image (see the top of this file) and the fold pipeline
@@ -1800,7 +1804,30 @@ export function createKaleido(device, format, platform) {
     if (wantDef.id !== requestedSet || wantUrl !== requestedUrl) changeSet(wantDef.id, wantUrl);
     if (!ready) return;
 
-    const folds = Math.round(clampNum(S.kaleidoFolds, 3, MAX_FOLDS, 8));
+    // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
+    const md = dt > 0 ? motionStep(dt) : 0;
+    // Symmetry as set, and as its variance plays it: the breath steps on
+    // the layer's motion clock (clockS as it stands once this frame's step
+    // is in), so a stopped scene holds it, and in a room is then pulled
+    // onto the room clock with its offset, as the trails' swings are. The
+    // dip takes the count that share of the way down to 3, never above the
+    // setting, and each whole count it lands on goes to trackSymmetry below
+    // exactly as a drag of the slider would, so it rides the Symmetry
+    // slide. At amount 0 none of it runs and the set count goes straight
+    // through; the breath is set back to the top of its cycle once, so
+    // turning the amount up eases in from the set count.
+    const setFolds = Math.round(clampNum(S.kaleidoFolds, 3, MAX_FOLDS, 8));
+    const foldsVar = clampNum(S.kaleidoFoldsVar ?? 0, 0, 1, 0);
+    let folds = setFolds;
+    if (foldsVar > 0) {
+      const foldsPeriod = clampNum(S.kaleidoFoldsPeriod ?? 10, 1, 60, 10);
+      breath(foldsB, foldsVar, foldsPeriod, clockS + md, 'sine');
+      foldsB.phase = roomPhase(foldsRoom, foldsB.phase, t, md, foldsPeriod, S.kaleidoFoldsPeriodOff || 0);
+      folds = Math.round(setFolds - dipDepth(foldsVar, foldsB.phase) * (setFolds - 3));
+      if (folds < 3) folds = 3; else if (folds > setFolds) folds = setFolds;
+    } else if (foldsB.at !== -1) {
+      resetBreath(foldsB, -1);
+    }
     const mirror = S.kaleidoMirror !== false;   // missing means on
     const density = clampNum(S.kaleidoDensity, 0, 1, 0.5);
     const speed = clampNum(S.kaleidoSpeed, 0, 3, 1);
@@ -1859,9 +1886,10 @@ export function createKaleido(device, format, platform) {
     const spanNew = mirror ? wedge * 0.5 : wedge;
     const sliding = trackSymmetry(folds, mirror, dt);
     // The Symmetry slider's live bar: the fold count the eased span stands
-    // for, while a slide between two fold counts runs (schema-kaleido.js).
+    // for, while a slide between two fold counts runs (schema-kaleido.js),
+    // and otherwise, while Symmetry's variance is up, the count it plays.
     S.effKaleidoFolds = sliding && oldFolds !== symFolds
-      ? oldFolds + (symFolds - oldFolds) * slideK : undefined;
+      ? oldFolds + (symFolds - oldFolds) * slideK : foldsVar > 0 ? symFolds : undefined;
     mirrorOn = mirror;
     spanNow = sliding ? oldSpan + (spanNew - oldSpan) * slideK : spanNew;
     seatMirror = mirror && SEAT_ON_MIRROR;
@@ -1918,9 +1946,7 @@ export function createKaleido(device, format, platform) {
       S.effKaleidoSpeed = speed * v;
     }
 
-    // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
     fadeInSNow = clampNum(S.kaleidoFadeInS ?? 1.5, 0, 10, 1.5);
-    const md = dt > 0 ? motionStep(dt) : 0;
     if (md > 0) {
       clockS += md;
       // The births' crossfade runs on the same clock as the births.

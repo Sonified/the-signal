@@ -39,7 +39,14 @@ const DEF_HI_RES = true;
 const NUM = [
   // key,               min,  max, def,  integer
   ['kaleidoFolds',       3,   32,  8,    true ],
-  ['kaleidoDensity',     0,   1,   0.5,  false],
+  // the fold count's variance: the standard percent dip, as the share of
+  // the way from the set count down to 3, on the layer's own clock pulled
+  // onto the room clock (gpu/kaleido.js), each new count riding the
+  // Symmetry slide
+  ['kaleidoFoldsVar',    0,   1,   0,    false],
+  ['kaleidoFoldsPeriod', 1,   60,  10,   true ],
+  ['kaleidoFoldsPeriodOff', 0, 1,  0,    false],
+  ['kaleidoDensity',    0,   1,   0.5,  false],
   ['kaleidoSpeed',       0,   3,   1,    false],
   // How far each shape's speed strays from Speed, and the seconds one
   // cycle of that wander takes, as the strobe's variance rates read.
@@ -551,6 +558,23 @@ export const KALEIDO_CONTROLS = [
     // the glowing bar: the fold count the eased chamber stands for while a
     // Symmetry slide runs, as gpu/kaleido.js writes it each frame
     { effective: S => typeof S.effKaleidoFolds === 'number' ? S.effKaleidoFolds : undefined })),
+  // Symmetry's dip and its rate fold out from under Symmetry, the rate on
+  // the room clock, retimed as Max internal rotation's is
+  varianceOf('kaleidoFolds', under('kaleidoShapesDrawer',
+    percent('kaleidoFoldsVar', 'kaleidoFoldsVar', 'Symmetry variance'))),
+  varianceOf('kaleidoFolds', under('kaleidoShapesDrawer', {
+    id: 'kaleidoFoldsPeriod', section: 'kaleido', label: 'Symmetry variance rate', kind: 'slider',
+    min: 1, max: 60, step: 1, def: 10,
+    get: S => S.kaleidoFoldsPeriod,
+    set: (S, pos) => {
+      const v = fit(pos, 1, 60, true);
+      retimeRoomPhase(S, 'kaleidoFoldsPeriodOff', S.kaleidoFoldsPeriod, v);
+      S.kaleidoFoldsPeriod = v;
+      save();
+    },
+    format: S => S.kaleidoFoldsPeriod + 's / cycle',
+    enabled: layerOn
+  })),
   {
     // How a change of Symmetry (the fold count or Mirror) arrives. Instant
     // snaps to the new pattern, as the layer always did; a time draws the
