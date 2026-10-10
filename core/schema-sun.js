@@ -538,11 +538,18 @@ export const SUN_CONTROLS = [
   {
     // How fast the series plays, 0.5x to 16x on the site's log map (1 hour
     // of sun is one sample at 48 kHz, so 1x is about 5.5 years a second).
+    // The dial snaps to the landmarks 0.5x, 1x and 2x: a drag landing
+    // within 0.05 of one takes it exactly.
     id: 'sunHumRate', section: 'sun', label: 'Speed', kind: 'slider',
     parent: 'sunHumDrawer',
     min: 0, max: HUM_POS, step: 1, def: Math.round(spec('sunHumRate')[3] * HUM_POS),
     get: S => Math.round(S.sunHumRate * HUM_POS),
-    set: (S, pos) => { S.sunHumRate = fit(pos / HUM_POS, 0, 1, false); syncHum(S); save(); },
+    set: (S, pos) => {
+      let v = fit(pos / HUM_POS, 0, 1, false);
+      const r = humRate(v);
+      for (const t of [0.5, 1, 2]) if (Math.abs(r - t) <= 0.05) { v = Math.log(t / HUM_RATE_LO) / HUM_RATE_LN; break; }
+      S.sunHumRate = v; syncHum(S); save();
+    },
     format: S => humRate(S.sunHumRate).toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
     enabled: layerOn
