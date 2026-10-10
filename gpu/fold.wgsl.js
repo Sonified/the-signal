@@ -4,7 +4,7 @@
 // there. The maths is kaleido.wgsl.js's fsFold, the same fold the
 // kaleidoscope layer uses, with its motif tint left out (a layer that wants a
 // tint can put it into the chamber itself) and the layer gain moved into the
-// map block so the struct stays four vectors.
+// map block.
 //
 // The chamber shares the screen's orientation and scale about the field
 // centre, shrunk by map.z texels per device px, with the field centre at
@@ -20,6 +20,14 @@
 // darkens what covers the field rather than letting the field show through
 // (a layer's feedback pulsing with the strobe). In 0..1 it keeps the output
 // a valid premultiplied colour.
+//
+// An optional radial gate, gate.xy, fades the output in with distance from
+// the field centre: smoothstep(gate.x, gate.y, r) in the target's own px,
+// scaling all four channels as the gain does, so the middle of the pattern
+// lays nothing down and the rest arrives whole. With gate.y at 0 (every
+// caller that passes none) it is off and the output is untouched. The Sun
+// layer's feedback folds use it, so only the sun's outer light feeds the
+// trails (sun.js).
 
 export const FOLD_WGSL = `
 struct FU {
@@ -27,6 +35,7 @@ struct FU {
   map: vec4f,     // the field centre's place in the chamber (texels), texels per device px, gain
   fold: vec4f,    // field centre x, y (device px), wedge angle, complete rotation (radians)
   dom: vec4f,     // the domain's starting angle, mirror (0 or 1), colour gain, unused
+  gate: vec4f,    // the radial gate's inner and outer radius (target px; outer 0 is off), unused x2
 };
 @group(0) @binding(0) var<uniform> u: FU;
 @group(0) @binding(1) var chamberTex: texture_2d<f32>;
@@ -63,6 +72,10 @@ fn fsFold(@builtin(position) p: vec4f) -> @location(0) vec4f {
   // (feedback.js, fsComposite does the same). The scene chamber is rgba8unorm,
   // where this is a no-op.
   let c = clamp(textureSampleLevel(chamberTex, chamberSamp, t * u.chamber.zw, 0.0), vec4f(0.0), vec4f(1.0));
-  return vec4f(c.rgb * u.dom.z, c.a) * u.map.w;
+  var g = u.map.w;
+  if (u.gate.y > 0.0) {
+    g = g * smoothstep(u.gate.x, u.gate.y, r);
+  }
+  return vec4f(c.rgb * u.dom.z, c.a) * g;
 }
 `;

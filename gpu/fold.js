@@ -24,7 +24,12 @@
 // { folds, mirror, rotation, gain, colorGain }. gain scales the fold's output
 // whole, coverage and all; colorGain, optional and 1 when left out, clamped
 // to 0..1, scales its colour only and keeps the coverage, so it darkens
-// rather than fades (feedback.js's composite gain does the same). draw() writes the uniform block with
+// rather than fades (feedback.js's composite gain does the same). Two more,
+// optional and both 0 when left out, gate the output radially: gateLo and
+// gateHi, device px from the field centre, fade it in by smoothstep(gateLo,
+// gateHi, r), so the pattern's middle lays nothing down (the Sun layer's
+// feedback folds); gateHi at 0 is off, and every other caller passes none.
+// draw() writes the uniform block with
 // queue.writeBuffer, which lands before the command buffer holding the pass
 // is submitted, so it is safe to call mid encoding.
 //
@@ -58,7 +63,7 @@ import { FOLD_WGSL } from './fold.wgsl.js';
 // reaches 32, as the kaleidoscope's does); every user clamps its own range
 // first, so the 16-fold layers see no change.
 const MIN_FOLDS = 3, MAX_FOLDS = 32;
-const UNIFORM_FLOATS = 16;          // see fold.wgsl.js's struct FU
+const UNIFORM_FLOATS = 20;          // see fold.wgsl.js's struct FU
 const TAU = Math.PI * 2;
 const UP = -Math.PI * 0.5;          // the domain's centre line, straight up the screen
 // Chamber texels per device pixel at the canvas's half diagonal. The fold
@@ -309,6 +314,11 @@ export function createFold(device, format, opts) {
     uni[4] = frame[4]; uni[5] = frame[5]; uni[6] = frame[6] / intoNow; uni[7] = gain;
     uni[8] = cxNow * intoNow; uni[9] = cyNow * intoNow; uni[10] = wedge; uni[11] = rotation;
     uni[12] = UP - span * 0.5; uni[13] = mirror ? 1 : 0; uni[14] = colorGain; uni[15] = 0;
+    // The radial gate, taken into the target's own px like the centre; off
+    // (both 0) unless the params carry a positive gateHi.
+    const gateHi = params && typeof params.gateHi === 'number' && params.gateHi > 0 ? params.gateHi : 0;
+    const gateLo = gateHi > 0 && typeof params.gateLo === 'number' && params.gateLo === params.gateLo ? params.gateLo : 0;
+    uni[16] = gateLo * intoNow; uni[17] = gateHi * intoNow; uni[18] = 0; uni[19] = 0;
     const up = from ? upBitsFrom : upBits;
     let same = from ? upValidFrom : upValid;
     for (let i = 0; same && i < UNIFORM_FLOATS; i++) if (uniBits[i] !== up[i]) same = false;

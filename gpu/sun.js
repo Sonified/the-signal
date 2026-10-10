@@ -31,7 +31,9 @@
 // 0 the same picture also goes into an image of the layer's own, over a
 // faded, streamed copy of the last, and that image is laid over the scene
 // just before the live draw, so the echoes sit under the present. At amount
-// 0 there is no image and no pass.
+// 0 there is no image and no pass. The Center fade (S.sunFbGate, the site's
+// gate) keeps the inner sun out of what feeds the image, so the trails flow
+// only from the edge; the live picture is never gated.
 //
 // The sun's own kaleidoscope (S.sunKaleidoOn) folds the picture through
 // gpu/fold.js: the feathered square is drawn into the fold's chamber instead of the
@@ -82,6 +84,9 @@ const MAX_FOLDS = 32;
 // full either way.
 const HL_MAX = 2.0;
 const STREAM_MAX = 0.5;
+// The Center fade's soft band either side of its radius, in the sun
+// square's half sides: the site's 0.03 (sun.wgsl.js holds the same).
+const GATE_BAND = 0.03;
 // The video's playback rates: Speed's range, and the slowest rate browsers
 // accept (Chrome refuses below 1/16), the floor of the pause's coast.
 const SPEED_MIN = 1, SPEED_MAX = 16, RATE_FLOOR = 0.0625;
@@ -273,8 +278,8 @@ export function createSun(device, format) {
   const chamberParams = { folds: 8, mirror: true };
   const pNew = { folds: 8, mirror: true, rotation: 0, gain: 1, colorGain: 1 };
   const pOld = { folds: 8, mirror: true, rotation: 0, gain: 0, colorGain: 1 };
-  const pFbNew = { folds: 8, mirror: true, rotation: 0, gain: 1, colorGain: 1 };
-  const pFbOld = { folds: 8, mirror: true, rotation: 0, gain: 0, colorGain: 1 };
+  const pFbNew = { folds: 8, mirror: true, rotation: 0, gain: 1, colorGain: 1, gateLo: 0, gateHi: 0 };
+  const pFbOld = { folds: 8, mirror: true, rotation: 0, gain: 0, colorGain: 1, gateLo: 0, gateHi: 0 };
   // kaleido.js's slide state: the symmetry last seen (symFolds, symMirror)
   // and the one slid from (oldFolds, oldMirror); the slide runs while
   // slideAge < slideLen, seconds of wall time, slideK the new one's eased
@@ -337,12 +342,12 @@ export function createSun(device, format) {
   }
 
   // One uniform slot: the centre in the target's texels, its texels per
-  // device px, the square's half side in device px, the target's size, and
-  // the gain.
-  function putSlot(slot, ox, oy, scale, half, tw, th, gain, g) {
+  // device px, the square's half side in device px, the target's size, the
+  // Center fade (0 everywhere but the feedback image's slot) and the gain.
+  function putSlot(slot, ox, oy, scale, half, tw, th, gate, gain, g) {
     const b = slot * SLOT_FLOATS;
     uni[b] = ox; uni[b + 1] = oy; uni[b + 2] = scale; uni[b + 3] = half;
-    uni[b + 4] = tw; uni[b + 5] = th; uni[b + 6] = 0; uni[b + 7] = gain;
+    uni[b + 4] = tw; uni[b + 5] = th; uni[b + 6] = gate; uni[b + 7] = gain;
     uni[b + 8] = g[0]; uni[b + 9] = g[1]; uni[b + 10] = g[2]; uni[b + 11] = g[3];
     uni[b + 12] = g[4]; uni[b + 13] = 0; uni[b + 14] = 0; uni[b + 15] = 0;
   }
@@ -480,7 +485,7 @@ export function createSun(device, format) {
       pFbOld.gain = 1 - slideK;
       if (!pipeChamber) pipeChamber = pipeFor(FOLD_CHAMBER_FORMAT);
       const f = foldA.frame;
-      putSlot(SLOT_CHAMBER, f[4], f[5], f[6], half, f[0], f[1], 1, gains);
+      putSlot(SLOT_CHAMBER, f[4], f[5], f[6], half, f[0], f[1], 0, 1, gains);
     }
 
     // ---------- feedback ----------
@@ -510,6 +515,16 @@ export function createSun(device, format) {
       fbParams.cx = cx; fbParams.cy = cy; fbParams.unit = R; fbParams.dt = md;
       // The echo fades with the layer.
       fbOpacity = clampNum(S.sunFbOpacity, 0, 1, 1) * opacity;
+      // The Center fade: G in the sun square's own units (1 the edges'
+      // midpoints, 0.775 the limb), gating only what feeds the image, never
+      // the live picture or the history already in it. Folded, the feedback
+      // folds take it as device px about the field centre (the fold keeps
+      // each pixel's radius, so gating there is gating the source); the live
+      // folds never carry it.
+      const gateG = clampNum(S.sunFbGate, 0, 1, 0);
+      const gateOn = gateG > 0;
+      pFbNew.gateLo = pFbOld.gateLo = gateOn ? (gateG - GATE_BAND) * half : 0;
+      pFbNew.gateHi = pFbOld.gateHi = gateOn ? (gateG + GATE_BAND) * half : 0;
       if (folded) {
         if (!fbFoldA) fbFoldA = createFold(device, FEEDBACK_FORMAT, { label: 'sun.fold.fb', res: 1 });
         if (!fbFoldB) fbFoldB = createFold(device, FEEDBACK_FORMAT, { label: 'sun.fold.fb.old', res: 1 });
@@ -519,12 +534,12 @@ export function createSun(device, format) {
       } else {
         if (!pipeFb) pipeFb = pipeFor(FEEDBACK_FORMAT);
         const kx = fb.width / pixelW, ky = fb.height / pixelH;
-        putSlot(SLOT_FB, cx * kx, cy * ky, fbScale, half, fb.width, fb.height, 1, gains);
+        putSlot(SLOT_FB, cx * kx, cy * ky, fbScale, half, fb.width, fb.height, gateG, 1, gains);
       }
     }
 
     if (!liveDraw && !fbOn) return;
-    putSlot(SLOT_SCENE, cx, cy, 1, half, pixelW, pixelH, opacity, gains);
+    putSlot(SLOT_SCENE, cx, cy, 1, half, pixelW, pixelH, 0, opacity, gains);
 
     // ---------- this frame's picture ----------
     if (!video || videoFailed || video.readyState < 2) return;

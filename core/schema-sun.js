@@ -49,6 +49,11 @@ const NUM = [
   // solidly that image lands on the scene.
   ['sunFbAmt',           0,   1,   0.6,  false],
   ['sunFbOpacity',       0,   1,   1,    false],
+  // The Center fade, the site's gate on what feeds the trails: how far out
+  // from the middle the picture is kept out of the feedback, in the sun
+  // square's half sides (0.775 the photosphere's limb, 1 the square's edge
+  // midpoints). 0 is off, and the whole sun feeds the trails.
+  ['sunFbGate',          0,   1,   0,    false],
   // The trails' Stream, signed: + streams outward, - inward. Manual while
   // Link to breath is off.
   ['sunFbStream',       -1,   1,   0,    false],
@@ -224,7 +229,7 @@ function atmoText(S) {
 }
 
 export const SUN_CONTROLS = [
-  // Sits in the drawer's Layers group straight after the Particles toggle.
+  // Sits in the drawer's Layers group straight after the Text toggle.
   // Off by default: a first visit looks exactly as it did before.
   {
     id: 'lSun', section: 'layers', label: 'Sun', kind: 'toggle', def: false,
@@ -240,8 +245,27 @@ export const SUN_CONTROLS = [
     set: (S, on) => { S.layers.sun = on; save(); }
   },
 
-  // ---- Breath, first of the section's drawers: the sun swelling and
-  // settling at a breathing rate, and the trails it leaves ----
+  // ---- Solar Parameters, first of the section's drawers: the picture
+  // itself ----
+  subDrawer('sunSolarDrawer', 'Solar Parameters', 'sun', ['sunSize', 'sunAtmo']),
+  under('sunSolarDrawer', percent('sunOpacity', 'sunOpacity', 'Opacity')),
+  {
+    // The playback rate, 1x to 16x, on a log taper so each doubling gets the
+    // same stretch of track.
+    id: 'sunSpeed', section: 'sun', label: 'Speed', kind: 'slider',
+    parent: 'sunSolarDrawer',
+    min: 0, max: SPEED_POS, step: 1, def: speedToPos(spec('sunSpeed')[3]),
+    get: S => speedToPos(S.sunSpeed),
+    set: (S, pos) => { S.sunSpeed = posToSpeed(pos); save(); },
+    format: S => (Math.round(S.sunSpeed * 10) / 10) + 'x',
+    parse: (S, text) => speedToPos(parseFloat(text)),
+    enabled: layerOn
+  },
+  under('sunSolarDrawer', direct('sunSize', 'sunSize', 'Size', 0.05, times2('sunSize'))),
+  under('sunSolarDrawer', percent('sunAtmo', 'sunAtmo', 'Atmosphere', atmoText)),
+
+  // ---- Breath: the sun swelling and settling at a breathing rate, and the
+  // trails it leaves ----
   subDrawer('sunBreathDrawer', 'Breath', 'sun', ['sunBreathRate', 'sunBreathAmt']),
   under('sunBreathDrawer', direct('sunBreathRate', 'sunBreathRate', 'Rate', 0.1,
     S => S.sunBreathRate.toFixed(1) + ' / min')),
@@ -252,6 +276,10 @@ export const SUN_CONTROLS = [
   subDrawer('sunFeedbackDrawer', 'Feedback', 'sun', ['sunFbAmt', 'sunFbStream']),
   under('sunFeedbackDrawer', percent('sunFbAmt', 'sunFbAmt', 'Amount')),
   under('sunFeedbackDrawer', percent('sunFbOpacity', 'sunFbOpacity', 'Opacity')),
+  // The Center fade: the inner sun kept out of the trails, so they flow
+  // only from the edge. The live picture is never faded.
+  under('sunFeedbackDrawer', percent('sunFbGate', 'sunFbGate', 'Center fade',
+    S => S.sunFbGate > 0 ? Math.round(S.sunFbGate * 100) + '%' : 'off')),
   {
     id: 'sunFbLink', section: 'sun', label: 'Link to breath', kind: 'toggle', def: DEF_FB_LINK,
     parent: 'sunFeedbackDrawer',
@@ -279,22 +307,6 @@ export const SUN_CONTROLS = [
     format: S => rangeText(S.sunFbStreamLo, S.sunFbStreamHi),
     enabled: S => layerOn(S) && S.sunFbLink !== false
   },
-
-  // ---- the picture itself ----
-  percent('sunOpacity', 'sunOpacity', 'Opacity'),
-  {
-    // The playback rate, 1x to 16x, on a log taper so each doubling gets the
-    // same stretch of track.
-    id: 'sunSpeed', section: 'sun', label: 'Speed', kind: 'slider',
-    min: 0, max: SPEED_POS, step: 1, def: speedToPos(spec('sunSpeed')[3]),
-    get: S => speedToPos(S.sunSpeed),
-    set: (S, pos) => { S.sunSpeed = posToSpeed(pos); save(); },
-    format: S => (Math.round(S.sunSpeed * 10) / 10) + 'x',
-    parse: (S, text) => speedToPos(parseFloat(text)),
-    enabled: layerOn
-  },
-  direct('sunSize', 'sunSize', 'Size', 0.05, times2('sunSize')),
-  percent('sunAtmo', 'sunAtmo', 'Atmosphere', atmoText),
 
   // ---- Kaleidoscope: the sun folded into wedges ----
   subDrawer('sunKaleidoDrawer', 'Kaleidoscope', 'sun', ['sunKaleidoOn', 'sunFolds']),

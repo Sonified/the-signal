@@ -16,16 +16,17 @@ import { FIREWORK_CONTROLS, FIREWORK_SECTIONS, FIREWORKS_ENABLED } from './schem
 import { CONFETTI_CONTROLS, CONFETTI_SECTIONS } from './schema-confetti.js';
 import { wireVariances } from './schema-variance.js';
 
-// Flowers go straight after the visual controls, so their lFlowers toggle
-// follows Field, Rings, Corners, Edge and Text within the Layers section, and
-// the kaleidoscope follows the flowers, so lKaleido comes right after it,
-// and the particles follow the kaleidoscope, so lParticles comes after that,
-// the sun follows the particles, so lSun comes after them,
+// The Layers section's rows run in this list's order. The sun goes straight
+// after the visual controls, so its lSun toggle follows Field, Rings,
+// Corners, Edge and Text (Text is the visual list's last layer toggle);
+// the flowers follow the sun, so lFlowers comes right after it, the
+// kaleidoscope follows the flowers, so lKaleido comes after that, and the
+// particles follow the kaleidoscope, so lParticles comes after them,
 // then the fireworks' lFireworks, with the confetti's lConfetti last. With
 // FIREWORKS_ENABLED off (schema-fireworks.js) the fireworks' controls and
 // section are left out here, so every screen, picker and recall that walks
 // these lists simply never meets them.
-export const CONTROLS = [...VISUAL_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONTROLS, ...PARTICLE_CONTROLS, ...SUN_CONTROLS, ...(FIREWORKS_ENABLED ? FIREWORK_CONTROLS : []), ...CONFETTI_CONTROLS, ...AUDIO_CONTROLS];
+export const CONTROLS = [...VISUAL_CONTROLS, ...SUN_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONTROLS, ...PARTICLE_CONTROLS, ...(FIREWORKS_ENABLED ? FIREWORK_CONTROLS : []), ...CONFETTI_CONTROLS, ...AUDIO_CONTROLS];
 
 // The Flowers section slots in after Edge, the Kaleidoscope section right
 // after it, then the Particles, Sun, Fireworks and Confetti sections, all before
