@@ -212,6 +212,11 @@ export function applySunState(S, o) {
 // (AUD_SPAN_LO 0.5 to HI 16) both logarithmic over the 0 to 1 setting.
 const HUM_HZ_LO = 100, HUM_HZ_HI = 10000, HUM_HZ_LN = Math.log(HUM_HZ_HI / HUM_HZ_LO);
 const HUM_RATE_LO = 0.5, HUM_RATE_HI = 16, HUM_RATE_LN = Math.log(HUM_RATE_HI / HUM_RATE_LO);
+// The whole speed axis is retuned by this factor before it reaches the
+// engine: the sound that used to play at a displayed 2.15x now sits at the
+// 2x mark (Robert's call, 2026-10-10). The slider, readouts, presets and
+// saved settings all keep their positions; only the sound under them shifts.
+const HUM_RETUNE = 2.15 / 2;
 const humHz = v => HUM_HZ_LO * Math.pow(HUM_HZ_HI / HUM_HZ_LO, v);
 const humRate = v => HUM_RATE_LO * Math.pow(HUM_RATE_HI / HUM_RATE_LO, v);
 // The fine sliders' positions (0 to 1000 over the 0 to 1 setting), and a
@@ -227,7 +232,7 @@ const rateToPos = r => r === r ? Math.round(Math.min(1, Math.max(0, Math.log(r /
 function syncHum(S) {
   hum.setVolume(S.sunHumAmp);
   hum.setCutoffHz(humHz(S.sunHumCutoff));
-  hum.setRate(humRate(S.sunHumRate));
+  hum.setRate(humRate(S.sunHumRate) * HUM_RETUNE);
   if (S.sunHumOn && S.layers.sun) hum.play(); else hum.pause();
 }
 
