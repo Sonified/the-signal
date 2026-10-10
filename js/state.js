@@ -347,6 +347,7 @@ export const S = {
   // the AM depth's own wander: each pulse depth roams 0..var of its slider
   choirStrobeAmVar: 0, choirStrobeAmPeriod: 20,
   bedStrobeAmVar: 0, bedStrobeAmPeriod: 20,
+  cloudStrobeAmVar: 0, cloudStrobeAmPeriod: 20,
   // Live Sound (js/livesound.js): a microphone or line input. Off at every
   // load, since the switch is never saved. liveDevice is the chosen input's
   // id, empty for the system default. The level starts low because a

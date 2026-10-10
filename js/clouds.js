@@ -29,7 +29,7 @@ import { getContext, getMaster, createRoom, swapRoom, glideParam, sourceGate, en
 import { ctxFor, masterFor, parseHeartFlag } from './heart/route.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
-import { strobeAm } from './strobe-am.js';
+import { strobeAm, strobeAmEffective } from './strobe-am.js';
 import { inTurn, TURN } from './load-order.js';
 import { after, clear } from './ticker.js';
 
@@ -247,7 +247,7 @@ function buildGraph() {
   // Vary with strobe: the bus on to a gain swung at the flash rate, so every
   // pad, the ones already sounding too, pulses with the strobe. Ahead of the
   // meter, so the meter shows the pulse. Built once and never torn down.
-  cloudAm = strobeAm(ctx, () => S.cloudStrobeAm);
+  cloudAm = strobeAm(ctx, () => S.cloudStrobeAm, () => S.cloudStrobeAmVar, () => S.cloudStrobeAmPeriod);
   bus.connect(cloudAm.node);
   cloudAm.node.connect(padTap.analyser);
 }
@@ -286,6 +286,7 @@ export function applyCloudReverb() {
 export function applyCloudAm() {
   if (cloudAm) cloudAm.apply();
 }
+export const cloudEffectiveAm = () => strobeAmEffective(cloudAm);
 // An island's own room following the master's decay (plugSend), crossfaded
 // rather than swapped under a ringing tail. Sharing the master room, there
 // is nothing of the clouds' own to rebuild.

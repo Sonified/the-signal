@@ -164,6 +164,7 @@ function buildSettings() {
     bedStrobeAm: S.bedStrobeAm, choirStrobeAm: S.choirStrobeAm, cloudStrobeAm: S.cloudStrobeAm,
     choirStrobeAmVar: S.choirStrobeAmVar, choirStrobeAmPeriod: S.choirStrobeAmPeriod,
     bedStrobeAmVar: S.bedStrobeAmVar, bedStrobeAmPeriod: S.bedStrobeAmPeriod,
+    cloudStrobeAmVar: S.cloudStrobeAmVar, cloudStrobeAmPeriod: S.cloudStrobeAmPeriod,
     pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP, musicRevOn: S.musicRevOn, bedOn: S.bedOn, pianoOn: S.pianoOn, arpOn: S.arpOn, arpVol: S.arpVol, arpRate: S.arpRate,
     arpVolVar: S.arpVolVar, arpVolPeriod: S.arpVolPeriod,
     pianoReverbVar: S.pianoReverbVar, pianoReverbPeriod: S.pianoReverbPeriod,
@@ -1108,7 +1109,8 @@ function applySettings(s, live, scene) {
                              ['choirVolVar', 0, 1], ['choirVolPeriod', 0, 120],
                              ['bedStrobeAm', 0, 1], ['choirStrobeAm', 0, 1], ['cloudStrobeAm', 0, 1],
                              ['choirStrobeAmVar', 0, 1], ['choirStrobeAmPeriod', 0, 120],
-                             ['bedStrobeAmVar', 0, 1], ['bedStrobeAmPeriod', 0, 120]])
+                             ['bedStrobeAmVar', 0, 1], ['bedStrobeAmPeriod', 0, 120],
+                             ['cloudStrobeAmVar', 0, 1], ['cloudStrobeAmPeriod', 0, 120]])
     if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = Math.max(lo, Math.min(hi, s[k]));
   // Each variance's Behavior, 'walk' or the default sinusoid.
   for (const k of ['choirVolVarMode', 'choirStackVarMode', 'choirDensityVarMode',

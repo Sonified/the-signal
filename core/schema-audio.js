@@ -27,7 +27,7 @@ import {
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn, applyToneBreath
 } from '../js/audio.js';
 import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
-import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm, rebuildCloudIR } from '../js/clouds.js';
+import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm, cloudEffectiveAm, rebuildCloudIR } from '../js/clouds.js';
 import {
   applyChoir, applyChoirVol, applyChoirOn, applyChoirAm, choirEffectiveAm,
   choirEffectiveLevel, choirEffectiveStack, choirEffectiveDensity
@@ -1394,6 +1394,11 @@ const musicControls = [
     format: s => Math.round((s.cloudStrobeAm || 0) * 100) + '%',
     visible: s => s.musicOn && s.cloudsOn
   },
+  ...varianceRows('cloudStrobeAm', {
+    music: true, name: 'Pulse', apply: applyCloudAm,
+    parent: 'musicCloudsDrawer', visible: s => s.musicOn && s.cloudsOn,
+    effective: () => cloudEffectiveAm() * 100
+  }),
   // The Music window's trims for the five voices (ui/screens/music.js),
   // as musTone's are for the tone: each how much of its voice's level plays,
   // where 100% is exactly the level the drawer and the Levels window set.
