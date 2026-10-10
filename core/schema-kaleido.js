@@ -45,6 +45,10 @@ const NUM = [
   // cycle of that wander takes, as the strobe's variance rates read.
   ['kaleidoSpeedVar',    0,   1,   0.15, false],
   ['kaleidoSpeedPeriod', 1,   60,  10,   true ],
+  // How far the flow leans from an even zoom (0, every radius growing by
+  // the same factor) toward a true flythrough (1), far shapes slow and
+  // small near the centre, near ones rushing past the rim.
+  ['kaleidoDepth',       0,   1,   0,    false],
   ['kaleidoSize',        0.2, 3,   1,    false],
   ['kaleidoSizeVar',     0,   1,   0.6,  false],
   ['kaleidoSpinMax',     0,   3,   0.35, false],
@@ -388,6 +392,13 @@ export const KALEIDO_CONTROLS = [
   // size's from under Max size (drawer.js, the schema's varianceOf).
   varianceOf('kaleidoSpeed', percent('kaleidoSpeedVar', 'kaleidoSpeedVar', 'Speed variance')),
   varianceOf('kaleidoSpeed', direct('kaleidoSpeedPeriod', 'kaleidoSpeedPeriod', 'Variance rate', 1, S => S.kaleidoSpeedPeriod + 's / cycle')),
+  // Depth: 0 is the flat continuous zoom as ever, every shape's radius
+  // growing by the same factor each second, and the readout says so; 100%
+  // is a true flythrough, far shapes hanging small near the centre and
+  // rushing past the rim, each at its own distance, so shapes at one radius
+  // slide past one another. A whole flight keeps Speed's length throughout.
+  under('kaleidoMotionDrawer', percent('kaleidoDepth', 'kaleidoDepth', 'Depth',
+    S => S.kaleidoDepth === 0 ? 'even zoom' : Math.round(S.kaleidoDepth * 100) + '%')),
   under('kaleidoMotionDrawer', percent('kaleidoDensity', 'kaleidoDensity', 'Density')),
   // Rotation comes in three layers, largest first.
   //

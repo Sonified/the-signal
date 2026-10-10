@@ -17,7 +17,12 @@
 // radius from the centre to the rim and the pattern looks alike at every
 // scale; they grow as they come, and at the same time sweep sideways across
 // the wedge at their own angular rate, so they are thrown across the part
-// that gets repeated, drift in from outside it, cross it and leave. How many
+// that gets repeated, drift in from outside it, cross it and leave. Depth
+// (S.kaleidoDepth) leans that zoom toward a true flight through a field of
+// shapes: each one's growth quickens with its radius, as a still object's
+// does when the eye flies toward it, and each sits at its own distance from
+// the flight's axis, so two at one radius slide past each other. At 0 it is
+// the even zoom exactly (see K_FAR). How many
 // there are follows from Density as a share of the domain covered, not as a
 // count (see coverageTarget). By default each is born on the domain's centre line, sized to fit
 // inside it and pointing straight out, so until that sweep carries it into
@@ -217,9 +222,10 @@ const BAND_EXTRA = 1;
 // The flow is a continuous zoom: every object's radius grows by the same
 // factor each second, the classic endless kaleidoscope. A perspective
 // flight evenly spaced in depth spends most of its time small near the
-// centre and passes the rim in a rush, so few objects were ever large at
+// centre and passes the rim in a rush, so few objects are ever large at
 // once; evenly spaced in log radius, every scale from the centre out holds
-// its fair share. An object is born at K_BIRTH of the rim radius, a few
+// its fair share. That is the default, and the flight is what Depth offers
+// in its place (see K_FAR). An object is born at K_BIRTH of the rim radius, a few
 // device pixels out, wholly inside the fold's hole (see HOLE_PAD_TEXELS), and
 // retires at the rim. ZOOM_RATE
 // is the growth in e-folds per second at kaleidoSpeed 1: 0.3 is a factor of
@@ -227,6 +233,30 @@ const BAND_EXTRA = 1;
 const K_BIRTH = 0.01;
 const LOG_SPAN = -Math.log(K_BIRTH);    // e-folds from birth to the rim
 const ZOOM_RATE = 0.3;
+// Depth. A still object at distance z, the eye flying toward it at a steady
+// speed, shows at a radius in proportion to 1 / z, so its radius grows at
+// an e-fold rate in proportion to that radius: slow far off near the
+// centre, a rush at the rim. The size law needs nothing new, size in
+// proportion to radius already is that projection; only the motion
+// changes. At Depth D an object's e-fold rate is A * k^D * rho, k its
+// radius fraction (constant at 0, the flight at 1), with A set so a whole
+// flight takes the even zoom's own time and Speed keeps its meaning (see
+// setDepth). rho is the object's own distance from the flight's axis, drawn
+// at birth anywhere within a factor RHO_SPREAD^D either way, so objects at
+// one radius but different depths slide past one another. A true flight
+// from K_BIRTH would spend nearly all its life unseen near the centre, so
+// the birth radius rises with Depth, to K_FAR of the rim at 1, the far
+// plane at ten times the rim's distance; births there are outside the
+// fold's hole and fade in where they stand (see spawnBirth).
+const K_FAR = 0.1;
+const RHO_SPREAD = 1.75;
+const RHO_LN = Math.log(RHO_SPREAD);
+// Below this Depth the even zoom's own forms stand in for the flight's,
+// whose expressions are 0 / 0 at 0.
+const DEPTH_EPS = 1e-6;
+// Midpoint steps in log radius for the coverage solve's integral at Depth
+// above 0.
+const COVER_STEPS = 64;
 // With Speed at 0 nothing flies out, so an object's life is taken as this
 // long when working out how far its orbit spreads it (inDomainShare).
 const STILL_LIFE = 60;
@@ -521,6 +551,9 @@ export function createKaleido(device, format, platform) {
   const velW = new Float32Array(MAX_SHAPES);    // its own share of the wander rate
   const phiU = new Float32Array(MAX_SHAPES);
   const sizeRnd = new Float32Array(MAX_SHAPES);
+  // Its distance from the flight's axis (see RHO_SPREAD), -1 to 1, raw so
+  // the Depth slider acts on live objects at once.
+  const rhoRnd = new Float32Array(MAX_SHAPES);
   const spinRnd = new Float32Array(MAX_SHAPES);
   const spinAng = new Float32Array(MAX_SHAPES);
   const orbitRnd = new Float32Array(MAX_SHAPES);
@@ -531,6 +564,7 @@ export function createKaleido(device, format, platform) {
   // How far an object has faded in on the spot (see APPEAR_SECONDS), and
   // which way it is going: 1 appearing, -1 leaving as surplus, 0 steady.
   // Objects born at the centre start at 1; the flight's own fade serves.
+  // At Depth above 0 births are past the hole and fade in by it too.
   const appear = new Float32Array(MAX_SHAPES);
   const appearDir = new Int8Array(MAX_SHAPES);
   // order holds the live slots, youngest first. A piece keeps its place
@@ -591,7 +625,7 @@ export function createKaleido(device, format, platform) {
 
   // The coverage target and the settings it was worked out from, so it is
   // recomputed only when one of them moves.
-  const tKey = new Float64Array(13).fill(NaN);
+  const tKey = new Float64Array(14).fill(NaN);
   let targetNow = 0;
 
   // The atlas set last asked for, the sheet it was asked from (the High
@@ -604,6 +638,9 @@ export function createKaleido(device, format, platform) {
   // motion and instancing so none of them needs it passed along.
   let mirrorOn = true, spanNow = 1, reachKNow = 0.5, sizeVarNow = 0.6;
   let seatMirror = false, scatterNow = 0, fadeNow = 0.55;
+  // Depth as this frame reads it (see K_FAR): the setting, the birth radius
+  // fraction and its travel, kb^-D, and A over the even zoom's rate.
+  let depthNow = 0, kbNow = K_BIRTH, dBirthNow = 0, kbPowNow = 1, aNormNow = 1;
 
   // The layer's own clocks advance only while the strobe runs, as the rings
   // do, and are accumulated from dt so moving a slider changes the pace from
@@ -1201,6 +1238,40 @@ export function createKaleido(device, format, platform) {
     return 0.5 + BAND_EXTRA + (e < whole ? e : whole);
   }
 
+  // Takes this frame's Depth (see K_FAR). The birth radius rises from
+  // K_BIRTH to K_FAR evenly in log radius; in travel, births start at
+  // dBirthNow instead of 0, travel itself staying the one coordinate radiusK
+  // reads. A whole flight at rate A k^D from kb to the rim takes
+  // (kb^-D - 1) / (A D) seconds and the even zoom's takes -ln kb / Z, so
+  // A / Z = (kb^-D - 1) / (D * -ln kb), which tends to 1 at 0. Only rates
+  // and births follow it: no live object's travel is worked out again, so
+  // dialling Depth live moves nothing where it stands.
+  function setDepth(D) {
+    depthNow = D;
+    kbNow = D > 0 ? Math.pow(K_BIRTH, 1 - D) * Math.pow(K_FAR, D) : K_BIRTH;
+    dBirthNow = 1 + Math.log(kbNow) / LOG_SPAN;
+    kbPowNow = D > 0 ? Math.pow(kbNow, -D) : 1;
+    aNormNow = D < DEPTH_EPS ? 1 : (kbPowNow - 1) / (D * -Math.log(kbNow));
+  }
+
+  // A point of the flight drawn from its steady state, u uniform in 0 to 1.
+  // An object's time per e-fold goes as k^-D, so that is how the objects
+  // are spread over log radius between kb and the rim, and the inverse of
+  // its running sum places one: k = (kb^-D + u (1 - kb^-D))^(-1/D). Evenly
+  // in log radius at 0, which is evenly in travel from dBirthNow.
+  function flightD(u) {
+    if (depthNow < DEPTH_EPS) return dBirthNow + u * (1 - dBirthNow);
+    // ln k = -ln(base) / D, and travel is 1 + ln k / LOG_SPAN
+    return 1 - Math.log(kbPowNow + u * (1 - kbPowNow)) / (depthNow * LOG_SPAN);
+  }
+
+  // The share of a whole flight's time already flown at travel d: d itself
+  // at Depth 0, (kb^-D - k^-D) / (kb^-D - 1) on the flight.
+  function flightFrac(d) {
+    if (depthNow < DEPTH_EPS) return (d - dBirthNow) / (1 - dBirthNow);
+    return (kbPowNow - Math.exp(LOG_SPAN * depthNow * (1 - d))) / (kbPowNow - 1);
+  }
+
   function spawn(d) {
     if (!freeTop || !slots[cur].allowedCount) return;
     const i = free[--freeTop];
@@ -1208,6 +1279,7 @@ export function createKaleido(device, format, platform) {
     velPh[i] = Math.random() * TAU;
     velW[i] = 0.5 + Math.random();
     sizeRnd[i] = Math.random();
+    rhoRnd[i] = Math.random() * 2 - 1;
     spinRnd[i] = Math.random() * 2 - 1;
     orbitRnd[i] = Math.random() * 2 - 1;
     spinAng[i] = 0;
@@ -1239,12 +1311,14 @@ export function createKaleido(device, format, platform) {
 
   // Gives the object just spawned in slot i everything it would have
   // gathered by its travel if it had been flying all along: lifeSec is a
-  // whole flight's seconds, so it has been out depth * lifeSec, turning at
+  // whole flight's seconds, so it has been out depth * lifeSec (at Depth
+  // above 0, its share of the flight's time, and its own rho's), turning at
   // its spin rate and carried along its orbit, wrapping as advance() wraps
   // it (round the band mirrored, round the wedge unmirrored). Its motif and
   // size stay as drawn: a wrap would have redrawn them anyway.
   function age(i, lifeSec, spinMax, spinVar, orbitMax, orbitVar) {
-    const secs = depth[i] * lifeSec;
+    const secs = flightFrac(depth[i]) * lifeSec /
+      (depthNow > 0 ? Math.exp(rhoRnd[i] * RHO_LN * depthNow) : 1);
     bornT[i] = clockS - secs;
     spinAng[i] = (spinRate(i, spinMax, spinVar) * secs) % TAU;
     let u = phiU[i] + orbitRate(i, orbitMax, orbitVar) * secs / spanNow;
@@ -1258,13 +1332,14 @@ export function createKaleido(device, format, platform) {
   }
 
   // Fill the chamber at its steady state, as if the layer had been running
-  // all along. Travel is even along a flight, so the depths are spread
-  // evenly (one jittered draw per equal slice, in ascending order so the
-  // pool starts sorted far to near), and each object is aged to its depth.
+  // all along. The depths are spread as the flight spreads them (flightD,
+  // evenly in travel at Depth 0), one jittered draw per equal slice, in
+  // ascending order so the pool starts sorted far to near, and each object
+  // is aged to its depth.
   function prewarm(count, lifeSec, spinMax, spinVar, orbitMax, orbitVar) {
     for (let n = 0; n < count; n++) {
       const before = live;
-      spawn((n + Math.random()) / count);
+      spawn(flightD((n + Math.random()) / count));
       if (live === before) return;
       age(order[live - 1], lifeSec, spinMax, spinVar, orbitMax, orbitVar);
     }
@@ -1274,7 +1349,7 @@ export function createKaleido(device, format, platform) {
   // where it stands. False when the pool is full.
   function spawnMidFlight(lifeSec, spinMax, spinVar, orbitMax, orbitVar) {
     const before = live;
-    spawn(Math.random());
+    spawn(flightD(Math.random()));
     if (live === before) return false;
     const i = order[live - 1];
     age(i, lifeSec, spinMax, spinVar, orbitMax, orbitVar);
@@ -1282,6 +1357,20 @@ export function createKaleido(device, format, platform) {
     appearDir[i] = 1;
     fading++;
     return true;
+  }
+
+  // One birth at the start of the flight. At Depth above 0 that is past the
+  // fold's hole, already in view, so it fades in where it stands over
+  // APPEAR_SECONDS as the fill births do, never a pop.
+  function spawnBirth() {
+    const before = live;
+    spawn(dBirthNow);
+    if (depthNow > 0 && live > before) {
+      const i = order[live - 1];
+      appear[i] = 0;
+      appearDir[i] = 1;
+      fading++;
+    }
   }
 
   // Marks one live object, picked at random, to fade out where it stands.
@@ -1411,28 +1500,60 @@ export function createKaleido(device, format, platform) {
   // density * COVER_FULL, and divided by the share of objects inside the
   // domain at any moment. Worked out only when a setting it depends on
   // moves.
+  //
+  // At Depth above 0 the objects are not even in log radius: an object's
+  // time per e-fold goes as k^-D, between the birth radius kb and the rim,
+  // so they crowd toward the centre. The share covered then varies with
+  // radius, and the count is solved for its mean over the visible band (from
+  // the fade in's half, or kb if further out, to the start of the fade out):
+  // the band's painted area, each radius weighted by that spread over its
+  // own whole, k^-D / ((kb^-D - 1) / D) per unit of log k, against the
+  // band's own area. At 0 that weight is 1 / LOG_SPAN and the closed form
+  // above stands, untouched.
   function coverageTarget(density, h0, sizeVar, constWant, lifeSec, orbitMax, orbitVar) {
     if (tKey[0] === density && tKey[1] === spanNow && tKey[2] === h0 && tKey[3] === sizeVar &&
         tKey[4] === constWant && tKey[5] === lifeSec && tKey[6] === orbitMax &&
         tKey[7] === orbitVar && tKey[8] === scatterNow && tKey[9] === meanFillNow &&
         tKey[10] === (mirrorOn ? 1 : 0) && tKey[11] === (seatMirror ? 1 : 0) &&
-        tKey[12] === fadeNow) return targetNow;
+        tKey[12] === fadeNow && tKey[13] === depthNow) return targetNow;
     tKey[0] = density; tKey[1] = spanNow; tKey[2] = h0; tKey[3] = sizeVar;
     tKey[4] = constWant; tKey[5] = lifeSec; tKey[6] = orbitMax;
     tKey[7] = orbitVar; tKey[8] = scatterNow; tKey[9] = meanFillNow;
     tKey[10] = mirrorOn ? 1 : 0; tKey[11] = seatMirror ? 1 : 0; tKey[12] = fadeNow;
+    tKey[13] = depthNow;
 
     if (!(density > 0) || !(h0 > 0)) return (targetNow = 0);
     const e2 = 1 - sizeVar + sizeVar * sizeVar / 3;
-    let g2 = 1;
-    if (constWant) {
-      const lo = fadeHalfK(fadeNow), hi = RADIAL_FADE_OUT_K;
-      const c = CONST_K < lo ? lo : (CONST_K > hi ? hi : CONST_K);
-      // The integral of k^2 g^2 over log k: growing below c, constant above.
-      const num = 0.5 * (c * c - lo * lo) + CONST_K * CONST_K * Math.log(hi / c);
-      g2 = num / (0.5 * (hi * hi - lo * lo));
+    let inside;
+    if (depthNow > 0) {
+      const lo0 = fadeHalfK(fadeNow), hi = RADIAL_FADE_OUT_K;
+      const lo = lo0 > kbNow ? lo0 : kbNow;
+      // The spread's whole over a flight, the integral of k^-D over log k
+      // from kb to the rim; at the slider's faintest it is -ln kb.
+      const norm = depthNow < DEPTH_EPS ? -Math.log(kbNow) : (kbPowNow - 1) / depthNow;
+      // The integral of k^-D k^2 g^2 over log k across the band, by
+      // midpoints, g the constant-size law as the closed form models it.
+      const a = Math.log(lo), h = (Math.log(hi) - a) / COVER_STEPS;
+      let num = 0;
+      for (let j = 0; j < COVER_STEPS; j++) {
+        const lk = a + (j + 0.5) * h, k = Math.exp(lk);
+        const g = constWant && k > CONST_K ? CONST_K / k : 1;
+        num += Math.exp((2 - depthNow) * lk) * g * g;
+      }
+      num *= h / norm;
+      const den = 0.5 * (hi * hi - lo * lo);
+      inside = density * COVER_FULL * spanNow * den / (4 * meanFillNow * h0 * h0 * e2 * num);
+    } else {
+      let g2 = 1;
+      if (constWant) {
+        const lo = fadeHalfK(fadeNow), hi = RADIAL_FADE_OUT_K;
+        const c = CONST_K < lo ? lo : (CONST_K > hi ? hi : CONST_K);
+        // The integral of k^2 g^2 over log k: growing below c, constant above.
+        const num = 0.5 * (c * c - lo * lo) + CONST_K * CONST_K * Math.log(hi / c);
+        g2 = num / (0.5 * (hi * hi - lo * lo));
+      }
+      inside = density * COVER_FULL * LOG_SPAN * spanNow / (4 * meanFillNow * h0 * h0 * e2 * g2);
     }
-    const inside = density * COVER_FULL * LOG_SPAN * spanNow / (4 * meanFillNow * h0 * h0 * e2 * g2);
 
     // The band an object of average size roams, as spawnBand() works it.
     const ratio = reachKNow * (1 - sizeVar * 0.5);
@@ -1459,7 +1580,16 @@ export function createKaleido(device, format, platform) {
       velPh[i] = (velPh[i] + dph * velW[i]) % TAU;
       let v = 1 + speedVar * Math.sin(velPh[i]);
       if (v < SPEED_FLOOR) v = SPEED_FLOOR;
-      const d = depth[i] + dt * travel * v;
+      let step = dt * travel * v;
+      // Depth: the flight's rate, A k^D rho over the even zoom's (see
+      // K_FAR). An object still short of the birth radius, left there by
+      // a turn of the slider, moves at the newborns' pace until it reaches
+      // it, rather than all but stalling unseen near the centre.
+      if (depthNow > 0) {
+        const dk = depth[i] > dBirthNow ? depth[i] : dBirthNow;
+        step *= aNormNow * Math.exp(depthNow * (rhoRnd[i] * RHO_LN - LOG_SPAN * (1 - dk)));
+      }
+      const d = depth[i] + step;
       if (d >= 1) { release(i); continue; }
       depth[i] = d;                // reachU reads it
       const om = orbitRate(i, orbitMax, orbitVar);
@@ -1681,6 +1811,7 @@ export function createKaleido(device, format, platform) {
     const orbitMax = clampNum(S.kaleidoOrbitMax ?? 0.25, 0, 2, 0.25);
     const orbitVar = clampNum(S.kaleidoOrbitVar ?? 0.7, 0, 1, 0.7);
     const scatter = clampNum(S.kaleidoScatter ?? 0, 0, 1, 0);
+    const depthSet = clampNum(S.kaleidoDepth ?? 0, 0, 1, 0);
     const opacity = clampNum(S.effKaleidoOpacity ?? S.kaleidoOpacity, 0, 1, 0.9);
     const tintAmt = clampNum(S.effKaleidoTint ?? S.kaleidoTint, 0, 1, 0);
     const pulse = scaledStrobeDepth(clampNum(S.kaleidoPulse, 0, 1, 0));
@@ -1711,6 +1842,7 @@ export function createKaleido(device, format, platform) {
     spanNow = mirror ? wedge * 0.5 : wedge;
     seatMirror = mirror && SEAT_ON_MIRROR;
     scatterNow = scatter;
+    setDepth(depthSet);
     sizeVarNow = sizeVar;
     const fitAng = seatMirror ? spanNow : spanNow * 0.5;
     const fitK = Math.min(Math.sin(fitAng) * (1 - FIT_MARGIN) / CORNER, SIZE_CAP * 0.5);
@@ -1726,8 +1858,10 @@ export function createKaleido(device, format, platform) {
 
     // Travel per second (a whole flight is LOG_SPAN e-folds), a flight's
     // length in seconds, and the live count density's coverage asks for.
+    // At Depth above 0 a flight starts further out, -ln kb e-folds from the
+    // rim (see setDepth), and is that much shorter.
     const travel = speed * ZOOM_RATE / LOG_SPAN;
-    const lifeSec = speed > 0 ? LOG_SPAN / (ZOOM_RATE * speed) : STILL_LIFE;
+    const lifeSec = speed > 0 ? -Math.log(kbNow) / (ZOOM_RATE * speed) : STILL_LIFE;
     const target = coverageTarget(density, fitK * sizeMul, sizeVar, constWant, lifeSec, orbitMax, orbitVar);
 
     if (!wasOn) {
@@ -1784,15 +1918,17 @@ export function createKaleido(device, format, platform) {
       const deficit = (target - live) / (target > 1 ? target : 1);
       let steer = 1 + 2 * deficit;
       if (steer < 0) steer = 0; else if (steer > 3) steer = 3;
-      spawnAcc += md * target * travel * steer;
+      // (target objects per flight: travel over the flight's share of it,
+      // all of it at Depth 0)
+      spawnAcc += md * target * travel / (1 - dBirthNow) * steer;
       while (spawnAcc >= spawnGap) {
         spawnAcc -= spawnGap;
         spawnGap = 0.5 + Math.random();
-        spawn(0);
+        spawnBirth();
       }
     }
-    // Any on-the-spot fade left over from an older pool still runs out, but
-    // nothing starts one any more (balance() is no longer called).
+    // Any on-the-spot fade left over from an older pool still runs out;
+    // balance() is no longer called, so only Depth's births start one.
     if (dt > 0) settle(dt);
     // The outgoing set's atlas goes once the crossfade is over and its last
     // piece has retired.
@@ -1849,7 +1985,9 @@ export function createKaleido(device, format, platform) {
     // The rim, and the fold's hole about the centre (see HOLE_PAD_TEXELS):
     // the newborn's radius plus the largest painted reach any object can
     // have there (reachKNow of its radius; size variance and the constant
-    // size law only ever shrink it), plus the bilinear clearance.
+    // size law only ever shrink it), plus the bilinear clearance. It stays
+    // on K_BIRTH whatever the Depth: at Depth above 0 births are past it
+    // and fade in by appear instead (spawnBirth).
     const maxR = Math.hypot(visW, cssH) * 0.62 * dpr;
     const holeR = K_BIRTH * maxR * (1 + reachKNow) + HOLE_PAD_TEXELS / s;
     dbgMaxR = maxR; dbgHoleR = holeR; dbgSideK = sideK; dbgSizeVar = sizeVar;
