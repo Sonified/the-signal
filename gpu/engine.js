@@ -383,7 +383,7 @@ export async function createEngine(platform, opts) {
     if (particles && particles.setTimestampWrites) particles.setTimestampWrites(undefined);
   }
 
-  let scene = null, uiRenderer = null, blur = null, flowers = null, kaleido = null, particles = null, fireworks = null, confetti = null, wordCloud = null, wordSmoke = null;
+  let scene = null, uiRenderer = null, blur = null, flowers = null, sun = null, kaleido = null, particles = null, fireworks = null, confetti = null, wordCloud = null, wordSmoke = null;
   let deviceLost = false;
   const lostCbs = [];
 
@@ -407,7 +407,7 @@ export async function createEngine(platform, opts) {
     // wake() asks again and says whether it was asleep.
     sleep() {}, wake() { return false; }, busy,
     gpu, gpuInfo,
-    start, render, registerScene, registerFlowers, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
+    start, render, registerScene, registerFlowers, registerSun, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
     onGpuError: fn => { gpuErrorCbs.push(fn); },
     profileBegin, profileEnd
   };
@@ -420,6 +420,7 @@ export async function createEngine(platform, opts) {
     createSceneTexture(pixelWidth, pixelHeight);
     if (scene && scene.resize) scene.resize(pixelWidth, pixelHeight, dpr);
     if (flowers && flowers.resize) flowers.resize(pixelWidth, pixelHeight, dpr);
+    if (sun) sun.resize(pixelWidth, pixelHeight, dpr);
     if (kaleido && kaleido.resize) kaleido.resize(pixelWidth, pixelHeight, dpr);
     if (particles && particles.resize) particles.resize(pixelWidth, pixelHeight, dpr);
     if (fireworks) fireworks.resize(pixelWidth, pixelHeight, dpr);
@@ -440,6 +441,13 @@ export async function createEngine(platform, opts) {
   function registerFlowers(f) {
     flowers = f;
     if (pixelWidth && flowers.resize) flowers.resize(pixelWidth, pixelHeight, engine.dpr);
+  }
+  // The Sun layer (gpu/sun.js) draws just before the kaleidoscope, so the
+  // motif kaleidoscope can sit over it. Its own fold's chamber and its
+  // feedback image are encoded before the scene pass (sun.encode below).
+  function registerSun(s) {
+    sun = s;
+    if (pixelWidth) sun.resize(pixelWidth, pixelHeight, engine.dpr);
   }
   // The kaleidoscope layer (gpu/kaleido.js) sits in the same gap, over
   // the flowers and under the edge. Its fold reads an offscreen object
@@ -499,9 +507,10 @@ export async function createEngine(platform, opts) {
   // one call.
   function drawScene(pass) {
     if (!scene) return;
-    if ((flowers || kaleido || particles || fireworks || confetti) && scene.drawBack) {
+    if ((flowers || sun || kaleido || particles || fireworks || confetti) && scene.drawBack) {
       scene.drawBack(pass);
       if (flowers) flowers.draw(pass);
+      if (sun) sun.draw(pass);
       if (kaleido) kaleido.draw(pass);
       if (particles) particles.draw(pass);
       if (fireworks) fireworks.draw(pass);
@@ -533,6 +542,7 @@ export async function createEngine(platform, opts) {
 
     if (scene && scene.update) scene.update(lum, frameDt, frameT);
     if (flowers) flowers.update(frameT, frameDt, lum);
+    if (sun) sun.update(frameT, frameDt, lum);
     if (kaleido) kaleido.update(frameT, frameDt, lum);
     if (particles) particles.update(frameT, frameDt, lum);
     if (fireworks) fireworks.update(frameT, frameDt);
@@ -585,6 +595,7 @@ export async function createEngine(platform, opts) {
     // The kaleidoscope's chamber pass, ahead of whichever route the scene
     // takes below, since both fold it into the scene. It encodes nothing on
     // a frame the layer is off or has nothing to draw.
+    if (sun) sun.encode(encoder);
     if (kaleido && kaleido.encodeChamber) kaleido.encodeChamber(encoder);
     if (particles && particles.encode) particles.encode(encoder);
     if (confetti && confetti.encode) confetti.encode(encoder);
@@ -689,7 +700,7 @@ export async function createEngine(platform, opts) {
   // or the glass owing a capture. main.js asks before letting the loop rest.
   let captureOwed = false;
   function busy() {
-    return captureOwed || !!(scene && scene.busy && scene.busy()) ||
+    return captureOwed || !!(scene && scene.busy && scene.busy()) || !!(sun && sun.busy()) ||
       !!(wordCloud && wordCloud.busy && wordCloud.busy()) || !!(wordSmoke && wordSmoke.busy && wordSmoke.busy());
   }
 
@@ -713,6 +724,8 @@ export async function createEngine(platform, opts) {
     engine.sleep = () => {
       if (asleep) return;
       asleep = true;
+      // The Sun layer's video stops with the loop (gpu/sun.js doze).
+      if (sun) sun.doze(true);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       rafHandle = 0;
     };
@@ -720,6 +733,7 @@ export async function createEngine(platform, opts) {
       if (!asleep) return false;
       asleep = false;
       slept = true;
+      if (sun) sun.doze(false);
       if (!rafHandle && !deviceLost && !pageHidden) rafHandle = requestAnimationFrame(raf);
       return true;
     };
@@ -729,6 +743,7 @@ export async function createEngine(platform, opts) {
       // loop was doing before it went.
       asleep = false;
       slept = false;
+      if (sun) sun.doze(pageHidden);
       if (pageHidden) {
         if (rafHandle) cancelAnimationFrame(rafHandle);
         rafHandle = 0;

@@ -54,7 +54,10 @@
 
 import { FOLD_WGSL } from './fold.wgsl.js';
 
-const MIN_FOLDS = 3, MAX_FOLDS = 16;
+// The ceiling is the widest any user asks for (the Sun layer's Symmetry
+// reaches 32, as the kaleidoscope's does); every user clamps its own range
+// first, so the 16-fold layers see no change.
+const MIN_FOLDS = 3, MAX_FOLDS = 32;
 const UNIFORM_FLOATS = 16;          // see fold.wgsl.js's struct FU
 const TAU = Math.PI * 2;
 const UP = -Math.PI * 0.5;          // the domain's centre line, straight up the screen

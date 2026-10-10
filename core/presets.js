@@ -360,6 +360,7 @@ const SWINGS = [
   ['kaleidoFbStreamVarRate', 'kaleidoFbStreamVarRateOff', carryRoomPhase],
   ['kaleidoFbTwistVarRate', 'kaleidoFbTwistVarRateOff', carryRoomPhase],
   ['kaleidoFbPulseRate',    'kaleidoFbPulseRateOff',    carryRoomPhase],
+  ['sunFoldsPeriod',        'sunFoldsPeriodOff',        carryRoomPhase],
   ['textOpacityVarPeriod',  'textOpacityVarPeriodOff',  carryWordOpacity]
 ];
 const swingRate = new Array(SWINGS.length);

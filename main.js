@@ -34,6 +34,7 @@ import { startWorkerShell } from './platform/worker-bridge.js';
 import { createEngine } from './gpu/engine.js';
 import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
+import { createSun } from './gpu/sun.js';
 import { createKaleido, setKaleidoYield } from './gpu/kaleido.js';
 import { createParticles } from './gpu/particles.js';
 import { createFireworks } from './gpu/fireworks.js';
@@ -190,6 +191,9 @@ async function boot() {
   // The flower layer loads its sprite sheet itself, the first time it is
   // switched on, and draws nothing until the atlas is built.
   engine.registerFlowers(createFlowers(device, format, platform));
+  // The Sun layer; it makes no video element and fetches nothing until
+  // first switched on.
+  engine.registerSun(createSun(device, format));
   // Likewise the kaleidoscope and its motif atlas.
   engine.registerKaleido(createKaleido(device, format, platform));
   // And the particle generator; it builds nothing until first switched on.
