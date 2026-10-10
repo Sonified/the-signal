@@ -2,6 +2,13 @@
 // from one frame of the NASA SDO mosaic video, imported zero copy as a
 // texture_external each frame.
 //
+// The loop's edge is a crossfade (gpu/sun.js, the site's two-element wrap):
+// a second picture, the ghost element playing from the loop's start, comes
+// in on sunTex2, and the frame is mix(main, ghost, g1.z), taken on the
+// summed five-channel color before the clamp, the grade, the feather and the
+// Center fade, so both sides carry the same treatment. At g1.z 0 (no wrap
+// fading; the CPU binds the main in both slots) the ghost is never read.
+//
 // The mosaic is a 3 x 2 grid of tiles, one SDO channel each: row 0 holds
 // 1700, 0304 and 0171, row 1 holds 0193 and 0211 (the sixth tile is black).
 // The picture is meditatewiththesun.com's composite exactly: every channel's
@@ -58,12 +65,13 @@ struct SU {
   place: vec4f, // centre x, y (target texels), target texels per device px, the square's half side (device px)
   look: vec4f,  // target width, height (texels), Center fade G (0 off), gain
   g0: vec4f,    // channel gains: 1700, 0304, 0171, 0193
-  g1: vec4f,    // channel gain 0211, Center fade band half width w (square units), unused x2
+  g1: vec4f,    // channel gain 0211, Center fade band half width w (square units), loop crossfade (0 main, 1 ghost), unused
   grade: vec4f, // Color grade: brightness, contrast, saturation, on (0 or 1)
 };
 @group(0) @binding(0) var<uniform> u: SU;
 @group(0) @binding(1) var sunTex: texture_external;
 @group(0) @binding(2) var sunSamp: sampler;
+@group(0) @binding(3) var sunTex2: texture_external;
 
 // meditatewiththesun.com's feather: where it sits, in half widths from the
 // middle, and how hard it is (0 soft, a band 0.6 wide; 1 a near cut).
@@ -80,23 +88,33 @@ fn vsSun(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
 }
 
 // One channel's tile at a point of the tile (0..1 each way, y down as the
-// video's own uv).
-fn tileAt(uv: vec2f, col: f32, row: f32) -> vec3f {
-  return textureSampleBaseClampToEdge(sunTex, sunSamp, (uv + vec2f(col, row)) / vec2f(3.0, 2.0)).rgb;
+// video's own uv), from the main picture or the ghost. The texture sample
+// here takes no derivatives, so it needs no uniform control flow.
+fn tileAt(uv: vec2f, col: f32, row: f32, ghost: bool) -> vec3f {
+  let st = (uv + vec2f(col, row)) / vec2f(3.0, 2.0);
+  if (ghost) { return textureSampleBaseClampToEdge(sunTex2, sunSamp, st).rgb; }
+  return textureSampleBaseClampToEdge(sunTex, sunSamp, st).rgb;
+}
+
+// The five channels, tinted and summed as light. The gains are uniforms, so
+// these branches are uniform control flow; only the lit channels are read.
+fn composite(uv: vec2f, ghost: bool) -> vec3f {
+  var c = vec3f(0.0);
+  if (u.g0.x > 0.0) { c += tileAt(uv, 0.0, 0.0, ghost) * (vec3f(255.0, 154.0, 138.0) / 255.0) * u.g0.x; }
+  if (u.g0.y > 0.0) { c += tileAt(uv, 1.0, 0.0, ghost) * (vec3f(255.0, 77.0, 46.0) / 255.0) * u.g0.y; }
+  if (u.g0.z > 0.0) { c += tileAt(uv, 2.0, 0.0, ghost) * (vec3f(255.0, 194.0, 51.0) / 255.0) * u.g0.z; }
+  if (u.g0.w > 0.0) { c += tileAt(uv, 0.0, 1.0, ghost) * (vec3f(201.0, 138.0, 75.0) / 255.0) * u.g0.w; }
+  if (u.g1.x > 0.0) { c += tileAt(uv, 1.0, 1.0, ghost) * (vec3f(180.0, 140.0, 255.0) / 255.0) * u.g1.x; }
+  return c;
 }
 
 @fragment
 fn fsSun(@builtin(position) p: vec4f) -> @location(0) vec4f {
   let d = (p.xy - u.place.xy) / u.place.z;
   let uv = clamp(vec2f(0.5) + d * (0.5 / u.place.w), vec2f(0.0), vec2f(1.0));
-  var c = vec3f(0.0);
-  // The gains are uniforms, so these branches are uniform control flow;
-  // only the lit channels are read.
-  if (u.g0.x > 0.0) { c += tileAt(uv, 0.0, 0.0) * (vec3f(255.0, 154.0, 138.0) / 255.0) * u.g0.x; }
-  if (u.g0.y > 0.0) { c += tileAt(uv, 1.0, 0.0) * (vec3f(255.0, 77.0, 46.0) / 255.0) * u.g0.y; }
-  if (u.g0.z > 0.0) { c += tileAt(uv, 2.0, 0.0) * (vec3f(255.0, 194.0, 51.0) / 255.0) * u.g0.z; }
-  if (u.g0.w > 0.0) { c += tileAt(uv, 0.0, 1.0) * (vec3f(201.0, 138.0, 75.0) / 255.0) * u.g0.w; }
-  if (u.g1.x > 0.0) { c += tileAt(uv, 1.0, 1.0) * (vec3f(180.0, 140.0, 255.0) / 255.0) * u.g1.x; }
+  var c = composite(uv, false);
+  // The loop's crossfade (see the top of this file); a uniform branch.
+  if (u.g1.z > 0.0) { c = mix(c, composite(uv, true), u.g1.z); }
   c = min(c, vec3f(1.0));
   // The Color grade (see the top of this file); a uniform branch.
   if (u.grade.w > 0.5) {

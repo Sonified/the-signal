@@ -12,8 +12,24 @@
 // copy (importExternalTexture) for sun.wgsl.js to composite. An external
 // texture lives only until the task that imported it ends, so it is imported
 // fresh in update() and its bind group made with it; render() submits in the
-// same task. The element loops plainly: the site's crossfade over the loop's
-// edge is out of scope for v1, so the loop is a cut.
+// same task.
+//
+// The loop is the site's crossfade over the edge, not video.loop (whose seek
+// to 0 on a streamed file finds nothing buffered there and drops to black):
+// two elements, the main and a ghost, same source, swap roles each lap. The
+// ghost sits paused at 0 with preload 'none' until it is wanted. The edge is
+// the file's end, or, when the buffer is losing to the playhead (its edge
+// growing slower than 0.9 x the rate over at least a second), the buffered
+// edge less BUFFER_MARGIN_S x the rate, the early wrap that beats a stall.
+// Near the edge the ghost starts loading; XFADE_S x the rate video-seconds
+// before it, the wrap arms: the ghost seeks to 0, takes the rate and plays,
+// and once it has frames the shader blends to it over XFADE_S wall seconds,
+// advanced only while the main plays. Done (or the main ended), the ghost is
+// the main and the old main parks at 0. A ghost with no frames after
+// GHOST_WAIT_S stands the wrap down (retry after WRAP_RETRY_S), and a main
+// that ended or starved hard-cuts to 0: a hard cut beats a frozen sun. Every
+// pause reason pauses both elements, the rate law sets both while a wrap is
+// armed, and an armed wrap that is playing holds the frame loop awake.
 //
 // The breath is the layer's master signal: one sine, S.sunBreathRate breaths
 // a minute on the layer's motion clock (a paused scene holds it), with two
@@ -63,12 +79,13 @@
 // reason left, so no reason's end can undo another's pause.
 //
 // High quality (S.sunHiRes) streams the site's original snapshot, about
-// twice the bytes, from another stem on the same base. A change swaps the
-// element's source in place (swapSource): the place and the play state
-// carry over, and the play waits for the seek.
+// twice the bytes, from another stem on the same base. A change stands any
+// wrap down and swaps both elements' source in place (swapSource): the
+// main's place and the play state carry over, and the play waits for the
+// seek; the ghost starts over, parked at 0.
 //
-// Allocation per frame: the external texture and its bind group, which
-// WebGPU makes new by design. Nothing else.
+// Allocation per frame: the external textures (one, two while a wrap fades)
+// and their bind group, which WebGPU makes new by design. Nothing else.
 
 import { S } from '../js/state.js';
 import { SUN_WGSL } from './sun.wgsl.js';
@@ -115,6 +132,15 @@ const SPEED_MIN = 1, SPEED_MAX = 16, RATE_FLOOR = 0.0625;
 const BREATH_STOP = 1 / 32, BREATH_GO = 1.25 / 32;
 // A refused play() is tried again no sooner than this, ms.
 const PLAY_RETRY_MS = 1000;
+// The loop's wrap, meditatewiththesun.com's constants (see the top of this
+// file): the crossfade in wall seconds; the wall seconds of buffer kept in
+// hand when the network is losing and the wrap comes early; the wall
+// seconds the ghost may take to show frames; and the wait after a stood-down
+// wrap before it may arm again.
+const XFADE_S = 0.5;
+const BUFFER_MARGIN_S = 1.5;
+const GHOST_WAIT_S = 6;
+const WRAP_RETRY_S = 4;
 // The uniform slots, one per target, 256 bytes apart (dynamic offsets): see
 // sun.wgsl.js's struct SU, 20 floats of each slot used.
 const SLOT_BYTES = 256, SLOT_FLOATS = SLOT_BYTES / 4, SU_FLOATS = 20;
@@ -137,7 +163,8 @@ export function createSun(device, format) {
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
         buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: SU_FLOATS * 4 } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
-      { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} }
     ]
   });
   const layout = device.createPipelineLayout({ label: 'sun.layout', bindGroupLayouts: [bgl] });
@@ -187,12 +214,16 @@ export function createSun(device, format) {
     magFilter: 'linear', minFilter: 'linear',
     addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge'
   });
-  // Reused descriptors: only the external texture changes each frame.
+  // Reused descriptors: only the external textures change each frame (the
+  // main's picture, and the ghost's while a wrap fades; the main in both
+  // slots otherwise).
   const extDesc = { label: 'sun.frame', source: null };
+  const extDescGhost = { label: 'sun.frame.ghost', source: null };
   const bindEntries = [
     { binding: 0, resource: { buffer: uniBuf, size: SU_FLOATS * 4 } },
     { binding: 1, resource: null },
-    { binding: 2, resource: sampler }
+    { binding: 2, resource: sampler },
+    { binding: 3, resource: null }
   ];
   const bindDesc = { label: 'sun.bind', layout: bgl, entries: bindEntries };
   // This frame's bind group over this frame's video picture; null when
@@ -200,33 +231,64 @@ export function createSun(device, format) {
   let bind = null;
 
   // ---------- the video ----------
-  let video = null, videoFailed = false, triedX264 = false, holding = false;
-  let playPending = false, retryAt = 0, nowMs = 0, dozing = false;
-  let warnedImport = false, warnedPlay = false;
-  // The stem the element is loading or playing, whether the breath has
-  // stopped the video (Speed link), and a swap's place to seek back to
-  // (-1 none) while the play waits for it.
-  let stemNow = '', breathStopped = false, seekTo = -1;
-  function onLoaded() {
+  // Two elements, the main (video) and the ghost, swapping roles each lap
+  // (see the top of this file); they are made together and share a source.
+  let video = null, ghost = null, videoFailed = false, triedX264 = false, holding = false;
+  let retryAt = 0, nowMs = 0, dozing = false;
+  let warnedImport = false, warnedPlay = false, warnedGhost = false;
+  // The elements with a play() in flight (a new one waits for it).
+  const playPending = new Set();
+  // The stem the elements are loading or playing and the URL they share,
+  // whether the breath has stopped the video (Speed link), and a swap's
+  // place to seek back to (-1 none) while the play waits for it.
+  let stemNow = '', srcNow = '', breathStopped = false, seekTo = -1;
+  // The wrap: { since, fading, last } (seconds) while one is armed, else
+  // null; the crossfade, 0 main to 1 ghost; the earliest a stood-down wrap
+  // may arm again; whether an armed wrap holds the frame loop awake; and the
+  // buffered edge's growth watch over the main.
+  let wrap = null, xfade = 0, wrapRetryAt = 0, wrapHeld = false;
+  const bufWatch = { el: null, end: 0, at: 0 };
+  function onLoaded(e) {
+    if (e.target !== video) return;
     if (holding) { holding = false; idleRelease('the sun video'); }
   }
-  function onVideoError() {
-    // The one swap: the HEVC file failing falls back to the x264 one.
+  // Both elements onto a source; the ghost goes back to waiting, unloaded.
+  function setSources(url) {
+    srcNow = url;
+    playPending.clear();
+    video.src = url;
+    ghost.preload = 'none';
+    ghost.src = url;
+  }
+  function onVideoError(e) {
+    const el = e.target;
+    if (!el.error) return;   // a stale report from a source since replaced
+    // The one swap: the HEVC file failing falls back to the x264 one, on
+    // both elements (they decode the same file).
     if (!triedX264) {
       triedX264 = true;
       console.warn('sun: the HEVC video failed; falling back to x264');
-      playPending = false;
-      video.src = urlX264(stemNow);
+      resetWrap();
+      setSources(urlX264(stemNow));
+      return;
+    }
+    // A ghost that failed costs a wrap, not the layer: the main plays on,
+    // and the stand-down reloads the ghost.
+    if (el === ghost) {
+      if (!warnedGhost) {
+        warnedGhost = true;
+        console.warn('sun: the loop ghost could not load (code ' + el.error.code + '); the wrap stands down');
+      }
+      if (wrap) standDownWrap();
       return;
     }
     videoFailed = true;
-    const err = video && video.error;
+    const err = el.error;
     console.warn('sun: the video could not load' + (err ? ' (code ' + err.code + (err.message ? ', ' + err.message : '') + ')' : '') + '; the layer stays empty');
-    onLoaded();
+    resetWrap();
+    if (holding) { holding = false; idleRelease('the sun video'); }
   }
-  function onPlayed() { playPending = false; }
   function onPlayFailed(err) {
-    playPending = false;
     // A play cut short by a pause or a new source (a swap) is not a
     // refusal: the next frame decides afresh, with no retry wait.
     if (err && err.name === 'AbortError') return;
@@ -236,9 +298,31 @@ export function createSun(device, format) {
       console.warn('sun: video.play() was refused:', err && err.message ? err.message : err);
     }
   }
+  function playEl(el) {
+    if (!el.paused || playPending.has(el) || nowMs < retryAt) return;
+    playPending.add(el);
+    const p = el.play();
+    if (p && p.then) p.then(() => { playPending.delete(el); }, err => { playPending.delete(el); onPlayFailed(err); });
+    else playPending.delete(el);
+  }
+  function setRate(el, rate) {
+    if (Math.abs(el.playbackRate - rate) > rate * 0.01) el.playbackRate = rate;
+  }
+  function makeElement(preload) {
+    const el = document.createElement('video');
+    el.crossOrigin = 'anonymous';   // required for the GPU import; R2 serves CORS
+    el.muted = true;
+    el.defaultMuted = true;
+    el.playsInline = true;
+    el.preload = preload;           // no video.loop: the wrap is the loop
+    el.addEventListener('loadeddata', onLoaded);
+    el.addEventListener('loadedmetadata', onMetadata);
+    el.addEventListener('error', onVideoError);
+    return el;
+  }
   // Made and loading the first frame the layer is on, never at boot.
-  // PORTABILITY: ARCHITECTURE.md keeps document to platform/; this element
-  // belongs behind a platform hook (platform/web.js) when one is added. A
+  // PORTABILITY: ARCHITECTURE.md keeps document to platform/; these elements
+  // belong behind a platform hook (platform/web.js) when one is added. A
   // worker engine has no document, and the layer stays empty there.
   function ensureVideo() {
     if (video || videoFailed) return;
@@ -247,75 +331,166 @@ export function createSun(device, format) {
       console.warn('sun: no document on this thread (worker engine); the Sun layer needs the page engine');
       return;
     }
-    video = document.createElement('video');
-    video.crossOrigin = 'anonymous';   // required for the GPU import; R2 serves CORS
-    video.muted = true;
-    video.defaultMuted = true;
-    video.playsInline = true;
-    video.loop = true;                 // a plain cut at the loop (see the top of this file)
-    video.preload = 'auto';
-    video.addEventListener('loadeddata', onLoaded);
-    video.addEventListener('loadedmetadata', onMetadata);
-    video.addEventListener('error', onVideoError);
+    video = makeElement('auto');
+    ghost = makeElement('none');
     stemNow = stemFor(S.sunHiRes === true);
     const hevc = !!video.canPlayType(HEVC_TYPE);
     triedX264 = !hevc;
     // A paused frame loop stays awake until the first picture is in.
     holding = true;
     idleHold();
-    video.src = hevc ? urlHevc(stemNow) : urlX264(stemNow);
+    setSources(hevc ? urlHevc(stemNow) : urlX264(stemNow));
   }
-  // High quality changed: the other stem into the same element, the HEVC
-  // choice and its one x264 fallback made afresh for it. The place is kept
-  // and sought back to once the new file's metadata is in; until then
-  // syncVideo holds off playing, and after it plays only if no pause reason
-  // holds, so a swap made while paused stays paused at that place.
+  // High quality changed: any wrap stands down, then the other stem into
+  // both elements, the HEVC choice and its one x264 fallback made afresh
+  // for it. The main's place is kept and sought back to once the new file's
+  // metadata is in; until then syncVideo holds off playing (and the wrap
+  // stays idle), and after it plays only if no pause reason holds, so a swap
+  // made while paused stays paused at that place.
   function swapSource(stem) {
+    resetWrap();
     seekTo = video.readyState >= 1 ? video.currentTime : (seekTo >= 0 ? seekTo : 0);
     stemNow = stem;
     videoFailed = false;
-    playPending = false;
     retryAt = 0;
     const hevc = !!video.canPlayType(HEVC_TYPE);
     triedX264 = !hevc;
     if (!holding) { holding = true; idleHold(); }
-    video.src = hevc ? urlHevc(stem) : urlX264(stem);
+    setSources(hevc ? urlHevc(stem) : urlX264(stem));
   }
-  function onMetadata() {
-    if (seekTo < 0) return;
+  function onMetadata(e) {
+    if (e.target !== video || seekTo < 0) return;
     const d = video.duration;
     const t = d > 0 && isFinite(d) ? seekTo % d : seekTo;
     seekTo = -1;
-    try { video.currentTime = t; } catch (e) {}
+    try { video.currentTime = t; } catch (e2) {}
   }
+
+  // ---------- the wrap (see the top of this file) ----------
+  // Clears the wrap where it stands: the ghost paused, the blend at the main.
+  function resetWrap() {
+    if (ghost && !ghost.paused) ghost.pause();
+    wrap = null;
+    xfade = 0;
+    bufWatch.el = null;
+  }
+  // The site's standDownWrap: the ghost reparked at 0 (reloaded if its
+  // stream failed), a wait before the next arm, and a main with nothing
+  // left to play cut to 0 (syncVideo plays it on).
+  function standDownWrap() {
+    resetWrap();
+    if (ghost.error) ghost.src = srcNow;
+    try { ghost.currentTime = 0; } catch (e) {}
+    wrapRetryAt = nowMs / 1000 + WRAP_RETRY_S;
+    if (video.ended || video.readyState < 3) { try { video.currentTime = 0; } catch (e) {} }
+  }
+  // meditatewiththesun.com's updateLoopXfade, now in seconds of the frame's
+  // clock. Runs before syncVideo, so an ended main is wrapped (or cut)
+  // before anything could play() it (which would seek it to 0 in place).
+  function updateWrap(now) {
+    if (!video || videoFailed || seekTo >= 0) return;
+    const v = video, g = ghost;
+    const dur = v.duration;
+    if (!isFinite(dur) || dur <= 0) return;
+
+    // The edge: the file's end, or the buffered edge when the network is
+    // losing to the playhead.
+    let edge = dur, losing = false;
+    if (!v.paused) {
+      const t = v.currentTime, b = v.buffered;
+      for (let i = 0; i < b.length; i++) {
+        if (b.start(i) <= t + 0.001 && t <= b.end(i)) {
+          const bEnd = b.end(i);
+          if (bufWatch.el !== v) { bufWatch.el = v; bufWatch.end = bEnd; bufWatch.at = now; }
+          const grow = (bEnd - bufWatch.end) / Math.max(1e-3, now - bufWatch.at);   // buffered seconds gained per wall second
+          if (now - bufWatch.at >= 2) { bufWatch.end = bEnd; bufWatch.at = now; }
+          // judged only on at least a second of history (the first sample
+          // after a load reads as zero growth)
+          losing = now - bufWatch.at >= 1 && grow < v.playbackRate * 0.9;
+          if (losing && bEnd < dur - XFADE_S * v.playbackRate) edge = bEnd - BUFFER_MARGIN_S * v.playbackRate;
+          break;
+        }
+      }
+    }
+    const remain = edge - v.currentTime;
+
+    // The fade's span in video-seconds at this rate; the ghost loads once
+    // the network is seen losing, or a few wall seconds before the edge.
+    const span = XFADE_S * Math.max(0.1, v.playbackRate);
+    if (!v.paused && g.preload === 'none' && (losing || remain <= span + 4 * v.playbackRate))
+      g.preload = 'auto';
+
+    if (!v.paused && !wrap && remain <= span && now >= wrapRetryAt) {
+      wrap = { since: now, fading: false, last: now };
+      xfade = 0;
+      try { g.currentTime = 0; } catch (e) {}
+      g.playbackRate = v.playbackRate;
+      playEl(g);
+    }
+
+    if (wrap) {
+      if (!wrap.fading) {
+        if (g.readyState >= 2) { wrap.fading = true; wrap.last = now; }
+        else if (now - wrap.since > GHOST_WAIT_S) { standDownWrap(); return; }
+      }
+      if (wrap.fading) {
+        // XFADE_S wall seconds of fade, advanced only while the main plays
+        // (a pause holds the blend where it is).
+        if (!v.paused) xfade = Math.min(1, xfade + (now - wrap.last) / XFADE_S);
+        wrap.last = now;
+      }
+    }
+
+    // Wrap when the fade has completed, or the file ends under us.
+    if (v.ended && g.readyState < 2) { standDownWrap(); return; }
+    if (v.ended || (wrap && xfade >= 1)) {
+      video = g;                      // the ghost (already playing) takes over
+      ghost = v;
+      v.pause();
+      try { v.currentTime = 0; } catch (e) {}
+      xfade = 0;
+      wrap = null;
+    }
+  }
+  // An armed wrap on a playing main holds the frame loop awake (a pause
+  // holds the blend, so the loop may rest then).
+  function syncWrapHold() {
+    const want = !!wrap && !!video && !video.paused;
+    if (want === wrapHeld) return;
+    wrapHeld = want;
+    if (want) idleHold(); else idleRelease('the sun wrap');
+  }
+
   // Plays while the layer is on, awake, the scene moving and the breath not
   // stopped, at Speed times the breath's share (Speed link) times the
   // motion scale (so the pause coasts it down with everything else);
   // pauses otherwise. pos is the breath, 0 full exhale to 1 full inhale.
+  // The ghost pauses and plays with the main, at the main's rate, while a
+  // wrap is armed, and is never left playing otherwise.
   function syncVideo(on, pos) {
     if (!video || videoFailed) return;
     const scale = motionScale();
     const link = clampNum(S.sunSpeedLink, 0, 1, 0);
     const breathRate = clampNum(S.sunSpeed, SPEED_MIN, SPEED_MAX, 1) * (1 - link * (1 - pos));
     breathStopped = link > 0 && breathRate < (breathStopped ? BREATH_GO : BREATH_STOP);
+    if (!wrap && !ghost.paused) ghost.pause();
     if (!on || dozing || !(scale > 0) || breathStopped || seekTo >= 0) {
       if (!video.paused) video.pause();
+      if (!ghost.paused) ghost.pause();
       return;
     }
     let rate = breathRate * scale;
     if (rate < RATE_FLOOR) rate = RATE_FLOOR;
-    if (Math.abs(video.playbackRate - rate) > rate * 0.01) video.playbackRate = rate;
-    if (video.paused && !playPending && nowMs >= retryAt) {
-      playPending = true;
-      const p = video.play();
-      if (p && p.then) p.then(onPlayed, onPlayFailed); else playPending = false;
-    }
+    setRate(video, rate);
+    playEl(video);
+    if (wrap) { setRate(ghost, rate); playEl(ghost); }
   }
   // The engine's sleep, and the page out of sight: the video stops at once.
   // Awake again, the next update starts it if it should play.
   function doze(on) {
     dozing = !!on;
     if (dozing && video && !video.paused) video.pause();
+    if (dozing && ghost && !ghost.paused) ghost.pause();
   }
 
   // ---------- frame state ----------
@@ -409,7 +584,7 @@ export function createSun(device, format) {
     uni[b] = ox; uni[b + 1] = oy; uni[b + 2] = scale; uni[b + 3] = half;
     uni[b + 4] = tw; uni[b + 5] = th; uni[b + 6] = gate; uni[b + 7] = gain;
     uni[b + 8] = g[0]; uni[b + 9] = g[1]; uni[b + 10] = g[2]; uni[b + 11] = g[3];
-    uni[b + 12] = g[4]; uni[b + 13] = band; uni[b + 14] = 0; uni[b + 15] = 0;
+    uni[b + 12] = g[4]; uni[b + 13] = band; uni[b + 14] = 0; uni[b + 15] = 0;   // [14] the crossfade, set with the picture
     uni[b + 16] = grade[0]; uni[b + 17] = grade[1]; uni[b + 18] = grade[2]; uni[b + 19] = grade[3];
   }
   const gains = new Float32Array(5);
@@ -436,6 +611,7 @@ export function createSun(device, format) {
         releaseFolds();
       }
       syncVideo(false, 1);
+      syncWrapHold();
       return;
     }
     wasOn = true;
@@ -455,8 +631,11 @@ export function createSun(device, format) {
     // rising (inhaling). Transient, like effSunFolds: never saved.
     S.effSunBreathPos = 0.5 + 0.5 * breathSin;
     S.effSunBreathIn = Math.cos(TAU * breathPh) >= 0;
-    // The video, its rate riding this breath (Speed link).
+    // The loop's wrap first (an ended main must wrap before any play()),
+    // then the video, its rate riding this breath (Speed link).
+    updateWrap(nowMs / 1000);
     syncVideo(true, S.effSunBreathPos);
+    syncWrapHold();
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
     // the pair the live position falls between crossfaded by smoothstep.
@@ -622,22 +801,35 @@ export function createSun(device, format) {
     putSlot(SLOT_SCENE, cx, cy, 1, half, pixelW, pixelH, 0, 0, opacity, gains);
 
     // ---------- this frame's picture ----------
-    if (!video || videoFailed || video.readyState < 2) return;
-    let ext = null;
+    // The main's picture, and while a wrap fades with the ghost showing
+    // frames, the ghost's too, blended by the crossfade (sun.wgsl.js). One
+    // picture alone is bound in both slots with the blend at its side.
+    if (!video || videoFailed) return;
+    const mainOk = video.readyState >= 2;
+    const ghostOk = !!wrap && wrap.fading && ghost.readyState >= 2;
+    const ext = mainOk ? importFrame(extDesc, video) : null;
+    const extGhost = ghostOk ? importFrame(extDescGhost, ghost) : null;
+    if (!ext && !extGhost) return;
+    const xf = ext && extGhost ? xfade : 0;
+    bindEntries[1].resource = ext || extGhost;
+    bindEntries[3].resource = extGhost || ext;
+    bind = device.createBindGroup(bindDesc);
+    bindEntries[1].resource = null;
+    bindEntries[3].resource = null;
+    for (let k = 0; k < SLOTS; k++) uni[k * SLOT_FLOATS + 14] = xf;
+    device.queue.writeBuffer(uniBuf, 0, uni);
+  }
+  function importFrame(desc, el) {
     try {
-      extDesc.source = video;
-      ext = device.importExternalTexture(extDesc);
+      desc.source = el;
+      return device.importExternalTexture(desc);
     } catch (e) {
       if (!warnedImport) {
         warnedImport = true;
         console.warn('sun: could not import the video frame:', e && e.message ? e.message : e);
       }
-      return;
+      return null;
     }
-    bindEntries[1].resource = ext;
-    bind = device.createBindGroup(bindDesc);
-    bindEntries[1].resource = null;
-    device.queue.writeBuffer(uniBuf, 0, uni);
   }
 
   // Before the scene pass: the sun into the fold's chamber when folded,
