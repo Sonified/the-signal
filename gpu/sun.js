@@ -1,6 +1,7 @@
 // Owns the Sun layer: NASA SDO footage of the sun, streamed as one mosaic
-// video, its five channels tinted and mixed as light, drawn as a disc at the
-// field centre. It reads S every frame and does no work at all while
+// video, its five channels tinted and mixed as light, drawn as the whole
+// square tile at the field centre, its edge taken away by the site's own
+// circular feather so the corona melts into the room (sun.wgsl.js). It reads S every frame and does no work at all while
 // S.layers.sun is off; nothing is made or fetched until it first comes on.
 //
 // The source is meditatewiththesun.com's: one MP4 whose frame is a 3 x 2
@@ -33,7 +34,7 @@
 // 0 there is no image and no pass.
 //
 // The sun's own kaleidoscope (S.sunKaleidoOn) folds the picture through
-// gpu/fold.js: the disc is drawn into the fold's chamber instead of the
+// gpu/fold.js: the feathered square is drawn into the fold's chamber instead of the
 // scene, and the fold draws in the scene pass; the feedback then takes the
 // folded pattern (fold, then feedback, then the echo under the live fold).
 // A change of symmetry dissolves over the Symmetry slide (S.sunFoldXfade):
@@ -68,12 +69,13 @@ const VIDEO_STEM = 'sun_mosaic_20260915_23289r';
 const URL_X264 = VIDEO_BASE + VIDEO_STEM + '.mp4';
 const URL_HEVC = VIDEO_BASE + VIDEO_STEM + '_hevc.mp4';
 const HEVC_TYPE = 'video/mp4; codecs="hvc1.1.6.L120.B0"';
-// The photosphere's radius in tile half widths: the disc's edge is the limb.
+// The photosphere's radius in tile half widths: the square is drawn this
+// much larger than the photosphere, so Size sets the photosphere's diameter
+// and the corona reaches out beyond it to the feather.
 const PHOTOSPHERE = 0.775;
-// The disc's diameter at Size 1, as a share of the visible field's smaller
-// side, and its soft edge in CSS px.
+// The photosphere's diameter at Size 1, as a share of the visible field's
+// smaller side.
 const DISC_SHARE = 0.7;
-const EDGE_CSS = 1.5;
 const MAX_FOLDS = 32;
 // Feedback, kaleido.js trails' constants: the half-life in seconds at Amount
 // 100% (through the slider's square), and the stream's e-folds a second at
@@ -119,8 +121,9 @@ export function createSun(device, format) {
       }
     });
   }
-  // Premultiplied over, the repo's convention for something that covers
-  // (kaleido.js, fold.js): the disc sits on the field.
+  // Premultiplied over, the repo's convention (kaleido.js, fold.js); the
+  // sun writes alpha 0, so it adds as light, as the site composites
+  // additively over black (sun.wgsl.js).
   const over = {
     color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
     alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
@@ -132,7 +135,7 @@ export function createSun(device, format) {
     let p = pipes.get(fmt);
     if (p) return p;
     p = device.createRenderPipeline({
-      label: 'sun.disc.' + fmt, layout,
+      label: 'sun.picture.' + fmt, layout,
       vertex: { module: mod, entryPoint: 'vsSun' },
       fragment: { module: mod, entryPoint: 'fsSun', targets: [{ format: fmt, blend: over }] },
       primitive: { topology: 'triangle-list' }
@@ -334,13 +337,14 @@ export function createSun(device, format) {
   }
 
   // One uniform slot: the centre in the target's texels, its texels per
-  // device px, the target's size, and the gain.
-  function putSlot(slot, ox, oy, scale, R, tw, th, edge, gain, g) {
+  // device px, the square's half side in device px, the target's size, and
+  // the gain.
+  function putSlot(slot, ox, oy, scale, half, tw, th, gain, g) {
     const b = slot * SLOT_FLOATS;
-    uni[b] = ox; uni[b + 1] = oy; uni[b + 2] = scale; uni[b + 3] = R;
-    uni[b + 4] = tw; uni[b + 5] = th; uni[b + 6] = edge; uni[b + 7] = gain;
+    uni[b] = ox; uni[b + 1] = oy; uni[b + 2] = scale; uni[b + 3] = half;
+    uni[b + 4] = tw; uni[b + 5] = th; uni[b + 6] = 0; uni[b + 7] = gain;
     uni[b + 8] = g[0]; uni[b + 9] = g[1]; uni[b + 10] = g[2]; uni[b + 11] = g[3];
-    uni[b + 12] = g[4]; uni[b + 13] = PHOTOSPHERE; uni[b + 14] = 0; uni[b + 15] = 0;
+    uni[b + 12] = g[4]; uni[b + 13] = 0; uni[b + 14] = 0; uni[b + 15] = 0;
   }
   const gains = new Float32Array(5);
 
@@ -444,8 +448,9 @@ export function createSun(device, format) {
     const inset = S.edgeInset || 0;
     const visW = Math.max(1, cssW - inset);
     const cx = (inset + visW * 0.5) * dpr, cy = cssH * 0.5 * dpr;
+    // The photosphere's radius, and the tile square's half side round it.
     const R = 0.5 * DISC_SHARE * clampNum(S.sunSize, 0.2, 2, 1) * Math.min(visW, cssH) * dpr;
-    const edge = EDGE_CSS * dpr;
+    const half = R / PHOTOSPHERE;
 
     // ---------- the fold ----------
     if (folded) {
@@ -475,7 +480,7 @@ export function createSun(device, format) {
       pFbOld.gain = 1 - slideK;
       if (!pipeChamber) pipeChamber = pipeFor(FOLD_CHAMBER_FORMAT);
       const f = foldA.frame;
-      putSlot(SLOT_CHAMBER, f[4], f[5], f[6], R, f[0], f[1], edge, 1, gains);
+      putSlot(SLOT_CHAMBER, f[4], f[5], f[6], half, f[0], f[1], 1, gains);
     }
 
     // ---------- feedback ----------
@@ -500,7 +505,7 @@ export function createSun(device, format) {
       }
       fbParams.twistRate = 0;
       // Centre and unit in device px (feedback.js scales them): the unit is
-      // the disc's radius, so a drawer slide or a Size change rescales the
+      // the photosphere's radius, so a drawer slide or a Size change rescales the
       // trails with the sun.
       fbParams.cx = cx; fbParams.cy = cy; fbParams.unit = R; fbParams.dt = md;
       // The echo fades with the layer.
@@ -514,12 +519,12 @@ export function createSun(device, format) {
       } else {
         if (!pipeFb) pipeFb = pipeFor(FEEDBACK_FORMAT);
         const kx = fb.width / pixelW, ky = fb.height / pixelH;
-        putSlot(SLOT_FB, cx * kx, cy * ky, fbScale, R, fb.width, fb.height, edge, 1, gains);
+        putSlot(SLOT_FB, cx * kx, cy * ky, fbScale, half, fb.width, fb.height, 1, gains);
       }
     }
 
     if (!liveDraw && !fbOn) return;
-    putSlot(SLOT_SCENE, cx, cy, 1, R, pixelW, pixelH, edge, opacity, gains);
+    putSlot(SLOT_SCENE, cx, cy, 1, half, pixelW, pixelH, opacity, gains);
 
     // ---------- this frame's picture ----------
     if (!video || videoFailed || video.readyState < 2) return;
@@ -540,7 +545,7 @@ export function createSun(device, format) {
     device.queue.writeBuffer(uniBuf, 0, uni);
   }
 
-  // Before the scene pass: the disc into the fold's chamber when folded,
+  // Before the scene pass: the sun into the fold's chamber when folded,
   // then the feedback image (fade and stream the last, then the picture,
   // folded or not, over it). Held (stopped with trails), the image is only
   // carried with the field. With no picture this frame the image still
