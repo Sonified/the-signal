@@ -451,6 +451,28 @@ function startPlaying() {
   };
   ctx.addEventListener('statechange', armed);
   ctx.resume().then(armed).catch(() => {});
+  hookGesture();
+}
+
+// A wanted hum on a suspended context also listens for the page's first
+// gesture directly (pointer or key, capture, once each): with the app's own
+// audio off, no other context ever runs to ride, and the viewer's first
+// touch anywhere is the blessing the browser wants. Removed as soon as the
+// context runs; harmless where there is no window (PORTABILITY: globalThis,
+// as above).
+let gestureHooked = false;
+function hookGesture() {
+  const w = globalThis;
+  if (gestureHooked || !w.addEventListener || !ctx) return;
+  gestureHooked = true;
+  const bless = () => {
+    w.removeEventListener('pointerdown', bless, true);
+    w.removeEventListener('keydown', bless, true);
+    gestureHooked = false;
+    if (wanted && ctx && ctx.state !== 'running') unlock();
+  };
+  w.addEventListener('pointerdown', bless, true);
+  w.addEventListener('keydown', bless, true);
 }
 
 // When the app's own context starts running, a gesture has just woken the
