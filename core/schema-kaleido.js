@@ -612,8 +612,11 @@ export const KALEIDO_CONTROLS = [
   })),
   under('kaleidoBrightnessDrawer', direct('kaleidoFadeInS', 'kaleidoFadeInS', 'Fade in time', 0.1,
     S => (S.kaleidoFadeInS ?? 1.5) < 0.05 ? 'off' : (S.kaleidoFadeInS ?? 1.5).toFixed(1) + 's')),
-  under('kaleidoBrightnessDrawer', percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
-    S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%')),
+  under('kaleidoBrightnessDrawer', Object.assign(percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
+    S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%'), {
+    effective: S => S.kaleidoPulseVar > 0
+      ? (typeof S.effKaleidoPulse === 'number' ? S.effKaleidoPulse : S.kaleidoPulse) * 100 : undefined
+  })),
   varianceOf('kaleidoPulse', under('kaleidoBrightnessDrawer',
     percent('kaleidoPulseVar', 'kaleidoPulseVar', 'Pulse variance'))),
   varianceOf('kaleidoPulse', under('kaleidoBrightnessDrawer', {
