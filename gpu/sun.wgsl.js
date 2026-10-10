@@ -27,11 +27,12 @@
 // and the feedback image take light the same way (fold.js, feedback.js).
 //
 // The Center fade, the site's gate on what feeds the trails: in the same r,
-// the picture is scaled by smoothstep(G - 0.03, G + 0.03, r), so the inner
+// the picture is scaled by smoothstep(G - w, G + w, r), so the inner
 // sun lays nothing into the feedback image and the energy flows only from
-// the edge. G is look.z, set only in the feedback image's slot (gpu/sun.js);
+// the edge. G is look.z and the band's half width w is g1.y (the Softness,
+// 0.03 the site's own), both set only in the feedback image's slot (gpu/sun.js);
 // the scene and the chamber pass 0, and at 0 the gate is skipped entirely
-// (smoothstep(-0.03, 0.03, r) would still dim a dot at the very centre), so
+// (smoothstep(-w, w, r) would still dim a dot at the very centre), so
 // the live picture is never gated. r is in the sun's own square, so the gate
 // grows with Size and the look holds.
 //
@@ -47,7 +48,7 @@ struct SU {
   place: vec4f, // centre x, y (target texels), target texels per device px, the square's half side (device px)
   look: vec4f,  // target width, height (texels), Center fade G (0 off), gain
   g0: vec4f,    // channel gains: 1700, 0304, 0171, 0193
-  g1: vec4f,    // channel gain 0211, unused x3
+  g1: vec4f,    // channel gain 0211, Center fade band half width w (square units), unused x2
 };
 @group(0) @binding(0) var<uniform> u: SU;
 @group(0) @binding(1) var sunTex: texture_external;
@@ -92,7 +93,7 @@ fn fsSun(@builtin(position) p: vec4f) -> @location(0) vec4f {
   var m = 1.0 - smoothstep(FEATHER_SIZE - w * 0.5, FEATHER_SIZE + w * 0.5, r);
   // The Center fade (see the top of this file); a uniform branch.
   if (u.look.z > 0.0) {
-    m = m * smoothstep(u.look.z - 0.03, u.look.z + 0.03, r);
+    m = m * smoothstep(u.look.z - u.g1.y, u.look.z + u.g1.y, r);
   }
   return vec4f(c * (m * u.look.w), 0.0);
 }

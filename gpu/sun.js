@@ -84,9 +84,11 @@ const MAX_FOLDS = 32;
 // full either way.
 const HL_MAX = 2.0;
 const STREAM_MAX = 0.5;
-// The Center fade's soft band either side of its radius, in the sun
-// square's half sides: the site's 0.03 (sun.wgsl.js holds the same).
-const GATE_BAND = 0.03;
+// The Center fade's band half width either side of its radius, in the sun
+// square's half sides: half the Softness, never below this floor (a near
+// cut, still a smoothstep with two distinct edges). Softness 0.06, the
+// default, gives the site's own 0.03.
+const GATE_BAND_MIN = 0.003;
 // The video's playback rates: Speed's range, and the slowest rate browsers
 // accept (Chrome refuses below 1/16), the floor of the pause's coast.
 const SPEED_MIN = 1, SPEED_MAX = 16, RATE_FLOOR = 0.0625;
@@ -343,13 +345,14 @@ export function createSun(device, format) {
 
   // One uniform slot: the centre in the target's texels, its texels per
   // device px, the square's half side in device px, the target's size, the
-  // Center fade (0 everywhere but the feedback image's slot) and the gain.
-  function putSlot(slot, ox, oy, scale, half, tw, th, gate, gain, g) {
+  // Center fade and its band half width (0 everywhere but the feedback
+  // image's slot) and the gain.
+  function putSlot(slot, ox, oy, scale, half, tw, th, gate, band, gain, g) {
     const b = slot * SLOT_FLOATS;
     uni[b] = ox; uni[b + 1] = oy; uni[b + 2] = scale; uni[b + 3] = half;
     uni[b + 4] = tw; uni[b + 5] = th; uni[b + 6] = gate; uni[b + 7] = gain;
     uni[b + 8] = g[0]; uni[b + 9] = g[1]; uni[b + 10] = g[2]; uni[b + 11] = g[3];
-    uni[b + 12] = g[4]; uni[b + 13] = 0; uni[b + 14] = 0; uni[b + 15] = 0;
+    uni[b + 12] = g[4]; uni[b + 13] = band; uni[b + 14] = 0; uni[b + 15] = 0;
   }
   const gains = new Float32Array(5);
 
@@ -485,7 +488,7 @@ export function createSun(device, format) {
       pFbOld.gain = 1 - slideK;
       if (!pipeChamber) pipeChamber = pipeFor(FOLD_CHAMBER_FORMAT);
       const f = foldA.frame;
-      putSlot(SLOT_CHAMBER, f[4], f[5], f[6], half, f[0], f[1], 0, 1, gains);
+      putSlot(SLOT_CHAMBER, f[4], f[5], f[6], half, f[0], f[1], 0, 0, 1, gains);
     }
 
     // ---------- feedback ----------
@@ -523,8 +526,10 @@ export function createSun(device, format) {
       // folds never carry it.
       const gateG = clampNum(S.sunFbGate, 0, 1, 0);
       const gateOn = gateG > 0;
-      pFbNew.gateLo = pFbOld.gateLo = gateOn ? (gateG - GATE_BAND) * half : 0;
-      pFbNew.gateHi = pFbOld.gateHi = gateOn ? (gateG + GATE_BAND) * half : 0;
+      // The band's half width, from the Softness, in the same square units.
+      const gateW = Math.max(GATE_BAND_MIN, 0.5 * clampNum(S.sunFbGateSoft, 0, 1, 0.06));
+      pFbNew.gateLo = pFbOld.gateLo = gateOn ? (gateG - gateW) * half : 0;
+      pFbNew.gateHi = pFbOld.gateHi = gateOn ? (gateG + gateW) * half : 0;
       if (folded) {
         if (!fbFoldA) fbFoldA = createFold(device, FEEDBACK_FORMAT, { label: 'sun.fold.fb', res: 1 });
         if (!fbFoldB) fbFoldB = createFold(device, FEEDBACK_FORMAT, { label: 'sun.fold.fb.old', res: 1 });
@@ -534,12 +539,12 @@ export function createSun(device, format) {
       } else {
         if (!pipeFb) pipeFb = pipeFor(FEEDBACK_FORMAT);
         const kx = fb.width / pixelW, ky = fb.height / pixelH;
-        putSlot(SLOT_FB, cx * kx, cy * ky, fbScale, half, fb.width, fb.height, gateG, 1, gains);
+        putSlot(SLOT_FB, cx * kx, cy * ky, fbScale, half, fb.width, fb.height, gateG, gateOn ? gateW : 0, 1, gains);
       }
     }
 
     if (!liveDraw && !fbOn) return;
-    putSlot(SLOT_SCENE, cx, cy, 1, half, pixelW, pixelH, 0, opacity, gains);
+    putSlot(SLOT_SCENE, cx, cy, 1, half, pixelW, pixelH, 0, 0, opacity, gains);
 
     // ---------- this frame's picture ----------
     if (!video || videoFailed || video.readyState < 2) return;

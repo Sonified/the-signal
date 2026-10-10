@@ -54,6 +54,11 @@ const NUM = [
   // square's half sides (0.775 the photosphere's limb, 1 the square's edge
   // midpoints). 0 is off, and the whole sun feeds the trails.
   ['sunFbGate',          0,   1,   0,    false],
+  // The Center fade's softness: the width of the band over which the gate
+  // opens, half of it either side of the fade's radius in the same half
+  // sides. The default 6% is the site's own band (0.03 each side); 0 is a
+  // near cut, 100% a band half the frame wide, a slow bloom.
+  ['sunFbGateSoft',      0,   1,   0.06, false],
   // The trails' Stream, signed: + streams outward, - inward. Manual while
   // Link to breath is off.
   ['sunFbStream',       -1,   1,   0,    false],
@@ -280,6 +285,8 @@ export const SUN_CONTROLS = [
   // only from the edge. The live picture is never faded.
   under('sunFeedbackDrawer', percent('sunFbGate', 'sunFbGate', 'Center fade',
     S => S.sunFbGate > 0 ? Math.round(S.sunFbGate * 100) + '%' : 'off')),
+  // How gently the Center fade opens, from a near cut to a slow bloom.
+  under('sunFeedbackDrawer', percent('sunFbGateSoft', 'sunFbGateSoft', 'Center fade softness')),
   {
     id: 'sunFbLink', section: 'sun', label: 'Link to breath', kind: 'toggle', def: DEF_FB_LINK,
     parent: 'sunFeedbackDrawer',
