@@ -53,6 +53,7 @@ import { initFlowerState, flowerStateOf, applyFlowerState } from './schema-flowe
 import { initKaleidoState, kaleidoStateOf, applyKaleidoState } from './schema-kaleido.js';
 import { initParticleState, particleStateOf, applyParticleState } from './schema-particles.js';
 import { initSunState, sunStateOf, applySunState } from './schema-sun.js';
+import { initHeartbeatState, heartbeatStateOf, applyHeartbeatState } from './schema-heartbeat.js';
 import { initFireworkState, fireworkStateOf, applyFireworkState } from './schema-fireworks.js';
 import { initConfettiState, confettiStateOf, applyConfettiState } from './schema-confetti.js';
 import { FX_NAMES } from './word-fx.js';
@@ -236,7 +237,7 @@ function buildSettings() {
 // keys and list them among its active layers.
 function sharedLayers() {
   const out = {};
-  for (const k in layers) if (k !== 'flowers' && k !== 'kaleido' && k !== 'particles' && k !== 'sun' && k !== 'fireworks' && k !== 'confetti') out[k] = layers[k];
+  for (const k in layers) if (k !== 'flowers' && k !== 'kaleido' && k !== 'particles' && k !== 'sun' && k !== 'heartbeat' && k !== 'fireworks' && k !== 'confetti') out[k] = layers[k];
   return out;
 }
 
@@ -423,7 +424,7 @@ function applyWordFxState(s, x) {
 }
 
 function buildExtra() {
-  return Object.assign(flowerStateOf(S), kaleidoStateOf(S), particleStateOf(S), sunStateOf(S), fireworkStateOf(S), confettiStateOf(S), mixStateOf(S), seqStateOf(S),
+  return Object.assign(flowerStateOf(S), kaleidoStateOf(S), particleStateOf(S), sunStateOf(S), heartbeatStateOf(S), fireworkStateOf(S), confettiStateOf(S), mixStateOf(S), seqStateOf(S),
                        wordFxStateOf(S));
 }
 
@@ -436,6 +437,7 @@ function applyExtra(x) {
   applyKaleidoState(S, x);
   applyParticleState(S, x);
   applySunState(S, x);
+  applyHeartbeatState(S, x);
   applyFireworkState(S, x);
   applyConfettiState(S, x);
   applyMixState(S, x);
@@ -809,6 +811,7 @@ export function load() {
   initKaleidoState(S);
   initParticleState(S);
   initSunState(S);
+  initHeartbeatState(S);
   initFireworkState(S);
   initConfettiState(S);
   if (!storage) return false;

@@ -35,6 +35,7 @@ import { createEngine } from './gpu/engine.js';
 import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
 import { createSun } from './gpu/sun.js';
+import { createHeartbeat } from './gpu/heartbeat.js';
 import { createKaleido, setKaleidoYield } from './gpu/kaleido.js';
 import { createParticles } from './gpu/particles.js';
 import { createFireworks } from './gpu/fireworks.js';
@@ -194,6 +195,9 @@ async function boot() {
   // The Sun layer; it makes no video element and fetches nothing until
   // first switched on.
   engine.registerSun(createSun(device, format));
+  // The Heartbeat layer; it builds nothing and fetches no sound until first
+  // switched on.
+  engine.registerHeartbeat(createHeartbeat(device, format));
   // Likewise the kaleidoscope and its motif atlas.
   engine.registerKaleido(createKaleido(device, format, platform));
   // And the particle generator; it builds nothing until first switched on.

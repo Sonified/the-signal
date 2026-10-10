@@ -383,7 +383,7 @@ export async function createEngine(platform, opts) {
     if (particles && particles.setTimestampWrites) particles.setTimestampWrites(undefined);
   }
 
-  let scene = null, uiRenderer = null, blur = null, flowers = null, sun = null, kaleido = null, particles = null, fireworks = null, confetti = null, wordCloud = null, wordSmoke = null;
+  let scene = null, uiRenderer = null, blur = null, flowers = null, sun = null, heartbeat = null, kaleido = null, particles = null, fireworks = null, confetti = null, wordCloud = null, wordSmoke = null;
   let deviceLost = false;
   const lostCbs = [];
 
@@ -407,7 +407,7 @@ export async function createEngine(platform, opts) {
     // wake() asks again and says whether it was asleep.
     sleep() {}, wake() { return false; }, busy,
     gpu, gpuInfo,
-    start, render, registerScene, registerFlowers, registerSun, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
+    start, render, registerScene, registerFlowers, registerSun, registerHeartbeat, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
     onGpuError: fn => { gpuErrorCbs.push(fn); },
     profileBegin, profileEnd
   };
@@ -448,6 +448,12 @@ export async function createEngine(platform, opts) {
   function registerSun(s) {
     sun = s;
     if (pixelWidth) sun.resize(pixelWidth, pixelHeight, engine.dpr);
+  }
+  // The Heartbeat layer (gpu/heartbeat.js): a flat wash of light drawn
+  // straight after the field, so every other layer sits over it. It has no
+  // pass of its own and no size to follow.
+  function registerHeartbeat(h) {
+    heartbeat = h;
   }
   // The kaleidoscope layer (gpu/kaleido.js) sits in the same gap, over
   // the flowers and under the edge. Its fold reads an offscreen object
@@ -507,8 +513,9 @@ export async function createEngine(platform, opts) {
   // one call.
   function drawScene(pass) {
     if (!scene) return;
-    if ((flowers || sun || kaleido || particles || fireworks || confetti) && scene.drawBack) {
+    if ((flowers || sun || heartbeat || kaleido || particles || fireworks || confetti) && scene.drawBack) {
       scene.drawBack(pass);
+      if (heartbeat) heartbeat.draw(pass);
       if (flowers) flowers.draw(pass);
       if (sun) sun.draw(pass);
       if (kaleido) kaleido.draw(pass);
@@ -543,6 +550,7 @@ export async function createEngine(platform, opts) {
     if (scene && scene.update) scene.update(lum, frameDt, frameT);
     if (flowers) flowers.update(frameT, frameDt, lum);
     if (sun) sun.update(frameT, frameDt, lum);
+    if (heartbeat) heartbeat.update(frameT, frameDt);
     if (kaleido) kaleido.update(frameT, frameDt, lum);
     if (particles) particles.update(frameT, frameDt, lum);
     if (fireworks) fireworks.update(frameT, frameDt);
@@ -726,6 +734,7 @@ export async function createEngine(platform, opts) {
       asleep = true;
       // The Sun layer's video stops with the loop (gpu/sun.js doze).
       if (sun) sun.doze(true);
+      if (heartbeat) heartbeat.doze(true);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       rafHandle = 0;
     };
@@ -734,6 +743,7 @@ export async function createEngine(platform, opts) {
       asleep = false;
       slept = true;
       if (sun) sun.doze(false);
+      if (heartbeat) heartbeat.doze(false);
       if (!rafHandle && !deviceLost && !pageHidden) rafHandle = requestAnimationFrame(raf);
       return true;
     };
@@ -744,6 +754,7 @@ export async function createEngine(platform, opts) {
       asleep = false;
       slept = false;
       if (sun) sun.doze(pageHidden);
+      if (heartbeat) heartbeat.doze(pageHidden);
       if (pageHidden) {
         if (rafHandle) cancelAnimationFrame(rafHandle);
         rafHandle = 0;

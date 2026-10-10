@@ -38,7 +38,7 @@ import {
 import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 
-const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'sun', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'live', 'render', 'settings'];
+const DRAWER_SECTIONS = ['layers', 'sun', 'heartbeat', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'audio', 'music', 'atmosphere', 'live', 'render', 'settings'];
 
 // The control each section's header switch stands for: the layer's own on/off,
 // the same one the section holds as its first row, so the header and the row
@@ -47,7 +47,7 @@ const DRAWER_SECTIONS = ['layers', 'strobe', 'text', 'sun', 'edge', 'corners', '
 const SECTION_SWITCH = {
   strobe: 'fieldOn', corners: 'cornersOn', tunnel: 'ringsOn', edge: 'edgeOn', text: 'textOn',
   flowers: 'flowersOn', kaleido: 'kaleidoOn', particles: 'particlesOn', fireworks: 'fireworksOn', confetti: 'confettiOn',
-  sun: 'sunOn',
+  sun: 'sunOn', heartbeat: 'heartbeatOn',
   audio: 'audioOn', music: 'musicOn', atmosphere: 'ambOn'
 };
 
