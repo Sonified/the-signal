@@ -36,6 +36,7 @@ import { motionStep, motionScale, winding } from './motion.js';
 import { roomPhase, roomPhaseState } from './room-clock.js';
 import { GAP_MS, stepWakeRamp, wakeRamp } from './wake.js';
 import { varied, stepPhase } from './variance.js';
+import { registerVarianceOwner } from './variance-owners.js';
 import {
   signal, SIGNAL_ORIGIN, waveCode, phaseAt, rateAt, retimeSignal, pinSignal, steerSignal,
   setSignalShape, publishSignal
@@ -111,7 +112,9 @@ const VARIANCES = [
   { amount: 'partOpacityVar', period: 'partOpacityVarPeriod', fallback: 20, phase: 'partOpacityVarPhase', eff: 'effPartOpacity', set: 'partOpacity' },
   { amount: 'partFoldSpinVar', period: 'partFoldSpinVarPeriod', fallback: 20, phase: 'partFoldSpinVarPhase', eff: 'effPartFoldSpin', set: 'partFoldSpin' }
 ];
-for (const v of VARIANCES) if (typeof v.set === 'string') { const k = v.set; v.set = S => S[k]; }
+// Each that reads its owner straight off S is registered for the drawer,
+// which lights that owner's bar from the effective (core/variance-owners.js).
+for (const v of VARIANCES) if (typeof v.set === 'string') { registerVarianceOwner(v); const k = v.set; v.set = S => S[k]; }
 
 // One frame of every variance: the phases step while anything moves (flick),
 // and every effective is written, stepped or not. At an amount of 0 the law

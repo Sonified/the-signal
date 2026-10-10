@@ -7,6 +7,7 @@
 // a ring, through schema.js and store.js).
 import { save } from './store.js';
 import { retimeRoomPhase } from './room-clock.js';
+import { varianceOwner } from './variance-owners.js';
 
 // A variance's rows. owner is the owner's id; opts, every one optional:
 //   name        the variance's name in its labels: '<name> variance' and
@@ -144,5 +145,28 @@ export function wireVariances(controls, byId) {
     if (!owner) { console.warn('schema: ' + c.id + ' is a variance of ' + w.owner + ', which is not a control'); continue; }
     for (const r of w.rows) if (r.section === undefined) r.section = owner.section;
     if (w.effective && owner.effective === undefined) owner.effective = w.effective;
+  }
+  // Any slider the strobe's variances play straight off S (core/strobe.js
+  // VARIANCES) lights its bar from the varied value, unless it has an
+  // effective of its own, so a variance never runs with its bar dark. The
+  // value goes through the owner's own get(), on a view of S with the
+  // effective over the setting, so the bar lands in the slider's units.
+  // Looked up on first draw: the strobe registers its owners when it loads.
+  const rowsOf = new Map();
+  for (const c of controls) {
+    if (!c.varianceOf) continue;
+    if (!rowsOf.has(c.varianceOf)) rowsOf.set(c.varianceOf, []);
+    rowsOf.get(c.varianceOf).push(c.id);
+  }
+  for (const [id, ids] of rowsOf) {
+    const owner = byId.get(id);
+    if (!owner || owner.kind !== 'slider' || owner.effective !== undefined) continue;
+    let v = null, view = null;
+    owner.effective = S => {
+      if (!v) { v = varianceOwner(id, ids); if (!v) return undefined; view = Object.create(S); }
+      if (!(S[v.amount] > 0) || (v.on && S[v.on] === false) || typeof S[v.eff] !== 'number') return undefined;
+      view[v.key] = S[v.eff];
+      return owner.get(view);
+    };
   }
 }
