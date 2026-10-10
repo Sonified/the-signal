@@ -62,7 +62,9 @@
 // no index takes the one journey the app kept before (under JOURNEY_KEY,
 // which is left as it was) as the library's first.
 //
-// A journey's record is { ver: 1, steps: [step, ...], autoPlay, loop, name }, a step being
+// A journey's record is { ver: 1, steps: [step, ...], mode, autoPlay, loop, name }, mode
+// being the AUTO button's 'off' | 'auto' | 'keys' and autoPlay its old boolean,
+// still written (true only in 'auto') and read when a record has no mode; a step being
 //   { overrides: { [controlId]: value }, text: '', appear: 'start', textLock: false,
 //     rampS: 3, holdS: 60, piano: 'free', interaction: 'none',
 //     seq: { seqSlot, seqs: [line x 8] } | null,
@@ -245,8 +247,10 @@ function readRaw(key) {
   try { return JSON.parse(readKey(key) || 'null'); } catch (e) { return null; }
 }
 
+const MODES = ['off', 'auto', 'keys'];
+
 function readJourney(raw) {
-  const d = { ver: 1, steps: [], autoPlay: false, loop: false, name: '', fullStart: false,
+  const d = { ver: 1, steps: [], mode: 'off', autoPlay: false, loop: false, name: '', fullStart: false,
               sizeLock: false, sizeLockValue: null, sizeRestore: null, ringV: 2, partV: 2 };
   if (raw && typeof raw === 'object') {
     if (Array.isArray(raw.steps)) {
@@ -265,7 +269,8 @@ function readJourney(raw) {
       const v = st.overrides.partSpeed;
       if (typeof v === 'number') st.overrides.partSpeed = Math.min(0.5, v * 2);
     }
-    d.autoPlay = raw.autoPlay === true;
+    d.mode = MODES.includes(raw.mode) ? raw.mode : raw.autoPlay === true ? 'auto' : 'off';
+    d.autoPlay = d.mode === 'auto';
     d.loop = raw.loop === true;
     d.name = typeof raw.name === 'string' ? raw.name.slice(0, NAME_MAX) : '';
     d.fullStart = raw.fullStart === true;
@@ -1648,23 +1653,39 @@ export function journeySetTextLock(i, on) {
   persist();
 }
 
-// AUTO. Switching it never touches the step playing: its settings, its ramp
-// and its clock carry on exactly as they were, and switching it off leaves
-// the step playing until the arrows or the transport move the walk. Only
-// when auto comes on with the step already past its ramp and hold is the
-// clock moved, so the hold is counted again from now rather than the walk
-// jumping on the instant it is asked to wait.
-export function journeySetAutoPlay(on) {
+// AUTO, a three-way button: 'off' (the transport alone moves the walk),
+// 'auto' (each step moves on after its ramp and hold) and 'keys' (no auto
+// advance; the digits 1-9 jump to that step, main.js). Switching it never
+// touches the step playing: its settings, its ramp and its clock carry on
+// exactly as they were, and leaving 'auto' leaves the step playing until the
+// arrows, the transport or a digit move the walk. Only when auto comes on
+// with the step already past its ramp and hold is the clock moved, so the
+// hold is counted again from now rather than the walk jumping on the
+// instant it is asked to wait.
+export function journeySetMode(mode) {
   ensureLoaded();
-  on = !!on;
-  if (data.autoPlay === on) return;
-  data.autoPlay = on;
+  if (!MODES.includes(mode) || data.mode === mode) return;
+  const autoOn = mode === 'auto' && !data.autoPlay;
+  data.mode = mode;
+  data.autoPlay = mode === 'auto';
   const st = play.stepIdx >= 0 ? data.steps[play.stepIdx] : null;
-  if (on && st) {
+  if (autoOn && st) {
     const now = play.playing ? nowT : play.pausedAt;
     if (now - play.phaseStartT >= (st.rampS + st.holdS) * 1000) play.phaseStartT = now - st.rampS * 1000;
   }
   persist();
+}
+export function journeySetAutoPlay(on) { journeySetMode(on ? 'auto' : 'off'); }
+
+// KEYS mode's digit: plays step i as its row's play button does
+// (journeyPlayFrom), except that the step already playing is left alone, so
+// a held key's repeats never restart it. A digit past the last step does
+// nothing.
+export function journeyJumpTo(i) {
+  ensureLoaded();
+  if (!(i >= 0 && i < data.steps.length)) return;
+  if (play.playing && play.stepIdx === i) return;
+  journeyPlayFrom(i);
 }
 
 // LOOP: an auto-play walk that passes the last step goes round to the first
@@ -2101,7 +2122,9 @@ export function journeyOverrideCount(i) {
 export const journeySelected = () => sel;
 export const journeyPlaying = () => play.playing;
 export const journeyPlayIdx = () => play.stepIdx;
+// true only in 'auto' (the walk advancing by itself); KEYS reads false
 export function journeyAutoPlay() { ensureLoaded(); return data.autoPlay; }
+export function journeyMode() { ensureLoaded(); return data.mode; }
 export function journeyLoop() { ensureLoaded(); return data.loop; }
 // How far through its ramp and hold the playing step is, 0..1, while the
 // walk plays, with auto-play on or off (off, it fills and then waits full),

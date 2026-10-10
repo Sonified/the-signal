@@ -61,7 +61,7 @@ import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
-import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy } from './core/journey.js';
+import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
 import { setSettingsFileHandler, overlayKeyCapture, OVERLAY_KEY_DEF } from './core/schema-visual.js';
@@ -533,6 +533,9 @@ async function boot() {
     const journeyKeys = journey.open && journey.active && journeyCount() > 0;
     if (e.code === 'Space') { if (journeyKeys) journeyTogglePlay(); else toggleRun(); return true; }
     if (journeyKeys && (k === 'ArrowLeft' || k === 'ArrowRight')) { journeyStepBy(k === 'ArrowLeft' ? -1 : 1); return true; }
+    // and with its AUTO button on KEYS, the digits 1-9 jump to that step
+    // (one past the last step does nothing)
+    if (journeyKeys && k.length === 1 && k >= '1' && k <= '9' && journeyMode() === 'keys') { journeyJumpTo(k.charCodeAt(0) - 49); return true; }
     if (k === 'Enter' || lk === 'f') { platform.fullscreen.toggle(); return true; }
     if (k === '`' || k === '~' || lk === 'h') { app.toggleDrawer(); return true; }
     // Escape shuts the front-most open floating window first and leaves the

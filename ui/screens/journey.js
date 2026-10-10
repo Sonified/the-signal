@@ -46,9 +46,9 @@
 // with the UI record (saveUiState), as the sequencer does.
 import {
   journeySetWindowOpen, journeyVersion, journeyCount, journeyStepAt, journeyOverrideCount,
-  journeySelected, journeyPlaying, journeyPlayIdx, journeyAutoPlay, journeyProgress,
+  journeySelected, journeyPlaying, journeyPlayIdx, journeyAutoPlay, journeyMode, journeyProgress,
   journeySelect, journeyAddStep, journeyDeleteStep, journeyMoveStep, journeySnapshotStep, journeyPlayFrom, journeyPause,
-  journeyTogglePlay, journeyStepBy, journeySetAutoPlay, journeySetRamp, journeySetHold, journeySetText,
+  journeyTogglePlay, journeyStepBy, journeySetMode, journeySetRamp, journeySetHold, journeySetText,
   journeySetPiano, journeySetAppear, journeyClearOverrides, journeyLoop, journeySetLoop,
   journeySetOverride, journeyName, journeySetName, NAME_MAX,
   journeyEditing, journeyLoadPreset, journeySetTextLock,
@@ -420,7 +420,8 @@ export function drawJourney(ui, app, fade = 1) {
   // window too narrow for the whole row (a phone's) the title is left out,
   // so the transport and LOOP never run under the gear and the ×.
   const active = journey.active;
-  const actW = measureBtn(ui, 'ACTIVE', 11), autoW = measureBtn(ui, 'AUTO', 11);
+  // (AUTO's button reads AUTO or KEYS, sized for the wider so it never shifts)
+  const actW = measureBtn(ui, 'ACTIVE', 11), autoW = Math.max(measureBtn(ui, 'AUTO', 11), measureBtn(ui, 'KEYS', 11));
   const titleX = lightX + 6 + BAR_GAP;
   const rowW = actW + 10 + BOX + 10 + BOX + ARROW_GAP + BOX + 10 + autoW + LOOP_GAP + LOOP_W;
   let actX = titleX + trackedW(ui, 'JOURNEY', 13, 0.13) + 8;
@@ -466,10 +467,12 @@ export function drawJourney(ui, app, fade = 1) {
     btnHover && !dim ? C.valueInk : C.btnInk, 1.8, -Math.PI / 2);
   if (dim) dl.popAlpha();
 
-  const auto = journeyAutoPlay();
+  // AUTO cycles off, AUTO, KEYS (digits 1-9 jump to a step, main.js), off
+  const mode = journeyMode();
   const autoX = nextX + BOX + 10;
-  if (btn(ui, 'jr.auto', autoX, cy - BTN_H / 2, autoW, BTN_H)) journeySetAutoPlay(!auto);
-  drawBtn(ui, autoX, cy, autoW, BTN_H, auto, 'AUTO', 11);
+  if (btn(ui, 'jr.auto', autoX, cy - BTN_H / 2, autoW, BTN_H))
+    journeySetMode(mode === 'off' ? 'auto' : mode === 'auto' ? 'keys' : 'off');
+  drawBtn(ui, autoX, cy, autoW, BTN_H, mode !== 'off', mode === 'keys' ? 'KEYS' : 'AUTO', 11);
 
   // LOOP, right beside AUTO: dim ink off, the sequencer's green on
   const loop = journeyLoop();
