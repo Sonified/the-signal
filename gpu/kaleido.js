@@ -45,7 +45,8 @@
 // A change of fold count or of mirror is instant at Symmetry slide 0
 // (S.kaleidoFoldXfade). With a slide time the fold is drawn twice for that
 // long, the symmetry it left fading out under the new one fading in, both
-// reading the one chamber (see trackSymmetry).
+// reading the one chamber, whose layout eases from the old domain to the
+// new across the slide (see trackSymmetry).
 //
 // The motif atlas is loaded lazily, the first time the layer is switched on,
 // and nothing is drawn until it is ready. S.kaleidoSet picks which atlas
@@ -1641,10 +1642,11 @@ export function createKaleido(device, format, platform) {
   // Constant size ease does, so a change made while paused still lands.
   // While it runs the fold is drawn twice, the old symmetry at weight 1 - k
   // and then the new at k, with k the smoothstep of the time gone, so the
-  // dissolve starts and lands gently. Both folds read the one chamber, laid
-  // out for the new symmetry: phiU is in domain widths, so the pieces take
-  // their new seats and sizes at the change, under the old mirrors, while
-  // the mirrors themselves dissolve.
+  // dissolve starts and lands gently. Both folds read the one chamber,
+  // whose domain span eases from the old symmetry's to the new one's at k
+  // (spanNow, see update): phiU is in domain widths, so the pieces travel
+  // to their new seats and sizes across the slide as the mirrors dissolve,
+  // while each fold keeps its own exact span.
   //
   // A second change mid-slide never draws a third fold. Back to the
   // symmetry fading out, the two simply swap roles with the mix carried
@@ -1789,6 +1791,7 @@ export function createKaleido(device, format, platform) {
     if (!lyr || !lyr.kaleido) {
       // Off: the trails go with the layer, so it comes back from a clear image.
       wasOn = false;
+      S.effKaleidoFolds = undefined;
       if (fbScreen) fbScreen.release();
       return;
     }
@@ -1837,9 +1840,30 @@ export function createKaleido(device, format, platform) {
     // whole between its seat line and the nearest domain edge: half the
     // domain either side of its centre line, or with SEAT_ON_MIRROR the
     // whole domain either side of the mirror line it sits on.
+    //
+    // While a symmetry slide runs, the chamber's domain travels with it:
+    // spanNow, the span every seat, size, band, orbit and the coverage
+    // target read (and the angle a piece's phiU maps through), eases from
+    // the old symmetry's span to the new one's at the slide's own weight
+    // slideK, so the pieces re-seat and resize across the slide rather than
+    // at the change. The folds themselves stay exact: each draws a whole
+    // symmetry, the new fold at spanNew and the old at oldSpan, never the
+    // eased span. Mirror is a switch and cannot ease, so mirrorOn and
+    // seatMirror change at the change; only the span between them travels.
+    // Off a slide spanNow is spanNew itself, so a slide's end, and an
+    // instant change, land exactly where they always did. The coverage
+    // target is keyed on spanNow and so is solved again each frame of a
+    // slide; that is a 16 by 16 quadrature, and at Depth a 64 step
+    // integral, cheap enough to run every frame for the slide's length.
     const wedge = TAU / folds;
+    const spanNew = mirror ? wedge * 0.5 : wedge;
+    const sliding = trackSymmetry(folds, mirror, dt);
+    // The Symmetry slider's live bar: the fold count the eased span stands
+    // for, while a slide between two fold counts runs (schema-kaleido.js).
+    S.effKaleidoFolds = sliding && oldFolds !== symFolds
+      ? oldFolds + (symFolds - oldFolds) * slideK : undefined;
     mirrorOn = mirror;
-    spanNow = mirror ? wedge * 0.5 : wedge;
+    spanNow = sliding ? oldSpan + (spanNew - oldSpan) * slideK : spanNew;
     seatMirror = mirror && SEAT_ON_MIRROR;
     scatterNow = scatter;
     setDepth(depthSet);
@@ -1849,12 +1873,11 @@ export function createKaleido(device, format, platform) {
     const sideK = 2 * fitK * sizeMul;
     reachKNow = sideK * 0.5 * CORNER;
     // While a symmetry slide runs, the chamber is sized, and filled, for
-    // the wider of the two domains, so each fold finds content across all
-    // it reads. Both are centred on straight up, so the narrower one's read
-    // is a part of the wider one's. Everything else (motion, births, the
-    // coverage target, the size law) is the new symmetry's alone.
-    const sliding = trackSymmetry(folds, mirror, dt);
-    const readSpan = sliding && oldSpan > spanNow ? oldSpan : spanNow;
+    // the wider of the two folds' exact domains, so each fold finds content
+    // across all it reads (the eased span lies between them). Both are
+    // centred on straight up, so the narrower one's read is a part of the
+    // wider one's.
+    const readSpan = sliding && oldSpan > spanNew ? oldSpan : spanNew;
 
     // Travel per second (a whole flight is LOG_SPAN e-folds), a flight's
     // length in seconds, and the live count density's coverage asks for.
@@ -1999,7 +2022,7 @@ export function createKaleido(device, format, platform) {
     uni[4] = chamberW * 0.5; uni[5] = chamberH - CHAMBER_PAD; uni[6] = s; uni[7] = holeR;
     uni[8] = rgb[0] / peak; uni[9] = rgb[1] / peak; uni[10] = rgb[2] / peak; uni[11] = tintAmt;
     uni[12] = cx; uni[13] = cy; uni[14] = wedge; uni[15] = twistAng;
-    uni[16] = UP - spanNow * 0.5; uni[17] = mirror ? 1 : 0; uni[18] = gain; uni[19] = 0;
+    uni[16] = UP - spanNew * 0.5; uni[17] = mirror ? 1 : 0; uni[18] = gain; uni[19] = 0;
     uni[20] = bright; uni[21] = contrast; uni[22] = sat; uni[23] = 0;
     // The slide's old fold: the same chamber, seat, scale, hole, colour and
     // rotation, folded to the old symmetry. Each fold's gain carries its
@@ -2103,7 +2126,8 @@ export function createKaleido(device, format, platform) {
   //
   // readSpan is the angle the folds read: the domain itself, or while a
   // symmetry slide runs the wider of the old and new domains. Pieces keep
-  // their seats in the new domain (span); only how far out they count as
+  // their seats in the chamber's domain (span, eased across a slide); only
+  // how far out they count as
   // seen widens, to rh domain widths either side of the centre line, so
   // the old fold finds the pieces, or mirrored the band, across its whole
   // wedge. Unmirrored, the copies past the new domain feed only the old

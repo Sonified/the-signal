@@ -546,7 +546,11 @@ export const KALEIDO_CONTROLS = [
   },
   // How many wedges the circle is cut into. The readout keeps the number
   // first, so clicking it to type opens on the fold count itself.
-  under('kaleidoShapesDrawer', direct('kaleidoFolds', 'kaleidoFolds', 'Symmetry', 1, S => S.kaleidoFolds + '-fold')),
+  under('kaleidoShapesDrawer', Object.assign(
+    direct('kaleidoFolds', 'kaleidoFolds', 'Symmetry', 1, S => S.kaleidoFolds + '-fold'),
+    // the glowing bar: the fold count the eased chamber stands for while a
+    // Symmetry slide runs, as gpu/kaleido.js writes it each frame
+    { effective: S => typeof S.effKaleidoFolds === 'number' ? S.effKaleidoFolds : undefined })),
   {
     // How a change of Symmetry (the fold count or Mirror) arrives. Instant
     // snaps to the new pattern, as the layer always did; a time draws the
