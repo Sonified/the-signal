@@ -53,10 +53,11 @@ const NUM = [
   // how far the breath travels the Atmosphere: the breath modulates which
   // channel shows, around the Atmosphere slider's position
   ['sunBreathAmt',       0,   1,   0.5,  false],
-  // how far the breath carries the video's playback rate: Speed times
-  // 1 - link * (1 - breath), so at 1 the full inhale runs the set Speed and
-  // the full exhale comes to a stop (gpu/sun.js). 0 is off.
-  ['sunSpeedLink',       0,   1,   0,    false],
+  // Speed's variance, ridden by the breath rather than a clock of its own:
+  // the rate is Speed times 1 - var * (1 - breath), so at 1 the full inhale
+  // runs the set Speed and the full exhale comes to a stop (gpu/sun.js).
+  // The standard law, a dip below the setting, never above it.
+  ['sunSpeedVar',        0,   1,   0,    false],
   // The Feedback drawer's video feedback, the same amount and opacity as the
   // Kaleidoscope's Feedback drawer: how long the sun leaves a trail, and how
   // solidly that image lands on the scene.
@@ -199,6 +200,10 @@ export function applySunState(S, o) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
   }
+  // A record from the control's first night, when it was the Breath
+  // drawer's "Speed link", lands on the variance it became.
+  if (typeof o.sunSpeedLink === 'number' && typeof o.sunSpeedVar !== 'number')
+    S.sunSpeedVar = fit(o.sunSpeedLink, 0, 1, false);
   // A preset, a journey step, a followed broadcast or another tab's write
   // also moves the controls through their set() (presets.js replayLive, the
   // worker's audio link), which syncs the hum there; this catches the one
@@ -359,8 +364,14 @@ export const SUN_CONTROLS = [
     set: (S, pos) => { S.sunSpeed = posToSpeed(pos); save(); },
     format: S => (Math.round(S.sunSpeed * 10) / 10) + 'x',
     parse: (S, text) => speedToPos(parseFloat(text)),
+    // the live dipped rate while the variance breathes, the slider's blue line
+    effective: S => typeof S.effSunSpeed === 'number' ? speedToPos(S.effSunSpeed) : undefined,
     enabled: layerOn
   },
+  // Speed's variance, folded out from under the Speed row as every variance
+  // is. The breath is its clock: see the NUM table.
+  varianceOf('sunSpeed', under('sunSolarDrawer', percent('sunSpeedVar', 'sunSpeedVar', 'Speed variance',
+    S => S.sunSpeedVar > 0 ? Math.round(S.sunSpeedVar * 100) + '%' : 'off'))),
   under('sunSolarDrawer', direct('sunSize', 'sunSize', 'Size', 0.05, times2('sunSize'))),
   under('sunSolarDrawer', percent('sunAtmo', 'sunAtmo', 'Atmosphere', atmoText)),
 
@@ -387,8 +398,6 @@ export const SUN_CONTROLS = [
     S => S.sunBreathRate.toFixed(1) + ' / min')),
   under('sunBreathDrawer', percent('sunBreathAmt', 'sunBreathAmt', 'Amount')),
   // How far the breath carries the video's speed, to a stop at the exhale.
-  under('sunBreathDrawer', percent('sunSpeedLink', 'sunSpeedLink', 'Speed link',
-    S => S.sunSpeedLink > 0 ? Math.round(S.sunSpeedLink * 100) + '%' : 'off')),
 
   // ---- Feedback: the trails the sun leaves, and a Stream that can ride the
   // breath ----

@@ -70,9 +70,9 @@
 // sight also pause it (doze), and the next frame awake resumes it. The
 // first load holds the loop awake until a frame is in (core/idle.js).
 //
-// Speed link (S.sunSpeedLink) lets the breath carry the playback rate:
-// Speed times 1 - link * (1 - breath), the breath 0 at full exhale and 1 at
-// full inhale, so at link 1 the full inhale runs the set Speed and the full
+// Speed's variance (S.sunSpeedVar) lets the breath carry the playback rate:
+// Speed times 1 - var * (1 - breath), the breath 0 at full exhale and 1 at
+// full inhale, so at var 1 the full inhale runs the set Speed and the full
 // exhale comes to a stop. A rate no browser accepts is a stop, so below
 // 1/32 the video pauses, one more reason beside the layer, the doze and the
 // still scene; syncVideo is the one place that plays it, and only with no
@@ -470,9 +470,12 @@ export function createSun(device, format) {
   function syncVideo(on, pos) {
     if (!video || videoFailed) return;
     const scale = motionScale();
-    const link = clampNum(S.sunSpeedLink, 0, 1, 0);
-    const breathRate = clampNum(S.sunSpeed, SPEED_MIN, SPEED_MAX, 1) * (1 - link * (1 - pos));
-    breathStopped = link > 0 && breathRate < (breathStopped ? BREATH_GO : BREATH_STOP);
+    const vary = clampNum(S.sunSpeedVar, 0, 1, 0);
+    const breathRate = clampNum(S.sunSpeed, SPEED_MIN, SPEED_MAX, 1) * (1 - vary * (1 - pos));
+    breathStopped = vary > 0 && breathRate < (breathStopped ? BREATH_GO : BREATH_STOP);
+    // The Speed slider's blue line: the live dipped rate while the variance
+    // breathes, gone when it rests.
+    S.effSunSpeed = vary > 0 ? breathRate : undefined;
     if (!wrap && !ghost.paused) ghost.pause();
     if (!on || dozing || !(scale > 0) || breathStopped || seekTo >= 0) {
       if (!video.paused) video.pause();
@@ -607,6 +610,7 @@ export function createSun(device, format) {
         S.effSunFolds = undefined;
         S.effSunBreathPos = undefined;
         S.effSunBreathIn = undefined;
+        S.effSunSpeed = undefined;
         if (fb) fb.release();
         releaseFolds();
       }
