@@ -49,6 +49,7 @@
 //                           it this frame (0 to 1, -1 while none plays): the
 //                           breath, the strobe or the time that drive it are
 //                           this thread's, so the page's hum is told.
+//   sunHumVerb(v)           the hum's Reverb mix the same way.
 //   pianoGesture(n)         a word appeared on a step that plays the piano on
 //                           the words: one gesture, now. n is the worker's
 //                           running count (S.pianoGestureN), so several in
@@ -138,7 +139,7 @@ export function createAudioLink(post) {
   const seqNow = new Float32Array(SEQ_PACK), seqSent = new Float32Array(SEQ_PACK);
 
   let lastRunning = false, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
-  let lastFree = true, lastGesture = 0, lastHumCut = -1;
+  let lastFree = true, lastGesture = 0, lastHumCut = -1, lastHumVerb = -1;
   let lastSignal = -1;
   const sigPack = new Float64Array(SIGNAL_PACK);
   let seeded = false;
@@ -212,6 +213,9 @@ export function createAudioLink(post) {
     // the time the renderer here reads.
     const hc = typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : -1;
     if (hc !== lastHumCut) { lastHumCut = hc; call('sunHumCutoff', hc, 0, 0, 0); }
+    // and its Reverb mix, the same way
+    const hv = typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : -1;
+    if (hv !== lastHumVerb) { lastHumVerb = hv; call('sunHumVerb', hv, 0, 0, 0); }
 
     const eff = S.effFreq || 0, ach = S.achievedFreq || 0;
     if (Math.abs(eff - lastEff) > STROBE_EPS || Math.abs(ach - lastAch) > STROBE_EPS) {

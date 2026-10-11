@@ -51,7 +51,7 @@ import {
 import { initStore, load, syncFromStorage } from './store.js';
 import { replayLive, applyActivePresetState } from './presets.js';
 import { signal, unpackSignal, publishSignal } from './signal.js';
-import { setCutoffHz, cutoffHz } from './sun-hum.js';
+import { setCutoffHz, cutoffHz, setRoomSend } from './sun-hum.js';
 import {
   M_FLAGS, M_DRIFT, M_ARP, M_HEAD, M_ATMOS, F_AUDIO, F_WORKLET, F_DRIFT,
   DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP, W_READBACKS, CALL_SLOTS, packReadbacks
@@ -128,6 +128,10 @@ export function createAudioShell(storage) {
     sunHumCutoff(v) {
       S.effSunHumCutoff = v >= 0 ? v : undefined;
       setCutoffHz(cutoffHz(v >= 0 ? v : S.sunHumCutoff));
+    },
+    sunHumVerb(v) {
+      S.effSunHumVerb = v >= 0 ? v : undefined;
+      setRoomSend(v >= 0 ? v : S.sunHumVerb);
     }
   };
 

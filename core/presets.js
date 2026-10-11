@@ -364,6 +364,7 @@ const SWINGS = [
   ['kaleidoFbPulseRate',    'kaleidoFbPulseRateOff',    carryRoomPhase],
   ['sunFoldsPeriod',        'sunFoldsPeriodOff',        carryRoomPhase],
   ['sunSpeedVarPeriod',     'sunSpeedVarPeriodOff',     carryRoomPhase],
+  ['sunHumVerbVarPeriod',   'sunHumVerbVarPeriodOff',   carryRoomPhase],
   ['sunHumCutoffVarPeriod', 'sunHumCutoffVarPeriodOff', carryRoomPhase],
   ['sunFbAmtVarPeriod',     'sunFbAmtVarPeriodOff',     carryRoomPhase],
   ['sunFbOpacityVarPeriod', 'sunFbOpacityVarPeriodOff', carryRoomPhase],

@@ -95,7 +95,7 @@ import { motionStep, motionScale } from '../core/motion.js';
 import { idleHold, idleRelease } from '../core/idle.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
-import { setCutoffHz, cutoffHz } from '../core/sun-hum.js';
+import { setCutoffHz, cutoffHz, setRoomSend } from '../core/sun-hum.js';
 
 const VIDEO_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
 // The standard stem and the High quality one, the site's original snapshot
@@ -542,7 +542,8 @@ export function createSun(device, format) {
     sunSpeed: { phase: 0, room: roomPhaseState() },
     sunFbAmt: { phase: 0, room: roomPhaseState() },
     sunFbOpacity: { phase: 0, room: roomPhaseState() },
-    sunHumCutoff: { phase: 0, room: roomPhaseState() }
+    sunHumCutoff: { phase: 0, room: roomPhaseState() },
+    sunHumVerb: { phase: 0, room: roomPhaseState() }
   };
   // A variance's drive this frame, 0 to 1 from its driver: Time's cosine, 1
   // at the cycle's start; the strobe's lum, 1 lit; the breath, 1 at the
@@ -652,6 +653,7 @@ export function createSun(device, format) {
         S.effSunFbAmt = undefined;
         S.effSunFbOpacity = undefined;
         S.effSunHumCutoff = undefined;
+        S.effSunHumVerb = undefined;
         if (fb) fb.release();
         releaseFolds();
       }
@@ -690,6 +692,10 @@ export function createSun(device, format) {
     const cut = varied('sunHumCutoff', cutSet, driveOf('sunHumCutoff', t, md, lum, S.effSunBreathPos));
     S.effSunHumCutoff = S.sunHumCutoffVar > 0 ? cut : undefined;
     setCutoffHz(cutoffHz(cut));
+    // and its send into the master room, the same way
+    const verb = varied('sunHumVerb', clampNum(S.sunHumVerb, 0, 1, 0), driveOf('sunHumVerb', t, md, lum, S.effSunBreathPos));
+    S.effSunHumVerb = S.sunHumVerbVar > 0 ? verb : undefined;
+    setRoomSend(verb);
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
     // the pair the live position falls between crossfaded by smoothstep.

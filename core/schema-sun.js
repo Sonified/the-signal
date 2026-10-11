@@ -47,7 +47,7 @@ const DEF_DRIVE = 'breath';
 const DRIVES = ['time', 'strobe', 'breath'];
 const DRIVE_NAMES = { time: 'Time', strobe: 'Link to strobe', breath: 'Link to breath' };
 const driveOf = v => DRIVES.indexOf(v) >= 0 ? v : DEF_DRIVE;
-const DRIVEN = ['sunSpeed', 'sunFbAmt', 'sunFbOpacity', 'sunHumCutoff'];
+const DRIVEN = ['sunSpeed', 'sunFbAmt', 'sunFbOpacity', 'sunHumCutoff', 'sunHumVerb'];
 const NUM = [
   // key,               min,  max, def,  integer
   // the sun video's playback rate, the site's 1x to 16x
@@ -136,6 +136,13 @@ const NUM = [
   ['sunHumCutoffVarPeriod', 0, 120, 20,  true ],
   ['sunHumCutoffVarPeriodOff', 0, 1, 0,  false],
   ['sunHumRate',         0,   1,   0,    false],
+  // How much of the hum is sent into the app's master room, the music's
+  // reverb (core/sun-hum.js setRoomSend). Off by default. Its variance rides
+  // a Drive as the Cutoff's does.
+  ['sunHumVerb',         0,   1,   0,    false],
+  ['sunHumVerbVar',      0,   1,   0,    false],
+  ['sunHumVerbVarPeriod', 0,  120, 20,   true ],
+  ['sunHumVerbVarPeriodOff', 0, 1, 0,    false],
   // meditatewiththesun.com's master volume: every page opened with
   // ?event=<this broadcast session's name> fades its sound to it (that
   // site's event.js reads it off the broadcast snapshot). Nothing here
@@ -282,6 +289,7 @@ function syncHum(S) {
   hum.setVolume(S.sunHumAmp);
   hum.setCutoffHz(humHz(typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : S.sunHumCutoff));
   hum.setRate(humRate(S.sunHumRate) * HUM_RETUNE);
+  hum.setRoomSend(typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : S.sunHumVerb);
   if (S.sunHumOn && S.layers.sun) hum.play(); else hum.pause();
 }
 
@@ -650,6 +658,21 @@ export const SUN_CONTROLS = [
     parse: (S, text) => rateToPos(parseFloat(text)),
     enabled: layerOn
   },
+  {
+    // The send into the app's master room, the reverb every music voice
+    // shares, heard while the transport runs (core/sun-hum.js).
+    id: 'sunHumVerb', section: 'sun', label: 'Reverb mix', kind: 'slider',
+    parent: 'sunHumDrawer',
+    min: 0, max: 100, step: 1, def: Math.round(spec('sunHumVerb')[3] * 100),
+    get: S => Math.round(S.sunHumVerb * 100),
+    set: (S, pos) => { S.sunHumVerb = fit(pos / 100, 0, 1, false); syncHum(S); save(); },
+    format: S => Math.round(S.sunHumVerb * 100) + '%',
+    // the live send while its variance plays, the slider's blue line
+    effective: S => S.sunHumVerbVar > 0 && typeof S.effSunHumVerb === 'number'
+      ? Math.round(S.effSunHumVerb * 100) : undefined,
+    enabled: layerOn
+  },
+  ...drivenVariance('sunHumVerb', 'Reverb mix', 'sunHumDrawer'),
 
   // ---- meditatewiththesun.com: the room's volume on that site, for the
   // phones following this broadcast (see mwtsVolume above). Never dimmed:

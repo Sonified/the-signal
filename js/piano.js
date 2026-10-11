@@ -15,6 +15,7 @@ import { createSweep } from './sweep.js';
 import { setChoirBus, choirSession } from './choir.js';
 import { setLayerBus, layersSession } from './layers.js';
 import { setCloudBus } from './clouds.js';
+import { setHumRoom } from '../core/sun-hum.js';
 import { strobeAm, strobeAmEffective, strobeTap, untapStrobe } from './strobe-am.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { inTurn, TURN } from './load-order.js';
@@ -190,6 +191,9 @@ function buildGraph() {
   // And the clouds (js/clouds.js) play into the same room, given the
   // context too: a clouds island on Heart cannot reach it and keeps its own.
   setCloudBus(ctx, revIn);
+  // And the sun's Rotational hum, from a context of its own, bridged
+  // (core/sun-hum.js setHumRoom).
+  setHumRoom(ctx, revIn);
   applyRevType();
 }
 
