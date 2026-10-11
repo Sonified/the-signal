@@ -13,7 +13,7 @@
   Tap a cue and Presence jumps to that journey step. Four faders (the Max
   surface's four): VOLUME the app's Master volume and LP / HP its global
   Lowpass and Highpass, all of its sound (slides, music, the Sun's hum);
-  SPEED the slides' speed. Play/Pause the slides' transport; Duck
+  SPEED the slides' speed. Play/pause toggles the slides' transport; Duck
   drops the slides' sound under the voice (never the Sun's hum), its amount
   and fades set behind the gear.
 
@@ -36,7 +36,7 @@
           lpf 0..1000 (global Lowpass, log 20 Hz..20 kHz, 1000 open: LP)
           hpf 0..1000 (global Highpass, same taper, 0 open: HP)
           slideRate 0..1000 (500 = 1x, log 0.25..2x: SPEED)
-          slidePlay true (PLAY) / false (PAUSE), each idempotent
+          slidePlay true (play) / false (pause), idempotent
           slideRestart (v ignored)
           slideXfade 0..300 (hundredths of a second, 0 a cut; the gear's
             Crossfade, sent on each change and remembered with the duck's)
@@ -45,8 +45,10 @@
         or the finger sliding off the button
 
   LAYOUT follows Robert's TouchOSC/Max surface (thumb reach, iPad held in
-  two hands): the cues down the left; on the right edge, top corner PLAY
-  (green) over PAUSE (red), below them the four tall faders (half-width,
+  two hands): the cues down the left; on the right edge, top corner one
+  play/pause toggle (green playing with a pause glyph, red paused with a
+  play glyph, sitting where PAUSE used to be), below it the four tall
+  faders (half-width,
   hugging the right edge, as the photo has them) in the
   surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK with
   The middle stays empty for what comes next.
@@ -105,11 +107,17 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
 #info { padding-top: 4px; display: grid; gap: 8px; }
 .bar { height: 10px; border-radius: 5px; background: #0f1219; border: 1px solid var(--line); overflow: hidden; }
 .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, #6b5216, var(--gold)); transition: width .3s; }
-#pp { display: grid; gap: 10px; }
-#pp .big { height: 84px; font-size: 24px; letter-spacing: .06em; color: #fff; opacity: .55; transition: opacity .15s, box-shadow .15s; }
-#play { background: #2f9a4a; border-color: #4fd06e; }
-#pause { background: #c0393b; border-color: #ff6b6b; }
-#pp .big.on { opacity: 1; box-shadow: 0 0 22px rgba(255, 255, 255, .25), inset 0 0 0 2px #fff; }
+/* One play/pause toggle, kept in the old PAUSE button's spot (the padding
+   is the old PLAY button and the gap above it). Green while playing with a
+   pause glyph, red while paused with a play glyph. */
+#pp { padding-top: 94px; }
+#playpause { height: 84px; color: #fff; display: grid; place-items: center;
+  box-shadow: 0 0 22px rgba(255, 255, 255, .25), inset 0 0 0 2px #fff; transition: background .15s, border-color .15s; }
+#playpause.playing { background: #2f9a4a; border-color: #4fd06e; }
+#playpause.paused { background: #c0393b; border-color: #ff6b6b; }
+#playpause svg { display: none; }
+#playpause.playing .ic-pause { display: block; }
+#playpause.paused .ic-play { display: block; }
 #faders { min-height: 160px; width: 50%; margin-left: auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .fader { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; }
 .fader .lab { text-align: center; font-size: 13px; font-weight: 700; letter-spacing: .08em; }
@@ -181,8 +189,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
           <div class="bar"><div id="showBar"></div></div>
         </div>
         <div id="pp">
-          <button class="big" id="play">PLAY</button>
-          <button class="big" id="pause">PAUSE</button>
+          <button class="big" id="playpause" aria-label="Play/pause">
+            <svg class="ic-play" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"><path d="M7 4.5v15l13-7.5z" fill="#fff"/></svg>
+            <svg class="ic-pause" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"><path d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z" fill="#fff"/></svg>
+          </button>
         </div>
       </div>
       <div id="faders"></div>
@@ -328,13 +338,16 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const FADERS = [
     { id: 'lpf', key: 'lp', label: 'LP', color: '#e45bf0', max: 1000, def: 1000, fmt: p => p >= 1000 ? 'open' : hzText(posToHz(p)) },
     { id: 'hpf', key: 'hp', label: 'HP', color: '#b6f03c', max: 1000, def: 0, fmt: p => p <= 0 ? 'open' : hzText(posToHz(p)) },
-    // Speed tops out at 1x (the control's 500); the whole track is the
-    // slow half, 0.25x at the bottom. The show never runs faster than life.
+    // Speed tops out at 1x (the control's 500); the track is the slow half,
+    // 0.25x just off the bottom, and the very bottom (0) STOPS the movie.
+    // The show never runs faster than life.
     { id: 'slideRate', key: 'rate', label: 'SPEED', color: '#f5e23a', max: 500, def: 500,
-      fmt: p => posToRate(p).toFixed(2) + '×' },
+      fmt: p => p <= 0 ? 'stop' : posToRate(p).toFixed(2) + '×' },
     // the app's Master volume (vol), the whole interface's level, 50% by
     // default; the laptop keeps the slides' own level (Master slide volume)
-    { id: 'vol', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 50, fmt: p => Math.round(p) + '%' }
+    // squared taper into the Master volume (platform/show-remote.js): 50% is -12 dB,
+    // 25% is -24 dB. 71 is the app's own default (0.5, -6 dB) on this curve.
+    { id: 'vol', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 71, fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
   let rafOn = false;
@@ -382,13 +395,17 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   }
 
   // ---------- transport ----------
-  // PLAY and PAUSE are two buttons, each always meaning itself (pressing
-  // either twice is harmless); the one matching what Presence reports lights.
+  // One play/pause toggle: it shows the state (green playing, red paused;
+  // the glyph is the action a tap takes), flips on tap, and Presence's
+  // status reports keep it honest if a word is lost.
   let slidePlay = true;
-  const drawPlay = () => { $('play').classList.toggle('on', slidePlay); $('pause').classList.toggle('on', !slidePlay); };
+  const drawPlay = () => {
+    const b = $('playpause');
+    b.classList.toggle('playing', slidePlay);
+    b.classList.toggle('paused', !slidePlay);
+  };
   drawPlay();
-  $('play').onclick = () => { slidePlay = true; drawPlay(); send({ k: 'ctl', id: 'slidePlay', v: true }); };
-  $('pause').onclick = () => { slidePlay = false; drawPlay(); send({ k: 'ctl', id: 'slidePlay', v: false }); };
+  $('playpause').onclick = () => { slidePlay = !slidePlay; drawPlay(); send({ k: 'ctl', id: 'slidePlay', v: slidePlay }); };
 
   // ---------- the duck and its settings ----------
   // xf: the slides' Crossfade (slideXfade), seconds, kept here with the duck's
