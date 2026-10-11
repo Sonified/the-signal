@@ -60,6 +60,9 @@
             in pitch: HUM)
           finaleSun 0..100 (the Sun's Speed 2x..8x, even in ratio, with its
             Speed variance 0..78% and Breath Amount 0..67%: SUN)
+          finaleWind 0..100 (the Sun's Feedback Amount 0..83% and Opacity
+            0..36%, the rings' opacity 0..29% over the top half, the
+            flowers' 0..15% over the top quarter: WIND)
     {k:'duck', on, amt, dn, up}  amt 0..1, dn and up in seconds; DUCK is
         hold-and-release: on at pointerdown, off at pointerup, pointercancel
         or the finger sliding off the button
@@ -67,15 +70,16 @@
   LAYOUT follows Robert's TouchOSC/Max surface (thumb reach, iPad held in
   two hands): the cues down the left; on the right edge, top corner one
   play/pause toggle (green playing with a pause glyph, red paused with a
-  play glyph, the DUCK button's width), below it the four tall
+  play glyph, the four faders' width), below it the four tall
   faders (half-width,
   hugging the right edge, as the photo has them) in the
   surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK.
   The middle holds the faders that are not the surface's, level with the
   four: SCREEN (the picture's master brightness, down to black), SUN beside
-  it (the Sun's speed, its variance and its breath together), HEART (the
-  Heartbeat's Master), then MWTS (meditatewiththesun.com's volume), room
-  beside them for more. Above those three, the finale row: five more of
+  it (the Sun's speed, its variance and its breath together), WIND beside
+  that (the Sun's feedback, the rings and the flowers), HEART (the
+  Heartbeat's Master), then MWTS (meditatewiththesun.com's volume), one
+  row 10px apart. Above them, column for column, the finale row: five of
   the same faders, DRONE (the drone file, the tone and the
   clouds together), PIANO, CHOIR, AMBIENCE, and HUM (the Sun hum's
   speed, 1x to 2x).
@@ -111,6 +115,7 @@ h1 { font-size: 20px; margin: 0; }
 .path-latency, .path-peers { overflow: hidden; text-overflow: ellipsis; }
 #appHealth { margin: 0 6px; vertical-align: middle; }
 .spacer { margin-left: auto; }
+.header-actions { display: flex; flex: none; gap: 12px; align-items: center; }
 .big { height: 54px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--btn); color: var(--ink);
   font-family: inherit; font-weight: 600; font-size: 16px; touch-action: manipulation; }
 .small { height: 40px; font-size: 14px; padding: 0 14px; }
@@ -150,22 +155,23 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 @keyframes flash { 0% { background: var(--flash); color: #000; box-shadow: 0 0 28px var(--flash); } }
 
 /* the right side: everything on the right edge, the middle left empty */
-#stage { min-height: 0; display: flex; justify-content: flex-end; gap: 14px; }
+#stage { position: relative; min-height: 0; display: flex; justify-content: flex-end; gap: 14px; }
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-/* centred in the empty span between SCREEN and the edge's faders: it runs
-   on past #middle across the stage's 14px gap and the edge's empty left half
-   (its faders take only its right 50%, 230px of its 460), and starts past
-   SCREEN (72px and a 10px gap), then nudged 60px further right (the
-   extra 120px of left padding moves the centre by half). All three middle faders sit 122px lower
+/* HEART and MWTS carry on the SCREEN, SUN, WIND row: HEART under
+   AMBIENCE, MWTS under HUM, the finale row's fourth and fifth columns. Their
+   box starts where SCREEN's does and is shifted right by three faders and
+   their gaps (3 x (72 + 10) = 246px); a relative shift, so it never widens
+   the page's columns, and the box itself is 0 wide for the same reason (see
+   #topFaders). All the middle's faders but the finale row sit 122px lower
    than the edge's four (DUCK's 110px row and its 12px gap), the same
    height, their bottoms level with DUCK's. */
-#midFaders { grid-row: 2 / 4; min-height: 282px; padding: 122px 0 0 202px; display: flex; justify-content: center; gap: 10px; margin-right: -244px; }
-#midFaders .fader { width: 72px; }
-/* SCREEN at the middle's left edge, next to the cues, SUN beside it 10px
-   apart; after #midFaders in the page so they sit above that row's empty
-   span. The box itself is 0 wide, so the pair spills out visibly instead
+#midFaders { grid-row: 2 / 4; min-height: 282px; padding-top: 122px; display: flex; gap: 10px;
+  justify-self: start; width: 0; position: relative; left: 246px; }
+#midFaders .fader { width: 72px; flex: none; }
+/* SCREEN at the middle's left edge, next to the cues, SUN and WIND
+   beside it 10px apart. The box itself is 0 wide, so the three spill out visibly instead
    of widening the page's columns (see #topFaders) */
 #leftFader { grid-row: 2 / 4; grid-column: 1; min-height: 282px; padding-top: 122px; display: flex; gap: 10px; justify-self: start; width: 0; }
 #leftFader .fader { width: 72px; flex: none; }
@@ -182,19 +188,22 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
   display: flex; gap: 10px; }
 #topFaders .fader { width: 72px; flex: none; }
 #edge { width: min(100%, 460px); min-height: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
-#top { display: grid; grid-template-columns: 1fr 172px; gap: 12px; align-items: start; }
-#info { padding-top: 4px; display: grid; gap: 8px; }
+/* Presence's status and the show's bar across the whole stage, from the
+   finale row's left edge (DRONE's) to the play button's right, in the strip
+   above the finale row and the button (both start 48px down); laid over
+   the stage, so it never widens it */
+#info { position: absolute; left: 0; right: 0; top: 0; padding-top: 4px; display: grid; gap: 8px; }
 .bar { height: 10px; border-radius: 5px; background: #0f1219; border: 1px solid var(--line); overflow: hidden; }
 .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, #6b5216, var(--gold)); transition: width .3s; }
-/* One play/pause toggle, the DUCK button's exact size (full column width,
-   110px tall), sitting at the BOTTOM of the old PLAY+PAUSE stack's 178px
-   footprint: the top right corner stays open, and nothing below it moves.
-   Green while playing with a pause glyph, red while paused with a play
-   glyph. */
-#pp { display: grid; align-content: end; min-height: 178px; }
-#playpause { height: 110px; color: #fff; display: grid; place-items: center;
+/* One play/pause toggle filling the 178px block above the four faders
+   below Presence's strip (from 48px down, the finale row's top line), as
+   wide as the four are (the edge's right half), so play/pause, the four and
+   DUCK make one column. Green while playing with a pause glyph, red while
+   paused with a play glyph. */
+#pp { width: 50%; height: 178px; padding-top: 48px; margin-left: auto; display: grid; }
+#playpause { height: 100%; color: #fff; display: grid; place-items: center;
   box-shadow: 0 0 22px rgba(255, 255, 255, .25), inset 0 0 0 2px #fff; transition: background .15s, border-color .15s; }
-#playpause svg { width: 44px; height: 44px; }
+#playpause svg { width: 80px; height: 80px; }
 #playpause.playing { background: #2f9a4a; border-color: #4fd06e; }
 #playpause.paused { background: #c0393b; border-color: #ff6b6b; }
 #playpause svg { display: none; }
@@ -211,7 +220,9 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
    spills past the narrow column instead of growing it and squeezing the
    track up */
 .fader .val { text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; height: 22px; line-height: 22px; white-space: nowrap; }
-#bottom { display: grid; grid-template-columns: 1fr 172px; gap: 12px; }
+/* DUCK the four faders' width too, under them */
+#bottom { display: flex; justify-content: flex-end; }
+#duck { width: 50%; }
 #duck { height: 110px; font-size: 28px; letter-spacing: .1em; background: #1f4a44; border-color: #3fa596; color: #bff3ea; touch-action: none; }
 #duck.on { background: var(--bad); color: #000; border-color: #fff; box-shadow: 0 0 34px rgba(255, 122, 122, .7); }
 .big:active, .cue:active { filter: brightness(1.35); }
@@ -240,8 +251,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   #cues { max-height: 50vh; }
   #faders { min-height: 300px; }
   #stage { display: block; }
+  #info { position: static; margin-bottom: 14px; }
   #middle { display: block; margin-bottom: 14px; }
-  #midFaders { height: 300px; margin-right: 0; padding: 0; min-height: 0; }
+  #midFaders { width: auto; left: 0; height: 300px; padding: 0; min-height: 0; }
   #leftFader { width: auto; height: 300px; margin-bottom: 14px; padding: 0; min-height: 0; }
   #topFaders { width: auto; margin-bottom: 14px; padding: 0; overflow-x: auto; }
   #edge { width: 100%; }
@@ -261,8 +273,11 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   <h1 id="title">Show Remote</h1>
   <span class="status" id="paths"></span>
   <span class="status">room <span class="dot" id="appHealth" role="img" aria-label="App status: waiting for laptop" title="App status: waiting for laptop"></span><b id="roomName"></b></span>
-  <button class="big small spacer" id="switch"></button>
-  <button class="big" id="gear" aria-label="Settings">⚙︎</button>
+  <div class="header-actions spacer">
+    <button class="big small" id="defaults">Defaults</button>
+    <button class="big small" id="switch"></button>
+    <button class="big" id="gear" aria-label="Settings">⚙︎</button>
+  </div>
 </header>
 
 <main>
@@ -271,13 +286,13 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     <div id="cues"></div>
   </div>
   <div id="stage">
+    <div id="info">
+      <div class="status" id="presence">Presence: <b>no word yet</b></div>
+      <div class="bar"><div id="showBar"></div></div>
+    </div>
     <div id="middle"><div id="midFaders"></div><div id="leftFader"></div><div id="topFaders"></div></div>
     <div id="edge">
       <div id="top">
-        <div id="info">
-          <div class="status" id="presence">Presence: <b>no word yet</b></div>
-          <div class="bar"><div id="showBar"></div></div>
-        </div>
         <div id="pp">
           <button class="big" id="playpause" aria-label="Play/pause">
             <svg class="ic-play" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"><path d="M7 4.5v15l13-7.5z" fill="#fff"/></svg>
@@ -303,6 +318,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     <div id="sUp"></div>
     <h2 style="margin-top: 18px">Slides</h2>
     <div id="sXf"></div>
+    <div id="sPreviewDelay" title="Advances the iPad preview to compensate for playback report delay. Saved on this device."></div>
     <h2 style="margin-top: 18px">Filters</h2>
     <div id="sLr"></div>
     <div id="sHr"></div>
@@ -312,8 +328,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
 
 <script>
 'use strict';
-(async () => {
-  const { slideRateFromPos: posToRate, slideElementRate } = await import('./core/slide-rate.js');
+(() => {
   const $ = id => document.getElementById(id);
   const P = new URLSearchParams(location.search);
   let room = (P.get('room') || 'show').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '') || 'show';
@@ -330,8 +345,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
     "Shepard's Rise", 'Earthquake', 'Rotating Sun', 'Spherical Harmonics — hum along!', 'HARP Trailer', 'WISPR CME',
-    'Touching the Sun', 'Ed Mitchell VR', 'QR + Sun', 'Guided Meditation',
-    ...Array.from({ length: 10 }, (_, i) => 'Guided Meditation - Step ' + (i + 1))];
+    'Touching the Sun', 'Ed Mitchell VR', 'QR + Sun', 'Guided Meditation'];
 
   // ---------- the password (remote.html's, as is) ----------
   let KEY = '';
@@ -388,7 +402,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // ---------- the cues ----------
   // The step Presence reports glows gold, the ones before it dim; until a
   // report arrives the last one tapped stands in.
-  let statusStep = null, tapped = -1, pendingPlayback = null, cueVideoStates = [], previewSpeedStopped = false;
+  let statusStep = null, tapped = -1;
   const cueEls = CUES.map((label, i) => {
     const b = document.createElement('button');
     b.className = 'cue';
@@ -402,6 +416,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
         const r = b.getBoundingClientRect();
         const f = Math.min(1, Math.max(0, (e.clientX - r.left) / (r.width || 1)));
         send({ k: 'seek', f: Math.round(f * 10000) / 10000 });
+        vp.t = f * vp.d; vpAt = performance.now();
         if (!vpRaf) drawProg();
         return;
       }
@@ -450,6 +465,12 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
 
   // Cue thumbnails use cached, silent 144p clips. The only moving thumbnail
   // follows the laptop's actual file, video time, speed and loop setting.
+  const PREVIEW_DELAY_MAX = 500;
+  let previewDelayMs = 50;
+  try {
+    const saved = localStorage.getItem('show.previewDelayMs');
+    if (saved !== null && Number.isFinite(+saved)) previewDelayMs = Math.round(Math.max(0, Math.min(PREVIEW_DELAY_MAX, +saved)) / 5) * 5;
+  } catch (e) {}
   let cuePreviews = null, cuePreviewsStarted = false;
   async function startCuePreviews() {
     if (cuePreviewsStarted) return;
@@ -462,10 +483,23 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
         getPlayback: () => vp ? {
           index: statusStep !== null ? statusStep : tapped,
           file: vp.f, time: vp.t, duration: vp.d, rate: vp.r, loop: vp.l, reportedAt: vpAt,
+          delayMs: previewDelayMs,
           live: document.visibilityState === 'visible' && paths.some(p => isOpen(p.cmd) && isOpen(p.st) &&
             p.peers > 0 && performance.now() - p.healthAt < HEALTH_TIMEOUT)
         } : null
       });
+      // Temporary passive diagnostics stay on this Mac's local relay.
+      // No show commands or changes to playback are sent on this room.
+      if (SERVED_LOCAL) {
+        const debug = new WebSocket('ws://' + LOCAL_HOST + '/room/' + ROOM + '-preview-debug?role=broadcast&key=' + encodeURIComponent(KEY));
+        const timer = setInterval(() => {
+          if (debug.readyState === 1 && !document.hidden) debug.send(JSON.stringify({
+            t: 'state', k: 'preview-debug', src: SID, ua: navigator.userAgent,
+            vp, reportAgeMs: Math.round(performance.now() - vpAt), ...cuePreviews.diagnostics()
+          }));
+        }, 1000);
+        window.addEventListener('pagehide', () => { clearInterval(timer); debug.close(); }, { once: true });
+      }
     } catch (error) { console.warn('Cue previews unavailable:', error); }
   }
 
@@ -481,6 +515,12 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // kHz always carries its decimal (5.0 kHz), so the centred value keeps
   // one width instead of jumping left and right as the fader moves
   const hzText = hz => hz >= 1000 ? (Math.round(hz / 100) / 10).toFixed(1) + ' kHz' : Math.round(hz) + ' Hz';
+  const posToRate = p => {
+    p = Math.max(0, Math.min(1000, p));
+    let r = p <= 500 ? p / 500 : Math.pow(2, (p - 500) / 500);
+    if (Math.abs(r - 1) <= 0.03) r = 1;
+    return Math.round(r * 100) / 100;
+  };
   // In the surface's order, left to right, each in its colour there.
   const FADERS = [
     { id: 'lpf', key: 'lp', label: 'LP', color: '#e45bf0', max: 1000, def: 1000, fmt: p => p >= 1000 ? 'open' : hzText(posToHz(p)) },
@@ -506,6 +546,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // is the speed
     { id: 'finaleSun', key: 'su', label: 'SUN', color: '#ffb13b', max: 100, def: 0, box: 'leftFader',
       fmt: p => (2 * Math.pow(4, p / 100)).toFixed(1) + '×' },
+    // WIND, beside SUN: the Sun's Feedback Amount 0 to 83% and Opacity 0 to
+    // 36% over the whole fader, the rings' opacity 0 to 29% over its top
+    // half and the flowers' 0 to 15% over its top quarter (finaleWind)
+    { id: 'finaleWind', key: 'wi', label: 'WIND', color: '#a8f0d8', max: 100, def: 0, box: 'leftFader', fmt: p => Math.round(p) + '%' },
     // Then the Heartbeat's Master, the heard beat and its flash
     // riding together at the balance the laptop's Audio level and Visual
     // amount set (core/schema-heartbeat.js), linear 0..100%.
@@ -578,6 +622,24 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     track.addEventListener('pointercancel', up);
     f.draw();
   }
+
+  // Explicit performance reset; startup and authored cue values stay as
+  // they are. Send every value even if its local readout already matches.
+  const SHOW_DEFAULTS = {
+    lpf: 1000, hpf: 0, slideRate: 500, vol: 100,
+    finaleDrone: 0, finalePiano: 0, finaleChoir: 0, finaleAmb: 0,
+    finaleHum: 0, finaleSun: 0, finaleWind: 0, heartMaster: 0,
+    screenGate: 100, mwtsVolume: 100
+  };
+  $('defaults').onclick = () => {
+    const now = performance.now();
+    for (const f of FADERS) {
+      f.pos = SHOW_DEFAULTS[f.id];
+      f.touchedAt = now;
+      f.draw();
+      queueCtl(f.id, f.pos);
+    }
+  };
 
   // ---------- transport ----------
   // One play/pause toggle: it shows the state (green playing, red paused;
@@ -683,6 +745,11 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     duckSet.xf = xf;
     queueCtl('slideXfade', Math.round(xf * 100));
   }, () => duckSet.xf > 0 ? duckSet.xf.toFixed(2) + ' s' : 'cut');
+  makeSlider($('sPreviewDelay'), 'Preview delay compensation', () => previewDelayMs / PREVIEW_DELAY_MAX, u => {
+    previewDelayMs = Math.round(u * PREVIEW_DELAY_MAX / 5) * 5;
+    try { localStorage.setItem('show.previewDelayMs', String(previewDelayMs)); } catch (e) {}
+    if (cuePreviews) cuePreviews.sync();
+  }, () => previewDelayMs + ' ms');
   // Filters: the global Lowpass's and Highpass's resonance (lpfRes, hpfRes),
   // the peak at each corner, 0 (flat) to 24 dB in 0.5 dB steps, sent in dB
   // whenever it moves. They live on the laptop, not here: Presence's reports
@@ -805,39 +872,6 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // must never be overwritten (it once was, and every fader was dropped).
   function send(m) {
     m.t = 'word'; m.n = ++seq; m.src = SID;
-    // Use the same tap for the cached preview and the laptop command.
-    // Reports sent before this command must not undo the local action.
-    if (m.k === 'jump') {
-      previewSpeedStopped = false;
-      statusStep = tapped = m.i;
-      const info = cuePreviews?.cueInfo(m.i, cueVideoStates[m.i]?.f);
-      const state = cueVideoStates[m.i];
-      cuePreviews?.startPreparedCue(m.i, state);
-      setProg(info ? { ...info, t: 0, r: state ? (state.p ? state.r : 0) : 1,
-        l: state?.l === true } : null);
-      pendingPlayback = { n: m.n, at: performance.now(), index: m.i, file: vp?.f };
-      drawCues();
-    } else if (vp && (m.k === 'seek' || (m.k === 'ctl' && ['slideRate', 'slidePlay'].includes(m.id)))) {
-      const prepared = cuePreviews?.preparedPlayback();
-      if (prepared) { vp = prepared; vpAt = performance.now(); }
-      vp.t += vp.r * Math.max(0, performance.now() - vpAt) / 1000;
-      vpAt = performance.now();
-      if (m.k === 'seek') vp.t = m.f * vp.d;
-      else if (m.id === 'slideRate') {
-        const rate = slideElementRate(posToRate(m.v));
-        if (rate === 0) {
-          previewSpeedStopped = previewSpeedStopped || vp.r > 0;
-          vp.r = 0;
-        } else {
-          vp.r = vp.r > 0 || previewSpeedStopped ? rate : 0;
-          previewSpeedStopped = false;
-        }
-      } else vp.r = m.v ? slideElementRate(posToRate(FADERS.find(f => f.id === 'slideRate').pos)) : 0;
-      pendingPlayback = { n: m.n, at: vpAt, index: statusStep, file: vp.f };
-      cuePreviews?.controlPrepared(m, slideElementRate(posToRate(m.v)));
-      if (cuePreviews) cuePreviews.sync(m.k === 'seek' || m.id === 'slidePlay');
-      if (!vpRaf) drawProg();
-    }
     for (const p of paths) sendOn(p.cmd, m);
   }
 
@@ -866,16 +900,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     const id = String(m.src || ''), q = +m.q || 0;
     if (q <= (lastQ.get(id) || 0)) return;
     lastQ.set(id, q);
-    if (Array.isArray(m.cv)) cueVideoStates = m.cv;
-    if (pendingPlayback) {
-      const acknowledged = m.ack && +m.ack[SID] >= pendingPlayback.n;
-      // Older laptops have no ack field; give them a short grace period.
-      const timedOut = performance.now() - pendingPlayback.at >= 3000;
-      const ready = m.i === pendingPlayback.index && (!pendingPlayback.file || m.vp?.f === pendingPlayback.file);
-      if (!timedOut && (!acknowledged || !ready)) return;
-      pendingPlayback = null;
-    }
+    const previousStep = statusStep;
     statusStep = typeof m.i === 'number' ? m.i : -1;
+    const cueChanged = statusStep !== previousStep;
     $('presence').innerHTML = 'Presence: <b>' + (statusStep >= 0 ? 'cue ' + (statusStep + 1) : 'no cue') + ' of ' + (m.n | 0) +
       (statusStep >= 0 && !m.p ? ' · paused' : '') + '</b>';
     $('showBar').style.width = (m.n > 0 && statusStep >= 0 ? (statusStep + 1) / m.n * 100 : 0) + '%';
@@ -885,7 +912,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     const now = performance.now();
     for (const f of FADERS) {
       const v = sl[f.key];
-      if (typeof v === 'number' && isFinite(v) && !f.held && now - f.touchedAt > 800 && !pending.has(f.id)) { f.pos = Math.min(f.max, v); f.draw(); }
+      // A new cue restores its authored faders even just after a gesture.
+      // Same-cue reports keep the grace period so a delayed echo cannot
+      // fight the operator's finger.
+      if (typeof v === 'number' && isFinite(v) && !f.held && (cueChanged || now - f.touchedAt > 800) && !pending.has(f.id)) { f.pos = Math.min(f.max, v); f.draw(); }
     }
     for (const r of RES) {
       const v = sl[r.key];

@@ -1,6 +1,7 @@
 // Local 144p previews for the show's cue buttons. All clips can be cached,
-// with a shared player plus a prepared Audification-only playback test.
-import { slideElementRate } from '../core/slide-rate.js';
+// while a single muted player follows the laptop's reported video clock.
+import { createPreviewClock } from './preview-clock.js';
+
 const BASE = '/slides/previews/144p-30fps/';
 
 function openCache() {
@@ -75,7 +76,7 @@ export async function createCuePreviews({ cues, prefixes, getPlayback }) {
     const box = document.createElement('span');
     box.className = 'cue-thumb'; box.setAttribute('aria-hidden', 'true');
     const image = document.createElement('img');
-    image.alt = ''; image.decoding = 'async'; image.style.zIndex = '1';
+    image.alt = ''; image.decoding = 'async';
     box.appendChild(image); cues[index].appendChild(box);
     cachedBlob(db, 'poster:' + asset.file + ':' + asset.sha256, BASE + encodeURIComponent(asset.poster), asset.poster_bytes)
       .then(blob => { image.src = URL.createObjectURL(blob); })
@@ -85,8 +86,24 @@ export async function createCuePreviews({ cues, prefixes, getPlayback }) {
   const player = document.createElement('video');
   player.muted = true; player.defaultMuted = true; player.playsInline = true;
   player.preload = 'auto'; player.setAttribute('aria-hidden', 'true');
-  let current = null, generation = 0, loaded = false, aligned = false, playPending = false, playRefused = false;
-  let lastCheck = -Infinity, correction = 0;
+  let current = null, generation = 0, loaded = false, playPending = false, playRefused = false;
+  let delayMs = 0;
+  const clock = createPreviewClock();
+  const events = [];
+  let targetTime = null, frameCount = 0, lastFrameAt = null;
+  function record(kind, extra = {}) {
+    events.push({ at: Math.round(performance.now()), kind, time: +player.currentTime.toFixed(3),
+      paused: player.paused, seeking: player.seeking, ready: player.readyState, ...extra });
+    if (events.length > 50) events.shift();
+  }
+  for (const kind of ['loadedmetadata', 'loadeddata', 'canplay', 'play', 'playing', 'pause',
+    'waiting', 'stalled', 'seeking', 'seeked', 'ratechange', 'ended', 'error']) {
+    player.addEventListener(kind, () => record(kind));
+  }
+  if (player.requestVideoFrameCallback) {
+    const frame = () => { frameCount++; lastFrameAt = performance.now(); player.requestVideoFrameCallback(frame); };
+    player.requestVideoFrameCallback(frame);
+  }
   function loadVideo(asset) {
     if (!asset.loading) {
       asset.loading = cachedBlob(db, 'video:' + asset.file + ':' + asset.sha256,
@@ -96,53 +113,12 @@ export async function createCuePreviews({ cues, prefixes, getPlayback }) {
     }
     return asset.loading;
   }
-  // Audification-only experiment: keep this actual video element loaded
-  // between cues. Starting it never resets its source or seeks before play.
-  const audFile = '030_Audification_Explained.mp4';
-  const audIndex = thumbnails.findIndex(thumb => thumb?.asset.source === audFile);
-  const audThumb = thumbnails[audIndex];
-  const audPlayer = document.createElement('video');
-  audPlayer.muted = true; audPlayer.defaultMuted = true; audPlayer.playsInline = true;
-  audPlayer.preload = 'auto'; audPlayer.setAttribute('aria-hidden', 'true');
-  audPlayer.dataset.preparedCue = 'audification';
-  let audActive = false, audRate = 1, audPlaying = false, audSpeedStopped = false;
-  function prepareAud() {
-    if (!audThumb || audPlayer.src) return;
-    loadVideo(audThumb.asset).then(url => {
-      if (audPlayer.src) return;
-      audThumb.box.appendChild(audPlayer);
-      audPlayer.src = url; audPlayer.load();
-    }).catch(() => {});
-  }
-  function playAud() {
-    if (!audActive) return;
-    if (!audPlaying || audRate <= 0) { audPlayer.pause(); return; }
-    audPlayer.playbackRate = slideElementRate(audRate);
-    // Called directly in the cue/transport gesture, with no load/seek await.
-    if (audPlayer.paused) void audPlayer.play().catch(() => {});
-  }
-  function leaveAud() {
-    if (!audActive) return;
-    audActive = false; audPlayer.pause();
-    audThumb.image.style.visibility = '';
-    // Re-arm at zero when leaving, before the next cue tap.
-    if (audPlayer.readyState >= 1) audPlayer.currentTime = 0;
-  }
-  audPlayer.addEventListener('playing', () => {
-    if (audActive) audThumb.image.style.visibility = 'hidden';
-  });
-  audPlayer.addEventListener('loadeddata', () => {
-    audThumb.box.dataset.prepared = 'true';
-    // A tap during the first download can retry once its source is ready.
-    if (audActive) playAud();
-  });
-  prepareAud();
   function clearCurrent() {
     generation++;
     player.pause(); player.remove();
     if (current) current.thumb.image.style.visibility = '';
-    current = null; loaded = false; aligned = false; playPending = false; playRefused = false;
-    lastCheck = -Infinity; correction = 0;
+    current = null; loaded = false; playPending = false; playRefused = false;
+    clock.reset();
   }
   function attach(index, asset) {
     clearCurrent();
@@ -150,6 +126,7 @@ export async function createCuePreviews({ cues, prefixes, getPlayback }) {
     if (!thumb) return;
     thumb.box.hidden = false;
     current = { index, asset, thumb };
+    record('attach', { file: asset.source, index });
     player.hidden = true;
     const token = generation;
     loadVideo(asset).then(url => {
@@ -162,88 +139,42 @@ export async function createCuePreviews({ cues, prefixes, getPlayback }) {
     if (!current || player.currentSrc !== current.asset.url) return;
     loaded = true; sync();
   });
-  player.addEventListener('seeked', () => {
-    if (!current || player.currentSrc !== current.asset.url) return;
-    aligned = true; sync();
-  });
-  player.addEventListener('playing', () => {
-    if (!aligned || !current) return;
-    player.hidden = false; current.thumb.image.style.visibility = 'hidden';
-  });
   player.addEventListener('error', clearCurrent);
+  player.addEventListener('seeked', () => { clock.seeked(performance.now()); sync(); });
   // A user tap retries a browser's autoplay restriction without changing
   // the cue action or sending any additional show commands.
   document.addEventListener('click', () => { playRefused = false; sync(); });
-  function sync(force = false) {
+  function sync() {
     const playback = getPlayback();
-    if (audActive) {
-      if (!playback || playback.index !== audIndex || (playback.file && playback.file !== audFile)) leaveAud();
-      else {
-        // No clock checks, seeks, or rate corrections in this experiment.
-        // Health still stops a preview when the laptop freezes/disconnects.
-        if (!playback.live) audPlayer.pause();
-        return;
-      }
-    }
     if (!playback || !Number.isInteger(playback.index) || !thumbnails[playback.index]) {
       if (current) clearCurrent();
       return;
     }
     const asset = playback.file ? assets.get(playback.file) : thumbnails[playback.index].asset;
     if (!asset) { if (current) clearCurrent(); return; }
+    const nextDelay = Number.isFinite(playback.delayMs) ? Math.max(0, playback.delayMs) : 0;
+    delayMs = nextDelay;
     if (!current || current.index !== playback.index || current.asset !== asset) attach(playback.index, asset);
     if (!loaded) return;
-    if (!playback.live) { player.pause(); return; }
-    const running = playback.rate > 0;
-    if (!running) player.pause();
-    let target = playback.time + (running ? Math.max(0, performance.now() - playback.reportedAt) / 1000 * playback.rate : 0);
-    if (playback.loop && playback.duration > 0) target %= playback.duration;
-    target = Math.max(0, Math.min(player.duration || asset.duration_seconds, target));
+    if (!playback.live) { player.pause(); clock.reset(); return; }
+    player.hidden = false; current.thumb.image.style.visibility = 'hidden';
+    const timing = clock.update({ currentTime: player.currentTime, seeking: player.seeking,
+      duration: player.duration || asset.duration_seconds }, playback, performance.now());
+    targetTime = timing.target;
     player.loop = playback.loop;
-    // Decode the first frame at the current show time before exposing it.
-    // The URL always comes from a fully downloaded Blob, never a stream.
-    if (!aligned) {
-      if (player.seeking) return;
-      aligned = true;
-      if (Math.abs(player.currentTime - target) > 1 / 30) {
-        player.currentTime = target;
-        return;
-      }
+    if (timing.seek !== null) {
+      record('correct', { target: +timing.seek.toFixed(3), reason: timing.reason });
+      player.currentTime = timing.seek;
     }
-    if (player.seeking) return;
-    const now = performance.now();
-    if (force || now - lastCheck >= 1000) {
-      lastCheck = now;
-      let error = target - player.currentTime;
-      if (playback.loop && playback.duration > 0) {
-        const d = playback.duration;
-        error = ((error + d / 2) % d + d) % d - d / 2;
-      }
-      // Correct small differences by gently adjusting rate, rather than
-      // repeatedly seeking and skipping decoded frames. A seek or pause
-      // requested on this iPad still lands immediately.
-      if (Math.abs(error) > (force || !running ? 1 / 30 : .5)) {
-        correction = 0;
-        player.currentTime = target;
-        return;
-      }
-      correction = running && Math.abs(error) > 1 / 30
-        ? Math.max(-.05, Math.min(.05, error * .25)) : 0;
-    }
-    if (!running || (!playback.loop && target >= player.duration)) {
-      player.pause();
-      player.hidden = false; current.thumb.image.style.visibility = 'hidden';
-      return;
-    }
-    try { player.playbackRate = Math.max(.0625, Math.min(4, playback.rate + correction)); }
+    if (!timing.running) { player.pause(); return; }
+    try { player.playbackRate = timing.rate; }
     catch { player.pause(); return; }
-    // Safari autoplay needs a visible player. The poster covers its initial
-    // decoded frame until the 'playing' event, avoiding a flash from time 0.
-    player.hidden = false;
     if (player.paused && !playPending && !playRefused) {
       playPending = true;
       const token = generation;
-      player.play().catch(() => { if (token === generation) playRefused = true; })
+      record('play-request');
+      player.play().then(() => { if (token === generation) record('play-resolved'); })
+        .catch(error => { if (token === generation) { playRefused = true; record('play-rejected', { name: error?.name }); } })
         .finally(() => { if (token === generation) playPending = false; });
     }
   }
@@ -261,47 +192,24 @@ export async function createCuePreviews({ cues, prefixes, getPlayback }) {
     }
     try { await Promise.all([worker(), worker()]); }
     finally { preloading = false; }
-    prepareAud();
     if ([...assets.values()].some(asset => !asset.url)) setTimeout(preload, 10000);
   }
   void preload();
   window.addEventListener('online', preload);
-  setInterval(sync, 1000);
+  setInterval(sync, 250);
   document.addEventListener('visibilitychange', () => { sync(); if (!document.hidden) void preload(); });
   sync();
   return {
     sync,
-    startPreparedCue(index, state = {}) {
-      if (index !== audIndex || !audThumb || (state.f && state.f !== audFile)) {
-        leaveAud(); return false;
-      }
-      clearCurrent();
-      audActive = true; audSpeedStopped = false;
-      audRate = state.r ?? 1; audPlaying = state.p !== false;
-      audPlayer.loop = state.l === true;
-      playAud();
-      return true;
-    },
-    controlPrepared(command, rate) {
-      if (!audActive) return;
-      if (command.k === 'seek' && Number.isFinite(audPlayer.duration)) audPlayer.currentTime = command.f * audPlayer.duration;
-      else if (command.id === 'slidePlay') { audPlaying = !!command.v; playAud(); }
-      else if (command.id === 'slideRate') {
-        if (rate === 0) { audSpeedStopped = audPlaying; audRate = 0; }
-        else {
-          audRate = rate;
-          if (audSpeedStopped) { audPlaying = true; audSpeedStopped = false; }
-        }
-        playAud();
-      }
-    },
-    preparedPlayback() {
-      return audActive ? { t: audPlayer.currentTime, d: audThumb.asset.duration_seconds,
-        f: audFile, r: audPlaying ? audRate : 0, l: audPlayer.loop } : null;
-    },
-    cueInfo(index, file) {
-      const asset = file ? assets.get(file) : thumbnails[index]?.asset;
-      return asset ? { f: asset.source, d: asset.duration_seconds } : null;
+    diagnostics() {
+      const quality = player.getVideoPlaybackQuality?.();
+      return { file: current?.asset.source, index: current?.index, time: player.currentTime,
+        target: targetTime, rate: player.playbackRate, paused: player.paused, seeking: player.seeking,
+        ready: player.readyState, network: player.networkState, playPending, playRefused, delayMs,
+        error: player.error?.code ?? null, frameCount,
+        frameAgeMs: lastFrameAt === null ? null : Math.round(performance.now() - lastFrameAt),
+        droppedFrames: quality?.droppedVideoFrames ?? null,
+        totalFrames: quality?.totalVideoFrames ?? null, events: events.slice() };
     }
   };
 }
