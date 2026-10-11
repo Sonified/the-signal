@@ -14,6 +14,12 @@
 // fresh in update() and its bind group made with it; render() submits in the
 // same task.
 //
+// The loop runs over the first four solar rotations only, not the whole
+// file: LOOP_END_S stands in for the file's end. July's eclipse season drops
+// frames daily, so the file after early July is full of jumps (39 of its 51
+// gaps over 2 h fall after this edge), and four whole rotations bring the
+// sun round to the same face, so the wrap lands on matching geometry.
+//
 // The loop is the site's crossfade over the edge, not video.loop (whose seek
 // to 0 on a streamed file finds nothing buffered there and drops to black):
 // two elements, the main and a ghost, same source, swap roles each lap. The
@@ -152,6 +158,12 @@ const XFADE_S = 0.5;
 const BUFFER_MARGIN_S = 1.5;
 const GHOST_WAIT_S = 6;
 const WRAP_RETRY_S = 4;
+// The loop's end in video seconds: frame 15255 of the 30 fps file, four
+// Carrington rotations (4 x 27.2753 days) after its first frame (2026-03-18
+// 15:38 to 2026-07-05 18:08 UTC, from meditatewiththesun's
+// mosaic_times.json). Both stems carry the same frames up to frame 16424,
+// so the one edge serves both.
+const LOOP_END_S = 15255 / 30;
 // A playing main whose clock has stood this many wall seconds, with at least
 // STALL_AHEAD_S of buffer past it (less is the network, the wrap's to
 // handle), is stalled.
@@ -408,7 +420,7 @@ export function createSun(device, format) {
     if (ghost.error) ghost.src = srcNow;
     try { ghost.currentTime = 0; } catch (e) {}
     wrapRetryAt = nowMs / 1000 + WRAP_RETRY_S;
-    if (video.ended || video.readyState < 3) { try { video.currentTime = 0; } catch (e) {} }
+    if (video.ended || video.readyState < 3 || video.currentTime >= LOOP_END_S) { try { video.currentTime = 0; } catch (e) {} }
   }
   // meditatewiththesun.com's updateLoopXfade, now in seconds of the frame's
   // clock. Runs before syncVideo, so an ended main is wrapped (or cut)
@@ -419,9 +431,10 @@ export function createSun(device, format) {
     const dur = v.duration;
     if (!isFinite(dur) || dur <= 0) return;
 
-    // The edge: the file's end, or the buffered edge when the network is
-    // losing to the playhead.
-    let edge = dur, losing = false;
+    // The edge: the loop's end (or the file's, if shorter), or the buffered
+    // edge when the network is losing to the playhead.
+    const end = Math.min(dur, LOOP_END_S);
+    let edge = end, losing = false;
     if (!v.paused) {
       const t = v.currentTime, b = v.buffered;
       for (let i = 0; i < b.length; i++) {
@@ -433,7 +446,7 @@ export function createSun(device, format) {
           // judged only on at least a second of history (the first sample
           // after a load reads as zero growth)
           losing = now - bufWatch.at >= 1 && grow < v.playbackRate * 0.9;
-          if (losing && bEnd < dur - XFADE_S * v.playbackRate) edge = bEnd - BUFFER_MARGIN_S * v.playbackRate;
+          if (losing && bEnd < end - XFADE_S * v.playbackRate) edge = bEnd - BUFFER_MARGIN_S * v.playbackRate;
           break;
         }
       }
