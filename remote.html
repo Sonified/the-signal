@@ -10,9 +10,9 @@
   on the one lands on the other. Sliders mirror, buttons flash, and a local
   video plays, pauses and changes speed (varispeed: the pitch goes with it).
 
-  The tunnel is the existing relay (broadcast-worker/), untouched: the
-  controller joins as the room's broadcaster (it needs the key), the
-  presentation as a follower. Live moves ride 'word' messages, which the
+  The tunnel is the existing relay (broadcast-worker/): the controller joins
+  a mirror- room as its broadcaster, the presentation as a follower, both
+  with the password the relay checks (see its Mirror rooms note). Live moves ride 'word' messages, which the
   relay passes on and never stores; a 'state' snapshot follows each burst of
   moves, which the relay keeps, so a presentation that joins late lands on
   where things are.
@@ -62,10 +62,22 @@ video { width: 100%; border-radius: 10px; background: #000; display: block; marg
 .log { font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--dim); height: 180px; overflow: hidden; margin-top: 8px; white-space: pre; }
 .hint { color: var(--dim); font-size: 13px; }
 .drop { border: 1px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; color: var(--dim); margin-bottom: 10px; }
-input[type=text] { height: 40px; border-radius: 8px; border: 1px solid var(--line); background: #0f1219; color: var(--ink); padding: 0 10px; font: inherit; }
+#lock { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 10; padding: 16px; }
+#lock form { display: grid; gap: 12px; width: min(340px, 100%); text-align: center; }
+#lock input { height: 54px; font-size: 20px; text-align: center; }
+#lock .msg { min-height: 20px; color: var(--bad); font-size: 14px; }
+input[type=text], input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(--line); background: #0f1219; color: var(--ink); padding: 0 10px; font: inherit; }
 </style>
 </head>
 <body>
+<div id="lock">
+  <form id="lockForm" autocomplete="on">
+    <h1>Mirror Test</h1>
+    <input type="password" id="pw" placeholder="password" autocomplete="current-password" autofocus>
+    <button class="big" type="submit">Unlock</button>
+    <div class="msg" id="lockMsg"></div>
+  </form>
+</div>
 <header>
   <h1>Mirror Test</h1>
   <span class="role" id="role"></span>
@@ -109,16 +121,50 @@ input[type=text] { height: 40px; border-radius: 8px; border: 1px solid var(--lin
   const P = new URLSearchParams(QS);
   const ROLE = /presentation/.test(QS) ? 'presentation' : 'controller';
   const CTRL = ROLE === 'controller';
-  const ROOM = (P.get('room') || 'mirror-test').toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 64);
+  // always a mirror- room, the ones the relay locks with the password
+  let ROOM = (P.get('room') || 'test').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '');
+  ROOM = ('mirror-' + ROOM).slice(0, 64);
   const HOST = P.get('relay') || 'the-signal-broadcast.robertalexander-music.workers.dev';
   const $ = id => document.getElementById(id);
   $('role').textContent = ROLE;
   $('roomName').textContent = ROOM;
   $('latTitle').textContent = CTRL ? 'Sent (and the round trip to the relay)' : 'Arrival latency (one way, controller → here)';
 
-  // The broadcast key: ?key= once, then remembered on this device.
+  // The password. The relay checks it (POST /auth, and again on every
+  // connection to a mirror room), never this page; one that works is
+  // remembered on this device, and asked again only if it stops working.
   let KEY = '';
-  try { KEY = P.get('key') || localStorage.getItem('mirror.key') || ''; if (P.get('key')) localStorage.setItem('mirror.key', KEY); } catch (e) { KEY = P.get('key') || ''; }
+  try { KEY = localStorage.getItem('mirror.pw') || ''; } catch (e) {}
+  async function check(pw) {
+    try {
+      const r = await fetch('https://' + HOST + '/auth', { method: 'POST', body: pw });
+      return r.status === 200 ? 'ok' : r.status === 403 ? 'no' : 'down';
+    } catch (e) { return 'down'; }
+  }
+  async function unlock() {
+    const lockMsg = $('lockMsg');
+    if (KEY) {
+      const v = await check(KEY);
+      // a remembered password stands even if the relay can't be reached
+      // right now; the connection retries until it can
+      if (v !== 'no') { $('lock').remove(); open(); return; }
+      try { localStorage.removeItem('mirror.pw'); } catch (e) {}
+      KEY = ''; lockMsg.textContent = 'That password no longer works.';
+    }
+    $('lockForm').onsubmit = async e => {
+      e.preventDefault();
+      const pw = $('pw').value;
+      if (!pw) return;
+      lockMsg.style.color = 'var(--dim)'; lockMsg.textContent = 'checking…';
+      const v = await check(pw);
+      lockMsg.style.color = '';
+      if (v === 'ok') {
+        KEY = pw;
+        try { localStorage.setItem('mirror.pw', pw); } catch (e) {}
+        $('lock').remove(); open();
+      } else lockMsg.textContent = v === 'no' ? 'Wrong password.' : 'Can\'t reach the relay. Check the internet.';
+    };
+  }
 
   // ---------- the control surface, the same on both sides ----------
   const N_SLIDERS = 3, N_BUTTONS = 4;
@@ -218,12 +264,12 @@ input[type=text] { height: 40px; border-radius: 8px; border: 1px solid var(--lin
   let ws = null, retry = 2000, seq = 0, stateTimer = null;
   function open() {
     const role = CTRL ? 'broadcast' : 'follow';
-    const url = 'wss://' + HOST + '/room/' + ROOM + '?role=' + role + (CTRL ? '&key=' + encodeURIComponent(KEY) : '');
+    const url = 'wss://' + HOST + '/room/' + ROOM + '?role=' + role + '&key=' + encodeURIComponent(KEY);
     ws = new WebSocket(url);
     ws.onopen = () => { $('dot').classList.add('on'); $('conn').textContent = 'connected'; retry = 2000; probe(); if (CTRL) sendState(); };
     ws.onclose = () => {
       $('dot').classList.remove('on');
-      $('conn').textContent = CTRL && !KEY ? 'no key: open once with &key=…' : 'reconnecting…';
+      $('conn').textContent = 'reconnecting…';
       setTimeout(open, retry); retry = Math.min(retry * 2, 15000);
     };
     ws.onmessage = e => { if (typeof e.data === 'string' && e.data !== 'pong') { try { take(JSON.parse(e.data)); } catch (err) {} } };
@@ -284,7 +330,7 @@ input[type=text] { height: 40px; border-radius: 8px; border: 1px solid var(--lin
     $('log').textContent = lines.join('\n');
   }
 
-  open();
+  unlock();
 })();
 </script>
 </body>

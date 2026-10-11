@@ -26,6 +26,13 @@
 // is open: anyone with the page URL and room name can watch, which is the
 // point of a demo. A room name is 1-64 word characters or dashes.
 //
+// Mirror rooms (named mirror-...) are the exception: the remote control
+// surface (remote.html), where an iPad drives the show. Both roles there need
+// the password (wrangler secret put MIRROR_KEY), checked here and never in
+// the page, and the broadcast key does not open them. POST /auth with the
+// password as the body answers 200 or 403, so the page can ask before it
+// connects and remember a password that works.
+//
 // Live sound. The broadcaster can also speak into the room: its Live Sound
 // mix, recorded as WebM/Opus in 200 ms pieces, arrives here as binary frames,
 // which fan out to the followers exactly as a word does and are never
@@ -89,7 +96,11 @@ export class Room {
     }
     const url = new URL(request.url);
     const role = url.searchParams.get('role') === 'broadcast' ? 'broadcast' : 'follow';
-    if (role === 'broadcast') {
+    if (isMirror(url)) {
+      if (!this.env.MIRROR_KEY || url.searchParams.get('key') !== this.env.MIRROR_KEY) {
+        return new Response('bad password', { status: 403 });
+      }
+    } else if (role === 'broadcast') {
       if (!this.env.BROADCAST_KEY) {
         return new Response('no BROADCAST_KEY set on the worker', { status: 403 });
       }
@@ -175,9 +186,27 @@ export class Room {
   }
 }
 
+// A mirror room, by its name in the path (see Mirror rooms above).
+function isMirror(url) {
+  return /^\/room\/mirror-/.test(url.pathname);
+}
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type'
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === '/auth') {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+      if (request.method !== 'POST') return new Response('POST the password', { status: 405, headers: CORS });
+      const pw = (await request.text()).slice(0, 256);
+      const ok = !!env.MIRROR_KEY && pw === env.MIRROR_KEY;
+      return new Response(ok ? 'ok' : 'no', { status: ok ? 200 : 403, headers: CORS });
+    }
     const m = url.pathname.match(/^\/room\/([\w-]{1,64})$/);
     if (!m) return new Response('The Signal broadcast relay. Connect a websocket to /room/<name>.');
     const id = env.ROOM.idFromName(m[1]);
