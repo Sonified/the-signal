@@ -45,7 +45,6 @@ import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows, driveRow } from './schema-variance.js';
 import { driveOf } from './variance.js';
-import { setMasterVolume as setHumMaster } from './sun-hum.js';
 import { notifyGlobalFilter, GF_HZ_LO, GF_HZ_HI } from './global-filter.js';
 
 // The global Lowpass and Highpass (core/global-filter.js): positions 0 to
@@ -411,7 +410,7 @@ const audioControls = [
     id: 'vol', section: 'audio', label: 'Master volume', kind: 'slider',
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.volume * 100),
-    set: (s, pos) => { s.volume = pos / 100; applyAudioGain(); setHumMaster(s.volume); save(); },
+    set: (s, pos) => { s.volume = pos / 100; applyAudioGain(); save(); },
     format: s => Math.round(s.volume * 100) + '%'
   },
   // The global Lowpass and Highpass, straight under Master volume: every

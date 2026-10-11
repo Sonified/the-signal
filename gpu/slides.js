@@ -19,16 +19,23 @@
 // over the scene on the same Crossfade, and the slot is emptied at the end
 // (so switching back on starts the file afresh, through its own fade up).
 //
-// CROSSFADE (S.slideXfade, seconds; 0 a cut): two video elements, slots A
-// and B, ping-pong. The live one is never touched: a new file loads into the
-// idle slot, which becomes the active one at once (Play, Speed, Loop and
-// Restart all act on it from then on), while the old one, now the outgoing
-// slot, plays on as it was. Once the new one has a picture the fade runs:
-// the outgoing quad drawn as ever, the incoming quad over it at a smoothstep
-// alpha, each in its own letterbox; the sound crosses equal-power (cos/sin)
-// on each slot's own gain leg. At the end the outgoing slot is stopped and
-// emptied. A pick mid-fade (or mid-load) first snaps the running one to its
-// end, so there are never more than the two slots and none is left stuck.
+// CROSSFADE (S.slideXfade, seconds; 0 a cut): a small pool of video
+// elements (voices), two to start, more made as quick picks need them, up
+// to MAX_VOICES. The live one is never touched: a new file loads into a free
+// voice, which becomes the active one at once (Play, Speed, Loop and Restart
+// all act on it from then on), while the old one joins the outgoing stack
+// and plays on as it was. Once the new one has a picture the fade runs: the
+// outgoing pictures drawn beneath, held at the alpha each had when it left,
+// the incoming over them at a smoothstep alpha, each in its own letterbox;
+// the sound crosses equal-power, each outgoing voice from the level it had
+// when it left (cos) down to 0, the incoming up (sin). So a pick mid-fade
+// never cuts anything: the slide fading in leaves from where it stands and
+// the older ones carry on fading on their own clocks. Outgoing clocks wait
+// while the incoming has no picture yet (they play on at their level), and
+// an incoming that never got one is simply dropped by the next pick, since
+// it is silent and unseen. An outgoing voice is emptied once it is silent
+// and its picture hidden (covered by an opaque one above, or faded out).
+// Only past MAX_VOICES does the oldest, deepest voice give way at once.
 // From None (or from the layer just switched on) the new slide fades in
 // over the scene - the stars stay up under it until it lands; to None (or
 // the layer switched off) the picture fades out over the scene the same
@@ -62,7 +69,7 @@
 // Page engine only: a worker engine has no document, so the layer stays
 // empty there (as the Sun's does).
 //
-// Allocation per frame: the external textures (one, two while a fade runs)
+// Allocation per frame: the external textures (one, more while a fade runs)
 // and their bind groups, which WebGPU makes new by design. Nothing else.
 
 import { S } from '../js/state.js';
@@ -81,6 +88,8 @@ const elRate = r => r > 0 ? Math.max(MIN_RATE, r) : 0;
 const LEG_TC = 0.008;
 // A refused play() is tried again no sooner than this, ms.
 const PLAY_RETRY_MS = 1000;
+// The most video elements alive at once (see CROSSFADE).
+const MAX_VOICES = 6;
 const SL_FLOATS = 8;
 const HALF_PI = Math.PI / 2;
 
@@ -125,15 +134,16 @@ const slideGain = S => { const v = clampNum(S.slideVolume, 0, 1, 1); return v * 
 const fileGain = f => { const v = slideVolOf(S, f); return v * v * v; };
 // What reaches the duck: the layer's own level times the app's Master
 // volume (S.volume, the drawer's 'vol' and the show remote's VOLUME fader,
-// the same straight gain js/audio.js and the Sun's hum take).
+// the same straight gain js/audio.js's master gives every voice).
 const outGain = S => slideGain(S) * clampNum(S.volume, 0, 1, 0.5);
 const smooth = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 
 // ---------- the duck ----------
 // The show remote's Duck button (show.html, through platform/show-remote.js):
-// a multiplier on the slides' gain alone, so the room's video sound drops
-// under the speaker's voice and the Sun's hum (its own chain, core/sun-hum.js)
-// is never touched. setDuck(mul, seconds): the gain glides to Volume x mul
+// a multiplier on the slides' gain, so the room's video sound drops under
+// the speaker's voice; the heartbeat and the Sun's hum take the same
+// multiplier on their own levels (core/heartbeat.js setHeartDuck,
+// core/sun-hum.js setHumDuck). setDuck(mul, seconds): the gain glides to Volume x mul
 // along an exponential approach whose time constant is seconds / 3, so it is
 // ~95% there after `seconds` (0 is a near cut, a 3 ms constant). It acts at
 // once on the running chain, not at the next frame, so it works while the
@@ -210,7 +220,8 @@ export function createSlides(device, format) {
     addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge'
   });
   // One uniform block, descriptor and draw entry per drawn picture (the
-  // outgoing, then the incoming over it), made once.
+  // outgoing ones, then the incoming over them), each made once, when first
+  // needed.
   function makePic(k) {
     const buf = device.createBuffer({
       label: 'slides.uniforms.' + k, size: SL_FLOATS * 4,
@@ -224,30 +235,34 @@ export function createSlides(device, format) {
     return { buf, uni: new Float32Array(SL_FLOATS), ext: { label: 'slides.frame.' + k, source: null },
              entries, desc: { label: 'slides.bind.' + k, layout: bgl, entries }, bind: null };
   }
-  const pics = [makePic(0), makePic(1)];
+  const pics = [];
 
   let pixelW = 1, pixelH = 1;
   // This frame: whether the black underlay draws, and how many pictures
   // (pics[0..nPics-1], bottom first).
   let drawBlack = false, nPics = 0;
 
-  // ---------- the two slots ----------
+  // ---------- the voices ----------
   // file: what the element holds ('' empty); failed: it would not load;
   // holding: the frame loop held awake for its first picture; playPending:
   // a play() in flight; retryAt: a refused play's wait; legNow: the gain
   // last aimed at its leg; src/leg: its audio nodes, once the chain exists.
+  // While outgoing: g0 and a0, its leg gain and picture alpha when it left;
+  // p, its fade's progress (0 to 1) over dur ms; plays, whether it was
+  // playing; v, its picture's fade out over the scene (-1 none) over vdur.
   const slots = [];
   let noDocument = false;
-  // The active slot (the one the controls play), the outgoing one during a
-  // fade (-1 none), what the layer was last asked to show ('' nothing yet),
-  // and the fade: pending (waiting for the incoming picture), running from
-  // t0 over dur ms, toNone (no incoming: the outgoing fades out over the
-  // scene). wasOn: a picture has been up this session (no fade out of a
-  // freshly restored boot).
-  let act = 0, out = -1, shown = '', wasOn = false;
-  const fade = { pending: false, running: false, t0: 0, dur: 0, toNone: false, t: 1 };
-  let dozing = false, nowMs = 0;
-  let playWas = true, restartSeen = 0, outPlays = false;
+  // The active slot's index (the one the controls play), the outgoing stack
+  // (oldest, deepest first), what the layer was last asked to show ('' nothing
+  // yet), and the incoming's fade: pending (waiting for its picture), running
+  // from t0 over dur ms. wasOn: a picture has been up this session (no fade
+  // out of a freshly restored boot). lastMs: the previous frame, for the
+  // outgoing clocks.
+  let act = 0, shown = '', wasOn = false;
+  const outs = [];
+  const fade = { pending: false, running: false, t0: 0, dur: 0, t: 1 };
+  let dozing = false, nowMs = 0, lastMs = 0;
+  let playWas = true, restartSeen = 0;
   // the play/pause run factor (see the header): 1 running, 0 stopped; ppInit
   // false means the next frame sets it straight to its target
   let pp = 1, ppInit = false, ppMs = 0, ppMoving = false;
@@ -266,7 +281,8 @@ export function createSlides(device, format) {
     el.preservesPitch = false;
     el.mozPreservesPitch = false;
     el.webkitPreservesPitch = false;
-    const s = { k, el, file: '', failed: false, holding: false, playPending: false, retryAt: 0, legNow: -1, src: null, leg: null };
+    const s = { k, el, file: '', failed: false, holding: false, playPending: false, retryAt: 0, legNow: -1, src: null, leg: null,
+                g0: 0, a0: 0, p: 0, dur: 0, plays: false, v: -1, vdur: 0 };
     el.addEventListener('loadeddata', () => { release(s, 'a slide video'); idleWake('slide loaded'); });
     el.addEventListener('ended', () => idleWake('slide ended'));
     el.addEventListener('error', () => {
@@ -295,6 +311,23 @@ export function createSlides(device, format) {
     // hook once one exists.
     slots.push(makeSlot(0), makeSlot(1));
     restartSeen = S.slideRestartN | 0;
+  }
+  // A voice neither active nor outgoing (always empty), made new while the
+  // pool has room; past MAX_VOICES the oldest outgoing one gives way.
+  function freeSlot() {
+    for (const s of slots) if (s !== slots[act] && !outs.includes(s)) return s;
+    if (slots.length < MAX_VOICES) {
+      const s = makeSlot(slots.length);
+      s.el.muted = slots[0].el.muted;
+      if (actx) {
+        try { wire(s); } catch (e) { console.warn('slides: a new voice could not join the sound chain (' + (e && e.message ? e.message : e) + ')'); }
+      }
+      slots.push(s);
+      return s;
+    }
+    const s = outs.shift();
+    empty(s);
+    return s;
   }
 
   function loadInto(s, file) {
@@ -339,18 +372,20 @@ export function createSlides(device, format) {
       gain = actx.createGain();
       gain.gain.value = outGain(S) * duckMul;
       gf.output.connect(gain); gain.connect(actx.destination);
-      for (const s of slots) {
-        s.src = actx.createMediaElementSource(s.el);
-        s.leg = actx.createGain();
-        s.leg.gain.value = s.legNow >= 0 ? s.legNow : 0;
-        s.src.connect(s.leg); s.leg.connect(gf.input);
-        s.el.volume = 1;
-      }
+      for (const s of slots) wire(s);
     } catch (e) {
       audioFailed = true;
       actx = null;
       console.warn('slides: could not build the sound chain (' + (e && e.message ? e.message : e) + '); the videos play with their own volume only');
     }
+  }
+  // A voice into the chain: its element's source -> its leg -> the filter.
+  function wire(s) {
+    s.src = actx.createMediaElementSource(s.el);
+    s.leg = actx.createGain();
+    s.leg.gain.value = s.legNow >= 0 ? s.legNow : 0;
+    s.src.connect(s.leg); s.leg.connect(gf.input);
+    s.el.volume = 1;
   }
   function resumeAudio() {
     if (actx && actx.state !== 'running' && actx.state !== 'closed') {
@@ -435,42 +470,38 @@ export function createSlides(device, format) {
   function pause(s) { if (!s.el.paused) s.el.pause(); }
 
   // ---------- the fade ----------
-  // Ends the fade where it stands: at its end, the outgoing slot emptied
-  // and the active one at full (still black if its picture is not in yet).
-  function finishFade() {
-    if (out >= 0) { empty(slots[out]); out = -1; }
-    fade.pending = fade.running = fade.toNone = false;
-    fade.t = 1;
-  }
-  // The layer was asked for another file (or None): the running fade
-  // snapped to its end first, then a cut or a new fade.
+  // The incoming's progress: 0 waiting for its picture, 1 fully in.
+  const fadeLin = () => fade.running ? (fade.t < 0 ? 0 : fade.t > 1 ? 1 : fade.t) : fade.pending ? 0 : 1;
+  // An outgoing voice's picture starts fading out over the scene (nothing
+  // will come to cover it), from the alpha it holds.
+  function vanish(o, xf) { if (o.v < 0) { o.v = 0; o.vdur = xf * 1000; } }
+  // The layer was asked for another file (or None). The active voice, if
+  // its picture is up, joins the outgoing stack from the level and alpha it
+  // has right now, and fades out on its own clock; nothing already fading
+  // is touched. One still loading is silent and unseen, so it just empties.
   function change(file) {
-    finishFade();
     liveOverride = null; walkHeld = false; ppInit = false;
     const xf = clampNum(S.slideXfade, 0, 5, 0.5);
     const cur = slots[act];
     // only a picture already up (on a layer that was on) fades out
     const live = wasOn && hasPicture(cur);
     shown = file;
-    if (file === SLIDE_NONE) {
-      if (live && xf > 0) {
-        // the picture becomes the outgoing slot; the active one is the
-        // other, empty (the idle slot is always empty outside a fade)
-        out = act; outPlays = !cur.el.paused;
-        act = 1 - act;
-        fade.toNone = true; fade.running = true; fade.t0 = nowMs; fade.dur = xf * 1000; fade.t = 0;
-      } else empty(cur);
-      return;
-    }
-    // the new file into the idle slot, which takes the controls at once
-    const next = slots[1 - act];
-    if (live && xf > 0) { out = act; outPlays = !cur.el.paused; }
-    else empty(cur);
-    act = 1 - act;
-    loadInto(next, file);
-    if (xf > 0) {
-      fade.pending = true; fade.dur = xf * 1000; fade.t = 0;
-    }
+    if (live && xf > 0) {
+      cur.g0 = cur.legNow >= 0 ? cur.legNow : 0;
+      cur.a0 = smooth(fadeLin());
+      cur.p = 0; cur.dur = xf * 1000; cur.plays = !cur.el.paused; cur.v = -1;
+      outs.push(cur);
+      act = freeSlot().k;
+    } else empty(cur);
+    // a cut takes everything still fading with it
+    if (!(xf > 0)) { for (const o of outs) empty(o); outs.length = 0; }
+    fade.pending = fade.running = false; fade.t = 1;
+    // None leaves the active voice empty; the stack fades out over the
+    // scene (update starts each one's vanish, as nothing is coming)
+    if (file === SLIDE_NONE) return;
+    // the new file into the active voice, which takes the controls at once
+    loadInto(slots[act], file);
+    if (xf > 0) { fade.pending = true; fade.dur = xf * 1000; fade.t = 0; }
   }
 
   function resize(pw, ph) {
@@ -486,6 +517,7 @@ export function createSlides(device, format) {
   // One picture into pics[nPics], at alpha a, in its own letterbox.
   function addPic(s, a) {
     if (a <= 0.001 || !hasPicture(s)) return;
+    if (nPics === pics.length) pics.push(makePic(nPics));
     const pk = pics[nPics];
     let ext = null;
     try {
@@ -511,15 +543,17 @@ export function createSlides(device, format) {
   }
 
   function update(t) {
-    nowMs = t;
+    // the outgoing clocks' step, capped as the run factor's is
+    const dtMs = Math.min(100, Math.max(0, t - lastMs));
+    nowMs = lastMs = t;
     drawBlack = false; nPics = 0;
-    pics[0].bind = pics[1].bind = null;
+    for (const pk of pics) pk.bind = null;
     const on = !!(S.layers && S.layers.slides);
     // The layer off is a change to None: the picture fades out over the
     // scene on the Crossfade, through the very same path below.
     const file = on && typeof S.slideFile === 'string' ? S.slideFile : SLIDE_NONE;
     const wantPlay = S.slidePlay !== false;
-    if (file === SLIDE_NONE && (shown === '' || shown === SLIDE_NONE) && out < 0) {
+    if (file === SLIDE_NONE && (shown === '' || shown === SLIDE_NONE) && !outs.length) {
       // nothing to show and nothing fading out
       shown = SLIDE_NONE;
       wasOn = true;
@@ -535,12 +569,33 @@ export function createSlides(device, format) {
     // The fade's clock: a pending one starts once the incoming picture is
     // in (or the incoming failed, which ends it: nothing is left to show).
     if (fade.pending) {
-      if (cur.failed) finishFade();
+      if (cur.failed) { fade.pending = false; fade.t = 1; }
       else if (hasPicture(cur)) { fade.pending = false; fade.running = true; fade.t0 = nowMs; fade.t = 0; }
     }
     if (fade.running) {
       fade.t = fade.dur > 0 ? (nowMs - fade.t0) / fade.dur : 1;
-      if (fade.t >= 1) { finishFade(); if (shown === SLIDE_NONE) empty(cur); }
+      if (fade.t >= 1) { fade.running = false; fade.t = 1; }
+    }
+
+    // The outgoing clocks run while nothing waits on an incoming picture.
+    // With nothing coming (None, or an incoming that failed) each picture
+    // fades out over the scene too. A voice goes once it is silent and its
+    // picture is hidden: faded out, or under an opaque picture above it.
+    if (outs.length) {
+      const xf = clampNum(S.slideXfade, 0, 5, 0.5);
+      const run = !fade.pending;
+      let covered = hasPicture(cur) && fadeLin() >= 1;
+      for (let i = outs.length - 1; i >= 0; i--) {
+        const o = outs[i];
+        if (!hasFile(cur)) vanish(o, xf);
+        if (run) {
+          o.p = o.dur > 0 ? Math.min(1, o.p + dtMs / o.dur) : 1;
+          if (o.v >= 0) o.v = o.vdur > 0 ? Math.min(1, o.v + dtMs / o.vdur) : 1;
+        }
+        const a = o.v >= 0 ? o.a0 * (1 - smooth(o.v)) : o.a0;
+        if (o.p >= 1 && (covered || a <= 0.001 || !hasPicture(o))) { outs.splice(i, 1); empty(o); }
+        else if (a >= 0.999 && hasPicture(o)) covered = true;
+      }
     }
 
     // ---- the active slot: Play, Loop, Speed, Restart ----
@@ -586,30 +641,25 @@ export function createSlides(device, format) {
       else pause(cur);
     } else { restartSeen = S.slideRestartN | 0; ppInit = false; ppMoving = false; }
     playWas = wantPlay;
-    // the outgoing slot plays on as it was, until it is emptied
-    if (out >= 0) {
-      const o = slots[out];
-      if (outPlays && !dozing && !o.el.ended) play(o); else pause(o);
+    // the outgoing voices play on as they were, until each is emptied
+    for (const o of outs) {
+      if (o.plays && !dozing && !o.el.ended) play(o); else pause(o);
     }
 
     // ---- the sound: equal power across the fade ----
-    const lin = fade.running ? (fade.t < 0 ? 0 : fade.t > 1 ? 1 : fade.t) : fade.pending ? 0 : 1;
+    // the incoming up on sin, each outgoing down on cos from where it left
+    const lin = fadeLin();
     const inGain = shown === SLIDE_NONE ? 0 : Math.sin(lin * HALF_PI);
     setLeg(cur, hasFile(cur) ? inGain * ppGain * fileGain(cur.file) : 0);
-    if (out >= 0) setLeg(slots[out], Math.cos(lin * HALF_PI) * fileGain(slots[out].file));
-    else setLeg(slots[1 - act], 0);
+    for (const o of outs) setLeg(o, o.g0 * Math.cos(o.p * HALF_PI));
     syncAudio();
 
     // ---- the picture ----
-    // Black under a slide still loading or fading in from nothing; then the
-    // outgoing picture, then the incoming over it.
-    const alpha = smooth(lin);
-    if (fade.toNone) {
-      addPic(slots[out], 1 - alpha);
-      return;
-    }
-    if (out >= 0) addPic(slots[out], 1);
-    if (hasFile(cur)) addPic(cur, fade.pending ? 0 : alpha);
+    // The outgoing pictures, deepest first, each at the alpha it left with
+    // (fading out over the scene when nothing is coming), then the incoming
+    // over them.
+    for (const o of outs) addPic(o, o.v >= 0 ? o.a0 * (1 - smooth(o.v)) : o.a0);
+    if (hasFile(cur)) addPic(cur, fade.pending ? 0 : smooth(lin));
   }
 
   // In the scene pass, after everything else the scene draws.
@@ -665,7 +715,7 @@ export function createSlides(device, format) {
 
   // A playing video, or a fade running or waiting for its picture, keeps the
   // frame loop awake (main.js's still frame asks), paused or not.
-  const busy = () => fade.pending || fade.running || out >= 0 || ppMoving ||
+  const busy = () => fade.pending || fade.running || outs.length > 0 || ppMoving ||
     ((drawBlack || nPics > 0) && slots.length > 0 && !slots[act].el.paused && !slots[act].el.ended);
 
   return { update, draw, resize, doze, busy };

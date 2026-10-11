@@ -52,10 +52,12 @@
 //                                      button, a walk pause) that disagrees
 //                         slideRestart (v ignored)
 //                         slideXfade   0..500   (hundredths of a second, 0 a cut)
-//   {k:'duck', on, amt, dn, up}  the duck (gpu/slides.js setDuck and the
-//                       heartbeat's setHeartDuck, the same multiplier):
-//                       on, the slides' gain falls to (1 - amt) over dn
-//                       seconds; off, back to full over up seconds
+//   {k:'duck', on, amt, dn, up}  the duck (gpu/slides.js setDuck, the
+//                       heartbeat's setHeartDuck and the Sun hum's
+//                       setHumDuck, the same multiplier): on, the slides',
+//                       the heartbeat's and the hum's gains fall to
+//                       (1 - amt) over dn seconds; off, back to full over
+//                       up seconds
 // The journey moves regardless of the Journey window or ACTIVE (a remote is
 // opted into by its URL, so nothing else gates it).
 //
@@ -87,6 +89,7 @@ import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlay
 import { idleWake } from '../core/idle.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
+import { setHumDuck } from '../core/sun-hum.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade']);
@@ -213,6 +216,7 @@ export function initShowRemote(hooks = {}) {
       const mul = m.on ? 1 - amt : 1, dur = isFinite(sec) && sec >= 0 ? sec : 0.2;
       setDuck(mul, dur);
       setHeartDuck(mul, dur);
+      setHumDuck(mul, dur);
     }
   }
   for (const b of bases) all.push(socket(b.base, b.name, CMD_ROOM, 'follow', take, null));

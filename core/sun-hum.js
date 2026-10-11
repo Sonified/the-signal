@@ -3,82 +3,78 @@
 // lowpass-filtered, given a room and speed-scaled. This is
 // meditatewiththesun.com's own engine (documents/sunaudio-site-reference.js,
 // the site's SunAudio), ported to a module: the decode, the stitch, the seam
-// smoothing, the buffer, the filter, the room's two ping-ponged convolvers,
-// the output gate and the source handling are the site's, kept as they are,
-// and the site's own header says the decode, stitch and seam mirror its
-// listen page exactly, so keep them in sync with it. What is gone is the
-// site's ?audiodebug overlay (it drew into the document) and its ?nohum
-// switch, both diagnostics.
+// smoothing, the buffer, the filter and the source handling are the site's,
+// kept as they are, and the site's own header says the decode, stitch and
+// seam mirror its listen page exactly, so keep them in sync with it. What is
+// gone is the site's ?audiodebug overlay (it drew into the document), its
+// ?nohum switch, both diagnostics, and (below) its own context and room.
 //
-// Its own AudioContext, at the site's 48 kHz, not the app's shared one
-// (js/audio.js getContext). One hour is one sample, so the hum's pitch IS
-// the sample rate: on the app's context, at whatever rate the device came up
-// with (often 44.1 kHz), every speed would sound about 8% low against the
-// site's. The hum also plays whenever the Sun layer and its switch are on,
-// whether or not the transport runs, where the app's master and pause gate
-// close with the transport. And the site's output gate is driven by its own
-// context's lifecycle (statechange opens and closes it, the first run's
-// silent route kick, the device-change recycle), which it cannot own on a
-// context the rest of the app suspends and resumes for its own reasons. The
-// app's context is only listened to: when it starts running, a gesture has
-// just woken the sound, and the hum spends that moment on its own unlock.
+// It plays as a music voice, on the music family's context and into its
+// master (js/heart/route.js: Heart's music island by default, the app's own
+// context under ?heart=off), so it is mixed, paused and woken like the
+// piano. The family master runs into js/audio.js's volGain, so the app's
+// Master volume, the global Lowpass and Highpass, the transport's ramps and
+// the pause gate all reach it there, and the hum keeps no copy of any of
+// them. Its room is the music's own, the reverb every music voice shares
+// (js/piano.js revIn), which piano.js hands over once its graph is built
+// (setHumBus); until then the hum plays dry.
+//
+// The site plays at 48 kHz, and one hour is one sample, so the hum's pitch IS
+// the sample rate: played at the app's rate (often 44.1 kHz) every speed
+// would sound about 8% low against the site's. So the buffer is made at
+// 48 kHz whatever the context runs at, and the source resamples it: native
+// Web Audio does, and so does Heart (heart/src/nodes/buffer_source.rs, whose
+// rate is playbackRate times buffer rate over context rate). Every time and
+// rate here is therefore in the site's own 48 kHz terms.
 //
 // Lazy: nothing is fetched or built until the hum is first asked to play.
 // Every call is harmless where there is no AudioContext (the engine worker,
 // which runs the schema's set() calls too; the page's copy makes the sound).
 //
-// PORTABILITY: like core/heartbeat.js, this reaches the browser's audio (and
-// navigator.audioSession, matchMedia, an Audio element as the old phones'
-// output) directly; it belongs behind a platform hook when one is added.
-// It never touches the document.
+// PORTABILITY: like core/heartbeat.js, this reaches the browser's audio
+// directly; it belongs behind a platform hook when one is added. It never
+// touches the document.
 
-import { getContext as appContext } from '../js/audio.js';
-import { createGlobalFilter } from './global-filter.js';
+import { S } from '../js/state.js';
+import { getContext, getMaster, sourceGate, ensureAudioGraph } from '../js/audio.js';
+import { ctxFor } from '../js/heart/route.js';
+import { meterTap, tapPeak } from '../js/util.js';
 
 const DATA_URL = 'audio/solar_wind_speed_hourly.u16';
 const HOURS_PER_YEAR = 8766;      // 365.25 * 24
 const BIG_GAP_HOURS = 168;        // >= 7 days is a hole worth cutting
 const SEAM_HALF = 4;              // splice de-click half-window, in samples
+const SITE_RATE = 48000;          // the site's context rate, and the buffer's (above)
 
 const G = globalThis;
 const AC = G.AudioContext || G.webkitAudioContext;
-const NAV = G.navigator;
-const mq = q => { try { return !!(G.matchMedia && G.matchMedia(q).matches); } catch (e) { return false; } };
 
 let values = null, hourOf = null; // the stitched series (see stitch())
-let ctx = null, buffer = null, filter = null, master = null, outputGate = null;
-// this context's global Lowpass/Highpass pair (core/global-filter.js)
-let globalFilter = null;
-let mediaOut = null;              // phone output path; see ensureCtx
+// The graph, on `ctx` (the music family's context, see familyCtx): the
+// source and its envelope, the site's filter, the swell that brings the hum
+// in, the channel gain (its volume and the mix gate), the pause gate, the
+// meter's tap, and the dry and wet legs.
+let ctx = null, buffer = null, filter = null, swell = null, chan = null, pgate = null;
+let tap = null, dry = null, wet = null;
 let src = null, env = null;
 
-let playing = false;
+let playing = false, everPlayed = false;
 let cutoffTarget = 376;           // matches the sun face's resting x (~0.25)
 let rate = 0.5;                   // resting rate = bottom of the sun-face drag
 let anchorPos = 0, anchorTime = 0, pausedPos = 0;
 
-// Phones get a smaller room: earbuds and tiny speakers smear long tails.
-const COARSE = mq('(pointer: coarse)');
-
 let volume = 0.9;                 // the hum's own gain, 0..2
-let masterVol = 1;                // the app's Master volume, 0..1 (setMasterVolume)
 let gate = 1;                     // the mix gate's mute and solo, 0 or 1 (setGate)
-// The Levels window's meter: an analyser on the output gate, so it reads
-// what is heard, post-fader, post-gate, silent while paused (humPeak).
-let meterAn = null, meterBuf = null;
+let duckMul = 1;                  // the show remote's Duck, 0..1 (setHumDuck)
+let verbMix = 0.3;                // wet/dry into the music room (setReverbMix)
 
-let verbMix = 0.3;                  // reverb wet/dry, the Reverb mix (setReverbMix)
-let verbOn = true;                  // the room
-let verbSize = COARSE ? 1.75 : 3.5;  // tail seconds to -60 dB (half on touch)
-let dry = null, wet = null, verbTimer = 0;
-let verbSlots = null, verbActive = 0;   // two convolvers, crossfade-swapped
-let lifecycleTimer = 0, outputOpen = false, outputEverOpened = false, routeKicked = false;
+// The music room (js/piano.js), handed over by setHumBus: its context and
+// its input, and whether the wet leg plays into it yet.
+let roomCtx = null, roomIn = null, roomPlugged = false;
 
-// The port's own state, around the site's: whether the layer wants the hum
-// (play() before the data is in still counts), the data's one fetch, the
-// app context's listener, and when the gate's last close lands.
-let wanted = false, loading = null, loadFailed = false, unavailable = false;
-let appCtxHooked = null, closeEndsAt = 0, openTimer = 0, onStateChange = null;
+// Whether the layer wants the hum (play() before the data is in still
+// counts), and the data's one fetch.
+let wanted = false, loading = null, loadFailed = false;
 
 function warn(msg, e) {
   console.warn('sun hum: ' + msg + (e ? ': ' + (e && e.message ? e.message : e) : ''));
@@ -150,118 +146,213 @@ function stitch(speeds) {
 
 // ---- audio graph ----
 
-function ensureCtx() {
+// The music family's context: the one the music room was built on, once
+// piano.js has handed it over (setHumBus), so the wet leg can always reach
+// that room; until then the family's own (js/heart/route.js), and the app's
+// native context when no family plays on Heart. Its master follows the
+// context, so the two always belong to the same engine.
+const familyCtx = () => roomCtx || ctxFor('music') || getContext();
+const masterOf = c => c && c.isHeart ? c.destination : getMaster();
+
+// "Now" for anything scheduled: on Heart a stage renders ahead of the
+// clock, and a call anchored at currentTime is heard from presentTime, a
+// lookahead later (js/heart/nodes.js, late gestures). Reading the present
+// keeps the source's start ahead of the render horizon and every anchor on
+// the clock its sound is actually heard by. Natively it is currentTime.
+const now = () => ctx.presentTime ?? ctx.currentTime;
+
+function buildGraph() {
   if (ctx) return;
-  try { ctx = new AC({ sampleRate: 48000 }); }
-  catch (e) { ctx = new AC(); }
+  const c = familyCtx(), master = masterOf(c);
+  if (!c || !master) return;
+  ctx = c;
 
   filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
   filter.Q.value = 0.707;
   filter.frequency.value = Math.min(cutoffTarget, 0.45 * ctx.sampleRate);
 
-  // User volume and hardware lifecycle are deliberately separate. The
-  // final gate is always born silent, then opens only after the browser's
-  // output route is running; this prevents a live waveform/reverb tail from
-  // being dropped onto a newly opened device at an arbitrary sample value.
-  master = ctx.createGain();
-  master.gain.value = volume * masterVol * gate;
-  outputGate = ctx.createGain();
-  outputGate.gain.value = 0;
-  onStateChange = () => {
-    if (!ctx) return;
-    if (ctx.state === 'running') {
-      // First run ever: push one silent buffer straight to the destination
-      // so the OS opens the route on nothing (the classic iOS pop guard).
-      if (!routeKicked) {
-        routeKicked = true;
-        try {
-          const b = ctx.createBuffer(1, Math.round(ctx.sampleRate * 0.05), ctx.sampleRate);
-          const k = ctx.createBufferSource(); k.buffer = b; k.connect(ctx.destination); k.start();
-        } catch (e) {}
-      }
-      openOutput();
-    } else muteOutputNow();
-  };
-  ctx.addEventListener('statechange', onStateChange);
+  // The swell the hum comes in on (startPlaying): the site's output gate
+  // opened over a second the visit's first time and 0.4 s on each later
+  // play, and the switch keeps that feel. Born silent.
+  swell = ctx.createGain();
+  swell.gain.value = 0;
+  // The hum's channel: its volume times the mix gate and the Duck
+  // (setVolume, setGate, setHumDuck), ahead of the split, so a mute, a solo
+  // or a duck reaches the room's feed too.
+  chan = ctx.createGain();
+  chan.gain.value = chanLevel();
+  // The pause gate (js/audio.js), ahead of the split as well, so a pause
+  // stops the hum reaching the speakers and the room alike while the room
+  // rings on, and the meter falls silent with it.
+  pgate = ctx.createGain();
+  sourceGate(pgate.gain);
+  filter.connect(swell).connect(chan).connect(pgate);
 
-  // On phones, raw WebAudio obeys the ringer's SILENT SWITCH, and most
-  // phones sit on silent, so the hum simply never sounds. Safari 17+
-  // offers the clean opt-out: declare the page's audio "playback" via
-  // navigator.audioSession and use the normal destination. Older touch
-  // browsers get the fallback: the graph terminates in a stream feeding
-  // an <audio> element, which counts as media playback.
-  // The app's global Lowpass and Highpass (core/global-filter.js), between
-  // the hum's master and its output gate: this context's own pair.
-  globalFilter = createGlobalFilter(ctx);
-  master.connect(globalFilter.input);
-  meterAn = ctx.createAnalyser();
-  meterAn.fftSize = 1024;
-  meterBuf = new Float32Array(meterAn.fftSize);
-  outputGate.connect(meterAn);
-  if (NAV && 'audioSession' in NAV) {
-    try { NAV.audioSession.type = 'playback'; } catch (e) {}
-    globalFilter.output.connect(outputGate).connect(ctx.destination);
-  } else if (mq('(pointer: coarse)') && G.Audio && ctx.createMediaStreamDestination) {
-    const msd = ctx.createMediaStreamDestination();
-    globalFilter.output.connect(outputGate).connect(msd);
-    mediaOut = new G.Audio();
-    mediaOut.srcObject = msd.stream;
-    mediaOut.setAttribute('playsinline', '');
-  } else {
-    globalFilter.output.connect(outputGate).connect(ctx.destination);
-  }
-
-  // A system-default output change can leave the AudioContext logically
-  // running while its hardware route is rebuilt underneath it. Re-close
-  // the final gate briefly for both the device-list signal and the newer
-  // AudioContext sink signal. The handler is debounced because browsers may
-  // emit both for one physical switch.
-  if (!COARSE) {
-    if (NAV && NAV.mediaDevices && NAV.mediaDevices.addEventListener)
-      NAV.mediaDevices.addEventListener('devicechange', recycleOutput);
-    if ('onsinkchange' in ctx) ctx.addEventListener('sinkchange', recycleOutput);
-  }
-
-  // The room, as a parallel path: the filtered hum splits into a dry leg
-  // and a convolver leg, recombined equal-power at the master. The impulse
-  // is synthesized (stereo shaped noise decaying to -60 dB at verbSize),
-  // so no sample ever loads.
-  //
-  // TWO convolvers, ping-ponged: assigning a new buffer to a LIVE
-  // ConvolverNode hard-resets its state, the tail truncates to silence
-  // and the output steps, which pops. So a size change loads the new
-  // impulse into the silent slot and crossfades; no audible node's
-  // buffer is ever touched.
+  // The Levels window's meter (humPeak): post-fader, post-gate, post-duck
+  // and pre-room, the point the music's own meters read (js/util.js meterTap),
+  // feeding the dry and wet legs.
   dry = ctx.createGain();
   wet = ctx.createGain();
-  // The graph is BORN in the room's current state, so no swell on load.
-  const m0 = verbOn ? verbMix : 0;
+  tap = meterTap(ctx, dry, wet);
+  pgate.connect(tap.analyser);
+  // The graph is BORN in the mix's current state, so no swell on load; with
+  // no room yet it is all dry (applyVerb).
+  const m0 = roomPlugged ? verbMix : 0;
   dry.gain.value = Math.cos(m0 * Math.PI / 2);
   wet.gain.value = Math.sin(m0 * Math.PI / 2);
-  filter.connect(dry).connect(master);
-  wet.connect(master);
-
-  verbSlots = [0, 1].map((i) => {
-    const conv = ctx.createConvolver();
-    const g = ctx.createGain();
-    g.gain.value = i === 0 ? 1 : 0;
-    filter.connect(conv).connect(g).connect(wet);
-    return { conv, g };
-  });
-  verbSlots[0].conv.buffer = makeImpulse(verbSize);
-  verbActive = 0;
+  dry.connect(master);
 
   if (values) buildBuffer();
   plugRoom();
 }
 
+// The wet leg into the music room, once the room exists on this context.
+// The room's input carries its own pause gate (piano.js), which the wet leg
+// meets after the hum's: both close together on a pause. Arriving, the mix
+// crossfades from all dry to its setting, as a room switched on does.
+function plugRoom() {
+  if (!wet || roomPlugged || !roomIn || roomCtx !== ctx) return;
+  wet.connect(roomIn);
+  roomPlugged = true;
+  applyVerb(0.25);
+}
+
+// Let go of the graph: the source stops (its place kept), and the legs
+// leave the master and the room. The pause gate keeps its registration in
+// audio.js, harmlessly, on a gain nothing plays through any more.
+function teardown() {
+  if (!ctx) return;
+  if (src) stopSource();
+  playing = false;
+  for (const n of [dry, wet, pgate, chan, swell, filter]) {
+    try { n && n.disconnect(); } catch (e) {}
+  }
+  ctx = null; buffer = null; filter = null; swell = null; chan = null; pgate = null;
+  tap = null; dry = null; wet = null; src = null; env = null;
+  roomPlugged = false;
+}
+
+// The channel's level: the hum's volume, its mix gate and the Duck.
+const chanLevel = () => volume * gate * duckMul;
+
+function hold(param, t) {
+  if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
+  else {
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(param.value, t);
+  }
+}
+
+// The wet/dry pair always move together, equal-power, and always by
+// APPROACH rather than assignment: `tau` is the time constant, ~0.03 for a
+// fader (instant to the hand) and ~0.25 for the room arriving, three
+// quarters of a second of swell, so the walls arrive rather than blink.
+// Until the music room exists the hum is all dry: the mix's wet share
+// waits for somewhere to go.
+function applyVerb(tau) {
+  if (!dry || !ctx) return;
+  const m = roomPlugged ? verbMix : 0;
+  const t = now();
+  dry.gain.setTargetAtTime(Math.cos(m * Math.PI / 2), t, tau);
+  wet.gain.setTargetAtTime(Math.sin(m * Math.PI / 2), t, tau);
+}
+
+const latency = () => ctx.outputLatency || ctx.baseLatency || 0;
+const dur = () => buffer.length / buffer.sampleRate;
+
+function currentPos() {
+  if (!playing || !src) return pausedPos;
+  let p = anchorPos + (now() - anchorTime) * rate;
+  return p % dur();
+}
+
+function startSource(offsetSec) {
+  src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  src.playbackRate.value = rate;
+  env = ctx.createGain();
+  env.gain.value = 0;
+  src.connect(env).connect(filter);
+  // The lead is the whole game. A 10ms lead is shorter than the main
+  // thread can stall for right after the graph and the buffer have been
+  // built, and a start time that lands in the PAST makes the browser begin
+  // instantly with the fade-in already elapsed, so the first sample arrives
+  // at full amplitude: the click. 80ms is imperceptible as latency and
+  // safely past any render quantum. Read the clock as late as possible,
+  // after the nodes exist.
+  const at = now() + 0.08;
+  src.start(at, offsetSec % dur());
+  env.gain.setValueAtTime(0, at);
+  env.gain.linearRampToValueAtTime(1, at + 0.04);    // a fade, not an edge
+  anchorPos = offsetSec;
+  anchorTime = at + latency();
+  return at;
+}
+
+function stopSource() {
+  if (!src) return;
+  const t = now();
+  pausedPos = currentPos();
+  const s = src, e = env;
+  src = null; env = null;
+  e.gain.cancelScheduledValues(t);
+  e.gain.setValueAtTime(e.gain.value, t);
+  e.gain.linearRampToValueAtTime(0, t + 0.02);
+  try { s.stop(t + 0.05); } catch (err) { /* already stopped */ }
+  s.onended = () => { try { e.disconnect(); } catch (err) {} };
+}
+
+// The source, and the swell it comes in on: the visit's first sound swells
+// over a second, a later play over 0.4 s, a swell and not a switch, since
+// this is a room you sit in. From a set 0.0001 at the source's own start.
+function sound() {
+  const at = startSource(pausedPos);
+  const rise = everPlayed ? 0.4 : 1.0;
+  everPlayed = true;
+  swell.gain.cancelScheduledValues(now());
+  swell.gain.setValueAtTime(0.0001, at);
+  swell.gain.exponentialRampToValueAtTime(1, at + rise);
+}
+
+// The site's play(), once the data and the graph are in. Waking the context
+// is the app's (js/audio.js, on the viewer's gestures); a hum asked for
+// while it sleeps is armed and starts the moment it runs.
+//
+// THE CLICK: starting the source on a suspended context schedules its
+// fade-in against a FROZEN clock. When the browser finally resumes,
+// currentTime leaps past those times, the envelope is already at 1, and the
+// very first audible sample lands at full amplitude on an arbitrary point of
+// the waveform: a pop. So the source waits until the context is genuinely
+// running.
+let armedOn = null;
+function startPlaying() {
+  if (!values || playing) return;
+  buildGraph();
+  if (!ctx) return;
+  if (!buffer) buildBuffer();     // the graph may have been built dataless
+  playing = true;
+  if (ctx.state === 'running') { sound(); return; }
+  if (armedOn === ctx) return;
+  const c = armedOn = ctx;
+  const armed = () => {
+    if (c !== ctx || c.state !== 'running') return;
+    c.removeEventListener('statechange', armed);
+    armedOn = null;
+    if (playing && !src) sound();
+  };
+  c.addEventListener('statechange', armed);
+}
+
 // The buffer IS the series, mean-removed, seams smoothed, peak-normalized.
-// Split from ensureCtx so a gesture can PRIME the context before the data
-// has arrived; the buffer joins the graph the moment both exist.
+// Made at the site's 48 kHz whatever the context's rate (see the top), and
+// an AudioBuffer belongs to no context, so a graph rebuilt on another one
+// (setHumBus) plays the same buffer. Split from buildGraph so the graph can
+// stand before the data has arrived; the buffer joins it once both exist.
 function buildBuffer() {
   const n = values.length;
-  buffer = ctx.createBuffer(1, n, ctx.sampleRate);
+  buffer = ctx.createBuffer(1, n, SITE_RATE);
   const ch = buffer.getChannelData(0);
 
   let sum = 0;
@@ -296,222 +387,6 @@ function buildBuffer() {
   for (let i = 0; i < n; i++) ch[i] *= k;
 }
 
-function makeImpulse(seconds) {
-  const sr = ctx.sampleRate, len = Math.max(1, Math.round(seconds * sr));
-  const ir = ctx.createBuffer(2, len, sr);
-  for (let c = 0; c < 2; c++) {
-    const d = ir.getChannelData(c);
-    for (let i = 0; i < len; i++)
-      d[i] = (Math.random() * 2 - 1) * Math.pow(0.001, i / len);
-  }
-  return ir;
-}
-
-function hold(param, t) {
-  if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
-  else {
-    param.cancelScheduledValues(t);
-    param.setValueAtTime(param.value, t);
-  }
-}
-
-function muteOutputNow() {
-  if (!ctx || !outputGate) return;
-  outputOpen = false;
-  const t = ctx.currentTime;
-  // a step to zero from a live signal is itself a click; 5ms is
-  // inaudible as a fade and silent as an edge. hold() pins the LIVE
-  // automated value (Safari's gain.value can report the stale set value).
-  hold(outputGate.gain, t);
-  outputGate.gain.linearRampToValueAtTime(0, t + 0.005);
-  closeEndsAt = t + 0.005;
-}
-
-function closeOutput(seconds = 0.035) {
-  if (!ctx || !outputGate) return;
-  outputOpen = false;
-  const t = ctx.currentTime;
-  hold(outputGate.gain, t);
-  outputGate.gain.linearRampToValueAtTime(0, t + seconds);
-  closeEndsAt = t + seconds;
-}
-
-function openOutput() {
-  if (!ctx || !outputGate || !playing || ctx.state !== 'running' || outputOpen)
-    return;
-  clearTimeout(lifecycleTimer);
-  const firstOpen = !outputEverOpened;
-  outputOpen = true;
-  outputEverOpened = true;
-  const t = ctx.currentTime;
-  // PHONES: a quarter second of enforced silence first; the start click
-  // is the phone output waking up, and its 1.15s rise is untouched.
-  // DESKTOP: the visit's first sound swells over a second. A resume is
-  // quicker but still a swell, not a switch: 0.18s read as a click of
-  // the hum coming back, and this is a room you sit in.
-  const wait = COARSE ? 0.25 : 0;
-  const rise = COARSE ? 1.15 : (firstOpen ? 1.0 : 0.4);
-  outputGate.gain.cancelScheduledValues(t);
-  outputGate.gain.setValueAtTime(0.0001, t);
-  outputGate.gain.setValueAtTime(0.0001, t + wait);
-  outputGate.gain.exponentialRampToValueAtTime(1, t + wait + rise);
-}
-
-// openOutput starts from a set 0.0001, which is only silent once a close has
-// landed: opened mid-close, the ringing tail would step from wherever the
-// close had reached. So a play that comes while the gate is still closing
-// waits out the close first. (The site never pauses through the gate; this
-// app's switches do.)
-function openOutputAfterClose() {
-  clearTimeout(openTimer);
-  const left = ctx ? closeEndsAt - ctx.currentTime : 0;
-  if (left > 0) openTimer = setTimeout(openOutput, left * 1000 + 10);
-  else openOutput();
-}
-
-// The wet/dry pair always move together, equal-power, and always by
-// APPROACH rather than assignment: `tau` is the time constant, ~0.03 for a
-// fader (instant to the hand) and ~0.25 for the room being switched on or
-// off, three quarters of a second of swell, so the walls arrive and leave
-// rather than blinking. Off is simply mix 0: the tail that is already in
-// the air rides its own decay out instead of being cut.
-function applyVerb(tau) {
-  if (!dry || !ctx) return;
-  const m = verbOn ? verbMix : 0;
-  const t = ctx.currentTime;
-  dry.gain.setTargetAtTime(Math.cos(m * Math.PI / 2), t, tau);
-  wet.gain.setTargetAtTime(Math.sin(m * Math.PI / 2), t, tau);
-}
-
-function recycleOutput() {
-  if (!ctx || !outputGate || !playing) return;
-  closeOutput(0.025);
-  clearTimeout(lifecycleTimer);
-  lifecycleTimer = setTimeout(() => {
-    if (!ctx) return;
-    if (ctx.state === 'running') openOutput();
-    else ctx.resume().then(openOutput).catch(() => {});
-  }, 80);
-}
-
-const latency = () => ctx.outputLatency || ctx.baseLatency || 0;
-const dur = () => buffer.length / ctx.sampleRate;
-
-function currentPos() {
-  if (!playing || !src) return pausedPos;
-  let p = anchorPos + (ctx.currentTime - anchorTime) * rate;
-  return p % dur();
-}
-
-function startSource(offsetSec) {
-  src = ctx.createBufferSource();
-  src.buffer = buffer;
-  src.loop = true;
-  src.playbackRate.value = rate;
-  env = ctx.createGain();
-  env.gain.value = 0;
-  src.connect(env).connect(filter);
-  // The lead is the whole game. A 10ms lead is shorter than the main
-  // thread can stall for right after ensureCtx() has synthesised the
-  // reverb and built the buffer, and a start time that lands in the
-  // PAST makes the browser begin instantly with the fade-in already
-  // elapsed, so the first sample arrives at full amplitude: the click.
-  // 80ms is imperceptible as latency and safely past any render quantum.
-  // Read currentTime as late as possible, after the nodes exist.
-  const at = ctx.currentTime + 0.08;
-  src.start(at, offsetSec % dur());
-  env.gain.setValueAtTime(0, at);
-  env.gain.linearRampToValueAtTime(1, at + 0.04);    // a fade, not an edge
-  anchorPos = offsetSec;
-  anchorTime = at + latency();
-}
-
-function stopSource() {
-  if (!src) return;
-  const now = ctx.currentTime;
-  pausedPos = currentPos();
-  const s = src, e = env;
-  src = null; env = null;
-  e.gain.cancelScheduledValues(now);
-  e.gain.setValueAtTime(e.gain.value, now);
-  e.gain.linearRampToValueAtTime(0, now + 0.02);
-  try { s.stop(now + 0.05); } catch (err) { /* already stopped */ }
-  s.onended = () => { try { e.disconnect(); } catch (err) {} };
-}
-
-// The site's play(), once the data is in. If the browser refuses the
-// unlock, `playing` still goes true: the SOURCE is armed and simply waits,
-// silent, on the suspended context; every later unlock() can open the gates
-// mid-flight. (Never gate retries on a resume() promise: Safari leaves it
-// PENDING rather than rejecting, which once wedged the site.)
-function startPlaying() {
-  if (!values || playing) return;
-  ensureCtx();
-  if (!buffer) buildBuffer();     // ctx may have been primed dataless
-  playing = true;
-  unlock();
-  if (ctx.state === 'running') {
-    startSource(pausedPos);
-    openOutputAfterClose();
-    return;
-  }
-  // THE CLICK: starting the source on a suspended context schedules
-  // its fade-in against a FROZEN clock. When the browser finally
-  // resumes, currentTime leaps past those times, the envelope is
-  // already at 1, and the very first audible sample lands at full
-  // amplitude on an arbitrary point of the waveform: a pop. So the
-  // source waits here until the context is genuinely running.
-  const armed = () => {
-    if (!playing || src || !ctx || ctx.state !== 'running') return;
-    startSource(pausedPos);
-    openOutputAfterClose();
-  };
-  ctx.addEventListener('statechange', armed);
-  ctx.resume().then(armed).catch(() => {});
-  hookGesture();
-}
-
-// A wanted hum on a suspended context also listens for the page's first
-// gesture directly (pointer or key, capture, once each): with the app's own
-// audio off, no other context ever runs to ride, and the viewer's first
-// touch anywhere is the blessing the browser wants. Removed as soon as the
-// context runs; harmless where there is no window (PORTABILITY: globalThis,
-// as above).
-let gestureHooked = false;
-function hookGesture() {
-  const w = globalThis;
-  if (gestureHooked || !w.addEventListener || !ctx) return;
-  gestureHooked = true;
-  const bless = () => {
-    w.removeEventListener('pointerdown', bless, true);
-    w.removeEventListener('keydown', bless, true);
-    gestureHooked = false;
-    if (wanted && ctx && ctx.state !== 'running') unlock();
-  };
-  w.addEventListener('pointerdown', bless, true);
-  w.addEventListener('keydown', bless, true);
-}
-
-// When the app's own context starts running, a gesture has just woken the
-// sound (main.js's first tap, the worker shell's): the hum's unlock rides
-// it. Hooked once per app context, the first time the hum is wanted; at boot
-// the app's graph may not be built yet, so a wanted hum looks again for a
-// while (half a second apart, for about half a minute).
-let hookTries = 0, hookTimer = 0;
-function hookAppContext() {
-  const a = appContext();
-  if (!a) {
-    if (wanted && !hookTimer && hookTries < 60) {
-      hookTries++;
-      hookTimer = setTimeout(() => { hookTimer = 0; hookAppContext(); }, 500);
-    }
-    return;
-  }
-  if (a === appCtxHooked) return;
-  appCtxHooked = a;
-  a.addEventListener('statechange', () => { if (a.state === 'running' && wanted) unlock(); });
-}
-
 // The site's load(): the series, decoded and stitched, fetched once.
 function load() {
   if (values) return Promise.resolve();
@@ -537,78 +412,66 @@ function load() {
 
 // Whether this thread can make the hum at all (an engine worker has no
 // AudioContext; the page's copy of the schema makes the sound there).
-export const humAvailable = () => !!AC && !unavailable && !loadFailed;
+export const humAvailable = () => !!AC && !loadFailed;
 export const humPlaying = () => playing;
 
-/** Fetch the data and build the graph (the site's load + prime): the
-    context is born suspended with its gate silent, so this is safe with no
-    gesture, and a press that lands mid-download still spends its
-    activation. Resolves once the data is in. */
+/** Fetch the data and build the graph on the music family's context. The
+    app's audio graph is asked for first (js/audio.js ensureAudioGraph, which
+    needs no gesture), since it is what starts Heart: a graph built before
+    the engine has settled would be built natively. Resolves once both are
+    in. */
 export function ensure() {
-  if (!AC || unavailable || loadFailed) return Promise.resolve();
-  try { ensureCtx(); }
-  catch (e) { unavailable = true; warn('could not make an AudioContext', e); return Promise.resolve(); }
-  return load();
-}
-
-/** Nudge the browser's gates. Idempotent and safe on EVERY gesture:
-    a refused resume just stays pending; a blessed one starts sound. */
-export function unlock() {
-  if (!ctx) return;
-  // The resolved resume() is the one signal every browser agrees on,
-  // so don't lean on statechange alone for the first fade.
-  if (ctx.state !== 'running') ctx.resume().then(openOutputAfterClose).catch(() => {});
-  if (mediaOut && mediaOut.paused) mediaOut.play().catch(() => {});
+  if (!AC || loadFailed) return Promise.resolve();
+  return Promise.all([load(), ensureAudioGraph()]).then(() => { buildGraph(); });
 }
 
 /** Start (or keep) the hum. Lazy: the first call fetches the data and
     builds the graph, and the hum starts the moment both are in, if it is
-    still wanted then. */
+    still wanted then. It is heard while the transport runs, like every
+    music voice: the pause gate closes on it, and it plays on, silent,
+    underneath. */
 export function play() {
   if (!AC) return;
   wanted = true;
-  hookAppContext();
-  if (playing) { unlock(); return; }
-  const p = ensure();
-  unlock();
-  p.then(() => { if (wanted) startPlaying(); });
+  if (playing) return;
+  ensure().then(() => { if (wanted) startPlaying(); });
 }
 
-/** Stop the hum through the output gate: the source fades out as the
-    site's pause does, and the gate closes over the resume swell's own 0.4 s,
-    so the room's tail ebbs rather than ringing on unheard. The place in
-    the series is kept for the next play. */
+/** Stop the hum: the source fades out as the site's pause does, and the
+    room's tail rings out in the music room. The place in the series is kept
+    for the next play. */
 export function pause() {
   wanted = false;
   if (!playing) return;
   playing = false;
   stopSource();
-  clearTimeout(openTimer);
-  closeOutput(0.4);
 }
 
-/** Ramp the FINAL output gate to silence, source, reverb tail and all,
-    for the moments before a page reload. */
+/** Ramp the hum to silence, room feed and all, for the moments before a
+    page reload. What is already in the room is the room's. */
 export function hush(seconds = 0.12) {
-  closeOutput(seconds);
+  if (!swell) return;
+  const t = now();
+  hold(swell.gain, t);
+  swell.gain.linearRampToValueAtTime(0, t + seconds);
 }
 
-/** Raw buffer playback rate. 1 hour of sun = 1 sample, so at 48k a
-    rate of 1 is ~5.48 years per second. */
+/** Raw buffer playback rate, in the site's 48 kHz terms (the buffer is
+    48 kHz on any context). 1 hour of sun = 1 sample, so a rate of 1 is
+    ~5.48 years per second. */
 export function setRate(r) {
   if (r === rate) return;
   if (playing && src) {
     anchorPos = currentPos();
-    anchorTime = ctx.currentTime + latency();
-    src.playbackRate.setValueAtTime(r, ctx.currentTime);
+    anchorTime = now() + latency();
+    src.playbackRate.setValueAtTime(r, now());
   }
   rate = r;
 }
 
-/** Data-time velocity. 1 yr/s at 48k = playbackRate 0.183. */
+/** Data-time velocity. 1 yr/s = playbackRate 0.183. */
 export function setYearsPerSecond(yps) {
-  const sr = ctx ? ctx.sampleRate : 48000;
-  setRate((yps * HOURS_PER_YEAR) / sr);
+  setRate((yps * HOURS_PER_YEAR) / SITE_RATE);
 }
 
 // The Cutoff setting's map, the site's: 0 to 1 over 100 Hz to 10 kHz,
@@ -623,101 +486,85 @@ export function setCutoffHz(hz) {
   cutoffTarget = hz;
   if (filter)
     filter.frequency.setTargetAtTime(
-      Math.min(hz, 0.45 * ctx.sampleRate), ctx.currentTime, 0.01);
+      Math.min(hz, 0.45 * ctx.sampleRate), now(), 0.01);
 }
 
-/** Master volume, 0..2: above 1 the gain simply boosts past the source's
-    own level (the tone is a smooth rumble with headroom, so a clean 2x).
-    Smoothed so slider drags never zipper. */
+/** The hum's own volume, 0..2: above 1 the gain simply boosts past the
+    source's own level (the tone is a smooth rumble with headroom, so a
+    clean 2x). Smoothed so slider drags never zipper. The app's Master
+    volume is not in it: the family master plays through that already. */
 export function setVolume(v) {
   if (v === volume) return;
   volume = v;
-  if (master) master.gain.setTargetAtTime(volume * masterVol * gate, ctx.currentTime, 0.02);
-}
-
-/** The app's Master volume, 0..1, scaling the hum's own volume. The hum
-    keeps its own context (see the top of this file), so it follows the
-    master's level here rather than playing through the master's gain,
-    which also closes with the transport and the Audio layer's switch. */
-export function setMasterVolume(v) {
-  if (v === masterVol) return;
-  masterVol = v;
-  if (master) master.gain.setTargetAtTime(volume * masterVol * gate, ctx.currentTime, 0.02);
+  if (chan) chan.gain.setTargetAtTime(chanLevel(), now(), 0.02);
 }
 
 /** The mix gate (js/mixgate.js), 1 open or 0 closed by a mute or another
-    channel's solo: a multiplier on the hum's own level, its room's tail
-    included. */
+    channel's solo: a multiplier on the hum's own level, its feed into the
+    room included. */
 export function setGate(g) {
   if (g === gate) return;
   gate = g;
-  if (master) master.gain.setTargetAtTime(volume * masterVol * gate, ctx.currentTime, 0.02);
+  if (chan) chan.gain.setTargetAtTime(chanLevel(), now(), 0.02);
 }
 
-/** The hum's output peak, 0..1+, for the Levels window's meter. */
+/** The show remote's Duck (platform/show-remote.js, the slides' setDuck
+    and the heartbeat's setHeartDuck pattern): a multiplier, 0..1, on the
+    hum's whole contribution, dry and room feed alike, since it rides the
+    channel ahead of the split; what is already in the room decays on its
+    own. It glides the live gain at once, an exponential approach whose time
+    constant is seconds / 3 (default 0.2 s), and every later setVolume and
+    setGate keeps honouring it. Not saved: a reload is unducked. */
+export function setHumDuck(mul, seconds) {
+  duckMul = typeof mul === 'number' && mul === mul ? (mul < 0 ? 0 : mul > 1 ? 1 : mul) : 1;
+  if (!chan || !ctx) return;
+  const sec = typeof seconds === 'number' && seconds >= 0 && seconds <= 10 ? seconds : 0.2;
+  chan.gain.setTargetAtTime(chanLevel(), now(), Math.max(0.003, sec / 3));
+}
+
+/** The hum's peak, 0..1+, for the Levels window's meter: post-fader,
+    post-gate, post-duck, pre-room: what is heard. A suspended context keeps returning the last block
+    it rendered, so the transport decides whether there is anything to show,
+    as it does for the music's meters. */
 export function humPeak() {
-  if (!meterAn || !playing) return 0;
-  meterAn.getFloatTimeDomainData(meterBuf);
-  let peak = 0;
-  for (let i = 0; i < meterBuf.length; i++) { const a = meterBuf[i] < 0 ? -meterBuf[i] : meterBuf[i]; if (a > peak) peak = a; }
-  return peak;
+  if (!tap || !playing || !S.running || !S.audioEnabled || getContext()?.state !== 'running') return 0;
+  return tapPeak(tap);
 }
 
-/** Wet/dry, 0..1, crossfaded equal-power so loudness holds steady: at 1
-    the hum is all room, no dry left. The Reverb mix setting; cheap when
-    unchanged, so its variance can set it every frame. */
+/** Wet/dry into the music room, 0..1, crossfaded equal-power so loudness
+    holds steady: at 1 the hum is all room, no dry left. The Reverb mix
+    setting; cheap when unchanged, so its variance can set it every frame.
+    Until the room exists the hum plays dry and the mix waits (applyVerb). */
 export function setReverbMix(m) {
   if (m === verbMix) return;
   verbMix = m;
   applyVerb(0.03);
 }
 
-/** The room, on or off. Never a cut: the wet leg swells in or ebbs out
-    over about three quarters of a second, equal-power against the dry. */
-export function setReverbEnabled(on) {
-  verbOn = !!on;
-  applyVerb(0.25);
+/** The music room, from js/piano.js once its graph is built: its context
+    and its input. On the context the hum already plays on, the wet leg
+    plugs in. On another (the hum built first, on a context the room did
+    not end up on), the hum moves to the room's: its graph and buffer are
+    rebuilt there, and a playing hum carries on from its place. */
+export function setHumBus(c, revIn) {
+  roomCtx = c; roomIn = revIn;
+  if (!ctx) return;
+  if (ctx === c) { plugRoom(); return; }
+  const was = playing;
+  teardown();
+  buildGraph();
+  if (was && wanted) startPlaying();
 }
 
-/** Tail length in seconds. Debounced, then swapped by loading the idle
-    convolver and crossfading (see the graph comment in ensureCtx). */
-export function setReverbSize(seconds) {
-  verbSize = seconds;
-  if (!verbSlots) return;
-  clearTimeout(verbTimer);
-  verbTimer = setTimeout(() => {
-    if (!ctx) return;
-    const from = verbSlots[verbActive];
-    const to = verbSlots[1 - verbActive];
-    to.conv.buffer = makeImpulse(verbSize);   // silent slot: safe to touch
-    const t = ctx.currentTime;
-    from.g.gain.setTargetAtTime(0, t, 0.05);
-    to.g.gain.setTargetAtTime(1, t, 0.05);
-    verbActive = 1 - verbActive;
-  }, 120);
-}
-
-/** Tear the whole graph down: the gate closes, and once it has the
-    context is closed and every node let go. The decoded series is kept,
-    so a later play() rebuilds without fetching again. */
+/** Tear the whole graph down. The context is the music family's and stays;
+    the decoded series is kept, so a later play() rebuilds without fetching
+    again. */
 export function dispose() {
   wanted = false;
-  if (!ctx) return;
+  const c = ctx;
+  if (!c) return;
   if (playing) { playing = false; stopSource(); }
-  closeOutput(0.12);
-  clearTimeout(lifecycleTimer); clearTimeout(openTimer); clearTimeout(verbTimer);
-  const c = ctx, m = mediaOut;
-  if (NAV && NAV.mediaDevices && NAV.mediaDevices.removeEventListener)
-    NAV.mediaDevices.removeEventListener('devicechange', recycleOutput);
-  try { c.removeEventListener('statechange', onStateChange); } catch (e) {}
-  if (globalFilter) { globalFilter.dispose(); globalFilter = null; }
-  ctx = null; buffer = null; filter = null; master = null; outputGate = null; meterAn = null;
-  mediaOut = null; src = null; env = null; dry = null; wet = null;
-  verbSlots = null; verbActive = 0; onStateChange = null;
-  outputOpen = false; outputEverOpened = false; routeKicked = false;
-  pausedPos = 0; closeEndsAt = 0;
-  setTimeout(() => {
-    if (m) { try { m.pause(); m.srcObject = null; } catch (e) {} }
-    c.close().catch(() => {});
-  }, 160);
+  hush(0.12);
+  // after the hush has landed, so nothing is cut mid-wave
+  setTimeout(() => { if (ctx === c && !wanted) { teardown(); pausedPos = 0; } }, 160);
 }

@@ -15,6 +15,7 @@ import { createSweep } from './sweep.js';
 import { setChoirBus, choirSession } from './choir.js';
 import { setLayerBus, layersSession } from './layers.js';
 import { setCloudBus } from './clouds.js';
+import { setHumBus } from '../core/sun-hum.js';
 import { strobeAm, strobeTap, untapStrobe } from './strobe-am.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { inTurn, TURN } from './load-order.js';
@@ -194,6 +195,11 @@ function buildGraph() {
   // And the clouds (js/clouds.js) play into the same room, given the
   // context too: a clouds island on Heart cannot reach it and keeps its own.
   setCloudBus(ctx, revIn);
+  // And the Sun's Rotational hum (core/sun-hum.js), a wet/dry mix into the
+  // same room. It plays on the music's context but sounds whether or not
+  // the piano was ever switched on, dry until this hand-over, and moves to
+  // this context if it had begun on another.
+  setHumBus(ctx, revIn);
   applyRevType();
 }
 

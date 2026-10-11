@@ -140,9 +140,9 @@ const NUM = [
   ['sunHumCutoffVarPeriod', 0, 120, 20,  true ],
   ['sunHumCutoffVarPeriodOff', 0, 1, 0,  false],
   ['sunHumRate',         0,   1,   0,    false],
-  // The hum's wet/dry into its own room (core/sun-hum.js setReverbMix): 0
-  // all dry, 1 all room. 0.3 is the site's own mix. Its variance rides a
-  // Drive as the Cutoff's does.
+  // The hum's wet/dry into the music room, the reverb every music voice
+  // shares (core/sun-hum.js setReverbMix): 0 all dry, 1 all room. 0.3 is
+  // the site's own mix. Its variance rides a Drive as the Cutoff's does.
   ['sunHumVerb',         0,   1,   0.3,  false],
   ['sunHumVerbVar',      0,   1,   0,    false],
   ['sunHumVerbVarPeriod', 0,  120, 20,   true ],
@@ -297,14 +297,14 @@ const hzToPos = hz => hz === hz ? Math.round(Math.min(1, Math.max(0, Math.log(hz
 const rateToPos = r => r === r ? Math.round(Math.min(1, Math.max(0, Math.log(r / HUM_RATE_LO) / HUM_RATE_LN)) * HUM_POS) : NaN;
 
 // The hum plays only while its own switch AND the Sun layer are on; either
-// going off pauses it through its output gate. Every setting is pushed too,
+// going off pauses it, and like every music voice it is heard only while
+// the transport runs (core/sun-hum.js). Every setting is pushed too,
 // each setter a no-op when nothing moved, so one call puts the hum wherever
 // S says, the cutoff where its variance has it (S.effSunHumCutoff, the
 // renderer's) while one plays. Called by every hum and layer set(), and by
 // applySunState.
 function syncHum(S) {
   hum.setVolume(S.sunHumAmp);
-  hum.setMasterVolume(S.volume);
   hum.setGate(chanGate('hum'));
   hum.setCutoffHz(humHz(typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : S.sunHumCutoff));
   hum.setRate(humRate(S.sunHumRate) * HUM_RETUNE);
@@ -683,7 +683,7 @@ export const SUN_CONTROLS = [
     enabled: layerOn
   },
   {
-    // The hum's wet/dry into its own room, a mix rather than a send: at
+    // The hum's wet/dry into the music room, a mix rather than a send: at
     // 100% no dry is left (core/sun-hum.js setReverbMix).
     id: 'sunHumVerb', section: 'sun', label: 'Reverb mix', kind: 'slider',
     parent: 'sunHumDrawer',
