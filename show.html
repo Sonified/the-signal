@@ -120,10 +120,11 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(252p
 /* centred in the empty span between SCREEN and the edge's faders: it runs
    on past #middle across the stage's 14px gap and the edge's empty left half
    (its faders take only its right 50%, 230px of its 460), and starts past
-   SCREEN (72px and a 10px gap). All three middle faders sit 122px lower
+   SCREEN (72px and a 10px gap), then nudged 60px further right (the
+   extra 120px of left padding moves the centre by half). All three middle faders sit 122px lower
    than the edge's four (DUCK's 110px row and its 12px gap), the same
    height, their bottoms level with DUCK's. */
-#midFaders { grid-row: 2 / 4; min-height: 282px; padding: 122px 0 0 82px; display: flex; justify-content: center; gap: 10px; margin-right: -244px; }
+#midFaders { grid-row: 2 / 4; min-height: 282px; padding: 122px 0 0 202px; display: flex; justify-content: center; gap: 10px; margin-right: -244px; }
 #midFaders .fader { width: 72px; }
 /* SCREEN on its own at the middle's left edge, next to the cues; after
    #midFaders in the page so it sits above that row's empty span */
