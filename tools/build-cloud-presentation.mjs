@@ -53,7 +53,13 @@ const seed = `(()=>{try{const marker='signal.presentationJourney.${revision}';if
   `localStorage.setItem('signal.journey.v1.'+id,JSON.stringify(${JSON.stringify(journey)}));\n` +
   `lib.items.push({id,title:'TSC 2026'});lib.cur=id;localStorage.setItem('signal.journeys.v1',JSON.stringify(lib));\n` +
   `localStorage.setItem(marker,'1');console.log('[presentation] TSC 2026 Journey installed (${journey.steps.length} steps)');\n` +
-  `}catch(error){console.error('[presentation] Journey could not be installed',error);}})();\n`;
+  `}catch(error){console.error('[presentation] Journey could not be installed',error);}})();\n` +
+  // Every load starts in journey mode (the Journey window's mode switch,
+  // signal.v1.ui journeyWin.active): Space and the arrows walk the show.
+  `(()=>{try{let ui;try{ui=JSON.parse(localStorage.getItem('signal.v1.ui')||'null');}catch{}\n` +
+  `if(!ui||typeof ui!=='object')ui={};const w=ui.journeyWin&&typeof ui.journeyWin==='object'?ui.journeyWin:{};\n` +
+  `w.active=true;ui.journeyWin=w;localStorage.setItem('signal.v1.ui',JSON.stringify(ui));\n` +
+  `}catch(error){console.error('[presentation] Journey mode could not be set',error);}})();\n`;
 await fs.writeFile(path.join(output, 'presentation-seed.js'), seed);
 const indexFile = path.join(output, 'index.html');
 const index = await fs.readFile(indexFile, 'utf8');
