@@ -235,6 +235,7 @@ function ringsTitle(title) {
   return ringsTitleText;
 }
 function partText(c, v) {
+  if (c.formatAt) return c.formatAt(c.get(S), S);
   if (c.format) return c.format(S);
   if (c.kind === 'segment') {
     for (const o of c.options) if (o.value === v) return o.label;
@@ -462,7 +463,7 @@ const rampCtrl = {
   get: () => presetRampS(),
   // turned below what a running recall has left, the recall lands within it
   set: (s, v) => { setPresetRampS(v); perfShortenRecall(presetRampS()); },
-  format: () => presetRampS() < 0.25 ? 'instant' : presetRampS().toFixed(1) + 's',
+  formatAt: pos => pos < 0.25 ? 'instant' : pos.toFixed(1) + 's',
   enabled: () => !journeyModeOn(),
   effective: () => journeyModeOn() ? undefined : perfRecallLeft()
 };
@@ -480,7 +481,7 @@ const liveRampCtrl = {
   inline: 'cut',
   get: () => { loadPerform(); return perform.rampS; },
   set: (s, v) => setRampS(v),
-  format: () => { loadPerform(); return perform.rampS <= 0 ? 'cut' : Math.round(perform.rampS) + 's'; }
+  formatAt: pos => pos <= 0 ? 'cut' : Math.round(pos) + 's'
 };
 
 const TIP_PRESET = 'Click to load  ·  Shift-click to save over';

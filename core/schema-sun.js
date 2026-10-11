@@ -320,27 +320,28 @@ onChannelGates(() => syncHum(appState));
 
 // One slider bound 1:1 to a sun field (a multiplier, a rate or a count),
 // whose range and default come from the NUM table so the two can never
-// disagree.
-function direct(id, key, label, step, format) {
+// disagree. Its position is the field itself, so formatAt reads it as is.
+function direct(id, key, label, step, formatAt) {
   const n = spec(key);
   return {
     id, section: 'sun', label, kind: 'slider',
     min: n[1], max: n[2], step, def: n[3],
     get: S => S[key],
     set: (S, pos) => { S[key] = fit(pos, n[1], n[2], n[4]); save(); },
-    format,
+    formatAt,
   };
 }
 
-// One whole-percent slider over a 0 to 1 field.
-function percent(id, key, label, format) {
+// One whole-percent slider over a 0 to 1 field. Its position is the whole
+// percent, so a formatAt handed in reads that.
+function percent(id, key, label, formatAt) {
   const n = spec(key);
   return {
     id, section: 'sun', label, kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
-    format: format || (S => Math.round(S[key] * 100) + '%'),
+    formatAt: formatAt || (pos => pos + '%'),
   };
 }
 
@@ -366,12 +367,12 @@ function grade(id, key, label) {
     min: 0, max: 200, step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, n[1], n[2], false); save(); },
-    format: S => Math.round(S[key] * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: S => !!S.sunGrade
   };
 }
 
-const times2 = key => S => S[key].toFixed(2) + '×';
+const times2 = pos => pos.toFixed(2) + '×';
 
 // Tags a control as part of the variance of the row straight above it (the
 // schema's varianceOf), so the drawer folds it out from under that row.
@@ -397,7 +398,7 @@ function drivenVariance(owner, name, drawer) {
       format: S => DRIVE_NAMES[driveOf(S[dKey])],
     }),
     varianceOf(owner, under(drawer, percent(vKey, vKey, name + ' variance',
-      S => S[vKey] > 0 ? Math.round(S[vKey] * 100) + '%' : 'off'))),
+      pos => pos > 0 ? pos + '%' : 'off'))),
     varianceOf(owner, under(drawer, {
       id: pKey, section: 'sun', label: name + ' variance speed', kind: 'slider',
       min: 0, max: 120, step: 1, def: spec(pKey)[3],
@@ -408,7 +409,7 @@ function drivenVariance(owner, name, drawer) {
         S[pKey] = v;
         save();
       },
-      format: S => S[pKey] + 's',
+      formatAt: pos => pos + 's',
       visible: S => driveOf(S[dKey]) === 'time',
     }))
   ];
@@ -418,12 +419,11 @@ const fbEffective = (owner, eff) => S => S[owner + 'Var'] > 0 && typeof S[eff] =
 
 // Atmosphere's readout: at each of the five channel stops (the sweep from the
 // photosphere up to the corona) it names the channel; between them, the
-// percent.
+// percent, read off the slider's whole-percent position.
 const ATMO_STOPS = [[0, '1700 Å'], [25, '304 Å'], [50, '171 Å'], [75, '193 Å'], [100, '211 Å']];
-function atmoText(S) {
-  const p = Math.round(S.sunAtmo * 100);
-  for (let i = 0; i < ATMO_STOPS.length; i++) if (ATMO_STOPS[i][0] === p) return ATMO_STOPS[i][1];
-  return p + '%';
+function atmoText(pos) {
+  for (let i = 0; i < ATMO_STOPS.length; i++) if (ATMO_STOPS[i][0] === pos) return ATMO_STOPS[i][1];
+  return pos + '%';
 }
 
 export const SUN_CONTROLS = [
@@ -462,7 +462,7 @@ export const SUN_CONTROLS = [
     min: 0, max: SPEED_POS, step: 1, def: speedToPos(spec('sunSpeed')[3]),
     get: S => speedToPos(S.sunSpeed),
     set: (S, pos) => { S.sunSpeed = posToSpeed(pos); save(); },
-    format: S => (Math.round(S.sunSpeed * 10) / 10) + 'x',
+    formatAt: pos => posToSpeed(pos) + 'x',
     parse: (S, text) => speedToPos(parseFloat(text)),
     // the live dipped rate while the variance breathes, the slider's blue line
     effective: S => typeof S.effSunSpeed === 'number' ? speedToPos(S.effSunSpeed) : undefined,
@@ -470,7 +470,7 @@ export const SUN_CONTROLS = [
   // Speed's variance, folded out from under the Speed row: its driver, its
   // dip and Time's speed (see the NUM table).
   ...drivenVariance('sunSpeed', 'Speed', 'sunSolarDrawer'),
-  under('sunSolarDrawer', direct('sunSize', 'sunSize', 'Size', 0.05, times2('sunSize'))),
+  under('sunSolarDrawer', direct('sunSize', 'sunSize', 'Size', 0.05, times2)),
   under('sunSolarDrawer', percent('sunAtmo', 'sunAtmo', 'Atmosphere', atmoText)),
 
   // ---- Breath: the sun swelling and settling at a breathing rate, and the
@@ -488,11 +488,12 @@ export const SUN_CONTROLS = [
     min: 0, max: 1000, step: 1,
     get: S => Math.round((S.effSunBreathPos ?? 0.5) * 1000),
     set: () => {},
-    format: S => S.effSunBreathIn === true ? 'Inhaling' : S.effSunBreathIn === false ? 'Exhaling' : '—',
+    // the words are the breath's direction on S, not the knob's position
+    formatAt: (_pos, S) => S.effSunBreathIn === true ? 'Inhaling' : S.effSunBreathIn === false ? 'Exhaling' : '—',
     parse: () => NaN,
   },
   under('sunBreathDrawer', direct('sunBreathRate', 'sunBreathRate', 'Rate', 0.1,
-    S => S.sunBreathRate.toFixed(1) + ' / min')),
+    pos => pos.toFixed(1) + ' / min')),
   under('sunBreathDrawer', percent('sunBreathAmt', 'sunBreathAmt', 'Amount')),
   // How far the breath carries the video's speed, to a stop at the exhale.
 
@@ -508,7 +509,7 @@ export const SUN_CONTROLS = [
   // The Center fade: the inner sun kept out of the trails, so they flow
   // only from the edge. The live picture is never faded.
   under('sunFeedbackDrawer', percent('sunFbGate', 'sunFbGate', 'Center fade',
-    S => S.sunFbGate > 0 ? Math.round(S.sunFbGate * 100) + '%' : 'off')),
+    pos => pos > 0 ? pos + '%' : 'off')),
   // How gently the Center fade opens, from a near cut to a slow bloom.
   under('sunFeedbackDrawer', percent('sunFbGateSoft', 'sunFbGateSoft', 'Center fade softness')),
   {
@@ -521,8 +522,8 @@ export const SUN_CONTROLS = [
   // (outward) or smaller (inward) about the centre. Greyed while the breath
   // drives it.
   under('sunFeedbackDrawer', Object.assign(
-    direct('sunFbStream', 'sunFbStream', 'Stream', 0.01, S => S.sunFbStream === 0 ? 'none'
-      : (S.sunFbStream > 0 ? '+' + S.sunFbStream.toFixed(2) + ' out' : S.sunFbStream.toFixed(2) + ' in')),
+    direct('sunFbStream', 'sunFbStream', 'Stream', 0.01, pos => pos === 0 ? 'none'
+      : (pos > 0 ? '+' + pos.toFixed(2) + ' out' : pos.toFixed(2) + ' in')),
     { enabled: S => S.sunFbLink === false })),
   {
     // Where the breath carries the Stream while linked: in at its bottom, out
@@ -566,7 +567,7 @@ export const SUN_CONTROLS = [
   under('sunKaleidoDrawer', percent('sunKaleidoOpacity', 'sunKaleidoOpacity', 'Opacity')),
   // How many wedges the circle is cut into. The readout keeps the number
   // first, so clicking it to type opens on the fold count itself.
-  under('sunKaleidoDrawer', direct('sunFolds', 'sunFolds', 'Symmetry', 1, S => S.sunFolds + '-fold')),
+  under('sunKaleidoDrawer', direct('sunFolds', 'sunFolds', 'Symmetry', 1, pos => pos + '-fold')),
   // Symmetry's dip and its rate fold out from under Symmetry, the rate on
   // the room clock, retimed as the kaleidoscope's is
   varianceOf('sunFolds', under('sunKaleidoDrawer', percent('sunFoldsVar', 'sunFoldsVar', 'Symmetry variance'))),
@@ -580,7 +581,7 @@ export const SUN_CONTROLS = [
       S.sunFoldsPeriod = v;
       save();
     },
-    format: S => S.sunFoldsPeriod + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   })),
   {
     // Whether alternate wedges are reflected, the way a real kaleidoscope's
@@ -592,7 +593,7 @@ export const SUN_CONTROLS = [
   },
   // The fold's turning, in revolutions per minute, positive clockwise.
   under('sunKaleidoDrawer', direct('sunKaleidoSpin', 'sunKaleidoSpin', 'Rotation', 0.1,
-    S => S.sunKaleidoSpin === 0 ? 'still' : S.sunKaleidoSpin.toFixed(1) + ' rpm')),
+    pos => pos === 0 ? 'still' : pos.toFixed(1) + ' rpm')),
   {
     // How a change of Symmetry (the fold count or Mirror) arrives. Instant
     // snaps to the new pattern; a time draws the old symmetry and the new one
@@ -603,8 +604,8 @@ export const SUN_CONTROLS = [
     min: 0, max: XFADE_POS, step: 1, def: 0,
     get: S => xfadeToPos(S.sunFoldXfade),
     set: (S, pos) => { S.sunFoldXfade = posToXfade(pos); save(); },
-    format: S => {
-      const v = S.sunFoldXfade;
+    formatAt: pos => {
+      const v = posToXfade(pos);
       return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
     },
     parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
@@ -627,7 +628,7 @@ export const SUN_CONTROLS = [
     min: 0, max: 200, step: 1, def: Math.round(spec('sunHumAmp')[3] * 100),
     get: S => Math.round(S.sunHumAmp * 100),
     set: (S, pos) => { S.sunHumAmp = fit(pos / 100, 0, 2, false); syncHum(S); save(); },
-    format: S => Math.round(S.sunHumAmp * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // The lowpass's corner, 100 Hz to 10 kHz on the site's log map.
@@ -636,7 +637,7 @@ export const SUN_CONTROLS = [
     min: 0, max: HUM_POS, step: 1, def: Math.round(spec('sunHumCutoff')[3] * HUM_POS),
     get: S => Math.round(S.sunHumCutoff * HUM_POS),
     set: (S, pos) => { S.sunHumCutoff = fit(pos / HUM_POS, 0, 1, false); syncHum(S); save(); },
-    format: S => Math.round(humHz(S.sunHumCutoff)) + ' Hz',
+    formatAt: pos => Math.round(humHz(pos / HUM_POS)) + ' Hz',
     parse: (S, text) => hzToPos(parseFloat(text)),
     // the live cutoff while its variance plays, the slider's blue line
     effective: S => S.sunHumCutoffVar > 0 && typeof S.effSunHumCutoff === 'number'
@@ -658,7 +659,7 @@ export const SUN_CONTROLS = [
       for (const t of [0.5, 1, 2]) if (Math.abs(r - t) <= 0.05) { v = Math.log(t / HUM_RATE_LO) / HUM_RATE_LN; break; }
       S.sunHumRate = v; syncHum(S); save();
     },
-    format: S => humRate(S.sunHumRate).toFixed(2) + 'x',
+    formatAt: pos => humRate(pos / HUM_POS).toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
   },
   {
@@ -669,7 +670,7 @@ export const SUN_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('sunHumVerb')[3] * 100),
     get: S => Math.round(S.sunHumVerb * 100),
     set: (S, pos) => { S.sunHumVerb = fit(pos / 100, 0, 1, false); syncHum(S); save(); },
-    format: S => Math.round(S.sunHumVerb * 100) + '%',
+    formatAt: pos => pos + '%',
     // the live send while its variance plays, the slider's blue line
     effective: S => S.sunHumVerbVar > 0 && typeof S.effSunHumVerb === 'number'
       ? Math.round(S.effSunHumVerb * 100) : undefined,
@@ -701,7 +702,7 @@ export const SUN_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.mwtsVolume * 100),
     set: (S, pos) => { S.mwtsVolume = fit(pos / 100, 0, 1, false); save(); },
-    format: S => Math.round(S.mwtsVolume * 100) + '%'
+    formatAt: pos => pos + '%'
   },
 
   // ---- Sun QR, the section's last rows: the show's QR PNG over
@@ -722,7 +723,7 @@ export const SUN_CONTROLS = [
     min: 25, max: 200, step: 0.1, def: Math.round(spec('sunQrSize')[3] * 100),
     get: S => Math.round(S.sunQrSize * 1000) / 10,
     set: (S, pos) => { S.sunQrSize = fit(pos / 100, 0.25, 2, false); save(); },
-    format: S => Math.round(S.sunQrSize * 100) + '%'
+    formatAt: pos => Math.round(pos) + '%'
   },
   // The QR's Lighten: the clear parts of the code and its letters filled
   // with white, 0 not at all, 100% solid. Never dimmed, as its neighbours.

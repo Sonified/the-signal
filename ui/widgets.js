@@ -234,7 +234,7 @@ export const RO_PLAIN = 0, RO_CLICK = 1, RO_HIDDEN = 2;
 // starts on the track can never land on the readout instead.
 const RO_PAD_X = 6, RO_PAD_Y = 3;
 
-function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01, inline, fill01, formatDrag) {
+function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01, inline, fill01, formatDrag, snapDrag) {
   const ui = this;
   const step = step01 === undefined ? 0.02 : step01;
   const nid = ui.id(id);
@@ -366,6 +366,8 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
     }
   }
 
+  if (!disabled && snapDrag && ui.sliderNudge === 0 &&
+      ((ui.pressed && ui.activeId === nid) || (ui.released && value !== value01))) value = snapDrag(value);
   const changed = !disabled && value !== value01;
   // Input has been resolved for this frame: show the value under the hand
   // immediately, before control() writes its new ramp destination.
@@ -1692,7 +1694,7 @@ function aimOf(ctrl, S, door) {
 function doorWrite(ctrl, S, door, v, now) {
   if (!door) return false;
   if (ctrl.op && (ctrl.kind === 'toggle' || typeof v === 'boolean')) return perfLayer(ctrl.id, !!v, { now }) !== false;
-  return perfSet(ctrl.id, v, now);
+  return perfSet(ctrl.id, v, now || !!ctrl.journeyImmediate);
 }
 
 // shown: the caller has already settled that the row shows (the drawer
@@ -1769,7 +1771,10 @@ function control(ctrl, S, shown) {
           let next = snapPos(ctrl, unitToPos(ctrl, u, isLogTaper(ctrl)));
           if (next === cache.pos && nudge && ctrl.step) next = snapPos(ctrl, cache.pos + nudge * ctrl.step);
           return fmtAt(ctrl, next);
-        } };
+        }, snapDrag: typeof ctrl.dragSnap === 'function' ? u => {
+          const log = isLogTaper(ctrl);
+          return posToUnit(ctrl, ctrl.dragSnap(snapPos(ctrl, unitToPos(ctrl, u, log))), log);
+        } : undefined };
         formatCache.set(ctrl.id, cache);
       }
       const pos = ctrl.get(S), aim = aimOf(ctrl, S, door);
@@ -1779,7 +1784,7 @@ function control(ctrl, S, shown) {
       // carries float dust no one asked to read.
       if (aimPos !== cache.pos) {
         cache.pos = aimPos;
-        cache.text = aimPos !== pos ? fmtAt(ctrl, aimPos) : ctrl.format ? ctrl.format(S) : String(pos);
+        cache.text = fmtAt(ctrl, aimPos);
       }
       const log = isLogTaper(ctrl);
       const value01 = posToUnit(ctrl, aimPos, log);
@@ -1792,7 +1797,7 @@ function control(ctrl, S, shown) {
       const step01 = log ? LOG_STEP01 : ctrl.step ? (ctrl.step / ((ctrl.max - ctrl.min) || 1)) : 0.02;
       const def01 = ctrl.def !== undefined ? posToUnit(ctrl, ctrl.def, log) : undefined;
       const nv = ui.slider(ctrl.id, ctrl.label, value01, cache.text, step01, def01, !enabled,
-                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01, ctrl.inline, fill01, cache.formatDrag);
+                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01, ctrl.inline, fill01, cache.formatDrag, cache.snapDrag);
       if (nv >= 0) {
         const nudge = ui.sliderNudge !== 0;
         let newPos = snapPos(ctrl, unitToPos(ctrl, nv, log));

@@ -232,7 +232,7 @@ const noteName = n => NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1);
 // the units it shows. Most rows print their position as it is, with a unit
 // folded on, and need nothing here. These are the ones whose readout is a
 // different quantity from the position, each the exact inverse of its
-// format(). They run on a commit, never per frame.
+// formatAt(). They run on a commit, never per frame.
 
 // The level faders print ampToDb(posToAmp(pos)), and posToAmp spreads
 // LEVEL_RANGE_DB evenly over the travel, so decibels come back to a position
@@ -241,6 +241,7 @@ const noteName = n => NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1);
 // the readout prints as -inf, so that is accepted too; anything quieter than
 // the range reaches lands there by the toolkit's clamp.
 const DB_PER_POS = LEVEL_RANGE_DB / 100;
+const dbAt = pos => ampToDb(posToAmp(pos)) + ' dB';
 function parseDb(s, text) {
   const t = text.trim().toLowerCase();
   if (t === '-inf' || t === '-\u221e') return 0;
@@ -408,7 +409,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.volume * 100),
     set: (s, pos) => { s.volume = pos / 100; applyAudioGain(); save(); },
-    format: s => Math.round(s.volume * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // The global Lowpass and Highpass, straight under Master volume: every
   // sound the app makes passes through the pair (core/global-filter.js), the
@@ -420,7 +421,7 @@ const audioControls = [
     min: 0, max: GF_POS, step: 1, def: GF_POS,
     get: s => gfHzToPos(gfHz(s.lpfHz, GF_HZ_HI)),
     set: (s, pos) => { s.lpfHz = gfPosToHz(pos); notifyGlobalFilter(); save(); },
-    format: s => gfHz(s.lpfHz, GF_HZ_HI) >= GF_HZ_HI ? 'open' : gfText(gfHz(s.lpfHz, GF_HZ_HI)),
+    formatAt: pos => pos >= GF_POS ? 'open' : gfText(gfPosToHz(pos)),
     parse: (s, text) => /^\s*open/i.test(text) ? GF_POS : gfParse(text)
   },
   {
@@ -428,7 +429,7 @@ const audioControls = [
     min: 0, max: GF_POS, step: 1, def: 0,
     get: s => gfHzToPos(gfHz(s.hpfHz, GF_HZ_LO)),
     set: (s, pos) => { s.hpfHz = gfPosToHz(pos); notifyGlobalFilter(); save(); },
-    format: s => gfHz(s.hpfHz, GF_HZ_LO) <= GF_HZ_LO ? 'open' : gfText(gfHz(s.hpfHz, GF_HZ_LO)),
+    formatAt: pos => pos <= 0 ? 'open' : gfText(gfPosToHz(pos)),
     parse: (s, text) => /^\s*open/i.test(text) ? 0 : gfParse(text)
   },
   // Their resonance, a bump of up to 24 dB at each corner (0 flat, as
@@ -439,14 +440,14 @@ const audioControls = [
     min: 0, max: GF_RES_MAX, step: 0.5, def: 0,
     get: s => gfRes(s.lpfRes),
     set: (s, db) => { s.lpfRes = gfRes(+db); notifyGlobalFilter(); save(); },
-    format: s => gfResText(gfRes(s.lpfRes))
+    formatAt: pos => gfResText(gfRes(pos))
   },
   {
     id: 'hpfRes', section: 'audio', label: 'Highpass resonance', kind: 'slider',
     min: 0, max: GF_RES_MAX, step: 0.5, def: 0,
     get: s => gfRes(s.hpfRes),
     set: (s, db) => { s.hpfRes = gfRes(+db); notifyGlobalFilter(); save(); },
-    format: s => gfResText(gfRes(s.hpfRes))
+    formatAt: pos => gfResText(gfRes(pos))
   },
   // The Music window's trims for the tone and the pulse (ui/screens/
   // music.js). Each is how much of the voice's own level plays, 0 to 100%,
@@ -459,7 +460,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musTone ?? 1) * 100),
     set: (s, pos) => { s.musTone = trimOf(pos); applyLevel('toneLevel'); applyLevel('harmLevel'); save(); },
-    format: s => Math.round((s.musTone ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   },
   {
@@ -467,7 +468,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musPulse ?? 1) * 100),
     set: (s, pos) => { s.musPulse = trimOf(pos); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
-    format: s => Math.round((s.musPulse ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   },
   {
@@ -510,7 +511,7 @@ const audioControls = [
       if (!s.amLinked) setAmRate(s.amRate);
       save();
     },
-    format: s => (s.amLinked ? s.freq : s.amRate).toFixed(1) + ' Hz',
+    formatAt: pos => pos.toFixed(1) + ' Hz',
     enabled: s => !s.amLinked,
   },
   // ---- the four voices, each its own switch and then a sub-drawer whose
@@ -538,7 +539,7 @@ const audioControls = [
     min: 1, max: 1000, step: 1, def: 40,
     get: s => s.carrierHz,
     set: (s, pos) => { s.carrierHz = pos; setParam('carrier', s.carrierHz); save(); },
-    format: s => s.carrierHz + ' Hz',
+    formatAt: pos => pos + ' Hz',
     // Positions stay in Hz (presets and saved settings store Hz), but the
     // track is logarithmic, so 1-100 Hz, where the carriers people actually
     // use live, gets two thirds of the travel instead of a tenth of it.
@@ -550,7 +551,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 83,
     get: s => ampToPos(s.toneVol),
     set: (s, pos) => { s.toneVol = posToAmp(pos); applyLevel('toneLevel'); save(); },
-    format: s => ampToDb(s.toneVol) + ' dB',
+    formatAt: dbAt,
     parse: parseDb,
   },
   // The level's dip, the choir's own: over one speed cycle it eases from the
@@ -573,7 +574,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * 100),
     set: (s, pos) => { s.toneStrobeAm = pos / 100; applyAmOn(); save(); },
-    format: s => Math.round((typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The pulse depth's dip, the choir's and drone's own, taken off the tone's
   // setting before the master strobe scales it (js/audio.js, toneAmDepth).
@@ -613,7 +614,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 0,
     get: s => ampToPos(pipGet(s, 'vol')),
     set: (s, pos) => { pipSet(s, 'vol', posToAmp(pos)); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
-    format: s => ampToDb(pipGet(s, 'vol')) + ' dB',
+    formatAt: dbAt,
     parse: parseDb,
   },
   // The two keys follow the live shape, the click's or the chirp's.
@@ -629,7 +630,7 @@ const audioControls = [
     min: 0.5, max: 25, step: 0.5, def: 8,
     get: s => s.pipMs,
     set: (s, pos) => { s.pipMs = pos; setParam('pipMs', s.pipMs); save(); },
-    format: s => s.pipMs.toFixed(1) + ' ms',
+    formatAt: pos => pos.toFixed(1) + ' ms',
     visible: s => s.clickMode === 'click'
   },
   {
@@ -638,7 +639,7 @@ const audioControls = [
     min: 40, max: 2000, step: 10, def: 150,
     get: s => s.chirpLowHz,
     set: (s, pos) => { s.chirpLowHz = pos; refreshChirp(); save(); },
-    format: s => s.chirpLowHz + ' Hz',
+    formatAt: pos => pos + ' Hz',
     visible: s => s.clickMode === 'chirp'
   },
   {
@@ -647,7 +648,7 @@ const audioControls = [
     min: 1000, max: 12000, step: 100, def: 6000,
     get: s => s.chirpHighHz,
     set: (s, pos) => { s.chirpHighHz = pos; refreshChirp(); save(); },
-    format: s => s.chirpHighHz + ' Hz',
+    formatAt: pos => pos + ' Hz',
     visible: s => s.clickMode === 'chirp'
   },
   {
@@ -656,7 +657,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round(s.chirpComp * 100),
     set: (s, pos) => { s.chirpComp = pos / 100; refreshChirp(); save(); },
-    format: s => Math.round(s.chirpComp * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.clickMode === 'chirp'
   },
   {
@@ -665,7 +666,7 @@ const audioControls = [
     min: 0, max: 150, step: 5, def: 130,
     get: s => Math.round(s.chirpTilt * 100),
     set: (s, pos) => { s.chirpTilt = pos / 100; refreshChirp(); save(); },
-    format: s => tiltName(s.chirpTilt),
+    formatAt: pos => tiltName(pos / 100),
     entry: 'text', parse: parseTilt,
     visible: s => s.clickMode === 'chirp'
   },
@@ -688,7 +689,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 37,
     get: s => Math.round(pipGet(s, 'reverb') * 100),
     set: (s, pos) => { pipSet(s, 'reverb', pos / 100); applyReverbMix(); applyLevel('clickSend'); save(); },
-    format: s => Math.round(pipGet(s, 'reverb') * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'clickRevTime', section: 'audio', label: 'Click / Chirp reverb time', kind: 'slider',
@@ -696,7 +697,7 @@ const audioControls = [
     min: 0.2, max: 8, step: 0.1, def: 0.5,
     get: s => pipGet(s, 'revTime'),
     set: (s, pos) => { pipSet(s, 'revTime', pos); rebuildClickIR(); save(); },
-    format: s => pipGet(s, 'revTime').toFixed(1) + 's',
+    formatAt: pos => pos.toFixed(1) + 's',
   },
   // The lowpass sweep. One filter for the whole train, click or chirp, so it
   // sits after the shape's own rows and is not swapped by the mode.
@@ -713,7 +714,7 @@ const audioControls = [
     min: 40, max: 4000, step: 10, def: 400, taper: 'log',
     get: s => s.pipLpfLo,
     set: (s, pos) => { s.pipLpfLo = pos; applyPipLpf(); save(); },
-    format: s => fmtHz(s.pipLpfLo),
+    formatAt: pos => fmtHz(pos),
     visible: s => s.pipLpfOn
   },
   {
@@ -722,7 +723,7 @@ const audioControls = [
     min: 500, max: 18000, step: 100, def: 9000, taper: 'log',
     get: s => s.pipLpfHi,
     set: (s, pos) => { s.pipLpfHi = pos; applyPipLpf(); save(); },
-    format: s => fmtHz(s.pipLpfHi),
+    formatAt: pos => fmtHz(pos),
     visible: s => s.pipLpfOn
   },
   {
@@ -731,7 +732,7 @@ const audioControls = [
     min: 2, max: 300, step: 1, def: 60, taper: 'log',
     get: s => s.pipLpfPeriod,
     set: (s, pos) => { s.pipLpfPeriod = pos; applyPipLpf(); save(); },
-    format: s => fmtSweep(s.pipLpfPeriod) + ' / cycle',
+    formatAt: pos => fmtSweep(pos) + ' / cycle',
     visible: s => s.pipLpfOn
   },
   {
@@ -740,7 +741,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round(s.pipLpfWander * 100),
     set: (s, pos) => { s.pipLpfWander = pos / 100; applyPipLpf(); save(); },
-    format: s => Math.round(s.pipLpfWander * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.pipLpfOn
   },
   {
@@ -749,7 +750,7 @@ const audioControls = [
     min: 50, max: 600, step: 1, def: 71, taper: 'log',
     get: s => Math.round(s.pipLpfQ * 100),
     set: (s, pos) => { s.pipLpfQ = pos / 100; applyPipLpf(); save(); },
-    format: s => s.pipLpfQ.toFixed(2),
+    formatAt: pos => (pos / 100).toFixed(2),
     visible: s => s.pipLpfOn
   },
   {
@@ -765,7 +766,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 60,
     get: s => Math.round(s.biDepth * 100),
     set: (s, pos) => { s.biDepth = pos / 100; applyHarmonics(); save(); },
-    format: s => Math.round(s.biDepth * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'biRate', section: 'audio', label: 'Bilateral rate', kind: 'slider',
@@ -773,7 +774,7 @@ const audioControls = [
     min: 0.4, max: 10, step: 0.1, def: 1,
     get: s => s.biPeriod,
     set: (s, pos) => { s.biPeriod = pos; applyHarmonics(); save(); },
-    format: s => s.biPeriod.toFixed(1) + 's / pass',
+    formatAt: pos => pos.toFixed(1) + 's / pass',
   },
   {
     id: 'biHardSwitch', section: 'audio', label: 'Bilateral shape', kind: 'segment',
@@ -800,7 +801,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 87,
     get: s => ampToPos(s.harmVol),
     set: (s, pos) => { s.harmVol = posToAmp(pos); applyLevel('harmLevel'); save(); },
-    format: s => ampToDb(s.harmVol) + ' dB',
+    formatAt: dbAt,
     parse: parseDb,
   },
   {
@@ -809,7 +810,7 @@ const audioControls = [
     min: 1, max: 16, step: 1, def: 9,
     get: s => s.harmCount,
     set: (s, pos) => { s.harmCount = pos; applyHarmonics(); save(); },
-    format: s => String(s.harmCount),
+    formatAt: pos => String(pos),
   },
   {
     id: 'harmBright', section: 'audio', label: 'Brightness', kind: 'slider',
@@ -817,7 +818,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 45,
     get: s => Math.round(s.harmBright * 100),
     set: (s, pos) => { s.harmBright = pos / 100; applyHarmonics(); save(); },
-    format: s => Math.round(s.harmBright * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'harmSpread', section: 'audio', label: 'Stereo spread', kind: 'slider',
@@ -825,7 +826,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 70,
     get: s => Math.round(s.harmSpread * 100),
     set: (s, pos) => { s.harmSpread = pos / 100; applyHarmonics(); save(); },
-    format: s => Math.round(s.harmSpread * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'harmPanRate', section: 'audio', label: 'Pan speed', kind: 'slider',
@@ -833,7 +834,7 @@ const audioControls = [
     min: 0, max: 4, step: 0.05, def: 0.45,
     get: s => s.harmPanRate,
     set: (s, pos) => { s.harmPanRate = pos; applyHarmonics(); save(); },
-    format: s => s.harmPanRate.toFixed(2) + ' Hz',
+    formatAt: pos => pos.toFixed(2) + ' Hz',
   },
   {
     id: 'shimDepth', section: 'audio', label: 'Shimmer depth', kind: 'slider',
@@ -841,7 +842,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 57,
     get: s => Math.round(s.shimDepth * 100),
     set: (s, pos) => { s.shimDepth = pos / 100; applyHarmonics(); save(); },
-    format: s => Math.round(s.shimDepth * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'shimRate', section: 'audio', label: 'Shimmer rate', kind: 'slider',
@@ -849,7 +850,7 @@ const audioControls = [
     min: 0.01, max: 6, step: 0.01, def: 0.12,
     get: s => s.shimRate,
     set: (s, pos) => { s.shimRate = pos; applyHarmonics(); save(); },
-    format: s => s.shimRate.toFixed(2) + ' Hz',
+    formatAt: pos => pos.toFixed(2) + ' Hz',
   },
   {
     id: 'harmReverb', section: 'audio', label: 'Reverb', kind: 'slider',
@@ -857,7 +858,7 @@ const audioControls = [
     min: 0, max: 100, step: 1, def: 35,
     get: s => Math.round(s.harmReverb * 100),
     set: (s, pos) => { s.harmReverb = pos / 100; applyReverbMix(); save(); },
-    format: s => Math.round(s.harmReverb * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The layers-row Audio checkbox. Visually it sits with the four visual
   // layer toggles schema-visual.js owns, but it is the audio master switch,
@@ -900,7 +901,7 @@ function musicLayerControls(L) {
       min: 0, max: 200, step: 1, def: 100,
       get: s => Math.round(s[vol] * 100),
       set: (s, pos) => { s[vol] = pos / 100; applyLayerVol(L.id); save(); },
-      format: s => Math.round(s[vol] * 100) + '%',
+      formatAt: pos => pos + '%',
     }
   ];
 }
@@ -955,7 +956,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 90,
     get: s => Math.round(s.pianoVol * 100),
     set: (s, pos) => { s.pianoVol = pos / 100; save(); },
-    format: s => Math.round(s.pianoVol * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'pianoHP', section: 'music',
@@ -963,7 +964,7 @@ const musicControls = [
     min: 20, max: 600, step: 5, def: 20,
     get: s => s.pianoHP,
     set: (s, pos) => { s.pianoHP = pos; applyPianoHP(); save(); },
-    format: s => s.pianoHP <= 20 ? 'off' : s.pianoHP + ' Hz',
+    formatAt: pos => pos <= 20 ? 'off' : pos + ' Hz',
   },
   // ---- the generative player's own dials: how often it plays (Density),
   // where on the keyboard it centres and how far it wanders (Register
@@ -975,7 +976,7 @@ const musicControls = [
     min: 20, max: 250, step: 5, def: 100,
     get: s => Math.round(s.pianoDensity * 100),
     set: (s, pos) => { s.pianoDensity = pos / 100; save(); },
-    format: s => Math.round(s.pianoDensity * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'pianoCentre', section: 'music',
@@ -983,7 +984,7 @@ const musicControls = [
     min: 48, max: 84, step: 1, def: 72,
     get: s => s.pianoCentre,
     set: (s, pos) => { s.pianoCentre = pos; save(); },
-    format: s => noteName(s.pianoCentre),
+    formatAt: pos => noteName(pos),
     entry: 'text', parse: parseNote,
   },
   {
@@ -992,7 +993,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 55,
     get: s => Math.round(s.pianoSpread * 100),
     set: (s, pos) => { s.pianoSpread = pos / 100; save(); },
-    format: s => Math.round(s.pianoSpread * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'pianoHold', section: 'music',
@@ -1000,7 +1001,7 @@ const musicControls = [
     min: 30, max: 250, step: 5, def: 100,
     get: s => Math.round(s.pianoHold * 100),
     set: (s, pos) => { s.pianoHold = pos / 100; save(); },
-    format: s => Math.round(s.pianoHold * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'pianoBass', section: 'music',
@@ -1008,7 +1009,7 @@ const musicControls = [
     min: 0, max: 60, step: 1, def: 10,
     get: s => s.pianoBass,
     set: (s, pos) => { s.pianoBass = pos; save(); },
-    format: s => s.pianoBass + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // The sequencer (js/piano.js, its arp and sequencer sections), whose
@@ -1034,7 +1035,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.arpVol * 100),
     set: (s, pos) => { s.arpVol = pos / 100; applyArp(); save(); },
-    format: s => Math.round(s.arpVol * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The master volume's dip, the app's standard: over one speed cycle it
   // eases from the setting down by this share and back (js/piano.js,
@@ -1049,7 +1050,7 @@ const musicControls = [
     min: 2, max: 14, step: 0.5, def: 7,
     get: s => s.arpRate,
     set: (s, pos) => { s.arpRate = pos; applyArp(); save(); },
-    format: s => s.arpRate.toFixed(1) + ' notes/s',
+    formatAt: pos => pos.toFixed(1) + ' notes/s',
   },
   {
     // Whole octaves either side of the written figure, over every line
@@ -1060,7 +1061,7 @@ const musicControls = [
     min: -2, max: 2, step: 1, def: 0,
     get: s => s.arpOct,
     set: (s, pos) => { s.arpOct = pos; save(); },
-    format: s => s.arpOct === 0 ? '0' : (s.arpOct > 0 ? '+' : '') + s.arpOct + ' oct',
+    formatAt: pos => pos === 0 ? '0' : (pos > 0 ? '+' : '') + pos + ' oct',
   },
   {
     // A tilt over every line's own range, octave jumps included: the
@@ -1072,7 +1073,7 @@ const musicControls = [
     min: 0, max: 20, step: 1, def: 0,
     get: s => s.arpHfCut || 0,
     set: (s, pos) => { s.arpHfCut = pos; save(); },
-    format: s => (s.arpHfCut || 0) > 0 ? s.arpHfCut + ' dB' : 'off',
+    formatAt: pos => pos > 0 ? pos + ' dB' : 'off',
   },
   {
     // A volume pulse at the strobe's own flash rate and in its waveform,
@@ -1083,7 +1084,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 0,
     get: s => Math.round((s.arpStrobeAm || 0) * 100),
     set: (s, pos) => { s.arpStrobeAm = pos / 100; applyArp(); save(); },
-    format: s => Math.round((s.arpStrobeAm || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The pulse depth's dip, the drone's and choir's own (js/piano.js,
   // arpPump).
@@ -1104,7 +1105,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round(s.bedVol * 100),
     set: (s, pos) => { s.bedVol = pos / 100; applyBedVol(); save(); },
-    format: s => Math.round(s.bedVol * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The level's variance: what drives the dip (Time, the strobe, the sun's
   // breath), how far under the setting it goes, and for Time its Behavior
@@ -1148,7 +1149,7 @@ const musicControls = [
     min: 40, max: 4000, step: 10, def: 400, taper: 'log',
     get: s => s.bedLpfLo,
     set: (s, pos) => { s.bedLpfLo = pos; applyBedLpf(); save(); },
-    format: s => fmtHz(s.bedLpfLo),
+    formatAt: pos => fmtHz(pos),
     visible: s => s.bedLpfOn
   },
   {
@@ -1157,7 +1158,7 @@ const musicControls = [
     min: 500, max: 18000, step: 100, def: 12000, taper: 'log',
     get: s => s.bedLpfHi,
     set: (s, pos) => { s.bedLpfHi = pos; applyBedLpf(); save(); },
-    format: s => fmtHz(s.bedLpfHi),
+    formatAt: pos => fmtHz(pos),
     visible: s => s.bedLpfOn
   },
   {
@@ -1166,7 +1167,7 @@ const musicControls = [
     min: 2, max: 300, step: 1, def: 90, taper: 'log',
     get: s => s.bedLpfPeriod,
     set: (s, pos) => { s.bedLpfPeriod = pos; applyBedLpf(); save(); },
-    format: s => fmtSweep(s.bedLpfPeriod) + ' / cycle',
+    formatAt: pos => fmtSweep(pos) + ' / cycle',
     visible: s => s.bedLpfOn
   },
   {
@@ -1175,7 +1176,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round(s.bedLpfWander * 100),
     set: (s, pos) => { s.bedLpfWander = pos / 100; applyBedLpf(); save(); },
-    format: s => Math.round(s.bedLpfWander * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.bedLpfOn
   },
   {
@@ -1184,7 +1185,7 @@ const musicControls = [
     min: 50, max: 600, step: 1, def: 71, taper: 'log',
     get: s => Math.round(s.bedLpfQ * 100),
     set: (s, pos) => { s.bedLpfQ = pos / 100; applyBedLpf(); save(); },
-    format: s => s.bedLpfQ.toFixed(2),
+    formatAt: pos => (pos / 100).toFixed(2),
     visible: s => s.bedLpfOn
   },
   {
@@ -1222,7 +1223,7 @@ const musicControls = [
     min: 0, max: 200, step: 1, def: 100,
     get: s => Math.round(s.bedRevLevel * 100),
     set: (s, pos) => { s.bedRevLevel = pos / 100; applyBedVerb(); save(); },
-    format: s => Math.round(s.bedRevLevel * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.bedRevOn
   },
   {
@@ -1239,7 +1240,7 @@ const musicControls = [
     min: 0, max: 200, step: 1, def: 50,
     get: s => Math.round(s.bedVerbLo * 100),
     set: (s, pos) => { s.bedVerbLo = pos / 100; applyBedVerb(); save(); },
-    format: s => Math.round(s.bedVerbLo * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.bedRevOn && s.bedVerbOn
   },
   {
@@ -1248,7 +1249,7 @@ const musicControls = [
     min: 0, max: 200, step: 1, def: 150,
     get: s => Math.round(s.bedVerbHi * 100),
     set: (s, pos) => { s.bedVerbHi = pos / 100; applyBedVerb(); save(); },
-    format: s => Math.round(s.bedVerbHi * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.bedRevOn && s.bedVerbOn
   },
   {
@@ -1257,7 +1258,7 @@ const musicControls = [
     min: 2, max: 300, step: 1, def: 120, taper: 'log',
     get: s => s.bedVerbPeriod,
     set: (s, pos) => { s.bedVerbPeriod = pos; applyBedVerb(); save(); },
-    format: s => fmtSweep(s.bedVerbPeriod) + ' / cycle',
+    formatAt: pos => fmtSweep(pos) + ' / cycle',
     visible: s => s.bedRevOn && s.bedVerbOn
   },
   {
@@ -1266,7 +1267,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round(s.bedVerbWander * 100),
     set: (s, pos) => { s.bedVerbWander = pos / 100; applyBedVerb(); save(); },
-    format: s => Math.round(s.bedVerbWander * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.bedRevOn && s.bedVerbOn
   },
   // ---- the choir (js/choir.js): the sandbox's Choir Performer, seven Lah
@@ -1290,7 +1291,7 @@ const musicControls = [
     min: 0, max: 200, step: 1, def: 100,
     get: s => Math.round(s.choirVol * 100),
     set: (s, pos) => { s.choirVol = pos / 100; applyChoirVol(); save(); },
-    format: s => Math.round(s.choirVol * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The level's variance: what drives the dip (Time, the strobe, the sun's
   // breath), how far under the setting it goes, and for Time its Behavior
@@ -1309,7 +1310,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => s.choirStack,
     set: (s, pos) => { s.choirStack = pos; applyChoir(); save(); },
-    format: s => s.choirStack < 1 ? 'low voice' : Math.round(s.choirStack) + '% filled',
+    formatAt: pos => pos < 1 ? 'low voice' : Math.round(pos) + '% filled',
   },
   choirDrive('choirStack', 'Stack variance driver'),
   ...varianceRows('choirStack', {
@@ -1325,7 +1326,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => s.choirDensity,
     set: (s, pos) => { s.choirDensity = pos; applyChoir(); save(); },
-    format: s => choirDensityText(s.choirDensity),
+    formatAt: pos => choirDensityText(pos),
   },
   choirDrive('choirDensity', 'Density variance driver'),
   ...varianceRows('choirDensity', {
@@ -1341,8 +1342,8 @@ const musicControls = [
     min: -100, max: 100, step: 1, def: 0,
     get: s => s.choirBrightness,
     set: (s, pos) => { s.choirBrightness = pos; applyChoir(); save(); },
-    format: s => s.choirBrightness === 0 ? 'even'
-      : (s.choirBrightness < 0 ? 'low +' : 'high +') + Math.abs(Math.round(s.choirBrightness)) + '%',
+    formatAt: pos => pos === 0 ? 'even'
+      : (pos < 0 ? 'low +' : 'high +') + Math.abs(Math.round(pos)) + '%',
   },
   {
     // Narrows Brightness's balance into a moving spotlight.
@@ -1351,7 +1352,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 0,
     get: s => s.choirFocus,
     set: (s, pos) => { s.choirFocus = pos; applyChoir(); save(); },
-    format: s => s.choirFocus < 1 ? 'broad' : s.choirFocus > 99 ? 'single voice' : Math.round(s.choirFocus) + '% narrow',
+    formatAt: pos => pos < 1 ? 'broad' : pos > 99 ? 'single voice' : Math.round(pos) + '% narrow',
   },
   // ---- the music layers (js/layers.js): Majestic voice, Bright fifth ----
   ...MUSIC_LAYERS.flatMap(musicLayerControls),
@@ -1373,7 +1374,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 60,
     get: s => Math.round(s.cloudVol * 100),
     set: (s, pos) => { s.cloudVol = pos / 100; save(); },
-    format: s => Math.round(s.cloudVol * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'cloudDensity', section: 'music', label: 'Clouds density', kind: 'slider',
@@ -1381,7 +1382,7 @@ const musicControls = [
     min: 20, max: 250, step: 5, def: 100,
     get: s => Math.round(s.cloudDensity * 100),
     set: (s, pos) => { s.cloudDensity = pos / 100; save(); },
-    format: s => Math.round(s.cloudDensity * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'cloudPhrase', section: 'music', label: 'Falling figure', kind: 'slider',
@@ -1389,7 +1390,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 35,
     get: s => Math.round(s.cloudPhrase * 100),
     set: (s, pos) => { s.cloudPhrase = pos / 100; save(); },
-    format: s => Math.round(s.cloudPhrase * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'cloudReverb', section: 'music', label: 'Clouds reverb', kind: 'slider',
@@ -1397,7 +1398,7 @@ const musicControls = [
     min: 0, max: 150, step: 1, def: 100,
     get: s => Math.round(s.cloudReverb * 100),
     set: (s, pos) => { s.cloudReverb = pos / 100; applyCloudReverb(); save(); },
-    format: s => Math.round(s.cloudReverb * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // The sequencer's Vary with strobe (js/strobe-am.js): a volume pulse at
@@ -1408,7 +1409,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 0,
     get: s => Math.round((s.cloudStrobeAm || 0) * 100),
     set: (s, pos) => { s.cloudStrobeAm = pos / 100; applyCloudAm(); save(); },
-    format: s => Math.round((s.cloudStrobeAm || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   ...varianceRows('cloudStrobeAm', {
     music: true, name: 'Pulse', apply: applyCloudAm,
@@ -1430,7 +1431,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musPiano ?? 1) * 100),
     set: (s, pos) => { s.musPiano = trimOf(pos); applyPianoTrim(); save(); },
-    format: s => Math.round((s.musPiano ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   },
   {
@@ -1438,7 +1439,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musClouds ?? 1) * 100),
     set: (s, pos) => { s.musClouds = trimOf(pos); applyCloudTrim(); save(); },
-    format: s => Math.round((s.musClouds ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   },
   {
@@ -1446,7 +1447,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musDrone ?? 1) * 100),
     set: (s, pos) => { s.musDrone = trimOf(pos); applyBedVol(); save(); },
-    format: s => Math.round((s.musDrone ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   },
   {
@@ -1454,7 +1455,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musArp ?? 1) * 100),
     set: (s, pos) => { s.musArp = trimOf(pos); applyArp(); save(); },
-    format: s => Math.round((s.musArp ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   },
   {
@@ -1462,7 +1463,7 @@ const musicControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musChoir ?? 1) * 100),
     set: (s, pos) => { s.musChoir = trimOf(pos); applyChoirVol(); save(); },
-    format: s => Math.round((s.musChoir ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   }
 ];
@@ -1518,7 +1519,7 @@ const reverbControls = [
     min: 0, max: 200, step: 1, def: 100,
     get: s => Math.round(s.pianoReverb * 100),
     set: (s, pos) => { s.pianoReverb = pos / 100; applyPianoReverb(); save(); },
-    format: s => Math.round(s.pianoReverb * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The room's level and decay each breathe by the app's standard dip
   // (js/room.js, revBreathe, on the audio clock).
@@ -1531,7 +1532,7 @@ const reverbControls = [
     min: 1, max: 15, step: 0.5, def: 4.5,
     get: s => s.pianoRevTime,
     set: (s, pos) => { s.pianoRevTime = pos; rebuildPianoIR(); rebuildCloudIR(); save(); },
-    format: s => s.pianoRevTime.toFixed(1) + 's',
+    formatAt: pos => pos.toFixed(1) + 's',
   },
   // Under Convolution a new decay is a new impulse, built and crossfaded
   // in, so its speed starts at 5 s rather than 0.
@@ -1546,7 +1547,7 @@ const reverbControls = [
     min: 20, max: 1000, step: 10, def: 20,
     get: s => s.pianoRevHP ?? 20,
     set: (s, pos) => { s.pianoRevHP = pos; applyRevHP(); save(); },
-    format: s => (s.pianoRevHP ?? 20) <= 20 ? 'off' : s.pianoRevHP + ' Hz',
+    formatAt: pos => pos <= 20 ? 'off' : pos + ' Hz',
   },
   {
     // Its slope (js/room.js HP_SLOPES): 6 dB an octave a one-pole, 12 to
@@ -1565,7 +1566,7 @@ const reverbControls = [
     min: 0, max: 100, step: 1, def: 35,
     get: s => Math.round((s.pianoRevDamp ?? 0.35) * 100),
     set: (s, pos) => { s.pianoRevDamp = pos / 100; applyPianoRevShape(); save(); },
-    format: s => Math.round((s.pianoRevDamp ?? 0.35) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.musicRevType === 'algo'
   },
   {
@@ -1575,7 +1576,7 @@ const reverbControls = [
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round((s.pianoRevMod ?? 0.3) * 100),
     set: (s, pos) => { s.pianoRevMod = pos / 100; applyPianoRevShape(); save(); },
-    format: s => Math.round((s.pianoRevMod ?? 0.3) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.musicRevType === 'algo'
   }
 ];
@@ -1600,7 +1601,7 @@ const atmosphereControls = [
     min: 0, max: 100, step: 1, def: 18,
     get: s => Math.round(s.ambVol * 100),
     set: (s, pos) => { s.ambVol = pos / 100; applyAmbVol(); save(); },
-    format: s => Math.round(s.ambVol * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The Music window's trim for the atmosphere, as musTone's is for the
   // tone: 100% plays exactly the level above. Out of the drawer.
@@ -1609,7 +1610,7 @@ const atmosphereControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musAmb ?? 1) * 100),
     set: (s, pos) => { s.musAmb = trimOf(pos); applyAmbVol(); save(); },
-    format: s => Math.round((s.musAmb ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   },
   // Opens the mixer overlay. v0's handler also closes the drawer
@@ -1631,7 +1632,7 @@ const atmosphereControls = [
     min: 4, max: 120, step: 1, def: 12,
     get: s => s.ambDriftFadeS,
     set: (s, pos) => { s.ambDriftFadeS = pos; save(); },
-    format: s => s.ambDriftFadeS + 's',
+    formatAt: pos => pos + 's',
   },
   {
     // How much of the time the children are there while the drift runs
@@ -1641,7 +1642,7 @@ const atmosphereControls = [
     min: 0, max: 100, step: 1, def: 67,
     get: s => Math.round(s.ambKidsFreq * 100),
     set: (s, pos) => { s.ambKidsFreq = pos / 100; save(); },
-    format: s => s.ambKidsFreq <= 0 ? 'never' : s.ambKidsFreq >= 1 ? 'always' : Math.round(s.ambKidsFreq * 100) + '%',
+    formatAt: pos => pos <= 0 ? 'never' : pos >= 100 ? 'always' : pos + '%',
   },
   subDrawer('ambReverbDrawer', 'Reverb', 'atmosphere', ['ambReverb', 'ambRevTime']),
   {
@@ -1666,7 +1667,7 @@ const atmosphereControls = [
     min: 0, max: 150, step: 1, def: 100,
     get: s => Math.round(s.ambReverb * 100),
     set: (s, pos) => { s.ambReverb = pos / 100; applyAmbReverb(); save(); },
-    format: s => Math.round(s.ambReverb * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // The level's dip, the music room's own (js/ambience.js revBreathe).
   ...varianceRows('ambReverb', {
@@ -1678,7 +1679,7 @@ const atmosphereControls = [
     min: 1, max: 15, step: 0.5, def: 4.5,
     get: s => s.ambRevTime,
     set: (s, pos) => { s.ambRevTime = pos; rebuildAmbIR(); save(); },
-    format: s => s.ambRevTime.toFixed(1) + 's',
+    formatAt: pos => pos.toFixed(1) + 's',
   },
   // And the decay's, as the music room has (js/ambience.js revBreathe).
   ...varianceRows('ambRevTime', {
@@ -1694,7 +1695,7 @@ const atmosphereControls = [
     min: 0, max: 100, step: 1, def: 35,
     get: s => Math.round((s.ambRevDamp ?? 0.35) * 100),
     set: (s, pos) => { s.ambRevDamp = pos / 100; applyAmbRevShape(); save(); },
-    format: s => Math.round((s.ambRevDamp ?? 0.35) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.ambRevType !== 'conv'
   },
   {
@@ -1702,7 +1703,7 @@ const atmosphereControls = [
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round((s.ambRevMod ?? 0.3) * 100),
     set: (s, pos) => { s.ambRevMod = pos / 100; applyAmbRevShape(); save(); },
-    format: s => Math.round((s.ambRevMod ?? 0.3) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: s => s.ambRevType !== 'conv'
   }
 ];
@@ -1762,7 +1763,7 @@ const liveControls = [
     min: 0, max: 100, step: 1, def: 25,
     get: s => Math.round(s.liveLevel * 100),
     set: (s, pos) => { s.liveLevel = pos / 100; applyLiveLevel(); saveLive(); },
-    format: s => Math.round(s.liveLevel * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // The Music window's trim, as musAmb is the ambience's: 100% plays
@@ -1771,7 +1772,7 @@ const liveControls = [
     min: 0, max: 100, step: 1, def: 100,
     get: s => Math.round((s.musLive ?? 1) * 100),
     set: (s, pos) => { s.musLive = trimOf(pos); applyLiveLevel(); saveLive(); },
-    format: s => Math.round((s.musLive ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: () => false
   },
   {
@@ -1782,7 +1783,7 @@ const liveControls = [
     min: 0, max: 100, step: 1, def: 25,
     get: s => Math.round(s.liveReverb * 100),
     set: (s, pos) => { s.liveReverb = pos / 100; applyLiveReverb(); saveLive(); },
-    format: s => liveMixLabel(Math.round(s.liveReverb * 100)),
+    formatAt: pos => liveMixLabel(pos),
   },
   {
     // The room's length. A move builds the new impulse once the slider has
@@ -1792,7 +1793,7 @@ const liveControls = [
     min: 0.5, max: 8, step: 0.1, def: 3,
     get: s => s.liveRevTime,
     set: (s, pos) => { s.liveRevTime = pos; applyLiveRevTime(); saveLive(); },
-    format: s => s.liveRevTime.toFixed(1) + 's',
+    formatAt: pos => pos.toFixed(1) + 's',
   },
   // The compressor, ahead of the dry side and the room alike. The defaults
   // are its old programmed settings; the knee stays programmed. Each move
@@ -1802,14 +1803,14 @@ const liveControls = [
     min: -60, max: 0, step: 1, def: -24,
     get: s => s.liveThreshold,
     set: (s, pos) => { s.liveThreshold = pos; applyLiveComp(); saveLive(); },
-    format: s => s.liveThreshold + ' dB',
+    formatAt: pos => pos + ' dB',
   },
   {
     id: 'liveRatio', section: 'live', label: 'Ratio', kind: 'slider',
     min: 1, max: 20, step: 0.5, def: 3,
     get: s => s.liveRatio,
     set: (s, pos) => { s.liveRatio = pos; applyLiveComp(); saveLive(); },
-    format: s => (Number.isInteger(s.liveRatio) ? s.liveRatio : s.liveRatio.toFixed(1)) + ':1',
+    formatAt: pos => (Number.isInteger(pos) ? pos : pos.toFixed(1)) + ':1',
   },
   {
     // The track is a cube: position p is 100 (p/100)^3 ms, so the first
@@ -1819,7 +1820,7 @@ const liveControls = [
     min: 0, max: 100, step: 1, def: 31,
     get: s => attackToPos(s.liveAttack),
     set: (s, pos) => { s.liveAttack = posToAttack(pos); applyLiveComp(); saveLive(); },
-    format: s => s.liveAttack < 10 ? s.liveAttack.toFixed(1) + ' ms' : Math.round(s.liveAttack) + ' ms',
+    formatAt: pos => { const ms = posToAttack(pos); return ms < 10 ? ms.toFixed(1) + ' ms' : Math.round(ms) + ' ms'; },
     parse: (s, text) => attackToPos(parseFloat(text)),
   },
   {
@@ -1828,7 +1829,7 @@ const liveControls = [
     min: 10, max: 1000, step: 1, def: 250, taper: 'log',
     get: s => s.liveRelease,
     set: (s, pos) => { s.liveRelease = pos; applyLiveComp(); saveLive(); },
-    format: s => s.liveRelease + ' ms',
+    formatAt: pos => pos + ' ms',
   },
   // The meter: how far the compressor is pulling the sound down right now,
   // read from the node itself (in worker mode, the page's reading). Not a
@@ -1851,7 +1852,7 @@ const liveControls = [
     min: 0, max: 100, step: 1, def: 0,
     get: s => s.liveLatency || 0,
     set: (s, pos) => { s.liveLatency = Math.max(0, Math.min(100, Math.round(pos))); applyLiveLatency(); saveLive(); },
-    format: s => liveLatencyLabel(s.liveLatency || 0, liveLatencyNow()),
+    formatAt: pos => liveLatencyLabel(pos, liveLatencyNow()),
   }
 ];
 
@@ -1963,7 +1964,7 @@ const transportControls = [
       applyAmOn();
       save();
     },
-    format: s => Math.round((typeof s.strobeScale === 'number' ? s.strobeScale : 1) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'tpPlay', section: 'transport', label: 'start / stop', kind: 'action',
@@ -2029,7 +2030,7 @@ const mixerControls = [
     min: 0, max: 100, step: 1, def: 83,
     get: s => ampToPos(s.toneVol),
     set: (s, pos) => { s.toneVol = posToAmp(pos); applyLevel('toneLevel'); save(); },
-    format: s => ampToDb(s.toneVol) + ' dB',
+    formatAt: dbAt,
     parse: parseDb
   },
   {
@@ -2037,7 +2038,7 @@ const mixerControls = [
     min: 0, max: 100, step: 1, def: 87,
     get: s => ampToPos(s.harmVol),
     set: (s, pos) => { s.harmVol = posToAmp(pos); applyLevel('harmLevel'); save(); },
-    format: s => ampToDb(s.harmVol) + ' dB',
+    formatAt: dbAt,
     parse: parseDb
   },
   {
@@ -2045,7 +2046,7 @@ const mixerControls = [
     min: 0, max: 100, step: 1, def: 0,
     get: s => ampToPos(pipGet(s, 'vol')),
     set: (s, pos) => { pipSet(s, 'vol', posToAmp(pos)); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
-    format: s => ampToDb(pipGet(s, 'vol')) + ' dB',
+    formatAt: dbAt,
     parse: parseDb
   },
   {
@@ -2053,35 +2054,35 @@ const mixerControls = [
     min: 0, max: 100, step: 1, def: 90,
     get: s => Math.round(s.pianoVol * 100),
     set: (s, pos) => { s.pianoVol = pos / 100; save(); },
-    format: s => Math.round(s.pianoVol * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'mixClouds', section: 'mixer', label: 'Clouds', kind: 'slider',
     min: 0, max: 100, step: 1, def: 60,
     get: s => Math.round(s.cloudVol * 100),
     set: (s, pos) => { s.cloudVol = pos / 100; save(); },
-    format: s => Math.round(s.cloudVol * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'mixDrone', section: 'mixer', label: 'Ocean drone', kind: 'slider',
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round(s.bedVol * 100),
     set: (s, pos) => { s.bedVol = pos / 100; applyBedVol(); save(); },
-    format: s => Math.round(s.bedVol * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'mixArp', section: 'mixer', label: 'Sequencer', kind: 'slider',
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.arpVol * 100),
     set: (s, pos) => { s.arpVol = pos / 100; applyArp(); save(); },
-    format: s => Math.round(s.arpVol * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'mixChoir', section: 'mixer', label: 'Choir', kind: 'slider',
     min: 0, max: 200, step: 1, def: 100,
     get: s => Math.round(s.choirVol * 100),
     set: (s, pos) => { s.choirVol = pos / 100; applyChoirVol(); save(); },
-    format: s => Math.round(s.choirVol * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // the music layers' faders, second surfaces on their drawer levels
   ...MUSIC_LAYERS.map(L => {
@@ -2091,7 +2092,7 @@ const mixerControls = [
       min: 0, max: 200, step: 1, def: 100,
       get: s => Math.round(s[vol] * 100),
       set: (s, pos) => { s[vol] = pos / 100; applyLayerVol(L.id); save(); },
-      format: s => Math.round(s[vol] * 100) + '%'
+      formatAt: pos => pos + '%'
     };
   }),
   {
@@ -2099,14 +2100,14 @@ const mixerControls = [
     min: 0, max: 100, step: 1, def: 18,
     get: s => Math.round(s.ambVol * 100),
     set: (s, pos) => { s.ambVol = pos / 100; applyAmbVol(); save(); },
-    format: s => Math.round(s.ambVol * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'ambMixerReverb', section: 'mixer', label: 'Reverb', kind: 'slider',
     min: 0, max: 150, step: 1, def: 100,
     get: s => Math.round(s.ambReverb * 100),
     set: (s, pos) => { s.ambReverb = pos / 100; applyAmbReverb(); save(); },
-    format: s => Math.round(s.ambReverb * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'ambMixerDrift', section: 'mixer', label: 'Drift', kind: 'toggle',

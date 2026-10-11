@@ -109,28 +109,28 @@ export const FIREWORK_CONTROLS = [
     min: 1, max: 60, step: 1, def: spec('fwRate')[3],
     get: S => S.fwRate,
     set: (S, pos) => { S.fwRate = fit(pos, 1, 60); save(); },
-    format: S => Math.round(S.fwRate) + ' / min',
+    formatAt: pos => Math.round(pos) + ' / min',
   },
   {
     id: 'fwSpeed', section: 'fireworks', label: 'Speed', kind: 'slider',
     min: 0.25, max: 3, step: 0.05, def: spec('fwSpeed')[3],
     get: S => S.fwSpeed,
     set: (S, pos) => { S.fwSpeed = fit(pos, 0.25, 3); save(); },
-    format: S => S.fwSpeed.toFixed(2) + '×',
+    formatAt: pos => pos.toFixed(2) + '×',
   },
   {
     id: 'fwSize', section: 'fireworks', label: 'Size', kind: 'slider',
     min: 0.4, max: 2, step: 0.05, def: spec('fwSize')[3],
     get: S => S.fwSize,
     set: (S, pos) => { S.fwSize = fit(pos, 0.4, 2); save(); },
-    format: S => S.fwSize.toFixed(2) + '×',
+    formatAt: pos => pos.toFixed(2) + '×',
   },
   {
     id: 'fwBright', section: 'fireworks', label: 'Brightness', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(spec('fwBright')[3] * 100),
     get: S => Math.round(S.fwBright * 100),
     set: (S, pos) => { S.fwBright = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.fwBright * 100) + '%',
+    formatAt: pos => pos + '%',
   }
 ];
 

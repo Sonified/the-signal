@@ -117,14 +117,14 @@ export function applyFlowerState(S, o) {
 
 // One slider bound 1:1 to a flower field (a multiplier or a count), whose
 // range and default come from the NUM table so the two can never disagree.
-function direct(id, key, label, step, format, visible) {
+function direct(id, key, label, step, formatAt, visible) {
   const n = spec(key);
   const c = {
     id, section: 'flowers', label, kind: 'slider',
     min: n[1], max: n[2], step, def: n[3],
     get: S => S[key],
     set: (S, pos) => { S[key] = fit(pos, n[1], n[2], n[4]); save(); },
-    format,
+    formatAt,
   };
   if (visible) c.visible = visible;
   return c;
@@ -132,14 +132,14 @@ function direct(id, key, label, step, format, visible) {
 
 // One whole-percent slider over a 0 to 1 field, the way schema-visual.js
 // does depth, fade and every other amount.
-function percent(id, key, label, format, visible) {
+function percent(id, key, label, formatAt, visible) {
   const n = spec(key);
   const c = {
     id, section: 'flowers', label, kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
-    format: format || (S => Math.round(S[key] * 100) + '%'),
+    formatAt: formatAt || (pos => pos + '%'),
   };
   if (visible) c.visible = visible;
   return c;
@@ -154,7 +154,7 @@ const under = (parent, c) => { c.parent = parent; return c; };
 const isTunnel = S => S.flowerMode !== 'mandala';
 const isMandala = S => S.flowerMode === 'mandala';
 
-const times2 = key => S => S[key].toFixed(2) + '×';
+const times2 = pos => pos.toFixed(2) + '×';
 
 // A Brightness setting's variance (schema-variance.js varianceRows): its
 // amount and rate under the owner's own names plus Var and Period, every
@@ -208,11 +208,11 @@ export const FLOWER_CONTROLS = [
   // control's label as a plain string, so rather than a label that changes
   // under it, each mode gets its own row and only the right one is visible.
   under('flowersMotionDrawer',
-    direct('flowerSpeed', 'flowerSpeed', 'Speed', 0.05, times2('flowerSpeed'), isTunnel)),
+    direct('flowerSpeed', 'flowerSpeed', 'Speed', 0.05, times2, isTunnel)),
   under('flowersMotionDrawer',
-    direct('flowerFlow', 'flowerSpeed', 'Outward speed', 0.05, times2('flowerSpeed'), isMandala)),
+    direct('flowerFlow', 'flowerSpeed', 'Outward speed', 0.05, times2, isMandala)),
   under('flowersMotionDrawer',
-    direct('flowerBloomRate', 'flowerBloomRate', 'Bloom speed', 0.05, times2('flowerBloomRate'))),
+    direct('flowerBloomRate', 'flowerBloomRate', 'Bloom speed', 0.05, times2)),
   // A multiplier, not a percent, so its bar glows in the row's own units
   ...swing('flowerBloomRate', {
     labels: ['Bloom speed variance', 'Bloom variance rate'], parent: 'flowersMotionDrawer',
@@ -222,15 +222,15 @@ export const FLOWER_CONTROLS = [
   // 0.12, is a position the slider can actually land on.
   under('flowersMotionDrawer',
     direct('flowerSpin', 'flowerSpin', 'Spin', 0.01,
-      S => S.flowerSpin === 0 ? 'still' : (S.flowerSpin > 0 ? '+' : '') + S.flowerSpin.toFixed(2) + '×')),
+      pos => pos === 0 ? 'still' : (pos > 0 ? '+' : '') + pos.toFixed(2) + '×')),
 
   subDrawer('flowersShapeDrawer', 'Shape', 'flowers', ['flowerCount', 'flowerSize']),
   under('flowersShapeDrawer',
-    direct('flowerCount', 'flowerCount', 'Flowers', 1, S => String(S.flowerCount))),
+    direct('flowerCount', 'flowerCount', 'Flowers', 1, pos => String(pos))),
   under('flowersShapeDrawer',
-    direct('flowerRings', 'flowerRings', 'Rings', 1, S => String(S.flowerRings), isTunnel)),
+    direct('flowerRings', 'flowerRings', 'Rings', 1, pos => String(pos), isTunnel)),
   under('flowersShapeDrawer',
-    direct('flowerSize', 'flowerSize', 'Size', 0.05, times2('flowerSize'))),
+    direct('flowerSize', 'flowerSize', 'Size', 0.05, times2)),
   under('flowersShapeDrawer', percent('flowerSpiral', 'flowerSpiral', 'Spiral', null, isTunnel)),
   under('flowersShapeDrawer', percent('flowerRipple', 'flowerRipple', 'Ripple', null, isTunnel)),
 
@@ -257,10 +257,10 @@ export const FLOWER_CONTROLS = [
   // would end its run, and the two names already say it.
   under('flowersBrightnessDrawer',
     percent('flowerPulse', 'flowerPulse', 'Pulse with strobe',
-      S => S.flowerPulse === 0 ? 'never flickers' : Math.round(S.flowerPulse * 100) + '%')),
+      pos => pos === 0 ? 'never flickers' : pos + '%')),
   ...swing('flowerPulse', { labels: ['Pulse variance', 'Pulse variance rate'] }),
   under('flowersBrightnessDrawer', percent('flowerTint', 'flowerTint', 'Tint to strobe colour',
-    S => S.flowerTint === 0 ? 'own colour' : Math.round(S.flowerTint * 100) + '%')),
+    pos => pos === 0 ? 'own colour' : pos + '%')),
   ...swing('flowerTint', { labels: ['Tint variance', 'Tint variance rate'] })
 ];
 

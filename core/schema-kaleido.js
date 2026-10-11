@@ -269,33 +269,35 @@ export function applyKaleidoState(S, o) {
 
 // One slider bound 1:1 to a kaleidoscope field (a multiplier, a rate or a
 // count), whose range and default come from the NUM table so the two can
-// never disagree.
-function direct(id, key, label, step, format) {
+// never disagree. Its position is the field itself, so formatAt reads it as
+// is.
+function direct(id, key, label, step, formatAt) {
   const n = spec(key);
   const c = {
     id, section: 'kaleido', label, kind: 'slider',
     min: n[1], max: n[2], step, def: n[3],
     get: S => S[key],
     set: (S, pos) => { S[key] = fit(pos, n[1], n[2], n[4]); save(); },
-    format,
+    formatAt,
   };
   return c;
 }
 
-// One whole-percent slider over a 0 to 1 field.
-function percent(id, key, label, format) {
+// One whole-percent slider over a 0 to 1 field. Its position is the whole
+// percent, so a formatAt handed in reads that.
+function percent(id, key, label, formatAt) {
   const n = spec(key);
   const c = {
     id, section: 'kaleido', label, kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
-    format: format || (S => Math.round(S[key] * 100) + '%'),
+    formatAt: formatAt || (pos => pos + '%'),
   };
   return c;
 }
 
-const times2 = key => S => S[key].toFixed(2) + '×';
+const times2 = pos => pos.toFixed(2) + '×';
 
 // Tags a control as part of the variance of the row straight above it (the
 // schema's varianceOf), so the drawer folds it out from under that row.
@@ -314,7 +316,7 @@ function grade(id, key, label) {
     min: 0, max: 200, step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, n[1], n[2], false); save(); },
-    format: S => Math.round(S[key] * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: S => !!S.kaleidoGrade
   };
 }
@@ -363,7 +365,7 @@ function fbVariance(owner, key, span, switchId) {
       min: 1, max: 120, step: 1, def: spec(rate)[3],
       get: S => S[rate],
       set: (S, pos) => { setRate(S, rate, fit(pos, 1, 120, true)); save(); },
-      format: S => S[rate] + 's / cycle',
+      formatAt: pos => pos + 's / cycle',
       parent: switchId || 'kaleidoTrailsDrawer', visible
     }
   ];
@@ -391,7 +393,7 @@ export const KALEIDO_CONTROLS = [
   // already say which kind of turning a slider moves ----
   subDrawer('kaleidoMotionDrawer', 'Motion', 'kaleido', ['kaleidoSpeed', 'kaleidoDensity']),
   under('kaleidoMotionDrawer', Object.assign(
-    direct('kaleidoSpeed', 'kaleidoSpeed', 'Speed', 0.05, times2('kaleidoSpeed')),
+    direct('kaleidoSpeed', 'kaleidoSpeed', 'Speed', 0.05, times2),
     // the glowing bar: a reference shape's swing, the envelope every shape
     // rides at its own phase, as gpu/kaleido.js writes it each frame
     { effective: S => S.kaleidoSpeedVar > 0 && typeof S.effKaleidoSpeed === 'number'
@@ -399,14 +401,14 @@ export const KALEIDO_CONTROLS = [
   // The speed's variance and its rate fold out from under Speed, and the
   // size's from under Max size (drawer.js, the schema's varianceOf).
   varianceOf('kaleidoSpeed', percent('kaleidoSpeedVar', 'kaleidoSpeedVar', 'Speed variance')),
-  varianceOf('kaleidoSpeed', direct('kaleidoSpeedPeriod', 'kaleidoSpeedPeriod', 'Variance rate', 1, S => S.kaleidoSpeedPeriod + 's / cycle')),
+  varianceOf('kaleidoSpeed', direct('kaleidoSpeedPeriod', 'kaleidoSpeedPeriod', 'Variance rate', 1, pos => pos + 's / cycle')),
   // Depth: 0 is the flat continuous zoom as ever, every shape's radius
   // growing by the same factor each second, and the readout says so; 100%
   // is a true flythrough, far shapes hanging small near the centre and
   // rushing past the rim, each at its own distance, so shapes at one radius
   // slide past one another. A whole flight keeps Speed's length throughout.
   under('kaleidoMotionDrawer', percent('kaleidoDepth', 'kaleidoDepth', 'Depth',
-    S => S.kaleidoDepth === 0 ? 'even zoom' : Math.round(S.kaleidoDepth * 100) + '%')),
+    pos => pos === 0 ? 'even zoom' : pos + '%')),
   under('kaleidoMotionDrawer', percent('kaleidoDensity', 'kaleidoDensity', 'Density')),
   // Rotation comes in three layers, largest first.
   //
@@ -414,14 +416,14 @@ export const KALEIDO_CONTROLS = [
   // twists one way or the other as it flows, and 0 holds it square. The id
   // stays kaleidoTwist so presets and saved settings still find it.
   under('kaleidoMotionDrawer', direct('kaleidoTwist', 'kaleidoTwist', 'Complete rotation', 0.01,
-    S => S.kaleidoTwist === 0 ? 'none' : (S.kaleidoTwist > 0 ? '+' : '') + S.kaleidoTwist.toFixed(2))),
+    pos => pos === 0 ? 'none' : (pos > 0 ? '+' : '') + pos.toFixed(2))),
   // Internal rotation is each shape orbiting within its wedge, so it slides
   // into the mirrors, merges with its own reflection and vanishes off the
   // edge. The ceiling reads in radians per second, with 'still' at 0; the
   // randomness runs from every shape moving together in one direction (0)
   // to each shape taking its own speed and direction (100%).
   under('kaleidoMotionDrawer', direct('kaleidoOrbitMax', 'kaleidoOrbitMax', 'Max internal rotation', 0.01,
-    S => S.kaleidoOrbitMax === 0 ? 'still' : S.kaleidoOrbitMax.toFixed(2) + ' rad/s')),
+    pos => pos === 0 ? 'still' : pos.toFixed(2) + ' rad/s')),
   varianceOf('kaleidoOrbitMax', under('kaleidoMotionDrawer',
     percent('kaleidoOrbitMaxVar', 'kaleidoOrbitMaxVar', 'Internal rotation variance'))),
   varianceOf('kaleidoOrbitMax', under('kaleidoMotionDrawer', {
@@ -435,7 +437,7 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoOrbitMaxPeriod = v;
       save();
     },
-    format: S => S.kaleidoOrbitMaxPeriod + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   })),
   under('kaleidoMotionDrawer', percent('kaleidoOrbitVar', 'kaleidoOrbitVar', 'Internal randomness')),
   // Shape spin is each shape turning about its own centre, at its own rate
@@ -446,7 +448,7 @@ export const KALEIDO_CONTROLS = [
   // position the slider can land on. The ids stay kaleidoSpinMax and
   // kaleidoSpinVar for presets and saved settings.
   under('kaleidoMotionDrawer', direct('kaleidoSpinMax', 'kaleidoSpinMax', 'Max shape spin', 0.01,
-    S => S.kaleidoSpinMax === 0 ? 'still' : S.kaleidoSpinMax.toFixed(2) + ' rad/s')),
+    pos => pos === 0 ? 'still' : pos.toFixed(2) + ' rad/s')),
   under('kaleidoMotionDrawer', percent('kaleidoSpinVar', 'kaleidoSpinVar', 'Spin randomness')),
 
   subDrawer('kaleidoShapesDrawer', 'Shapes', 'kaleido', ['kaleidoSet', 'kaleidoFolds']),
@@ -500,8 +502,8 @@ export const KALEIDO_CONTROLS = [
     min: 0, max: XFADE_POS, step: 1, def: 0,
     get: S => xfadeToPos(S.kaleidoSetXfade),
     set: (S, pos) => { S.kaleidoSetXfade = posToXfade(pos); save(); },
-    format: S => {
-      const v = S.kaleidoSetXfade;
+    formatAt: pos => {
+      const v = posToXfade(pos);
       return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
     },
     parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
@@ -539,7 +541,7 @@ export const KALEIDO_CONTROLS = [
   // How many wedges the circle is cut into. The readout keeps the number
   // first, so clicking it to type opens on the fold count itself.
   under('kaleidoShapesDrawer', Object.assign(
-    direct('kaleidoFolds', 'kaleidoFolds', 'Symmetry', 1, S => S.kaleidoFolds + '-fold'),
+    direct('kaleidoFolds', 'kaleidoFolds', 'Symmetry', 1, pos => pos + '-fold'),
     // the glowing bar: the fold count the eased chamber stands for while a
     // Symmetry slide runs, as gpu/kaleido.js writes it each frame
     { effective: S => typeof S.effKaleidoFolds === 'number' ? S.effKaleidoFolds : undefined })),
@@ -557,7 +559,7 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoFoldsPeriod = v;
       save();
     },
-    format: S => S.kaleidoFoldsPeriod + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   })),
   {
     // How a change of Symmetry (the fold count or Mirror) arrives. Instant
@@ -570,8 +572,8 @@ export const KALEIDO_CONTROLS = [
     min: 0, max: XFADE_POS, step: 1, def: 0,
     get: S => xfadeToPos(S.kaleidoFoldXfade),
     set: (S, pos) => { S.kaleidoFoldXfade = posToXfade(pos); save(); },
-    format: S => {
-      const v = S.kaleidoFoldXfade;
+    formatAt: pos => {
+      const v = posToXfade(pos);
       return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
     },
     parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
@@ -584,7 +586,7 @@ export const KALEIDO_CONTROLS = [
     get: S => !!S.kaleidoMirror,
     set: (S, on) => { S.kaleidoMirror = !!on; save(); },
   },
-  under('kaleidoShapesDrawer', direct('kaleidoSize', 'kaleidoSize', 'Max size', 0.05, times2('kaleidoSize'))),
+  under('kaleidoShapesDrawer', direct('kaleidoSize', 'kaleidoSize', 'Max size', 0.05, times2)),
   varianceOf('kaleidoSize', percent('kaleidoSizeVar', 'kaleidoSizeVar', 'Size variance')),
   {
     // Whether a shape grows as it comes toward the rim. Checked, each one
@@ -601,7 +603,7 @@ export const KALEIDO_CONTROLS = [
   // readout says so. Higher values spread births off the axis, and 100% is
   // anywhere across the wedge and the band beyond it.
   under('kaleidoShapesDrawer', percent('kaleidoScatter', 'kaleidoScatter', 'Scatter',
-    S => S.kaleidoScatter === 0 ? 'on the axis' : Math.round(S.kaleidoScatter * 100) + '%')),
+    pos => pos === 0 ? 'on the axis' : pos + '%')),
 
   // The layer's master opacity, its radial fade in from the centre (the
   // rings' Ring fade in for this layer: 0 is no fade, higher values ease the
@@ -621,7 +623,7 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoOpacityPeriod = v;
       save();
     },
-    format: S => S.kaleidoOpacityPeriod + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   })),
   under('kaleidoBrightnessDrawer', percent('kaleidoFade', 'kaleidoFade', 'Center fade radius')),
   varianceOf('kaleidoFade', under('kaleidoBrightnessDrawer',
@@ -637,12 +639,12 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoFadePeriod = v;
       save();
     },
-    format: S => S.kaleidoFadePeriod + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   })),
   under('kaleidoBrightnessDrawer', direct('kaleidoFadeInS', 'kaleidoFadeInS', 'Fade in time', 0.1,
-    S => (S.kaleidoFadeInS ?? 1.5) < 0.05 ? 'off' : (S.kaleidoFadeInS ?? 1.5).toFixed(1) + 's')),
+    pos => (pos ?? 1.5) < 0.05 ? 'off' : (pos ?? 1.5).toFixed(1) + 's')),
   under('kaleidoBrightnessDrawer', Object.assign(percent('kaleidoPulse', 'kaleidoPulse', 'Pulse with strobe',
-    S => S.kaleidoPulse === 0 ? 'never flickers' : Math.round(S.kaleidoPulse * 100) + '%'), {
+    pos => pos === 0 ? 'never flickers' : pos + '%'), {
     effective: S => S.kaleidoPulseVar > 0
       ? (typeof S.effKaleidoPulse === 'number' ? S.effKaleidoPulse : S.kaleidoPulse) * 100 : undefined
   })),
@@ -659,7 +661,7 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoPulsePeriod = v;
       save();
     },
-    format: S => S.kaleidoPulsePeriod + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   })),
 
   // Video feedback of the folded pattern, the Confetti layer's Feedback
@@ -691,20 +693,20 @@ export const KALEIDO_CONTROLS = [
     min: 1, max: 120, step: 1, def: 20,
     get: S => S.kaleidoFbAmtVarRate,
     set: (S, pos) => { setRate(S, 'kaleidoFbAmtVarRate', fit(pos, 1, 120, true)); save(); },
-    format: S => S.kaleidoFbAmtVarRate + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   })),
   // The trails' own motion: each frame's faded copy is taken a little
   // larger or smaller about the field centre (Stream) and turned about it
   // (Twist), the same way in every direction.
   under('kaleidoTrailsDrawer', Object.assign(
-    direct('kaleidoFbStream', 'kaleidoFbStream', 'Stream', 0.01, S => S.kaleidoFbStream === 0 ? 'none'
-      : (S.kaleidoFbStream > 0 ? '+' + S.kaleidoFbStream.toFixed(2) + ' out' : S.kaleidoFbStream.toFixed(2) + ' in')),
+    direct('kaleidoFbStream', 'kaleidoFbStream', 'Stream', 0.01, pos => pos === 0 ? 'none'
+      : (pos > 0 ? '+' + pos.toFixed(2) + ' out' : pos.toFixed(2) + ' in')),
     { effective: S => (S.kaleidoFbStreamVarLo !== 0 || S.kaleidoFbStreamVarHi !== 0)
         ? (typeof S.effKaleidoFbStream === 'number' ? S.effKaleidoFbStream : S.kaleidoFbStream) : undefined })),
   ...fbVariance('kaleidoFbStream', 'kaleidoFbStreamVar', 4),
   under('kaleidoTrailsDrawer', Object.assign(
-    direct('kaleidoFbTwist', 'kaleidoFbTwist', 'Twist', 0.01, S => S.kaleidoFbTwist === 0 ? 'none'
-      : (S.kaleidoFbTwist > 0 ? '+' + S.kaleidoFbTwist.toFixed(2) + ' clockwise' : S.kaleidoFbTwist.toFixed(2) + ' counter')),
+    direct('kaleidoFbTwist', 'kaleidoFbTwist', 'Twist', 0.01, pos => pos === 0 ? 'none'
+      : (pos > 0 ? '+' + pos.toFixed(2) + ' clockwise' : pos.toFixed(2) + ' counter')),
     { effective: S => S.kaleidoFbTwistVarOn !== false && (S.kaleidoFbTwistVarLo !== 0 || S.kaleidoFbTwistVarHi !== 0)
         ? (typeof S.effKaleidoFbTwist === 'number' ? S.effKaleidoFbTwist : S.kaleidoFbTwist) : undefined })),
   {
@@ -724,7 +726,7 @@ export const KALEIDO_CONTROLS = [
   // flicker by this much, its colour only, so trails darken rather than
   // turning see-through.
   under('kaleidoTrailsDrawer', Object.assign(percent('kaleidoFbPulse', 'kaleidoFbPulse', 'Pulse with strobe',
-    S => S.kaleidoFbPulse === 0 ? 'never flickers' : Math.round(S.kaleidoFbPulse * 100) + '%'), {
+    pos => pos === 0 ? 'never flickers' : pos + '%'), {
     effective: S => S.kaleidoFbPulseVar > 0
       ? (typeof S.effKaleidoFbPulse === 'number' ? S.effKaleidoFbPulse : S.kaleidoFbPulse) * 100 : undefined
   })),
@@ -734,7 +736,7 @@ export const KALEIDO_CONTROLS = [
     min: 1, max: 60, step: 1, def: 10,
     get: S => S.kaleidoFbPulseRate,
     set: (S, pos) => { setRate(S, 'kaleidoFbPulseRate', fit(pos, 1, 60, true)); save(); },
-    format: S => S.kaleidoFbPulseRate + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   })),
 
   // The motifs' own color, graded before any tint toward the strobe, then
@@ -752,7 +754,7 @@ export const KALEIDO_CONTROLS = [
   grade('kaleidoContrast', 'kaleidoContrast', 'Contrast'),
   grade('kaleidoSat', 'kaleidoSat', 'Saturation'),
   under('kaleidoColorDrawer', percent('kaleidoTint', 'kaleidoTint', 'Tint to strobe colour',
-    S => S.kaleidoTint === 0 ? 'own colour' : Math.round(S.kaleidoTint * 100) + '%')),
+    pos => pos === 0 ? 'own colour' : pos + '%')),
   varianceOf('kaleidoTint', under('kaleidoColorDrawer',
     percent('kaleidoTintVar', 'kaleidoTintVar', 'Tint variance'))),
   varianceOf('kaleidoTint', under('kaleidoColorDrawer', {
@@ -768,7 +770,7 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoTintPeriod = v;
       save();
     },
-    format: S => S.kaleidoTintPeriod + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   }))
 ];
 

@@ -12,8 +12,10 @@
 // fraction; a control whose slider already matches its state 1:1, like ring
 // spread, is not converted at all). `set` takes that same unit back, writes
 // through to S, repeats v0's side effect if it had one, and ends with the
-// debounced save() every v0 handler ends with. `format` returns the readout
-// text precisely as v0's <b><span> shows it, unit included.
+// debounced save() every v0 handler ends with. A slider's `formatAt` turns
+// any position of its own (the live one, a drag's, a glide's destination)
+// into the readout text precisely as v0's <b><span> shows it, unit included;
+// the other kinds keep `format`, which reads S as it stands.
 //
 // No control here needs a parse (the toolkit's typed-readout inverse): every
 // slider's readout prints its own position, only rounded and with a unit on,
@@ -137,7 +139,7 @@ function fxRows(leaving) {
     visible: uses(list),
     get: S => Math.round(S[key + sfx] * 100),
     set: (S, pos) => { S[key + sfx] = pos / 100; save(); },
-    format: S => Math.round(S[key + sfx] * 100) + '%'
+    formatAt: pos => pos + '%'
   }, extra);
   const ALL = Object.keys(FX_NAMES);
   const smoke = uses(['smoke']);
@@ -145,7 +147,7 @@ function fxRows(leaving) {
   return [
     // How far the letters or the vapour travel, in word heights.
     pct('textFxDist', 'Distance', 600, 150, ['gather', 'wind', 'cloud', 'smoke'],
-        { step: 5, format: S => S['textFxDist' + sfx].toFixed(2) + '× size' }),
+        { step: 5, formatAt: pos => (pos / 100).toFixed(2) + '× size' }),
     {
       // Gather only. On, the letters gather in (and leave) from left to
       // right rather than in no particular order, and Stagger below sets
@@ -173,7 +175,7 @@ function fxRows(leaving) {
       visible: uses(['wind']),
       get: S => S['textFxWindDir' + sfx],
       set: (S, pos) => { S['textFxWindDir' + sfx] = pos; save(); },
-      format: S => S['textFxWindDir' + sfx] + '°'
+      formatAt: pos => pos + '°'
     },
     // ---- Smoke only. The recording is prepared per word, so a change here
     // reaches the screen with the next word recorded, not the one playing. ----
@@ -307,7 +309,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((typeof S.strobeScale === 'number' ? S.strobeScale : 1) * 100),
     set: (S, pos) => { const c = byId('strobeScale'); if (c) c.set(S, pos); },
-    format: S => Math.round((typeof S.strobeScale === 'number' ? S.strobeScale : 1) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // On, every glide of the strobe's rate (a preset's, a journey's, the
@@ -331,7 +333,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((S.cornerOpacity ?? 1) * 100),
     set: (S, pos) => { S.cornerOpacity = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round((S.cornerOpacity ?? 1) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // The opacity breathes on the app's standard: over one rate cycle it
   // eases from the setting down by this share and back, never above it.
@@ -344,21 +346,21 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 4, step: 0.05, def: 1,
     get: S => S.cornerSpeed ?? 1,
     set: (S, pos) => { S.cornerSpeed = Math.max(0, Math.min(4, pos)); save(); },
-    format: S => (S.cornerSpeed ?? 1).toFixed(2) + '×'
+    formatAt: pos => pos.toFixed(2) + '×'
   },
   {
     id: 'cornerPulse', section: 'corners', label: 'Pulse with strobe', kind: 'slider',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((S.cornerPulse ?? 1) * 100),
     set: (S, pos) => { S.cornerPulse = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => (S.cornerPulse ?? 1) === 0 ? 'never flickers' : Math.round(S.cornerPulse * 100) + '%'
+    formatAt: pos => pos === 0 ? 'never flickers' : pos + '%'
   },
   {
     id: 'cornerSize', section: 'corners', label: 'Size', kind: 'slider',
     min: 5, max: 100, step: 1, def: 46,
     get: S => Math.round((S.cornerSize ?? 0.46) * 100),
     set: (S, pos) => { S.cornerSize = Math.max(0.05, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round((S.cornerSize ?? 0.46) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'cornerType', section: 'corners', label: 'Type', kind: 'segment', def: 'glow',
@@ -390,7 +392,7 @@ export const VISUAL_CONTROLS = [
       if (S.amLinked) setAmRate(S.freq);
       save();
     },
-    format: S => S.freq.toFixed(1) + ' Hz'
+    formatAt: pos => pos.toFixed(1) + ' Hz'
   },
   {
     // Off holds the strobe on the set frequency; the amount and rate below
@@ -408,7 +410,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 15, step: 0.5, def: 1,
     get: S => S.freqDrift,
     set: (S, pos) => { S.freqDrift = pos; save(); },
-    format: S => '±' + S.freqDrift.toFixed(1) + ' Hz',
+    formatAt: pos => '±' + pos.toFixed(1) + ' Hz',
     visible: S => S.freqDriftOn !== false
   },
   {
@@ -418,7 +420,7 @@ export const VISUAL_CONTROLS = [
     min: 1, max: 60, step: 1, def: 60,
     get: S => S.driftPeriod,
     set: (S, pos) => { S.driftPeriod = pos; save(); },
-    format: S => S.driftPeriod + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
     visible: S => S.freqDriftOn !== false
   },
   {
@@ -463,7 +465,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 80,
     get: S => Math.round(S.depth * 100),
     set: (S, pos) => { S.depth = pos / 100; save(); },
-    format: S => Math.round(S.depth * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // The overlay shows the dip the variance makes on the Depth setting
   // itself, not S.effDepth, which also carries the Master strobe (strobe.js
@@ -480,7 +482,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.bright * 100),
     set: (S, pos) => { S.bright = pos / 100; save(); },
-    format: S => Math.round(S.bright * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   ...varianceRows('bright', {
     name: 'Brightness', amountDef: 85, periodDef: 22,
@@ -496,7 +498,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((S.fieldOpacity ?? 1) * 100),
     set: (S, pos) => { S.fieldOpacity = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round((S.fieldOpacity ?? 1) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'fieldShape', section: 'strobe', label: 'Field shape', kind: 'segment', def: 'full',
@@ -518,7 +520,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.fieldFade || 0) * 100),
     set: (S, pos) => { S.fieldFade = pos / 100; save(); },
-    format: S => Math.round((S.fieldFade || 0) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // The fade radius breathes on the app's standard: over one rate cycle it
   // eases from the setting down by this share and back, never above it.
@@ -535,7 +537,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((S.fieldSoft ?? 1) * 100),
     set: (S, pos) => { S.fieldSoft = pos / 100; save(); },
-    format: S => Math.round((S.fieldSoft ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: S => (S.fieldFade || 0) > 0
   },
   subDrawer('strobeColorDrawer', 'Color', 'strobe', ['hueBand', 'colorWalk']),
@@ -588,7 +590,7 @@ export const VISUAL_CONTROLS = [
       S.colorMode = S.colorWalk <= 0 ? 'magenta' : (S.perElementColor ? 'multi' : 'rotating');
       save();
     },
-    format: S => S.colorWalk === 0 ? 'off' : Math.round(S.colorWalk * 100) + '%'
+    formatAt: pos => pos === 0 ? 'off' : pos + '%'
   },
   {
     id: 'walkPeriod', section: 'strobe', label: 'Walk speed', kind: 'slider',
@@ -596,7 +598,7 @@ export const VISUAL_CONTROLS = [
     min: 1, max: 300, step: 1, def: 60,
     get: S => S.walkPeriod,
     set: (S, pos) => { S.walkPeriod = pos; save(); },
-    format: S => S.walkPeriod + 's / lap'
+    formatAt: pos => pos + 's / lap'
   },
   {
     id: 'colorWalkMode', section: 'strobe', label: 'Walk mode', kind: 'segment', def: false,
@@ -632,7 +634,7 @@ export const VISUAL_CONTROLS = [
     min: 0.1, max: 3, step: 0.05, def: 2.5,
     get: S => S.ringSpeedMul,
     set: (S, pos) => { S.ringSpeedMul = pos; save(); },
-    format: S => S.ringSpeedMul.toFixed(1) + '×'
+    formatAt: pos => pos.toFixed(1) + '×'
   },
   // The speed's dip, the app's standard: over one rate cycle the rings ease
   // from the setting down by this share and back, never above it. The bar
@@ -654,7 +656,7 @@ export const VISUAL_CONTROLS = [
     min: 0.2, max: 20, step: 0.1, def: 5,
     get: S => S.ringRate,
     set: (S, pos) => { S.ringRate = pos; save(); },
-    format: S => S.ringRate.toFixed(1) + ' / s'
+    formatAt: pos => pos.toFixed(1) + ' / s'
   },
   {
     // Where a new ring is born, as a share of the tunnel's depth: 100% is
@@ -667,7 +669,7 @@ export const VISUAL_CONTROLS = [
     min: 5, max: 100, step: 1, def: 100,
     get: S => Math.round((S.ringOrigin ?? 1) * 100),
     set: (S, pos) => { S.ringOrigin = pos / 100; save(); },
-    format: S => Math.round((S.ringOrigin ?? 1) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // How long a new ring takes to fade up from nothing when it is born,
@@ -679,7 +681,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 3000, step: 50, def: 1000,
     get: S => S.ringFadeInMs ?? 1000,
     set: (S, v) => { S.ringFadeInMs = v; save(); },
-    format: S => Math.round(S.ringFadeInMs ?? 1000) + ' ms'
+    formatAt: pos => Math.round(pos) + ' ms'
   },
   subDrawer('tunnelBrightnessDrawer', 'Brightness', 'tunnel', ['ringOpacity', 'ringFade', 'ringPulse']),
   {
@@ -689,7 +691,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((S.ringOpacity ?? 1) * 100),
     set: (S, pos) => { S.ringOpacity = pos / 100; save(); },
-    format: S => Math.round((S.ringOpacity ?? 1) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   driveRow('ringOpacity', 'ringBrightVarDrive', 'Ring brightness var driver'),
   ...varianceRows('ringOpacity', {
@@ -711,7 +713,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 55,
     get: S => Math.round(S.ringFade * 100),
     set: (S, pos) => { S.ringFade = pos / 100; save(); },
-    format: S => Math.round(S.ringFade * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'ringPulse', section: 'tunnel', label: 'Pulse with strobe', kind: 'slider',
@@ -720,7 +722,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.ringPulse || 0) * 100),
     set: (S, pos) => { S.ringPulse = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => (S.ringPulse || 0) === 0 ? 'never flickers' : Math.round(S.ringPulse * 100) + '%'
+    formatAt: pos => pos === 0 ? 'never flickers' : pos + '%'
   },
   subDrawer('tunnelStyleDrawer', 'Style', 'tunnel', ['ringThick']),
   {
@@ -730,7 +732,7 @@ export const VISUAL_CONTROLS = [
     min: 0.2, max: 5, step: 0.1, def: 3,
     get: S => S.ringThick,
     set: (S, pos) => { S.ringThick = pos; save(); },
-    format: S => S.ringThick.toFixed(1) + '×'
+    formatAt: pos => pos.toFixed(1) + '×'
   },
   {
     id: 'ringThickVar', section: 'tunnel', label: 'Line thickness variance', kind: 'slider',
@@ -741,7 +743,7 @@ export const VISUAL_CONTROLS = [
     // emitRing in js/sim.js), so, exactly as in v0, a change here only shows
     // up as new rings arrive; reseeding would make the whole tunnel jump.
     set: (S, pos) => { S.ringThickVar = pos / 100; save(); },
-    format: S => Math.round(S.ringThickVar * 100) + '%'
+    formatAt: pos => pos + '%'
   },
 
   // ---------- Edge ----------
@@ -756,7 +758,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.edgeOpacity * 100),
     set: (S, pos) => { S.edgeOpacity = pos / 100; save(); },
-    format: S => Math.round(S.edgeOpacity * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // The opacity breathes on the app's standard: over one rate cycle it
   // eases from the setting down by this share and back, never above it.
@@ -774,7 +776,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(edgePulse(S) * 100),
     set: (S, pos) => { S.edgePulse = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => edgePulse(S) === 0 ? 'never flickers' : Math.round(edgePulse(S) * 100) + '%'
+    formatAt: pos => pos === 0 ? 'never flickers' : pos + '%'
   },
   // The pulse's dip, the app's standard: over one rate cycle the edge's
   // breathing eases from the setting down by this share and back, never
@@ -817,7 +819,7 @@ export const VISUAL_CONTROLS = [
     min: 5, max: 500, step: 5, def: 120,
     get: S => S.edgePartRate,
     set: (S, pos) => { S.edgePartRate = Math.max(5, Math.min(500, pos)); save(); },
-    format: S => S.edgePartRate + ' / s'
+    formatAt: pos => pos + ' / s'
   },
   {
     // A spark's radius, css px, before each one's own spread of it.
@@ -826,7 +828,7 @@ export const VISUAL_CONTROLS = [
     min: 0.5, max: 8, step: 0.1, def: 2,
     get: S => S.edgePartSize,
     set: (S, pos) => { S.edgePartSize = Math.max(0.5, Math.min(8, pos)); save(); },
-    format: S => S.edgePartSize.toFixed(1) + ' px'
+    formatAt: pos => pos.toFixed(1) + ' px'
   },
   {
     // How fast the sparks drift in toward the centre, alike on every side.
@@ -839,7 +841,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 35,
     get: S => Math.round(-S.edgePartDrift * 100),
     set: (S, pos) => { S.edgePartDrift = -Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => !S.edgePartDrift ? 'none' : Math.round(-S.edgePartDrift * 100) + '% in'
+    formatAt: pos => pos === 0 ? 'none' : pos + '% in'
   },
   {
     // Each spark twinkling on its own, as a firework's sparks crackle; 0 is
@@ -849,7 +851,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 50,
     get: S => Math.round(S.edgePartSparkle * 100),
     set: (S, pos) => { S.edgePartSparkle = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round(S.edgePartSparkle * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // Flame: licks rising in off all four borders, as if the frame were
   // quietly burning.
@@ -860,7 +862,7 @@ export const VISUAL_CONTROLS = [
     min: 8, max: 240, step: 1, def: 56,
     get: S => S.edgeFlameHeight,
     set: (S, pos) => { S.edgeFlameHeight = Math.max(8, Math.min(240, pos)); save(); },
-    format: S => Math.round(S.edgeFlameHeight) + ' px'
+    formatAt: pos => Math.round(pos) + ' px'
   },
   {
     // How fast the flames flicker and climb.
@@ -869,7 +871,7 @@ export const VISUAL_CONTROLS = [
     min: 0.1, max: 3, step: 0.05, def: 1,
     get: S => S.edgeFlameSpeed,
     set: (S, pos) => { S.edgeFlameSpeed = Math.max(0.1, Math.min(3, pos)); save(); },
-    format: S => S.edgeFlameSpeed.toFixed(2) + '×'
+    formatAt: pos => pos.toFixed(2) + '×'
   },
   {
     // How rough the flames are: at 0 smooth rounded tongues, at 100% ragged
@@ -879,7 +881,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 50,
     get: S => Math.round(S.edgeFlameTurb * 100),
     set: (S, pos) => { S.edgeFlameTurb = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round(S.edgeFlameTurb * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // Glow: a soft band of light hugging the border.
   {
@@ -889,7 +891,7 @@ export const VISUAL_CONTROLS = [
     min: 2, max: 200, step: 1, def: 28,
     get: S => S.edgeGlowWidth,
     set: (S, pos) => { S.edgeGlowWidth = Math.max(2, Math.min(200, pos)); save(); },
-    format: S => Math.round(S.edgeGlowWidth) + ' px'
+    formatAt: pos => Math.round(pos) + ' px'
   },
   {
     // How the light falls away inward from the screen's edge, where it is
@@ -900,7 +902,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 60,
     get: S => Math.round(S.edgeGlowSoft * 100),
     set: (S, pos) => { S.edgeGlowSoft = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round(S.edgeGlowSoft * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // A slow swell: once a Breathe rate the glow dims by this much and
@@ -912,7 +914,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 40,
     get: S => Math.round(S.edgeGlowBreathe * 100),
     set: (S, pos) => { S.edgeGlowBreathe = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round(S.edgeGlowBreathe * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'edgeGlowBreatheRate', section: 'edge', label: 'Breathe rate', kind: 'slider',
@@ -920,7 +922,7 @@ export const VISUAL_CONTROLS = [
     min: 1, max: 60, step: 1, def: 8,
     get: S => S.edgeGlowBreatheRate,
     set: (S, pos) => { S.edgeGlowBreatheRate = Math.max(1, Math.min(60, pos)); save(); },
-    format: S => S.edgeGlowBreatheRate + 's / cycle'
+    formatAt: pos => pos + 's / cycle'
   },
   // ---- Surfing's two sub-drawers, Motion and Style (see subDrawer), each
   // with its rows straight after it, shown only while Surfing is the effect
@@ -933,7 +935,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 6, step: 0.1, def: 4,
     get: S => S.edgeSpeedMul,
     set: (S, pos) => { S.edgeSpeedMul = pos; save(); },
-    format: S => S.edgeSpeedMul.toFixed(1) + '×'
+    formatAt: pos => pos.toFixed(1) + '×'
   },
   ...varianceRows('edgeSpeed', {
     name: 'Edge speed', amountDef: 50, periodDef: 22,
@@ -964,7 +966,7 @@ export const VISUAL_CONTROLS = [
     min: 2, max: 200, step: 1, def: 60,
     get: S => S.edgeCount,
     set: (S, pos) => { S.edgeCount = pos; seedParticles(S.edgeCount); save(); },
-    format: S => String(S.edgeCount)
+    formatAt: pos => String(pos)
   },
   {
     // The slider reads in half the stored units: S.edgeSize stays in the
@@ -976,7 +978,7 @@ export const VISUAL_CONTROLS = [
     min: 0.1, max: 20, step: 0.1, def: 3,
     get: S => S.edgeSize / 2,
     set: (S, pos) => { S.edgeSize = pos * 2; save(); },
-    format: S => (S.edgeSize / 2).toFixed(1) + '×'
+    formatAt: pos => pos.toFixed(1) + '×'
   },
   ...varianceRows('edgeSize', {
     name: 'Edge size', amountDef: 50, periodDef: 18,
@@ -988,7 +990,7 @@ export const VISUAL_CONTROLS = [
     min: 0.2, max: 6, step: 0.1, def: 1,
     get: S => S.trailMul,
     set: (S, pos) => { S.trailMul = pos; save(); },
-    format: S => S.trailMul.toFixed(1) + '×'
+    formatAt: pos => pos.toFixed(1) + '×'
   },
   {
     // The particle's leading tip (gpu/scene-data.js's buildEdge). v1 only,
@@ -1021,7 +1023,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((typeof S.edgeFbOpacity === 'number' ? S.edgeFbOpacity : 1) * 100),
     set: (S, pos) => { S.edgeFbOpacity = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round((typeof S.edgeFbOpacity === 'number' ? S.edgeFbOpacity : 1) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // For softening the edge: each frame keeps a fading copy of the last,
@@ -1035,7 +1037,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.edgeFb || 0) * 100),
     set: (S, pos) => { S.edgeFb = Math.max(0, Math.min(1, pos / 100)); save(); },
-    format: S => Math.round((S.edgeFb || 0) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // The trails' own motion: each frame's faded copy is taken a little
@@ -1047,8 +1049,8 @@ export const VISUAL_CONTROLS = [
     min: -2, max: 2, step: 0.01, def: 0,
     get: S => S.edgeFbStream || 0,
     set: (S, pos) => { S.edgeFbStream = Math.max(-2, Math.min(2, pos)); save(); },
-    format: S => !S.edgeFbStream ? 'none'
-      : (S.edgeFbStream > 0 ? '+' + S.edgeFbStream.toFixed(2) + ' out' : S.edgeFbStream.toFixed(2) + ' in')
+    formatAt: pos => !pos ? 'none'
+      : (pos > 0 ? '+' + pos.toFixed(2) + ' out' : pos.toFixed(2) + ' in')
   },
   {
     // And turned a little about the centre each frame, so the trails swirl.
@@ -1057,8 +1059,8 @@ export const VISUAL_CONTROLS = [
     min: -1, max: 1, step: 0.01, def: 0,
     get: S => S.edgeFbTwist || 0,
     set: (S, pos) => { S.edgeFbTwist = Math.max(-1, Math.min(1, pos)); save(); },
-    format: S => !S.edgeFbTwist ? 'none'
-      : (S.edgeFbTwist > 0 ? '+' + S.edgeFbTwist.toFixed(2) + ' clockwise' : S.edgeFbTwist.toFixed(2) + ' counter')
+    formatAt: pos => !pos ? 'none'
+      : (pos > 0 ? '+' + pos.toFixed(2) + ' clockwise' : pos.toFixed(2) + ' counter')
   },
 
   // ---------- Text ----------
@@ -1109,7 +1111,7 @@ export const VISUAL_CONTROLS = [
     visible: S => S.textMode === 'breath',
     get: S => S.textBreathDelay > 0 ? S.textBreathDelay : 0,
     set: (S, pos) => { S.textBreathDelay = Math.max(0, pos); save(); },
-    format: S => (S.textBreathDelay > 0 ? S.textBreathDelay : 0).toFixed(1) + ' s'
+    formatAt: pos => pos.toFixed(1) + ' s'
   },
   {
     // The Custom source's phrases, one line with a '|' between them, and a
@@ -1137,7 +1139,7 @@ export const VISUAL_CONTROLS = [
     visible: S => S.textMode === 'custom',
     get: S => S.textPhraseGap >= 0 ? S.textPhraseGap : -1,
     set: (S, pos) => { S.textPhraseGap = pos < 0 ? -1 : pos; save(); },
-    format: S => S.textPhraseGap >= 0 ? S.textPhraseGap + ' s' : 'auto'
+    formatAt: pos => pos >= 0 ? pos + ' s' : 'auto'
   },
   // ---- three sub-drawers, Timing, Styling and Fades (see subDrawer), each
   // with its rows straight after it, then the themes at the section's level ----
@@ -1163,7 +1165,7 @@ export const VISUAL_CONTROLS = [
     visible: S => !S.textLinked,
     get: S => S.textRateHz,
     set: (S, pos) => { S.textRateHz = pos; save(); },
-    format: S => S.textRateHz.toFixed(1) + ' Hz'
+    formatAt: pos => pos.toFixed(1) + ' Hz'
   },
   {
     // Whether a word's chance rolls per strobe tick (so 40 Hz offers forty
@@ -1192,7 +1194,7 @@ export const VISUAL_CONTROLS = [
     visible: S => S.textAppearMode === 'time',
     get: S => S.textAppearPerMin,
     set: (S, pos) => { S.textAppearPerMin = pos; save(); },
-    format: S => S.textAppearPerMin + ' / min'
+    formatAt: pos => pos + ' / min'
   },
   {
     id: 'textFreq', section: 'text', label: 'Appearance', kind: 'slider',
@@ -1202,7 +1204,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 50,
     get: S => Math.round(S.textFreq * 100),
     set: (S, pos) => { S.textFreq = pos / 100; save(); },
-    format: S => Math.round(S.textFreq * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'textRandom', section: 'text', label: 'Appearance variance', kind: 'slider',
@@ -1211,7 +1213,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.textRandom * 100),
     set: (S, pos) => { S.textRandom = pos / 100; save(); },
-    format: S => Math.round(S.textRandom * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'textRestFreq', section: 'text', label: 'Rest frequency', kind: 'slider',
@@ -1219,7 +1221,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 4,
     get: S => Math.round(S.textRestFreq * 100),
     set: (S, pos) => { S.textRestFreq = pos / 100; save(); },
-    format: S => Math.round(S.textRestFreq * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     id: 'textRestSec', section: 'text', label: 'Rest duration', kind: 'slider',
@@ -1227,7 +1229,7 @@ export const VISUAL_CONTROLS = [
     min: 1, max: 60, step: 1, def: 10,
     get: S => S.textRestSec,
     set: (S, pos) => { S.textRestSec = pos; save(); },
-    format: S => S.textRestSec + 's'
+    formatAt: pos => pos + 's'
   },
   {
     id: 'textRestVar', section: 'text', label: 'Rest variance', kind: 'slider',
@@ -1236,7 +1238,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 70,
     get: S => Math.round(S.textRestVar * 100),
     set: (S, pos) => { S.textRestVar = pos / 100; save(); },
-    format: S => Math.round(S.textRestVar * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // 0 is no hold at all: the word starts fading out the moment it has
@@ -1247,7 +1249,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 10000, step: 10, def: 80,
     get: S => S.textDwellMs,
     set: (S, pos) => { S.textDwellMs = pos; save(); },
-    format: S => S.textDwellMs + ' ms'
+    formatAt: pos => pos + ' ms'
   },
   {
     id: 'textDwellVar', section: 'text', label: 'Duration variance', kind: 'slider',
@@ -1256,7 +1258,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round(S.textDwellVar * 100),
     set: (S, pos) => { S.textDwellVar = pos / 100; save(); },
-    format: S => Math.round(S.textDwellVar * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   subDrawer('textStylingDrawer', 'Styling', 'text', ['textSize', 'textOpacity']),
   {
@@ -1271,7 +1273,7 @@ export const VISUAL_CONTROLS = [
     min: 16, max: 160, step: 1, def: 35,
     get: S => S.textSize,
     set: (S, pos) => { S.textSize = pos; save(); },
-    format: S => S.textSize + ' px'
+    formatAt: pos => pos + ' px'
   },
   {
     id: 'textColorMode', section: 'text', label: 'Word color', kind: 'segment', def: 'system',
@@ -1292,7 +1294,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round(S.textBrighten * 100),
     set: (S, pos) => { S.textBrighten = pos / 100; save(); },
-    format: S => Math.round(S.textBrighten * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: S => S.textColorMode === 'system'
   },
   {
@@ -1302,7 +1304,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 95,
     get: S => Math.round(S.textOpacity * 100),
     set: (S, pos) => { S.textOpacity = pos / 100; save(); },
-    format: S => Math.round(S.textOpacity * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // In a running word walk a change of rate is folded into the dip's phase
   // offset first (core/words.js retimeWordOpacity), so it carries on from
@@ -1321,7 +1323,7 @@ export const VISUAL_CONTROLS = [
     min: 20, max: 100, step: 1, def: 92,
     get: S => Math.round((S.textLineWidth ?? 0.92) * 100),
     set: (S, pos) => { S.textLineWidth = pos / 100; save(); },
-    format: S => Math.round((S.textLineWidth ?? 0.92) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // On, a phrase with smart breaks marked in js/affirmations.js breaks
@@ -1369,7 +1371,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.textShadowO || 0) * 100),
     set: (S, pos) => { S.textShadowO = pos / 100; save(); },
-    format: S => Math.round((S.textShadowO || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // How far the shadow softens past the letter's edge, on top of the little
@@ -1379,7 +1381,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.textShadowBlur || 0) * 100),
     set: (S, pos) => { S.textShadowBlur = pos / 100; save(); },
-    format: S => Math.round((S.textShadowBlur || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // How far the dark copies swell past the letters' edges, evenly all
@@ -1389,7 +1391,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.textShadowSize || 0) * 100),
     set: (S, pos) => { S.textShadowSize = pos / 100; save(); },
-    format: S => Math.round((S.textShadowSize || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // The shadow's own arrival: it eases in over this once a word appears.
@@ -1399,7 +1401,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 2000, step: 50, def: 0,
     get: S => S.textShadowFadeInMs || 0,
     set: (S, pos) => { S.textShadowFadeInMs = pos; save(); },
-    format: S => (S.textShadowFadeInMs || 0) + ' ms',
+    formatAt: pos => pos + ' ms',
   },
   {
     // And its leaving: from the moment the word starts out, the shadow
@@ -1409,7 +1411,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 2000, step: 50, def: 0,
     get: S => S.textShadowFadeOutMs || 0,
     set: (S, pos) => { S.textShadowFadeOutMs = pos; save(); },
-    format: S => (S.textShadowFadeOutMs || 0) + ' ms',
+    formatAt: pos => pos + ' ms',
   },
   {
     // The panel's switch, on its strip, the shadow's twin above.
@@ -1428,7 +1430,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.textPanelO || 0) * 100),
     set: (S, pos) => { S.textPanelO = pos / 100; save(); },
-    format: S => Math.round((S.textPanelO || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // The panel's margin past the letters: a sliver at 0, the full wide
@@ -1438,7 +1440,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round((S.textPanelSize ?? 1) * 100),
     set: (S, pos) => { S.textPanelSize = pos / 100; save(); },
-    format: S => Math.round((S.textPanelSize ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // Soft edges melt the panel's rim into the scene: the hard rounded rect
@@ -1449,7 +1451,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.textPanelSoft || 0) * 100),
     set: (S, pos) => { S.textPanelSoft = pos / 100; save(); },
-    format: S => Math.round((S.textPanelSoft || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // On, each line of a phrase gets a panel of its own, as wide as that
@@ -1468,7 +1470,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 2000, step: 50, def: 0,
     get: S => S.textPanelFadeInMs || 0,
     set: (S, pos) => { S.textPanelFadeInMs = pos; save(); },
-    format: S => (S.textPanelFadeInMs || 0) + ' ms',
+    formatAt: pos => pos + ' ms',
   },
   {
     // And its leaving, from the word's first step out.
@@ -1477,7 +1479,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 2000, step: 50, def: 0,
     get: S => S.textPanelFadeOutMs || 0,
     set: (S, pos) => { S.textPanelFadeOutMs = pos; save(); },
-    format: S => (S.textPanelFadeOutMs || 0) + ' ms',
+    formatAt: pos => pos + ' ms',
   },
   subDrawer('textFadesDrawer', 'Fades', 'text', ['textFadeIn', 'textFadeOut']),
   {
@@ -1494,7 +1496,7 @@ export const VISUAL_CONTROLS = [
     visible: S => phraseMode(S),
     get: S => Math.round((S.textLinePause || 0) * 100),
     set: (S, pos) => { S.textLinePause = pos / 100; save(); },
-    format: S => Math.round((S.textLinePause || 0) * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   // ---- fade in and fade out, each with its transition (core/word-fx.js) ----
   // Each side is a switch with everything it governs listed under it: the
@@ -1514,7 +1516,7 @@ export const VISUAL_CONTROLS = [
     visible: fadeInOn,
     get: S => S.textFadeInMs,
     set: (S, pos) => { S.textFadeInMs = pos; save(); },
-    format: S => S.textFadeInMs + ' ms'
+    formatAt: pos => pos + ' ms'
   },
   // Each word rolls its own fade time as it appears: the slider above is the
   // cap, and the variance is how far below it the roll may land.
@@ -1525,7 +1527,7 @@ export const VISUAL_CONTROLS = [
     visible: fadeInOn,
     get: S => Math.round(S.textFadeInVar * 100),
     set: (S, pos) => { S.textFadeInVar = pos / 100; save(); },
-    format: S => Math.round(S.textFadeInVar * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // Phrases only (affirmations or custom). On, a multi-line block arrives as one; off, line
@@ -1572,7 +1574,7 @@ export const VISUAL_CONTROLS = [
     visible: fadeOutOn,
     get: S => S.textFadeOutMs,
     set: (S, pos) => { S.textFadeOutMs = pos; save(); },
-    format: S => S.textFadeOutMs + ' ms'
+    formatAt: pos => pos + ' ms'
   },
   {
     id: 'textFadeOutVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeOutOn',
@@ -1581,7 +1583,7 @@ export const VISUAL_CONTROLS = [
     visible: fadeOutOn,
     get: S => Math.round(S.textFadeOutVar * 100),
     set: (S, pos) => { S.textFadeOutVar = pos / 100; save(); },
-    format: S => Math.round(S.textFadeOutVar * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // Phrases only (a single word is one line). On, a multi-line
@@ -1711,7 +1713,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 40, step: 1, def: 0,
     get: S => S.sunRateHz ?? 0,
     set: (S, v) => { S.sunRateHz = Math.max(0, Math.min(40, Math.round(v))); save(); },
-    format: S => (S.sunRateHz ?? 0) > 0 ? S.sunRateHz + ' per second' : 'Off'
+    formatAt: pos => pos > 0 ? pos + ' per second' : 'Off'
   },
   subDrawer('renderAudioDrawer', 'Audio engine', 'render', ['heartLookaheadS', 'heartGrowX']),
   {
@@ -1726,7 +1728,7 @@ export const VISUAL_CONTROLS = [
     min: 0.05, max: 0.5, step: 0.01, def: 0.3,
     get: S => S.heartLookaheadS ?? 0.3,
     set: (S, v) => { S.heartLookaheadS = Math.max(0.05, Math.min(0.5, v)); applyHeartLookahead(); save(); },
-    format: S => Math.round((S.heartLookaheadS ?? 0.3) * 1000) + ' ms'
+    formatAt: pos => Math.round(pos * 1000) + ' ms'
   },
   {
     // How the cushion grows when it runs dry: the lookahead, and the floor
@@ -1738,7 +1740,7 @@ export const VISUAL_CONTROLS = [
     min: 1.1, max: 2, step: 0.1, def: 1.5,
     get: S => S.heartGrowX ?? 1.5,
     set: (S, v) => { S.heartGrowX = Math.max(1.1, Math.min(2, v)); applyHeartGrow(); save(); },
-    format: S => '×' + (S.heartGrowX ?? 1.5).toFixed(1)
+    formatAt: pos => '×' + pos.toFixed(1)
   },
   {
     // Whether the strobe's audio allows for the output's latency (js/
@@ -1796,7 +1798,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: GF_GLIDE_MAX, step: 1, def: 25,
     get: S => glideMs(S.filterGlideMs),
     set: (S, ms) => { S.filterGlideMs = glideMs(+ms); save(); },
-    format: S => glideMs(S.filterGlideMs) + ' ms'
+    formatAt: pos => pos + ' ms'
   },
   subDrawer('renderPauseDrawer', 'Pause', 'render', ['pauseWindDown', 'pauseFlickerStop']),
   {
@@ -1808,7 +1810,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 5, step: 0.1, def: 1,
     get: S => S.pauseWindDown ?? 1,
     set: (S, v) => { S.pauseWindDown = v; save(); },
-    format: S => (S.pauseWindDown ?? 1).toFixed(1) + ' s'
+    formatAt: pos => pos.toFixed(1) + ' s'
   },
   {
     // Whether pressing pause ends the flashing on that very frame. On (the
@@ -1843,7 +1845,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 10000, step: 50, def: 2000,
     get: S => S.hintFadeInMs ?? 2000,
     set: (S, v) => { S.hintFadeInMs = v; save(); },
-    format: S => Math.round(S.hintFadeInMs ?? 2000) + ' ms'
+    formatAt: pos => Math.round(pos) + ' ms'
   },
   {
     // How long the resting screen's hint takes to smoke away on a start
@@ -1855,7 +1857,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 10000, step: 50, def: 5000,
     get: S => S.hintFadeMs ?? 5000,
     set: (S, v) => { S.hintFadeMs = v; save(); },
-    format: S => Math.round(S.hintFadeMs ?? 5000) + ' ms'
+    formatAt: pos => Math.round(pos) + ' ms'
   },
   {
     // How fast the hint's dissolve crosses it left to right, as a multiple
@@ -1866,7 +1868,7 @@ export const VISUAL_CONTROLS = [
     min: 0.6, max: 4, step: 0.05, def: 2,
     get: S => S.hintSweep ?? 2,
     set: (S, v) => { S.hintSweep = v; save(); },
-    format: S => (S.hintSweep ?? 2).toFixed(2) + '×'
+    formatAt: pos => pos.toFixed(2) + '×'
   },
   {
     // How the hint appears over its fade in. Left to right sends a soft
@@ -1946,7 +1948,7 @@ export const VISUAL_CONTROLS = [
     min: 0, max: 30, step: 1, def: 10,
     get: S => Math.round((S.parallaxAmount ?? 0.1) * 100),
     set: (S, pos) => { S.parallaxAmount = pos / 100; save(); },
-    format: S => Math.round((S.parallaxAmount ?? 0.1) * 100) + '%',
+    formatAt: pos => pos + '%',
     visible: S => S.parallaxSim === true
   },
   {
@@ -1957,7 +1959,7 @@ export const VISUAL_CONTROLS = [
     min: 0.05, max: 2, step: 0.05, def: 0.25,
     get: S => S.parallaxSpeed ?? 0.25,
     set: (S, v) => { S.parallaxSpeed = v; save(); },
-    format: S => (S.parallaxSpeed ?? 0.25).toFixed(2) + ' Hz',
+    formatAt: pos => pos.toFixed(2) + ' Hz',
     visible: S => S.parallaxSim === true
   },
   {

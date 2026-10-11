@@ -301,7 +301,7 @@ function readout(f) {
   const pos = f.ctrl.get(S);
   if (pos !== f.pos) {
     f.pos = pos;
-    let t = f.ctrl.format ? f.ctrl.format(S) : String(pos);
+    let t = f.ctrl.formatAt ? f.ctrl.formatAt(pos, S) : f.ctrl.format ? f.ctrl.format(S) : String(pos);
     if (t.endsWith(' dB')) t = t.slice(0, -3);
     else if (t.endsWith('%')) t = t.slice(0, -1);
     f.text = t;
@@ -743,7 +743,7 @@ export function drawMixer(ui, app, fade = 1) {
     dl.rect(volX + MAIN_VOL_W * vu - kr, cy - kr, kr * 2, kr * 2, kr, vHover ? C.masterInk : C.btnInk, 0, null, 0, 0);
     if (!unmuted) dl.popAlpha();
     if (MAIN_VOL) {
-      const pct = MAIN_VOL.format(S);
+      const pct = MAIN_VOL.formatAt ? MAIN_VOL.formatAt(MAIN_VOL.get(S), S) : MAIN_VOL.format(S);
       if (volX + MAIN_VOL_W + 10 + ui.text.measure(pct, 10, W.regular) <= driftX - 6)
         ui.text.draw(dl, pct, volX + MAIN_VOL_W + 10, baseline(ui, cy, 10), 10, W.regular, C.valueInk, 0, 0, 1);
     }

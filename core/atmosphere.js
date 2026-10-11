@@ -131,7 +131,7 @@ export function ambLayerControls(i) {
       get: s => Math.round((ensureLayers(s)[i]?.level ?? 0) * 100),
       set: (s, pos) => { setAmbLayerLevel(ensureLayers(s)[i], pos / 100); syncAmbLayers(); save(); },
       // the readout is the position itself, so a typed level needs no parse
-      format: s => String(Math.round((ensureLayers(s)[i]?.level ?? 0) * 100))
+      formatAt: pos => String(pos)
     },
     mute: {
       id: 'ambMute-' + source.id, section: 'mixer', label: 'Mute ' + source.name, kind: 'toggle',

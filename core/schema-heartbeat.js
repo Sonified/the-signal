@@ -92,7 +92,7 @@ function percent(id, key, label) {
     min: 0, max: Math.round(n[2] * 100), step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, n[1], n[2], false); save(); },
-    format: S => Math.round(S[key] * 100) + '%',
+    formatAt: pos => pos + '%',
   };
 }
 
@@ -121,7 +121,7 @@ export const HEARTBEAT_CONTROLS = [
     min: 0, max: RATE_POS, step: 1, def: rateToPos(1),
     get: S => rateToPos(S.heartSpeed),
     set: (S, pos) => { S.heartSpeed = fit(posToRate(pos), 0.25, 2, false); save(); },
-    format: S => S.heartSpeed.toFixed(2) + 'x',
+    formatAt: pos => posToRate(pos).toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
   }
 ];

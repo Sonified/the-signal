@@ -236,7 +236,7 @@ function fbVariance(owner, key, span, pct, switchId) {
       min: 1, max: 120, step: 1, def: spec(rate)[3],
       get: S => S[rate],
       set: (S, pos) => { setRate(S, rate, fit(pos, 1, 120, true)); save(); },
-      format: S => S[rate] + 's / cycle',
+      formatAt: pos => pos + 's / cycle',
       parent: switchId || 'confFeedbackDrawer', visible
     }
   ];
@@ -265,14 +265,14 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confAmount')[3] * 100),
     get: S => Math.round(S.confAmount * 100),
     set: (S, pos) => { S.confAmount = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confAmount * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'confSize', section: 'confetti', label: 'Size', kind: 'slider',
     min: 0.2, max: 50, step: 0.05, def: spec('confSize')[3],
     get: S => S.confSize,
     set: (S, pos) => { S.confSize = fit(pos, 0.2, 50); save(); },
-    format: S => S.confSize.toFixed(2) + '×',
+    formatAt: pos => pos.toFixed(2) + '×',
   },
   {
     // How much the pieces differ in size: each is up to this much bigger or
@@ -283,7 +283,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 95, step: 1, def: Math.round(spec('confSizeVar')[3] * 100),
     get: S => Math.round(S.confSizeVar * 100),
     set: (S, pos) => { S.confSizeVar = fit(pos / 100, 0, 0.95); save(); },
-    format: S => Math.round(S.confSizeVar * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // Which shapes the pieces come in, each switched on or off, after the
@@ -325,7 +325,7 @@ export const CONFETTI_CONTROLS = [
     effective: S => S.confOpacityVar > 0 && typeof S.effConfOpacity === 'number'
       ? S.effConfOpacity * 100 : undefined,
     set: (S, pos) => { S.confOpacity = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confOpacity * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // Opacity's dip, the app's standard: over one rate cycle the pieces
@@ -335,7 +335,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.confOpacityVar || 0) * 100),
     set: (S, pos) => { S.confOpacityVar = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round((S.confOpacityVar || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // Seconds for one swing of the opacity variance.
@@ -344,14 +344,14 @@ export const CONFETTI_CONTROLS = [
     min: 1, max: 120, step: 1, def: 20,
     get: S => S.confOpacityVarRate,
     set: (S, pos) => { setRate(S, 'confOpacityVarRate', fit(pos, 1, 120, true)); save(); },
-    format: S => S.confOpacityVarRate + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   },
   {
     id: 'confSpeed', section: 'confetti', label: 'Speed', kind: 'slider',
     min: 0.1, max: 2, step: 0.05, def: spec('confSpeed')[3],
     get: S => S.confSpeed,
     set: (S, pos) => { S.confSpeed = fit(pos, 0.1, 2); save(); },
-    format: S => S.confSpeed.toFixed(2) + '×',
+    formatAt: pos => pos.toFixed(2) + '×',
     // the glowing bar: the speed as the variance is swinging it, written by
     // gpu/confetti.js each frame
     effective: S => S.confSpeedVar > 0 && typeof S.effConfSpeed === 'number'
@@ -369,7 +369,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confSpeedVar')[3] * 100),
     get: S => Math.round(S.confSpeedVar * 100),
     set: (S, pos) => { S.confSpeedVar = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confSpeedVar * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // Seconds for one swing of the speed variance.
@@ -378,7 +378,7 @@ export const CONFETTI_CONTROLS = [
     min: 1, max: 120, step: 1, def: Math.round(spec('confSpeedVarRate')[3]),
     get: S => S.confSpeedVarRate,
     set: (S, pos) => { S.confSpeedVarRate = fit(pos, 1, 120, true); save(); },
-    format: S => S.confSpeedVarRate + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   },
   {
     // How the pieces are born: at 0 a steady stream, and up from there more
@@ -391,7 +391,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confClump')[3] * 100),
     get: S => Math.round(S.confClump * 100),
     set: (S, pos) => { S.confClump = fit(pos / 100, 0, 1); save(); },
-    format: S => S.confClump === 0 ? 'stream' : Math.round(S.confClump * 100) + '%',
+    formatAt: pos => pos === 0 ? 'stream' : pos + '%',
   },
   {
     // How far out from the centre the pieces take to come up to full
@@ -401,7 +401,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confFade')[3] * 100),
     get: S => Math.round(S.confFade * 100),
     set: (S, pos) => { S.confFade = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confFade * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // How much of its flight a piece lives: 100% flies the whole way to the
@@ -410,7 +410,7 @@ export const CONFETTI_CONTROLS = [
     min: 5, max: 100, step: 1, def: Math.round(spec('confLife')[3] * 100),
     get: S => Math.round(S.confLife * 100),
     set: (S, pos) => { S.confLife = fit(pos / 100, 0.05, 1); save(); },
-    format: S => Math.round(S.confLife * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // 0 is the stream as it was, coming straight down the tunnel at the
@@ -419,7 +419,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confSpread')[3] * 100),
     get: S => Math.round(S.confSpread * 100),
     set: (S, pos) => { S.confSpread = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confSpread * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // The wobble off each piece's path: 0 flies a straight line, 100% is
@@ -429,7 +429,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confFlutter')[3] * 100),
     get: S => Math.round(S.confFlutter * 100),
     set: (S, pos) => { S.confFlutter = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confFlutter * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // How fast the pieces turn. 0 holds every piece still at its angle.
@@ -437,7 +437,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 3, step: 0.05, def: spec('confSpin')[3],
     get: S => S.confSpin,
     set: (S, pos) => { S.confSpin = fit(pos, 0, 3); save(); },
-    format: S => S.confSpin.toFixed(2) + '×',
+    formatAt: pos => pos.toFixed(2) + '×',
   },
   {
     // How much the pieces differ in how fast they turn, folded out from
@@ -466,7 +466,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confTumble')[3] * 100),
     get: S => Math.round(S.confTumble * 100),
     set: (S, pos) => { S.confTumble = fit(pos / 100, 0, 1); save(); },
-    format: S => S.confTumble === 0 ? 'flat' : Math.round(S.confTumble * 100) + '%',
+    formatAt: pos => pos === 0 ? 'flat' : pos + '%',
   },
   {
     // How each piece is posed as it is born: at 100% face on, its long side
@@ -479,14 +479,14 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confAlign')[3] * 100),
     get: S => Math.round(S.confAlign * 100),
     set: (S, pos) => { S.confAlign = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confAlign * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'confShine', section: 'confetti', label: 'Shine', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(spec('confShine')[3] * 100),
     get: S => Math.round(S.confShine * 100),
     set: (S, pos) => { S.confShine = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confShine * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     id: 'confPalette', section: 'confetti', label: 'Palette', kind: 'segment', def: DEF_PALETTE,
@@ -504,7 +504,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confBright')[3] * 100),
     get: S => Math.round(S.confBright * 100),
     set: (S, pos) => { S.confBright = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confBright * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   // Video feedback, in a sub-drawer of its own (see subDrawer in
   // schema-visual.js) that the viewer opens and shuts, so no rows come and
@@ -521,7 +521,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confFbOpacity')[3] * 100),
     get: S => Math.round(S.confFbOpacity * 100),
     set: (S, pos) => { S.confFbOpacity = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confFbOpacity * 100) + '%',
+    formatAt: pos => pos + '%',
     parent: 'confFeedbackDrawer'
   },
   // Opacity's dip, the app's standard: over one rate cycle the image eases
@@ -548,7 +548,7 @@ export const CONFETTI_CONTROLS = [
     effective: S => S.confFbAmtVar > 0
       ? (typeof S.effConfFeedback === 'number' ? S.effConfFeedback : S.confFeedback) * 100 : undefined,
     set: (S, pos) => { S.confFeedback = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confFeedback * 100) + '%',
+    formatAt: pos => pos + '%',
     parent: 'confFeedbackDrawer'
   },
   // Amount's dip, in the Amount's own share, so its readout is percent to
@@ -562,7 +562,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round((S.confFbAmtVar || 0) * 100),
     set: (S, pos) => { S.confFbAmtVar = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round((S.confFbAmtVar || 0) * 100) + '%',
+    formatAt: pos => pos + '%',
   },
   {
     // Seconds for one swing of the variance.
@@ -571,7 +571,7 @@ export const CONFETTI_CONTROLS = [
     min: 1, max: 120, step: 1, def: 20,
     get: S => S.confFbAmtVarRate,
     set: (S, pos) => { setRate(S, 'confFbAmtVarRate', fit(pos, 1, 120, true)); save(); },
-    format: S => S.confFbAmtVarRate + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
   },
   // The trails' own motion, always in the drawer; at an Amount of 0 there is
   // no trail, so they simply have nothing to move. Each frame's faded copy
@@ -586,8 +586,8 @@ export const CONFETTI_CONTROLS = [
     effective: S => (S.confFbStreamVarLo !== 0 || S.confFbStreamVarHi !== 0)
       ? (typeof S.effConfFbStream === 'number' ? S.effConfFbStream : S.confFbStream) : undefined,
     set: (S, pos) => { S.confFbStream = fit(pos, -2, 2); save(); },
-    format: S => S.confFbStream === 0 ? 'none'
-      : (S.confFbStream > 0 ? '+' + S.confFbStream.toFixed(2) + ' out' : S.confFbStream.toFixed(2) + ' in'),
+    formatAt: pos => pos === 0 ? 'none'
+      : (pos > 0 ? '+' + pos.toFixed(2) + ' out' : pos.toFixed(2) + ' in'),
     parent: 'confFeedbackDrawer'
   },
   // Stream's swing, in Stream's units: a span of 4 lets either knob carry it
@@ -601,8 +601,8 @@ export const CONFETTI_CONTROLS = [
     effective: S => S.confFbTwistVarOn !== false && (S.confFbTwistVarLo !== 0 || S.confFbTwistVarHi !== 0)
       ? (typeof S.effConfFbTwist === 'number' ? S.effConfFbTwist : S.confFbTwist) : undefined,
     set: (S, pos) => { S.confFbTwist = fit(pos, -1, 1); save(); },
-    format: S => S.confFbTwist === 0 ? 'none'
-      : (S.confFbTwist > 0 ? '+' + S.confFbTwist.toFixed(2) + ' clockwise' : S.confFbTwist.toFixed(2) + ' counter'),
+    formatAt: pos => pos === 0 ? 'none'
+      : (pos > 0 ? '+' + pos.toFixed(2) + ' clockwise' : pos.toFixed(2) + ' counter'),
     parent: 'confFeedbackDrawer'
   },
   {
@@ -630,7 +630,7 @@ export const CONFETTI_CONTROLS = [
     effective: S => S.confFbPulseVar > 0
       ? (typeof S.effConfFbPulse === 'number' ? S.effConfFbPulse : S.confFbPulse) * 100 : undefined,
     set: (S, pos) => { S.confFbPulse = fit(pos / 100, 0, 1); save(); },
-    format: S => S.confFbPulse === 0 ? 'never flickers' : Math.round(S.confFbPulse * 100) + '%',
+    formatAt: pos => pos === 0 ? 'never flickers' : pos + '%',
     parent: 'confFeedbackDrawer'
   },
   // How far the pulse amount swings, as every variance in the app does:
@@ -643,7 +643,7 @@ export const CONFETTI_CONTROLS = [
     min: 0, max: 100, step: 1, def: Math.round(spec('confFbPulseVar')[3] * 100),
     get: S => Math.round(S.confFbPulseVar * 100),
     set: (S, pos) => { S.confFbPulseVar = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.confFbPulseVar * 100) + '%',
+    formatAt: pos => pos + '%',
     parent: 'confFeedbackDrawer'
   },
   {
@@ -654,7 +654,7 @@ export const CONFETTI_CONTROLS = [
     min: 1, max: 60, step: 1, def: spec('confFbPulseRate')[3],
     get: S => S.confFbPulseRate,
     set: (S, pos) => { setRate(S, 'confFbPulseRate', fit(pos, 1, 60, true)); save(); },
-    format: S => S.confFbPulseRate + 's / cycle',
+    formatAt: pos => pos + 's / cycle',
     parent: 'confFeedbackDrawer'
   },
   // An optional fold of the whole confetti field into wedges, exactly as the
@@ -675,7 +675,7 @@ export const CONFETTI_CONTROLS = [
     min: 3, max: 16, step: 1, def: spec('confFolds')[3],
     get: S => S.confFolds,
     set: (S, pos) => { S.confFolds = fit(pos, 3, 16, true); save(); },
-    format: S => S.confFolds + '-fold',
+    formatAt: pos => pos + '-fold',
     sub: 'Kaleidoscope', visible: isFolded, parent: 'confKaleido'
   },
   {
@@ -689,7 +689,7 @@ export const CONFETTI_CONTROLS = [
     min: -1, max: 1, step: 0.01, def: spec('confFoldSpin')[3],
     get: S => S.confFoldSpin,
     set: (S, pos) => { S.confFoldSpin = fit(pos, -1, 1); save(); },
-    format: S => S.confFoldSpin === 0 ? 'none' : (S.confFoldSpin > 0 ? '+' : '') + S.confFoldSpin.toFixed(2),
+    formatAt: pos => pos === 0 ? 'none' : (pos > 0 ? '+' : '') + pos.toFixed(2),
     sub: 'Kaleidoscope', visible: isFolded, parent: 'confKaleido'
   },
   // Where the feedback sits, the last row under the Kaleidoscope switch

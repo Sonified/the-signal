@@ -204,14 +204,14 @@ const isSeqOn = S => !!S.partSeqOn;
 // One slider bound 1:1 to a particle field (a multiplier, a signed rate or a
 // count), whose range and default come from the NUM table so the two can
 // never disagree.
-function direct(id, key, label, step, format, sub, visible) {
+function direct(id, key, label, step, formatAt, sub, visible) {
   const n = spec(key);
   const c = {
     id, section: 'particles', label, kind: 'slider',
     min: n[1], max: n[2], step, def: n[3],
     get: S => S[key],
     set: (S, pos) => { S[key] = fit(pos, n[1], n[2], n[4]); save(); },
-    format,
+    formatAt,
   };
   if (sub) c.sub = sub;
   if (visible) c.visible = visible;
@@ -219,14 +219,14 @@ function direct(id, key, label, step, format, sub, visible) {
 }
 
 // One whole-percent slider over a 0 to 1 field.
-function percent(id, key, label, format, sub, visible) {
+function percent(id, key, label, formatAt, sub, visible) {
   const n = spec(key);
   const c = {
     id, section: 'particles', label, kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(n[3] * 100),
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
-    format: format || (S => Math.round(S[key] * 100) + '%'),
+    formatAt: formatAt || (pos => pos + '%'),
   };
   if (sub) c.sub = sub;
   if (visible) c.visible = visible;
@@ -274,7 +274,7 @@ function roomRate(c) {
   return c;
 }
 
-const times2 = key => S => S[key].toFixed(2) + '×';
+const times2 = pos => pos.toFixed(2) + '×';
 
 // Marks a control as a child row of the toggle, segment or sub-drawer
 // straight above it (the schema's `parent`), so the drawer nests it there.
@@ -328,12 +328,12 @@ export function particleFlightSec(speed) {
 export const PARTICLE_SLOWEST = 0.6;
 const perSecText = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k/s' : Math.round(n) + '/s';
 // Rate reads its percentage and what that means in births per second.
-const rateText = S => Math.round(S.partRate * 100) + '% · ' + (S.partRate > 0 ? perSecText(particleBirthsPerSec(S.partRate, S.partStyle)) : 'none');
+const rateText = (pos, S) => pos + '% · ' + (pos > 0 ? perSecText(particleBirthsPerSec(pos / 100, S.partStyle)) : 'none');
 // Speed reads its multiplier and how long a particle takes to fly the tunnel.
-const speedText = S => S.partSpeed.toFixed(2) + '× · ' + (S.partSpeed > 0.001 ? particleFlightSec(S.partSpeed * PART_SPEED_SCALE).toFixed(1) + ' s' : 'frozen');
+const speedText = pos => pos.toFixed(2) + '× · ' + (pos > 0.001 ? particleFlightSec(pos * PART_SPEED_SCALE).toFixed(1) + ' s' : 'frozen');
 // A signed amount reads 'none' at 0 and carries its sign otherwise, so the
 // direction is plain without a second label.
-const signed = key => S => S[key] === 0 ? 'none' : (S[key] > 0 ? '+' : '') + S[key].toFixed(2);
+const signed = pos => pos === 0 ? 'none' : (pos > 0 ? '+' : '') + pos.toFixed(2);
 
 // A range row's readout (widgets.js range), as the Confetti layer's: 'none'
 // while both knobs sit on the centre, else how far down, then how far up,
@@ -379,7 +379,7 @@ function fbVariance(owner, key, span, pct, switchId) {
       min: 1, max: 120, step: 1, def: spec(rate)[3],
       get: S => S[rate],
       set: (S, pos) => { setRate(S, rate, fit(pos, 1, 120, true)); save(); },
-      format: S => S[rate] + 's / cycle',
+      formatAt: pos => pos + 's / cycle',
       parent: switchId || 'partFeedbackDrawer', visible
     }
   ];
@@ -431,16 +431,16 @@ export const PARTICLE_CONTROLS = [
     min: 5, max: 100, step: 1, def: 100,
     get: S => Math.round((S.partOrigin ?? 1) * 100),
     set: (S, pos) => { S.partOrigin = fit(pos / 100, 0.05, 1, false); save(); },
-    format: S => Math.round((S.partOrigin ?? 1) * 100) + '%',
+    formatAt: pos => pos + '%',
   }),
-  under('partMotionDrawer', direct('partSwirl', 'partSwirl', 'Swirl', 0.01, signed('partSwirl'))),
+  under('partMotionDrawer', direct('partSwirl', 'partSwirl', 'Swirl', 0.01, signed)),
 
   // What each one looks like. Size is the largest a particle gets; the
   // variance spreads them between that and small. Trail only exists for the
   // streak style.
   subDrawer('partShapeDrawer', 'Shape', 'particles', ['partStyle', 'partSize']),
   under('partShapeDrawer', noLabel(choice('partStyle', 'partStyle', 'Style', STYLES, ['Glow', 'Streak', 'Spark', 'Bokeh', 'Dust'], DEF_STYLE))),
-  under('partShapeDrawer', direct('partSize', 'partSize', 'Size', 0.05, times2('partSize'))),
+  under('partShapeDrawer', direct('partSize', 'partSize', 'Size', 0.05, times2)),
   // (the variance folds out from under Size; drawer.js, the schema's varianceOf)
   varianceOf('partSize', percent('partSizeVar', 'partSizeVar', 'Size variance')),
   under('partShapeDrawer', percent('partTrail', 'partTrail', 'Trail', null, null, isStreak)),
@@ -475,11 +475,11 @@ export const PARTICLE_CONTROLS = [
   // Seconds for one swing of the radius variance, as the strobe's Variance
   // rate.
   under('partColorDrawer', varianceOf('partFade',
-    roomRate(direct('partFadeRate', 'partFadeRate', 'Variance rate', 1, S => S.partFadeRate + 's / cycle')))),
+    roomRate(direct('partFadeRate', 'partFadeRate', 'Variance rate', 1, pos => pos + 's / cycle')))),
   // It defaults to 0, a steady layer of its own on top of the flicker, and
   // the readout spells out what 0 means.
   under('partColorDrawer', percent('partPulse', 'partPulse', 'Pulse with strobe',
-    S => S.partPulse === 0 ? 'never flickers' : Math.round(S.partPulse * 100) + '%')),
+    pos => pos === 0 ? 'never flickers' : pos + '%')),
 
   // Video feedback, the Confetti layer's, in a sub-drawer of its own that the
   // viewer opens and shuts, so no rows come and go as a slider moves. Shut,
@@ -504,7 +504,7 @@ export const PARTICLE_CONTROLS = [
   // Seconds for one swing of the opacity variance, as the strobe's Variance
   // rate.
   under('partFeedbackDrawer', varianceOf('partFbOpacity',
-    roomRate(direct('partFbOpVarRate', 'partFbOpVarRate', 'Variance rate', 1, S => S.partFbOpVarRate + 's / cycle')))),
+    roomRate(direct('partFbOpVarRate', 'partFbOpVarRate', 'Variance rate', 1, pos => pos + 's / cycle')))),
   // Each frame keeps a fading copy of the last, so every particle leaves a
   // trail that stays where it was drawn and dies away. At 0 there is no
   // trail, the particles as they are; at 100% a trail takes about two
@@ -526,8 +526,8 @@ export const PARTICLE_CONTROLS = [
   // Both read 'none' at 0 and carry their sign and direction otherwise.
   {
     ...under('partFeedbackDrawer', direct('partFbStream', 'partFbStream', 'Stream', 0.01,
-      S => S.partFbStream === 0 ? 'none'
-        : (S.partFbStream > 0 ? '+' + S.partFbStream.toFixed(2) + ' out' : S.partFbStream.toFixed(2) + ' in'))),
+      pos => pos === 0 ? 'none'
+        : (pos > 0 ? '+' + pos.toFixed(2) + ' out' : pos.toFixed(2) + ' in'))),
     effective: S => (S.partFbStreamVarLo !== 0 || S.partFbStreamVarHi !== 0)
       ? (typeof S.effPartFbStream === 'number' ? S.effPartFbStream : S.partFbStream) : undefined
   },
@@ -537,8 +537,8 @@ export const PARTICLE_CONTROLS = [
   ...fbVariance('partFbStream', 'partFbStreamVar', 4, false),
   {
     ...under('partFeedbackDrawer', direct('partFbTwist', 'partFbTwist', 'Twist', 0.01,
-      S => S.partFbTwist === 0 ? 'none'
-        : (S.partFbTwist > 0 ? '+' + S.partFbTwist.toFixed(2) + ' clockwise' : S.partFbTwist.toFixed(2) + ' counter'))),
+      pos => pos === 0 ? 'none'
+        : (pos > 0 ? '+' + pos.toFixed(2) + ' clockwise' : pos.toFixed(2) + ' counter'))),
     effective: S => S.partFbTwistVarOn !== false && (S.partFbTwistVarLo !== 0 || S.partFbTwistVarHi !== 0)
       ? (typeof S.effPartFbTwist === 'number' ? S.effPartFbTwist : S.partFbTwist) : undefined
   },
@@ -561,7 +561,7 @@ export const PARTICLE_CONTROLS = [
   // At 0 the trails never flicker.
   {
     ...under('partFeedbackDrawer', percent('partFbPulse', 'partFbPulse', 'Pulse with strobe',
-      S => S.partFbPulse === 0 ? 'never flickers' : Math.round(S.partFbPulse * 100) + '%')),
+      pos => pos === 0 ? 'never flickers' : pos + '%')),
     effective: S => S.partFbPulseVar > 0
       ? (typeof S.effPartFbPulse === 'number' ? S.effPartFbPulse : S.partFbPulse) * 100 : undefined
   },
@@ -573,15 +573,15 @@ export const PARTICLE_CONTROLS = [
   // Seconds for one swing of the pulse variance, as the strobe's Variance
   // rate.
   under('partFeedbackDrawer', varianceOf('partFbPulse',
-    roomRate(direct('partFbPulseRate', 'partFbPulseRate', 'Variance rate', 1, S => S.partFbPulseRate + 's / cycle')))),
+    roomRate(direct('partFbPulseRate', 'partFbPulseRate', 'Variance rate', 1, pos => pos + 's / cycle')))),
   // An optional fold of the whole particle field into wedges, like the
   // Kaleidoscope layer's own. The three rows under the switch only show
   // while it is on. The fold count reads with the number first, so clicking
   // it to type opens on the count itself.
   toggle('partKaleido', 'partKaleido', 'Kaleidoscope', DEF_KALEIDO, 'Kaleidoscope'),
-  under('partKaleido', direct('partFolds', 'partFolds', 'Symmetry', 1, S => S.partFolds + '-fold', 'Kaleidoscope', isFolded)),
+  under('partKaleido', direct('partFolds', 'partFolds', 'Symmetry', 1, pos => pos + '-fold', 'Kaleidoscope', isFolded)),
   under('partKaleido', toggle('partMirror', 'partMirror', 'Mirror', DEF_MIRROR, 'Kaleidoscope', isFolded)),
-  under('partKaleido', direct('partFoldSpin', 'partFoldSpin', 'Rotation', 0.01, signed('partFoldSpin'), 'Kaleidoscope', isFolded)),
+  under('partKaleido', direct('partFoldSpin', 'partFoldSpin', 'Rotation', 0.01, signed, 'Kaleidoscope', isFolded)),
   ...varianceRows('partFoldSpin', {
     name: 'Rotation', periodMax: 120, parent: 'partKaleido', visible: isFolded,
     effective: S => S.effPartFoldSpin ?? S.partFoldSpin
@@ -611,13 +611,13 @@ export const PARTICLE_CONTROLS = [
   toggle('partSeqOn', 'partSeqOn', 'Pulse with sequencer', DEF_SEQ_ON, 'With the sequencer'),
   under('partSeqOn', tip('Brighten on each note, dim in the silences',
     percent('partSeqPulse', 'partSeqPulse', 'Brightness pulse',
-      S => S.partSeqPulse === 0 ? 'off' : Math.round(S.partSeqPulse * 100) + '%', 'With the sequencer', isSeqOn))),
+      pos => pos === 0 ? 'off' : pos + '%', 'With the sequencer', isSeqOn))),
   under('partSeqOn', tip('Swell on each note, up to twice the size',
     percent('partSeqSize', 'partSeqSize', 'Size push',
-      S => S.partSeqSize === 0 ? 'off' : '+' + Math.round(S.partSeqSize * 100) + '%', 'With the sequencer', isSeqOn))),
-  under('partSeqOn', direct('partSeqSens', 'partSeqSens', 'Sensitivity', 0.1, S => S.partSeqSens.toFixed(1) + '×', 'With the sequencer', isSeqOn)),
-  under('partSeqOn', direct('partSeqAtk', 'partSeqAtk', 'Attack', 0.001, S => Math.round(S.partSeqAtk * 1000) + ' ms', 'With the sequencer', isSeqOn)),
-  under('partSeqOn', direct('partSeqRel', 'partSeqRel', 'Release', 0.01, S => Math.round(S.partSeqRel * 1000) + ' ms', 'With the sequencer', isSeqOn))
+      pos => pos === 0 ? 'off' : '+' + pos + '%', 'With the sequencer', isSeqOn))),
+  under('partSeqOn', direct('partSeqSens', 'partSeqSens', 'Sensitivity', 0.1, pos => pos.toFixed(1) + '×', 'With the sequencer', isSeqOn)),
+  under('partSeqOn', direct('partSeqAtk', 'partSeqAtk', 'Attack', 0.001, pos => Math.round(pos * 1000) + ' ms', 'With the sequencer', isSeqOn)),
+  under('partSeqOn', direct('partSeqRel', 'partSeqRel', 'Release', 0.01, pos => Math.round(pos * 1000) + ' ms', 'With the sequencer', isSeqOn))
 ];
 
 export const PARTICLE_SECTIONS = [

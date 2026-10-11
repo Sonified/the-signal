@@ -90,7 +90,7 @@ export function varianceRows(owner, o = {}) {
     min: 0, max: 100, step: 1, def: o.amountDef ?? 0,
     get: S => Math.round((S[aKey(S)] || 0) * 100),
     set: (S, pos) => { const k = aKey(S); S[k] = fit(k, pos / 100); if (apply) apply(); save(); },
-    format: S => Math.round((S[aKey(S)] || 0) * 100) + '%'
+    formatAt: pos => pos + '%'
   }, innerParent, inner);
   // How the variance moves: Sinusoid breathes evenly, down by the amount
   // and back once per period; Walk drifts leg by leg to random depths
@@ -117,7 +117,7 @@ export function varianceRows(owner, o = {}) {
       if (apply) apply();
       save();
     },
-    format: S => (S[pKey(S)] ?? pDef) + unit
+    formatAt: pos => pos + unit
   }, innerParent, inner);
   const rows = [];
   for (const which of ['on', 'amount', 'mode', 'period']) {

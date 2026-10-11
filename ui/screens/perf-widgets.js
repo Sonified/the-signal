@@ -70,52 +70,31 @@ export function effectivePos(c) {
   const v = c.effective(S);
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
-// Formatted from the control's own format on change only, never per frame.
-// A position the control is not at yet, in the control's own words. Its
-// format reads the live state, so the live readout is reused with its number
-// swapped for the target's, at the same number of decimals, keeping the
-// sign and unit around it. A readout with no number in it that tracks the
-// position (a word like 'none' at the ends) falls back to the bare position
-// at the step's decimals. One cached string per control, rebuilt only when
-// the target or the live readout changes.
-const atCache = new Map();
-const NUM_RE = /[-+]?\d+(?:\.\d+)?/;
+// A position in the control's own words: every slider readout, live or not,
+// comes from the control's one formatter, formatAt(pos, S). Any position it
+// is handed — the live value, a drag resolved this frame, a glide's
+// destination — goes through the same function, so the readout can never
+// fall out of its own units. A control not yet carrying formatAt answers
+// with its live format(S) text (right words, at worst one value behind, and
+// warned about once below); a bare track position is never printed.
+const warned = new Set();
 export function fmtAt(c, pos) {
-  const live = fmt(c);
-  if (typeof pos !== 'number' || pos === c.get(S)) return live;
-  let e = atCache.get(c.id);
-  if (!e) { e = { pos: NaN, live: '', text: '' }; atCache.set(c.id, e); }
-  if (pos === e.pos && live === e.live) return e.text;
-  e.pos = pos; e.live = live;
-  const m = NUM_RE.exec(live), lp = c.get(S);
-  const dec = m && m[0].indexOf('.') >= 0 ? m[0].length - m[0].indexOf('.') - 1 : 0;
-  // The number is rewritten at the fewer of the live text's decimals and
-  // the control's own step's: mid-glide the live number is an unsnapped
-  // travelling value, and taking the decimals it happens to carry would
-  // print all sixteen of them back. The tolerance below stays on the live
-  // text's own decimals, since it asks whether that number IS the position.
-  const st = c.step || 0, stDec = st >= 1 ? 0 : st > 0 ? String(st).split('.')[1].length : dec;
-  const outDec = Math.min(dec, stDec);
-  // The readout's number is the position when it is the position rounded to
-  // the decimals it prints: mid-glide the position carries more of them
-  // (7.4321 Hz shown as 7.4), which an exact match took for a number that
-  // is not the position, dropping the unit until the glide landed.
-  if (m && typeof lp === 'number' && Math.abs(parseFloat(m[0]) - lp) <= 0.5 * Math.pow(10, -dec) + 1e-6 + Math.abs(lp) * 1e-3) {
-    let n = pos.toFixed(outDec);
-    if (m[0][0] === '+' && pos > 0) n = '+' + n;
-    e.text = live.slice(0, m.index) + n + live.slice(m.index + m[0].length);
-  } else {
-    const st = c.step || 0, sd = st && st < 1 ? String(st).split('.')[1].length : 0;
-    e.text = pos.toFixed(sd);
+  if (typeof c.formatAt === 'function') return c.formatAt(typeof pos === 'number' ? pos : c.get(S), S);
+  if (typeof pos === 'number' && pos !== c.get(S) && !warned.has(c.id)) {
+    warned.add(c.id);
+    console.warn('fmtAt: "' + c.id + '" has no formatAt; its readout lags while dragging or gliding');
   }
-  return e.text;
+  return fmt(c);
 }
 const fmtCache = new Map();
 export function fmt(c) {
   let e = fmtCache.get(c.id);
   if (!e) { e = { pos: NaN, text: '' }; fmtCache.set(c.id, e); }
   const pos = c.get(S);
-  if (pos !== e.pos) { e.pos = pos; e.text = c.format ? c.format(S) : String(pos); }
+  if (pos !== e.pos) {
+    e.pos = pos;
+    e.text = typeof c.formatAt === 'function' ? c.formatAt(pos, S) : c.format ? c.format(S) : String(pos);
+  }
   return e.text;
 }
 
@@ -352,7 +331,7 @@ export function ddCell(ui, dd, cel, x, top, fitMenu) {
   }
   // a swatch-only box (swatchOnly) shows just its colour dot, no name
   if (!c.swatchOnly) {
-    const shown = idx >= 0 ? labels[idx] : (c.format ? fmt(c) : '');
+    const shown = idx >= 0 ? labels[idx] : (c.formatAt || c.format ? fmt(c) : '');
     ui.text.draw(dl, shown, tx, baseline(ui, by + bh / 2, TYPE.xs), TYPE.xs, W.regular, C.name, 0, 0, 1);
   }
   dl.popClip();
