@@ -117,14 +117,17 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(252p
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-/* centred in the whole empty span, which runs on past #middle across the
-   stage's 14px gap and the edge's empty left half (its faders take only its
-   right 50%, 230px of its 460) */
-#midFaders { grid-row: 2; min-height: 160px; display: flex; justify-content: center; gap: 10px; margin-right: -244px; }
+/* centred in the empty span between SCREEN and the edge's faders: it runs
+   on past #middle across the stage's 14px gap and the edge's empty left half
+   (its faders take only its right 50%, 230px of its 460), and starts past
+   SCREEN (72px and a 10px gap). All three middle faders sit 122px lower
+   than the edge's four (DUCK's 110px row and its 12px gap), the same
+   height, their bottoms level with DUCK's. */
+#midFaders { grid-row: 2 / 4; min-height: 282px; padding: 122px 0 0 82px; display: flex; justify-content: center; gap: 10px; margin-right: -244px; }
 #midFaders .fader { width: 72px; }
 /* SCREEN on its own at the middle's left edge, next to the cues; after
    #midFaders in the page so it sits above that row's empty span */
-#leftFader { grid-row: 2; grid-column: 1; min-height: 160px; display: flex; justify-self: start; }
+#leftFader { grid-row: 2 / 4; grid-column: 1; min-height: 282px; padding-top: 122px; display: flex; justify-self: start; }
 #leftFader .fader { width: 72px; }
 #midFaders { grid-column: 1; }
 #edge { width: min(100%, 460px); min-height: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
@@ -187,8 +190,8 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   #faders { min-height: 300px; }
   #stage { display: block; }
   #middle { display: block; margin-bottom: 14px; }
-  #midFaders { height: 300px; margin-right: 0; }
-  #leftFader { height: 300px; margin-bottom: 14px; }
+  #midFaders { height: 300px; margin-right: 0; padding: 0; min-height: 0; }
+  #leftFader { height: 300px; margin-bottom: 14px; padding: 0; min-height: 0; }
   #edge { width: 100%; }
 }
 </style>
