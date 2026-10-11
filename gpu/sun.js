@@ -307,7 +307,7 @@ export function createSun(device, format) {
     if (p && p.then) p.then(() => { playPending.delete(el); }, err => { playPending.delete(el); onPlayFailed(err); });
     else playPending.delete(el);
   }
-  // Render > Sun rate updates (S.sunRateHz) caps the writes a second per
+  // Render > Sun playback rate throttle (S.sunRateHz) caps the writes a second per
   // element; 0 leaves every 1% drift written at once.
   const rateAt = new WeakMap();
   function setRate(el, rate) {
