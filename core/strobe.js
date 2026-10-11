@@ -96,7 +96,7 @@ const VARIANCES = [
   // the flowers' Pulse with strobe and Opacity (gpu/flowers.js), pulled onto
   // the room clock in a broadcast room rather than riding the beacon
   { amount: 'flowerPulseVar', period: 'flowerPulsePeriod', fallback: 10, phase: 'flowerPulsePhase', eff: 'effFlowerPulse', set: 'flowerPulse', room: roomPhaseState() },
-  { amount: 'flowerOpacityVar', period: 'flowerOpacityPeriod', fallback: 10, phase: 'flowerOpacityPhase', eff: 'effFlowerOpacity', set: 'flowerOpacity', room: roomPhaseState() },
+  { amount: 'flowerOpacityVar', period: 'flowerOpacityPeriod', fallback: 10, phase: 'flowerOpacityPhase', eff: 'effFlowerOpacity', set: 'flowerOpacity', room: roomPhaseState(), drive: 'flowerOpacityVarDrive' },
   { amount: 'flowerTintVar', period: 'flowerTintPeriod', fallback: 10, phase: 'flowerTintPhase', eff: 'effFlowerTint', set: 'flowerTint', room: roomPhaseState() },
   { amount: 'flowerBloomRateVar', period: 'flowerBloomRatePeriod', fallback: 10, phase: 'flowerBloomRatePhase', eff: 'effFlowerBloomRate', set: 'flowerBloomRate', room: roomPhaseState() },
   { amount: 'kaleidoTintVar', period: 'kaleidoTintPeriod', fallback: 10, phase: 'kaleidoTintPhase', eff: 'effKaleidoTint', set: 'kaleidoTint', room: roomPhaseState() },

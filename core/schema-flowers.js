@@ -18,8 +18,8 @@
 // call save(); store.js decides when to write.
 import { save } from './store.js';
 import { subDrawer } from './schema-visual.js';
-import { varianceRows } from './schema-variance.js';
-import { varied } from './variance.js';
+import { varianceRows, driveRow } from './schema-variance.js';
+import { varied, driveOf } from './variance.js';
 
 // Mode, the layer switch, and every numeric field with its range. The GPU
 // agent reads these names off S directly, so they are the source of truth
@@ -84,6 +84,7 @@ function spec(key) {
 export function initFlowerState(S) {
   if (typeof S.layers.flowers !== 'boolean') S.layers.flowers = false;
   if (MODES.indexOf(S.flowerMode) < 0) S.flowerMode = DEF_MODE;
+  S.flowerOpacityVarDrive = driveOf(S.flowerOpacityVarDrive);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -94,7 +95,7 @@ export function initFlowerState(S) {
 // snapshot carries. The layer switch is stored under its own flat name so
 // the record does not look like a partial v0 layers object.
 export function flowerStateOf(S) {
-  const out = { flowersOn: !!S.layers.flowers, flowerMode: S.flowerMode };
+  const out = { flowersOn: !!S.layers.flowers, flowerMode: S.flowerMode, flowerOpacityVarDrive: driveOf(S.flowerOpacityVarDrive) };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
 }
@@ -107,6 +108,7 @@ export function applyFlowerState(S, o) {
   if (!o || typeof o !== 'object') return;
   if (typeof o.flowersOn === 'boolean') S.layers.flowers = o.flowersOn;
   if (MODES.indexOf(o.flowerMode) >= 0) S.flowerMode = o.flowerMode;
+  if (typeof o.flowerOpacityVarDrive === 'string') S.flowerOpacityVarDrive = driveOf(o.flowerOpacityVarDrive);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -242,7 +244,15 @@ export const FLOWER_CONTROLS = [
 
   subDrawer('flowersBrightnessDrawer', 'Brightness', 'flowers', ['flowerOpacity', 'flowerFade']),
   under('flowersBrightnessDrawer', percent('flowerOpacity', 'flowerOpacity', 'Opacity')),
-  ...swing('flowerOpacity', { name: 'Opacity' }),
+  // Opacity's variance leads with what drives it, Time, the strobe or the
+  // sun's breath (core/strobe.js plays it); the rate is Time's alone, and the
+  // blue line is the opacity as the strobe core played it.
+  driveRow('flowerOpacity', 'flowerOpacityVarDrive', 'Opacity variance driver', 'flowersBrightnessDrawer', 'flowers'),
+  ...swing('flowerOpacity', {
+    name: 'Opacity',
+    effective: S => (typeof S.effFlowerOpacity === 'number' ? S.effFlowerOpacity : S.flowerOpacity) * 100,
+    rows: { period: { visible: S => driveOf(S.flowerOpacityVarDrive) === 'time' } }
+  }),
   // The tunnel rings' fade in from the centre (core/fade.js), with its own
   // amount so the flowers can ease in sooner or later than the rings do.
   // Both modes use it, so it is never hidden.

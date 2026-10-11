@@ -8,6 +8,7 @@
 import { save } from './store.js';
 import { retimeRoomPhase } from './room-clock.js';
 import { varianceOwner } from './variance-owners.js';
+import { DRIVES, driveOf } from './variance.js';
 
 // A variance's rows. owner is the owner's id; opts, every one optional:
 //   name        the variance's name in its labels: '<name> variance' and
@@ -175,4 +176,26 @@ export function wireVariances(controls, byId) {
       return owner.get(view);
     };
   }
+}
+
+// What a variance dips with, a dropdown row folded out from under its owner
+// ahead of the factory's rows: Time (its own rate), the strobe's wave or the
+// sun's breath, the same choice the sun's variances carry (core/schema-sun.js
+// drivenVariance). The dip's law is the same for all three (core/variance.js
+// variedBy); Time is the default, the dip as it always was. Here, in the leaf,
+// for the same reason varianceRows is: the rings (schema-visual.js) and the
+// flowers' Opacity (schema-flowers.js) both call it while the schema ring
+// loads.
+const DRIVE_NAMES = { time: 'Time', strobe: 'Link to strobe', breath: 'Link to breath' };
+export function driveRow(owner, key, label, parent, section = 'tunnel') {
+  const row = {
+    id: key, section, label, kind: 'segment', dropdown: true, varianceOf: owner,
+    options: DRIVES.map(v => ({ value: v, label: DRIVE_NAMES[v], domId: null })),
+    def: 'time',
+    get: S => driveOf(S[key]),
+    set: (S, v) => { S[key] = driveOf(v); save(); },
+    format: S => DRIVE_NAMES[driveOf(S[key])]
+  };
+  if (parent) row.parent = parent;
+  return row;
 }

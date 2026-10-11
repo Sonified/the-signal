@@ -35,8 +35,8 @@ import { rebuildWordPool, retimeWordOpacity } from './words.js';
 import { FX_NAMES } from './word-fx.js';
 import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
-import { varianceRows } from './schema-variance.js';
-import { varied, DRIVES, driveOf } from './variance.js';
+import { varianceRows, driveRow } from './schema-variance.js';
+import { varied, driveOf } from './variance.js';
 import { applyHeartLookahead, applyHeartGrow } from '../js/heart/route.js';
 
 // S stores colour as an [r,g,b] triple (js/color.js's setColorFromPicker
@@ -114,24 +114,6 @@ const surfing = S => edgeMode(S) === 'surfing';
 // The edge's Pulse with strobe, 1 (the edge as it always was) when unset.
 const edgePulse = S => typeof S.edgePulse === 'number' ? S.edgePulse : 1;
 
-// What a ring variance dips with, the first row folded out from under its
-// owner: Time (its own rate), the strobe's wave or the sun's breath, the same
-// choice the sun's variances carry (core/schema-sun.js drivenVariance). The
-// dip's law is the same for all three (core/variance.js variedBy); Time is
-// the default, the dip as it always was.
-const DRIVE_NAMES = { time: 'Time', strobe: 'Link to strobe', breath: 'Link to breath' };
-function driveRow(owner, key, label, parent) {
-  const row = {
-    id: key, section: 'tunnel', label, kind: 'segment', dropdown: true, varianceOf: owner,
-    options: DRIVES.map(v => ({ value: v, label: DRIVE_NAMES[v], domId: null })),
-    def: 'time',
-    get: S => driveOf(S[key]),
-    set: (S, v) => { S[key] = driveOf(v); save(); },
-    format: S => DRIVE_NAMES[driveOf(S[key])]
-  };
-  if (parent) row.parent = parent;
-  return row;
-}
 const fadeInOn = S => S.textFadeInOn !== false;
 const fadeOutOn = S => S.textFadeOutOn !== false;
 // Whole phrases, which can wrap to several lines: the affirmations, and the
