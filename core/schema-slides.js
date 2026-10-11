@@ -16,6 +16,7 @@
 // the talk's Videos_optimized folder) and are served beside the page.
 import { save } from './store.js';
 import { idleWake } from './idle.js';
+import { subDrawer } from './schema-visual.js';
 
 // The show's videos, in running order: the file name (stored on S as the
 // dropdown's value, so it reads plainly in a saved journey) and its label.
@@ -46,18 +47,22 @@ const fileOf = v => FILE_OK.has(v) ? v : SLIDE_NONE;
 const LABEL_OF = new Map(SLIDE_OPTIONS.map(o => [o.value, o.label]));
 export const slideLabel = v => LABEL_OF.get(fileOf(v));
 
-// The numeric fields and their ranges: the playback rate (x), the volume
-// (0 to 1, a gain) and the two filters' corners (Hz).
+// The numeric fields and their ranges: the playback rate (x) and the
+// layer's own level (0 to 1, a gain). The Lowpass and Highpass are global
+// now (core/global-filter.js, the Audio section's lpf and hpf); a record
+// still carrying the old slideLP and slideHP has them passed over.
 const NUM = [
   // key,          min,   max,    def
   ['slideRate',    0.25,  2,      1],
   ['slideVolume',  0,     1,      1],
-  ['slideLP',      20,    20000,  20000],
-  ['slideHP',      20,    20000,  20],
   // the crossfade from one slide to the next, seconds (0 a cut)
-  ['slideXfade',   0,     3,      0.5]
+  ['slideXfade',   0,     3,      0.5],
+  // the play/pause ramps, seconds (0 a cut): how long a pause takes to fade
+  // the sound and slow the picture to a stop, and a play to bring both back
+  ['slidePpOut',   0,     3,      0.2],
+  ['slidePpIn',    0,     3,      0.2]
 ];
-const DEF_PLAY = true, DEF_LOOP = false;
+const DEF_PLAY = true, DEF_LOOP = false, DEF_PP_RAMP = false;
 
 function fit(v, min, max) {
   if (!(v >= min)) v = min;          // also catches NaN
@@ -72,13 +77,14 @@ export function initSlidesState(S) {
   S.slideFile = fileOf(S.slideFile);
   if (typeof S.slidePlay !== 'boolean') S.slidePlay = DEF_PLAY;
   if (typeof S.slideLoop !== 'boolean') S.slideLoop = DEF_LOOP;
+  if (typeof S.slidePpRamp !== 'boolean') S.slidePpRamp = DEF_PP_RAMP;
   for (const n of NUM) if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
 }
 
 // The plain record store.js writes into the v1 extra and a snapshot carries.
 // The layer switch rides under its own flat name, as sunOn does.
 export function slidesStateOf(S) {
-  const out = { slidesOn: !!S.layers.slides, slideFile: fileOf(S.slideFile), slidePlay: S.slidePlay !== false, slideLoop: !!S.slideLoop };
+  const out = { slidesOn: !!S.layers.slides, slideFile: fileOf(S.slideFile), slidePlay: S.slidePlay !== false, slideLoop: !!S.slideLoop, slidePpRamp: !!S.slidePpRamp };
   for (const n of NUM) out[n[0]] = S[n[0]];
   return out;
 }
@@ -91,6 +97,7 @@ export function applySlidesState(S, o) {
   if (typeof o.slideFile === 'string') S.slideFile = fileOf(o.slideFile);
   if (typeof o.slidePlay === 'boolean') S.slidePlay = o.slidePlay;
   if (typeof o.slideLoop === 'boolean') S.slideLoop = o.slideLoop;
+  if (typeof o.slidePpRamp === 'boolean') S.slidePpRamp = o.slidePpRamp;
   for (const n of NUM) {
     const v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2]);
@@ -117,19 +124,6 @@ function posToRate(pos) {
   if (Math.abs(r - 1) <= RATE_SNAP) r = 1;
   return Math.round(r * 100) / 100;
 }
-// The filters: logarithmic over 20 Hz to 20 kHz, so each octave gets the
-// same stretch of track.
-const HZ_LO = 20, HZ_HI = 20000, HZ_POS = 1000, HZ_LN = Math.log(HZ_HI / HZ_LO);
-const hzToPos = hz => hz === hz ? Math.round(Math.min(1, Math.max(0, Math.log(hz / HZ_LO) / HZ_LN)) * HZ_POS) : NaN;
-const posToHz = pos => Math.round(HZ_LO * Math.exp(HZ_LN * Math.min(1, Math.max(0, pos / HZ_POS))));
-function hzText(hz) { return hz >= 1000 ? (Math.round(hz / 100) / 10) + ' kHz' : Math.round(hz) + ' Hz'; }
-// A typed corner: "5k", "5 kHz" or "500".
-function parseHz(text) {
-  const m = /^\s*([\d.]+)\s*(k)?/i.exec(text || '');
-  if (!m) return NaN;
-  return hzToPos(parseFloat(m[1]) * (m[2] ? 1000 : 1));
-}
-
 export const SLIDES_CONTROLS = [
   // In the drawer's Layers group, straight after the Sun. Off by default.
   {
@@ -145,6 +139,18 @@ export const SLIDES_CONTROLS = [
     set: (S, on) => { S.layers.slides = !!on; save(); }
   },
   {
+    // The layer's own level, the section's first row (the On switch rides
+    // its header): every slide's sound, before the app's Master volume and
+    // the show remote's Duck multiply in (gpu/slides.js). Not the remote's
+    // VOLUME fader, which drives Master volume. Never dimmed, so it can be
+    // set before the layer comes on.
+    id: 'slideVolume', section: 'slides', label: 'Master slide volume', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round(S.slideVolume * 100),
+    set: (S, pos) => { S.slideVolume = fit(pos / 100, 0, 1); save(); },
+    format: S => Math.round(S.slideVolume * 100) + '%'
+  },
+  {
     // Which video plays. A change loads the new file from its start.
     id: 'slideFile', section: 'slides', label: 'Slide', kind: 'segment', dropdown: true,
     options: SLIDE_OPTIONS,
@@ -158,6 +164,38 @@ export const SLIDES_CONTROLS = [
     id: 'slidePlay', section: 'slides', label: 'Play', kind: 'toggle', def: DEF_PLAY,
     get: S => S.slidePlay !== false,
     set: (S, on) => { S.slidePlay = !!on; save(); },
+    enabled: layerOn
+  },
+  // Play / pause, a drawer under the Play switch: a pause fades the sound
+  // and slows the picture to a stop over Fade out, a play brings both back
+  // over Fade in (gpu/slides.js). Audio speed ramp on lets the sound's pitch
+  // follow the slowing picture, like a turntable; off, the sound only fades.
+  subDrawer('slidePpDrawer', 'Play / pause', 'slides', ['slidePpOut', 'slidePpIn', 'slidePpRamp'], 'slidePlay'),
+  {
+    id: 'slidePpOut', section: 'slides', label: 'Fade out', kind: 'slider',
+    parent: 'slidePpDrawer',
+    min: 0, max: 300, step: 5, def: 20,
+    get: S => Math.round(S.slidePpOut * 100),
+    set: (S, pos) => { S.slidePpOut = fit(Math.round(pos / 5) * 5 / 100, 0, 3); save(); },
+    format: S => S.slidePpOut > 0 ? S.slidePpOut.toFixed(2) + ' s' : 'cut',
+    parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
+    enabled: layerOn
+  },
+  {
+    id: 'slidePpIn', section: 'slides', label: 'Fade in', kind: 'slider',
+    parent: 'slidePpDrawer',
+    min: 0, max: 300, step: 5, def: 20,
+    get: S => Math.round(S.slidePpIn * 100),
+    set: (S, pos) => { S.slidePpIn = fit(Math.round(pos / 5) * 5 / 100, 0, 3); save(); },
+    format: S => S.slidePpIn > 0 ? S.slidePpIn.toFixed(2) + ' s' : 'cut',
+    parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
+    enabled: layerOn
+  },
+  {
+    id: 'slidePpRamp', section: 'slides', label: 'Audio speed ramp', kind: 'toggle', def: DEF_PP_RAMP,
+    parent: 'slidePpDrawer',
+    get: S => !!S.slidePpRamp,
+    set: (S, on) => { S.slidePpRamp = !!on; save(); },
     enabled: layerOn
   },
   {
@@ -196,34 +234,6 @@ export const SLIDES_CONTROLS = [
     set: (S, pos) => { S.slideRate = fit(posToRate(pos), 0.25, 2); save(); },
     format: S => S.slideRate.toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
-    enabled: layerOn
-  },
-  {
-    id: 'slideVolume', section: 'slides', label: 'Volume', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 100,
-    get: S => Math.round(S.slideVolume * 100),
-    set: (S, pos) => { S.slideVolume = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.slideVolume * 100) + '%',
-    enabled: layerOn
-  },
-  {
-    // Lowpass corner, open at its right end (20 kHz).
-    id: 'slideLP', section: 'slides', label: 'Lowpass', kind: 'slider',
-    min: 0, max: HZ_POS, step: 1, def: HZ_POS,
-    get: S => hzToPos(S.slideLP),
-    set: (S, pos) => { S.slideLP = fit(posToHz(pos), HZ_LO, HZ_HI); save(); },
-    format: S => S.slideLP >= HZ_HI ? 'open' : hzText(S.slideLP),
-    parse: (S, text) => /^\s*open/i.test(text) ? HZ_POS : parseHz(text),
-    enabled: layerOn
-  },
-  {
-    // Highpass corner, open at its left end (20 Hz).
-    id: 'slideHP', section: 'slides', label: 'Highpass', kind: 'slider',
-    min: 0, max: HZ_POS, step: 1, def: 0,
-    get: S => hzToPos(S.slideHP),
-    set: (S, pos) => { S.slideHP = fit(posToHz(pos), HZ_LO, HZ_HI); save(); },
-    format: S => S.slideHP <= HZ_LO ? 'open' : hzText(S.slideHP),
-    parse: (S, text) => /^\s*open/i.test(text) ? 0 : parseHz(text),
     enabled: layerOn
   }
 ];

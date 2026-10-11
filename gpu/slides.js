@@ -31,17 +31,28 @@
 // black; to None the picture fades out over the scene. A fade (or a wait for
 // its picture) keeps the frame loop awake, paused or not (busy).
 //
+// PLAY / PAUSE RAMPS (S.slidePpOut, S.slidePpIn, S.slidePpRamp): the active
+// slide never starts or stops dead. A run factor pp (1 playing, 0 stopped)
+// glides to 0 over Fade out and back to 1 over Fade in, whatever asked for
+// the pause or the play (the Play switch, the Journey's button and Space,
+// the walk, the remote). The sound's leg is scaled by pp, and the video's
+// rate is Speed x pp (floored at MIN_RATE), so the picture slows to a halt
+// and winds back up; at 0 the element is paused. With Audio speed ramp on,
+// the sound's pitch follows that rate like a turntable; off, pitch is held
+// through the ramp (preservesPitch) and the sound only fades. A new slide,
+// the layer switched on, and a doze start at their target, with no ramp.
+//
 // SOUND: each slot's createMediaElementSource -> its leg (a gain, the
-// crossfade) -> the shared highpass -> lowpass -> master gain (Volume x the
-// duck) -> destination, in an AudioContext of its own made lazily, the
+// crossfade) -> the app's global highpass -> lowpass (core/global-filter.js,
+// the Audio section's lpf and hpf, which every chain in the app carries) ->
+// master gain (Master slide volume x the app's Master volume x the duck) ->
+// destination, in an AudioContext of its own made lazily, the
 // first time a video is to play after the page has had a user gesture
 // (sticky user activation), so it starts running rather than suspended.
 // Before any gesture the videos play muted (a muted play is always
 // allowed), and the first pointer or key press builds the chain, unmutes
 // them and resumes it. A refused play() is logged, never thrown, and
-// retried muted the same way. The filters are Butterworth: Web Audio reads
-// a lowpass's or highpass's Q in dB, so Q 0.707 (linear) is set as
-// 20 log10(0.7071) = -3.01 dB. Every change glides through setTargetAtTime
+// retried muted the same way. Every change glides through setTargetAtTime
 // (AUDIO_TC) so a drag never zippers.
 //
 // Page engine only: a worker engine has no document, so the layer stays
@@ -53,11 +64,14 @@
 import { S } from '../js/state.js';
 import { idleHold, idleRelease, idleWake } from '../core/idle.js';
 import { SLIDE_DIR, SLIDE_NONE } from '../core/schema-slides.js';
+import { createGlobalFilter } from '../core/global-filter.js';
 
 const AUDIO_TC = 0.015;
+// the slowest rate a pause ramp asks of the element; below this a browser
+// mutes the sound or refuses the rate
+const MIN_RATE = 0.0625;
 // the legs follow the fade frame by frame, on a shorter glide
 const LEG_TC = 0.008;
-const BUTTERWORTH_Q_DB = 20 * Math.log10(Math.SQRT1_2);   // -3.01 dB: linear Q 0.707
 // A refused play() is tried again no sooner than this, ms.
 const PLAY_RETRY_MS = 1000;
 const SL_FLOATS = 8;
@@ -98,6 +112,10 @@ const clampNum = (v, lo, hi, def) => typeof v === 'number' && v === v ? (v < lo 
 // three quarters of the fader. Cubed, 75% is about -7.5 dB, 50% -18 dB and
 // 25% -36 dB, so the fader works evenly along its whole length.
 const slideGain = S => { const v = clampNum(S.slideVolume, 0, 1, 1); return v * v * v; };
+// What reaches the duck: the layer's own level times the app's Master
+// volume (S.volume, the drawer's 'vol' and the show remote's VOLUME fader,
+// the same straight gain js/audio.js and the Sun's hum take).
+const outGain = S => slideGain(S) * clampNum(S.volume, 0, 1, 0.5);
 const smooth = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 
 // ---------- the duck ----------
@@ -218,6 +236,9 @@ export function createSlides(device, format) {
   const fade = { pending: false, running: false, t0: 0, dur: 0, fromBlack: false, toNone: false, t: 1 };
   let dozing = false, nowMs = 0;
   let playWas = true, restartSeen = 0, outPlays = false;
+  // the play/pause run factor (see the header): 1 running, 0 stopped; ppInit
+  // false means the next frame sets it straight to its target
+  let pp = 1, ppInit = false, ppMs = 0, ppMoving = false;
   // the play button's live override (see toggleSlidePlayLive): null follows
   // S.slidePlay, true or false holds the active slide playing or paused
   let liveOverride = null;
@@ -291,7 +312,7 @@ export function createSlides(device, format) {
   const hasPicture = s => hasFile(s) && s.el.readyState >= 2 && s.el.videoWidth > 0 && s.el.videoHeight > 0;
 
   // ---------- the sound ----------
-  let actx = null, hp = null, lp = null, gain = null, audioFailed = false, gestureArmed = false;
+  let actx = null, gf = null, gain = null, audioFailed = false, gestureArmed = false;
   const hasActivation = () => {
     const ua = typeof navigator !== 'undefined' ? navigator.userActivation : null;
     return ua ? ua.hasBeenActive : true;
@@ -301,18 +322,16 @@ export function createSlides(device, format) {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       actx = new AC({ latencyHint: 'playback' });
-      hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.Q.value = BUTTERWORTH_Q_DB;
-      lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = BUTTERWORTH_Q_DB;
+      // the global pair, which follows the Audio section's lpf and hpf itself
+      gf = createGlobalFilter(actx);
       gain = actx.createGain();
-      hp.frequency.value = clampNum(S.slideHP, 20, 20000, 20);
-      lp.frequency.value = clampNum(S.slideLP, 20, 20000, 20000);
-      gain.gain.value = slideGain(S) * duckMul;
-      hp.connect(lp); lp.connect(gain); gain.connect(actx.destination);
+      gain.gain.value = outGain(S) * duckMul;
+      gf.output.connect(gain); gain.connect(actx.destination);
       for (const s of slots) {
         s.src = actx.createMediaElementSource(s.el);
         s.leg = actx.createGain();
         s.leg.gain.value = s.legNow >= 0 ? s.legNow : 0;
-        s.src.connect(s.leg); s.leg.connect(hp);
+        s.src.connect(s.leg); s.leg.connect(gf.input);
         s.el.volume = 1;
       }
     } catch (e) {
@@ -349,7 +368,7 @@ export function createSlides(device, format) {
   // Without a chain each element's own volume stands in for its leg times
   // the master.
   function elementVolume(s) {
-    const v = slideGain(S) * duckMul * (s.legNow >= 0 ? s.legNow : 0);
+    const v = outGain(S) * duckMul * (s.legNow >= 0 ? s.legNow : 0);
     if (Math.abs(s.el.volume - v) > 0.001) s.el.volume = v;
   }
   // A slot's crossfade leg, glided; a no-op when it has not moved.
@@ -360,23 +379,19 @@ export function createSlides(device, format) {
     else elementVolume(s);
   }
   // The chain's settings, glided; each a no-op once it is where S says.
-  let lastHP = -1, lastLP = -1, lastVol = -1;
+  let lastVol = -1;
   function syncAudio() {
-    const vol = slideGain(S) * duckMul;
+    const vol = outGain(S) * duckMul;
     if (!actx) {
       for (const s of slots) elementVolume(s);
       return;
     }
-    const t = actx.currentTime;
-    const hz1 = clampNum(S.slideHP, 20, 20000, 20), hz2 = clampNum(S.slideLP, 20, 20000, 20000);
-    if (hz1 !== lastHP) { lastHP = hz1; hp.frequency.setTargetAtTime(hz1, t, AUDIO_TC); }
-    if (hz2 !== lastLP) { lastLP = hz2; lp.frequency.setTargetAtTime(hz2, t, AUDIO_TC); }
-    if (vol !== lastVol) { lastVol = vol; gain.gain.setTargetAtTime(vol, t, AUDIO_TC); }
+    if (vol !== lastVol) { lastVol = vol; gain.gain.setTargetAtTime(vol, actx.currentTime, AUDIO_TC); }
   }
   // The duck, glided from wherever the gain is now (see setDuck); the
   // volume it lands on is noted, so syncAudio does not re-aim it fast.
   duckHook = tc => {
-    const vol = slideGain(S) * duckMul;
+    const vol = outGain(S) * duckMul;
     if (!actx) { for (const s of slots) elementVolume(s); return; }
     lastVol = vol;
     gain.gain.setTargetAtTime(vol, actx.currentTime, tc);
@@ -419,7 +434,7 @@ export function createSlides(device, format) {
   // snapped to its end first, then a cut or a new fade.
   function change(file) {
     finishFade();
-    liveOverride = null; walkHeld = false;
+    liveOverride = null; walkHeld = false; ppInit = false;
     const xf = clampNum(S.slideXfade, 0, 3, 0.5);
     const cur = slots[act];
     // only a picture already up (on a layer that was on) fades out
@@ -498,6 +513,7 @@ export function createSlides(device, format) {
         release(slots[act], 'slides off');
       }
       wasOn = false;
+      ppInit = false;
       playWas = wantPlay;
       return;
     }
@@ -528,11 +544,10 @@ export function createSlides(device, format) {
     }
 
     // ---- the active slot: Play, Loop, Speed, Restart ----
+    let ppGain = 1;
     if (hasFile(cur)) {
       const loop = S.slideLoop === true;
       if (cur.el.loop !== loop) cur.el.loop = loop;
-      const rate = clampNum(S.slideRate, 0.25, 2, 1);
-      if (Math.abs(cur.el.playbackRate - rate) > 0.001) { cur.el.playbackRate = rate; cur.el.defaultPlaybackRate = rate; }
       const rn = S.slideRestartN | 0;
       if (rn !== restartSeen) {
         restartSeen = rn;
@@ -545,9 +560,31 @@ export function createSlides(device, format) {
       // Play switched back on over a finished video starts it again.
       if (wantPlay && !playWas && cur.el.ended) { try { cur.el.currentTime = 0; } catch (e) {} }
       const playOn = liveOverride !== null ? liveOverride : wantPlay;
-      if (playOn && !dozing) { if (!cur.el.ended) play(cur); }
+      // the run factor glides toward 1 or 0; a first frame, a doze or a
+      // finished video takes its target at once
+      const target = playOn && !cur.el.ended ? 1 : 0;
+      // a ramp's first frame counts one 60 Hz tick, however long the loop
+      // had rested before it; later frames count their own time, capped
+      const dt = ppMoving ? Math.min(0.1, Math.max(0, (nowMs - ppMs) / 1000)) : 1 / 60;
+      ppMs = nowMs;
+      if (!ppInit || dozing || cur.el.ended) { pp = target; ppInit = true; }
+      else if (pp !== target) {
+        const secs = clampNum(target > pp ? S.slidePpIn : S.slidePpOut, 0, 3, 0.2);
+        const step = secs > 0 ? dt / secs : 1;
+        pp = target > pp ? Math.min(target, pp + step) : Math.max(target, pp - step);
+      }
+      ppMoving = pp !== target;
+      ppGain = pp;
+      // Speed x the run factor; pitch follows only while the ramp is on
+      // (off, it is held through a ramp and the sound just fades)
+      const rate = clampNum(S.slideRate, 0.25, 2, 1);
+      const eff = pp >= 1 ? rate : Math.max(MIN_RATE, rate * pp);
+      if (Math.abs(cur.el.playbackRate - eff) > 0.001) { try { cur.el.playbackRate = eff; } catch (e) {} cur.el.defaultPlaybackRate = rate; }
+      const hold = pp < 1 && S.slidePpRamp !== true;
+      if (cur.el.preservesPitch !== hold) { cur.el.preservesPitch = hold; cur.el.mozPreservesPitch = hold; cur.el.webkitPreservesPitch = hold; }
+      if (pp > 0 && !dozing) { if (!cur.el.ended) play(cur); }
       else pause(cur);
-    } else restartSeen = S.slideRestartN | 0;
+    } else { restartSeen = S.slideRestartN | 0; ppInit = false; ppMoving = false; }
     playWas = wantPlay;
     // the outgoing slot plays on as it was, until it is emptied
     if (out >= 0) {
@@ -558,7 +595,7 @@ export function createSlides(device, format) {
     // ---- the sound: equal power across the fade ----
     const lin = fade.running ? (fade.t < 0 ? 0 : fade.t > 1 ? 1 : fade.t) : fade.pending ? 0 : 1;
     const inGain = shown === SLIDE_NONE ? 0 : Math.sin(lin * HALF_PI);
-    setLeg(cur, hasFile(cur) ? inGain : 0);
+    setLeg(cur, hasFile(cur) ? inGain * ppGain : 0);
     if (out >= 0) setLeg(slots[out], Math.cos(lin * HALF_PI));
     else setLeg(slots[1 - act], 0);
     syncAudio();
@@ -629,7 +666,7 @@ export function createSlides(device, format) {
 
   // A playing video, or a fade running or waiting for its picture, keeps the
   // frame loop awake (main.js's still frame asks), paused or not.
-  const busy = () => fade.pending || fade.running || out >= 0 ||
+  const busy = () => fade.pending || fade.running || out >= 0 || ppMoving ||
     ((drawBlack || nPics > 0) && slots.length > 0 && !slots[act].el.paused && !slots[act].el.ended);
 
   return { update, draw, resize, doze, busy };
