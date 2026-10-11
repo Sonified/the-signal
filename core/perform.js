@@ -208,7 +208,8 @@ export function perfTarget(id) {
 
 // Where a control on its way will come to rest, undefined when nothing here
 // is moving it. Not the same as perfTarget: a layer switched off from a
-// window fades first and only switches at the landing (perfLayer), so for
+// window, or a voice by a journey step, fades first and only switches at the
+// landing (perfLayer, the one door both go through), so for
 // the whole fade its toggle still reads on and its level reads somewhere on
 // the way down to nothing, while what the operator asked for is the toggle
 // off and the level back where it was. The journey records a step from this
@@ -241,42 +242,6 @@ export function perfDestination(id) {
     }
   }
   return tweens.size ? perfTarget(id) : undefined;
-}
-
-// The journey entering a step that puts switch id on while a fade here is
-// still taking it off (a window's fade-out, or a preset's ramp holding it on
-// until it ends): the fade is dropped, so the step's on stands instead of
-// being undone when the fade lands, and recorded as off into whatever step is
-// being edited by then. Each level the fade was carrying is handed to carry
-// (control, the level it belonged at), which returns true when the caller
-// takes it from there (the journey's ramp brings it back up from wherever the
-// fade had reached); otherwise, or with no carry, it goes straight back to
-// that level. Called inside the caller's own transition.
-export function perfTakeSwitch(id, carry) {
-  const f = layerFades.get(id);
-  if (f) {
-    layerFades.delete(id);
-    tweens.delete(f.op.id);
-    handBack(f.op, f.level, carry);
-    if (f.fb) { tweens.delete(f.fb.id); handBack(f.fb, f.fbLevel, carry); }
-  }
-  if (!recall) return;
-  const offs = recall.offs;
-  for (let k = offs.length - 1; k >= 0; k--) {
-    const o = offs[k];
-    if (o.t.id !== id) continue;
-    offs.splice(k, 1);
-    if (o.levels) for (let q = 0; q < o.levels.length; q++) {
-      const x = o.levels[q];
-      tweens.delete(x.c.id);
-      handBack(x.c, x.to, carry);
-    }
-  }
-}
-function handBack(c, to, carry) {
-  if (typeof to !== 'number' || !Number.isFinite(to)) return;
-  if (carry && carry(c, to)) return;
-  if (c.get(S) !== to) c.set(S, to);
 }
 
 // A value applied whole, inside its own short glide: the transition door is
@@ -355,7 +320,7 @@ export function perfSet(id, value, now, sec) {
 //                           Edge layer's effect crossfades across all of it
 //                           (the journey's startRamp does the same);
 //   a switch coming on      comes on as the ramp begins, its level
-//                           (SWITCH_LEVELS) dropped to nothing first and
+//                           (levelsOf) dropped to nothing first and
 //                           gliding up to the preset's;
 //   a switch going off      stays on while its level glides down to nothing,
 //                           and only as the ramp ends does it go off, its
@@ -581,6 +546,23 @@ export function perfRecallPreset(i, sec) {
 }
 
 // The ramp's end, from perfTick once every glide it started has landed.
+//
+// The recall's switches going off are held in its own offs rather than as
+// fades of the door's (perfLayer's layerFades), though each is the same idea,
+// a switch held on while its level falls and turned off at the landing unless
+// a hand took the level. They stay apart because a recall lands as one
+// transaction: every hold ends together at the ramp's end, inside one
+// transition, before the rest of the preset is recalled for real with every
+// control a hand took held; the taken rule is judged across switches that
+// share a level (the music engine and a voice's trim) before any level goes
+// back; a switch can hold several levels (the engine's five trims) or none
+// (held until the end with nothing to fade); and a second recall, or a cut
+// one, reads and settles the last one's holds against its own targets
+// (heldOff, levelGoal, settleRecall). A layer fade lands alone, as its own
+// glide does, through one level and its trail. The door is where these are
+// meant to end up, once its fades can be landed as a set: for now it takes
+// a recall's hold over when asked to move that switch (takeHeld), and
+// perfDestination reads both.
 function landRecall(r) {
   const offs = r.offs;
   // A switch whose level a hand (or a journey) took on the way stays on
@@ -682,11 +664,34 @@ function levelOf(c) {
   const tgt = perfTarget(c.id);
   return typeof tgt === 'number' ? tgt : c.get(S);
 }
+// The one door a switch that fades enters and leaves by, whoever asks: the
+// Music and Performance windows' rows, and a journey step (core/journey.js),
+// which hands in its own ramp. opts, each optional:
+//   now   land at once (a shift-click, a journey's cut or a step selected to
+//         edit), inside a short glide
+//   sec   this one fade's ramp, in place of the windows' interpolation time,
+//         as perfSet's sec is; with now, the glide the landing takes
+//   to    where the level belongs once the fade is done (a step that names
+//         the level): what it rises to coming on and is put back to going
+//         off. Without it, a fade already under way's remembered level, or
+//         where the level is headed, or where it is.
+// Whatever is already taking the switch off when the call arrives is this
+// call's now: a fade-out in flight here (a window's or an earlier step's) or
+// a preset's ramp holding the switch on until it ends (takeHeld). Coming on,
+// the level rises again from wherever that fade had got to; going off, it
+// falls from there over this call's ramp.
 export function perfLayer(toggleId, on, opts) {
   loadPerform();
   const t = byId(toggleId);
   if (!t) return false;
   const now = !!(opts && opts.now);
+  const own = !!opts && typeof opts.sec === 'number' && opts.sec >= 0;
+  const sec = own ? opts.sec : perform.rampS;
+  const goal = opts && typeof opts.to === 'number' && Number.isFinite(opts.to) ? opts.to : undefined;
+  // the glide a landing takes: a caller's own ramp with now, else each
+  // part's usual one (setNow's shortest for a level, SWITCH_GLIDE_S for the
+  // switch, through perfSet)
+  const landS = now && own ? Math.max(MIN_GLIDE_S, sec) : 0;
   const op = opOf(t);
   // The journey is told where each control ends up, not left to read it: a
   // fade-out keeps the toggle on and the level falling for the whole ramp,
@@ -696,25 +701,33 @@ export function perfLayer(toggleId, on, opts) {
   // level, and the trails', at where they belong once the fade is done
   // (level and fbLevel below). The fade is registered in this same
   // synchronous body, so by the time the recorder runs perfDestination also
-  // knows it.
+  // knows it. (A journey going through this door itself does not hear these
+  // as a hand: journey.js throughDoor.)
   journeyManualOverride(toggleId, on);
-  const pend = layerFades.get(toggleId);
+  let pend = layerFades.get(toggleId);
   layerFades.delete(toggleId);
-  if (!op) return perfSet(toggleId, on);
-  const floor = Number.isFinite(op.min) ? op.min : 0;
-  // where the opacity belongs: a fade-out's remembered level, or where a
-  // glide on it is headed, or where it is
-  const level = pend ? pend.level : levelOf(op);
+  if (recall) pend = takeHeld(t, op, pend, on && !now && sec >= TWEEN_MIN_S ? sec : 0);
+  if (!op) return flipSwitch(t, on, landS);
+  const floor = floorOf(op);
+  // where the level belongs: the caller's, or a fade-out's remembered level,
+  // or where a glide on it is headed, or where it is
+  const level = goal !== undefined ? goal : pend ? pend.level : levelOf(op);
   journeyManualOverride(op.id, level);
   // the trail opacity likewise, when the layer has one
   const fb = trailOf(op);
-  const fbFloor = fb && Number.isFinite(fb.min) ? fb.min : 0;
+  const fbFloor = fb ? floorOf(fb) : 0;
   const fbLevel = !fb ? undefined : pend && pend.fb === fb ? pend.fbLevel : levelOf(fb);
   if (fb) journeyManualOverride(fb.id, fbLevel);
-  if (now || perform.rampS < TWEEN_MIN_S || typeof level !== 'number' || level <= floor) {
-    if (pend || tweens.has(op.id)) { tweens.delete(op.id); if (op.get(S) !== level) setNow(op, level, 0); }
-    if (fb && (pend || tweens.has(fb.id))) { tweens.delete(fb.id); if (typeof fbLevel === 'number' && fb.get(S) !== fbLevel) setNow(fb, fbLevel, 0); }
-    return perfSet(toggleId, on);
+  // A cut, a level with nowhere to rise to, or a switch going off that is
+  // already silent (or already off, a fade on it put back first) just switch.
+  if (now || sec < TWEEN_MIN_S || typeof level !== 'number' || level <= floor ||
+      (!on && !(t.get(S) && op.get(S) > floor))) {
+    if (typeof level === 'number' && (pend || tweens.has(op.id) || goal !== undefined)) {
+      tweens.delete(op.id);
+      if (op.get(S) !== level) setNow(op, level, landS);
+    }
+    if (fb && (pend || tweens.has(fb.id))) { tweens.delete(fb.id); if (typeof fbLevel === 'number' && fb.get(S) !== fbLevel) setNow(fb, fbLevel, landS); }
+    return flipSwitch(t, on, landS);
   }
   // a trail opacity already at nothing (or not a number) is left alone
   const fbFades = fb && typeof fbLevel === 'number' && fbLevel > fbFloor;
@@ -722,15 +735,48 @@ export function perfLayer(toggleId, on, opts) {
     if (!t.get(S)) {
       tweens.delete(op.id); setNow(op, floor, 0);
       if (fbFades) { tweens.delete(fb.id); setNow(fb, fbFloor, 0); }
-      perfSet(toggleId, true);
+      flipSwitch(t, true, 0);
     }
-    if (fbFades) startSlider(fb, fbLevel);
-    return startSlider(op, level);   // up from nothing, or back up from where a fade-out had got to
+    if (fbFades) startSlider(fb, fbLevel, sec);
+    return startSlider(op, level, sec);   // up from nothing, or back up from where a fade-out had got to
   }
-  if (!t.get(S)) return true;
   layerFades.set(toggleId, { t, op, level, floor, fb: fbFades ? fb : null, fbLevel });
-  if (fbFades) startSlider(fb, fbFloor);
-  return startSlider(op, floor);
+  if (fbFades) startSlider(fb, fbFloor, sec);
+  return startSlider(op, floor, sec);
+}
+// The switch itself: through perfSet, inside its usual short transition (a
+// variance switch crossfading through its mix), or, given landS, a journey
+// cut's own glide, inside that.
+function flipSwitch(t, on, landS) {
+  if (!landS || t.mixKey) return perfSet(t.id, on);
+  if (t.get(S) !== on) setNow(t, on, landS);
+  return true;
+}
+// A preset's ramp holding switch t on until it ends (its recall.offs), let go
+// to perfLayer: the hold is dropped, so the recall's landing never turns the
+// switch off under the door's own answer. The level the door fades through
+// (op) carries on as a fade of the door's own, pend, unless one was already
+// under way, with its trail; any other level it held (the music engine's
+// voices' trims) goes back to where it belonged, rising over upS when the
+// switch is coming on with a ramp, else straight back. Returns pend.
+function takeHeld(t, op, pend, upS) {
+  const offs = recall.offs;
+  const fb = op ? trailOf(op) : null;
+  for (let k = offs.length - 1; k >= 0; k--) {
+    const o = offs[k];
+    if (o.t !== t) continue;
+    offs.splice(k, 1);
+    if (!o.levels) continue;
+    for (let q = 0; q < o.levels.length; q++) {
+      const x = o.levels[q];
+      if (op && x.c === op && !pend) { pend = { t, op, level: x.to, floor: x.floor, fb: null, fbLevel: undefined }; continue; }
+      if (fb && x.c === fb && pend && pend.op === op) { pend.fb = fb; pend.fbLevel = x.to; continue; }
+      if (x.c === op || x.c === fb) continue;
+      if (upS > 0) startSlider(x.c, x.to, upS);
+      else { tweens.delete(x.c.id); if (x.c.get(S) !== x.to) setNow(x.c, x.to, 0); }
+    }
+  }
+  return pend;
 }
 // The level a layer fading out will come back to, undefined when none is
 // fading: the window shows such a layer as off already, and parks its

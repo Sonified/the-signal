@@ -31,7 +31,10 @@
 // on and leaves the ramp at once. A ramp of 0 is a cut, applied all at once as
 // a preset is. Auto-play moves on once the ramp and the hold have passed, and
 // after the last step stops, or with loop on goes round to the first again;
-// without it the window's arrows move by hand.
+// without it the window's arrows move by hand. A voice the step turns on or
+// off is the exception to switches landing first: it enters and leaves
+// through its level over the ramp, by the same door the Music window's rows
+// use (perform.js perfLayer; see throughDoor).
 //
 // Playing and authoring stay apart, and nothing the window does short of its
 // transport and deleting the playing step ever stops or restarts the walk.
@@ -82,6 +85,7 @@ import { pianoGesture, applySeqs, SEQ_WAVES, SEQ_COUNT } from '../js/piano.js';
 import { CHANNELS, applyMixGates } from '../js/mixgate.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
 import { byId } from './schema.js';
+import { AUDIO_CONTROLS } from './schema-audio.js';
 import { REPLAY_CONTROLS, beginTransition, recallPresetForStep, machineControl } from './presets.js';
 import { readKey, saveKey, onSave, save, seqStateOf, applySeqState, mixStateOf, SEQ_NUM_RANGE, oldRingSpeed } from './store.js';
 import { onWordAppear, wordSequenceOnce, cancelWordSequenceOnce } from './words.js';
@@ -89,7 +93,7 @@ import { glideSkippingRiskBand } from './strobe.js';
 // A cycle, perform.js importing this module for journeyManualOverride: both
 // sides only call across it at run time, never as either module is first
 // evaluated, so whichever loads first is complete before the other asks.
-import { perfDestination, perfTakeSwitch } from './perform.js';
+import { perfDestination, perfLayer } from './perform.js';
 
 const JOURNEY_KEY = 'signal.journey.v1';
 export const RAMP_MIN = 0, RAMP_MAX = 30, HOLD_MIN = 5, HOLD_MAX = 600;
@@ -196,63 +200,50 @@ const twins = new Map();
 }
 const withTwins = id => twins.has(id) ? [id, ...twins.get(id)] : [id];
 
-// The voices a step's ramp fades rather than switches: each voice's switch
-// and the trim it fades through. The pairs mirror the music window's rows
-// (ui/screens/music.js ROWS), which fade the same switches through the same
-// trims (perform.js perfLayer). Live Sound's is left out: its switch is never
-// in a step (NEVER_IN_STEP). A pair either of whose controls the schema does
-// not have, or a step could not hold, is dropped. ti and li are the two
-// controls' places in R, the ramp's own indices.
-const VOICE_PAIRS = { aTone: 'musTone', aClick: 'musPulse', pianoOn: 'musPiano', cloudsOn: 'musClouds',
-  bedOn: 'musDrone', arpOn: 'musArp', choirOn: 'musChoir', ambOn: 'musAmb' };
-const VOICES = [];
-for (const tid in VOICE_PAIRS) {
-  const ti = idxOf.get(tid), li = idxOf.get(VOICE_PAIRS[tid]);
-  if (ti === undefined || li === undefined || skip[ti] || skip[li]) continue;
-  const t = R[ti], l = R[li];
-  if (!t.get || !t.set || l.kind !== 'slider' || !l.get || !l.set) continue;
-  VOICES.push({ t, l, ti, li, floor: Number.isFinite(l.min) ? l.min : 0 });
+// The switches a step moves through the performer's door (perform.js
+// perfLayer) instead of its own switch pass (throughDoor, below). opAt[i] is
+// the place in R of the level switch i enters and leaves through, the
+// schema's op for it (core/schema-audio.js), -1 for a switch with none or one
+// a step could not hold. voice[i] marks a sound's: a voice the step turns on
+// or off rides the step's ramp through its level, as the Music window's rows
+// fade one, since a switch landing in the short glide brought a voice in at
+// its standing level however long the ramp. A layer's switch still turns as
+// the ramp begins and crossfades over it with the picture (startRamp's
+// transition span), so for a layer only a fade already taking it off goes
+// through the door, to be taken over. Live Sound's switch is never in a step
+// (NEVER_IN_STEP), so it is never one.
+const AUDIO = new Set(AUDIO_CONTROLS);
+const opAt = new Int32Array(R.length).fill(-1);
+const voice = new Uint8Array(R.length);
+for (let i = 0; i < R.length; i++) {
+  const c = R[i], j = c.op ? idxOf.get(c.op) : undefined;
+  if (j === undefined || skip[i] || skip[j] || R[j].kind !== 'slider') continue;
+  opAt[i] = j;
+  if (AUDIO.has(c)) voice[i] = 1;
 }
-
-// The voices a playing ramp is fading out (see startRamp), held on until it
-// lands: n of them, each its voice (VOICES entry) and the level its trim goes
-// back to once the switch is off. And the voices a new step took over from a
-// fade-out still under way (landVoiceOffs), whose trims the new ramp brings
-// back up. Fixed arrays, one slot a voice, so nothing allocates.
-const vOff = new Array(VOICES.length).fill(null), vOffTo = new Float64Array(VOICES.length);
-let vOffN = 0;
-const vCarry = new Array(VOICES.length).fill(null), vCarryTo = new Float64Array(VOICES.length);
-let vCarryN = 0;
-// startRamp's scratch: the voices it brings on and the levels they rise to,
-// and the places in R its switch pass and slider loop leave to the voices.
-const vUp = new Array(VOICES.length).fill(null), vUpTo = new Float64Array(VOICES.length);
-const vHold = new Uint8Array(R.length);
+// The places in R the door took for the step being entered (throughDoor):
+// each switch it moved, the switch's twins, and the level it was handed. And
+// whether the journey is going through the door right now, when the door's
+// word that a hand moved something (journeyManualOverride) is its own echo.
+const doorHeld = new Uint8Array(R.length);
+let driving = false;
 
 // Where control c will come to rest, undefined when nothing is moving it:
-// the journey's own fade-outs first (a voice's switch lands off, its trim at
-// its level), then the performer's engine (perform.js perfDestination: a
-// layer fading out from a window, a preset's ramp, any glide). A twin (see
-// twins) shares its state with a door the engine may be moving, as the
-// mixer's power button shares S.ambOn with the Ambience switch the music
-// window fades, so a switch whose own id names no destination takes its
-// twin's: the same value when the two read alike now, the other when they
-// read opposite (a mute beside an on). Anything else of a twin's is left to
-// its own reading, since a slider's twin can be scaled differently.
-function ownDest(id) {
-  for (let k = 0; k < vOffN; k++) {
-    const V = vOff[k];
-    if (V.t.id === id) return false;
-    if (V.l.id === id) return vOffTo[k];
-  }
-  return perfDestination(id);
-}
+// the performer's engine (perform.js perfDestination: a layer or a voice
+// fading out, from a window or a step's ramp, a preset's ramp, any glide). A
+// twin (see twins) shares its state with a door the engine may be moving, as
+// the mixer's power button shares S.ambOn with the Ambience switch, so a
+// switch whose own id names no destination takes its twin's: the same value
+// when the two read alike now, the other when they read opposite (a mute
+// beside an on). Anything else of a twin's is left to its own reading, since
+// a slider's twin can be scaled differently.
 function destOf(c) {
-  const d = ownDest(c.id);
+  const d = perfDestination(c.id);
   if (d !== undefined) return d;
   const tws = twins.get(c.id);
   if (!tws) return undefined;
   for (let k = 0; k < tws.length; k++) {
-    const td = ownDest(tws[k]);
+    const td = perfDestination(tws[k]);
     if (typeof td !== 'boolean') continue;
     const tc = byId(tws[k]), a = tc && tc.get ? tc.get(S) : undefined, b = c.get(S);
     if (typeof a === 'boolean' && typeof b === 'boolean') return a === b ? td : !td;
@@ -557,14 +548,14 @@ function applyText(text) {
 // a voice already playing is not started a second time. Selecting a step to
 // edit it, and a step whose ramp is a cut, land this way.
 function applyStep(st, sec) {
+  const o = st.overrides, mixOwned = !!st.mix;
+  throughDoor(o, mixOwned, sec, true);
   beginTransition(Math.max(MIN_GLIDE_S, sec));
   try {
-    const o = st.overrides, mixOwned = !!st.mix;
-    takeSwitchFades(o, mixOwned, false, null);
     for (let i = 0; i < R.length; i++) {
       const c = R[i];
       const v = o[c.id];
-      if (v === undefined || skip[i] || manual.has(c.id) || (mixOwned && inMix[i])) continue;
+      if (v === undefined || skip[i] || doorHeld[i] || manual.has(c.id) || (mixOwned && inMix[i])) continue;
       if (c.get(S) !== v) c.set(S, v);
     }
     applyText(st.text);
@@ -574,26 +565,45 @@ function applyStep(st, sec) {
   }
 }
 
-// A switch the step puts on that a fade is taking off (a voice clicked off in
-// the music window a moment ago, a layer in the performer's, a preset's ramp
-// still holding one on until it ends) reads on until the fade lands, so the
-// step's on looked already done and was skipped, and the landing then turned
-// it off under the step, recorded as off into it when it was being edited.
-// The fade is taken from the engine first (perform.js perfTakeSwitch), its
-// levels handed to carry (startRamp brings them back up over its ramp) or
-// put straight back. open: no transition is open yet, and one is opened only
-// if something is taken. Nothing is allocated unless a fade is.
-function takeSwitchFades(o, mixOwned, open, carry) {
-  let opened = false;
+// Every switch the step names that goes through the performer's door
+// (perform.js perfLayer), before anything else of the step lands: a voice
+// the step turns on or off (voice above), and any switch a fade is still
+// taking off, from a window, the last step or a preset's ramp, which would
+// otherwise read on until its fade landed and be turned off under the step.
+// Through the door a voice coming on enters silent and rises over sec to the
+// level the step names for it (to), else where it stood, and one going off
+// falls through its level and switches off at the landing, its level put
+// back. A fade already under way is taken over from wherever it has got to:
+// back up when the step wants the switch on, down again over this step's
+// ramp when it wants a voice off. A fade the step does not name is left to
+// land on its own time. now (a cut, a step selected to edit) lands each at
+// once, inside a glide of sec. The fade and its in-flight record are then
+// the performer's, the one place every fade lives, so the Music window shows
+// a step's fade as its own, a hand on the voice mid-fade keeps it on, as a
+// hand on a window's fade does (perform.js takeLayerFade, landLayerFades),
+// and the recorder reads where it is headed (perfDestination). What it took
+// is marked in doorHeld for the step's own passes to leave alone: a twin
+// would otherwise turn the shared state at once through the other door.
+// Nothing is allocated unless a switch goes through.
+function throughDoor(o, mixOwned, sec, now) {
+  doorHeld.fill(0);
+  driving = true;
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i], v = o[c.id];
-      if (!v || skip[i] || manual.has(c.id) || (mixOwned && inMix[i]) || (c.kind !== 'toggle' && c.kind !== 'segment')) continue;
-      if (perfDestination(c.id) !== false || !c.get(S)) continue;
-      if (open && !opened) { beginTransition(SWITCH_GLIDE_S); opened = true; }
-      perfTakeSwitch(c.id, carry);
+      if (v === undefined || skip[i] || manual.has(c.id) || (mixOwned && inMix[i])) continue;
+      if ((c.kind !== 'toggle' && c.kind !== 'segment') || c.mixKey) continue;
+      const is = !!c.get(S), fading = is && perfDestination(c.id) === false;
+      const L = opAt[i], lid = L >= 0 && !manual.has(R[L].id) ? R[L].id : null;
+      if (!(fading && (v || voice[i])) && !(voice[i] && lid && !!v !== is)) continue;
+      const lv = lid ? o[lid] : undefined;
+      perfLayer(c.id, !!v, { now, sec, to: typeof lv === 'number' ? lv : undefined });
+      doorHeld[i] = 1;
+      if (lv !== undefined) doorHeld[L] = 1;
+      const tws = twins.get(c.id);
+      if (tws) for (let k = 0; k < tws.length; k++) { const j = idxOf.get(tws[k]); if (j !== undefined) doorHeld[j] = 1; }
     }
-  } finally { if (opened) endGlide(); }
+  } finally { driving = false; }
 }
 
 // ---------- the sequencer and the mix ----------
@@ -1070,13 +1080,9 @@ export function journeyEachGlide(fn) {
   if (tw.colorOn && COLOR) fn(COLOR, cHex, rem);
 }
 
-// next is the step about to be entered, when one is (enterStep), so a voice
-// the ramp was fading out that the next step wants on is handed over rather
-// than switched off and on again (landVoiceOffs).
-function endTween(next) {
+function endTween() {
   const was = tw.active;
   if (tw.seqMix) endSeqMix();
-  landVoiceOffs(next);
   tw.active = false; tw.n = 0; tw.colorOn = false; tw.glow = 0; tw.seqMix = false;
   rampIds.clear(); rampSections.clear(); rampSubs.clear();
   if (was && glideLand) glideLand();
@@ -1128,80 +1134,24 @@ function addColor(c, hex) {
   noteRamping(c);
 }
 
-// startRamp's hand for a level a taken fade was carrying: a control the
-// step can hold rides the ramp back up from where the fade had reached, to
-// the step's own level (its slider loop, below) or to where it belonged.
-let rampO = null;
-function rampCarry(L, to) {
-  const j = idxOf.get(L.id);
-  if (j === undefined || skip[j] || L.kind !== 'slider') return false;
-  if (!manual.has(L.id) && rampO[L.id] === undefined) addSlider(j, L, to);
-  return true;
-}
-
 // A playing step with a ramp: its switches (and its text, when that shows
 // from the start) inside one short transition, then the sliders and the
 // colour set travelling from wherever they are now, read only after the
 // switches, since clickMode decides which voice the pip controls address.
 // The switches' transition spans the whole ramp (presets.js beginTransition's
 // span), so what crossfades rather than glides, the Edge layer's effect, fades
-// over the ramp while the audio's levels still land in the short glide.
-//
-// A voice (VOICES) the step switches rides the ramp instead, as the music
-// window's own rows fade one (perform.js perfLayer), since a switch landing
-// in the short glide brought a voice in at its standing level, which is its
-// full level whenever the last fade-out put it back there, and a long ramp
-// did nothing to soften it. One the step turns on has its trim dropped to
-// nothing first, through its own short declick while the voice is still off,
-// then comes on with the other switches, silent, and its trim rises over the
-// whole ramp to the step's level, or, with the step naming none, to where it
-// stood. One the step turns off stays on while its trim falls to nothing over
-// the ramp, and switches off only as the ramp lands (landVoiceOffs), its trim
-// then put quietly back to the step's level, or to where it stood, so it
-// keeps its loudness for whatever turns it on next. Its twins (the mixer's
-// power beside the Ambience switch) are held back with it, or the switch pass
-// would turn the shared state off through the other door at once. A voice
-// the viewer has taken (manual), switch or trim, a trim already at nothing,
-// or one with nothing to rise to, simply switches as before.
+// over the ramp while the audio's levels still land in the short glide. A
+// voice the step switches, and any switch a fade is still taking off, go
+// through the performer's door first (throughDoor), which rides each over the
+// step's ramp through its level; the passes below leave those to it.
 function startRamp(st, withText) {
   const o = st.overrides, mixOwned = !!st.mix;
-  rampO = o;
-  takeSwitchFades(o, mixOwned, true, rampCarry);
-  rampO = null;
-  // ---- the voices, planned ----
-  vHold.fill(0);
-  let ups = 0;
-  for (let q = 0; q < VOICES.length; q++) {
-    const V = VOICES[q], v = o[V.t.id];
-    if (v === undefined || manual.has(V.t.id) || manual.has(V.l.id)) continue;
-    if (!!v === !!V.t.get(S)) continue;
-    const lv = o[V.l.id];
-    if (v) {
-      const goal = typeof lv === 'number' ? lv : posOf(V.l);
-      if (typeof goal !== 'number' || !(goal > V.floor)) continue;
-      vUp[ups] = V; vUpTo[ups] = goal; ups++;
-    } else {
-      const from = V.l.get(S), back = typeof lv === 'number' ? lv : posOf(V.l);
-      if (typeof from !== 'number' || !(from > V.floor) || typeof back !== 'number' || !Number.isFinite(back)) continue;
-      vOff[vOffN] = V; vOffTo[vOffN] = back; vOffN++;
-      vHold[V.ti] = 1; vHold[V.li] = 1;
-      const tws = twins.get(V.t.id);
-      if (tws) for (let k = 0; k < tws.length; k++) { const j = idxOf.get(tws[k]); if (j !== undefined) vHold[j] = 1; }
-    }
-  }
-  // the trims of the voices coming on, down to nothing before any switch
-  // moves (perfLayer's order), each voice still off, so the drop is unheard
-  if (ups) {
-    beginTransition(MIN_GLIDE_S);
-    try {
-      for (let k = 0; k < ups; k++) { const V = vUp[k]; if (V.l.get(S) !== V.floor) V.l.set(S, V.floor); }
-    } finally { endGlide(); }
-  }
+  throughDoor(o, mixOwned, st.rampS, false);
   beginTransition(SWITCH_GLIDE_S, st.rampS);
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i], v = o[c.id];
-      if (v === undefined || skip[i] || vHold[i] || manual.has(c.id) || c.kind === 'slider' || c.kind === 'color' || (mixOwned && inMix[i])) continue;
+      if (v === undefined || skip[i] || doorHeld[i] || manual.has(c.id) || c.kind === 'slider' || c.kind === 'color' || (mixOwned && inMix[i])) continue;
       if (c.get(S) !== v) c.set(S, v);
     }
     if (withText) applyText(st.text);
@@ -1211,28 +1161,11 @@ function startRamp(st, withText) {
   }
   for (let i = 0; i < R.length; i++) {
     const c = R[i], v = o[c.id];
-    if (v === undefined || skip[i] || vHold[i] || manual.has(c.id)) continue;
+    if (v === undefined || skip[i] || doorHeld[i] || manual.has(c.id)) continue;
     if (c.kind === 'slider') addSlider(i, c, v);
     else if (c.kind === 'color') addColor(c, v);
   }
-  // a voice coming on whose level the step does not name rises to where it
-  // stood (one it names rose in the loop above, from the nothing set first)
-  for (let k = 0; k < ups; k++) {
-    const V = vUp[k];
-    if (o[V.l.id] === undefined) addSlider(V.li, V.l, vUpTo[k]);
-    vUp[k] = null;
-  }
-  // a voice going off: its trim falls to nothing over the ramp
-  for (let k = 0; k < vOffN; k++) addSlider(vOff[k].li, vOff[k].l, vOff[k].floor);
-  // a voice the last step was fading out that this one keeps on: its trim
-  // comes back up from wherever the fade had got to
-  for (let k = 0; k < vCarryN; k++) {
-    const V = vCarry[k];
-    if (!manual.has(V.l.id) && o[V.l.id] === undefined) addSlider(V.li, V.l, vCarryTo[k]);
-    vCarry[k] = null;
-  }
-  vCarryN = 0;
-  if (tw.n > 0 || tw.colorOn || tw.seqMix || vOffN > 0) {
+  if (tw.n > 0 || tw.colorOn || tw.seqMix) {
     tw.active = true; tw.t0 = nowT; tw.durMs = st.rampS * 1000; tw.glow = 1;
     // the broadcast's glide-start message (see the broadcast's view above)
     if (glideStart) glideStart();
@@ -1251,12 +1184,7 @@ function stepTween(t) {
     const i = twIdx[k];
     if (i < 0) continue;
     const c = R[i];
-    if (c.get(S) !== twLast[k]) {
-      twIdx[k] = -1; rampIds.delete(c.id);
-      // a voice's trim taken mid fade-out keeps the voice on
-      if (vOffN) cancelVoiceOff(c.id);
-      continue;
-    }
+    if (c.get(S) !== twLast[k]) { twIdx[k] = -1; rampIds.delete(c.id); continue; }
     const from = twFrom[k], to = twTo[k];
     let v = to;
     if (u < 1) {
@@ -1299,66 +1227,6 @@ function stepColor(u, e) {
   try { COLOR.set(S, u < 1 ? '#' + HEX2[r] + HEX2[g] + HEX2[b] : cHex); } finally { glideWriting = false; }
   const now = S.rgb;
   cLast[0] = now[0]; cLast[1] = now[1]; cLast[2] = now[2];
-}
-
-// The voices a ramp was fading out, switched off: at the ramp's end (its
-// trims at nothing by then), or sooner when the next step is entered or the
-// walk stops, whichever comes first. Inside one switch transition each voice
-// goes off and its trim goes back to the step's level, or where it stood,
-// silent with the voice off (perform.js landLayerFades). Landing early, mid
-// fade, it is the switch's own glide that takes the rest of the sound away,
-// as a preset's ramp cut short lands its own (perform.js settleRecall). A
-// voice the next step wants on (next, the step being entered) is not switched
-// off to be switched on again: it stays on, and its trim is handed over. With
-// the next step naming the trim, that step's own ramp or cut takes it from
-// where it is; without, a ramp brings it back up to where it stood (vCarry,
-// read by startRamp) and a cut puts it back at once.
-function landVoiceOffs(next) {
-  if (!vOffN) return;
-  const n = vOffN;
-  // emptied first: the writes below save, and destinations read the list
-  vOffN = 0;
-  const no = next ? next.overrides : null;
-  const ramped = !!next && next.rampS >= TWEEN_MIN_S;
-  beginTransition(SWITCH_GLIDE_S);
-  try {
-    for (let k = 0; k < n; k++) {
-      const V = vOff[k], back = vOffTo[k];
-      vOff[k] = null;
-      if (no && no[V.t.id] && !manual.has(V.t.id) && !manual.has(V.l.id)) {
-        if (no[V.l.id] !== undefined) continue;
-        if (ramped) { vCarry[vCarryN] = V; vCarryTo[vCarryN] = back; vCarryN++; }
-        else if (V.l.get(S) !== back) V.l.set(S, back);
-        continue;
-      }
-      if (V.t.get(S)) V.t.set(S, false);
-      if (V.l.get(S) !== back) V.l.set(S, back);
-    }
-  } finally { endGlide(); }
-}
-
-// A hand on a voice the ramp is fading out takes it over, as a hand on a
-// window's fade does (perform.js takeLayerFade). On its trim, the voice stays
-// on wherever the trim is left. On its switch (the drawer's, or a twin's),
-// the fade stops where it is, and once the hand's own write has landed, a
-// voice it switched off has its trim put quietly back; one left on stays on
-// at the trim the fade had reached.
-function cancelVoiceOff(id) {
-  for (let k = vOffN - 1; k >= 0; k--) {
-    const V = vOff[k];
-    if (V.t.id !== id && V.l.id !== id) continue;
-    const back = vOffTo[k];
-    vOffN--;
-    vOff[k] = vOff[vOffN]; vOffTo[k] = vOffTo[vOffN]; vOff[vOffN] = null;
-    if (V.t.id !== id) continue;
-    for (let j = 0; j < tw.n; j++) if (twIdx[j] === V.li) twIdx[j] = -1;
-    rampIds.delete(V.l.id);
-    queueMicrotask(() => {
-      if (V.t.get(S) || V.l.get(S) === back) return;
-      beginTransition(MIN_GLIDE_S);
-      try { V.l.set(S, back); } finally { endGlide(); }
-    });
-  }
 }
 
 // ---------- authoring ----------
@@ -2210,7 +2078,7 @@ function enterStep(i) {
   play.phaseStartT = play.enterT = nowT;
   play.appearAt = -1;
   cancelWordSequenceOnce();
-  endTween(st);
+  endTween();
   const ramped = st.rampS >= TWEEN_MIN_S;
   const at = APPEAR_AT[st.appear] || 0;
   const textNow = !!st.text && (!ramped || at === 0);
@@ -2264,6 +2132,8 @@ function stopWalk(rearm = true) {
 // this same walk leaves it alone. A paused walk still counts as the same
 // session, so a change made while paused remains authoritative on resume.
 export function journeyManualOverride(id, requested) {
+  // the journey's own steps going through the performer's door (throughDoor)
+  if (driving) return;
   if (id === 'lParticles' || id === 'particlesOn') journeyDiag('particle control changed', { id });
   if (armed && sel >= 0 && winOpen) { diffPending = true; queueDiff(); }
   if (play.stepIdx < 0 || typeof id !== 'string') return;
@@ -2290,7 +2160,6 @@ function releaseJourneyControl(id) {
   }
   if (COLOR && id === COLOR.id) tw.colorOn = false;
   rampIds.delete(id);
-  if (vOffN) cancelVoiceOff(id);
 }
 
 function recordLiveControl(stepIdx, id, requested) {
