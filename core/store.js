@@ -42,6 +42,7 @@
 import { S, layers, STORE, SKIP_KEY, seqSeat, CORNER_TYPES } from '../js/state.js';
 import { setColorFromPicker } from '../js/color.js';
 import { idleWake } from './idle.js';
+import { applyOutputGuards } from './output-guard.js';
 import { applyEdgeDir } from '../js/sim.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
 import { CHANNELS, applyMixGates } from '../js/mixgate.js';
@@ -219,6 +220,8 @@ function buildSettings() {
     biDepth: S.biDepth, biPeriod: S.biPeriod, biHardSwitch: S.biHardSwitch,
     rendererPref: S.rendererPref, heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, outputLatComp: S.outputLatComp,
     syncDiagLog: S.syncDiagLog,
+    // Render > Audio engine > Limiter and Soft clip (core/output-guard.js)
+    outLimiter: S.outLimiter, outSoftClip: S.outSoftClip,
     // Settings > Control overlays and its key (main.js), this machine's own
     overlayMode: S.overlayMode, overlayKey: S.overlayKey,
     // Settings > Journey page reload (core/journey.js), this machine's own
@@ -702,7 +705,7 @@ export function snapshot() {
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
                       'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog',
-                      'overlayMode', 'overlayKey', 'journeyReload'];
+                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayKey', 'journeyReload'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -948,6 +951,11 @@ function applySettings(s, live, scene) {
     if (typeof s.heartGrowX === 'number' && isFinite(s.heartGrowX)) S.heartGrowX = Math.max(1.1, Math.min(2, s.heartGrowX));
     if (typeof s.outputLatComp === 'boolean') S.outputLatComp = s.outputLatComp;
     if (typeof s.syncDiagLog === 'boolean') S.syncDiagLog = s.syncDiagLog;
+    // The output guard's two stages; every live guard follows at once (a
+    // no-op where nothing changed, or before any guard is built).
+    if (typeof s.outLimiter === 'boolean') S.outLimiter = s.outLimiter;
+    if (typeof s.outSoftClip === 'boolean') S.outSoftClip = s.outSoftClip;
+    applyOutputGuards();
     // Settings > Control overlays: how this screen's floating controls come
     // up, and the key that toggles them in Key mode (any one event.key).
     if (s.overlayMode === 'auto' || s.overlayMode === 'key') S.overlayMode = s.overlayMode;

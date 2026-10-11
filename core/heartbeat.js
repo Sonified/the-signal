@@ -49,6 +49,7 @@
 import { getContext, getMaster, sourceGate, ensureAudioGraph } from '../js/audio.js';
 import { ctxFor, masterFor } from '../js/heart/route.js';
 import { createGlobalFilter } from './global-filter.js';
+import { createOutputGuard } from './output-guard.js';
 import { chanGate, onChannelGates } from '../js/mixgate.js';
 import { tapPeak } from '../js/util.js';
 
@@ -188,11 +189,14 @@ function ensureGraph() {
     meterTap = tapAfter(gate);
   } else {
     // a context of its own: the app's global Lowpass and Highpass
-    // (core/global-filter.js) go on here, as js/audio.js's master carries
-    // them for the usual path above
+    // (core/global-filter.js) and its output guard (core/output-guard.js)
+    // go on here, as js/audio.js's master carries them for the usual path
+    // above
     const gf = createGlobalFilter(ctx);
+    const guard = createOutputGuard(ctx);
     trim.connect(gf.input);
-    gf.output.connect(ctx.destination);
+    gf.output.connect(guard.input);
+    guard.output.connect(ctx.destination);
     meterTap = tapAfter(trim);
   }
   return true;

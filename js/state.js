@@ -59,6 +59,8 @@ export const S = {
   heartGrowX: 1.5,            // how the cushion grows on underrun; this machine's own too
   outputLatComp: true,        // the strobe audio allows for the output's latency (strobe-am.js)
   syncDiagLog: false,         // print [syncdiag] sync and latency lines to the console (strobe-am.js)
+  outLimiter: true,           // the output guard's limiter on every output (core/output-guard.js); this machine's own
+  outSoftClip: true,          // the output guard's soft clip after it; this machine's own too
   overlayMode: 'auto',        // the floating controls: 'auto' wake on activity, 'key' only overlayKey toggles them (main.js); this machine's own
   overlayKey: '\\',           // the key (event.key) that toggles them in Key mode
   journeyReload: 'resume',    // a reload comes back to the journey step last played ('resume') or the top ('restart'); this machine's own

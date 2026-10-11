@@ -45,6 +45,7 @@ import { S } from './state.js';
 import { createRoom, swapRoom } from './audio.js';
 import { setAudioSessionRecording } from './background.js';
 import { createGlobalFilter } from '../core/global-filter.js';
+import { createOutputGuard } from '../core/output-guard.js';
 
 // The compressor. Its defaults are gentle glue rather than a limiter: a 3:1
 // ratio from about -24 dB, over a knee 30 dB wide, so it starts leaning on
@@ -189,12 +190,17 @@ function makeGraph() {
   // the app's global Lowpass and Highpass (core/global-filter.js) on the
   // monitor's way out; the broadcast tap, taken above, is left unfiltered
   const gf = createGlobalFilter(ctx);
-  const g = { ctx, ms, comp, dry, wet, room, voice, level, gate, gf, tap: null, gateTo: monitorGate(), poll: null };
+  // and the app's output guard, the limiter and the soft clip (core/output-
+  // guard.js), last before the speakers as on every output; the broadcast
+  // tap, above it all, is left unlimited
+  const guard = createOutputGuard(ctx);
+  const g = { ctx, ms, comp, dry, wet, room, voice, level, gate, gf, guard, tap: null, gateTo: monitorGate(), poll: null };
   gate.gain.value = g.gateTo;
   voice.connect(level);
   level.connect(gate);
   gate.connect(gf.input);
-  gf.output.connect(ctx.destination);
+  gf.output.connect(guard.input);
+  guard.output.connect(ctx.destination);
   g.poll = setInterval(() => followGate(g), GATE_POLL_MS);
   // The latency is only known for certain once the context is running (the
   // output's share especially), so the worker's readout is told again then.
@@ -225,6 +231,7 @@ function followGate(g) {
 function closeGraph(g) {
   clearInterval(g.poll);
   if (g.gf) g.gf.dispose();
+  if (g.guard) g.guard.dispose();
   // a new room length still waiting behind the Decay slider is the next context's to build
   clearTimeout(g.room.timer);
   try { g.voice.gain.setTargetAtTime(0, g.ctx.currentTime, FADE_TC); } catch (e) {}

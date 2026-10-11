@@ -4,9 +4,10 @@
 // app makes passes through on its way out.
 //
 // The app's sound lives in several AudioContexts (js/audio.js's, which the
-// Heart engine, the heartbeat's track and the Sun's hum also play into;
-// gpu/slides.js's; the heartbeat's own when it has had to make one; Live
-// Sound's monitor), and a node can only join its own context's graph. So
+// Heart engine, the heartbeat's track, the Sun's hum and gpu/slides.js's
+// chain also play into, the slides with a pair of their own past the
+// master's; the heartbeat's own when it has had to make one; Live Sound's
+// monitor), and a node can only join its own context's graph. So
 // each output chain asks createGlobalFilter(ctx) for its own highpass ->
 // lowpass pair and puts it just before its destination; this module keeps
 // the subscriptions and, when the corners move (notifyGlobalFilter, from the

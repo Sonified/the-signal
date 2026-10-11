@@ -1,6 +1,7 @@
 // Owns the Slides layer (core/schema-slides.js): one of the show's videos,
 // played fullscreen over the whole scene, letterboxed (contain, centred,
-// black bars), with its sound through its own little chain.
+// black bars), with its sound through its own little chain into the app's
+// output.
 //
 // RENDERING PATH: the GPU one, cloned from gpu/sun.js's video texture. A
 // hidden <video> element plays the file and each frame imports its current
@@ -57,9 +58,16 @@
 // crossfade) -> the app's global highpass -> lowpass (core/global-filter.js,
 // the Audio section's lpf and hpf, which every chain in the app carries) ->
 // master gain (Master slide volume x the app's Master volume x the duck) ->
-// destination, in an AudioContext of its own made lazily, the
-// first time a video is to play after the page has had a user gesture
-// (sticky user activation), so it starts running rather than suspended.
+// the app's output bus (js/audio.js getOutputBus): past its master, whose
+// volume, pause gate and transport ramps are not the slides', into the
+// output guard (core/output-guard.js, the limiter and soft clip) every
+// sound shares on its way to the destination. It lives in the app's own
+// context, the chain built lazily the first time a video is to play after
+// the page has had a user gesture (sticky user activation), and that
+// context resumed then if nothing has woken it yet. Nothing in the app
+// suspends that context, so a pause of the transport leaves the slides
+// playing as before; when the system suspends it (a locked phone) the
+// slides go quiet with everything else and wake with it.
 // Before any gesture the videos play muted (a muted play is always
 // allowed), and the first pointer or key press builds the chain, unmutes
 // them and resumes it. A refused play() is logged, never thrown, and
@@ -76,6 +84,7 @@ import { S } from '../js/state.js';
 import { idleHold, idleRelease, idleWake } from '../core/idle.js';
 import { SLIDE_DIR, SLIDE_NONE, slideVolOf } from '../core/schema-slides.js';
 import { createGlobalFilter } from '../core/global-filter.js';
+import { ensureAudioGraph, getContext, getOutputBus } from '../js/audio.js';
 
 const AUDIO_TC = 0.015;
 // The element's own floor: Chrome refuses playbackRate between 0 and
@@ -371,16 +380,26 @@ export function createSlides(device, format) {
     const ua = typeof navigator !== 'undefined' ? navigator.userActivation : null;
     return ua ? ua.hasBeenActive : true;
   };
+  // The chain is built in the app's own context (js/audio.js), ending at
+  // its output bus: after the master, so the transport's pause gate, ramps
+  // and Master volume (which outGain already carries) never act on it twice,
+  // and before the output guard, so the slides share the app's limiter and
+  // soft clip. ensureAudioGraph makes the context and the bus before its
+  // first await, so they are there the moment it returns (main.js has
+  // asked for it at boot anyway); with neither, the chain is given up and
+  // the elements' own volume stands in, as for any chain that cannot build.
   function buildAudio() {
     if (actx || audioFailed || !slots.length) return;
     try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      actx = new AC({ latencyHint: 'playback' });
+      ensureAudioGraph();
+      const ctx = getContext(), bus = getOutputBus();
+      if (!ctx || !bus) throw new Error('the app has no audio graph');
+      actx = ctx;
       // the global pair, which follows the Audio section's lpf and hpf itself
       gf = createGlobalFilter(actx);
       gain = actx.createGain();
       gain.gain.value = outGain(S) * duckMul;
-      gf.output.connect(gain); gain.connect(actx.destination);
+      gf.output.connect(gain); gain.connect(bus);
       for (const s of slots) wire(s);
     } catch (e) {
       audioFailed = true;

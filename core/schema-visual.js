@@ -38,6 +38,7 @@ import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engin
 import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
 import { applyHeartLookahead, applyHeartGrow } from '../js/heart/route.js';
+import { applyOutputGuards } from './output-guard.js';
 
 // S stores colour as an [r,g,b] triple (js/color.js's setColorFromPicker
 // writes S.rgb, S.hue, S.hueSat, S.hueLight from it); v0 kept the hex string
@@ -1737,6 +1738,27 @@ export const VISUAL_CONTROLS = [
     get: S => S.outputLatComp !== false,
     set: (S, on) => { S.outputLatComp = !!on; save(); },
     format: S => S.outputLatComp !== false ? 'compensated' : 'raw'
+  },
+  {
+    // The output guard's limiter (core/output-guard.js), on every output:
+    // the app's master with the slides, Live Sound's monitor. Firm above
+    // -3 dBFS, unity below it, so switching it changes only the peaks. On
+    // by default; this machine's own. Crossfades in or out over ~25 ms.
+    id: 'outLimiter', section: 'render', label: 'Limiter', kind: 'toggle', parent: 'renderAudioDrawer',
+    def: true,
+    get: S => S.outLimiter !== false,
+    set: (S, on) => { S.outLimiter = !!on; applyOutputGuards(); save(); },
+    format: S => S.outLimiter !== false ? 'on' : 'off'
+  },
+  {
+    // The soft clip after it: transparent below -6 dBFS, then a tanh bend
+    // that never passes -0.2 dBFS, so an over is rounded instead of hard
+    // clipped. On by default; this machine's own.
+    id: 'outSoftClip', section: 'render', label: 'Soft clip', kind: 'toggle', parent: 'renderAudioDrawer',
+    def: true,
+    get: S => S.outSoftClip !== false,
+    set: (S, on) => { S.outSoftClip = !!on; applyOutputGuards(); save(); },
+    format: S => S.outSoftClip !== false ? 'on' : 'off'
   },
   {
     // The [syncdiag] console lines (js/strobe-am.js syncdiag): every 2 s,

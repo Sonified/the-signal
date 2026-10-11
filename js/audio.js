@@ -12,9 +12,10 @@ import { every, after, clear } from './ticker.js';
 import { breath, breathState } from '../core/variance.js';
 import { IDLE_DIAG } from '../core/idle.js';
 import { createGlobalFilter } from '../core/global-filter.js';
+import { createOutputGuard } from '../core/output-guard.js';
 import { startRoom } from './room.js';
 
-let audioCtx = null, volGain = null, node = null;
+let audioCtx = null, volGain = null, node = null, guard = null;
 let harmDry = null, harmWet = null, convolver = null, clickWet = null;
 let clickRoom = null;
 let graphPromise = null, deviceWarm = false, audioHasPlayed = false;
@@ -73,6 +74,12 @@ export const getContext = () => audioCtx;
 // The piano hangs off the same master gain the rest of the audio uses, so the
 // volume slider and the transport mute reach it without any extra wiring.
 export const getMaster = () => volGain;
+// The bus after the master and its global filter, straight into the output
+// guard (core/output-guard.js): for a chain with a level, a pause and a
+// filter all of its own, which must not pass through volGain's volume,
+// pause gate and transport ramps a second time (gpu/slides.js). Null until
+// the graph's first, synchronous part has run (ensureAudioGraph).
+export const getOutputBus = () => guard ? guard.input : null;
 
 // ---------- impulse responses ----------
 // A decaying noise burst is a perfectly serviceable reverb impulse, and it is
@@ -820,7 +827,14 @@ export function ensureAudioGraph() {
     // hum is a music voice) passes through it. Open, it is transparent.
     const globalFilter = createGlobalFilter(audioCtx);
     volGain.connect(globalFilter.input);
-    globalFilter.output.connect(audioCtx.destination);
+    // Then the output guard, the limiter and the soft clip (core/output-
+    // guard.js, Render > Audio engine), last of all, so it holds whatever
+    // sums here: this master and the slides' chain, which joins at its
+    // input (getOutputBus). Built before anything awaits, so the bus is
+    // there the moment ensureAudioGraph returns.
+    guard = createOutputGuard(audioCtx);
+    globalFilter.output.connect(guard.input);
+    guard.output.connect(audioCtx.destination);
 
     // The reverb's module loads beside the engine's; if it fails, the
     // Algorithmic reverb type stays on convolution (js/room.js) and nothing
