@@ -12,6 +12,8 @@
 // the flash's amount heartMaster * heartVisual * the beat's brightness.
 // Master rides both together at the balance the other two set.
 import { save } from './store.js';
+import { varianceRows, driveRow } from './schema-variance.js';
+import { driveOf } from './variance.js';
 
 const NUM = [
   // key,          min, max, def, integer
@@ -20,7 +22,12 @@ const NUM = [
   ['heartVisual',  0,   1,   0.8, false],
   // the recording's playback speed, a multiplier: varispeed, so its pitch
   // moves with it, and the light (which reads the sound) beats with it
-  ['heartSpeed',   0.25, 2,  1,   false]
+  ['heartSpeed',   0.25, 2,  1,   false],
+  // Speed's variance, the app's standard dip below the setting (core/strobe.js
+  // VARIANCES steps it, gpu/heartbeat.js plays effHeartSpeed), led by its
+  // driver: Time (the rate below), the strobe's wave or the sun's breath
+  ['heartSpeedVar',       0, 1,   0,  false],
+  ['heartSpeedVarPeriod', 1, 120, 20, true ]
 ];
 
 // Trims a slider's position to the step's precision and clamps it into
@@ -40,6 +47,7 @@ function spec(key) {
 // store.load(), beside initSunState; it only fills gaps.
 export function initHeartbeatState(S) {
   if (typeof S.layers.heartbeat !== 'boolean') S.layers.heartbeat = false;
+  S.heartSpeedVarDrive = driveOf(S.heartSpeedVarDrive);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -49,7 +57,7 @@ export function initHeartbeatState(S) {
 // A plain copy of the heartbeat state, the shape store.js writes and a
 // preset snapshot carries; the layer switch under its own flat name.
 export function heartbeatStateOf(S) {
-  const out = { heartbeatOn: !!S.layers.heartbeat };
+  const out = { heartbeatOn: !!S.layers.heartbeat, heartSpeedVarDrive: driveOf(S.heartSpeedVarDrive) };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
 }
@@ -59,6 +67,7 @@ export function heartbeatStateOf(S) {
 export function applyHeartbeatState(S, o) {
   if (!o || typeof o !== 'object') return;
   if (typeof o.heartbeatOn === 'boolean') S.layers.heartbeat = o.heartbeatOn;
+  if (typeof o.heartSpeedVarDrive === 'string') S.heartSpeedVarDrive = driveOf(o.heartSpeedVarDrive);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -123,7 +132,16 @@ export const HEARTBEAT_CONTROLS = [
     set: (S, pos) => { S.heartSpeed = fit(posToRate(pos), 0.25, 2, false); save(); },
     formatAt: pos => posToRate(pos).toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
-  }
+  },
+  // Speed's dip, folded out from under it as the confetti's Opacity's is
+  // (core/schema-confetti.js): what leads it, how far, and Time's rate,
+  // shown only while Time leads. The bar lights from effHeartSpeed through
+  // the slider's own taper (core/schema-variance.js wireVariances).
+  driveRow('heartSpeed', 'heartSpeedVarDrive', 'Speed variance driver', null, 'heartbeat'),
+  ...varianceRows('heartSpeed', {
+    name: 'Speed', periodMax: 120,
+    rows: { period: { visible: S => driveOf(S.heartSpeedVarDrive) === 'time' } }
+  })
 ];
 
 export const HEARTBEAT_SECTIONS = [

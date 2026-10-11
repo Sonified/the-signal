@@ -137,8 +137,10 @@ export function createHeartbeat(device, format) {
     const master = clamp01(S.heartMaster, 1);
     const audio = clampTo(S.heartAudio, 4, 0.8);
     const visual = clamp01(S.heartVisual, 0.8);
-    const sp = S.heartSpeed;
-    const speed = typeof sp === 'number' && sp >= 0.25 ? (sp > 2 ? 2 : sp) : 1;
+    // the Speed as its variance plays it (core/strobe.js effHeartSpeed),
+    // which dips below the slider's 0.25x floor, to a stop at 100%
+    const sp = typeof S.effHeartSpeed === 'number' ? S.effHeartSpeed : S.heartSpeed;
+    const speed = typeof sp === 'number' && sp >= 0 ? (sp > 2 ? 2 : sp) : 1;
     const playing = heartSync(!dozing && motionScale() > 0, master * audio, speed);
     if (heartUnavailable()) return;
     if (playing) {
