@@ -84,6 +84,9 @@ const AUDIO_TC = 0.015;
 // floor, and only a true 0 stops the movie.
 const MIN_RATE = 0.0625;
 const elRate = r => r > 0 ? Math.max(MIN_RATE, r) : 0;
+// how long a rate of 0 keeps the element at its floor before freezing it:
+// ten of the legs' time constants, so the gain is below hearing first
+const RATE_ZERO_MS = 80;
 // the legs follow the fade frame by frame, on a shorter glide
 const LEG_TC = 0.008;
 // A refused play() is tried again no sooner than this, ms.
@@ -266,6 +269,9 @@ export function createSlides(device, format) {
   // the play/pause run factor (see the header): 1 running, 0 stopped; ppInit
   // false means the next frame sets it straight to its target
   let pp = 1, ppInit = false, ppMs = 0, ppMoving = false;
+  // when the asked rate reached 0 (-1 not there): the element holds at its
+  // floor until the gain leg has run out, and only then freezes
+  let rateZeroAt = -1;
   // the play button's live override (see toggleSlidePlayLive): null follows
   // S.slidePlay, true or false holds the active slide playing or paused
   let liveOverride = null;
@@ -636,12 +642,20 @@ export function createSlides(device, format) {
       // fades on its gain leg and the picture stops when it reaches 0.
       const rate = clampNum(S.slideRate, 0, 2, 1);
       const want = S.slidePpRamp === true && pp < 1 ? rate * pp : rate;
-      const eff = elRate(want);
-      if (Math.abs(cur.el.playbackRate - eff) > 0.001) { try { cur.el.playbackRate = eff; } catch (e) {} cur.el.defaultPlaybackRate = eff; }
       // Under the element's floor the rate holds at 6.25% while the gain
-      // takes the last of the slow-down to silence, so the freeze at a
-      // true 0 lands on a quiet leg instead of cutting mid-waveform.
-      if (want < MIN_RATE) rateGain = want / MIN_RATE;
+      // takes the last of the slow-down to silence. A true 0 freezes the
+      // picture only after the leg has had RATE_ZERO_MS to run out - a
+      // flick straight to 0 must not freeze the pipeline mid-waveform on
+      // the very frame the fade starts (the click).
+      let eff;
+      if (want >= MIN_RATE) { rateZeroAt = -1; eff = want; }
+      else {
+        rateGain = want / MIN_RATE;
+        if (want > 0) rateZeroAt = -1;
+        else if (rateZeroAt < 0) rateZeroAt = nowMs;
+        eff = rateZeroAt >= 0 && nowMs - rateZeroAt >= RATE_ZERO_MS ? 0 : MIN_RATE;
+      }
+      if (Math.abs(cur.el.playbackRate - eff) > 0.001) { try { cur.el.playbackRate = eff; } catch (e) {} cur.el.defaultPlaybackRate = eff; }
       if (pp > 0 && !dozing) { if (!cur.el.ended) play(cur); }
       else pause(cur);
     } else { restartSeen = S.slideRestartN | 0; ppInit = false; ppMoving = false; }
@@ -720,7 +734,7 @@ export function createSlides(device, format) {
 
   // A playing video, or a fade running or waiting for its picture, keeps the
   // frame loop awake (main.js's still frame asks), paused or not.
-  const busy = () => fade.pending || fade.running || outs.length > 0 || ppMoving ||
+  const busy = () => fade.pending || fade.running || outs.length > 0 || ppMoving || (rateZeroAt >= 0 && nowMs - rateZeroAt < RATE_ZERO_MS + 100) ||
     ((drawBlack || nPics > 0) && slots.length > 0 && !slots[act].el.paused && !slots[act].el.ended);
 
   return { update, draw, resize, doze, busy };
