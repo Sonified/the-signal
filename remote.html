@@ -81,10 +81,9 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
 <header>
   <h1>Mirror Test</h1>
   <span class="role" id="role"></span>
-  <span class="status"><span class="dot" id="dot"></span><span id="conn">connecting…</span></span>
+  <span class="status" id="paths"></span>
   <span class="status">room <b id="roomName"></b></span>
-  <span class="status" id="peer"></span>
-  <span class="status">clock <b id="clock">syncing…</b></span>
+  <button class="big" id="switch" style="height:36px;font-size:14px;margin-left:auto"></button>
 </header>
 
 <div class="grid">
@@ -124,20 +123,43 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
   // always a mirror- room, the ones the relay locks with the password
   let ROOM = (P.get('room') || 'test').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '');
   ROOM = ('mirror-' + ROOM).slice(0, 64);
+  // Two paths, used at once: the Cloudflare relay (needs internet), and the
+  // local relay on the laptop (tools/mirror-local.mjs; needs only a shared
+  // Wi-Fi, like OSC). A page the laptop served (http) has both; on the
+  // secure site the presentation still reaches the laptop's own relay at
+  // localhost, and the controller (an iPad, where Safari forbids it) has the
+  // cloud alone until it switches to the laptop's page.
   const HOST = P.get('relay') || 'the-signal-broadcast.robertalexander-music.workers.dev';
+  const MAC = P.get('mac') || 'Roberts-MacBook-Pro-2.local:8800';
+  // where Switch to Cloud goes when the page did not come from there
+  const CLOUD_PAGE = P.get('cloud') || 'https://sun-layer.presence-generator.pages.dev';
+  const SERVED_LOCAL = location.protocol === 'http:';
+  const LOCAL_HOST = SERVED_LOCAL ? location.host : CTRL ? '' : 'localhost:8800';
   const $ = id => document.getElementById(id);
   $('role').textContent = ROLE;
   $('roomName').textContent = ROOM;
-  $('latTitle').textContent = CTRL ? 'Sent (and the round trip to the relay)' : 'Arrival latency (one way, controller → here)';
+  $('latTitle').textContent = CTRL ? 'Sent (and each path\'s round trip)' : 'Arrival latency (one way, controller → here, first copy wins)';
 
   // The password. The relay checks it (POST /auth, and again on every
   // connection to a mirror room), never this page; one that works is
   // remembered on this device, and asked again only if it stops working.
   let KEY = '';
   try { KEY = localStorage.getItem('mirror.pw') || ''; } catch (e) {}
+  // Switching between Cloud and Local hands the password over in the
+  // address's #fragment, which never reaches any server, and is wiped from
+  // the address bar at once.
+  {
+    const hk = new URLSearchParams(location.hash.slice(1)).get('k');
+    if (hk) {
+      KEY = hk;
+      try { localStorage.setItem('mirror.pw', hk); } catch (e) {}
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
   async function check(pw) {
     try {
-      const r = await fetch('https://' + HOST + '/auth', { method: 'POST', body: pw });
+      // the laptop's relay checks for a page it served; the cloud otherwise
+      const r = await fetch(SERVED_LOCAL ? '/auth' : 'https://' + HOST + '/auth', { method: 'POST', body: pw });
       return r.status === 200 ? 'ok' : r.status === 403 ? 'no' : 'down';
     } catch (e) { return 'down'; }
   }
@@ -163,6 +185,25 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
         try { localStorage.setItem('mirror.pw', pw); } catch (e) {}
         $('lock').remove(); open();
       } else lockMsg.textContent = v === 'no' ? 'Wrong password.' : 'Can\'t reach the relay. Check the internet.';
+    };
+  }
+
+  // Switch: Local opens this page from the laptop (the iPad by the Mac's
+  // name), Cloud from the site; the password rides along (see above).
+  {
+    const sw = $('switch');
+    sw.textContent = SERVED_LOCAL ? 'Switch to Cloud' : 'Switch to Local';
+    sw.onclick = () => {
+      const q = new URLSearchParams(location.search);
+      let to;
+      if (SERVED_LOCAL) {
+        q.delete('cloud');
+        to = CLOUD_PAGE + '/remote?' + q.toString();
+      } else {
+        q.set('cloud', location.origin);
+        to = 'http://' + (CTRL ? MAC : 'localhost:8800') + '/remote.html?' + q.toString();
+      }
+      location.href = to + '#k=' + encodeURIComponent(KEY);
     };
   }
 
@@ -246,74 +287,100 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
     for (const id of ['play', 'rate1', 'restart']) $(id).disabled = true;
   }
 
-  // ---------- the clock: the relay's, via the time probe ----------
-  let offset = NaN, bestRtt = Infinity, rttNow = NaN;
-  const sharedNow = () => Date.now() + offset;
-  function probe() { for (let i = 0; i < 6; i++) setTimeout(() => sendRaw({ t: 'time', c: Date.now() }), i * 120); }
-  function takeTime(m) {
+  // ---------- the paths: one socket, one clock each ----------
+  // Each relay answers {t:'time'} with its own clock (NTP's trick: the best
+  // of a burst, by round trip), and every message leaves stamped on the
+  // clock of the path it travels, so each arrival is timed on that path.
+  const paths = [{ name: 'cloud', base: 'wss://' + HOST }];
+  if (LOCAL_HOST) paths.push({ name: 'local', base: 'ws://' + LOCAL_HOST });
+  for (const p of paths) Object.assign(p, { ws: null, retry: 2000, offset: NaN, best: Infinity, rtt: NaN, peers: 0, lats: [] });
+  const isOpen = p => p.ws && p.ws.readyState === 1;
+  const pathNow = p => Date.now() + p.offset;
+
+  function render() {
+    $('paths').innerHTML = paths.map(p =>
+      '<span class="dot' + (isOpen(p) ? ' on' : '') + '"></span><b>' + p.name + '</b> ' +
+      (isOpen(p) ? (isNaN(p.rtt) ? '…' : p.rtt + ' ms') + (CTRL ? ' · ' + p.peers + ' screen' + (p.peers === 1 ? '' : 's') : '') : 'off')
+    ).join(' &nbsp; ');
+  }
+
+  function probe(p) { for (let i = 0; i < 6; i++) setTimeout(() => sendOn(p, { t: 'time', c: Date.now() }), i * 120); }
+  function takeTime(m, p) {
     const t1 = Date.now(), rtt = t1 - m.c;
-    rttNow = rtt;
-    // the best round trip so far sets the clock; a much later one is let in
-    // as the old one ages, so a drifting clock is still followed
-    if (rtt <= bestRtt * 1.2 || isNaN(offset)) { bestRtt = Math.min(bestRtt, rtt); offset = m.s - (m.c + t1) / 2; }
-    $('clock').textContent = 'set (rtt ' + rtt + ' ms)';
+    p.rtt = rtt;
+    // the best round trip so far sets the clock; the bar is let down as it
+    // ages, so a drifting clock is still followed
+    if (rtt <= p.best * 1.2 || isNaN(p.offset)) { p.best = Math.min(p.best, rtt); p.offset = m.s - (m.c + t1) / 2; }
+    render();
   }
-  setInterval(() => { bestRtt *= 1.5; probe(); }, 10000);
+  setInterval(() => { for (const p of paths) { p.best *= 1.5; if (isOpen(p)) probe(p); } }, 10000);
 
-  // ---------- the tunnel ----------
-  let ws = null, retry = 2000, seq = 0, stateTimer = null;
-  function open() {
+  function open() { for (const p of paths) openPath(p); render(); }
+  function openPath(p) {
     const role = CTRL ? 'broadcast' : 'follow';
-    const url = 'wss://' + HOST + '/room/' + ROOM + '?role=' + role + '&key=' + encodeURIComponent(KEY);
-    ws = new WebSocket(url);
-    ws.onopen = () => { $('dot').classList.add('on'); $('conn').textContent = 'connected'; retry = 2000; probe(); if (CTRL) sendState(); };
-    ws.onclose = () => {
-      $('dot').classList.remove('on');
-      $('conn').textContent = 'reconnecting…';
-      setTimeout(open, retry); retry = Math.min(retry * 2, 15000);
+    try { p.ws = new WebSocket(p.base + '/room/' + ROOM + '?role=' + role + '&key=' + encodeURIComponent(KEY)); }
+    catch (e) { setTimeout(() => openPath(p), p.retry); return; }
+    p.ws.onopen = () => { p.retry = 2000; render(); probe(p); if (CTRL) sendState(); };
+    p.ws.onclose = () => {
+      p.rtt = NaN; render();
+      setTimeout(() => openPath(p), p.retry); p.retry = Math.min(p.retry * 2, 15000);
     };
-    ws.onmessage = e => { if (typeof e.data === 'string' && e.data !== 'pong') { try { take(JSON.parse(e.data)); } catch (err) {} } };
+    p.ws.onmessage = e => { if (typeof e.data === 'string' && e.data !== 'pong') { try { take(JSON.parse(e.data), p); } catch (err) {} } };
   }
-  setInterval(() => { if (ws && ws.readyState === 1) ws.send('ping'); }, 20000);
-  function sendRaw(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+  setInterval(() => { for (const p of paths) if (isOpen(p)) p.ws.send('ping'); }, 20000);
+  function sendOn(p, m) { if (isOpen(p)) p.ws.send(JSON.stringify(m)); }
 
-  // A move goes at once as a 'word' (relayed, not stored); 300 ms after the
-  // last one the whole state goes as a 'state' the relay keeps for joiners.
+  // A move goes at once, down every open path, as a 'word' (relayed, not
+  // stored), numbered so the far side acts on whichever copy lands first;
+  // 300 ms after the last move the whole state goes as a 'state' each relay
+  // keeps for joiners.
+  const SID = Math.random().toString(36).slice(2, 10);
+  let seq = 0, stateTimer = null;
   function send(m) {
-    m.t = 'word'; m.n = ++seq; m.at = isNaN(offset) ? 0 : sharedNow();
-    sendRaw(m);
-    log('sent #' + m.n + ' ' + describe(m));
+    m.t = 'word'; m.n = ++seq; m.id = SID;
+    const via = [];
+    for (const p of paths) if (isOpen(p)) { m.at = isNaN(p.offset) ? 0 : pathNow(p); sendOn(p, m); via.push(p.name); }
+    log('sent #' + m.n + ' ' + describe(m) + '  via ' + (via.join(' + ') || 'NOTHING (no path open)'));
     $('latNow').textContent = '#' + m.n;
     clearTimeout(stateTimer); stateTimer = setTimeout(sendState, 300);
   }
-  function sendState() { sendRaw({ t: 'state', snap: { mirror: S }, at: isNaN(offset) ? 0 : sharedNow() }); }
+  function sendState() { for (const p of paths) sendOn(p, { t: 'state', snap: { mirror: S }, at: isNaN(p.offset) ? 0 : pathNow(p) }); }
 
-  const lats = [];
-  function take(m) {
-    if (m.t === 'time') return takeTime(m);
-    if (m.t === 'count') { $('peer').innerHTML = 'presentations <b>' + m.n + '</b>'; return; }
+  let lastId = '', lastN = 0;
+  function stats(p) {
+    const l = p.lats;
+    if (!l.length) return p.name + ': –';
+    const sorted = l.slice().sort((a, b) => a - b);
+    return p.name + ': median ' + sorted[sorted.length >> 1] + ' · min ' + sorted[0] + ' · max ' + sorted[sorted.length - 1] + ' ms';
+  }
+  function take(m, p) {
+    if (m.t === 'time') return takeTime(m, p);
+    if (m.t === 'count') { p.peers = m.n; render(); return; }
     if (CTRL) return;
     if (m.t === 'state' && m.snap && m.snap.mirror) {
       Object.assign(S, m.snap.mirror); S.s = m.snap.mirror.s.slice();
       drawS.forEach(d => d()); applyVideo(); return;
     }
     if (m.t !== 'word' || !m.k) return;
-    if (m.k === 's') { S.s[m.i] = m.v; drawS[m.i](); }
-    else if (m.k === 'b') flash(m.i);
-    else if (m.k === 'p') { S.playing = m.v; applyVideo(); }
-    else if (m.k === 'r') { S.rate = m.v; applyVideo(); }
-    else if (m.k === 'z') { if (video) video.currentTime = 0; }
-    if (m.at && !isNaN(offset)) {
-      const ms = Math.round(sharedNow() - m.at);
-      lats.push(ms); if (lats.length > 100) lats.shift();
-      const sorted = lats.slice().sort((a, b) => a - b);
-      const avg = Math.round(lats.reduce((a, b) => a + b, 0) / lats.length);
-      $('latNow').textContent = ms + ' ms';
-      $('latStats').textContent = 'avg ' + avg + ' · min ' + sorted[0] + ' · median ' + sorted[sorted.length >> 1] + ' · max ' + sorted[sorted.length - 1] + ' (last ' + lats.length + ')';
-      log('recv #' + m.n + ' ' + describe(m) + '  +' + ms + ' ms');
-    } else log('recv #' + m.n + ' ' + describe(m) + '  (clock not set yet)');
+    const ms = m.at && !isNaN(p.offset) ? Math.round(pathNow(p) - m.at) : NaN;
+    if (!isNaN(ms)) { p.lats.push(ms); if (p.lats.length > 100) p.lats.shift(); }
+    // a fresh controller (a reload, a switch) starts its count again
+    if (m.id !== lastId) { lastId = m.id; lastN = 0; }
+    if (m.n <= lastN) {
+      log('     #' + m.n + ' also via ' + p.name + (isNaN(ms) ? '' : '  +' + ms + ' ms'));
+    } else {
+      lastN = m.n;
+      if (m.k === 's') { S.s[m.i] = m.v; drawS[m.i](); }
+      else if (m.k === 'b') flash(m.i);
+      else if (m.k === 'p') { S.playing = m.v; applyVideo(); }
+      else if (m.k === 'r') { S.rate = m.v; applyVideo(); }
+      else if (m.k === 'z') { if (video) video.currentTime = 0; }
+      $('latNow').textContent = isNaN(ms) ? p.name : ms + ' ms · ' + p.name;
+      log('recv #' + m.n + ' ' + describe(m) + '  first via ' + p.name + (isNaN(ms) ? '  (clock not set yet)' : '  +' + ms + ' ms'));
+    }
+    $('latStats').textContent = paths.map(stats).join('   ');
   }
-  if (CTRL) setInterval(() => { if (!isNaN(rttNow)) $('latStats').textContent = 'round trip to the relay ' + rttNow + ' ms (best ' + Math.round(bestRtt) + ')'; }, 1000);
+  if (CTRL) setInterval(() => { $('latStats').textContent = paths.map(p => p.name + ' round trip ' + (isNaN(p.rtt) ? '–' : p.rtt + ' ms')).join('   '); }, 1000);
 
   function describe(m) {
     return m.k === 's' ? 'slider ' + (m.i + 1) + ' → ' + Math.round(m.v * 100) + '%'

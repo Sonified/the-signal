@@ -12,3 +12,6 @@ audio/source/
 
 # the Ocean Cavern master lives with the other sources, ignored with them
 audio/source/Ocean_Cavern.wav
+
+# the mirror test's local relay password (tools/mirror-local.mjs)
+.mirror-key
