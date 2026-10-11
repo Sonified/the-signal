@@ -234,7 +234,7 @@ export const RO_PLAIN = 0, RO_CLICK = 1, RO_HIDDEN = 2;
 // starts on the track can never land on the readout instead.
 const RO_PAD_X = 6, RO_PAD_Y = 3;
 
-function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01, inline, fill01) {
+function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01, inline, fill01, formatDrag) {
   const ui = this;
   const step = step01 === undefined ? 0.02 : step01;
   const nid = ui.id(id);
@@ -367,6 +367,12 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   }
 
   const changed = !disabled && value !== value01;
+  // Input has been resolved for this frame: show the value under the hand
+  // immediately, before control() writes its new ramp destination.
+  if (changed && formatDrag) {
+    formatted = formatDrag(value, ui.sliderNudge);
+    if (clickable) { roW = ui.text.measure(formatted, TYPE.sm, W.regular); ui.sliderReadoutW = roW; }
+  }
 
   // ---- draw ----
   // The label and readout live at the full row's ends (fx/fw), which in the
@@ -1758,14 +1764,21 @@ function control(ctrl, S, shown) {
       }
 
       let cache = formatCache.get(ctrl.id);
-      if (!cache) { cache = { pos: NaN, text: '' }; formatCache.set(ctrl.id, cache); }
+      if (!cache || !cache.formatDrag) {
+        cache = { pos: NaN, text: '', formatDrag: (u, nudge) => {
+          let next = snapPos(ctrl, unitToPos(ctrl, u, isLogTaper(ctrl)));
+          if (next === cache.pos && nudge && ctrl.step) next = snapPos(ctrl, cache.pos + nudge * ctrl.step);
+          return fmtAt(ctrl, next);
+        } };
+        formatCache.set(ctrl.id, cache);
+      }
       const pos = ctrl.get(S), aim = aimOf(ctrl, S, door);
       const aimPos = typeof aim === 'number' ? aim : pos;
       // Mid-glide the readout speaks the destination, as the Music window's
       // cells do: the knob is already parked there, and the travelling value
       // carries float dust no one asked to read.
-      if (pos !== cache.pos) {
-        cache.pos = pos;
+      if (aimPos !== cache.pos) {
+        cache.pos = aimPos;
         cache.text = aimPos !== pos ? fmtAt(ctrl, aimPos) : ctrl.format ? ctrl.format(S) : String(pos);
       }
       const log = isLogTaper(ctrl);
@@ -1779,7 +1792,7 @@ function control(ctrl, S, shown) {
       const step01 = log ? LOG_STEP01 : ctrl.step ? (ctrl.step / ((ctrl.max - ctrl.min) || 1)) : 0.02;
       const def01 = ctrl.def !== undefined ? posToUnit(ctrl, ctrl.def, log) : undefined;
       const nv = ui.slider(ctrl.id, ctrl.label, value01, cache.text, step01, def01, !enabled,
-                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01, ctrl.inline, fill01);
+                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01, ctrl.inline, fill01, cache.formatDrag);
       if (nv >= 0) {
         const nudge = ui.sliderNudge !== 0;
         let newPos = snapPos(ctrl, unitToPos(ctrl, nv, log));
