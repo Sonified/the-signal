@@ -44,7 +44,7 @@
           slideRate 0..1000 (500 = 1x, log 0.25..2x: SPEED)
           slidePlay true (play) / false (pause), idempotent
           slideRestart (v ignored)
-          slideXfade 0..500 (hundredths of a second, 0 a cut; the gear's
+          slideXfade 0..1000 (hundredths of a second, 0 a cut; the gear's
             Crossfade, sent on each change and remembered with the duck's)
           heartMaster 0..100 (the Heartbeat's Master, %, its sound and its
             flash together: HEART)
@@ -590,11 +590,11 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     () => duckSet.dn.toFixed(2) + ' s', true);
   makeSlider($('sUp'), 'Fade up', () => duckSet.up / 3, u => { duckSet.up = Math.round(u * 3 * 20) / 20; },
     () => duckSet.up.toFixed(2) + ' s', true);
-  // Crossfade: 0 to 5 s in 0.05 s steps, sent as the control's position
+  // Crossfade: 0 to 10 s in 0.05 s steps, sent as the control's position
   // (hundredths of a second) whenever it moves
-  if (!(duckSet.xf >= 0 && duckSet.xf <= 5)) duckSet.xf = DUCK_DEF.xf;
-  makeSlider($('sXf'), 'Crossfade', () => duckSet.xf / 5, u => {
-    const xf = Math.round(u * 5 * 20) / 20;
+  if (!(duckSet.xf >= 0 && duckSet.xf <= 10)) duckSet.xf = DUCK_DEF.xf;
+  makeSlider($('sXf'), 'Crossfade', () => duckSet.xf / 10, u => {
+    const xf = Math.round(u * 10 * 20) / 20;
     if (xf === duckSet.xf) return;
     duckSet.xf = xf;
     queueCtl('slideXfade', Math.round(xf * 100));

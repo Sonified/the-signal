@@ -523,7 +523,7 @@ export function createSlides(device, format) {
   function change(file) {
     seekTo = null;
     liveOverride = null; walkHeld = false; ppInit = false;
-    const xf = clampNum(S.slideXfade, 0, 5, 0.5);
+    const xf = clampNum(S.slideXfade, 0, 10, 0.5);
     const cur = slots[act];
     // only a picture already up (on a layer that was on) fades out
     const live = wasOn && hasPicture(cur);
@@ -660,7 +660,7 @@ export function createSlides(device, format) {
     // fades out over the scene too. A voice goes once it is silent and its
     // picture is hidden: faded out, or under an opaque picture above it.
     if (outs.length) {
-      const xf = clampNum(S.slideXfade, 0, 5, 0.5);
+      const xf = clampNum(S.slideXfade, 0, 10, 0.5);
       const run = !fade.pending;
       let covered = hasPicture(cur) && fadeLin() >= 1;
       for (let i = outs.length - 1; i >= 0; i--) {

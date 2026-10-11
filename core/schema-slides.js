@@ -56,7 +56,7 @@ const NUM = [
   ['slideRate',    0,     2,      1],
   ['slideVolume',  0,     1,      1],
   // the crossfade from one slide to the next, seconds (0 a cut)
-  ['slideXfade',   0,     5,      0.5],
+  ['slideXfade',   0,     10,     0.5],
   // the play/pause ramps, seconds (0 a cut): how long a pause takes to fade
   // the sound and slow the picture to a stop, and a play to bring both back
   ['slidePpOut',   0,     1,      0.2],
@@ -256,13 +256,13 @@ export const SLIDES_CONTROLS = [
   },
   {
     // How long a change of slide takes, picture and sound together
-    // (gpu/slides.js): 0 is a cut, up to 5 s in 0.05 s steps. Its position
-    // is in hundredths of a second (0 to 500), whole numbers, so the show
+    // (gpu/slides.js): 0 is a cut, up to 10 s in 0.05 s steps. Its position
+    // is in hundredths of a second (0 to 1000), whole numbers, so the show
     // remote (platform/show-remote.js) can send it as it sends the faders.
     id: 'slideXfade', section: 'slides', label: 'Crossfade', kind: 'slider',
-    min: 0, max: 500, step: 5, def: 50,
+    min: 0, max: 1000, step: 5, def: 50,
     get: S => Math.round(S.slideXfade * 100),
-    set: (S, pos) => { S.slideXfade = fit(Math.round(pos / 5) * 5 / 100, 0, 5); save(); },
+    set: (S, pos) => { S.slideXfade = fit(Math.round(pos / 5) * 5 / 100, 0, 10); save(); },
     format: S => S.slideXfade > 0 ? S.slideXfade.toFixed(2) + ' s' : 'cut',
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
     enabled: layerOn

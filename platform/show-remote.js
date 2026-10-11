@@ -59,7 +59,7 @@
 //                                      live hold (the Journey window's
 //                                      button, a walk pause) that disagrees
 //                         slideRestart (v ignored)
-//                         slideXfade   0..500   (hundredths of a second, 0 a cut)
+//                         slideXfade   0..1000  (hundredths of a second, 0 a cut)
 //                         heartMaster  0..100   (the Heartbeat's Master, %:
 //                                                its sound and its flash
 //                                                together, core/schema-
