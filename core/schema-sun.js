@@ -151,9 +151,16 @@ const NUM = [
   // plays it; it only rides presets and the broadcast.
   ['mwtsVolume',         0,   1,   1,    false],
   // The show's QR code's size (gpu/sun-qr.js), a multiplier on the art's
-  // authored size (canvas height * 533 / 1080 at 1). It is the scene, so it
+  // authored size (canvas height * 553 / 1080 at 1). It is the scene, so it
   // rides presets, journeys and the broadcast like every field here.
-  ['sunQrSize',          0.25, 2,  1,    false]
+  ['sunQrSize',          0.25, 2,  1,    false],
+  // The star field's opacity (gpu/stars.js): a multiplier on the whole sky's
+  // brightness, on top of the Atmosphere's wash. 1 is the site's own sky.
+  ['sunStarsOpacity',    0,   1,   1,    false],
+  // The QR code's Lighten (gpu/sun-qr.js): how far the clear parts of the
+  // code and its letters are filled with white. 0 leaves the sun showing
+  // through them; 1 is solid white, the code as black on white.
+  ['sunQrLighten',       0,   1,   0,    false]
 ];
 
 // A slider's rounded position can come back as 1.1500000000000001; this
@@ -529,11 +536,13 @@ export const SUN_CONTROLS = [
     // at its top. Greyed while the link is off.
     id: 'sunFbStreamRange', section: 'sun', label: 'Breath range', kind: 'range',
     parent: 'sunFeedbackDrawer',
-    min: -1, max: 1, step: 0.01, defLo: spec('sunFbStreamLo')[3], defHi: spec('sunFbStreamHi')[3],
+    // free: either end anywhere from -1 to 1 (both inward, both outward, or
+    // across the middle), only never past each other
+    min: -1, max: 1, step: 0.01, defLo: spec('sunFbStreamLo')[3], defHi: spec('sunFbStreamHi')[3], free: true,
     getLo: S => S.sunFbStreamLo,
     getHi: S => S.sunFbStreamHi,
-    setLo: (S, v) => { S.sunFbStreamLo = fit(v, -1, 0); save(); },
-    setHi: (S, v) => { S.sunFbStreamHi = fit(v, 0, 1); save(); },
+    setLo: (S, v) => { S.sunFbStreamLo = fit(v, -1, 1); save(); },
+    setHi: (S, v) => { S.sunFbStreamHi = fit(v, -1, 1); save(); },
     format: S => rangeText(S.sunFbStreamLo, S.sunFbStreamHi),
     enabled: S => layerOn(S) && S.sunFbLink !== false
   },
@@ -691,6 +700,12 @@ export const SUN_CONTROLS = [
     get: S => S.sunStars !== false,
     set: (S, on) => { S.sunStars = !!on; save(); }
   },
+  // Its opacity. Never dimmed either: the sky shows with or without the sun.
+  (() => {
+    const c = percent('sunStarsOpacity', 'sunStarsOpacity', 'Star field opacity');
+    delete c.enabled;
+    return c;
+  })(),
 
   // ---- meditatewiththesun.com: the room's volume on that site, for the
   // phones following this broadcast (see mwtsVolume above). Never dimmed:
@@ -714,13 +729,24 @@ export const SUN_CONTROLS = [
     set: (S, on) => { S.sunQrOn = !!on; save(); }
   },
   {
-    // A multiplier on the art's authored size, 25% to 200%.
+    // A multiplier on the art's authored size, 25% to 200%. Positions go in
+    // tenths of a percent: every glide (a journey ramp, a preset, a followed
+    // broadcast) snaps to the step each frame, and whole percents moved the
+    // code in visible jumps of several pixels; a tenth is under one. The
+    // readout stays whole percents.
     id: 'sunQrSize', section: 'sun', label: 'Size', kind: 'slider',
-    min: 25, max: 200, step: 1, def: Math.round(spec('sunQrSize')[3] * 100),
-    get: S => Math.round(S.sunQrSize * 100),
+    min: 25, max: 200, step: 0.1, def: Math.round(spec('sunQrSize')[3] * 100),
+    get: S => Math.round(S.sunQrSize * 1000) / 10,
     set: (S, pos) => { S.sunQrSize = fit(pos / 100, 0.25, 2, false); save(); },
     format: S => Math.round(S.sunQrSize * 100) + '%'
-  }
+  },
+  // The QR's Lighten: the clear parts of the code and its letters filled
+  // with white, 0 not at all, 100% solid. Never dimmed, as its neighbours.
+  (() => {
+    const c = percent('sunQrLighten', 'sunQrLighten', 'Lighten');
+    delete c.enabled;
+    return c;
+  })()
 ];
 
 export const SUN_SECTIONS = [

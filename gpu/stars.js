@@ -249,7 +249,8 @@ export function createStars(device, format, sun) {
     // a brighter sun washes out the sky: the stars peak at 75% at the dim
     // end of the spectrum and fall to about a third of that at the bright end
     const p = clampNum(S.sunAtmo, 0, 1, 0.25);
-    const wash = 0.75 * (1 - 0.675 * Math.pow(p, 1.5));
+    // times the Star field opacity setting (1 leaves the sky as the site has it)
+    const wash = clampNum(S.sunStarsOpacity, 0, 1, 1) * 0.75 * (1 - 0.675 * Math.pow(p, 1.5));
     uni[0] = W; uni[1] = H; uni[2] = dpr; uni[3] = off;
     uni[4] = wash;
     // slow shimmer: each group drifts between 55% and 100% on its own clock

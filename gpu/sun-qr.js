@@ -19,9 +19,9 @@
 // visible (S.edgeInset, the same centre gpu/sun.js keeps), so it stays put
 // on the sun while the drawer opens and shuts.
 //
-// SIZE: the art was authored against a ~1080p sun render at 490 x 533
+// SIZE: the art was authored against a ~1080p sun render at 490 x 553
 // logical px, so at Size 100% it is drawn at height = canvas height *
-// 533 / 1080, its width keeping the PNG's own aspect, whatever the canvas;
+// 553 / 1080, its width keeping the PNG's own aspect, whatever the canvas;
 // Size (25% to 200%) scales both about the centre.
 //
 // The PNG is fetched and decoded the first time the switch is on, and
@@ -39,7 +39,7 @@ import { presetTransitionCount, transitionRemaining } from '../core/presets.js';
 
 const QR_URL = new URL('../slides/qr_overlay_TSC2026@2x.png', import.meta.url).href;
 // The art's authored height against a 1080-high render.
-const QR_HEIGHT_FRAC = 533 / 1080;
+const QR_HEIGHT_FRAC = 553 / 1080;
 const QR_FLOATS = 8;
 // The fade of a flip made by hand, with no transition in flight, s.
 const HAND_FADE_S = 1.0;
@@ -47,7 +47,7 @@ const HAND_FADE_S = 1.0;
 const QR_WGSL = `
 struct QR {
   rect: vec4f,  // left, top, width, height in target pixels
-  look: vec4f,  // target width, target height, opacity, unused
+  look: vec4f,  // target width, target height, opacity, lighten (0 to 1)
 };
 @group(0) @binding(0) var<uniform> u: QR;
 @group(0) @binding(1) var tex: texture_2d<f32>;
@@ -69,9 +69,19 @@ fn vsQr(@builtin(vertex_index) vi: u32) -> VOut {
   return o;
 }
 
+// The art is black ink at 241/255 alpha (the dark modules, the field around
+// the code) with the CLEAR parts (the light modules, the letters) cut out of
+// it, so the sun shows through them. Lighten fills those clear parts with
+// white: how clear a texel is (1 minus its alpha over the ink's) times the
+// setting is the white's alpha, laid UNDER the ink, so the ink stays as it
+// is and its antialiased edges take their share of white.
+const INK_A: f32 = 0.945;
 @fragment
 fn fsQr(i: VOut) -> @location(0) vec4f {
-  return textureSample(tex, samp, i.uv) * u.look.z;
+  let t = textureSample(tex, samp, i.uv);
+  let w = u.look.w * clamp(1.0 - t.a / INK_A, 0.0, 1.0);
+  let under = w * (1.0 - t.a);
+  return (t + vec4f(under)) * u.look.z;
 }
 `;
 
@@ -115,7 +125,7 @@ export function createSunQr(device, format) {
   let state = 0;            // 0 not asked for, 1 loading, 2 ready, 3 failed
   let texW = 1, texH = 1, bind = null;
   let drawing = false;
-  let lastSize = -1, lastW = -1, lastH = -1, lastOp = -1, lastCx = -1;
+  let lastSize = -1, lastW = -1, lastH = -1, lastOp = -1, lastCx = -1, lastLight = -1;
   // The fade: the drawn opacity, the switch's target (-1 before the first
   // frame), and the run from fadeFrom over fadeDur s, fadeT s in.
   let op = 0, target = -1, fadeFrom = 0, fadeT = 0, fadeDur = 0;
@@ -187,12 +197,14 @@ export function createSunQr(device, format) {
     // keeps it (inset in css px; pixelW / S.W is the device pixel ratio).
     const inset = S.edgeInset > 0 && S.W > 0 ? S.edgeInset * pixelW / S.W : 0;
     const cx = (pixelW + inset) * 0.5;
-    if (size !== lastSize || pixelW !== lastW || pixelH !== lastH || op !== lastOp || cx !== lastCx) {
-      lastSize = size; lastW = pixelW; lastH = pixelH; lastOp = op; lastCx = cx;
+    const lv = S.sunQrLighten;
+    const light = typeof lv === 'number' && lv === lv ? (lv < 0 ? 0 : lv > 1 ? 1 : lv) : 0;
+    if (size !== lastSize || pixelW !== lastW || pixelH !== lastH || op !== lastOp || cx !== lastCx || light !== lastLight) {
+      lastSize = size; lastW = pixelW; lastH = pixelH; lastOp = op; lastCx = cx; lastLight = light;
       const h = pixelH * QR_HEIGHT_FRAC * size;
       const w = h * texW / texH;
       uni[0] = cx - w * 0.5; uni[1] = (pixelH - h) * 0.5; uni[2] = w; uni[3] = h;
-      uni[4] = pixelW; uni[5] = pixelH; uni[6] = op; uni[7] = 0;
+      uni[4] = pixelW; uni[5] = pixelH; uni[6] = op; uni[7] = light;
       device.queue.writeBuffer(uniBuf, 0, uni);
     }
     drawing = true;

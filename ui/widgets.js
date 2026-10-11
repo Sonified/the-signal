@@ -49,7 +49,10 @@
 // clamped, snapped to step and handed to set() like any drag. Only one
 // readout is open at a time.
 //
-//   ui.range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi01, disabled) -> changed (bool)
+//   ui.range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi01, disabled, free) -> changed (bool)
+//     (free: the knobs may go anywhere on the track, either side of the
+//     centre, only never past each other; a press takes the nearer knob.
+//     The rest of this note is the ordinary, centred range.)
 //     A slider with two knobs about a centre mark, for how far below and how
 //     far above a setting something may go. Every value is a fraction of the
 //     whole track, as slider()'s are: zero01 is where 0 (the setting itself)
@@ -440,7 +443,13 @@ function labelHit(ui, nid, label, x, y, h, maxW, disabled) {
 // can reach the pointer, and a press is never spent on one that cannot move
 // toward it. Exactly on the centre it goes to the nearer knob, which is the
 // hi knob when the two sit together there.
-function rangeKnob(px, rx, rw, lo01, hi01, zero01) {
+function rangeKnob(px, rx, rw, lo01, hi01, zero01, free) {
+  if (free) {
+    const xl = rx + lo01 * rw, xh = rx + hi01 * rw;
+    if (px < xl) return 0;
+    if (px > xh) return 1;
+    return Math.abs(px - xl) < Math.abs(px - xh) ? 0 : 1;
+  }
   const xz = rx + zero01 * rw;
   if (px < xz) return 0;
   if (px > xz) return 1;
@@ -464,7 +473,7 @@ function rangeKnobDraw(ui, x, cy, hoverA, pressA, disabled) {
 // mode), which knob it holds, and the knob last taken, for the arrow keys.
 const rangeDrag = new Map();
 
-function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi01, disabled) {
+function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi01, disabled, free) {
   const ui = this;
   const step = step01 === undefined ? 0.02 : step01;
   const nid = ui.id(id);
@@ -497,6 +506,10 @@ function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi0
   if (focused && ui.focusVisible) ui._focusRing(rx, trackY0, rw, trackAreaH, RADIUS.xs);
 
   let lo = lo01, hi = hi01;
+  // Where a knob may go: its own side of the centre, or (free) anywhere
+  // short of the other knob.
+  const side = (u, which) => !free ? rangeSide(u, which, zero01)
+    : which === 0 ? (u < 0 ? 0 : u > hi ? hi : u) : (u < lo ? lo : u > 1 ? 1 : u);
   let st = null;
   if (!disabled) {
     st = rangeDrag.get(nid);
@@ -512,7 +525,7 @@ function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi0
     let u = NaN;
     if (mine && !st.wasPressed) {
       st.anchorX = ui.pointerX;
-      st.which = rangeKnob(ui.pointerX, rx, rw, lo01, hi01, zero01);
+      st.which = rangeKnob(ui.pointerX, rx, rw, lo01, hi01, zero01, free);
       st.last = st.which;
       st.base = st.which === 0 ? lo01 : hi01;
       if (ui.slopPending) {
@@ -536,7 +549,7 @@ function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi0
       if (Math.abs(st.anchorX - (rx + st.base * rw)) > knobHitR) u = (st.anchorX - rx) / rw;
     }
     if (u === u) {
-      if (st.which === 0) lo = rangeSide(u, 0, zero01); else hi = rangeSide(u, 1, zero01);
+      if (st.which === 0) lo = side(u, 0); else hi = side(u, 1);
       ui.rangeWhich = st.which;
     }
     if (!pressed) st.mode = '';
@@ -544,18 +557,18 @@ function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi0
 
     // A double-click puts the knob it landed on back to its default.
     if (dbl) {
-      if (st.which === 0) { if (defLo01 !== undefined) lo = rangeSide(defLo01, 0, zero01); }
-      else if (defHi01 !== undefined) hi = rangeSide(defHi01, 1, zero01);
+      if (st.which === 0) { if (defLo01 !== undefined) lo = side(defLo01, 0); }
+      else if (defHi01 !== undefined) hi = side(defHi01, 1);
       ui.rangeWhich = st.which;
     }
 
     // Alt/Option + wheel nudges the knob on the pointer's side, as a
     // slider's fine adjust does; plain wheel stays with the scroll.
     if (hover && ui.wheelAlt && ui.wheelDY !== 0 && !ui._wheelConsumed) {
-      const k = rangeKnob(ui.pointerX, rx, rw, lo01, hi01, zero01);
+      const k = rangeKnob(ui.pointerX, rx, rw, lo01, hi01, zero01, free);
       ui.rangeNudge = ui.wheelDY > 0 ? -1 : 1;
-      if (k === 0) lo = rangeSide(lo01 + ui.rangeNudge * step, 0, zero01);
-      else hi = rangeSide(hi01 + ui.rangeNudge * step, 1, zero01);
+      if (k === 0) lo = side(lo01 + ui.rangeNudge * step, 0);
+      else hi = side(hi01 + ui.rangeNudge * step, 1);
       ui.rangeWhich = k; st.last = k;
       ui._wheelConsumed = true;
       ui._unsettled = true;
@@ -571,8 +584,8 @@ function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi0
         if (c === 'ArrowLeft' || c === 'ArrowDown') d = -1;
         else if (c === 'ArrowRight' || c === 'ArrowUp') d = 1;
         if (d === 0) continue;
-        if (st.last === 0) lo = rangeSide(lo01 + d * step * fine, 0, zero01);
-        else hi = rangeSide(hi01 + d * step * fine, 1, zero01);
+        if (st.last === 0) lo = side(lo01 + d * step * fine, 0);
+        else hi = side(hi01 + d * step * fine, 1);
         ui.rangeNudge = d; ui.rangeWhich = st.last;
       }
     }
@@ -600,7 +613,7 @@ function range(id, label, lo01, hi01, zero01, formatted, step01, defLo01, defHi0
 
   // The knob in hand, or under the pointer, grows as a slider's does, and is
   // drawn last so it sits over the other where the two meet at the centre.
-  const hotK = disabled ? -1 : pressed ? st.which : hover ? rangeKnob(ui.pointerX, rx, rw, lo, hi, zero01) : -1;
+  const hotK = disabled ? -1 : pressed ? st.which : hover ? rangeKnob(ui.pointerX, rx, rw, lo, hi, zero01, free) : -1;
   const pLo = disabled ? 0 : ui.spring(combine2(nid, 20), pressed && hotK === 0 ? 1 : 0, MOTION.press);
   const hLo = disabled ? 0 : ui.spring(combine2(nid, 21), hotK === 0 ? 1 : 0, MOTION.hover);
   const pHi = disabled ? 0 : ui.spring(combine2(nid, 22), pressed && hotK === 1 ? 1 : 0, MOTION.press);
@@ -1524,16 +1537,18 @@ function rangeControl(ui, ctrl, S, enabled) {
   const defLo = ctrl.defLo !== undefined ? ctrl.defLo : 0, defHi = ctrl.defHi !== undefined ? ctrl.defHi : 0;
   let changed = false;
   if (ui.range(ctrl.id, ctrl.label, (lo - min) / span, (hi - min) / span, -min / span, cache.text,
-               step ? step / span : 0.02, (defLo - min) / span, (defHi - min) / span, !enabled)) {
+               step ? step / span : 0.02, (defLo - min) / span, (defHi - min) / span, !enabled, !!ctrl.free)) {
     // Only the knob that moved is written, so the other is never nudged by
     // the trip through fractions.
-    let nLo = ui.rangeWhich === 0 ? snapStep(min + ui.rangeLo * span, min, 0, step) : lo;
-    let nHi = ui.rangeWhich === 1 ? snapStep(min + ui.rangeHi * span, 0, max, step) : hi;
+    // (a free range's knobs keep the whole track: lo up to max, hi down to min)
+    const loTop = ctrl.free ? max : 0, hiBottom = ctrl.free ? min : 0;
+    let nLo = ui.rangeWhich === 0 ? snapStep(min + ui.rangeLo * span, min, loTop, step) : lo;
+    let nHi = ui.rangeWhich === 1 ? snapStep(min + ui.rangeHi * span, hiBottom, max, step) : hi;
     // A notch smaller than a step (Shift with an arrow key) would snap
     // straight back, so it moves one whole step, as a slider's does.
     if (ui.rangeNudge !== 0 && step) {
-      if (ui.rangeWhich === 0 && nLo === lo) nLo = snapStep(lo + ui.rangeNudge * step, min, 0, step);
-      if (ui.rangeWhich === 1 && nHi === hi) nHi = snapStep(hi + ui.rangeNudge * step, 0, max, step);
+      if (ui.rangeWhich === 0 && nLo === lo) nLo = Math.min(hi, snapStep(lo + ui.rangeNudge * step, min, loTop, step));
+      if (ui.rangeWhich === 1 && nHi === hi) nHi = Math.max(lo, snapStep(hi + ui.rangeNudge * step, hiBottom, max, step));
     }
     if (nLo !== lo) { ctrl.setLo(S, nLo); changed = true; }
     if (nHi !== hi) { ctrl.setHi(S, nHi); changed = true; }
