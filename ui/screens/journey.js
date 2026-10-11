@@ -236,6 +236,17 @@ let btnHover = false, overBtn = false;
 let snapshotAt = -1e9;
 let snapshotStep = -1;
 const SNAPSHOT_OK_MS = 1400;
+// The Down arrow's snapshot (main.js): the same as the step's snapshot
+// button, on the step whose panel is open (the selected one, else the one
+// playing). Its tick is lit on the next frame, on the window's own clock.
+let snapshotKeyReq = -1;
+export function journeySnapshotFromKey() {
+  const i = journeySelected() >= 0 ? journeySelected() : journeyPlayIdx();
+  if (!(i >= 0 && i < journeyCount())) return false;
+  journeySnapshotStep(i);
+  snapshotKeyReq = i;
+  return true;
+}
 // Transport clicks land after the fold has drawn. A text field therefore
 // commits its outside click before the step begins and its words are read.
 const transportDo = { op: 0, arg: 0 }; // 1 toggle, 2 step by, 3 play from
@@ -401,6 +412,7 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && window.a
 // fade is the chrome's idle fade, as the sequencer's.
 export function drawJourney(ui, app, fade = 1) {
   if (!restored) restore();
+  if (snapshotKeyReq >= 0) { snapshotStep = snapshotKeyReq; snapshotAt = ui.t; snapshotKeyReq = -1; }
   // (authoring needs journey mode on as well as the window: switched off,
   // the step is let go just as when the window shuts)
   journeySetWindowOpen(journey.open && journey.active);

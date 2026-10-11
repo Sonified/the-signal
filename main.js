@@ -88,7 +88,7 @@ import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
-import { drawJourney, journey } from './ui/screens/journey.js';
+import { drawJourney, journey, journeySnapshotFromKey } from './ui/screens/journey.js';
 import { drawPerformer, performer } from './ui/screens/performer.js';
 import { drawMusic, music } from './ui/screens/music.js';
 import { drawTextbank, textbank } from './ui/screens/textbank.js';
@@ -563,6 +563,8 @@ async function boot() {
     const journeyKeys = journey.active && journeyCount() > 0;
     if (e.code === 'Space') { if (journeyKeys) journeyTogglePlay(); else toggleRun(); return true; }
     if (journeyKeys && (k === 'ArrowLeft' || k === 'ArrowRight')) { journeyStepBy(k === 'ArrowLeft' ? -1 : 1); return true; }
+    // the Down arrow takes the step's snapshot, as its snapshot button does
+    if (journeyKeys && k === 'ArrowDown') { journeySnapshotFromKey(); return true; }
     // and with its AUTO button on KEYS, the digits 1-9 jump to that step
     // (one past the last step does nothing)
     if (journeyKeys && k.length === 1 && k >= '1' && k <= '9' && journeyMode() === 'keys') { journeyJumpTo(k.charCodeAt(0) - 49); return true; }
