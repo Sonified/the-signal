@@ -11,6 +11,7 @@ import { startHeart, ctxFor, masterFor, makeWorklet, heartEngine } from './heart
 import { every, after, clear } from './ticker.js';
 import { breath, breathState } from '../core/variance.js';
 import { IDLE_DIAG } from '../core/idle.js';
+import { createGlobalFilter } from '../core/global-filter.js';
 
 let audioCtx = null, volGain = null, node = null;
 let harmDry = null, harmWet = null, convolver = null, clickWet = null;
@@ -812,7 +813,13 @@ export function ensureAudioGraph() {
 
     volGain = audioCtx.createGain();
     volGain.gain.value = 0;
-    volGain.connect(audioCtx.destination);
+    // The app's global Lowpass and Highpass (core/global-filter.js) on the
+    // way out, after the master: everything that plays into volGain (every
+    // native voice, the Heart engine's bus, the heartbeat's track, the Sun
+    // hum's send to the room) passes through it. Open, it is transparent.
+    const globalFilter = createGlobalFilter(audioCtx);
+    volGain.connect(globalFilter.input);
+    globalFilter.output.connect(audioCtx.destination);
 
     // The reverb's module loads beside the engine's; if it fails, the
     // Algorithmic reverb type stays on convolution (piano.js) and nothing

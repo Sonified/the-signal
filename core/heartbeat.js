@@ -29,6 +29,7 @@
 // Web Audio's design.
 
 import { getContext, getMaster, sourceGate } from '../js/audio.js';
+import { createGlobalFilter } from './global-filter.js';
 
 const TRACK_URL = 'audio/heartbeat.m4a';
 // The RMS window: the generator's frame, 1/30 s of sound, whatever the
@@ -134,7 +135,12 @@ function ensureGraph() {
     trim.connect(gate);
     gate.connect(master);
   } else {
-    trim.connect(ctx.destination);
+    // a context of its own: the app's global Lowpass and Highpass
+    // (core/global-filter.js) go on here, as js/audio.js's master carries
+    // them for the usual path above
+    const gf = createGlobalFilter(ctx);
+    trim.connect(gf.input);
+    gf.output.connect(ctx.destination);
   }
   return true;
 }

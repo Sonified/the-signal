@@ -197,6 +197,7 @@ export const S = {
   // that reads one falls back to 1 when it is missing.
   musTone: 1, musPulse: 1, musPiano: 1, musClouds: 1, musDrone: 1, musArp: 1, musChoir: 1, musAmb: 1,
   carrierHz: 40, amRate: 7.5, volume: 0.50, amLinked: true, lastAmSet: 0,
+  lpfHz: 20000, hpfHz: 20,    // v1: the global Lowpass and Highpass corners, Hz (core/global-filter.js), open
   amModOn: true,              // the pulse envelope on the tone; off plays it steady
   toneStrobeAm: 1,            // 'Vary with strobe' on the tone: its pulse depth, 0..1, times the master strobe
   // the tone's level and pulse depth, each wandered below its setting by up

@@ -8,10 +8,7 @@
     "slideFile": "010_Alexander_ECE_2026_Intro_Slide.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -30,10 +27,7 @@
     "slideFile": "015_Heartbeat_Pulse.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -52,10 +46,7 @@
     "slideFile": "020_harmonica_Car_Seat.jpeg.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -74,10 +65,7 @@
     "slideFile": "030_Audification_Explained.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -96,10 +84,7 @@
     "slideFile": "031_Shepard_Tone_Rising_Trim.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -118,10 +103,7 @@
     "slideFile": "032_Sheprise-Trim.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -140,10 +122,7 @@
     "slideFile": "040_Nightingale.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -162,10 +141,7 @@
     "slideFile": "050_Earthquake_Sonification.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -184,10 +160,7 @@
     "slideFile": "060_Rotating_Sun_Solar Wind Audification.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -206,10 +179,7 @@
     "slideFile": "070_Solar_Spherical_Harmonics.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -228,10 +198,7 @@
     "slideFile": "090_Harp_Trailer_Voice.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -250,10 +217,7 @@
     "slideFile": "180_WISPR PSP CME Sonification dfb dbm vac trim_ANOMALY_B4.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",
@@ -272,10 +236,7 @@
     "slideFile": "220_Ed_Mitchell_VR_Combined_Audio_Video.mp4",
     "slidePlay": true,
     "slideLoop": false,
-    "slideRate": 500,
-    "slideVolume": 100,
-    "slideLP": 1000,
-    "slideHP": 0
+    "slideRate": 500
    },
    "text": "",
    "appear": "start",

@@ -33,6 +33,7 @@
 // It never touches the document.
 
 import { getContext as appContext } from '../js/audio.js';
+import { createGlobalFilter } from './global-filter.js';
 
 const DATA_URL = 'audio/solar_wind_speed_hourly.u16';
 const HOURS_PER_YEAR = 8766;      // 365.25 * 24
@@ -46,6 +47,8 @@ const mq = q => { try { return !!(G.matchMedia && G.matchMedia(q).matches); } ca
 
 let values = null, hourOf = null; // the stitched series (see stitch())
 let ctx = null, buffer = null, filter = null, master = null, outputGate = null;
+// this context's global Lowpass/Highpass pair (core/global-filter.js)
+let globalFilter = null;
 let mediaOut = null;              // phone output path; see ensureCtx
 let src = null, env = null;
 
@@ -189,17 +192,22 @@ function ensureCtx() {
   // navigator.audioSession and use the normal destination. Older touch
   // browsers get the fallback: the graph terminates in a stream feeding
   // an <audio> element, which counts as media playback.
+  // The app's global Lowpass and Highpass (core/global-filter.js), between
+  // the hum's master and its output gate: this context's own pair. (The
+  // send into the app's room is filtered there, on js/audio.js's chain.)
+  globalFilter = createGlobalFilter(ctx);
+  master.connect(globalFilter.input);
   if (NAV && 'audioSession' in NAV) {
     try { NAV.audioSession.type = 'playback'; } catch (e) {}
-    master.connect(outputGate).connect(ctx.destination);
+    globalFilter.output.connect(outputGate).connect(ctx.destination);
   } else if (mq('(pointer: coarse)') && G.Audio && ctx.createMediaStreamDestination) {
     const msd = ctx.createMediaStreamDestination();
-    master.connect(outputGate).connect(msd);
+    globalFilter.output.connect(outputGate).connect(msd);
     mediaOut = new G.Audio();
     mediaOut.srcObject = msd.stream;
     mediaOut.setAttribute('playsinline', '');
   } else {
-    master.connect(outputGate).connect(ctx.destination);
+    globalFilter.output.connect(outputGate).connect(ctx.destination);
   }
 
   // A system-default output change can leave the AudioContext logically
@@ -734,6 +742,7 @@ export function dispose() {
   try { c.removeEventListener('statechange', onStateChange); } catch (e) {}
   if (bridgeIn) { try { bridgeIn.disconnect(); sendGain.disconnect(); } catch (e) {} }
   bridgeOut = null; bridgeIn = null; sendGain = null; sendCtx = null; sendTo = null;
+  if (globalFilter) { globalFilter.dispose(); globalFilter = null; }
   ctx = null; buffer = null; filter = null; master = null; outputGate = null;
   mediaOut = null; src = null; env = null; dry = null; wet = null;
   verbSlots = null; verbActive = 0; onStateChange = null;

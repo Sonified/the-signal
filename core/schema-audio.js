@@ -46,6 +46,21 @@ import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows } from './schema-variance.js';
 import { setMasterVolume as setHumMaster } from './sun-hum.js';
+import { notifyGlobalFilter, GF_HZ_LO, GF_HZ_HI } from './global-filter.js';
+
+// The global Lowpass and Highpass (core/global-filter.js): positions 0 to
+// 1000 on a log taper over 20 Hz to 20 kHz, each octave the same stretch of
+// track, the lowpass open at its top, the highpass at its bottom. The show
+// remote's LP and HP faders send these positions.
+const GF_POS = 1000, GF_LN = Math.log(GF_HZ_HI / GF_HZ_LO);
+const gfHzToPos = hz => hz === hz ? Math.round(Math.min(1, Math.max(0, Math.log(hz / GF_HZ_LO) / GF_LN)) * GF_POS) : NaN;
+const gfPosToHz = pos => Math.round(GF_HZ_LO * Math.exp(GF_LN * Math.min(1, Math.max(0, pos / GF_POS))));
+const gfText = hz => hz >= 1000 ? (Math.round(hz / 100) / 10) + ' kHz' : Math.round(hz) + ' Hz';
+function gfParse(text) {
+  const m = /^\s*([\d.]+)\s*(k)?/i.exec(text || '');
+  return m ? gfHzToPos(parseFloat(m[1]) * (m[2] ? 1000 : 1)) : NaN;
+}
+const gfHz = (v, def) => typeof v === 'number' && v === v ? Math.max(GF_HZ_LO, Math.min(GF_HZ_HI, v)) : def;
 
 // ---------- shared helpers, ported from v0/js/ui.js closures ----------
 
@@ -363,6 +378,27 @@ const audioControls = [
     get: s => Math.round(s.volume * 100),
     set: (s, pos) => { s.volume = pos / 100; applyAudioGain(); setHumMaster(s.volume); save(); },
     format: s => Math.round(s.volume * 100) + '%'
+  },
+  // The global Lowpass and Highpass, straight under Master volume: every
+  // sound the app makes passes through the pair (core/global-filter.js), the
+  // slides', the Sun's hum and the music alike. They ride presets and the
+  // broadcast as Master volume does; a journey step never holds them
+  // (core/journey.js leaves vol, lpf and hpf out of every step).
+  {
+    id: 'lpf', section: 'audio', label: 'Lowpass', kind: 'slider',
+    min: 0, max: GF_POS, step: 1, def: GF_POS,
+    get: s => gfHzToPos(gfHz(s.lpfHz, GF_HZ_HI)),
+    set: (s, pos) => { s.lpfHz = gfPosToHz(pos); notifyGlobalFilter(); save(); },
+    format: s => gfHz(s.lpfHz, GF_HZ_HI) >= GF_HZ_HI ? 'open' : gfText(gfHz(s.lpfHz, GF_HZ_HI)),
+    parse: (s, text) => /^\s*open/i.test(text) ? GF_POS : gfParse(text)
+  },
+  {
+    id: 'hpf', section: 'audio', label: 'Highpass', kind: 'slider',
+    min: 0, max: GF_POS, step: 1, def: 0,
+    get: s => gfHzToPos(gfHz(s.hpfHz, GF_HZ_LO)),
+    set: (s, pos) => { s.hpfHz = gfPosToHz(pos); notifyGlobalFilter(); save(); },
+    format: s => gfHz(s.hpfHz, GF_HZ_LO) <= GF_HZ_LO ? 'open' : gfText(gfHz(s.hpfHz, GF_HZ_LO)),
+    parse: (s, text) => /^\s*open/i.test(text) ? 0 : gfParse(text)
   },
   // The Music window's trims for the tone and the pulse (ui/screens/
   // music.js). Each is how much of the voice's own level plays, 0 to 100%,

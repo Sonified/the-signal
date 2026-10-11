@@ -23,12 +23,16 @@
 //   {k:'jump', i}       journeyJumpTo(i), i 0-based (the step already playing
 //                       is left alone, as a digit key or MIDI note does)
 //   {k:'next'}/{k:'prev'}  journeyStepBy(+1 / -1)
-//   {k:'ctl', id, v}    a Slides control, by schema id, v in the CONTROL'S
-//                       OWN position units, exactly what byId(id).set takes:
-//                         slideVolume  0..100   (percent)
+//   {k:'ctl', id, v}    a control, by schema id, v in the CONTROL'S OWN
+//                       position units, exactly what byId(id).set takes:
+//                         vol          0..100   (the app's Master volume,
+//                                                %, default 50; the slides,
+//                                                the music and the Sun's hum)
+//                         lpf          0..1000  (global Lowpass, log 20 Hz..
+//                                                20 kHz, 1000 open)
+//                         hpf          0..1000  (global Highpass, same taper,
+//                                                0 open)
 //                         slideRate    0..1000  (500 = 1x; log 0.25x..2x)
-//                         slideLP      0..1000  (log 20 Hz..20 kHz, 1000 open)
-//                         slideHP      0..1000  (log 20 Hz..20 kHz, 0 open)
 //                         slidePlay    true (PLAY) / false (PAUSE),
 //                                      each idempotent: it also lets go a
 //                                      live hold (the Journey window's
@@ -46,16 +50,19 @@
 // through journeyManualOverride as the drawer's widgets are: with the
 // Journey window open that would record the fader into the playing cue for
 // good, and with it closed it would pin the control for the rest of the
-// walk, so every later cue's own volume, speed and filters (each cue resets
-// them) would be ignored. From the iPad a move lasts until the next cue.
+// walk, so every later cue's own speed (each cue resets it) would be
+// ignored. From the iPad a Speed move lasts until the next cue; vol, lpf and
+// hpf are never held by a cue (core/journey.js), so they last until moved.
+// The slides' own level (Master slide volume, slideVolume) is the laptop's
+// and is never sent from here.
 //
 // STATUS (here -> show.html): a second pair of sockets, this page the
 // broadcaster of 'mirror-<room>-status', sends
 //   {t:'state', k:'step', i, n, p, sl, src, q}
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
-// walk plays, sl the Slides controls in the same units as above
-// {vol, rate, lp, hp, play, on} (play: what is actually happening, the
+// walk plays, sl the faders' controls in the same units as above
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, play, on} (play: what is actually happening, the
 // live hold included), src/q this page's sender id and sequence.
 // It goes as a 'state' rather than a 'word' so each relay keeps the latest
 // and hands it to an iPad that joins late.
@@ -67,7 +74,7 @@ import { idleWake } from '../core/idle.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive } from '../gpu/slides.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
-const CTL_IDS = new Set(['slideVolume', 'slideRate', 'slideLP', 'slideHP', 'slidePlay', 'slideRestart', 'slideXfade']);
+const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade']);
 const STATUS_MS = 250;
 
 export function initShowRemote() {
@@ -175,7 +182,7 @@ export function initShowRemote() {
     return {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
-      sl: { vol: get('slideVolume'), rate: get('slideRate'), lp: get('slideLP'), hp: get('slideHP'),
+      sl: { vol: get('vol'), rate: get('slideRate'), lp: get('lpf'), hp: get('hpf'),
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };
   }

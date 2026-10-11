@@ -134,13 +134,19 @@ const HALF_SECOND_FADE = new Set(['textFadeIn', 'textFadeOut', 'textDwell']);
 // (readStep). And so are Live Sound's switch, input and latency
 // (js/livesound.js): a step must never open a microphone on its own, and an
 // input's id and the buffer its hardware wants belong to this machine alone.
+// Nor the room's own level and tone: Master volume and the global Lowpass
+// and Highpass (vol, lpf, hpf) are the operator's, ridden live from the
+// drawer or the show remote, so no cue may set them back. A step saved
+// holding one has it dropped as it is read, as with the controls above, and
+// an id no control has any more (the Slides' old slideLP and slideHP) is
+// passed over the same way, silently.
 const R = REPLAY_CONTROLS;
 const idxOf = new Map();
 const skip = new Uint8Array(R.length);
+const NEVER_IN_STEP = new Set(['liveOn', 'liveDevice', 'liveLatency', 'vol', 'lpf', 'hpf']);
 for (let i = 0; i < R.length; i++) {
   idxOf.set(R[i].id, i);
-  if (machineControl(R[i]) || R[i].id === 'liveOn' || R[i].id === 'liveDevice' ||
-      R[i].id === 'liveLatency') skip[i] = 1;
+  if (machineControl(R[i]) || NEVER_IN_STEP.has(R[i].id)) skip[i] = 1;
 }
 const baseline = new Array(R.length);
 const MODE = byId('textMode'), CUSTOM = byId('textCustomText');

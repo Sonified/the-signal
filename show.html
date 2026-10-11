@@ -10,9 +10,10 @@
   Presence (the app at /, on the laptop, opened with ?remote). This page is
   always the controller; the receiving end is platform/show-remote.js.
 
-  Tap a cue and Presence jumps to that journey step. Four faders (Volume,
-  Speed, Lowpass, Highpass: the Max surface's four) drive the Slides layer's
-  sound and speed; Play/Pause, Restart and the arrows its transport; Duck
+  Tap a cue and Presence jumps to that journey step. Four faders (the Max
+  surface's four): VOLUME the app's Master volume and LP / HP its global
+  Lowpass and Highpass, all of its sound (slides, music, the Sun's hum);
+  SPEED the slides' speed. Play/Pause the slides' transport; Duck
   drops the slides' sound under the voice (never the Sun's hum), its amount
   and fades set behind the gear.
 
@@ -22,7 +23,7 @@
   command goes down every open path numbered (src, n) and Presence acts on
   whichever copy lands first. This page broadcasts on 'mirror-<room>' and
   follows 'mirror-<room>-status', where Presence reports the step playing and
-  the Slides controls ({t:'state', k:'step', i, n, p, sl}), kept by each
+  the faders' controls ({t:'state', k:'step', i, n, p, sl}), kept by each
   relay for a late joiner. The password is the mirror rooms' one (POST /auth,
   remembered as localStorage 'mirror.pw', handed over in #k= on a switch).
 
@@ -30,10 +31,11 @@
   count; NOT 'id', which is the control's id in a ctl):
     {k:'jump', i}  i 0-based          {k:'next'} / {k:'prev'}
     {k:'ctl', id, v}  v in the control's OWN position units (what
-        byId(id).set takes in core/schema-slides.js):
-          slideVolume 0..100 (%)       slideRate 0..1000 (500 = 1x, log 0.25..2x)
-          slideLP 0..1000 (log 20 Hz..20 kHz, 1000 open)
-          slideHP 0..1000 (same taper, 0 open)
+        byId(id).set takes in core/schema-audio.js / schema-slides.js):
+          vol 0..100 (the app's Master volume, %, default 50: VOLUME)
+          lpf 0..1000 (global Lowpass, log 20 Hz..20 kHz, 1000 open: LP)
+          hpf 0..1000 (global Highpass, same taper, 0 open: HP)
+          slideRate 0..1000 (500 = 1x, log 0.25..2x: SPEED)
           slidePlay true (PLAY) / false (PAUSE), each idempotent
           slideRestart (v ignored)
           slideXfade 0..300 (hundredths of a second, 0 a cut; the gear's
@@ -124,7 +126,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 5; padding: 16px; }
 #modal.open { display: grid; }
 #modal .card { width: min(460px, 100%); position: relative; }
-#close { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; padding: 0; font-size: 20px; }
+#close { position: absolute; top: -56px; right: 0; width: 44px; height: 44px; padding: 0; font-size: 20px; }
 .slider { position: relative; height: 54px; border-radius: 10px; background: #0f1219; border: 1px solid var(--line);
   margin-bottom: 10px; overflow: hidden; touch-action: none; }
 .slider .fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #6b5216, var(--gold)); }
@@ -306,7 +308,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
 
   // ---------- the faders ----------
   // Each holds its control's own position (see the header) and shows it in
-  // plain units through the same tapers core/schema-slides.js uses. A drag
+  // plain units through the same tapers core/schema-audio.js and schema-slides.js use. A drag
   // is relative (it moves the fader from where it is, wherever the finger
   // lands, so a touch never jumps the sound).
   // Sends go at most once per animation frame. Presence's reports move a
@@ -322,13 +324,15 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   };
   // In the surface's order, left to right, each in its colour there.
   const FADERS = [
-    { id: 'slideLP', key: 'lp', label: 'LP', color: '#e45bf0', max: 1000, def: 1000, fmt: p => p >= 1000 ? 'open' : hzText(posToHz(p)) },
-    { id: 'slideHP', key: 'hp', label: 'HP', color: '#b6f03c', max: 1000, def: 0, fmt: p => p <= 0 ? 'open' : hzText(posToHz(p)) },
+    { id: 'lpf', key: 'lp', label: 'LP', color: '#e45bf0', max: 1000, def: 1000, fmt: p => p >= 1000 ? 'open' : hzText(posToHz(p)) },
+    { id: 'hpf', key: 'hp', label: 'HP', color: '#b6f03c', max: 1000, def: 0, fmt: p => p <= 0 ? 'open' : hzText(posToHz(p)) },
     // Speed tops out at 1x (the control's 500); the whole track is the
     // slow half, 0.25x at the bottom. The show never runs faster than life.
     { id: 'slideRate', key: 'rate', label: 'SPEED', color: '#f5e23a', max: 500, def: 500,
       fmt: p => posToRate(p).toFixed(2) + '×' },
-    { id: 'slideVolume', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 100, fmt: p => Math.round(p) + '%' }
+    // the app's Master volume (vol), the whole interface's level, 50% by
+    // default; the laptop keeps the slides' own level (Master slide volume)
+    { id: 'vol', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 50, fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
   let rafOn = false;
@@ -421,24 +425,45 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   duckBtn.addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') duckOff(); });
 
-  function makeSlider(el, label, get, set, fmt) {
+  // audition: a duck setting's slider ducks the room while a finger is on
+  // it, so the setting is heard as it is set. The press ducks with the fade
+  // down as it stands; a move that changes the setting sends the duck again
+  // (the amount glides to the new depth); the lift lets go with the fade up
+  // as it stands, unless the DUCK button itself is still held.
+  function makeSlider(el, label, get, set, fmt, audition) {
     el.className = 'slider';
     el.innerHTML = '<div class="fill"></div><span class="lab"></span><span class="val"></span>';
     el.querySelector('.lab').textContent = label;
     const fill = el.querySelector('.fill'), val = el.querySelector('.val');
     const draw = () => { fill.style.width = (get() * 100) + '%'; val.textContent = fmt(); };
     const at = e => { const r = el.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
-    el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); set(at(e)); draw(); });
-    el.addEventListener('pointermove', e => { if (el.hasPointerCapture(e.pointerId)) { set(at(e)); draw(); } });
-    el.addEventListener('pointerup', saveDuck);
+    const move = e => {
+      const was = get();
+      set(at(e)); draw();
+      if (audition && get() !== was) sendDuck(true);
+    };
+    const lift = e => {
+      if (!el.hasPointerCapture(e.pointerId)) return;
+      el.releasePointerCapture(e.pointerId);
+      saveDuck();
+      if (audition && duckPtr === null) sendDuck(false);
+    };
+    el.addEventListener('pointerdown', e => {
+      el.setPointerCapture(e.pointerId);
+      set(at(e)); draw();
+      if (audition) sendDuck(true);
+    });
+    el.addEventListener('pointermove', e => { if (el.hasPointerCapture(e.pointerId)) move(e); });
+    el.addEventListener('pointerup', lift);
+    el.addEventListener('pointercancel', lift);
     draw();
   }
   makeSlider($('sAmt'), 'Duck amount', () => duckSet.amt, u => { duckSet.amt = Math.round(u * 100) / 100; },
-    () => Math.round(duckSet.amt * 100) + '%');
+    () => Math.round(duckSet.amt * 100) + '%', true);
   makeSlider($('sDn'), 'Fade down', () => duckSet.dn / 1, u => { duckSet.dn = Math.round(u * 100) / 100; },
-    () => duckSet.dn.toFixed(2) + ' s');
+    () => duckSet.dn.toFixed(2) + ' s', true);
   makeSlider($('sUp'), 'Fade up', () => duckSet.up / 3, u => { duckSet.up = Math.round(u * 3 * 20) / 20; },
-    () => duckSet.up.toFixed(2) + ' s');
+    () => duckSet.up.toFixed(2) + ' s', true);
   // Crossfade: 0 to 3 s in 0.05 s steps, sent as the control's position
   // (hundredths of a second) whenever it moves
   if (!(duckSet.xf >= 0 && duckSet.xf <= 3)) duckSet.xf = DUCK_DEF.xf;
