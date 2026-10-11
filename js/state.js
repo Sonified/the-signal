@@ -418,8 +418,8 @@ export const S = {
   // Mute and solo for the six fixed channels (see mixgate.js). The atmosphere
   // recordings keep their own flags on their layer objects. Nothing is muted
   // or soloed by default, and v0 never changes these, so v0 sounds as before.
-  chanMute: { fund: false, harm: false, pulse: false, piano: false, clouds: false, drone: false, arp: false, choir: false, ...layerChannelFlags() },
-  chanSolo: { fund: false, harm: false, pulse: false, piano: false, clouds: false, drone: false, arp: false, choir: false, ...layerChannelFlags() },
+  chanMute: { fund: false, harm: false, pulse: false, piano: false, clouds: false, drone: false, arp: false, choir: false, ...layerChannelFlags(), hum: false },
+  chanSolo: { fund: false, harm: false, pulse: false, piano: false, clouds: false, drone: false, arp: false, choir: false, ...layerChannelFlags(), hum: false },
 
   // ---------- layers ----------
   layers: { field: true, rings: true, corners: true, edge: true, text: true }

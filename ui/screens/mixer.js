@@ -176,6 +176,7 @@ const MASTER = makeFader(byId('ambMixerMaster')), REVERB = makeFader(byId('ambMi
 // The Sun's Rotational hum, a second surface on its panel's Amplitude, so the
 // drawer and this row are one control and can never disagree.
 const HUM = makeFader(byId('sunHumAmp'));
+const HUM_MUTE = byId('mixHumMute'), HUM_SOLO = byId('mixHumSolo');
 const LAYERS = [];
 for (let i = 0; i < AMB_LAYER_COUNT; i++) LAYERS.push(makeFader(ambLayerControls(i).level));
 
@@ -864,8 +865,10 @@ export function drawMixer(ui, app, fade = 1) {
 
   sectionLabel(ui, 'SOLAR ROTATIONAL HUM', false);
   ui.spacer(5);
-  // dimmed, as a muted channel is, while the hum or the Sun is switched off
-  masterRow(ui, HUM, true, 'AMPLITUDE', '%', -1, null, null, !(S.sunHumOn && S.layers.sun));
+  // dimmed, as a muted channel is, while the gate holds it or the hum or the
+  // Sun is switched off
+  masterRow(ui, HUM, true, 'AMPLITUDE', '%', meterCount('sunHumAmp'), HUM_MUTE, HUM_SOLO,
+    chanSilenced('hum') || !(S.sunHumOn && S.layers.sun));
 
   sectionLabel(ui, 'ATMOSPHERE', false);
   ui.spacer(2);

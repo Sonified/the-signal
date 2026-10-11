@@ -2055,6 +2055,9 @@ const mixerControls = [
   ...gateControls('mixArp', 'arp', 'Sequencer'),
   ...gateControls('mixChoir', 'choir', 'Choir'),
   ...MUSIC_LAYERS.flatMap(L => gateControls(layerMixId(L), L.id, L.label)),
+  // the Sun's Rotational hum: mixHumMute, mixHumSolo (core/journey.js finds
+  // each channel's pair by that name)
+  ...gateControls('mixHum', 'hum', 'Rotational hum'),
   {
     id: 'mixFund', section: 'mixer', label: 'Fundamental', kind: 'slider',
     min: 0, max: 100, step: 1, def: 83,

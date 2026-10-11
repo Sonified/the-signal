@@ -20,6 +20,7 @@ import { choirPeak } from '../js/choir.js';
 import { MUSIC_LAYERS, layerPeak } from '../js/layers.js';
 import { layerMixId } from '../js/layer-defs.js';
 import { cloudPeak } from '../js/clouds.js';
+import { humPeak } from './sun-hum.js';
 import { layerGate, applyMixGates } from '../js/mixgate.js';
 import { save, flush } from './store.js';
 
@@ -177,6 +178,8 @@ const CHANNEL_PEAK_FNS = {
 };
 // the music layers (js/layers.js), one meter each under its fader's id
 for (const L of MUSIC_LAYERS) CHANNEL_PEAK_FNS[layerMixId(L)] = () => layerPeak(L.id);
+// and the Sun's Rotational hum, under its Amplitude's id
+CHANNEL_PEAK_FNS.sunHumAmp = humPeak;
 const channelMeters = {};
 // Listed once so the per-frame meter step walks a fixed array instead of
 // building one from Object.keys every frame.
