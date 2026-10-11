@@ -569,7 +569,7 @@ export function createSlides(device, format) {
       ppMs = nowMs;
       if (!ppInit || dozing || cur.el.ended) { pp = target; ppInit = true; }
       else if (pp !== target) {
-        const secs = clampNum(target > pp ? S.slidePpIn : S.slidePpOut, 0, 3, 0.2);
+        const secs = clampNum(target > pp ? S.slidePpIn : S.slidePpOut, 0, 1, 0.2);
         const step = secs > 0 ? dt / secs : 1;
         pp = target > pp ? Math.min(target, pp + step) : Math.max(target, pp - step);
       }

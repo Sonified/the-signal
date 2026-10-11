@@ -59,8 +59,8 @@ const NUM = [
   ['slideXfade',   0,     3,      0.5],
   // the play/pause ramps, seconds (0 a cut): how long a pause takes to fade
   // the sound and slow the picture to a stop, and a play to bring both back
-  ['slidePpOut',   0,     3,      0.2],
-  ['slidePpIn',    0,     3,      0.2]
+  ['slidePpOut',   0,     1,      0.2],
+  ['slidePpIn',    0,     1,      0.2]
 ];
 const DEF_PLAY = true, DEF_LOOP = false, DEF_PP_RAMP = false;
 
@@ -174,9 +174,9 @@ export const SLIDES_CONTROLS = [
   {
     id: 'slidePpOut', section: 'slides', label: 'Fade out', kind: 'slider',
     parent: 'slidePpDrawer',
-    min: 0, max: 300, step: 5, def: 20,
+    min: 0, max: 100, step: 5, def: 20,
     get: S => Math.round(S.slidePpOut * 100),
-    set: (S, pos) => { S.slidePpOut = fit(Math.round(pos / 5) * 5 / 100, 0, 3); save(); },
+    set: (S, pos) => { S.slidePpOut = fit(Math.round(pos / 5) * 5 / 100, 0, 1); save(); },
     format: S => S.slidePpOut > 0 ? S.slidePpOut.toFixed(2) + ' s' : 'cut',
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
     enabled: layerOn
@@ -184,9 +184,9 @@ export const SLIDES_CONTROLS = [
   {
     id: 'slidePpIn', section: 'slides', label: 'Fade in', kind: 'slider',
     parent: 'slidePpDrawer',
-    min: 0, max: 300, step: 5, def: 20,
+    min: 0, max: 100, step: 5, def: 20,
     get: S => Math.round(S.slidePpIn * 100),
-    set: (S, pos) => { S.slidePpIn = fit(Math.round(pos / 5) * 5 / 100, 0, 3); save(); },
+    set: (S, pos) => { S.slidePpIn = fit(Math.round(pos / 5) * 5 / 100, 0, 1); save(); },
     format: S => S.slidePpIn > 0 ? S.slidePpIn.toFixed(2) + ' s' : 'cut',
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
     enabled: layerOn
