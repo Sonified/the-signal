@@ -461,10 +461,12 @@ export function createSun(device, format) {
     if (want) idleHold(); else idleRelease('the sun wrap');
   }
 
-  // Plays while the layer is on, awake, the scene moving and the breath not
-  // stopped, at Speed times the breath's share (Speed link) times the
+  // Plays while the layer is on, awake, the scene moving and the variance
+  // not stopped, at Speed times its drive's share (Speed variance) times the
   // motion scale (so the pause coasts it down with everything else);
-  // pauses otherwise. pos is the breath, 0 full exhale to 1 full inhale.
+  // pauses otherwise. pos is the drive, 0 its bottom to 1 its top (the
+  // breath's full exhale to full inhale, the strobe dark to lit, Time's
+  // trough to its start).
   // The ghost pauses and plays with the main, at the main's rate, while a
   // wrap is armed, and is never left playing otherwise.
   function syncVideo(on, pos) {
@@ -532,6 +534,34 @@ export function createSun(device, format) {
 
   // ---------- feedback ----------
   let fb = null, fbScale = 1, fbOpacity = 1;
+  // The Speed's, Amount's and Opacity's variances (schema-sun.js
+  // drivenVariance): Time's phase for each, stepped on the motion clock and
+  // pulled onto the room clock, with its room bookkeeping.
+  const driven = {
+    sunSpeed: { phase: 0, room: roomPhaseState() },
+    sunFbAmt: { phase: 0, room: roomPhaseState() },
+    sunFbOpacity: { phase: 0, room: roomPhaseState() }
+  };
+  // A variance's drive this frame, 0 to 1 from its driver: Time's cosine, 1
+  // at the cycle's start; the strobe's lum, 1 lit; the breath, 1 at the
+  // full inhale. The setting plays at set times 1 - var * (1 - drive). Time
+  // steps even while another driver rides, so a switch back to it lands in
+  // the room's phase.
+  function driveOf(key, t, md, lum, breathPos) {
+    const v = driven[key];
+    const period = Math.max(0.5, clampNum(S[key + 'VarPeriod'], 0, 120, 20));
+    v.phase += md / period;
+    v.phase -= Math.floor(v.phase);
+    v.phase = roomPhase(v.room, v.phase, t, md, period, S[key + 'VarPeriodOff'] || 0);
+    const drive = S[key + 'VarDrive'];
+    return drive === 'time' ? 0.5 + 0.5 * Math.cos(TAU * v.phase)
+      : drive === 'strobe' ? clampNum(lum, 0, 1, 1)
+      : breathPos;
+  }
+  function varied(key, set, d) {
+    const amount = clampNum(S[key + 'Var'], 0, 1, 0);
+    return amount > 0 ? set * (1 - amount * (1 - d)) : set;
+  }
   const fbParams = { keepHalfLife: 0, zoomRate: 0, twistRate: 0, cx: 0, cy: 0, unit: 1, dt: 0 };
 
   function resize(pw, ph, d) {
@@ -595,8 +625,9 @@ export function createSun(device, format) {
   // saturation, on. Off, the identity and 0, kaleido.js's discipline.
   const grade = new Float32Array(4);
 
-  // t is the rAF timestamp (ms), dt seconds; lum is unused (the sun keeps
-  // steady brightness through the strobe).
+  // t is the rAF timestamp (ms), dt seconds; lum the strobe's raw wave, 1
+  // lit to 0 dark, read only by a Feedback variance linked to the strobe
+  // (the sun itself keeps steady brightness through the strobe).
   function update(t, dt, lum) {
     bind = null; liveDraw = false; folded = false; fbOn = false; sliding = false;
     nowMs = t;
@@ -611,6 +642,8 @@ export function createSun(device, format) {
         S.effSunBreathPos = undefined;
         S.effSunBreathIn = undefined;
         S.effSunSpeed = undefined;
+        S.effSunFbAmt = undefined;
+        S.effSunFbOpacity = undefined;
         if (fb) fb.release();
         releaseFolds();
       }
@@ -636,9 +669,9 @@ export function createSun(device, format) {
     S.effSunBreathPos = 0.5 + 0.5 * breathSin;
     S.effSunBreathIn = Math.cos(TAU * breathPh) >= 0;
     // The loop's wrap first (an ended main must wrap before any play()),
-    // then the video, its rate riding this breath (Speed link).
+    // then the video, its rate riding its variance's drive.
     updateWrap(nowMs / 1000);
-    syncVideo(true, S.effSunBreathPos);
+    syncVideo(true, driveOf('sunSpeed', t, md, lum, S.effSunBreathPos));
     syncWrapHold();
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
@@ -750,8 +783,12 @@ export function createSun(device, format) {
     }
 
     // ---------- feedback ----------
-    const fbAmt = clampNum(S.sunFbAmt, 0, 1, 0.6);
-    fbOn = fbAmt > 0;
+    const fbAmt = varied('sunFbAmt', clampNum(S.sunFbAmt, 0, 1, 0.6), driveOf('sunFbAmt', t, md, lum, S.effSunBreathPos));
+    const fbOpacitySet = varied('sunFbOpacity', clampNum(S.sunFbOpacity, 0, 1, 1), driveOf('sunFbOpacity', t, md, lum, S.effSunBreathPos));
+    // The two rows' blue lines, while their variances play.
+    S.effSunFbAmt = S.sunFbAmtVar > 0 ? fbAmt : undefined;
+    S.effSunFbOpacity = S.sunFbOpacityVar > 0 ? fbOpacitySet : undefined;
+    fbOn = clampNum(S.sunFbAmt, 0, 1, 0.6) > 0;
     if (!fbOn) {
       if (fb) fb.release();
       if (fbFoldA) fbFoldA.releaseChamber();
@@ -775,7 +812,7 @@ export function createSun(device, format) {
       // trails with the sun.
       fbParams.cx = cx; fbParams.cy = cy; fbParams.unit = R; fbParams.dt = md;
       // The echo fades with the layer.
-      fbOpacity = clampNum(S.sunFbOpacity, 0, 1, 1) * opacity;
+      fbOpacity = fbOpacitySet * opacity;
       // The Center fade: G in the sun square's own units (1 the edges'
       // midpoints, 0.775 the limb), gating only what feeds the image, never
       // the live picture or the history already in it. Folded, the feedback

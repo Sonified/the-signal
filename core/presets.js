@@ -363,6 +363,9 @@ const SWINGS = [
   ['kaleidoFbTwistVarRate', 'kaleidoFbTwistVarRateOff', carryRoomPhase],
   ['kaleidoFbPulseRate',    'kaleidoFbPulseRateOff',    carryRoomPhase],
   ['sunFoldsPeriod',        'sunFoldsPeriodOff',        carryRoomPhase],
+  ['sunSpeedVarPeriod',     'sunSpeedVarPeriodOff',     carryRoomPhase],
+  ['sunFbAmtVarPeriod',     'sunFbAmtVarPeriodOff',     carryRoomPhase],
+  ['sunFbOpacityVarPeriod', 'sunFbOpacityVarPeriodOff', carryRoomPhase],
   ['textOpacityVarPeriod',  'textOpacityVarPeriodOff',  carryWordOpacity]
 ];
 const swingRate = new Array(SWINGS.length);

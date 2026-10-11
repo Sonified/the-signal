@@ -38,6 +38,13 @@ const DEF_GRADE = false;
 const DEF_HI_RES = false;
 // Off by default: the Rotational hum is heard only once the viewer asks.
 const DEF_HUM_ON = false;
+// What drives the Speed's, Feedback Amount's and Opacity's variances: the
+// room-timed clock, the strobe or the breath. The breath by default.
+const DEF_DRIVE = 'breath';
+const DRIVES = ['time', 'strobe', 'breath'];
+const DRIVE_NAMES = { time: 'Time', strobe: 'Link to strobe', breath: 'Link to breath' };
+const driveOf = v => DRIVES.indexOf(v) >= 0 ? v : DEF_DRIVE;
+const DRIVEN = ['sunSpeed', 'sunFbAmt', 'sunFbOpacity'];
 const NUM = [
   // key,               min,  max, def,  integer
   // the sun video's playback rate, the site's 1x to 16x
@@ -53,16 +60,30 @@ const NUM = [
   // how far the breath travels the Atmosphere: the breath modulates which
   // channel shows, around the Atmosphere slider's position
   ['sunBreathAmt',       0,   1,   0.5,  false],
-  // Speed's variance, ridden by the breath rather than a clock of its own:
-  // the rate is Speed times 1 - var * (1 - breath), so at 1 the full inhale
-  // runs the set Speed and the full exhale comes to a stop (gpu/sun.js).
-  // The standard law, a dip below the setting, never above it.
+  // Speed's variance, ridden by its Drive (above) as the Feedback's are:
+  // the rate is Speed times 1 - var * (1 - drive), so at 1 the drive's top
+  // runs the set Speed and its bottom comes to a stop (gpu/sun.js). The
+  // standard law, a dip below the setting, never above it.
   ['sunSpeedVar',        0,   1,   0,    false],
+  ['sunSpeedVarPeriod',  0,   120, 20,   true ],
+  ['sunSpeedVarPeriodOff', 0, 1,   0,    false],
   // The Feedback drawer's video feedback, the same amount and opacity as the
   // Kaleidoscope's Feedback drawer: how long the sun leaves a trail, and how
   // solidly that image lands on the scene.
   ['sunFbAmt',           0,   1,   0.6,  false],
   ['sunFbOpacity',       0,   1,   1,    false],
+  // Their variances, each driven by its own Drive (above): the value is the
+  // setting times 1 - var * (1 - drive), the drive 1 at its top (a full
+  // inhale, the strobe lit, the time cycle's start) and 0 at its bottom, so
+  // at 100% the full value at the top and nothing at the bottom
+  // (gpu/sun.js). The period is Time's alone, seconds a cycle, room-timed
+  // with the Off phase offset (core/room-clock.js).
+  ['sunFbAmtVar',        0,   1,   0,    false],
+  ['sunFbAmtVarPeriod',  0,   120, 20,   true ],
+  ['sunFbAmtVarPeriodOff', 0, 1,   0,    false],
+  ['sunFbOpacityVar',    0,   1,   0,    false],
+  ['sunFbOpacityVarPeriod', 0, 120, 20,  true ],
+  ['sunFbOpacityVarPeriodOff', 0, 1, 0,  false],
   // The Center fade, the site's gate on what feeds the trails: how far out
   // from the middle the picture is kept out of the feedback, in the sun
   // square's half sides (0.775 the photosphere's limb, 1 the square's edge
@@ -172,6 +193,7 @@ export function initSunState(S) {
   if (typeof S.sunGrade !== 'boolean') S.sunGrade = DEF_GRADE;
   if (typeof S.sunHumOn !== 'boolean') S.sunHumOn = DEF_HUM_ON;
   if (typeof S.sunHiRes !== 'boolean') S.sunHiRes = DEF_HI_RES;
+  for (const k of DRIVEN) S[k + 'VarDrive'] = driveOf(S[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -184,6 +206,7 @@ export function initSunState(S) {
 // object.
 export function sunStateOf(S) {
   const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade, sunHumOn: !!S.sunHumOn, sunHiRes: !!S.sunHiRes };
+  for (const k of DRIVEN) out[k + 'VarDrive'] = driveOf(S[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
 }
@@ -201,6 +224,7 @@ export function applySunState(S, o) {
   if (typeof o.sunGrade === 'boolean') S.sunGrade = o.sunGrade;
   if (typeof o.sunHumOn === 'boolean') S.sunHumOn = o.sunHumOn;
   if (typeof o.sunHiRes === 'boolean') S.sunHiRes = o.sunHiRes;
+  for (const k of DRIVEN) if (typeof o[k + 'VarDrive'] === 'string') S[k + 'VarDrive'] = driveOf(o[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -318,6 +342,44 @@ const varianceOf = (owner, c) => { c.varianceOf = owner; return c; };
 // `parent`), so the drawer folds it with that drawer.
 const under = (parent, c) => { c.parent = parent; return c; };
 
+// A row's variance, folded out from under it as every variance is: what
+// drives it (Time, the strobe or the breath), how far it dips, and Time's
+// speed, 0 to 120 s a cycle, shown only while Time drives it. The owner's
+// blue line is the varied value (its effective, below).
+function drivenVariance(owner, name, drawer) {
+  const vKey = owner + 'Var', dKey = owner + 'VarDrive', pKey = owner + 'VarPeriod';
+  return [
+    varianceOf(owner, {
+      id: dKey, section: 'sun', label: name + ' variance driver', kind: 'segment', dropdown: true,
+      parent: drawer,
+      options: DRIVES.map(v => ({ value: v, label: DRIVE_NAMES[v], domId: null })),
+      def: DEF_DRIVE,
+      get: S => driveOf(S[dKey]),
+      set: (S, v) => { S[dKey] = driveOf(v); save(); },
+      format: S => DRIVE_NAMES[driveOf(S[dKey])],
+      enabled: layerOn
+    }),
+    varianceOf(owner, under(drawer, percent(vKey, vKey, name + ' variance',
+      S => S[vKey] > 0 ? Math.round(S[vKey] * 100) + '%' : 'off'))),
+    varianceOf(owner, under(drawer, {
+      id: pKey, section: 'sun', label: name + ' variance speed', kind: 'slider',
+      min: 0, max: 120, step: 1, def: spec(pKey)[3],
+      get: S => S[pKey],
+      set: (S, pos) => {
+        const v = fit(pos, 0, 120, true);
+        retimeRoomPhase(S, pKey + 'Off', S[pKey], v);
+        S[pKey] = v;
+        save();
+      },
+      format: S => S[pKey] + 's',
+      visible: S => driveOf(S[dKey]) === 'time',
+      enabled: layerOn
+    }))
+  ];
+}
+// The live varied value gpu/sun.js publishes, as the owner's whole percent.
+const fbEffective = (owner, eff) => S => S[owner + 'Var'] > 0 && typeof S[eff] === 'number' ? Math.round(S[eff] * 100) : undefined;
+
 // Atmosphere's readout: at each of the five channel stops (the sweep from the
 // photosphere up to the corona) it names the channel; between them, the
 // percent.
@@ -373,10 +435,9 @@ export const SUN_CONTROLS = [
     effective: S => typeof S.effSunSpeed === 'number' ? speedToPos(S.effSunSpeed) : undefined,
     enabled: layerOn
   },
-  // Speed's variance, folded out from under the Speed row as every variance
-  // is. The breath is its clock: see the NUM table.
-  varianceOf('sunSpeed', under('sunSolarDrawer', percent('sunSpeedVar', 'sunSpeedVar', 'Speed variance',
-    S => S.sunSpeedVar > 0 ? Math.round(S.sunSpeedVar * 100) + '%' : 'off'))),
+  // Speed's variance, folded out from under the Speed row: its driver, its
+  // dip and Time's speed (see the NUM table).
+  ...drivenVariance('sunSpeed', 'Speed', 'sunSolarDrawer'),
   under('sunSolarDrawer', direct('sunSize', 'sunSize', 'Size', 0.05, times2('sunSize'))),
   under('sunSolarDrawer', percent('sunAtmo', 'sunAtmo', 'Atmosphere', atmoText)),
 
@@ -407,8 +468,12 @@ export const SUN_CONTROLS = [
   // ---- Feedback: the trails the sun leaves, and a Stream that can ride the
   // breath ----
   subDrawer('sunFeedbackDrawer', 'Feedback', 'sun', ['sunFbAmt', 'sunFbStream']),
-  under('sunFeedbackDrawer', percent('sunFbAmt', 'sunFbAmt', 'Amount')),
-  under('sunFeedbackDrawer', percent('sunFbOpacity', 'sunFbOpacity', 'Opacity')),
+  under('sunFeedbackDrawer', Object.assign(percent('sunFbAmt', 'sunFbAmt', 'Amount'),
+    { effective: fbEffective('sunFbAmt', 'effSunFbAmt') })),
+  ...drivenVariance('sunFbAmt', 'Amount', 'sunFeedbackDrawer'),
+  under('sunFeedbackDrawer', Object.assign(percent('sunFbOpacity', 'sunFbOpacity', 'Opacity'),
+    { effective: fbEffective('sunFbOpacity', 'effSunFbOpacity') })),
+  ...drivenVariance('sunFbOpacity', 'Opacity', 'sunFeedbackDrawer'),
   // The Center fade: the inner sun kept out of the trails, so they flow
   // only from the edge. The live picture is never faded.
   under('sunFeedbackDrawer', percent('sunFbGate', 'sunFbGate', 'Center fade',
