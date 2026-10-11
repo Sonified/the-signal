@@ -401,39 +401,25 @@ function idxOf(id) {
 // rearranged or trimmed under the ramp still lands the preset that began it.
 let recall = null;
 
-// The level each switch fades through: the rows of the two windows that fade
-// a switch rather than cut it (ui/screens/performer.js LAYERS, ui/screens/
-// music.js ROWS), a layer's opacity and a voice's trim, with a layer's trail
-// opacity beside it (TRAIL_OP). The text and the fireworks are faded the
-// same way though no window row does. The music engine's switch has no level
-// of its own, so it fades through its five voices' trims together. A switch
-// not listed simply switches. Ids the schema does not know are dropped.
-const SWITCH_LEVELS = {
-  lField: ['fieldOpacity'], lEdge: ['edgeOpacity'], lCorners: ['cornerOpacity'],
-  lRings: ['ringOpacity'], lKaleido: ['kaleidoOpacity'], lFlowers: ['flowerOpacity'],
-  lParticles: ['partOpacity'], lConfetti: ['confOpacity'], lFireworks: ['fwBright'],
-  lText: ['textOpacity'],
-  aTone: ['musTone'], aClick: ['musPulse'],
-  musicOn: ['musPiano', 'musClouds', 'musDrone', 'musArp', 'musChoir'],
-  pianoOn: ['musPiano'], cloudsOn: ['musClouds'], bedOn: ['musDrone'],
-  arpOn: ['musArp'], choirOn: ['musChoir'], ambOn: ['musAmb']
-};
+// The levels each switch fades through: its schema op (a layer's opacity, a
+// voice's trim) with that level's trail beside it (opOf, trailOf below), the
+// one declaration the windows' rows, the journey and this recall all read.
+// The music engine's switch has no level of its own, so it fades through
+// every music voice's together. A switch with none simply switches.
 let levelMap = null;
 function levelsOf(id) {
   if (!levelMap) {
     levelMap = new Map();
-    const ok = c => c && c.kind === 'slider' && c.get && c.set;
-    for (const k in SWITCH_LEVELS) {
-      const out = [];
-      for (const lid of SWITCH_LEVELS[k]) {
-        const L = byId(lid);
-        if (!ok(L)) continue;
-        out.push(L);
-        const fb = TRAIL_OP[lid] ? byId(TRAIL_OP[lid]) : null;
-        if (ok(fb)) out.push(fb);
-      }
-      if (out.length) levelMap.set(k, out);
+    const engine = [];
+    for (let j = 0; j < R.length; j++) {
+      const L = opOf(R[j]);
+      if (!L) continue;
+      const out = [L], fb = trailOf(L);
+      if (fb) out.push(fb);
+      levelMap.set(R[j].id, out);
+      if (R[j].section === 'music') engine.push(...out);
     }
+    if (engine.length) levelMap.set('musicOn', engine);
   }
   return levelMap.get(id);
 }
@@ -671,32 +657,37 @@ function settleRecall(r, i) {
 
 // ---------- a layer switched on or off from the window ----------
 // Rather than landing at once, the layer fades over the ramp time through its
-// own opacity control (op): on, the opacity drops to nothing, the layer comes
-// on and the opacity glides up to its level; off, the opacity glides down to
-// nothing, then the layer goes off and the opacity is quietly put back, so
-// the layer keeps its level for next time. now (shift-click), a cut-length
-// ramp, a layer with no opacity or one already at nothing just switch.
-// A fade-out in flight is kept here by toggle id until perfTick lands it.
+// own level, the schema's op for its switch (a layer's opacity, a voice's
+// trim): on, the level drops to nothing, the layer comes on and the level
+// glides up to where it belongs; off, the level glides down to nothing, then
+// the layer goes off and the level is quietly put back, so the layer keeps it
+// for next time. opts.now (shift-click), a cut-length ramp, a switch with no
+// op or a level already at nothing just switch. A fade-out in flight is kept
+// here by toggle id until perfTick lands it.
 //
-// A layer with trails fades its trail image's opacity alongside (TRAIL_OP):
-// the layer's opacity only thins what goes into the trails, so the trails
-// already laid would hold at full strength and then cut when the layer went
-// off. The trail opacity glides with it and is put back the same way.
+// A level with a trail (the schema's trail on it: the edge's and the
+// particles' trail opacity) fades it alongside: the layer's opacity only
+// thins what goes into the trails, so the trails already laid would hold at
+// full strength and then cut when the layer went off. The trail opacity
+// glides with it and is put back the same way.
 const layerFades = new Map();
-// Confetti is not listed: its Opacity already dims its trails
-// (gpu/confetti.js), and fading both would square the fade.
-const TRAIL_OP = { edgeOpacity: 'edgeFbOpacity', partOpacity: 'partFbOpacity' };
+// A switch's level (its schema op) and a level's trail (the schema's trail),
+// each a slider that can be read and set, else null.
+const okLevel = c => c && c.kind === 'slider' && c.get && c.set ? c : null;
+const opOf = t => t && t.op ? okLevel(byId(t.op)) : null;
+const trailOf = L => L && L.trail ? okLevel(byId(L.trail)) : null;
 // A slider's level to fade from and back to: where a glide on it is headed,
 // or where it is.
 function levelOf(c) {
   const tgt = perfTarget(c.id);
   return typeof tgt === 'number' ? tgt : c.get(S);
 }
-export function perfLayer(toggleId, opId, on, now) {
+export function perfLayer(toggleId, on, opts) {
   loadPerform();
   const t = byId(toggleId);
   if (!t) return false;
-  const op = opId ? byId(opId) : null;
+  const now = !!(opts && opts.now);
+  const op = opOf(t);
   // The journey is told where each control ends up, not left to read it: a
   // fade-out keeps the toggle on and the level falling for the whole ramp,
   // and a fade-in drops the level to nothing first, so a reading taken just
@@ -709,15 +700,14 @@ export function perfLayer(toggleId, opId, on, now) {
   journeyManualOverride(toggleId, on);
   const pend = layerFades.get(toggleId);
   layerFades.delete(toggleId);
-  if (!op || op.kind !== 'slider') { if (op) journeyManualOverride(op.id); return perfSet(toggleId, on); }
+  if (!op) return perfSet(toggleId, on);
   const floor = Number.isFinite(op.min) ? op.min : 0;
   // where the opacity belongs: a fade-out's remembered level, or where a
   // glide on it is headed, or where it is
   const level = pend ? pend.level : levelOf(op);
   journeyManualOverride(op.id, level);
   // the trail opacity likewise, when the layer has one
-  let fb = TRAIL_OP[op.id] ? byId(TRAIL_OP[op.id]) : null;
-  if (fb && fb.kind !== 'slider') fb = null;
+  const fb = trailOf(op);
   const fbFloor = fb && Number.isFinite(fb.min) ? fb.min : 0;
   const fbLevel = !fb ? undefined : pend && pend.fb === fb ? pend.fbLevel : levelOf(fb);
   if (fb) journeyManualOverride(fb.id, fbLevel);

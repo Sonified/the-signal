@@ -80,7 +80,9 @@ export const FIREWORK_CONTROLS = [
   // In the Layers group after Particles. Off by default, so a first visit
   // looks exactly as it did before.
   {
-    id: 'lFireworks', section: 'layers', label: 'Fireworks', kind: 'toggle', def: false,
+    // op: what it fades through (schema-visual.js layerToggle); the fireworks
+    // have no opacity of their own, so their brightness stands in for one
+    id: 'lFireworks', section: 'layers', label: 'Fireworks', kind: 'toggle', def: false, op: 'fwBright',
     get: S => !!S.layers.fireworks,
     set: (S, on) => { S.layers.fireworks = on; save(); }
   },

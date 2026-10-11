@@ -135,7 +135,8 @@ function makeLayer(toggleId, name, cells) {
     fitW: -1, fitOver: false, linesH: ROW_H, cellH: ROW_H, k: cellSeq++ };
   for (const cel of row.cells) cel.row = row;
   // the first shared column is the layer's opacity, which its switch fades
-  // through (perform.js perfLayer)
+  // through (perform.js perfLayer, by the schema's op), where the handle is
+  // parked while the layer fades out
   const first = cells[0];
   if (first && first.kind === 'slider') { row.op = first; first.opOf = row; }
   row.shownOn = true; row.fadeLevel = undefined;
@@ -241,6 +242,12 @@ const LAYERS = [
   // The text layer's own row lives in the Text window (textbank.js, on T),
   // with the phrase bank and the fades, so every text control is in one place.
 ].filter(Boolean);
+// Which opacity a layer's switch fades through is the schema's to say (its
+// op); a row whose first column shows another is warned of.
+for (const L of LAYERS) {
+  const has = L.op ? L.op.c.id : null, op = L.t.op || null;
+  if (has !== op) console.warn('performer: ' + L.t.id + ' fades through ' + op + ' (its schema op), but its row shows ' + has + ' in the opacity column');
+}
 
 // placed says x and y hold a real position, as the mixer's does: a window
 // dragged partly off the left edge has a legitimate negative x. winO is the
@@ -584,7 +591,7 @@ function layerBlock(ui, L, index) {
   ui.interact(hid, bodyX - 4, swY - 6, SW_W + 12, SW_H + 12, false);
   if (ui.hover) ui.setCursorHint('pointer');
   // fades over the ramp time through the layer's opacity; shift-click cuts
-  if (ui.clicked) perfLayer(L.t.id, L.op ? L.op.c.id : null, !on, ui.pointerShift);
+  if (ui.clicked) perfLayer(L.t.id, !on, { now: ui.pointerShift });
   const onA = ui.spring(ui.idx('perf.lswA', L.k), on ? 1 : 0, MOTION.hover);
   // An off row reads as off at a glance: its band shaded darker, its name
   // and its handles dimmed well down, all eased on the switch's own spring

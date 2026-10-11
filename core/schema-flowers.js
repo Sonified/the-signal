@@ -175,7 +175,8 @@ export const FLOWER_CONTROLS = [
   // Text, since the drawer groups by section and walks controls in order.
   // Off by default: a first visit looks exactly as it did before flowers.
   {
-    id: 'lFlowers', section: 'layers', label: 'Flowers', kind: 'toggle', def: false,
+    // op: the opacity it fades through (schema-visual.js layerToggle)
+    id: 'lFlowers', section: 'layers', label: 'Flowers', kind: 'toggle', def: false, op: 'flowerOpacity',
     get: S => !!S.layers.flowers,
     set: (S, on) => { S.layers.flowers = on; save(); }
   },

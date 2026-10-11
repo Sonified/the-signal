@@ -373,7 +373,8 @@ export const KALEIDO_CONTROLS = [
   // Sits in the drawer's Layers group straight after the Flowers toggle.
   // Off by default: a first visit looks exactly as it did before.
   {
-    id: 'lKaleido', section: 'layers', label: 'Kaleidoscope', kind: 'toggle', def: false,
+    // op: the opacity it fades through (schema-visual.js layerToggle)
+    id: 'lKaleido', section: 'layers', label: 'Kaleidoscope', kind: 'toggle', def: false, op: 'kaleidoOpacity',
     get: S => !!S.layers.kaleido,
     set: (S, on) => { S.layers.kaleido = on; save(); }
   },

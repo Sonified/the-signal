@@ -263,9 +263,14 @@ function themesGet(S) {
 // top of the Text group below; both point at the same S.layers.text, the
 // same "one owner" pattern v0 uses everywhere a corner toggle mirrors a
 // drawer control.
-function layerToggle(id, key, label) {
+//
+// op names the layer's opacity, the level it fades in and out through when a
+// window or a preset's ramp switches it (core/perform.js perfLayer); a layer
+// in another file (the flowers, the particles, ...) declares its own the same
+// way. A switch with no op simply switches.
+function layerToggle(id, key, label, op) {
   return {
-    id, section: 'layers', label, kind: 'toggle', def: true,
+    id, section: 'layers', label, kind: 'toggle', def: true, op,
     get: S => !!S.layers[key],
     set: (S, on) => { S.layers[key] = on; save(); }
   };
@@ -284,11 +289,11 @@ function sectionToggle(id, key, section, label) {
 }
 
 export const VISUAL_CONTROLS = [
-  layerToggle('lField',   'field',   'Field'),
-  layerToggle('lRings',   'rings',   'Rings'),
-  layerToggle('lCorners', 'corners', 'Corners'),
-  layerToggle('lEdge',    'edge',    'Edge'),
-  layerToggle('lText',    'text',    'Text'),
+  layerToggle('lField',   'field',   'Field',   'fieldOpacity'),
+  layerToggle('lRings',   'rings',   'Rings',   'ringOpacity'),
+  layerToggle('lCorners', 'corners', 'Corners', 'cornerOpacity'),
+  layerToggle('lEdge',    'edge',    'Edge',    'edgeOpacity'),
+  layerToggle('lText',    'text',    'Text',    'textOpacity'),
 
   // ---------- Strobe ----------
   sectionToggle('fieldOn',   'field',   'strobe', 'On'),
@@ -742,8 +747,12 @@ export const VISUAL_CONTROLS = [
   // ---------- Edge ----------
   sectionToggle('edgeOn', 'edge', 'edge', 'On'),
   {
-    // Scales the whole edge's brightness, whichever effect it shows.
-    id: 'edgeOpacity', section: 'edge', label: 'Edge opacity', kind: 'slider',
+    // Scales the whole edge's brightness, whichever effect it shows. Its
+    // trail is the trails' own opacity: this one only thins what goes into
+    // the trails, so a fade through it alone would leave the trails already
+    // laid at full strength and cut them as the layer went off, and a fade
+    // (core/perform.js perfLayer) takes the trail down and back with it.
+    id: 'edgeOpacity', section: 'edge', label: 'Edge opacity', kind: 'slider', trail: 'edgeFbOpacity',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.edgeOpacity * 100),
     set: (S, pos) => { S.edgeOpacity = pos / 100; save(); },

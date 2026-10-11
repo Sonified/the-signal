@@ -246,7 +246,10 @@ export const CONFETTI_CONTROLS = [
   // In the Layers group after Fireworks. Off by default, so a first visit
   // looks exactly as it did before.
   {
-    id: 'lConfetti', section: 'layers', label: 'Confetti', kind: 'toggle', def: false,
+    // op: the opacity it fades through (schema-visual.js layerToggle). It
+    // names no trail: this Opacity already dims the trails (gpu/confetti.js),
+    // and fading both would square the fade.
+    id: 'lConfetti', section: 'layers', label: 'Confetti', kind: 'toggle', def: false, op: 'confOpacity',
     get: S => !!S.layers.confetti,
     set: (S, on) => { S.layers.confetti = on; save(); }
   },

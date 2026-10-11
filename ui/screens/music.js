@@ -134,7 +134,9 @@ function makeRow(toggleId, name, cells, opts) {
     fitW: -1, fitOver: false, linesH: ROW_H, cellH: ROW_H, k: cellSeq++ };
   for (const cel of row.cells) cel.row = row;
   // A row with a switch fades through its level (perform.js perfLayer): the
-  // first cell, the LEVEL column. A row without a level simply switches.
+  // first cell, the LEVEL column, where the handle is parked while the row
+  // fades out. Which level the switch fades through is the schema's to say
+  // (its op), not the row's, so a row laid out against it is warned of.
   const first = cells[0];
   if (t && first) { row.op = first; first.opOf = row; }
   row.shownOn = true; row.fadeLevel = undefined;
@@ -162,6 +164,11 @@ const ROWS = [
   // monitor only; the broadcast hears the input at its designed level.
   makeRow('liveOn', 'Live Sound', [levelCell('musLive')], { short: 'Live' })
 ].filter(Boolean);
+for (const R of ROWS) {
+  if (!R.t) continue;
+  const has = R.op ? R.op.c.id : null, op = R.t.op || null;
+  if (has !== op) console.warn('music: ' + R.t.id + ' fades through ' + op + ' (its schema op), but its row shows ' + has + ' in the level column');
+}
 
 // placed says x and y hold a real position: a window dragged partly off the
 // left edge has a legitimate negative x. winO is the whole window's opacity,
@@ -456,7 +463,7 @@ function rowBlock(ui, R, index) {
     ui.interact(ui.idx('mus.sw', R.k), bodyX - 4, swY - 6, SW_W + 12, SW_H + 12, false);
     if (ui.hover) ui.setCursorHint('pointer');
     // fades over the ramp time through the row's level; shift-click cuts
-    if (ui.clicked) perfLayer(R.t.id, R.op ? R.op.c.id : null, !on, ui.pointerShift);
+    if (ui.clicked) perfLayer(R.t.id, !on, { now: ui.pointerShift });
     drawSwitch(ui, bodyX, swY, SW_W, SW_H, onA, on);
   }
   ui.text.draw(dl, R.name, bodyX + SW_W + NAME_GAP, baseline(ui, cy, TYPE.sm),

@@ -285,6 +285,9 @@ const noLabel = c => { c.hideLabel = true; return c; };
 // Tags a control as part of the variance of the row straight above it (the
 // schema's varianceOf), so the drawer folds it out from under that row.
 const varianceOf = (owner, c) => { c.varianceOf = owner; return c; };
+// Names the trail opacity a fade through this level takes with it (the
+// schema's `trail`, core/perform.js perfLayer).
+const trail = (id, c) => { c.trail = id; return c; };
 // Gives a control a hover tip in the drawer (the schema's `tip`).
 const tip = (str, c) => { c.tip = str; return c; };
 
@@ -386,7 +389,8 @@ export const PARTICLE_CONTROLS = [
   // Sits in the drawer's Layers group straight after the Kaleidoscope toggle.
   // Off by default: a first visit looks exactly as it did before.
   {
-    id: 'lParticles', section: 'layers', label: 'Particles', kind: 'toggle', def: false,
+    // op: the opacity it fades through (schema-visual.js layerToggle)
+    id: 'lParticles', section: 'layers', label: 'Particles', kind: 'toggle', def: false, op: 'partOpacity',
     get: S => !!S.layers.particles,
     set: (S, on) => { S.layers.particles = on; save(); }
   },
@@ -445,7 +449,9 @@ export const PARTICLE_CONTROLS = [
   // solid the layer is, how it fades in from the centre, and how far it
   // flickers with the strobe.
   subDrawer('partColorDrawer', 'Color', 'particles', ['partOpacity', 'partColor']),
-  under('partColorDrawer', percent('partOpacity', 'partOpacity', 'Opacity')),
+  // Its trail (the trails' own opacity) fades with it, as the edge's does
+  // (schema-visual.js edgeOpacity): this one only thins what goes into them.
+  trail('partFbOpacity', under('partColorDrawer', percent('partOpacity', 'partOpacity', 'Opacity'))),
   ...varianceRows('partOpacity', {
     name: 'Opacity', periodMax: 120, parent: 'partColorDrawer',
     effective: S => (S.effPartOpacity ?? S.partOpacity) * 100

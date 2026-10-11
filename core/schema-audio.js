@@ -517,9 +517,16 @@ const audioControls = [
   // strip carries that switch (subDrawer in schema-visual.js, its switchId),
   // with the voice's rows straight after it. The switch is drawn on the strip
   // only, never as a row; its rows keep their own rules, so a voice switched
-  // off still opens, its rows hidden until it is on ----
+  // off still opens, its rows hidden until it is on.
+  //
+  // A voice's op names the level it enters and leaves through: its Music
+  // window trim. A voice switched from anywhere that fades (the Music
+  // window's rows, a journey step's ramp, a preset's) comes on silent and
+  // rises through it, and goes off by falling through it first, the switch
+  // only turning at the landing (core/perform.js perfLayer, the one door).
+  // Declared here once; every fader, recorder and ramp reads it from here ----
   {
-    id: 'aTone', section: 'audio', label: 'Sine tone', kind: 'toggle',
+    id: 'aTone', section: 'audio', label: 'Sine tone', kind: 'toggle', op: 'musTone',
     get: s => s.toneOn,
     set: (s, on) => setToneOn(s, !!on),
     format: s => s.toneOn ? 'On' : 'Off'
@@ -576,7 +583,7 @@ const audioControls = [
     effective: s => (typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * toneAmMulNow() * 100
   }),
   {
-    id: 'aClick', section: 'audio', label: 'Click train', kind: 'toggle',
+    id: 'aClick', section: 'audio', label: 'Click train', kind: 'toggle', op: 'musPulse',
     get: s => s.clickOn,
     set: (s, on) => setClickOn(s, !!on),
     format: s => s.clickOn ? 'On' : 'Off'
@@ -920,7 +927,7 @@ const musicControls = [
   {
     // The generative piano voice alone; the drone, sequencer and clouds keep
     // playing. Read by the player as each gesture is chosen (js/piano.js).
-    id: 'pianoOn', section: 'music', label: 'Piano', kind: 'toggle',
+    id: 'pianoOn', section: 'music', label: 'Piano', kind: 'toggle', op: 'musPiano',
     get: s => s.pianoOn !== false,
     // the channel holds its trim while the piano is off (piano.js); on
     // picks the trim up again
@@ -1006,7 +1013,7 @@ const musicControls = [
   {
     // The sequencer (js/piano.js, its arp and sequencer sections), whose
     // first pattern is the original 3 4 8 figure: off by default.
-    id: 'arpOn', section: 'music', label: 'Sequencer', kind: 'toggle',
+    id: 'arpOn', section: 'music', label: 'Sequencer', kind: 'toggle', op: 'musArp',
     get: s => !!s.arpOn,
     set: (s, on) => { s.arpOn = !!on; applyArp(); save(); },
     format: s => s.arpOn ? 'On' : 'Off',
@@ -1085,7 +1092,7 @@ const musicControls = [
     effective: () => arpEffectiveAm() * 100
   }),
   {
-    id: 'bedOn', section: 'music', label: 'Ocean drone', kind: 'toggle',
+    id: 'bedOn', section: 'music', label: 'Ocean drone', kind: 'toggle', op: 'musDrone',
     get: s => s.bedOn !== false,
     set: (s, on) => { s.bedOn = !!on; applyBedOn(); save(); },
     format: s => s.bedOn !== false ? 'On' : 'Off',
@@ -1269,7 +1276,7 @@ const musicControls = [
   // a new cosine leg every speed-many seconds; the slider shows the set
   // value. Every change glides the voices' gains; nothing retriggers ----
   {
-    id: 'choirOn', section: 'music', label: 'Choir', kind: 'toggle',
+    id: 'choirOn', section: 'music', label: 'Choir', kind: 'toggle', op: 'musChoir',
     get: s => !!s.choirOn,
     set: (s, on) => { s.choirOn = !!on; applyChoirOn(); save(); },
     format: s => s.choirOn ? 'On' : 'Off',
@@ -1349,7 +1356,7 @@ const musicControls = [
   // ---- the music layers (js/layers.js): Majestic voice, Bright fifth ----
   ...MUSIC_LAYERS.flatMap(musicLayerControls),
   {
-    id: 'cloudsOn', section: 'music', label: 'Clouds', kind: 'segment',
+    id: 'cloudsOn', section: 'music', label: 'Clouds', kind: 'segment', op: 'musClouds',
     hideLabel: true,
     options: [
       { value: true,  label: 'On',  domId: 'clOn' },
@@ -1577,7 +1584,8 @@ const reverbControls = [
 // own 'mixer' section further down) ----------
 const atmosphereControls = [
   {
-    id: 'ambOn', section: 'atmosphere', label: 'Ambience', kind: 'segment',
+    // its level partner (op) is the Music window's trim, as a voice's is
+    id: 'ambOn', section: 'atmosphere', label: 'Ambience', kind: 'segment', op: 'musAmb',
     hideLabel: true,
     options: [
       { value: true,  label: 'On',  domId: 'amOn' },
@@ -1735,7 +1743,8 @@ const liveControls = [
     // Opens the input (asking the browser's permission the first time) and
     // brings it in; off stops it, and the microphone light goes out. A
     // refusal turns this back off by itself (livesound.js).
-    id: 'liveOn', section: 'live', label: 'On', kind: 'toggle',
+    // Its level partner (op) is the Music window's trim, as a voice's is.
+    id: 'liveOn', section: 'live', label: 'On', kind: 'toggle', op: 'musLive',
     get: s => !!s.liveOn,
     set: (s, on) => { s.liveOn = !!on; applyLiveOn(); }
   },
