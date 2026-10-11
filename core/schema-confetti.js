@@ -10,7 +10,8 @@
 // applyConfettiState().
 import { save } from './store.js';
 import { subDrawer } from './schema-visual.js';
-import { varianceRows } from './schema-variance.js';
+import { varianceRows, driveRow } from './schema-variance.js';
+import { driveOf } from './variance.js';
 import { retimeRoomPhase } from './room-clock.js';
 
 // The palettes, as gpu/confetti.js reads S.confPalette: six festive hues,
@@ -143,6 +144,7 @@ export function initConfettiState(S) {
   if (typeof S.confKaleido !== 'boolean') S.confKaleido = DEF_KALEIDO;
   if (typeof S.confMirror !== 'boolean') S.confMirror = DEF_MIRROR;
   if (typeof S.confFbTwistVarOn !== 'boolean') S.confFbTwistVarOn = true;
+  S.confFbOpacityVarDrive = driveOf(S.confFbOpacityVarDrive);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -160,7 +162,8 @@ export function confettiStateOf(S) {
     confFbWhere: S.confFbWhere,
     confKaleido: !!S.confKaleido,
     confMirror: !!S.confMirror,
-    confFbTwistVarOn: S.confFbTwistVarOn !== false
+    confFbTwistVarOn: S.confFbTwistVarOn !== false,
+    confFbOpacityVarDrive: driveOf(S.confFbOpacityVarDrive)
   };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   // Copied, so the record never aliases S.
@@ -178,6 +181,7 @@ export function applyConfettiState(S, o) {
   if (typeof o.confKaleido === 'boolean') S.confKaleido = o.confKaleido;
   if (typeof o.confMirror === 'boolean') S.confMirror = o.confMirror;
   if (typeof o.confFbTwistVarOn === 'boolean') S.confFbTwistVarOn = o.confFbTwistVarOn;
+  if (typeof o.confFbOpacityVarDrive === 'string') S.confFbOpacityVarDrive = driveOf(o.confFbOpacityVarDrive);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -543,10 +547,14 @@ export const CONFETTI_CONTROLS = [
   },
   // Opacity's dip, the app's standard: over one rate cycle the image eases
   // from the setting down by this share and back, never above it (stepped
-  // with the strobe's own variances, core/strobe.js).
+  // with the strobe's own variances, core/strobe.js). What drives it leads:
+  // Time (the rate, shown only then), the strobe's wave or the sun's breath.
+  Object.assign(driveRow('confFbOpacity', 'confFbOpacityVarDrive', 'Opacity variance driver', 'confFeedbackDrawer', 'confetti'),
+    { enabled: layerOn }),
   ...varianceRows('confFbOpacity', {
     name: 'Opacity', periodMax: 120, parent: 'confFeedbackDrawer', enabled: layerOn,
-    effective: S => (S.effConfFbOpacity ?? S.confFbOpacity) * 100
+    effective: S => (S.effConfFbOpacity ?? S.confFbOpacity) * 100,
+    rows: { period: { visible: S => driveOf(S.confFbOpacityVarDrive) === 'time' } }
   }),
   // Each frame keeps a fading copy of the last, so every piece leaves a
   // trail that stays where it was drawn and dies away. At 0 there is no
