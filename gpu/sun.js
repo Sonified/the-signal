@@ -31,6 +31,16 @@
 // pause reason pauses both elements, the rate law sets both while a wrap is
 // armed, and an armed wrap that is playing holds the frame loop awake.
 //
+// A stalled decoder is rescued the same way (watchStall): a main that is
+// playing, with buffer in hand, whose clock has not moved for STALL_S wall
+// seconds (seen live: HEVC wedged mid-file, everything buffered, the clock
+// frozen, a seek never finishing) arms a rescue wrap. The ghost, a decoder
+// of its own, seeks to the main's place and plays, the frozen frame holds
+// meanwhile, and the usual crossfade hands over; the dead element is then
+// reloaded, a fresh decoder parked as the ghost. A ghost that cannot show
+// frames in GHOST_WAIT_S reloads both elements in place (swapSource), as
+// High quality off and on did by hand.
+//
 // The breath is the layer's master signal: one sine, S.sunBreathRate breaths
 // a minute on the layer's motion clock (a paused scene holds it), with two
 // consumers in step. The Atmosphere: the five channels sit along a
@@ -142,6 +152,11 @@ const XFADE_S = 0.5;
 const BUFFER_MARGIN_S = 1.5;
 const GHOST_WAIT_S = 6;
 const WRAP_RETRY_S = 4;
+// A playing main whose clock has stood this many wall seconds, with at least
+// STALL_AHEAD_S of buffer past it (less is the network, the wrap's to
+// handle), is stalled.
+const STALL_S = 1;
+const STALL_AHEAD_S = 0.5;
 // The uniform slots, one per target, 256 bytes apart (dynamic offsets): see
 // sun.wgsl.js's struct SU, 20 floats of each slot used.
 const SLOT_BYTES = 256, SLOT_FLOATS = SLOT_BYTES / 4, SU_FLOATS = 20;
@@ -249,6 +264,8 @@ export function createSun(device, format) {
   // buffered edge's growth watch over the main.
   let wrap = null, xfade = 0, wrapRetryAt = 0, wrapHeld = false;
   const bufWatch = { el: null, end: 0, at: 0 };
+  // The stall watch over the main: its clock as last seen, and since when.
+  const stallWatch = { el: null, t: -1, at: 0 };
 
   function onLoaded(e) {
     if (e.target !== video) return;
@@ -439,8 +456,12 @@ export function createSun(device, format) {
 
     if (wrap) {
       if (!wrap.fading) {
-        if (g.readyState >= 2) { wrap.fading = true; wrap.last = now; }
-        else if (now - wrap.since > GHOST_WAIT_S) { standDownWrap(); return; }
+        if (g.readyState >= 2 && !g.seeking) { wrap.fading = true; wrap.last = now; }
+        else if (now - wrap.since > GHOST_WAIT_S) {
+          // A rescue whose ghost cannot show frames either: both reloaded in place.
+          if (wrap.rescue) { console.warn('sun: the rescue ghost showed no frames; reloading the video in place'); swapSource(stemNow); return; }
+          standDownWrap(); return;
+        }
       }
       if (wrap.fading) {
         // XFADE_S wall seconds of fade, advanced only while the main plays
@@ -453,10 +474,20 @@ export function createSun(device, format) {
     // Wrap when the fade has completed, or the file ends under us.
     if (v.ended && g.readyState < 2) { standDownWrap(); return; }
     if (v.ended || (wrap && xfade >= 1)) {
+      const rescued = !!(wrap && wrap.rescue);
       video = g;                      // the ghost (already playing) takes over
       ghost = v;
       v.pause();
-      try { v.currentTime = 0; } catch (e) {}
+      if (rescued) {
+        // The stalled decoder is not trusted to seek again: a fresh load,
+        // parked unloaded as a new ghost is.
+        playPending.delete(v);
+        v.preload = 'none';
+        v.src = srcNow;
+        console.warn('sun: rescued, the ghost has taken over and the stalled element reloads');
+      } else {
+        try { v.currentTime = 0; } catch (e) {}
+      }
       xfade = 0;
       wrap = null;
     }
@@ -468,6 +499,36 @@ export function createSun(device, format) {
     if (want === wrapHeld) return;
     wrapHeld = want;
     if (want) idleHold(); else idleRelease('the sun wrap');
+  }
+  // The stall rescue (see the top of this file). Watches only a main that
+  // is playing on its own: paused, ended, mid-play(), mid-swap or under an
+  // armed wrap, the watch starts over.
+  function watchStall(now) {
+    const v = video;
+    if (!v || videoFailed || seekTo >= 0 || wrap || v.paused || v.ended || playPending.has(v)) { stallWatch.el = null; return; }
+    const t = v.currentTime;
+    if (stallWatch.el !== v || t !== stallWatch.t) { stallWatch.el = v; stallWatch.t = t; stallWatch.at = now; return; }
+    if (now - stallWatch.at < STALL_S) return;
+    const dur = v.duration;
+    if (!isFinite(dur) || dur <= 0) return;
+    // A seek that never finished is a stall whatever the buffer says;
+    // otherwise only with buffer in hand past the clock.
+    if (!v.seeking) {
+      let ahead = 0;
+      const b = v.buffered;
+      for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.001 && t <= b.end(i)) { ahead = b.end(i) - t; break; }
+      if (ahead < Math.min(STALL_AHEAD_S, dur - t - 0.05)) return;
+    }
+    console.warn('sun: the video stalled at ' + t.toFixed(2) + 's (clock still ' + (now - stallWatch.at).toFixed(1) + 's, ready ' + v.readyState + (v.seeking ? ', seeking' : '') + '); the ghost takes over');
+    stallWatch.el = null;
+    const g = ghost;
+    if (g.error) g.src = srcNow;
+    g.preload = 'auto';
+    try { g.currentTime = Math.min(t + 0.05, Math.max(0, dur - 0.1)); } catch (e) {}
+    g.playbackRate = v.playbackRate;
+    wrap = { since: now, fading: false, last: now, rescue: true };
+    xfade = 0;
+    playEl(g);
   }
 
   // Plays while the layer is on, awake, the scene moving and the variance
@@ -695,6 +756,7 @@ export function createSun(device, format) {
     // then the video, its rate riding its variance's drive.
     updateWrap(nowMs / 1000);
     syncVideo(true, driveOf('sunSpeed', t, md, lum, S.effSunBreathPos));
+    watchStall(nowMs / 1000);
     syncWrapHold();
 
     // The Rotational hum's Cutoff, as its variance plays it, on the 0 to 1
