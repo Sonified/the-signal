@@ -118,7 +118,10 @@ const C = {
   // LOOP lit: the sequencer window's green (ui/screens/sequencer.js), not
   // the journey's gold, so it reads as on at a glance
   loopOnBg: css('#62d7aa', 0.12), loopOnBorder: css('#365e50'), loopOnInk: css('#64d8ad'),
-  // the fold's ground and the add chip
+  // an open step's fold: a ground a shade lighter than the pane, its edge a
+  // faint gold, so the opened step reads as a raised panel of its own
+  fold: css('#232d39'), foldLine: css(GOLD, 0.24),
+  // the fold's fields and the add chip
   field: css('#121820'), fieldBorder: css('#2a3440'), placeholder: css('#8997a6')
 };
 
@@ -980,12 +983,12 @@ function foldName(ui, x0, t, cy) {
   ui.text.draw(ui.dl, t, x0 + FOLD_NAME_X, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
 }
 
-// One step's fold on a faint ground, top at fy: HOLD and RAMP, SLIDE, the
+// One step's fold on its raised ground, top at fy: HOLD and RAMP, SLIDE, the
 // text accordion, PIANO, PRESET and INTERACTION.
 function drawFold(ui, i, x0, fy) {
   const dl = ui.dl, st = journeyStepAt(i);
   if (!st) return;
-  dl.rect(x0 - 5, fy + 1, CONTENT_W + 10, foldH[i] - 2, 5, C.bar, 1, C.barLine, 0, 0);
+  dl.rect(x0 - 5, fy + 1, CONTENT_W + 10, foldH[i] - 2, 5, C.fold, 1, C.foldLine, 0, 0);
   const cx = x0 + FOLD_CTL_X, right = x0 + CONTENT_W - 6, mid = x0 + CONTENT_W / 2;
   let ry = fy + FOLD_PAD, cy = ry + FOLD_ROW_H / 2;
 
