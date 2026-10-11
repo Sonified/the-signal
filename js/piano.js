@@ -2054,8 +2054,14 @@ export function applyBedOn() {
   if (S.bedOn !== false) bedOn(); else bedOff();
 }
 
+// Each on or off takes a turn; an on still waiting on the samples' first load
+// lets go if an off (or a later on) came while it waited, so a step that turns
+// the music off on a fresh page is not overruled seconds later by the load.
+let onTurn = 0;
 export async function pianoOn() {
+  const turn = ++onTurn;
   if (!ready && !(await loadPiano())) return false;
+  if (turn !== onTurn) return false;
   const ctx = getContext();
   if (!ctx) return false;
   running = true;
@@ -2068,6 +2074,6 @@ export async function pianoOn() {
   layersSession(true);
   return true;
 }
-export function pianoOff() { running = false; clear(timer); bedOff(); arpStop(); choirSession(false); layersSession(false); }
+export function pianoOff() { onTurn++; running = false; clear(timer); bedOff(); arpStop(); choirSession(false); layersSession(false); }
 export const pianoReady = () => ready;
 export const pianoAvailable = () => canOpus;

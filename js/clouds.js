@@ -485,8 +485,13 @@ function step() {
   timer = after(700, step);
 }
 
+// An on waiting on the first load lets go if an off came meanwhile (as
+// piano.js pianoOn).
+let onTurn = 0;
 export async function cloudsOn() {
+  const turn = ++onTurn;
   if (!ready && !(await loadClouds())) return false;
+  if (turn !== onTurn) return false;
   const ctx = actx;
   if (!ctx) return false;
   running = true;
@@ -497,6 +502,6 @@ export async function cloudsOn() {
   step();
   return true;
 }
-export function cloudsOff() { running = false; clear(timer); }
+export function cloudsOff() { onTurn++; running = false; clear(timer); }
 export const cloudsReady = () => ready;
 export const cloudsAvailable = () => canOpus;
