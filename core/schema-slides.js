@@ -78,6 +78,7 @@ export function initSlidesState(S) {
   if (typeof S.slidePlay !== 'boolean') S.slidePlay = DEF_PLAY;
   if (typeof S.slideLoop !== 'boolean') S.slideLoop = DEF_LOOP;
   if (typeof S.slidePpRamp !== 'boolean') S.slidePpRamp = DEF_PP_RAMP;
+  if (!S.slideVols || typeof S.slideVols !== 'object') S.slideVols = {};
   for (const n of NUM) if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
 }
 
@@ -86,6 +87,13 @@ export function initSlidesState(S) {
 export function slidesStateOf(S) {
   const out = { slidesOn: !!S.layers.slides, slideFile: fileOf(S.slideFile), slidePlay: S.slidePlay !== false, slideLoop: !!S.slideLoop, slidePpRamp: !!S.slidePpRamp };
   for (const n of NUM) out[n[0]] = S[n[0]];
+  // only the lowered slides ride; a full one is the default
+  const vols = {};
+  if (S.slideVols) for (const f in S.slideVols) {
+    const v = S.slideVols[f];
+    if (FILE_OK.has(f) && typeof v === 'number' && isFinite(v) && v < 1) vols[f] = fit(v, 0, 1);
+  }
+  out.slideVols = vols;
   return out;
 }
 
@@ -98,6 +106,14 @@ export function applySlidesState(S, o) {
   if (typeof o.slidePlay === 'boolean') S.slidePlay = o.slidePlay;
   if (typeof o.slideLoop === 'boolean') S.slideLoop = o.slideLoop;
   if (typeof o.slidePpRamp === 'boolean') S.slidePpRamp = o.slidePpRamp;
+  if (o.slideVols && typeof o.slideVols === 'object') {
+    const vols = {};
+    for (const f in o.slideVols) {
+      const v = o.slideVols[f];
+      if (FILE_OK.has(f) && typeof v === 'number' && isFinite(v)) vols[f] = fit(v, 0, 1);
+    }
+    S.slideVols = vols;
+  }
   for (const n of NUM) {
     const v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2]);
@@ -105,6 +121,23 @@ export function applySlidesState(S, o) {
 }
 
 const layerOn = S => !!S.layers.slides;
+
+// ---------- per-slide volume ----------
+// Each slide remembers its own level (S.slideVols, file -> 0..1; full when
+// unset): the drawer's Slide volume row and the Journey fold's VOL slider
+// both edit this one map, so a slide meets the show at the level it was
+// last left. gpu/slides.js reads it onto the slot's gain leg each frame.
+export function slideVolOf(S, file) {
+  const m = S.slideVols;
+  const v = m && typeof m[file] === 'number' ? m[file] : 1;
+  return v >= 0 ? (v > 1 ? 1 : v) : 0;
+}
+export function setSlideVol(S, file, v) {
+  if (typeof file !== 'string' || file === SLIDE_NONE || !FILE_OK.has(file)) return;
+  if (!S.slideVols || typeof S.slideVols !== 'object') S.slideVols = {};
+  S.slideVols[file] = fit(v, 0, 1);
+  save();
+}
 
 // ---------- the sliders' tapers ----------
 // Rate: logarithmic either side of 1x at the centre, 0.25x (two octaves
@@ -159,6 +192,17 @@ export const SLIDES_CONTROLS = [
     set: (S, v) => { S.slideFile = fileOf(v); save(); },
     format: S => slideLabel(S.slideFile),
     enabled: layerOn
+  },
+  {
+    // The picked slide's own remembered level (slideVolOf above), mirrored
+    // by the Journey fold's VOL slider. It sits right after the picker in
+    // the schema, so a step replaying both lands the file first.
+    id: 'slideVol', section: 'slides', label: 'Slide volume', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round(slideVolOf(S, fileOf(S.slideFile)) * 100),
+    set: (S, pos) => setSlideVol(S, fileOf(S.slideFile), pos / 100),
+    format: S => Math.round(slideVolOf(S, fileOf(S.slideFile)) * 100) + '%',
+    enabled: S => layerOn(S) && fileOf(S.slideFile) !== SLIDE_NONE
   },
   {
     id: 'slidePlay', section: 'slides', label: 'Play', kind: 'toggle', def: DEF_PLAY,

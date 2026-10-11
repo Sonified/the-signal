@@ -71,7 +71,7 @@ import {
   journeyTrigger, journeySetTrigger, journeyJumpTo,
   RAMP_MIN, RAMP_MAX, HOLD_MIN, HOLD_MAX, STEP_TEXT_MAX
 } from '../../core/journey.js';
-import { SLIDE_OPTIONS, slideLabel } from '../../core/schema-slides.js';
+import { SLIDE_OPTIONS, SLIDE_NONE, slideLabel, slideVolOf, setSlideVol } from '../../core/schema-slides.js';
 import { slidesLiveState, toggleSlidePlayLive } from '../../gpu/slides.js';
 import { idleWake } from '../../core/idle.js';
 import { S } from '../../js/state.js';
@@ -986,6 +986,13 @@ function drawLifted(ui, x, n) {
 }
 
 // A fold line's name, in the name column.
+// The VOL slider's percent texts, one per whole percent, made once.
+const volTexts = [];
+function volText(v) {
+  const n = Math.round(v * 100);
+  return volTexts[n] || (volTexts[n] = n + '%');
+}
+
 function foldName(ui, x0, t, cy) {
   ui.text.draw(ui.dl, t, x0 + FOLD_NAME_X, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
 }
@@ -999,21 +1006,42 @@ function drawFold(ui, i, x0, fy) {
   const cx = x0 + FOLD_CTL_X, right = x0 + CONTENT_W - 6, mid = x0 + CONTENT_W / 2;
   let ry = fy + FOLD_PAD, cy = ry + FOLD_ROW_H / 2;
 
-  // HOLD, 5 s to 10 min (log): how long auto-play stays once the ramp is
-  // done, its value right-aligned just short of the midline. Hidden in
-  // TRIGGER mode, where the walk moves on by hand alone.
-  if (journeyMode() !== 'keys') {
+  // The first line: HOLD, VOL and RAMP in thirds, or VOL and RAMP in halves
+  // in TRIGGER mode, where HOLD is hidden (the walk moves on by hand alone).
+  // HOLD is 5 s to 10 min (log): how long auto-play stays once the ramp is
+  // done. VOL is the step's slide's own remembered level (one per file,
+  // core/schema-slides.js), the drawer's Slide volume row mirrored: it edits
+  // the map directly, never the step, so every step meets its slide at the
+  // level it was last left; with no slide anywhere it sits dim at full.
+  const keysMode = journeyMode() === 'keys';
+  const third = Math.round((CONTENT_W - 6) / 3);
+  if (!keysMode) {
     foldName(ui, x0, 'HOLD', cy);
-    const hx = x0 + HR_SLIDER_X, hw = mid - HR_GAP - VAL_W - hx;
+    const hEnd = x0 + third, hx = x0 + HR_SLIDER_X, hw = hEnd - VAL_W - 4 - hx;
     const u = hslider(ui, ui.idx('jr.hold', i), hx, cy, hw, holdToU(st.holdS));
     if (u >= 0) journeySetHold(i, uToHold(u));
-    ui.text.draw(dl, holdTexts[i], mid - HR_GAP, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
+    ui.text.draw(dl, holdTexts[i], hEnd - 4, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
   }
-  // RAMP beside it, 0 to 30 s in half seconds: how long the step's settings
-  // glide in
   {
-    ui.text.draw(dl, 'RAMP', mid + HR_GAP, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
-    const rx = mid + HR_GAP + HR_NAME_W, rw = right - VAL_W - rx;
+    const v0 = keysMode ? x0 + FOLD_NAME_X : x0 + third + 6;
+    const vEnd = keysMode ? mid - HR_GAP : x0 + 2 * third;
+    const file = typeof st.overrides.slideFile === 'string' ? st.overrides.slideFile
+      : typeof S.slideFile === 'string' ? S.slideFile : SLIDE_NONE;
+    const none = file === SLIDE_NONE;
+    ui.text.draw(dl, 'VOL', v0, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
+    if (none) dl.pushAlpha(0.4);
+    const vol = slideVolOf(S, file);
+    const sx = keysMode ? x0 + HR_SLIDER_X : v0 + 30;
+    const u = hslider(ui, ui.idx('jr.vol', i), sx, cy, vEnd - VAL_W - 4 - sx, vol);
+    ui.text.draw(dl, volText(vol), vEnd - 4, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
+    if (none) dl.popAlpha();
+    if (u >= 0 && !none) setSlideVol(S, file, Math.round(u * 100) / 100);
+  }
+  // RAMP, 0 to 30 s in half seconds: how long the step's settings glide in
+  {
+    const r0 = keysMode ? mid + HR_GAP : x0 + 2 * third + 6;
+    ui.text.draw(dl, 'RAMP', r0, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
+    const rx = r0 + (keysMode ? HR_NAME_W : 40), rw = right - VAL_W - rx;
     const u = hslider(ui, ui.idx('jr.ramp', i), rx, cy, rw, (st.rampS - RAMP_MIN) / (RAMP_MAX - RAMP_MIN));
     if (u >= 0) journeySetRamp(i, Math.round((RAMP_MIN + u * (RAMP_MAX - RAMP_MIN)) * 2) / 2);
     ui.text.draw(dl, rampTexts[i], right, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);

@@ -63,7 +63,7 @@
 
 import { S } from '../js/state.js';
 import { idleHold, idleRelease, idleWake } from '../core/idle.js';
-import { SLIDE_DIR, SLIDE_NONE } from '../core/schema-slides.js';
+import { SLIDE_DIR, SLIDE_NONE, slideVolOf } from '../core/schema-slides.js';
 import { createGlobalFilter } from '../core/global-filter.js';
 
 const AUDIO_TC = 0.015;
@@ -112,6 +112,10 @@ const clampNum = (v, lo, hi, def) => typeof v === 'number' && v === v ? (v < lo 
 // three quarters of the fader. Cubed, 75% is about -7.5 dB, 50% -18 dB and
 // 25% -36 dB, so the fader works evenly along its whole length.
 const slideGain = S => { const v = clampNum(S.slideVolume, 0, 1, 1); return v * v * v; };
+// A slide's own remembered level (core/schema-slides.js), on the same cubed
+// taper, read onto its slot's gain leg so the crossfade carries each file at
+// its own volume.
+const fileGain = f => { const v = slideVolOf(S, f); return v * v * v; };
 // What reaches the duck: the layer's own level times the app's Master
 // volume (S.volume, the drawer's 'vol' and the show remote's VOLUME fader,
 // the same straight gain js/audio.js and the Sun's hum take).
@@ -595,8 +599,8 @@ export function createSlides(device, format) {
     // ---- the sound: equal power across the fade ----
     const lin = fade.running ? (fade.t < 0 ? 0 : fade.t > 1 ? 1 : fade.t) : fade.pending ? 0 : 1;
     const inGain = shown === SLIDE_NONE ? 0 : Math.sin(lin * HALF_PI);
-    setLeg(cur, hasFile(cur) ? inGain * ppGain : 0);
-    if (out >= 0) setLeg(slots[out], Math.cos(lin * HALF_PI));
+    setLeg(cur, hasFile(cur) ? inGain * ppGain * fileGain(cur.file) : 0);
+    if (out >= 0) setLeg(slots[out], Math.cos(lin * HALF_PI) * fileGain(slots[out].file));
     else setLeg(slots[1 - act], 0);
     syncAudio();
 
