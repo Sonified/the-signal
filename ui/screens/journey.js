@@ -71,7 +71,7 @@ import {
   journeyTrigger, journeySetTrigger, journeyJumpTo,
   RAMP_MIN, RAMP_MAX, HOLD_MIN, HOLD_MAX, STEP_TEXT_MAX
 } from '../../core/journey.js';
-import { SLIDE_OPTIONS, SLIDE_NONE, slideLabel, slideVolOf, setSlideVol } from '../../core/schema-slides.js';
+import { SLIDE_OPTIONS, SLIDE_NONE, slideLabel, slideVolOf, setSlideVol, SLIDE_VOL_MAX } from '../../core/schema-slides.js';
 import { slidesLiveState, toggleSlidePlayLive } from '../../gpu/slides.js';
 import { idleWake } from '../../core/idle.js';
 import { S } from '../../js/state.js';
@@ -1047,10 +1047,10 @@ function drawFold(ui, i, x0, fy) {
     if (none) dl.pushAlpha(0.4);
     const vol = slideVolOf(S, file);
     const sx = keysMode ? x0 + HR_SLIDER_X : v0 + 30;
-    const u = hslider(ui, ui.idx('jr.vol', i), sx, cy, vEnd - VAL_W - 4 - sx, vol);
+    const u = hslider(ui, ui.idx('jr.vol', i), sx, cy, vEnd - VAL_W - 4 - sx, vol / SLIDE_VOL_MAX);
     ui.text.draw(dl, volText(vol), vEnd - 4, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
     if (none) dl.popAlpha();
-    if (u >= 0 && !none) setSlideVol(S, file, Math.round(u * 100) / 100);
+    if (u >= 0 && !none) setSlideVol(S, file, Math.round(u * SLIDE_VOL_MAX * 100) / 100);
   }
   // RAMP, 0 to 30 s in half seconds: how long the step's settings glide in
   {

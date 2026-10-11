@@ -419,9 +419,10 @@ export function createSlides(device, format) {
     window.addEventListener('keydown', onGesture, true);
   }
   // Without a chain each element's own volume stands in for its leg times
-  // the master.
+  // the master, held at the element's own ceiling of 1 (a slide set above
+  // 100% only gets its boost through the chain's gain).
   function elementVolume(s) {
-    const v = outGain(S) * duckMul * (s.legNow >= 0 ? s.legNow : 0);
+    const v = Math.min(1, outGain(S) * duckMul * (s.legNow >= 0 ? s.legNow : 0));
     if (Math.abs(s.el.volume - v) > 0.001) s.el.volume = v;
   }
   // A slot's crossfade leg, glided; a no-op when it has not moved.

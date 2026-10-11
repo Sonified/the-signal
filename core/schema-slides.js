@@ -87,11 +87,11 @@ export function initSlidesState(S) {
 export function slidesStateOf(S) {
   const out = { slidesOn: !!S.layers.slides, slideFile: fileOf(S.slideFile), slidePlay: S.slidePlay !== false, slideLoop: !!S.slideLoop, slidePpRamp: !!S.slidePpRamp };
   for (const n of NUM) out[n[0]] = S[n[0]];
-  // only the lowered slides ride; a full one is the default
+  // only the slides moved off full ride; a full one is the default
   const vols = {};
   if (S.slideVols) for (const f in S.slideVols) {
     const v = S.slideVols[f];
-    if (FILE_OK.has(f) && typeof v === 'number' && isFinite(v) && v < 1) vols[f] = fit(v, 0, 1);
+    if (FILE_OK.has(f) && typeof v === 'number' && isFinite(v) && v !== 1) vols[f] = fit(v, 0, SLIDE_VOL_MAX);
   }
   out.slideVols = vols;
   return out;
@@ -110,7 +110,7 @@ export function applySlidesState(S, o) {
     const vols = {};
     for (const f in o.slideVols) {
       const v = o.slideVols[f];
-      if (FILE_OK.has(f) && typeof v === 'number' && isFinite(v)) vols[f] = fit(v, 0, 1);
+      if (FILE_OK.has(f) && typeof v === 'number' && isFinite(v)) vols[f] = fit(v, 0, SLIDE_VOL_MAX);
     }
     S.slideVols = vols;
   }
@@ -123,19 +123,20 @@ export function applySlidesState(S, o) {
 const layerOn = S => !!S.layers.slides;
 
 // ---------- per-slide volume ----------
-// Each slide remembers its own level (S.slideVols, file -> 0..1; full when
+// Each slide remembers its own level (S.slideVols, file -> 0..1.5; full when
 // unset): the drawer's Slide volume row and the Journey fold's VOL slider
 // both edit this one map, so a slide meets the show at the level it was
 // last left. gpu/slides.js reads it onto the slot's gain leg each frame.
+export const SLIDE_VOL_MAX = 1.5;
 export function slideVolOf(S, file) {
   const m = S.slideVols;
   const v = m && typeof m[file] === 'number' ? m[file] : 1;
-  return v >= 0 ? (v > 1 ? 1 : v) : 0;
+  return v >= 0 ? (v > SLIDE_VOL_MAX ? SLIDE_VOL_MAX : v) : 0;
 }
 export function setSlideVol(S, file, v) {
   if (typeof file !== 'string' || file === SLIDE_NONE || !FILE_OK.has(file)) return;
   if (!S.slideVols || typeof S.slideVols !== 'object') S.slideVols = {};
-  S.slideVols[file] = fit(v, 0, 1);
+  S.slideVols[file] = fit(v, 0, SLIDE_VOL_MAX);
   save();
 }
 
@@ -201,7 +202,7 @@ export const SLIDES_CONTROLS = [
     // by the Journey fold's VOL slider. It sits right after the picker in
     // the schema, so a step replaying both lands the file first.
     id: 'slideVol', section: 'slides', label: 'Slide volume', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 100,
+    min: 0, max: SLIDE_VOL_MAX * 100, step: 1, def: 100,
     get: S => Math.round(slideVolOf(S, fileOf(S.slideFile)) * 100),
     set: (S, pos) => setSlideVol(S, fileOf(S.slideFile), pos / 100),
     format: S => Math.round(slideVolOf(S, fileOf(S.slideFile)) * 100) + '%',
