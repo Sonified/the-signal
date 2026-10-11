@@ -6,6 +6,7 @@
 // specifically), because the device belongs to the GPU layer, not the page.
 
 import { wakeGap } from '../core/wake.js';
+import { S } from '../js/state.js';
 
 let loggedAdapter = false;
 
@@ -159,6 +160,64 @@ export async function createEngine(platform, opts) {
     fragment: { module: blitModule, entryPoint: 'fs', targets: [{ format }] },
     primitive: { topology: 'triangle-list' }
   });
+
+  // ---------- the screen gate ----------
+  // The show's master brightness (S.screenGate, 0..1, the iPad's GATE fader,
+  // platform/show-remote.js): one fullscreen triangle drawn after everything
+  // the room sees and before the operator's UI, multiplying what is already
+  // there by the blend constant, so at 0 the experience is black and the
+  // drawer and windows still show. It draws nothing at 1. The fader's words
+  // arrive in bunches over the network, so the gate glides to its target
+  // (a 60 ms one-pole) instead of stepping, and keeps the loop awake (busy)
+  // until it lands.
+  const gateModule = device.createShaderModule({
+    label: 'engine.gate',
+    code: `
+      @vertex
+      fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+        let x = f32((i << 1u) & 2u) * 2.0 - 1.0;
+        let y = f32(i & 2u) * 2.0 - 1.0;
+        return vec4f(x, y, 0.0, 1.0);
+      }
+
+      @fragment
+      fn fs() -> @location(0) vec4f { return vec4f(0.0); }
+    `
+  });
+  const gatePipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: gateModule, entryPoint: 'vs' },
+    fragment: {
+      module: gateModule, entryPoint: 'fs',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'zero', dstFactor: 'constant', operation: 'add' },
+          alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' }
+        }
+      }]
+    },
+    primitive: { topology: 'triangle-list' }
+  });
+  const gateColor = { r: 1, g: 1, b: 1, a: 1 };
+  let gate = 1;
+  function gateTarget() {
+    const want = Math.max(0, Math.min(1, +S.screenGate));
+    return isFinite(want) ? want : 1;
+  }
+  function stepGate() {
+    const target = gateTarget();
+    const k = 1 - Math.exp(-frameDt / 0.06);
+    gate += (target - gate) * k;
+    if (Math.abs(target - gate) < 0.002) gate = target;
+  }
+  function drawGate(pass) {
+    if (gate >= 1) return;
+    gateColor.r = gateColor.g = gateColor.b = gate;
+    pass.setPipeline(gatePipeline);
+    pass.setBlendConstant(gateColor);
+    pass.draw(3);
+  }
 
   let sceneTex = null, sceneTexView = null, blitBindGroup = null;
   let pixelWidth = 0, pixelHeight = 0;
@@ -585,7 +644,9 @@ export async function createEngine(platform, opts) {
     if (confetti) confetti.update(frameT, frameDt, lum);
     if (wordCloud) wordCloud.update(frameT, frameDt);
     if (wordSmoke) wordSmoke.update(frameT, frameDt);
-    if (args.sceneChanged) captureStale = true;
+    const gateWas = gate;
+    stepGate();
+    if (args.sceneChanged || gate !== gateWas) captureStale = true;
 
     // Capture a fresh blur only on a lit frame with frosted glass on screen,
     // and at most CAPTURE_INTERVAL_MS apart; a dark frame keeps the previous
@@ -650,6 +711,7 @@ export async function createEngine(platform, opts) {
         if (overlayList && overlayList.count > 0) uiRenderer.draw(pass, overlayList, null);
         if (wordCloud) wordCloud.draw(pass);
         if (wordSmoke) wordSmoke.draw(pass);
+        drawGate(pass);
         const bv = blur ? blur.view : null;
         if (uiList && uiList.count > 0) uiRenderer.draw(pass, uiList, bv);
         if (topList && topList.count > 0) uiRenderer.draw(pass, topList, bv);
@@ -666,6 +728,7 @@ export async function createEngine(platform, opts) {
       if (uiRenderer && overlayList && overlayList.count > 0) uiRenderer.draw(scenePass, overlayList, null);
       if (wordCloud) wordCloud.draw(scenePass);
       if (wordSmoke) wordSmoke.draw(scenePass);
+      drawGate(scenePass);
       scenePass.end();
 
       if (doCapture) {
@@ -740,7 +803,7 @@ export async function createEngine(platform, opts) {
   // or the glass owing a capture. main.js asks before letting the loop rest.
   let captureOwed = false;
   function busy() {
-    return captureOwed || !!(scene && scene.busy && scene.busy()) || !!(sun && sun.busy()) || !!(slides && slides.busy()) || !!(sunQr && sunQr.busy()) ||
+    return captureOwed || gate !== gateTarget() || !!(scene && scene.busy && scene.busy()) || !!(sun && sun.busy()) || !!(slides && slides.busy()) || !!(sunQr && sunQr.busy()) ||
       !!(wordCloud && wordCloud.busy && wordCloud.busy()) || !!(wordSmoke && wordSmoke.busy && wordSmoke.busy());
   }
 

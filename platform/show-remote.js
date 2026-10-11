@@ -64,6 +64,12 @@
 //                                                Master volume, %: the phones
 //                                                following the broadcast,
 //                                                core/schema-sun.js)
+//                         screenGate   0..100   (the screen gate, %: the
+//                                                room's picture's master
+//                                                brightness, 0 black; NOT a
+//                                                schema control, it sets
+//                                                S.screenGate directly, live
+//                                                only, gpu/engine.js drawGate)
 //   {k:'duck', on, amt, dn, up}  the duck (gpu/slides.js setDuck, the
 //                       heartbeat's setHeartDuck and the Sun hum's
 //                       setHumDuck, the same multiplier): on, the slides',
@@ -90,7 +96,7 @@
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
-// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, hm: heartMaster, mw: mwtsVolume, play, on} (play: what is actually happening, the
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, hm: heartMaster, mw: mwtsVolume, gt: screenGate, play, on} (play: what is actually happening, the
 // live hold included), src/q this page's sender id and sequence.
 // It goes as a 'state' rather than a 'word' so each relay keeps the latest
 // and hands it to an iPad that joins late.
@@ -180,6 +186,12 @@ export function initShowRemote(hooks = {}) {
     else if (m.k === 'next') journeyStepBy(1);
     else if (m.k === 'prev') journeyStepBy(-1);
     else if (m.k === 'ctl') {
+      if (m.id === 'screenGate') {
+        // not a schema control: live only, never saved (js/state.js)
+        const v = +m.v;
+        if (isFinite(v)) S.screenGate = Math.max(0, Math.min(1, v / 100));
+        return;
+      }
       if (!CTL_IDS.has(m.id)) return;
       const c = byId(m.id);
       if (!c) return;
@@ -244,6 +256,7 @@ export function initShowRemote(hooks = {}) {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), hm: get('heartMaster'), mw: get('mwtsVolume'),
+            gt: Math.round(Math.max(0, Math.min(1, +S.screenGate)) * 1000) / 10,
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };
   }

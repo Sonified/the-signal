@@ -202,6 +202,11 @@ export const S = {
   musTone: 1, musPulse: 1, musPiano: 1, musClouds: 1, musDrone: 1, musArp: 1, musChoir: 1, musAmb: 1,
   carrierHz: 40, amRate: 7.5, volume: 0.50, amLinked: true, lastAmSet: 0,
   lpfHz: 20000, hpfHz: 20,    // v1: the global Lowpass and Highpass corners, Hz (core/global-filter.js), open
+  // v1: the show's screen gate, the room's picture's master brightness, 0
+  // black to 1 full (gpu/engine.js drawGate). Live only, set from the iPad's
+  // GATE fader (platform/show-remote.js): never saved, so every load opens
+  // at full and a reload can never come up black.
+  screenGate: 1,
   lpfRes: 0, hpfRes: 0,       // v1: their resonance, the peak at the corner in dB (core/global-filter.js), 0 flat
   amModOn: true,              // the pulse envelope on the tone; off plays it steady
   toneStrobeAm: 1,            // 'Vary with strobe' on the tone: its pulse depth, 0..1, times the master strobe
