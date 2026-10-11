@@ -38,6 +38,9 @@ const DEF_GRADE = false;
 const DEF_HI_RES = false;
 // Off by default: the Rotational hum is heard only once the viewer asks.
 const DEF_HUM_ON = false;
+// On by default, as on meditatewiththesun.com: the drifting star field
+// behind the sun (gpu/stars.js), shown whether or not the sun is.
+const DEF_STARS = true;
 // What drives the Speed's, Feedback Amount's and Opacity's variances: the
 // room-timed clock, the strobe or the breath. The breath by default.
 const DEF_DRIVE = 'breath';
@@ -199,6 +202,7 @@ export function initSunState(S) {
   if (typeof S.sunGrade !== 'boolean') S.sunGrade = DEF_GRADE;
   if (typeof S.sunHumOn !== 'boolean') S.sunHumOn = DEF_HUM_ON;
   if (typeof S.sunHiRes !== 'boolean') S.sunHiRes = DEF_HI_RES;
+  if (typeof S.sunStars !== 'boolean') S.sunStars = DEF_STARS;
   for (const k of DRIVEN) S[k + 'VarDrive'] = driveOf(S[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
@@ -211,7 +215,7 @@ export function initSunState(S) {
 // kaleidoOn does, so the record does not look like a partial v0 layers
 // object.
 export function sunStateOf(S) {
-  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade, sunHumOn: !!S.sunHumOn, sunHiRes: !!S.sunHiRes };
+  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade, sunHumOn: !!S.sunHumOn, sunHiRes: !!S.sunHiRes, sunStars: S.sunStars !== false };
   for (const k of DRIVEN) out[k + 'VarDrive'] = driveOf(S[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
@@ -230,6 +234,7 @@ export function applySunState(S, o) {
   if (typeof o.sunGrade === 'boolean') S.sunGrade = o.sunGrade;
   if (typeof o.sunHumOn === 'boolean') S.sunHumOn = o.sunHumOn;
   if (typeof o.sunHiRes === 'boolean') S.sunHiRes = o.sunHiRes;
+  if (typeof o.sunStars === 'boolean') S.sunStars = o.sunStars;
   for (const k of DRIVEN) if (typeof o[k + 'VarDrive'] === 'string') S[k + 'VarDrive'] = driveOf(o[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
@@ -657,9 +662,19 @@ export const SUN_CONTROLS = [
     get: S => Math.round(S.mwtsVolume * 100),
     set: (S, pos) => { S.mwtsVolume = fit(pos / 100, 0, 1, false); save(); },
     format: S => Math.round(S.mwtsVolume * 100) + '%'
+  },
+
+  // ---- Star field, a section of its own: meditatewiththesun.com's one
+  // control for its sky, the switch. Never dimmed: the stars drift whether
+  // or not the sun is shown (gpu/stars.js) ----
+  {
+    id: 'sunStars', section: 'stars', label: 'Star field', kind: 'toggle', def: DEF_STARS,
+    get: S => S.sunStars !== false,
+    set: (S, on) => { S.sunStars = !!on; save(); }
   }
 ];
 
 export const SUN_SECTIONS = [
-  { id: 'sun', title: 'Sun' }
+  { id: 'sun', title: 'Sun' },
+  { id: 'stars', title: 'Star field' }
 ];

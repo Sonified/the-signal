@@ -623,6 +623,10 @@ export function createSun(device, format) {
     uni[b + 16] = grade[0]; uni[b + 17] = grade[1]; uni[b + 18] = grade[2]; uni[b + 19] = grade[3];
   }
   const gains = new Float32Array(5);
+  // Where the sun sits this frame, for the star field's hole (gpu/stars.js):
+  // the centre (device px), the tile square's half side (device px), and
+  // the hole's depth, the Opacity while a picture is drawn, else 0.
+  const disk = new Float32Array(4);
   // This frame's Color grade, the same in every slot: brightness, contrast,
   // saturation, on. Off, the identity and 0, kaleido.js's discipline.
   const grade = new Float32Array(4);
@@ -632,6 +636,7 @@ export function createSun(device, format) {
   // (the sun itself keeps steady brightness through the strobe).
   function update(t, dt, lum) {
     bind = null; liveDraw = false; folded = false; fbOn = false; sliding = false;
+    disk[3] = 0;
     nowMs = t;
     const on = !!(S.layers && S.layers.sun);
     if (!on) {
@@ -762,6 +767,7 @@ export function createSun(device, format) {
     // The photosphere's radius, and the tile square's half side round it.
     const R = 0.5 * DISC_SHARE * clampNum(S.sunSize, 0.2, 2, 1) * Math.min(visW, cssH) * dpr;
     const half = R / PHOTOSPHERE;
+    disk[0] = cx; disk[1] = cy; disk[2] = half;
 
     // ---------- the fold ----------
     if (folded) {
@@ -867,6 +873,8 @@ export function createSun(device, format) {
     bindEntries[1].resource = ext || extGhost;
     bindEntries[3].resource = extGhost || ext;
     bind = device.createBindGroup(bindDesc);
+    // A picture is up: the star field's hole opens where it sits.
+    disk[3] = opacity;
     bindEntries[1].resource = null;
     bindEntries[3].resource = null;
     for (let k = 0; k < SLOTS; k++) uni[k * SLOT_FLOATS + 14] = xf;
@@ -937,5 +945,5 @@ export function createSun(device, format) {
   // still frame waits for it (main.js via engine.busy).
   const busy = () => wasOn && folded && slideAge < slideLen;
 
-  return { update, encode, draw, resize, busy, doze };
+  return { update, encode, draw, resize, busy, doze, disk };
 }

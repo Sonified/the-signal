@@ -35,6 +35,7 @@ import { createEngine } from './gpu/engine.js';
 import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
 import { createSun } from './gpu/sun.js';
+import { createStars } from './gpu/stars.js';
 import { createHeartbeat } from './gpu/heartbeat.js';
 import { createKaleido, setKaleidoYield } from './gpu/kaleido.js';
 import { createParticles } from './gpu/particles.js';
@@ -194,7 +195,11 @@ async function boot() {
   engine.registerFlowers(createFlowers(device, format, platform));
   // The Sun layer; it makes no video element and fetches nothing until
   // first switched on.
-  engine.registerSun(createSun(device, format));
+  const sun = createSun(device, format);
+  engine.registerSun(sun);
+  // The star field behind it, meditatewiththesun.com's drifting sky; it
+  // reads where the sun's disk sits to keep the stars off it.
+  engine.registerStars(createStars(device, format, sun));
   // The Heartbeat layer; it builds nothing and fetches no sound until first
   // switched on.
   engine.registerHeartbeat(createHeartbeat(device, format));
