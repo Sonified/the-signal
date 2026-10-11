@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TSC 2026 · Presentation</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101114;color:#f2f2ef;font:17px system-ui,sans-serif}
+main{width:min(360px,calc(100vw - 48px));padding:32px 0}h1{font-size:26px;margin:0 0 14px}p{color:#aaa;line-height:1.5}
+label{display:block;margin:26px 0 8px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:8px;font:inherit}
+input{background:#1c1d22;border:1px solid #555;color:inherit}button{margin-top:14px;background:#eed567;border:0;color:#181818;font-weight:650;cursor:pointer}
+a{color:#eed567}#message{min-height:26px}button:disabled{opacity:.65;cursor:wait}
+</style>
+<main>
+<h1>TSC 2026 🌞</h1>
+<p>The presentation includes your 16-step Journey.</p>
+<form id="start"><label for="password">Show password</label><input id="password" type="password" autocomplete="current-password" required>
+<button id="go">Open presentation</button><p id="message" role="status"></p></form>
+<p><a href="./show.html">Open iPad controller</a></p>
+</main>
+<script>
+const relay='https://the-signal-broadcast.robertalexander-music.workers.dev';
+const form=document.getElementById('start'),input=document.getElementById('password'),button=document.getElementById('go'),message=document.getElementById('message');
+const room=new URLSearchParams(location.search).get('room');
+if(room)document.querySelector('a').href='./show.html?room='+encodeURIComponent(room);
+try{input.value=localStorage.getItem('mirror.pw')||'';}catch{}
+form.onsubmit=async event=>{
+ event.preventDefault();button.disabled=true;message.textContent='Connecting…';
+ try{
+  const response=await fetch(relay+'/auth',{method:'POST',body:input.value});
+  if(response.status===403){message.textContent='That password did not match.';return;}
+  if(!response.ok)throw Error('relay');
+  localStorage.setItem('mirror.pw',input.value);location.href='./?remote'+(room?'='+encodeURIComponent(room):'');
+ }catch{message.textContent='Could not connect. Check this computer’s internet connection.';}
+ finally{button.disabled=false;}
+};
+</script>
+</html>

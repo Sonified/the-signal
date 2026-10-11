@@ -106,6 +106,14 @@ node tools/serve.mjs        # http://localhost:8000/ (a port number as an argume
 
 It sends the cross-origin isolation headers that Heart, the audio engine, needs for its fastest mode (shared memory between its workers), and tells the browser never to cache, so a reload always runs what is on disk. `python3 -m http.server` still works; Heart then carries its audio in messages instead.
 
+### Presentation build
+
+The TSC 2026 talk runs from its own Cloudflare Pages project, separate from the main site: **https://presence-presentation.pages.dev/?remote**. `tools/build-cloud-presentation.mjs` packages a snapshot of the tracked files plus the talk's Journey and slide media (`documents/tsc-2026-media-manifest.json`) into an empty `/private/tmp` folder, with `tools/presentation-entry.html` as its `presentation.html`:
+
+```
+node tools/build-cloud-presentation.mjs <empty /private/tmp folder> documents/tsc-2026-media-manifest.json <exported journey.json>
+```
+
 `stereo.html` is a separate proof-of-concept for free-fusion 3D depth using a side-by-side stereo pair.
 
 ---

@@ -1,0 +1,77 @@
+{
+  "bucket": "solarmeditation-media",
+  "prefix": "the-signal/presentation/32e9063c8f301554/slides/",
+  "release": "32e9063c8f301554",
+  "videos": [
+    {
+      "file": "010_Alexander_TSC_2026_Intro_Slide.mp4",
+      "bytes": 102723,
+      "sha256": "c813d4a1f9af002ad9461bf7d06b2df446861ee1378a4460edb60a0338d1449c"
+    },
+    {
+      "file": "015_Heartbeat_Pulse.mp4",
+      "bytes": 3010127,
+      "sha256": "af06834e061687c8ab65c89a4cf1dca7ce0ea2f0e300335edc237e836ef9b853"
+    },
+    {
+      "file": "020_harmonica_Car_Seat.jpeg.mp4",
+      "bytes": 131849,
+      "sha256": "ee9099fea092f9597fa87d40552e95d385c6d17d46383aa07bb000a1afa79688"
+    },
+    {
+      "file": "030_Audification_Explained.mp4",
+      "bytes": 83974357,
+      "sha256": "c78f3a152c83df8160b51f46737339ecd00baf7641b50342e26dc5b12e605bba"
+    },
+    {
+      "file": "031_Shepard_Tone_Rising_Trim.mp4",
+      "bytes": 4456507,
+      "sha256": "07f04cd6e4dd4deccb6b92f3bfa8f01bcfe074d384c9a55b81f81797cf760338"
+    },
+    {
+      "file": "032_Sheprise-Trim.mp4",
+      "bytes": 29292235,
+      "sha256": "52979a43f6bfaba80ecb4904a29c5eeda3c61780c8e6301711485f2a6941128c"
+    },
+    {
+      "file": "040_Nightingale.mp4",
+      "bytes": 38617486,
+      "sha256": "4566b86e193014f8156a8d7ea299b2835ca14ace5d66ca36b535bc54fd8da5f1"
+    },
+    {
+      "file": "050_Earthquake_Sonification.mp4",
+      "bytes": 19219321,
+      "sha256": "2da508ba8afab5039080167e47e7fad180f60a07000b84a96a516c0e1503d433"
+    },
+    {
+      "file": "060_Rotating_Sun_Solar Wind Audification.mp4",
+      "bytes": 9897951,
+      "sha256": "a25550b83d4a45c4e7a4a7bc51d2215d0bd63e1b20b2f51a49c576420921b092"
+    },
+    {
+      "file": "070_Solar_Spherical_Harmonics.mp4",
+      "bytes": 7905707,
+      "sha256": "a5fcb717fe8e4673195f69eec61856b2a57b55eef7f60bb9f6802b87e31a9fa0"
+    },
+    {
+      "file": "090_Harp_Trailer_Voice.mp4",
+      "bytes": 94615927,
+      "sha256": "98b64ff1b9b8935a62ffd5b6fe4a0ca378eeb53f5af857ed4fb7aafa23d07199"
+    },
+    {
+      "file": "180_WISPR PSP CME Sonification dfb dbm vac trim_ANOMALY_B4.mp4",
+      "bytes": 34600445,
+      "sha256": "b853810926eb12e80e8e7e8b618b5226f98e33f95138c37c4e4e046bee27eb0b"
+    },
+    {
+      "file": "190_Touching_The_Sun.mp4",
+      "bytes": 40482664,
+      "sha256": "19963c82d245fcdf0df22c7f05bc0de0f5b48f97c85af07e3d7112a1ba99f5f7"
+    },
+    {
+      "file": "220_Ed_Mitchell_VR_Combined_Audio_Video.mp4",
+      "bytes": 54573060,
+      "sha256": "892adae43a1cc232a59dd0d591b21be49a42de9deeaf367b8cd52185d6655529"
+    }
+  ]
+}
