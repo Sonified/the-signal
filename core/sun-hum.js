@@ -16,8 +16,9 @@
 // Master volume, the global Lowpass and Highpass, the transport's ramps and
 // the pause gate all reach it there, and the hum keeps no copy of any of
 // them. Its room is the music's own, the reverb every music voice shares
-// (js/piano.js revIn), which piano.js hands over once its graph is built
-// (setHumBus); until then the hum plays dry.
+// (js/room.js), which is built as the app's audio comes up, whatever the
+// Music switch says, and hands itself over (setHumBus); only in the moment
+// before that does the hum play dry.
 //
 // The site plays at 48 kHz, and one hour is one sample, so the hum's pitch IS
 // the sample rate: played at the app's rate (often 44.1 kHz) every speed
@@ -68,7 +69,7 @@ let gate = 1;                     // the mix gate's mute and solo, 0 or 1 (setGa
 let duckMul = 1;                  // the show remote's Duck, 0..1 (setHumDuck)
 let verbMix = 0.3;                // wet/dry into the music room (setReverbMix)
 
-// The music room (js/piano.js), handed over by setHumBus: its context and
+// The music room (js/room.js), handed over by setHumBus: its context and
 // its input, and whether the wet leg plays into it yet.
 let roomCtx = null, roomIn = null, roomPlugged = false;
 
@@ -147,7 +148,7 @@ function stitch(speeds) {
 // ---- audio graph ----
 
 // The music family's context: the one the music room was built on, once
-// piano.js has handed it over (setHumBus), so the wet leg can always reach
+// js/room.js has handed it over (setHumBus), so the wet leg can always reach
 // that room; until then the family's own (js/heart/route.js), and the app's
 // native context when no family plays on Heart. Its master follows the
 // context, so the two always belong to the same engine.
@@ -208,8 +209,9 @@ function buildGraph() {
 }
 
 // The wet leg into the music room, once the room exists on this context.
-// The room's input carries its own pause gate (piano.js), which the wet leg
-// meets after the hum's: both close together on a pause. Arriving, the mix
+// The room's input carries no gate of its own (js/room.js): the hum's
+// pause gate, ahead of the split, is the one that closes its feed on a
+// pause, while the room rings on. Arriving, the mix
 // crossfades from all dry to its setting, as a room switched on does.
 function plugRoom() {
   if (!wet || roomPlugged || !roomIn || roomCtx !== ctx) return;
@@ -541,7 +543,7 @@ export function setReverbMix(m) {
   applyVerb(0.03);
 }
 
-/** The music room, from js/piano.js once its graph is built: its context
+/** The music room, from js/room.js as it is built (and rebuilt): its context
     and its input. On the context the hum already plays on, the wet leg
     plugs in. On another (the hum built first, on a context the room did
     not end up on), the hum moves to the room's: its graph and buffer are

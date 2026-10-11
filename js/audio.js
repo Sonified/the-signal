@@ -12,6 +12,7 @@ import { every, after, clear } from './ticker.js';
 import { breath, breathState } from '../core/variance.js';
 import { IDLE_DIAG } from '../core/idle.js';
 import { createGlobalFilter } from '../core/global-filter.js';
+import { startRoom } from './room.js';
 
 let audioCtx = null, volGain = null, node = null;
 let harmDry = null, harmWet = null, convolver = null, clickWet = null;
@@ -63,7 +64,7 @@ export function pipDipRead() {
 // this module rather than the document so it keeps working from a subpath.
 const WORKLET_URL = new URL('./worklet.js', import.meta.url).href;
 window.__WORKLET_URL = WORKLET_URL;   // exposed so tests can render it offline
-// The master room's algorithmic reverb (fdn-worklet.js, js/piano.js).
+// The master room's algorithmic reverb (fdn-worklet.js, js/room.js).
 const FDN_URL = new URL('./fdn-worklet.js', import.meta.url).href;
 
 export const isDeviceWarm = () => deviceWarm;
@@ -822,7 +823,7 @@ export function ensureAudioGraph() {
     globalFilter.output.connect(audioCtx.destination);
 
     // The reverb's module loads beside the engine's; if it fails, the
-    // Algorithmic reverb type stays on convolution (piano.js) and nothing
+    // Algorithmic reverb type stays on convolution (js/room.js) and nothing
     // else notices.
     await Promise.all([
       audioCtx.audioWorklet.addModule(WORKLET_URL),
@@ -833,6 +834,12 @@ export function ensureAudioGraph() {
     // so the volume and the pause gate stay these. With no family flagged
     // it loads nothing and does nothing.
     await startHeart(audioCtx, volGain);
+    // The music's master room (js/room.js), the reverb every music voice
+    // and the Sun's hum share: built here, as soon as the music family's
+    // context is known, so it exists from the first sound whatever the
+    // Music switch says. A room that cannot be made costs the music its
+    // reverb, never the rest of the graph.
+    try { startRoom(); } catch (e) { console.warn('audio: the music room could not be built', e); }
 
     // The genus family (this engine, the harmonics' room and the pips' room)
     // builds on the context route.js hands it and ends at its master: on
@@ -1124,7 +1131,7 @@ function setSources(open) {
 // shaped by (1 - t / length) to a power (fillIR), so it is exactly its
 // length long and then silent: nothing rings past the longest impulse in
 // play. That is the harmonics' fixed room, the live pip shape's room, the
-// piano's (the clouds' too, shared or, on a Heart island, copied: js/clouds.js)
+// music's master room (js/room.js; the clouds' too, shared or, on a Heart island, copied: js/clouds.js)
 // and the atmosphere's rooms at their current decay settings, and each sequencer line's own room (js/piano.js lineRoom), all
 // counted whether or not they are sounding, since holding a silent master
 // open a few seconds longer costs nothing. On top

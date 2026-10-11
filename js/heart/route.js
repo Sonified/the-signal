@@ -145,6 +145,25 @@ function fallBack(stage, message) {
   console.warn(`Heart: stage ${stage} failed (${message}). ` + (stuck.length
     ? `${stuck.join(', ')} already built on Heart and stay there; every other family plays natively`
     : 'Every family plays natively'));
+  for (const fn of fallBackFns) {
+    try { fn(); } catch (e) { console.warn('Heart: a fall-back listener failed', e); }
+  }
+}
+
+// Told after a fall back, for a module that built on a family's context
+// without being handed it (peekCtxFor) and so can follow the family native.
+const fallBackFns = [];
+export function onFallBack(fn) { fallBackFns.push(fn); }
+
+// The context and master a family would build on, without handing them
+// over. The music room (js/room.js) is built at boot on the music family's
+// context, before any voice of that family has asked; peeking leaves the
+// family free to go native if the engine fails before a voice is built,
+// and the room follows it there (onFallBack).
+export const peekCtxFor = family => contexts.get(family) || nativeCtx;
+export function peekMasterFor(family) {
+  const ctx = contexts.get(family);
+  return ctx ? ctx.destination : nativeMaster;
 }
 
 // The context a family builds on: its HeartContext, or the native one.

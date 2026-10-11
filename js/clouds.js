@@ -179,9 +179,9 @@ export function loadClouds() {
 }
 
 // The clouds are a music voice, so they play into the music's own reverb,
-// the master room the piano, drone, choir and arp share (js/piano.js), the
-// way the choir does: piano.js hands over its context and the room's input
-// once its graph is built (setCloudBus). The pads reach it through send,
+// the master room the piano, drone, choir, arp and the Sun's hum share
+// (js/room.js), the way the choir does: piano.js hands over its context and
+// its pause-gated send into the room once its graph is built (setCloudBus). The pads reach it through send,
 // whose gain is the Clouds reverb slider: how much cloud goes to the shared
 // room. That room's level, decay, type and switch then govern the tail.
 //
@@ -195,7 +195,7 @@ export function loadClouds() {
 // Either side may be built first (js/load-order.js plays the piano's turn
 // before the clouds', but a turn that fails moves on): a send with nowhere
 // to go yet waits unplugged, and the hand-over plugs it in.
-let musicCtx = null, musicRevIn = null;  // the music's context and room input (piano.js)
+let musicCtx = null, musicRevIn = null;  // the music's context and its send into the room (piano.js)
 let sendTo = null;                       // what send plays into now
 // piano.js, once its graph is built.
 export function setCloudBus(ctx, roomIn) {
@@ -207,7 +207,7 @@ function plugSend() {
   if (actx === musicCtx) {
     if (sendTo === musicRevIn) return;
     if (sendTo) try { send.disconnect(); } catch (e) {}
-    // revIn carries the music's pause gate (piano.js), so the send needs
+    // The piano's send carries the music's pause gate (piano.js), so this needs
     // none of its own: a pause stops the pads reaching the room there.
     send.connect(musicRevIn);
     sendTo = musicRevIn;

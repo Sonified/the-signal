@@ -7,15 +7,14 @@
 // number rather than merely compatible.
 import { S } from './state.js';
 import { getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, sourceGate } from './audio.js';
-import { onPhone } from './handheld.js';
 import { ctxFor, masterFor, makeWorklet } from './heart/route.js';
+import { roomInput, roomReturn, applyRoomLevel } from './room.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 import { createSweep } from './sweep.js';
 import { setChoirBus, choirSession } from './choir.js';
 import { setLayerBus, layersSession } from './layers.js';
 import { setCloudBus } from './clouds.js';
-import { setHumBus } from '../core/sun-hum.js';
 import { strobeAm, strobeTap, untapStrobe } from './strobe-am.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { inTurn, TURN } from './load-order.js';
@@ -50,8 +49,11 @@ let bedTakes = [], bedNextAt = 0, bedTimer = null, bedRunning = false;
 const bedBuffers = new Map();
 let bedRun = null, bedSwapSeq = 0;
 let ready = false, loading = null;
-let dry = null, room = null, wet = null, hp = null, chan = null;
-let revIn = null, convFeed = null, algo = null, algoFeed = null, algoDead = false;
+let dry = null, hp = null, chan = null;
+// The music's way into the master room (js/room.js): every note, the drone
+// and the sequencer feed it, and the choir, the layers and the clouds are
+// handed it too, so this one gain carries their pause gate.
+let revIn = null;
 let noteTap = null, bedTap = null;
 let bedCut = null, bedChains = null, bedSend = null, bedRev = null;
 let running = false, clock = 0, elapsed = 0, drift = 0, lastDyad = 0, timer = null;
@@ -146,24 +148,20 @@ function buildGraph() {
   if (!ctx || !master) return;
   fam = ctx;
   dry  = ctx.createGain(); dry.gain.value = 1;
-  wet  = ctx.createGain(); wet.gain.value = revLevel();
   dry.connect(master);
-  wet.connect(master);
-  // The way into the reverb, whichever type plays it: every voice feeds
-  // revIn, and revIn feeds the convolution room through convFeed or the
-  // algorithmic one through its own feed (applyRevType).
+  // The music's send into the master room. The room is its own module now
+  // (js/room.js), built when the audio first comes up whatever the Music
+  // switch says; this only plugs into it, on this same context (roomInput
+  // moves the room here should the family have moved before the piano
+  // built).
   revIn = ctx.createGain();
-  convFeed = ctx.createGain();
-  revIn.connect(convFeed);
-  // two convolvers, so a new decay fades in under the old tail (audio.js).
-  // A phone plays this room on the algorithmic one whatever the type says
-  // (applyRevType), so it builds no convolution room unless that cannot be
-  // made.
-  if (!onPhone()) convRoom();
-  // The pause gate (audio.js) on the way into the reverb and the dry bus
+  const roomIn = roomInput(ctx, master);
+  if (roomIn) revIn.connect(roomIn);
+  // The pause gate (audio.js) on the send into the room and the dry bus
   // alike, the two points every note, the drone and the arp all pass, so a
   // pause stops them at once, notes already scheduled included, while the
-  // room rings on. Neither gain is set by anything else.
+  // room rings on. Neither gain is set by anything else. The room itself is
+  // never gated.
   sourceGate(dry.gain);
   sourceGate(revIn.gain);
   // A high-pass on the notes only, ahead of the room so the reverb is fed the
@@ -195,12 +193,8 @@ function buildGraph() {
   // And the clouds (js/clouds.js) play into the same room, given the
   // context too: a clouds island on Heart cannot reach it and keeps its own.
   setCloudBus(ctx, revIn);
-  // And the Sun's Rotational hum (core/sun-hum.js), a wet/dry mix into the
-  // same room. It plays on the music's context but sounds whether or not
-  // the piano was ever switched on, dry until this hand-over, and moves to
-  // this context if it had begun on another.
-  setHumBus(ctx, revIn);
-  applyRevType();
+  // The Sun's Rotational hum plays into the room too, but straight from
+  // js/room.js, which hands it over as the room is built: it gates itself.
 }
 
 // Gated on the transport rather than on the graph: a suspended context keeps
@@ -211,117 +205,20 @@ export const pianoPeak = () => audible() ? tapPeak(noteTap) : 0;
 export const bedPeak   = () => audible() ? tapPeak(bedTap)  : 0;
 export const arpPeak   = () => audible() && arp ? tapPeak(arp.tap) : 0;
 
-// Every gain and the filter here go through glideParam (audio.js): a
-// straight line over a preset's transition, the usual short approach for a
-// slider.
-// The Master reverb switch closes the shared room's wet output; the level
-// below it is what the room plays at when it is open.
-// The sequencer's lines follow at once, since a line mixed toward its room
-// plays dry whenever the room cannot be heard (roomHeard, seqSync).
+// The master room's level and decay, its type and the algorithmic one's
+// shape all live with the room now (js/room.js); these names are kept here
+// for the drawer and v0, which import them from the piano.
+export { applyRevType, applyPianoRevShape, rebuildPianoIR, pianoEffectiveReverb, pianoEffectiveRevTime } from './room.js';
+
+// The Master reverb switch and the Reverb level, on the room's wet return
+// (js/room.js). The sequencer's lines follow at once, since a line mixed
+// toward its room plays dry whenever the room cannot be heard (roomHeard,
+// seqSync).
 export function applyPianoReverb() {
-  if (wet) glideParam(wet.gain, revLevel(), 0.08);
+  applyRoomLevel();
   if (arp) seqSync();
 }
 
-// The room's two variances, each the app's standard dip (core/variance.js
-// breath, the sinusoid): the level and the decay ease down from their
-// settings by the amount's share and back, one cycle per its speed (an unset
-// speed reads as 20 s), stepped by the music's clock (step, below) on the
-// audio clock, so a suspended context holds them. The decay plays in the
-// slider's half seconds, no shorter than its 1 s floor, so the convolution
-// room builds a new impulse only when the dip crosses a step; the
-// algorithmic one takes it as it moves. schema-audio.js reads the two
-// effectives for the sliders' glowing bars.
-const revLevelB = breathState(), revTimeB = breathState();
-let effRevLevelDepth = 0, effRevTimeDepth = 0;
-const revDip01 = v => Math.max(0, Math.min(1, +v || 0));
-const revLevel = () => S.musicRevOn === false ? 0 : pianoEffectiveReverb();
-const revDecay = () => Math.max(1, S.pianoRevTime * (1 - effRevTimeDepth));
-const revSec = () => Math.round(revDecay() * 2) / 2;
-export const pianoEffectiveReverb = () => Math.max(0, S.pianoReverb || 0) * (1 - effRevLevelDepth);
-export const pianoEffectiveRevTime = () => revAlgoNow ? revDecay() : revSec();
-function revBreathe(now) {
-  const level0 = effRevLevelDepth, time0 = effRevTimeDepth, sec0 = revSec();
-  effRevLevelDepth = breath(revLevelB, revDip01(S.pianoReverbVar), S.pianoReverbPeriod, now, 'sine', 20);
-  effRevTimeDepth = breath(revTimeB, revDip01(S.pianoRevTimeVar), S.pianoRevTimePeriod, now, 'sine', 20);
-  if (wet && effRevLevelDepth !== level0) glideParam(wet.gain, revLevel(), 0.25);
-  if (revAlgoNow) { if (effRevTimeDepth !== time0) algoTune(0.25); }
-  else if (room && revSec() !== sec0) swapRoom(room);
-}
-
-// The Reverb type: Convolution, the room above, or Algorithmic, the feedback
-// delay network in fdn-worklet.js, whose decay is a number rather than an
-// impulse. Both are fed from revIn and both play into wet, so the level, the
-// switch and the sequencer's rooms are the same either way. A change
-// crossfades the feeds, not the outputs, so the old reverb's tail rings out
-// under the new one; once it has, the old one's feed is unplugged and it
-// falls idle. The network is made the first time it is chosen; if its module
-// did not load, the type stays on convolution.
-//
-// A phone plays the algorithmic one unless its viewer picked Convolution,
-// lighter on its audio thread than a long convolution: the phone's own
-// choice (S.phoneRevType, a machine setting), so the show's type is left as
-// the show has it (schema-audio.js). The damping and drift are the show's own only when the
-// show chose this reverb; under Convolution they are hidden and unheard on
-// a desktop, so a phone plays the network's defaults.
-let revAlgoNow = false, revUnplug = null;
-const wantAlgo = () => onPhone() ? S.phoneRevType !== 'conv' : S.musicRevType === 'algo';
-function convRoom() {
-  if (room) return room;
-  room = createRoom(famCtx(), revSec, 2.0);
-  room.output.connect(wet);
-  convFeed.connect(room.input);
-  return room;
-}
-function algoNode() {
-  if (algo || algoDead) return algo;
-  const ctx = famCtx();
-  try {
-    algo = makeWorklet(ctx, 'fdn-reverb', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
-  } catch (e) {
-    console.warn('piano: algorithmic reverb unavailable, staying on convolution', e);
-    algoDead = true;
-    return null;
-  }
-  algoFeed = ctx.createGain();
-  algoFeed.gain.value = 0;
-  revIn.connect(algoFeed);
-  algo.connect(wet);
-  return algo;
-}
-function algoTune(tc) {
-  if (!algo) return;
-  const p = algo.parameters;
-  glideParam(p.get('decay'), revDecay(), tc);
-  const own = S.musicRevType === 'algo';
-  glideParam(p.get('damping'), own ? revDip01(S.pianoRevDamp ?? 0.35) : 0.35, tc);
-  glideParam(p.get('mod'), own ? revDip01(S.pianoRevMod ?? 0.3) : 0.3, tc);
-}
-export function applyRevType() {
-  if (!revIn) return;
-  const toAlgo = wantAlgo() && !!algoNode();
-  // a phone whose network could not be made falls back to the room after all
-  if (!toAlgo) convRoom();
-  // On a phone the type can change while the network plays on, which moves
-  // only its damping and drift between the show's and the defaults.
-  if (toAlgo === revAlgoNow) { if (toAlgo && onPhone()) algoTune(0.05); return; }
-  revAlgoNow = toAlgo;
-  const on = toAlgo ? algoFeed : convFeed, off = toAlgo ? convFeed : algoFeed;
-  // the incoming reverb catches up on any decay it missed while idle
-  if (toAlgo) algoTune(0.02); else swapRoom(room);
-  clearTimeout(revUnplug);
-  on.connect(toAlgo ? algo : room.input);
-  glideParam(on.gain, 1, 0.05);
-  glideParam(off.gain, 0, 0.05);
-  revUnplug = setTimeout(() => {
-    revUnplug = null;
-    try { off.disconnect(); } catch (e) {}
-  }, (S.pianoRevTime + 1.5 + lateBy(famCtx())) * 1000);
-}
-// The algorithmic reverb's own two: its damping and its drift.
-export function applyPianoRevShape() {
-  algoTune(0.05);
-}
 // Glided rather than set, so dragging the slider sweeps instead of zippering.
 export function applyPianoHP() {
   if (hp) glideParam(hp.frequency, S.pianoHP, 0.05);
@@ -352,10 +249,6 @@ onChannelGates(() => {
   if (bedGain) glideParam(bedGain.gain, bedLevel() * chanGate('drone'), GATE_TC);
   if (arp) glideParam(arp.chanG.gain, chanGate('arp'), GATE_TC);
 });
-// Crossfaded into the room rather than swapped under a ringing tail.
-export function rebuildPianoIR() {
-  if (revAlgoNow) algoTune(0.05); else swapRoom(room, 200);
-}
 
 const nearest = semi => SEMIS.reduce((a,b) => Math.abs(b-semi) < Math.abs(a-semi) ? b : a);
 
@@ -714,7 +607,6 @@ function step() {
   if (!running) return;
   const ctx = famCtx();
   const now = ctx.currentTime;
-  revBreathe(now);
   // The Piano voice switch: off, the player schedules nothing and the clock
   // idles just behind now, so switching back on picks up within a phrase.
   // v1's journey idles it the same way while a step plays the piano on the
@@ -820,7 +712,7 @@ function bedOn() {
   bedGain.connect(bedAm.node);
   // The drone's own low-pass, ahead of its tap so the dry path, the room and
   // the meter all hear the same filtered drone, and its own feed into the
-  // piano's room in place of the tap feeding the room directly. Both start
+  // master room (js/room.js) in place of the tap feeding it directly. Both start
   // where they change nothing (the filter at Nyquist, where a Web Audio
   // low-pass passes the signal through untouched, and the feed at unity),
   // and each is moved by its sweep (the drone's sweeps, after bedOff).
@@ -928,7 +820,7 @@ function bedOff() {
 // The same slow motion as the click train's filter sweep (lpfBlock in
 // worklet.js), played onto ordinary nodes by the sweep driver in sweep.js.
 // The filter sweeps its cutoff in pitch between the low and high settings;
-// the room sweep moves the drone's own feed into the piano's room between
+// the room sweep moves the drone's own feed into the master room between
 // its low and high settings, as a share of the usual feed, so the drone
 // sits sometimes nearer and sometimes further in. The room's wet level
 // (S.pianoReverb) still applies after the room. Off, each glides back to
@@ -1184,7 +1076,7 @@ export async function applyBedDetune() {
 // closes, so the line is one smooth tone swelling and dimming rather than a
 // row of plucks. It has its own mixer channel ('arp' in mixgate.js: level,
 // mute, solo and meter), and each line has a room of its own (lineRoom)
-// whose output joins the piano room's at the shared Reverb level. It runs
+// whose output joins the master room's at the shared Reverb level. It runs
 // only while the music is on and its switch is up.
 const ARP_A = [76, 77, 84], ARP_B = [84, 77, 76];
 
@@ -1405,7 +1297,8 @@ export function seqSwingRead(out, at) {
 // dry builds nothing. Its impulse comes off the main thread through
 // getIR, and a new decay crossfades in under the old tail. Its input
 // carries the pause gate as the shared room's does, and its output joins
-// the shared room's at the Reverb level and switch (wet).
+// the master room's at the Reverb level and switch (js/room.js
+// roomReturn).
 //
 // The cost: eight lines all sending is eight stereo convolutions of up to
 // 15 s, where one shared room used to carry them all, roughly eight times
@@ -1421,7 +1314,7 @@ function lineRoom(ctx, i) {
   if (!r) {
     r = lineRooms[i] = createRoom(ctx, () => lineRevTime(i), 2.0);
     sourceGate(r.input.gain);
-    r.output.connect(wet);
+    r.output.connect(roomReturn());
     roomSec[i] = lineRevTime(i);
   }
   return r;

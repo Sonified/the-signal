@@ -392,6 +392,7 @@ export const AUDIO_SECTIONS = [
   { id: 'music',      title: 'Music' },
   { id: 'atmosphere', title: 'Ambience' },
   { id: 'live',       title: 'Live Sound' },
+  { id: 'reverb',     title: 'Reverb' },
   { id: 'quick',      title: 'Quick bar' },
   { id: 'transport',  title: 'Transport' },
   { id: 'mixer',      title: 'Ambience mixer' }
@@ -1505,33 +1506,42 @@ const musicControls = [
     set: (s, pos) => { s.musChoir = trimOf(pos); applyChoirVol(); save(); },
     format: s => Math.round((s.musChoir ?? 1) * 100) + '%',
     visible: () => false
-  },
+  }
+];
+
+// ---------- Reverb section ----------
+// The music's master room, beneath Live Sound: its own section because the
+// room is its own thing (js/room.js), built when the audio first comes up
+// and never gated by the Music switch, so the Sun's hum has it with the
+// music off. The ids and state keys are the ones these rows always had
+// under Music, so presets, journeys and the broadcast still reach them.
+const reverbControls = [
   {
-    // The room every music voice shares: the piano, the drone and the
-    // sequencer all feed this one reverb, and the per-voice rows (Drone
-    // reverb level, Sequencer reverb) only set each voice's share of it.
-    id: 'musicRevOn', section: 'music', label: 'Master reverb', kind: 'toggle',
+    // The room every music voice shares (js/room.js): the piano, the
+    // drone, the sequencer, the choir, the layers, the clouds and the Sun's
+    // hum all feed this one reverb, and the per-voice rows (Drone reverb
+    // level, Sequencer reverb, the hum's Reverb mix) only set each voice's
+    // share of it. The section's header switch (ui/screens/drawer.js).
+    id: 'musicRevOn', section: 'reverb', label: 'Master reverb', kind: 'toggle',
     get: s => s.musicRevOn !== false,
     set: (s, on) => { s.musicRevOn = !!on; applyPianoReverb(); save(); },
-    format: s => s.musicRevOn !== false ? 'On' : 'Off',
-    visible: s => s.musicOn
+    format: s => s.musicRevOn !== false ? 'On' : 'Off'
   },
-  subDrawer('musicReverbDrawer', 'Reverb', 'music', ['pianoReverb', 'pianoRevTime'], 'musicRevOn'),
   {
     // What plays the room: Convolution, a fixed impulse (a new decay is a
     // new impulse, crossfaded in), or Algorithmic, a feedback delay network
     // whose decay is one number, with a damping and a drift of its own
-    // (js/piano.js applyRevType, js/fdn-worklet.js). Level and decay, and
+    // (js/room.js applyRevType, js/fdn-worklet.js). Level and decay, and
     // their variances, are the same settings under either.
     //
     // On a phone the row is that phone's own choice instead (phoneRevType),
     // Algorithmic until the viewer picks otherwise, since a long convolution
-    // is heavy on a phone's audio thread (js/piano.js applyRevType). It is a
+    // is heavy on a phone's audio thread (js/room.js applyRevType). It is a
     // machine setting there (presets.js machineControl, store.js
     // MACHINE_KEYS): no preset, step or broadcast moves it, and the show's
     // own type is left as the show has it for the desktops that play it.
-    id: 'musicRevType', section: 'music', label: 'Reverb type', kind: 'segment',
-    parent: 'musicReverbDrawer', machineOnPhone: true,
+    id: 'musicRevType', section: 'reverb', label: 'Reverb type', kind: 'segment',
+    machineOnPhone: true,
     options: [
       { value: 'conv', label: 'Convolution' },
       { value: 'algo', label: 'Algorithmic' }
@@ -1544,60 +1554,56 @@ const musicControls = [
       applyRevType(); save();
     },
     format: s => (onPhone() ? s.phoneRevType !== 'conv' : s.musicRevType === 'algo') ? 'algorithmic' : 'convolution',
-    visible: s => s.musicOn && s.musicRevOn !== false
+    visible: s => s.musicRevOn !== false
   },
   {
-    id: 'pianoReverb', section: 'music', label: 'Reverb level', kind: 'slider',
-    parent: 'musicReverbDrawer',
+    id: 'pianoReverb', section: 'reverb', label: 'Reverb level', kind: 'slider',
     min: 0, max: 200, step: 1, def: 100,
     get: s => Math.round(s.pianoReverb * 100),
     set: (s, pos) => { s.pianoReverb = pos / 100; applyPianoReverb(); save(); },
     format: s => Math.round(s.pianoReverb * 100) + '%',
-    visible: s => s.musicOn && s.musicRevOn !== false
+    visible: s => s.musicRevOn !== false
   },
   // The room's level and decay each breathe by the app's standard dip
-  // (js/piano.js, revBreathe, on the music's own clock).
+  // (js/room.js, revBreathe, on the audio clock).
   ...varianceRows('pianoReverb', {
-    music: true, name: 'Level', parent: 'musicReverbDrawer', visible: s => s.musicOn && s.musicRevOn !== false,
+    music: true, name: 'Level', visible: s => s.musicRevOn !== false,
     effective: () => pianoEffectiveReverb() * 100
   }),
   {
-    id: 'pianoRevTime', section: 'music', label: 'Reverb decay', kind: 'slider',
-    parent: 'musicReverbDrawer',
+    id: 'pianoRevTime', section: 'reverb', label: 'Reverb decay', kind: 'slider',
     min: 1, max: 15, step: 0.5, def: 4.5,
     get: s => s.pianoRevTime,
     set: (s, pos) => { s.pianoRevTime = pos; rebuildPianoIR(); rebuildCloudIR(); save(); },
     format: s => s.pianoRevTime.toFixed(1) + 's',
-    visible: s => s.musicOn && s.musicRevOn !== false
+    visible: s => s.musicRevOn !== false
   },
   // Under Convolution a new decay is a new impulse, built and crossfaded
   // in, so its speed starts at 5 s rather than 0.
   ...varianceRows('pianoRevTime', {
-    music: true, name: 'Decay', parent: 'musicReverbDrawer', visible: s => s.musicOn && s.musicRevOn !== false,
+    music: true, name: 'Decay', visible: s => s.musicRevOn !== false,
     periodMin: 5, effective: pianoEffectiveRevTime
   }),
   {
     // How much sooner the highs die than the decay: 0 keeps every
     // frequency to the decay, as the convolution room does; full has the
     // top end gone in about a sixth of it.
-    id: 'pianoRevDamp', section: 'music', label: 'Damping', kind: 'slider',
-    parent: 'musicReverbDrawer',
+    id: 'pianoRevDamp', section: 'reverb', label: 'Damping', kind: 'slider',
     min: 0, max: 100, step: 1, def: 35,
     get: s => Math.round((s.pianoRevDamp ?? 0.35) * 100),
     set: (s, pos) => { s.pianoRevDamp = pos / 100; applyPianoRevShape(); save(); },
     format: s => Math.round((s.pianoRevDamp ?? 0.35) * 100) + '%',
-    visible: s => s.musicOn && s.musicRevOn !== false && s.musicRevType === 'algo'
+    visible: s => s.musicRevOn !== false && s.musicRevType === 'algo'
   },
   {
     // The slow drift of the network's delay lengths, which keeps a held
     // tone from ringing metallic; 0 holds them still.
-    id: 'pianoRevMod', section: 'music', label: 'Modulation', kind: 'slider',
-    parent: 'musicReverbDrawer',
+    id: 'pianoRevMod', section: 'reverb', label: 'Modulation', kind: 'slider',
     min: 0, max: 100, step: 1, def: 30,
     get: s => Math.round((s.pianoRevMod ?? 0.3) * 100),
     set: (s, pos) => { s.pianoRevMod = pos / 100; applyPianoRevShape(); save(); },
     format: s => Math.round((s.pianoRevMod ?? 0.3) * 100) + '%',
-    visible: s => s.musicOn && s.musicRevOn !== false && s.musicRevType === 'algo'
+    visible: s => s.musicRevOn !== false && s.musicRevType === 'algo'
   }
 ];
 
@@ -2194,7 +2200,7 @@ function mixerSettingsText(s) {
 }
 
 export const AUDIO_CONTROLS = [
-  ...audioControls, ...musicControls, ...atmosphereControls, ...liveControls,
+  ...audioControls, ...musicControls, ...atmosphereControls, ...liveControls, ...reverbControls,
   ...quickControls, ...transportControls, ...mixerControls
 ];
 
