@@ -720,7 +720,9 @@ export function createSun(device, format) {
     // the pattern clockwise (y down) as its rotation grows.
     spinAng = (spinAng + md * clampNum(S.sunKaleidoSpin, -6, 6, 0.5) * TAU / 60) % TAU;
 
-    const opacity = clampNum(S.sunOpacity, 0, 1, 1);
+    // Folded, the Kaleidoscope's own Opacity rides on the layer's.
+    const opacity = clampNum(S.sunOpacity, 0, 1, 1) *
+      (S.sunKaleidoOn === true ? clampNum(S.sunKaleidoOpacity, 0, 1, 1) : 1);
     liveDraw = opacity > 0.002;
 
     // ---------- Symmetry, as set and as its variance plays it ----------

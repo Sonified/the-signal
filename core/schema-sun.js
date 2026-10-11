@@ -117,6 +117,9 @@ const NUM = [
   ['sunFolds',           3,   32,  8,    true ],
   // the fold's turning, in RPM, positive clockwise
   ['sunKaleidoSpin',    -6,   6,   0.5,  false],
+  // The folded sun's own opacity, on top of the layer's Opacity: the live
+  // fold and its echo both fade with it (gpu/sun.js).
+  ['sunKaleidoOpacity',  0,   1,   1,    false],
   // Seconds over which a change of Symmetry (the fold count, or Mirror)
   // dissolves from the old pattern into the new one. 0 is instant.
   ['sunFoldXfade',       0,   60,  0,    false],
@@ -578,6 +581,7 @@ export const SUN_CONTROLS = [
     set: (S, on) => { S.sunKaleidoOn = !!on; save(); },
     enabled: layerOn
   },
+  under('sunKaleidoDrawer', percent('sunKaleidoOpacity', 'sunKaleidoOpacity', 'Opacity')),
   // How many wedges the circle is cut into. The readout keeps the number
   // first, so clicking it to type opens on the fold count itself.
   under('sunKaleidoDrawer', direct('sunFolds', 'sunFolds', 'Symmetry', 1, S => S.sunFolds + '-fold')),
