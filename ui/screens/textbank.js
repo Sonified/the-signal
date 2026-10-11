@@ -68,7 +68,7 @@ function cell(id, label, kind, w) {
 // switch, its opacity and where its words come from, above the phrase bank.
 // Every one goes through perfSet like the rest; the switch and the source
 // land at once, as switches do.
-const LAYER_SW_W = 30, LAYER_SW_H = 16, TOGGLE_W = 76, CHOICE_W = 270, LAYER_GAP = 10;
+const LAYER_SW_W = 30, LAYER_SW_H = 16, TOGGLE_W = 76, CHOICE_W = 340, LAYER_GAP = 10;
 const LAYER = {
   cells: [
     cell('lText', 'TEXT', 'toggle', TOGGLE_W),

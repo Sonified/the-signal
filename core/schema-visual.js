@@ -1076,12 +1076,27 @@ export const VISUAL_CONTROLS = [
     options: [
       { value: 'words',        label: 'Words',        domId: 'txModeWords' },
       { value: 'affirmations', label: 'Affirmations', domId: 'txModeAff' },
-      { value: 'custom',       label: 'Custom',       domId: null }
+      { value: 'custom',       label: 'Custom',       domId: null },
+      { value: 'breath',       label: 'Breath',       domId: null }
     ],
     get: S => S.textMode,
     set: (S, v) => { S.textMode = v; rebuildWordPool(); save(); },
     format: S => S.textMode === 'affirmations' ? 'affirmations'
-               : S.textMode === 'custom' ? 'custom phrases' : 'individual words'
+               : S.textMode === 'custom' ? 'custom phrases'
+               : S.textMode === 'breath' ? 'the breath' : 'individual words'
+  },
+  {
+    // Breath follows the sun's breath (gpu/sun.js S.effSunBreathIn): each
+    // inhale puts up "inhaling" and each exhale "exhaling", with the usual
+    // fades (core/words.js breathTick). This is how long after the breath
+    // turns the word arrives.
+    id: 'textBreathDelay', section: 'text', label: 'Appearance delay', kind: 'slider',
+    parent: 'textMode',
+    min: 0, max: 10, step: 0.1, def: 0,
+    visible: S => S.textMode === 'breath',
+    get: S => S.textBreathDelay > 0 ? S.textBreathDelay : 0,
+    set: (S, pos) => { S.textBreathDelay = Math.max(0, pos); save(); },
+    format: S => (S.textBreathDelay > 0 ? S.textBreathDelay : 0).toFixed(1) + ' s'
   },
   {
     // The Custom source's phrases, one line with a '|' between them, and a

@@ -280,6 +280,7 @@ export const S = {
   textMode: 'words',          // 'words' shows the themed pool, 'affirmations' the phrases; v1 adds 'custom' (v0 ignores it)
   textCustomText: '',         // v1: the Custom source's own phrases, separated by '|', shown in order; a '/' breaks a line
   textPhraseGap: -1,          // v1: seconds between Custom phrases, one leaving to the next arriving; -1 Auto (the scheduler's roll)
+  textBreathDelay: 0,         // v1: seconds after the sun's breath turns before Breath's word appears
   textLineWidth: 0.92,        // the wrap width, as a share of the view; phrases break to fit it
   textSmartBreaks: true,      // v1: a phrase with marked breaks (js/affirmations.js) takes a line per piece
   textLinesTogetherIn: false,  // v1: the Fade in block's own switch, arrivals only

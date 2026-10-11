@@ -232,7 +232,9 @@ export function rebuildWordPool() {
   // '|' between them, each phrase a row of its own in the same shape.
   const on = S.textThemes;
   const prev = pool;
-  pool = S.textMode === 'custom'
+  pool = S.textMode === 'breath'
+    ? []
+    : S.textMode === 'custom'
     ? customRows(S.textCustomText)
     : S.textMode === 'affirmations'
     ? affirmations.slice()
@@ -492,6 +494,34 @@ function showLocal(t) {
   wordState.step = -1;
   forceNext = false;
   for (let k = 0; k < appearCbs.length; k++) appearCbs[k](p.w);
+}
+
+// ---------- the breath ----------
+// The Breath source has no pool and no roll: it follows the sun's breath
+// (gpu/sun.js publishes S.effSunBreathIn, true while inhaling). Each time
+// the breath turns, "inhaling" or "exhaling" goes up the Appearance delay
+// later, through the performer's path above, so the word on screen leaves
+// through its fade and the new one arrives with the usual fades and hold.
+// Switched to mid-breath it waits for the next turn, so a word never lands
+// partway through. With the Sun layer off there is no breath, and no word.
+let breathWasIn = null;   // the breath's direction last frame, null before the first
+let breathDueAt = -1;     // ms the pending word goes up, -1 none
+let breathWord = '';
+function breathTick(t) {
+  const inh = S.effSunBreathIn;
+  if (typeof inh !== 'boolean') { breathWasIn = null; breathDueAt = -1; return; }
+  if (breathWasIn !== null && inh !== breathWasIn) {
+    breathWord = inh ? 'inhaling' : 'exhaling';
+    breathDueAt = t + Math.max(0, S.textBreathDelay || 0) * 1000;
+    wordState.nextText = breathWord;
+  }
+  breathWasIn = inh;
+  if (breathDueAt >= 0 && t >= breathDueAt) {
+    breathDueAt = -1;
+    triggerPhrase(breathWord);
+    // the word after this one, for the smoke to record its arrival
+    wordState.nextText = breathWord === 'inhaling' ? 'exhaling' : 'inhaling';
+  }
 }
 
 // The remote word goes up the moment the screen is clear, as a forced local
@@ -878,6 +908,7 @@ export function wordsResume(away) {
   if (restUntil > lastT) restUntil += away;
   if (revealStart >= 0) revealStart += away;
   if (goneAt >= 0) goneAt += away;
+  if (breathDueAt >= 0) breathDueAt += away;
 }
 
 // A session's first moments are quiet: no word for at least this long after
@@ -906,6 +937,7 @@ export function stepWords(t, dt) {
     rateAcc = 0;
     goneAt = -1;   // a restart's first phrase comes on the next tick, not a gap after the last
     wasLive = false;
+    breathWasIn = null; breathDueAt = -1;
     return;
   }
   if (!wasLive) {
@@ -927,6 +959,11 @@ export function stepWords(t, dt) {
   // The Phrase gap is read outside the branches: the leave logic further
   // down (maybeRest) checks it whichever way the word was chosen.
   const gap = phraseGapMs();
+  // The Breath source deals here, ahead of the performer's phrase it rides
+  // on; following a broadcast, the broadcaster's breath words arrive relayed.
+  const breathing = S.textMode === 'breath';
+  if (breathing && !remote) breathTick(t);
+  else { breathWasIn = null; breathDueAt = -1; }
   // The performer's phrase, ahead of the pool pick and outside the remote
   // switch: it shows the moment the screen is clear, no rest in between,
   // whichever way this scheduler is running.
@@ -941,6 +978,8 @@ export function stepWords(t, dt) {
     // words on while the broadcaster's socket dozes.
     if (pendingRemote.has && !showing) showRemote(t);
     else if (wordWalkRunning()) walkTick(t);
+  } else if (breathing) {
+    // Breath: breathTick above is the whole scheduler; no roll, no walk.
   } else if (wordWalkRunning() && oneShotRemaining === -1 && !forceNext) {
     // Broadcasting: the shared walk takes the place of the roll, so this
     // screen deals exactly what its followers deal. A Journey's one-shot

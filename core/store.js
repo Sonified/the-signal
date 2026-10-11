@@ -391,7 +391,7 @@ function wordFxStateOf(s) {
               textGatherSweep: s.textGatherSweep, textGatherSweepOut: s.textGatherSweepOut,
               textFadeInOn: s.textFadeInOn, textFadeOutOn: s.textFadeOutOn,
               textCustomText: typeof s.textCustomText === 'string' ? s.textCustomText : '',
-              textPhraseGap: s.textPhraseGap };
+              textPhraseGap: s.textPhraseGap, textBreathDelay: s.textBreathDelay };
   for (const k of WORD_FX_NUMS) o[k] = s[k];
   return o;
 }
@@ -422,6 +422,8 @@ function applyWordFxState(s, x) {
   if (typeof x.textCustomText === 'string') s.textCustomText = x.textCustomText.slice(0, CUSTOM_TEXT_MAX);
   // Their Phrase gap too: seconds, 0 to 30, anything below 0 reading as Auto.
   if (Number.isFinite(x.textPhraseGap)) s.textPhraseGap = x.textPhraseGap < 0 ? -1 : Math.min(30, x.textPhraseGap);
+  // Breath's Appearance delay: seconds, 0 to 10.
+  if (Number.isFinite(x.textBreathDelay)) s.textBreathDelay = Math.max(0, Math.min(10, x.textBreathDelay));
   for (const k of WORD_FX_SIDED) if (!Number.isFinite(x[k + 'Out']) && Number.isFinite(x[k])) s[k + 'Out'] = x[k];
   for (const k of WORD_FX_NUMS) if (Number.isFinite(x[k])) s[k] = x[k];
 }
@@ -1047,7 +1049,7 @@ function applySettings(s, live, scene) {
   }
   if (s.textColorMode === 'white' || s.textColorMode === 'system') S.textColorMode = s.textColorMode;
   if (s.textThemes && typeof s.textThemes === 'object') S.textThemes = { ...s.textThemes };
-  if (s.textMode === 'words' || s.textMode === 'affirmations' || s.textMode === 'custom') S.textMode = s.textMode;
+  if (s.textMode === 'words' || s.textMode === 'affirmations' || s.textMode === 'custom' || s.textMode === 'breath') S.textMode = s.textMode;
   if (typeof s.textLineWidth === 'number') S.textLineWidth = s.textLineWidth;
   if (typeof s.textSmartBreaks === 'boolean') S.textSmartBreaks = s.textSmartBreaks;
   if (typeof s.textLinesTogether === 'boolean') S.textLinesTogether = s.textLinesTogether;
