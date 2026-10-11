@@ -86,6 +86,10 @@ import { REPLAY_CONTROLS, beginTransition, recallPresetForStep, machineControl }
 import { readKey, saveKey, onSave, save, seqStateOf, applySeqState, mixStateOf, SEQ_NUM_RANGE, oldRingSpeed } from './store.js';
 import { onWordAppear, wordSequenceOnce, cancelWordSequenceOnce } from './words.js';
 import { glideSkippingRiskBand } from './strobe.js';
+// A cycle, perform.js importing this module for journeyManualOverride: both
+// sides only call across it at run time, never as either module is first
+// evaluated, so whichever loads first is complete before the other asks.
+import { perfDestination, perfTakeSwitch } from './perform.js';
 
 const JOURNEY_KEY = 'signal.journey.v1';
 export const RAMP_MIN = 0, RAMP_MAX = 30, HOLD_MIN = 5, HOLD_MAX = 600;
@@ -191,6 +195,35 @@ const twins = new Map();
   }
 }
 const withTwins = id => twins.has(id) ? [id, ...twins.get(id)] : [id];
+
+// Where control c will come to rest, undefined when nothing is moving it:
+// the performer's engine (perform.js perfDestination: a layer fading out
+// from a window, a preset's ramp, any glide). A twin (see twins) shares its
+// state with a door the engine may be moving, as the mixer's power button
+// shares S.ambOn with the Ambience switch the music window fades, so a
+// switch whose own id names no destination takes its twin's: the same value
+// when the two read alike now, the other when they read opposite (a mute
+// beside an on). Anything else of a twin's is left to its own reading, since
+// a slider's twin can be scaled differently.
+function ownDest(id) { return perfDestination(id); }
+function destOf(c) {
+  const d = ownDest(c.id);
+  if (d !== undefined) return d;
+  const tws = twins.get(c.id);
+  if (!tws) return undefined;
+  for (let k = 0; k < tws.length; k++) {
+    const td = ownDest(tws[k]);
+    if (typeof td !== 'boolean') continue;
+    const tc = byId(tws[k]), a = tc && tc.get ? tc.get(S) : undefined, b = c.get(S);
+    if (typeof a === 'boolean' && typeof b === 'boolean') return a === b ? td : !td;
+  }
+  return undefined;
+}
+// What the journey records for c: where it is headed, else where it is.
+function posOf(c) {
+  const d = destOf(c);
+  return d !== undefined ? d : c.get(S);
+}
 
 const baseline = new Array(R.length);
 const MODE = byId('textMode'), CUSTOM = byId('textCustomText');
@@ -487,6 +520,7 @@ function applyStep(st, sec) {
   beginTransition(Math.max(MIN_GLIDE_S, sec));
   try {
     const o = st.overrides, mixOwned = !!st.mix;
+    takeSwitchFades(o, mixOwned, false, null);
     for (let i = 0; i < R.length; i++) {
       const c = R[i];
       const v = o[c.id];
@@ -498,6 +532,28 @@ function applyStep(st, sec) {
   } finally {
     endGlide();
   }
+}
+
+// A switch the step puts on that a fade is taking off (a voice clicked off in
+// the music window a moment ago, a layer in the performer's, a preset's ramp
+// still holding one on until it ends) reads on until the fade lands, so the
+// step's on looked already done and was skipped, and the landing then turned
+// it off under the step, recorded as off into it when it was being edited.
+// The fade is taken from the engine first (perform.js perfTakeSwitch), its
+// levels handed to carry (startRamp brings them back up over its ramp) or
+// put straight back. open: no transition is open yet, and one is opened only
+// if something is taken. Nothing is allocated unless a fade is.
+function takeSwitchFades(o, mixOwned, open, carry) {
+  let opened = false;
+  try {
+    for (let i = 0; i < R.length; i++) {
+      const c = R[i], v = o[c.id];
+      if (!v || skip[i] || manual.has(c.id) || (mixOwned && inMix[i]) || (c.kind !== 'toggle' && c.kind !== 'segment')) continue;
+      if (perfDestination(c.id) !== false || !c.get(S)) continue;
+      if (open && !opened) { beginTransition(SWITCH_GLIDE_S); opened = true; }
+      perfTakeSwitch(c.id, carry);
+    }
+  } finally { if (opened) endGlide(); }
 }
 
 // ---------- the sequencer and the mix ----------
@@ -1028,6 +1084,17 @@ function addColor(c, hex) {
   noteRamping(c);
 }
 
+// startRamp's hand for a level a taken fade was carrying: a control the
+// step can hold rides the ramp back up from where the fade had reached, to
+// the step's own level (its slider loop, below) or to where it belonged.
+let rampO = null;
+function rampCarry(L, to) {
+  const j = idxOf.get(L.id);
+  if (j === undefined || skip[j] || L.kind !== 'slider') return false;
+  if (!manual.has(L.id) && rampO[L.id] === undefined) addSlider(j, L, to);
+  return true;
+}
+
 // A playing step with a ramp: its switches (and its text, when that shows
 // from the start) inside one short transition, then the sliders and the
 // colour set travelling from wherever they are now, read only after the
@@ -1037,6 +1104,9 @@ function addColor(c, hex) {
 // over the ramp while the audio's levels still land in the short glide.
 function startRamp(st, withText) {
   const o = st.overrides, mixOwned = !!st.mix;
+  rampO = o;
+  takeSwitchFades(o, mixOwned, true, rampCarry);
+  rampO = null;
   beginTransition(SWITCH_GLIDE_S, st.rampS);
   try {
     for (let i = 0; i < R.length; i++) {
@@ -1121,8 +1191,13 @@ function stepColor(u, e) {
 
 // ---------- authoring ----------
 
+// The baseline is where each control is headed, not where it is (posOf): a
+// layer toggled off in the music window fades first and only switches at the
+// landing (perform.js perfLayer), so a baseline read mid-fade held it on, and
+// when the fade landed after another step had been selected, the off showed
+// up as a change in that step instead of the one it was made in.
 function captureBaseline() {
-  for (let i = 0; i < R.length; i++) baseline[i] = R[i].get(S);
+  for (let i = 0; i < R.length; i++) baseline[i] = posOf(R[i]);
 }
 
 function rebuildOverSet() {
@@ -1177,12 +1252,16 @@ function runDiff() {
   for (let i = 0; i < R.length; i++) {
     if (skip[i] || inMix[i]) continue;
     if (i === COLOR_I && S.colorWalk > 0) { baseline[i] = R[i].get(S); continue; }
-    const c = R[i], raw = c.get(S);
+    // What the viewer asked for is where a control is headed: a switch
+    // fading out from a window reads on until its fade lands, and a glide
+    // reads every value on its way (perform.js perfDestination).
+    const c = R[i], dest = destOf(c), raw = dest !== undefined ? dest : c.get(S);
     let v = HALF_SECOND_FADE.has(c.id) ? validValue(c, raw) : raw;
     if (v === undefined || v !== v) continue;
     // While authoring, the drawer follows the Journey's half-second grid as
-    // soon as its finer fade control is released.
-    if (v !== raw) c.set(S, v);
+    // soon as its finer fade control is released; never a control still on
+    // its way, whose glide this write would stop.
+    if (v !== raw && dest === undefined) c.set(S, v);
     const had = o[c.id] !== undefined;
     if (!had && c.enabled && !c.enabled(S)) continue;
     if (had ? o[c.id] !== v : v !== baseline[i]) {
@@ -1326,7 +1405,7 @@ export function journeyClearOverride(id) {
   delete st.overrides[id];
   overSet.delete(id);
   const i = idxOf.get(id);
-  if (i !== undefined) baseline[i] = R[i].get(S);
+  if (i !== undefined) baseline[i] = posOf(R[i]);
   persist();
 }
 
@@ -1351,7 +1430,9 @@ function snapshotAllOverrides(st) {
   const o = st.overrides;
   for (let i = 0; i < R.length; i++) {
     if (skip[i] || inMix[i]) continue;
-    const c = R[i], v = validValue(c, c.get(S));
+    // where each control is headed (posOf): a Snapshot taken while a layer
+    // fades out saves it off, at the level it goes back to
+    const c = R[i], v = validValue(c, posOf(c));
     if (v !== undefined) o[c.id] = v;
   }
 }
@@ -2052,7 +2133,9 @@ function recordLiveControl(stepIdx, id, requested) {
     // a range control has no single get (getLo/getHi); with no requested
     // position either there is nothing to record for it
     if (n !== 0 || requested === undefined) { if (!c.get) continue; }
-    let v = n === 0 && requested !== undefined ? requested : c.get(S);
+    // with no position asked for, where it is headed (a layer fading out
+    // from the music window still reads on until the fade lands)
+    let v = n === 0 && requested !== undefined ? requested : posOf(c);
     v = validValue(c, v);
     if (v === undefined || st.overrides[cid] === v) continue;
     st.overrides[cid] = v;
