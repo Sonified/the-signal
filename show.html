@@ -93,7 +93,7 @@ h1 { font-size: 20px; margin: 0; }
   font-family: inherit; font-weight: 600; font-size: 16px; touch-action: manipulation; }
 .small { height: 40px; font-size: 14px; padding: 0 14px; }
 
-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 0.85fr) 1.15fr; gap: 14px; }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(252px, 0.765fr) 1.235fr; gap: 14px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-height: 0; }
 .card h2 { font-size: 12px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 10px; }
 
@@ -122,6 +122,11 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
    right 50%, 230px of its 460) */
 #midFaders { grid-row: 2; min-height: 160px; display: flex; justify-content: center; gap: 10px; margin-right: -244px; }
 #midFaders .fader { width: 72px; }
+/* SCREEN on its own at the middle's left edge, next to the cues; after
+   #midFaders in the page so it sits above that row's empty span */
+#leftFader { grid-row: 2; grid-column: 1; min-height: 160px; display: flex; justify-self: start; }
+#leftFader .fader { width: 72px; }
+#midFaders { grid-column: 1; }
 #edge { width: min(100%, 460px); min-height: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
 #top { display: grid; grid-template-columns: 1fr 172px; gap: 12px; align-items: start; }
 #info { padding-top: 4px; display: grid; gap: 8px; }
@@ -183,6 +188,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   #stage { display: block; }
   #middle { display: block; margin-bottom: 14px; }
   #midFaders { height: 300px; margin-right: 0; }
+  #leftFader { height: 300px; margin-bottom: 14px; }
   #edge { width: 100%; }
 }
 </style>
@@ -210,7 +216,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     <div id="cues"></div>
   </div>
   <div id="stage">
-    <div id="middle"><div id="midFaders"></div></div>
+    <div id="middle"><div id="midFaders"></div><div id="leftFader"></div></div>
     <div id="edge">
       <div id="top">
         <div id="info">
@@ -387,7 +393,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // In the middle, first: the screen gate, the room's picture's master
     // brightness (S.screenGate, gpu/engine.js), linear 0..100%, 0 black.
     // Slide it down to end the show; the laptop's own drawer stays lit.
-    { id: 'screenGate', key: 'gt', label: 'SCREEN', color: '#f4efe0', max: 100, def: 100, box: 'midFaders', fmt: p => p <= 0 ? 'black' : Math.round(p) + '%' },
+    { id: 'screenGate', key: 'gt', label: 'SCREEN', color: '#f4efe0', max: 100, def: 100, box: 'leftFader', fmt: p => p <= 0 ? 'black' : Math.round(p) + '%' },
     // Then the Heartbeat's Master, the heard beat and its flash
     // riding together at the balance the laptop's Audio level and Visual
     // amount set (core/schema-heartbeat.js), linear 0..100%.
