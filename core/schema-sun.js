@@ -117,8 +117,8 @@ const NUM = [
   ['sunFolds',           3,   32,  8,    true ],
   // the fold's turning, in RPM, positive clockwise
   ['sunKaleidoSpin',    -6,   6,   0.5,  false],
-  // The folded sun's own opacity, on top of the layer's Opacity: the live
-  // fold and its echo both fade with it (gpu/sun.js).
+  // The Kaleidoscope's Opacity, a dry/wet mix: 0 the raw sun, 1 the fold
+  // alone, 0.5 half of each (gpu/sun.js), the trails fed the same mix.
   ['sunKaleidoOpacity',  0,   1,   1,    false],
   // Seconds over which a change of Symmetry (the fold count, or Mirror)
   // dissolves from the old pattern into the new one. 0 is instant.

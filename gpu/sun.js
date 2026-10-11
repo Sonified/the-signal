@@ -508,6 +508,15 @@ export function createSun(device, format) {
   // This frame: whether the live picture draws, whether it is folded, and
   // whether the feedback runs.
   let liveDraw = false, folded = false, fbOn = false;
+  // The Kaleidoscope's Opacity, a dry/wet mix of the raw sun and the fold
+  // (S.sunKaleidoOpacity, the wet share). Both are mostly opaque over the
+  // same disc, so an over-blend crossfades them: up to half wet, the raw
+  // sun lands full and the fold goes over it at the wet share; past half,
+  // the fold lands full and the raw sun goes over it at the dry share. The
+  // two orders agree at half, and either end draws the one picture alone.
+  // dryGain and wetGain are those shares (dryGain also carries the layer's
+  // Opacity in the live slot); wetFirst says which goes under.
+  let dryGain = 1, wetGain = 1, wetFirst = false, drawDry = true, drawWet = false;
 
   // ---------- the fold pair and the symmetry slide ----------
   // foldA owns the chamber and folds the symmetry the pattern is at or
@@ -720,9 +729,7 @@ export function createSun(device, format) {
     // the pattern clockwise (y down) as its rotation grows.
     spinAng = (spinAng + md * clampNum(S.sunKaleidoSpin, -6, 6, 0.5) * TAU / 60) % TAU;
 
-    // Folded, the Kaleidoscope's own Opacity rides on the layer's.
-    const opacity = clampNum(S.sunOpacity, 0, 1, 1) *
-      (S.sunKaleidoOn === true ? clampNum(S.sunKaleidoOpacity, 0, 1, 1) : 1);
+    const opacity = clampNum(S.sunOpacity, 0, 1, 1);
     liveDraw = opacity > 0.002;
 
     // ---------- Symmetry, as set and as its variance plays it ----------
@@ -734,6 +741,12 @@ export function createSun(device, format) {
     // dissolves chain whole; a change of the setting itself goes straight
     // through.
     folded = S.sunKaleidoOn === true;
+    const wet = folded ? clampNum(S.sunKaleidoOpacity, 0, 1, 1) : 0;
+    wetFirst = wet > 0.5;
+    dryGain = wetFirst ? 1 - wet : 1;
+    wetGain = wetFirst ? 1 : wet;
+    drawDry = !folded || dryGain > 0.002;
+    drawWet = folded && wetGain > 0.002;
     let nFolds = 8, mirror = true;
     if (folded) {
       const setFolds = Math.round(clampNum(S.sunFolds, 3, MAX_FOLDS, 8));
@@ -796,13 +809,13 @@ export function createSun(device, format) {
       // with the spin.
       const rotation = -Math.PI * 0.5 + spinAng;
       pNew.folds = symFolds; pNew.mirror = symMirror; pNew.rotation = rotation;
-      pNew.gain = opacity * (sliding ? slideK : 1);
+      pNew.gain = opacity * wetGain * (sliding ? slideK : 1);
       pOld.folds = oldFolds; pOld.mirror = oldMirror; pOld.rotation = rotation;
-      pOld.gain = opacity * (1 - slideK);
+      pOld.gain = opacity * wetGain * (1 - slideK);
       pFbNew.folds = symFolds; pFbNew.mirror = symMirror; pFbNew.rotation = rotation;
-      pFbNew.gain = sliding ? slideK : 1;
+      pFbNew.gain = wetGain * (sliding ? slideK : 1);
       pFbOld.folds = oldFolds; pFbOld.mirror = oldMirror; pFbOld.rotation = rotation;
-      pFbOld.gain = 1 - slideK;
+      pFbOld.gain = wetGain * (1 - slideK);
       if (!pipeChamber) pipeChamber = pipeFor(FOLD_CHAMBER_FORMAT);
       const f = foldA.frame;
       putSlot(SLOT_CHAMBER, f[4], f[5], f[6], half, f[0], f[1], 0, 0, 1, gains);
@@ -857,15 +870,16 @@ export function createSun(device, format) {
         fbFoldA.ensureChamber(pixelW, pixelH, chamberParams, true);
         fbFoldA.fit(cx, cy, fbScale);
         if (sliding) { fbFoldB.ensureChamber(pixelW, pixelH, chamberParams, true); fbFoldB.fit(cx, cy, fbScale); }
-      } else {
+      }
+      if (drawDry) {
         if (!pipeFb) pipeFb = pipeFor(FEEDBACK_FORMAT);
         const kx = fb.width / pixelW, ky = fb.height / pixelH;
-        putSlot(SLOT_FB, cx * kx, cy * ky, fbScale, half, fb.width, fb.height, gateG, gateOn ? gateW : 0, 1, gains);
+        putSlot(SLOT_FB, cx * kx, cy * ky, fbScale, half, fb.width, fb.height, gateG, gateOn ? gateW : 0, dryGain, gains);
       }
     }
 
     if (!liveDraw && !fbOn) return;
-    putSlot(SLOT_SCENE, cx, cy, 1, half, pixelW, pixelH, 0, 0, opacity, gains);
+    putSlot(SLOT_SCENE, cx, cy, 1, half, pixelW, pixelH, 0, 0, opacity * dryGain, gains);
 
     // ---------- this frame's picture ----------
     // The main's picture, and while a wrap fades with the ghost showing
@@ -920,16 +934,21 @@ export function createSun(device, format) {
     const lp = fb.begin(encoder, fbParams, drawing);
     if (!lp) return;
     if (drawing) {
-      if (folded) {
+      // The dry/wet mix, in the same order as the live picture's.
+      if (!wetFirst) drawDryFb(lp);
+      if (drawWet) {
         if (sliding) fbFoldB.drawFrom(lp, pFbOld, foldA.chamberView);
         fbFoldA.drawFrom(lp, pFbNew, foldA.chamberView);
-      } else {
-        lp.setPipeline(pipeFb);
-        lp.setBindGroup(0, bind, offFb);
-        lp.draw(6);
       }
+      if (wetFirst) drawDryFb(lp);
     }
     fb.end(lp);
+  }
+  function drawDryFb(lp) {
+    if (!drawDry) return;
+    lp.setPipeline(pipeFb);
+    lp.setBindGroup(0, bind, offFb);
+    lp.draw(6);
   }
 
   // Inside the scene pass, just before the kaleidoscope layer: the echo
@@ -938,12 +957,17 @@ export function createSun(device, format) {
   function draw(pass) {
     if (fbOn) fb.composite(pass, 1, fbOpacity);
     if (!bind || !liveDraw) return;
-    if (folded) {
-      if (!foldA || !foldA.chamberView) return;
+    if (folded && (!foldA || !foldA.chamberView)) return;
+    // The dry/wet mix: the share past half goes under, full.
+    if (!wetFirst) drawDryLive(pass);
+    if (drawWet) {
       if (sliding) foldB.drawFrom(pass, pOld, foldA.chamberView);
       foldA.draw(pass, pNew);
-      return;
     }
+    if (wetFirst) drawDryLive(pass);
+  }
+  function drawDryLive(pass) {
+    if (!drawDry) return;
     pass.setPipeline(pipeScene);
     pass.setBindGroup(0, bind, offScene);
     pass.draw(6);
