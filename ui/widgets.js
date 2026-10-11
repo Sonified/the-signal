@@ -397,7 +397,12 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   // A control gliding to where it was asked (ui.control's doors) keeps its
   // knob at the destination while the fill catches up (fill01), as the
   // Music window's sliders do; held by the hand, both follow the hand.
-  const fillAt = changed || typeof fill01 !== 'number' ? shown : fill01;
+  // The fill is the value in use NOW, always: grabbed and dragged, the knob
+  // and the readout are the hand, while the fill stays the live value
+  // gliding toward it over the ramp. The fill never follows the hand except
+  // when the hand's writes land as they move (the ramp at cut), when the
+  // live value simply is the hand.
+  const fillAt = typeof fill01 === 'number' ? fill01 : shown;
   const fillW = Math.max(trackH, rw * fillAt);
   ui.dl.rect(rx, trackCY - trackH / 2, fillW, trackH, trackH / 2,
     hasEffective && !tint ? COLOR.accentGlow : acc, 0, null, disabled ? 0 : 6, 0.35);
