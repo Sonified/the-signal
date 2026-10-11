@@ -23,7 +23,7 @@ import { subDrawer } from './schema-visual.js';
 export const SLIDE_DIR = 'slides/';
 export const SLIDE_NONE = 'none';
 export const SLIDE_FILES = [
-  ['010_Alexander_ECE_2026_Intro_Slide.mp4', 'Intro Slide'],
+  ['010_Alexander_TSC_2026_Intro_Slide.mp4', 'Intro Slide'],
   ['015_Heartbeat_Pulse.mp4', 'Heartbeat'],
   ['020_harmonica_Car_Seat.jpeg.mp4', 'Harmonica Car Seat'],
   ['030_Audification_Explained.mp4', 'Audification Explained'],
@@ -43,7 +43,15 @@ export const SLIDE_FILES = [
 export const SLIDE_OPTIONS = [{ value: SLIDE_NONE, label: 'None', domId: null }]
   .concat(SLIDE_FILES.map(f => ({ value: f[0], label: f[1], domId: null })));
 const FILE_OK = new Set(SLIDE_OPTIONS.map(o => o.value));
-const fileOf = v => FILE_OK.has(v) ? v : SLIDE_NONE;
+// A slide whose file was swapped for a new one under a new name: a saved
+// journey or record still naming the old file plays the new one.
+const RENAMED = new Map([
+  ['010_Alexander_ECE_2026_Intro_Slide.mp4', '010_Alexander_TSC_2026_Intro_Slide.mp4']
+]);
+const fileOf = v => {
+  v = RENAMED.get(v) ?? v;
+  return FILE_OK.has(v) ? v : SLIDE_NONE;
+};
 const LABEL_OF = new Map(SLIDE_OPTIONS.map(o => [o.value, o.label]));
 export const slideLabel = v => LABEL_OF.get(fileOf(v));
 
