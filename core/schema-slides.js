@@ -35,6 +35,7 @@ export const SLIDE_FILES = [
   ['070_Solar_Spherical_Harmonics.mp4', 'Spherical Harmonics'],
   ['090_Harp_Trailer_Voice.mp4', 'HARP Trailer'],
   ['180_WISPR PSP CME Sonification dfb dbm vac trim_ANOMALY_B4.mp4', 'WISPR CME'],
+  ['190_Touching_The_Sun.mp4', 'Touching the Sun'],
   ['220_Ed_Mitchell_VR_Combined_Audio_Video.mp4', 'Ed Mitchell VR'],
   ['900_QR_Meditate_With_The_Sun_ALT_304.mp4', 'QR Meditate']
 ];
