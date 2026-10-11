@@ -31,7 +31,6 @@ import {
 } from '../../core/broadcast.js';
 import { liveOnAir, liveSetOnAir, liveAirLabel, liveAirSending } from '../../core/live-audio.js';
 import {
-  journeyEditing, journeyOverridden, journeyClearOverride,
   journeyRampGlow, journeyRampingControl, journeyRampingSection, journeyRampingSub,
   journeyManualOverride, journeyModeOn, journeyRampS
 } from '../../core/journey.js';
@@ -629,28 +628,6 @@ export function drawProfileBadge(dl, text, height) {
   dl.rect(x, y, badgeW, FOOT_CHIP_H, RADIUS.pill, COLOR.glassTint, 1, COLOR.lineSoft, 0, 0);
   dl.rect(x + CHIP_PAD, y + (FOOT_CHIP_H - DOT) / 2, DOT, DOT, DOT / 2, COLOR.warn, 0, null, 0, 0);
   text.draw(dl, str, x + CHIP_PAD + DOT + 6, y + FOOT_CHIP_H / 2 + 4, TYPE.xs, W.regular, COLOR.inkDim, 0, TRACK.ui, 1);
-}
-
-// While a journey step is being authored (core/journey.js), every row whose
-// control the step records wears a small gold dot at its upper left, in the
-// gutter the row is indented past, so the layout never moves for it. It sits
-// above where a variance chevron seats itself (the row's vertical middle, in
-// the guide line's column) and runs before it, so in the corner they share
-// the dot has the first claim on a press. A click takes the control out of
-// the step. The row's rect is read with peek() before the row lays itself
-// out, so the dot costs a Set lookup a row and nothing when not authoring.
-const JDOT_R = 2.5, JDOT_HIT = 12, JDOT_DX = 5, JDOT_DY = 6;
-const TIP_JDOT = 'Saved with this step  ·  click to remove';
-function journeyDot(ui, it, salt) {
-  ui.peek();
-  const cx = ui.px - JDOT_DX, cy = ui.py + JDOT_DY, hx = cx - JDOT_HIT / 2, hy = cy - JDOT_HIT / 2;
-  const id = ui.idx('drawer.jdot', salt);
-  ui.interact(id, hx, hy, JDOT_HIT, JDOT_HIT, false);
-  const hover = ui.hover;
-  if (hover) { ui.setCursorHint('pointer'); noteTip(id, hx, hy, JDOT_HIT, TIP_JDOT, JDOT_HIT); }
-  if (ui.clicked) { journeyClearOverride(it.id); return; }
-  const r = hover ? JDOT_R + 1 : JDOT_R;
-  ui.dl.rect(cx - r, cy - r, r * 2, r * 2, r, JOURNEY_ACCENT, 0, null, hover ? 6 : 0, 0.35);
 }
 
 // While a playing journey step ramps its settings in (core/journey.js), the
@@ -1332,7 +1309,6 @@ export function drawDrawer(ui, app) {
 
   // every section as a collapsible group, headers on the wider column
   ui.setCursor(dx + HEAD_X, ui.cursorY, HEAD_W);
-  const authoring = journeyEditing();
   const rampGlow = journeyRampGlow();
   if (rampGlow > 0) rampColors(rampGlow);
   for (let g = 0; g < GROUPS.length; g++) {
@@ -1423,7 +1399,6 @@ export function drawDrawer(ui, app) {
           if (frozenFrom) shown = seen[i] === 1;
           else { shown = !it.visible || it.visible(S); seen[i] = shown ? 1 : 0; }
           if (shown) {
-            if (authoring && journeyOverridden(it.id)) journeyDot(ui, it, g * 1024 + i);
             // a row in a playing step's ramp: where it starts, before it
             // lays out, and its height from how far it moved the cursor
             const ramping = rampGlow > 0 && journeyRampingControl(it.id);

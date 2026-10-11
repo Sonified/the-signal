@@ -65,7 +65,7 @@ import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcas
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
 import { initShowRemote } from './platform/show-remote.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
-import { stepJourney, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
+import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
 import { setSettingsFileHandler, overlayKeyCapture, OVERLAY_KEY_DEF } from './core/schema-visual.js';
@@ -850,6 +850,9 @@ async function boot() {
       const cursor = (chromeAwake || overWin) ? res.cursor : 'none';
       if (cursor !== lastCursor) { lastCursor = cursor; platform.setCursor(cursor); }
     }
+    // a journey's record waits to be written while a control is held, and
+    // is written as it is let go (core/journey.js)
+    journeyHoldWrites(ui.activeId !== -1);
 
     drawOverlay(overlayList, text, t, width, height);
     // While recording with the drawer shut, a small steady badge in the

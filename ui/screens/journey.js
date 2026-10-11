@@ -6,8 +6,8 @@
 // walk at that step, STEP n and a short summary of what it holds, and an ×
 // that deletes it. A click on a row anywhere off its controls selects the
 // step for editing (core/journey.js): the step glides in, and from then on
-// the drawer's changes are recorded into it, each recorded control wearing a
-// gold dot in the drawer's gutter. A second click lets it go. While the walk
+// the drawer's changes are recorded into it, the step always holding the
+// whole scene. A second click lets it go. While the walk
 // plays, a click only opens the step's fold, and the walk carries on. The
 // selected step folds open beneath its row with HOLD and RAMP on one line,
 // then TEXT with its lock at the right (locked, a preset loaded into the step
@@ -16,8 +16,7 @@
 // text takes to arrive and leave: the drawer's own two fade times, recorded
 // into the step when moved, and shown dim at the interface's own while it
 // holds none). APPEAR chooses when in the ramp the text first shows, followed
-// by PIANO, PRESET (the drawer's hearted presets first) and INTERACTION, with
-// a chip that clears every recorded setting. A row
+// by PIANO, PRESET (the drawer's hearted presets first) and INTERACTION. A row
 // pressed and dragged past a few px lifts and moves, an insertion bar marking
 // where it will land, as the drawer's preset chips do in their edit mode.
 // The title bar plays and pauses the walk, steps it back and on by hand,
@@ -58,11 +57,11 @@
 // never on S; the window keeps only where it sits and whether it is open,
 // with the UI record (saveUiState), as the sequencer does.
 import {
-  journeySetWindowOpen, journeyVersion, journeyCount, journeyStepAt, journeyOverrideCount,
+  journeySetWindowOpen, journeyVersion, journeyCount, journeyStepAt,
   journeySelected, journeyPlaying, journeyPlayIdx, journeyAutoPlay, journeyMode, journeyProgress,
   journeySelect, journeyAddStep, journeyDeleteStep, journeyMoveStep, journeySnapshotStep, journeyPlayFrom, journeyPause,
   journeyTogglePlay, journeyStepBy, journeySetMode, journeySetRamp, journeySetHold, journeySetText,
-  journeySetPiano, journeySetAppear, journeyClearOverrides, journeyLoop, journeySetLoop,
+  journeySetPiano, journeySetAppear, journeyLoop, journeySetLoop,
   journeySetOverride, journeyName, journeySetName, NAME_MAX,
   journeyEditing, journeyLoadPreset, journeySetTextLock,
   journeySizeLocked, journeySetTextSize, journeySetSizeLock,
@@ -91,8 +90,8 @@ function css(hex, a) {
   return v;
 }
 const GOLD = '#d2b356', GOLD_DEEP = '#b8963c', GOLD_HI = '#ecd28a';
-// The drawer's override dot wears the same gold, so a dot and this window
-// read as one thing.
+// The drawer's glow on a ramping row wears the same gold, so the two read
+// as one thing.
 export const JOURNEY_ACCENT = css(GOLD);
 const C = {
   pane: css('#1a222c'), paneBorder: css('#2c3742'), bar: css('#171e27'), barLine: css('#29313b'),
@@ -119,7 +118,7 @@ const C = {
   // LOOP lit: the sequencer window's green (ui/screens/sequencer.js), not
   // the journey's gold, so it reads as on at a glance
   loopOnBg: css('#62d7aa', 0.12), loopOnBorder: css('#365e50'), loopOnInk: css('#64d8ad'),
-  snapshotBg: css('#122318'), snapshotBorder: css('#3f8f68'), snapshotInk: css('#5adca1'),
+  snapshotInk: css('#5adca1'),
   // the fold's ground and the add chip
   field: css('#121820'), fieldBorder: css('#2a3440'), placeholder: css('#8997a6')
 };
@@ -235,10 +234,11 @@ function baseline(ui, cy, size) {
 let btnHover = false, overBtn = false;
 let snapshotAt = -1e9;
 let snapshotStep = -1;
-const SNAPSHOT_OK_MS = 1400;
-// The Down arrow's snapshot (main.js): the same as the step's snapshot
-// button, on the step whose panel is open (the selected one, else the one
-// playing). Its tick is lit on the next frame, on the window's own clock.
+const SNAPSHOT_OK_MS = 1400, SNAP_TICK = 13;
+// The Down arrow's snapshot (main.js): the step whose panel is open (the
+// selected one, else the one playing) takes the whole scene again as it
+// stands (core/journey.js journeySnapshotStep). A tick lights on its row
+// from the next frame, on the window's own clock.
 let snapshotKeyReq = -1;
 export function journeySnapshotFromKey() {
   const i = journeySelected() >= 0 ? journeySelected() : journeyPlayIdx();
@@ -274,7 +274,7 @@ const trackedW = (ui, t, size, track) => ui.text.measure(t, size, W.semibold) + 
 // Every string a row or fold prints, rebuilt only when the journey's version
 // moves (an edit, a recorded setting, another tab's write), never per frame.
 let sumVersion = -1;
-let stepLabels = [], summaries = [], rampTexts = [], holdTexts = [], countTexts = [];
+let stepLabels = [], summaries = [], rampTexts = [], holdTexts = [];
 function fmtRamp(v) { return v <= 0 ? 'cut' : (v % 1 ? v.toFixed(1) : String(v)) + ' s'; }
 function fmtHold(v) {
   if (v < 60) return Math.round(v) + ' s';
@@ -311,18 +311,17 @@ function refreshTexts() {
   sumVersion = v;
   const n = journeyCount(), trig = journeyMode() === 'keys';
   for (let i = 0; i < n; i++) {
-    const st = journeyStepAt(i), k = journeyOverrideCount(i);
+    const st = journeyStepAt(i);
     if (stepLabels.length <= i) stepLabels.push('STEP ' + (i + 1));
-    const count = k === 1 ? '1 setting' : k + ' settings';
     rampTexts[i] = fmtRamp(st.rampS);
     holdTexts[i] = fmtHold(st.holdS);
-    countTexts[i] = count;
     // the step's slide first when it holds one; no hold in TRIGGER mode
+    // (every step holds every setting, so there is no count to give)
     const slide = typeof st.overrides.slideFile === 'string' ? slideLabel(st.overrides.slideFile) : '';
     summaries[i] = (slide ? slide + ' · ' : '') + (st.text ? '“' + firstWords(st.text) + '” · ' : '') +
-      count + (trig ? '' : ' · hold ' + holdTexts[i]) + ' · ramp ' + rampTexts[i];
+      (trig ? '' : 'hold ' + holdTexts[i] + ' · ') + 'ramp ' + rampTexts[i];
   }
-  summaries.length = n; rampTexts.length = n; holdTexts.length = n; countTexts.length = n;
+  summaries.length = n; rampTexts.length = n; holdTexts.length = n;
 }
 
 // ---------- per-frame layout, in typed arrays grown only when steps are added ----------
@@ -903,26 +902,17 @@ function drawSteps(ui, x, y, n, sel, playing, playIdx) {
 
     ui.text.draw(dl, stepLabels[i], x0 + STEP_X, baseline(ui, cyr, 12), 12, W.semibold,
       lit || selected ? C.rowLabelOn : C.rowInk, 0, 0.08, 1);
-    const snapW = measureBtn(ui, 'snapshot', 10);
-    const sx = x0 + SUM_X, sw = CONTENT_W - SUM_X - DEL_W - 8 - snapW - 6;
+    const sx = x0 + SUM_X, sw = CONTENT_W - SUM_X - DEL_W - 8 - SNAP_TICK - 6;
     dl.pushClip(sx, ry, sw, ROW_H);
     ui.text.draw(dl, summaries[i], sx, baseline(ui, cyr, 12), 12, W.regular, C.rowSummaryInk, 0, 0, 1);
     dl.popClip();
 
-    // Any step can be explicitly replaced with the complete scene as it is
-    // now. Keeping this beside delete makes the snapshot action unambiguous.
+    // Every step is the whole scene already, so the row has no snapshot
+    // button; the Down arrow's retake lights a tick here for a moment.
     const dx = x0 + CONTENT_W - DEL_W;
-    const bx = dx - 6 - snapW;
-    if (btnAt(ui, ui.idx('jr.snapshot', i), bx, cyr - BTN_H / 2, snapW, BTN_H)) {
-      journeySnapshotStep(i);
-      snapshotStep = i;
-      snapshotAt = ui.t;
-    }
     if (snapshotStep === i && ui.t - snapshotAt < SNAPSHOT_OK_MS) {
-      dl.rect(bx, cyr - BTN_H / 2, snapW, BTN_H, 6, C.snapshotBg, 1, C.snapshotBorder, 0, 0);
-      const is = 13;
-      dl.icon(ICON.CHECK, bx + (snapW - is) / 2, cyr - is / 2, is, is, C.snapshotInk, 1.7, 0);
-    } else drawBtn(ui, bx, cyr, snapW, BTN_H, false, 'snapshot', 10);
+      dl.icon(ICON.CHECK, dx - 6 - SNAP_TICK, cyr - SNAP_TICK / 2, SNAP_TICK, SNAP_TICK, C.snapshotInk, 1.7, 0);
+    }
 
     // the ×, which deletes the step outright
     if (btnAt(ui, ui.idx('jr.rowDel', i), dx, cyr - DEL_W / 2, DEL_W, DEL_W)) { journeyDeleteStep(i); changed = true; }
@@ -1149,21 +1139,6 @@ function drawFold(ui, i, x0, fy) {
   dl.pushAlpha(0.45);
   drawBtn(ui, cx, cy, SEG_W, BTN_H, false, 'None', 11);
   dl.popAlpha();
-  // and on the right, the recorded settings' count and the chip that
-  // clears them all
-  const k = journeyOverrideCount(i);
-  const cw = measureBtn(ui, 'clear settings', 11), chipX = right - cw + 6;
-  if (k > 0) {
-    if (btnAt(ui, ui.idx('jr.clear', i), chipX, cy - BTN_H / 2, cw, BTN_H)) journeyClearOverrides(i);
-    drawBtn(ui, chipX, cy, cw, BTN_H, false, 'clear settings', 11);
-  } else {
-    btnHover = false;
-    dl.pushAlpha(0.35);
-    drawBtn(ui, chipX, cy, cw, BTN_H, false, 'clear settings', 11);
-    dl.popAlpha();
-  }
-  ui.text.draw(dl, countTexts[i], chipX - 8, baseline(ui, cy, 11), 11, W.regular,
-    k > 0 ? C.label : C.labelDim, 2, 0, 1);
 }
 
 // One half of a paired control line: a drawer

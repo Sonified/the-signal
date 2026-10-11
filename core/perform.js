@@ -244,6 +244,19 @@ export function perfDestination(id) {
   return tweens.size ? perfTarget(id) : undefined;
 }
 
+// A journey step taking a control a glide here is moving somewhere other
+// than where the step puts it (core/journey.js): the glide stops where it
+// stands, so the step's own write is not undone by the glide's next frame. A
+// variance switch's crossfade leaves its mix at full, as a cut does. A level
+// a layer is fading out through, let go, keeps the layer on at the landing,
+// as a hand on it does (landLayerFades).
+export function perfRelease(id) {
+  const tw = tweens.get(id);
+  if (!tw) return;
+  tweens.delete(id);
+  if (tw.kind === 'mix') S[tw.c.mixKey] = 1;
+}
+
 // A value applied whole, inside its own short glide: the transition door is
 // for this landing only, never for a tween's per-frame writes.
 function setNow(c, v, sec) {

@@ -1,40 +1,44 @@
 // The journey: a guided sequence of the app's own states, walked step by step.
 //
-// A journey is an ordered list of steps. A step is not a snapshot: it holds
-// only the controls it overrides, by the same positions a built-in preset
-// names in its inputs (a control's own units, what get(S) hands back), plus
-// its own on-screen text and where in the ramp it appears, a ramp (how long
-// its settings take to glide in), a hold (how long auto-play stays once they
-// have), and how the piano plays while it lasts. Everything a step does not
-// name is left exactly as the viewer has it, so a journey never fights the
-// drawer: a tweak made during a walk is simply the viewer's setting, saved as
-// any other, and the next step only moves the controls it names.
+// A journey is an ordered list of steps. A step is a whole scene: it holds
+// every control a step can hold (the ones a snapshot replays, presets.js),
+// by the same positions a built-in preset names in its inputs (a control's
+// own units, what get(S) hands back), plus its own on-screen text and where
+// in the ramp it appears, a ramp (how long its settings take to glide in), a
+// hold (how long auto-play stays once they have), and how the piano plays
+// while it lasts. Two doors onto one state (see twins) are held once, under
+// the first of them.
 //
-// Authoring rides the drawer, the one settings UI. While the Journey window
-// is open with a step selected for editing, every drawer change is noticed
-// (store.js's onSave, a mark and nothing more) and, at most every DIFF_MS,
-// each control's position is compared with the baseline taken when the step
-// was selected; anything that moved is recorded into the step. A control
-// already recorded keeps following its control, even back to where it
-// started: taking a control out of a step is always explicit, the drawer's
-// gold dot beside it (drawer.js) or the window's clear chip.
+// Authoring rides the drawer, the one settings UI. A new step takes the
+// scene as it stands. While the Journey window is open with a step selected
+// for editing, every drawer change is noticed (store.js's onSave, a mark and
+// nothing more) and each control's destination, where it is headed or else
+// where it is, is written into the step, so the step is always the scene on
+// screen. A control the operator has locked (journeyToggleLock) is never
+// written, and never moved.
 //
-// Playing enters a step in two parts. What cannot glide lands first, at once,
-// inside one short transition opened the way a preset recall opens one
-// (presets.js): every segment and switch the step names, clickMode first,
-// since the pip controls address the click or the chirp by it. Then every
-// slider the step names travels from where it is to where the step puts it,
-// eased over the step's ramp, a little further each frame (stepTween), through
-// the control's own set(), so the drawer's faders are seen to move and the
-// sound follows each on its own short glide; the colour crosses in RGB. A
-// control the viewer moves mid-ramp (or another tab does) is theirs from then
-// on and leaves the ramp at once. A ramp of 0 is a cut, applied all at once as
-// a preset is. Auto-play moves on once the ramp and the hold have passed, and
-// after the last step stops, or with loop on goes round to the first again;
-// without it the window's arrows move by hand. A voice the step turns on or
-// off is the exception to switches landing first: it enters and leaves
-// through its level over the ramp, by the same door the Music window's rows
-// use (perform.js perfLayer; see throughDoor).
+// Playing enters a step by comparing it with where everything is headed now
+// and touching only what differs: nothing is sent where nothing would change,
+// so a voice already playing is never started again and a layer already on
+// never blinks, and entering the step one is already in moves nothing. What
+// differs lands in two parts. What cannot glide lands first, at once, inside
+// one short transition opened the way a preset recall opens one (presets.js):
+// every segment and switch, clickMode first, since the pip controls address
+// the click or the chirp by it. Then every slider travels from where it is to
+// where the step puts it, eased over the step's ramp, a little further each
+// frame (stepTween), through the control's own set(), so the drawer's faders
+// are seen to move and the sound follows each on its own short glide; the
+// colour crosses in RGB. A control the viewer moves mid-ramp (or another tab
+// does) is theirs from then on and leaves the ramp at once, and during a walk
+// a hand's move keeps the control for the rest of the walk (the manual set),
+// so a tweak made while the journey plays persists through every later step.
+// A ramp of 0 is a cut, applied all at once as a preset is. Auto-play moves
+// on once the ramp and the hold have passed, and after the last step stops,
+// or with loop on goes round to the first again; without it the window's
+// arrows move by hand. A voice the step turns on or off is the exception to
+// switches landing first: it enters and leaves through its level over the
+// ramp, by the same door the Music window's rows use (perform.js perfLayer;
+// see throughDoor).
 //
 // Playing and authoring stay apart, and nothing the window does short of its
 // transport and deleting the playing step ever stops or restarts the walk.
@@ -45,9 +49,8 @@
 // which is what ends the walk. Starting a walk stops the recording into the
 // step being edited and leaves its fold open.
 //
-// Beside its overrides, every step holds the whole sequencer and the whole
-// mix, in full rather than as a diff (see "the sequencer and the mix"
-// below): the eight lines and the active one, the fixed channels' mutes and
+// Beside its controls, every step holds the whole sequencer and the whole
+// mix (see "the sequencer and the mix" below): the eight lines and the active one, the fixed channels' mutes and
 // solos, and every atmosphere recording's level, mute and solo. A ramp
 // crossfades those too: numbers travel, a line changing waveform sounds both
 // waves at once and trades them over the ramp, the mixer's mutes and solos
@@ -67,7 +70,7 @@
 // no index takes the one journey the app kept before (under JOURNEY_KEY,
 // which is left as it was) as the library's first.
 //
-// A journey's record is { ver: 1, steps: [step, ...], mode, trigger, autoPlay, loop, name }, mode
+// A journey's record is { ver: 2, steps: [step, ...], mode, trigger, autoPlay, loop, name }, mode
 // being the AUTO button's 'off' | 'auto' | 'keys' ('keys' is shown as TRIGGER), trigger
 // what drives TRIGGER mode, 'keys' (the digits and arrows, main.js) or 'midi' (notes,
 // ui/screens/journey.js), and autoPlay its old boolean,
@@ -81,6 +84,16 @@
 // recordings, read lazily on first use (store.js receives its storage at
 // boot, after this module has loaded) under its own key, and written back
 // through saveKey, as presets.js keeps the viewer's presets.
+//
+// A record of ver 1 holds steps as diffs: each named only what it changed,
+// and everything else was left as the viewer had it. Such a record is read
+// forward (readJourney): step 1, filled out with the scene as it stands for
+// anything it never named, is the start, and each later step is the one
+// before it with its own changes laid over, which is exactly the scene a walk
+// from the top reached at that step. It is written back as ver 2 straight
+// away, so the scene it was filled from is the one it keeps. A ver 2 record
+// is read the same way, which fills in only a control the app has gained
+// since it was written.
 import { S } from '../js/state.js';
 import { endGlide } from '../js/audio.js';
 import { pianoGesture, applySeqs, SEQ_WAVES, SEQ_COUNT } from '../js/piano.js';
@@ -95,7 +108,7 @@ import { glideSkippingRiskBand } from './strobe.js';
 // A cycle, perform.js importing this module for journeyManualOverride: both
 // sides only call across it at run time, never as either module is first
 // evaluated, so whichever loads first is complete before the other asks.
-import { perfDestination, perfLayer } from './perform.js';
+import { perfDestination, perfLayer, perfRelease } from './perform.js';
 
 const JOURNEY_KEY = 'signal.journey.v1';
 export const RAMP_MIN = 0, RAMP_MAX = 30, HOLD_MIN = 5, HOLD_MAX = 600;
@@ -167,10 +180,13 @@ for (let i = 0; i < R.length; i++) {
 // Ambience switch and the mixer's power button both are S.ambOn, or the
 // Layers group's Particles and the Particles section's On. Found by what
 // each one's get reads from S (through a proxy that only notes the paths it
-// is asked for), so a new pair is a twin the moment it exists. A live edit
-// of one records every twin too: otherwise a step keeps the other door's
-// stale position, and entering the step sets the fresh one and then the
-// stale one straight after, which undoes the edit.
+// is asked for), so a new pair is a twin the moment it exists. A step holds
+// one value for the one truth: the group's first door in REPLAY order (its
+// canonical, canon below), which is read as the scene is taken and set as a
+// step is entered, the others following through the state they share. Were
+// each door kept apart, a step could hold the other door's stale position,
+// and entering it would set the fresh one and then the stale one straight
+// after, undoing the edit.
 function readsOf(c) {
   const seen = new Set();
   const wrap = (obj, path) => new Proxy(obj, {
@@ -201,6 +217,27 @@ const twins = new Map();
   }
 }
 const withTwins = id => twins.has(id) ? [id, ...twins.get(id)] : [id];
+// canon[i]: the place in R of the door control i's value is held under, i
+// itself for a control with no twin (and for a twin a step never holds). The
+// first twin a step can hold, so a group whose first door is this machine's
+// own is still held through the next. flip[i]: a switch twin that reads the
+// opposite of its canonical (a mute beside an on), its stored value turned
+// over on the way in from an old record.
+const canon = new Int32Array(R.length);
+const flip = new Uint8Array(R.length);
+for (let i = 0; i < R.length; i++) canon[i] = i;
+for (const [id, tws] of twins) {
+  const i = idxOf.get(id);
+  if (skip[i]) continue;
+  let k = i;
+  for (let n = 0; n < tws.length; n++) { const j = idxOf.get(tws[n]); if (j < k && !skip[j]) k = j; }
+  canon[i] = k;
+  if (k !== i) {
+    let a, b;
+    try { a = R[i].get(S); b = R[k].get(S); } catch (e) { a = b = undefined; }
+    if (typeof a === 'boolean' && typeof b === 'boolean' && a !== b) flip[i] = 1;
+  }
+}
 
 // The switches a step moves through the performer's door (perform.js
 // perfLayer) instead of its own switch pass (throughDoor, below). opAt[i] is
@@ -252,13 +289,36 @@ function destOf(c) {
   }
   return undefined;
 }
-// What the journey records for c: where it is headed, else where it is.
+// What the journey records for c, and what a step entering compares with:
+// where it is headed, else where it is. The journey's own ramp counts, so
+// the scene taken mid-ramp (a step added, or the Down arrow's snapshot,
+// while a walk plays) holds where each slider is going, not where it got to.
 function posOf(c) {
+  if (tw.active) {
+    const i = idxOf.get(c.id), k = i === undefined ? -1 : twAt[i];
+    if (k >= 0 && k < tw.n && twIdx[k] === i) return twTo[k];
+    if (tw.colorOn && c === COLOR) return cHex;
+  }
   const d = destOf(c);
   return d !== undefined ? d : c.get(S);
 }
+// Whether two positions of c are the same: a switch's on whether it is
+// written true or 1, a colour's hex in either case.
+function same(c, a, b) {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  if (c.kind === 'toggle') return (a === true || a === 1) === (b === true || b === 1);
+  if (c.kind === 'color') return typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
+  return false;
+}
+// Whether control c already stands where a step puts it (v), or is headed
+// there: read through the same check a stored value passes (validValue), so
+// a position outside a slider's range or off a fade's half-second grid is
+// judged as the step would have stored it. Nothing that is settled is sent.
+function settled(c, v) {
+  return same(c, validValue(c, posOf(c)), v);
+}
 
-const baseline = new Array(R.length);
 const MODE = byId('textMode'), CUSTOM = byId('textCustomText');
 const COLOR_I = idxOf.has('color') ? idxOf.get('color') : -1;
 const COLOR = COLOR_I >= 0 ? R[COLOR_I] : null;
@@ -281,11 +341,9 @@ const POS_KEY = 'signal.journeyPos.v1';
 let cued = false;
 
 // The step whose fold is open (-1 for none), whether the window is showing,
-// whether that step is being edited (armed: drawer changes are recorded into
-// it), and the controls it names, kept as a set so the drawer's dot costs one
-// lookup a row.
+// and whether that step is being edited (armed: drawer changes are recorded
+// into it).
 let sel = -1, winOpen = false, armed = false;
-const overSet = new Set();
 let diffPending = false, lastDiffT = -1e9, nowT = 0;
 
 // Controls the viewer has taken over during this walk. A manual move owns
@@ -332,7 +390,7 @@ function validValue(c, v) {
     for (let k = 0; k < c.options.length; k++) if (c.options[k].value === v) return v;
     return undefined;
   }
-  if (c.kind === 'toggle') return typeof v === 'boolean' || (typeof v === 'number' && (v === 0 || v === 1)) ? v : undefined;
+  if (c.kind === 'toggle') return typeof v === 'boolean' ? v : v === 0 || v === 1 ? v === 1 : undefined;
   if (c.kind === 'slider') {
     if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
     if (HALF_SECOND_FADE.has(c.id)) v = Math.round(v / 500) * 500;
@@ -342,16 +400,28 @@ function validValue(c, v) {
   return undefined;
 }
 
+// A stored step, checked. Its controls are read in REPLAY order, each twin's
+// value going to its group's canonical door (turned over for one that reads
+// the opposite way), so an old record that kept each door apart comes in as
+// one value for the one truth: the last of them in that order, which is the
+// one that won when such a step was entered (each door set in turn).
 function readStep(raw) {
   const st = makeStep();
   if (!raw || typeof raw !== 'object') return st;
   const o = raw.overrides;
   if (o && typeof o === 'object' && !Array.isArray(o)) {
-    for (const id in o) {
-      const i = idxOf.get(id);
-      if (i === undefined || skip[i]) continue;
-      const v = validValue(R[i], o[id]);
-      if (v !== undefined) st.overrides[id] = v;
+    for (let i = 0; i < R.length; i++) {
+      const id = R[i].id;
+      if (skip[i] || !Object.prototype.hasOwnProperty.call(o, id)) continue;
+      let v = validValue(R[i], o[id]);
+      if (v === undefined) continue;
+      const k = canon[i];
+      if (k !== i) {
+        if (flip[i]) v = !(v === true || v === 1);
+        v = validValue(R[k], v);
+        if (v === undefined) continue;
+      }
+      st.overrides[R[k].id] = v;
     }
   }
   if (typeof raw.text === 'string') st.text = raw.text.slice(0, STEP_TEXT_MAX);
@@ -374,7 +444,7 @@ const MODES = ['off', 'auto', 'keys'];
 const TRIGGERS = ['keys', 'midi'];
 
 function readJourney(raw) {
-  const d = { ver: 1, steps: [], mode: 'off', trigger: 'keys', autoPlay: false, loop: false, name: '', fullStart: false,
+  const d = { ver: 2, steps: [], mode: 'off', trigger: 'keys', autoPlay: false, loop: false, name: '',
               sizeLock: false, sizeLockValue: null, sizeRestore: null, ringV: 2, partV: 2 };
   if (raw && typeof raw === 'object') {
     if (Array.isArray(raw.steps)) {
@@ -398,7 +468,6 @@ function readJourney(raw) {
     d.trigger = TRIGGERS.includes(raw.trigger) ? raw.trigger : 'keys';
     d.loop = raw.loop === true;
     d.name = typeof raw.name === 'string' ? raw.name.slice(0, NAME_MAX) : '';
-    d.fullStart = raw.fullStart === true;
     const lockValue = SIZE ? validValue(SIZE, raw.sizeLockValue) : undefined;
     if (raw.sizeLock === true && lockValue !== undefined && Array.isArray(raw.sizeRestore) && raw.sizeRestore.length === d.steps.length) {
       const restore = [];
@@ -409,6 +478,13 @@ function readJourney(raw) {
         restore.push({ own: entry.own === true, value });
       }
       if (valid) {
+        // A diff's step that held no size of its own came in at the size
+        // before it, the first at the size the lock found: what each is put
+        // back to on unlocking, now that every step holds one.
+        for (let i = 0; i < restore.length; i++) {
+          if (!restore[i].own && i > 0) restore[i].value = restore[i - 1].value;
+          restore[i].own = true;
+        }
         d.sizeLock = true;
         d.sizeLockValue = lockValue;
         d.sizeRestore = restore;
@@ -416,12 +492,43 @@ function readJourney(raw) {
       }
     }
   }
+  fillSteps(d.steps);
   return d;
 }
 
+// Every step whole (see the header's ver 1): step 1 takes the scene as it
+// stands for any control it does not hold, and each later step the one
+// before it. Run on every read; for a ver 2 record it fills in only a
+// control the app has gained since the record was written, or one a lock
+// kept out of a step taken while it held (journeyToggleLock).
+function fillSteps(steps) {
+  let prev = null;
+  for (let n = 0; n < steps.length; n++) {
+    const o = steps[n].overrides;
+    for (let i = 0; i < R.length; i++) {
+      if (!held[i]) continue;
+      const id = R[i].id;
+      if (o[id] !== undefined) continue;
+      let v;
+      if (prev) v = prev[id];
+      else { try { v = validValue(R[i], R[i].get(S)); } catch (e) { v = undefined; } }
+      if (v !== undefined) o[id] = v;
+    }
+    prev = o;
+  }
+}
+
+// A journey as this tab knows it, read once. A record still in the diff
+// model is written back whole at once (see the header's ver 1), so it is
+// composed only this once, from the scene as it stands now.
 function journeyById(id) {
   let d = cache.get(id);
-  if (!d) { d = readJourney(readRaw(keyOf(id))); cache.set(id, d); }
+  if (!d) {
+    const raw = readRaw(keyOf(id));
+    d = readJourney(raw);
+    cache.set(id, d);
+    if (raw && typeof raw === 'object' && raw.ver !== 2) saveKey(keyOf(id), d);
+  }
   return d;
 }
 
@@ -458,7 +565,6 @@ function ensureLoaded() {
   ensureLib();
   data = journeyById(lib.cur);
   reconcile();
-  ensureStartSnapshot();
   if (!cued) { cued = true; cueLastStep(); }
 }
 
@@ -472,23 +578,38 @@ function cueLastStep() {
   const p = readRaw(POS_KEY);
   if (!p || p.id !== lib.cur || !Number.isInteger(p.step) || !data.steps[p.step]) return;
   sel = p.step;
-  rebuildOverSet();
   version++;
 }
 
 // After a fresh read (another tab's write), the step being edited or played
 // may be gone or be a new object; the indices are kept where they still
-// point at a step, and the selected step's set is rebuilt from its new copy.
+// point at a step.
 function reconcile() {
   const n = data.steps.length;
-  if (sel >= n) { sel = -1; armed = false; overSet.clear(); }
-  else if (sel >= 0) rebuildOverSet();
+  if (sel >= n) { sel = -1; armed = false; }
   if (play.stepIdx >= n) stopWalk(false);
 }
 
+// Every edit is kept in the open journey at once, and written to storage as
+// it happens, except while the viewer holds a control (a drag in the drawer
+// or a window, main.js journeyHoldWrites): a step is the whole scene, so its
+// record is written once as the hand lets go, not every frame of the drag.
+// What waits is kept by key, so a journey left in the meantime still lands
+// in its own record.
+let holdWrites = false;
+const owed = new Map();
 function persist() {
   version++;
+  if (holdWrites) { owed.set(keyOf(lib.cur), data); return; }
   saveKey(keyOf(lib.cur), data);
+}
+export function journeyHoldWrites(held) {
+  held = !!held;
+  if (held === holdWrites) return;
+  holdWrites = held;
+  if (held || !owed.size) return;
+  for (const [key, d] of owed) saveKey(key, d);
+  owed.clear();
 }
 function persistLib() {
   version++;
@@ -508,7 +629,7 @@ export function syncJourneyFromStorage(key) {
     const was = lib ? lib.cur : '';
     lib = null; data = null;
     ensureLib();
-    if (lib.cur !== was) { stopWalk(false); sel = -1; armed = false; overSet.clear(); diffPending = false; }
+    if (lib.cur !== was) { stopWalk(false); sel = -1; armed = false; diffPending = false; }
     version++;
     return true;
   }
@@ -544,21 +665,44 @@ function applyText(text) {
   if (!manual.has(MODE.id) && MODE.get(S) !== 'custom') MODE.set(S, 'custom');
 }
 
-// Every control the step names, set through its own set() in the replay's
-// order (clickMode first), inside one transition over `sec`; a control
-// already where the step puts it is left alone, as replayLive leaves one, so
-// a voice already playing is not started a second time. Selecting a step to
-// edit it, and a step whose ramp is a cut, land this way.
+// Whether a step entering moves control i at all: one a step can hold, held
+// under its own id (a twin's canonical; the others follow through the state
+// they share), not taken by the viewer for this walk (manual), and not one
+// of the mixer's switches when the step's mix block holds them.
+function moves(i, mixOwned) {
+  return !skip[i] && canon[i] === i && !manual.has(R[i].id) && !(mixOwned && inMix[i]);
+}
+// While the step's colour walk runs (its own Color walk, else the one running
+// now), the colour is the walk's, moved every frame, and a step never lands
+// one over it: entering the step it is already in would otherwise put back
+// the colour it was taken at.
+function walking(o) {
+  const w = o.colorWalk;
+  return typeof w === 'number' ? w > 0 : S.colorWalk > 0;
+}
+// The step taking a control a glide of the performer's is moving somewhere
+// else: the glide stops where it stands (perform.js perfRelease), so the
+// step's own write is not overwritten by it on the next frame.
+function takeFromGlide(c) {
+  if (perfDestination(c.id) !== undefined) perfRelease(c.id);
+}
+
+// Every control the step holds that is not already where the step puts it,
+// or headed there (settled), set through its own set() in the replay's
+// order (clickMode first), inside one transition over `sec`. What is settled
+// is left alone, so a voice already playing is not started a second time.
+// Selecting a step to edit it, and a step whose ramp is a cut, land this way.
 function applyStep(st, sec) {
-  const o = st.overrides, mixOwned = !!st.mix;
+  const o = st.overrides, mixOwned = !!st.mix, walk = walking(o);
   throughDoor(o, mixOwned, sec, true);
   beginTransition(Math.max(MIN_GLIDE_S, sec));
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i];
       const v = o[c.id];
-      if (v === undefined || skip[i] || doorHeld[i] || manual.has(c.id) || (mixOwned && inMix[i])) continue;
-      if (c.get(S) !== v) c.set(S, v);
+      if (v === undefined || doorHeld[i] || !moves(i, mixOwned) || (walk && i === COLOR_I) || settled(c, v)) continue;
+      takeFromGlide(c);
+      if (!same(c, c.get(S), v)) c.set(S, v);
     }
     applyText(st.text);
     applySeqMixNow(st, sec);
@@ -587,18 +731,23 @@ function applyStep(st, sec) {
 // is marked in doorHeld for the step's own passes to leave alone: a twin
 // would otherwise turn the shared state at once through the other door.
 // Nothing is allocated unless a switch goes through.
+// A switch the step wants off while a fade already takes it off goes through
+// too when the step puts its level somewhere else than the fade will, so the
+// level lands where the step says rather than being let go with the switch
+// left on.
 function throughDoor(o, mixOwned, sec, now) {
   doorHeld.fill(0);
   driving = true;
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i], v = o[c.id];
-      if (v === undefined || skip[i] || manual.has(c.id) || (mixOwned && inMix[i])) continue;
+      if (v === undefined || !moves(i, mixOwned)) continue;
       if ((c.kind !== 'toggle' && c.kind !== 'segment') || c.mixKey) continue;
       const is = !!c.get(S), fading = is && perfDestination(c.id) === false;
       const L = opAt[i], lid = L >= 0 && !manual.has(R[L].id) ? R[L].id : null;
-      if (!(fading && (v || voice[i])) && !(voice[i] && lid && !!v !== is)) continue;
       const lv = lid ? o[lid] : undefined;
+      const relevel = fading && !v && typeof lv === 'number' && perfDestination(lid) !== lv;
+      if (!(fading && (v || voice[i])) && !(voice[i] && lid && !!v !== is) && !relevel) continue;
       perfLayer(c.id, !!v, { now, sec, to: typeof lv === 'number' ? lv : undefined });
       doorHeld[i] = 1;
       if (lv !== undefined) doorHeld[L] = 1;
@@ -610,8 +759,8 @@ function throughDoor(o, mixOwned, sec, now) {
 
 // ---------- the sequencer and the mix ----------
 //
-// Every step also carries the whole sequencer and the whole mix, in full, not
-// as a diff: st.seq is the eight lines and the active one in store.js's own
+// Every step also carries the whole sequencer and the whole mix, in full, as
+// it holds every control: st.seq is the eight lines and the active one in store.js's own
 // shape (seqStateOf), st.mix the fixed channels' mutes and solos (mixStateOf)
 // plus every atmosphere recording's level, peak, mute and solo. A new step
 // takes them as they are; a step being edited takes them again whenever
@@ -620,9 +769,7 @@ function throughDoor(o, mixOwned, sec, now) {
 // mix alone until it is next edited, when it gains both. With a mix block,
 // the mixer's own mute and solo switches (the fixed channels', which are
 // CONTROLS a step could otherwise record) belong to the block, so they are
-// neither recorded as overrides nor replayed from one. The window's clear
-// chip leaves both blocks be: they are the step's state, not settings it
-// chose to hold.
+// neither recorded among its controls nor replayed from them.
 //
 // Everything is written straight into S (the lines' fields, the channel
 // flags, the recordings' objects), then the engine is told once: applySeqs
@@ -643,6 +790,11 @@ for (let k = 0; k < CHANNELS.length; k++) {
 }
 const inMix = new Uint8Array(R.length);
 for (let k = 0; k < MIX_CTL.length; k++) if (idxOf.has(MIX_CTL[k].id)) inMix[idxOf.get(MIX_CTL[k].id)] = 1;
+// held[i]: control i is one a step holds, and takes as the scene is taken:
+// one a step can hold at all, held under its own id (a twin's canonical),
+// and not the mixer's switches, which the mix block holds.
+const held = new Uint8Array(R.length);
+for (let i = 0; i < R.length; i++) held[i] = !skip[i] && !inMix[i] && canon[i] === i ? 1 : 0;
 
 // A line's numbers that travel over a ramp, and the grid each is kept on as
 // it goes (the sequencer window's own rounding, so a ramped knob reads as a
@@ -745,7 +897,6 @@ function dropMixOverrides(st) {
     const id = MIX_CTL[k].id;
     if (st.overrides[id] === undefined) continue;
     delete st.overrides[id];
-    overSet.delete(id);
     moved = true;
   }
   return moved;
@@ -1025,6 +1176,9 @@ const twFrom = new Float64Array(R.length), twTo = new Float64Array(R.length);
 const twSent = new Float64Array(R.length), twLast = new Float64Array(R.length);
 const twStep = new Float64Array(R.length), twP = new Float64Array(R.length);
 const twBand = new Uint8Array(R.length);
+// For each place in R, the slot it was last given (posOf reads a ramping
+// control's target through it; a slot counts only while it still names it).
+const twAt = new Int32Array(R.length).fill(-1);
 const cFrom = new Int16Array(3), cTo = new Int16Array(3), cLast = new Int16Array(3);
 let cHex = '';
 const rampIds = new Set(), rampSections = new Set(), rampSubs = new Set();
@@ -1092,6 +1246,7 @@ function addSlider(i, c, to) {
   // a position that is not a number cannot travel; it lands
   if (typeof from !== 'number' || !Number.isFinite(from)) { c.set(S, to); return; }
   const k = tw.n++;
+  twAt[i] = k;
   twIdx[k] = i; twFrom[k] = from; twTo[k] = to; twSent[k] = from; twLast[k] = from;
   const step = c.step > 0 ? c.step : 0;
   let p = 1;
@@ -1127,6 +1282,7 @@ function addColor(c, hex) {
 // voice the step switches, and any switch a fade is still taking off, go
 // through the performer's door first (throughDoor), which rides each over the
 // step's ramp through its level; the passes below leave those to it.
+// Only what is not already settled where the step puts it moves (applyStep).
 function startRamp(st, withText) {
   const o = st.overrides, mixOwned = !!st.mix;
   throughDoor(o, mixOwned, st.rampS, false);
@@ -1134,19 +1290,23 @@ function startRamp(st, withText) {
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i], v = o[c.id];
-      if (v === undefined || skip[i] || doorHeld[i] || manual.has(c.id) || c.kind === 'slider' || c.kind === 'color' || (mixOwned && inMix[i])) continue;
-      if (c.get(S) !== v) c.set(S, v);
+      if (v === undefined || c.kind === 'slider' || c.kind === 'color' || doorHeld[i] || !moves(i, mixOwned) || settled(c, v)) continue;
+      takeFromGlide(c);
+      if (!same(c, c.get(S), v)) c.set(S, v);
     }
     if (withText) applyText(st.text);
     tw.seqMix = startSeqMix(st);
   } finally {
     endGlide();
   }
+  const walk = walking(o);
   for (let i = 0; i < R.length; i++) {
     const c = R[i], v = o[c.id];
-    if (v === undefined || skip[i] || doorHeld[i] || manual.has(c.id)) continue;
+    if (v === undefined || (c.kind !== 'slider' && c.kind !== 'color') || doorHeld[i] || !moves(i, mixOwned) || settled(c, v)) continue;
+    if (c.kind === 'color' && walk) continue;
+    takeFromGlide(c);
     if (c.kind === 'slider') addSlider(i, c, v);
-    else if (c.kind === 'color') addColor(c, v);
+    else addColor(c, v);
   }
   if (tw.n > 0 || tw.colorOn || tw.seqMix) {
     tw.active = true; tw.t0 = nowT; tw.durMs = st.rampS * 1000; tw.glow = 1;
@@ -1214,22 +1374,6 @@ function stepColor(u, e) {
 
 // ---------- authoring ----------
 
-// The baseline is where each control is headed, not where it is (posOf): a
-// layer toggled off in the music window fades first and only switches at the
-// landing (perform.js perfLayer), so a baseline read mid-fade held it on, and
-// when the fade landed after another step had been selected, the off showed
-// up as a change in that step instead of the one it was made in.
-function captureBaseline() {
-  for (let i = 0; i < R.length; i++) baseline[i] = posOf(R[i]);
-}
-
-function rebuildOverSet() {
-  overSet.clear();
-  const st = data && data.steps[sel];
-  if (!st) return;
-  for (const id in st.overrides) overSet.add(id);
-}
-
 // Record authoring changes after the setter that called save() returns. This
 // microtask is the transaction boundary: it coalesces all writes from one UI
 // action, but does not depend on another animation frame arriving. The old
@@ -1255,15 +1399,14 @@ onSave(() => {
   queueDiff();
 });
 
-// Records every control that moved off the baseline, and keeps every
-// control already recorded following its control. Two kinds of move are not
-// the viewer's and are passed over. The colour, while the colour walk runs,
-// is the walk's (core/strobe.js moves S.rgb every frame), so it is neither
-// recorded nor followed then, its baseline kept up with the walk so the
-// walk stopping does not sweep its last colour in. And a locked control
-// (its enabled rule says no) shows a neighbour's position, as Pulse rate
-// shows the strobe's frequency while linked, so it is not newly recorded
-// for the neighbour's move.
+// Writes each control's destination into the step (posOf: where it is
+// headed, else where it is), so the step being edited is always the scene on
+// screen. What the viewer asked for is where a control is headed: a switch
+// fading out from a window reads on until its fade lands, and a glide reads
+// every value on its way (perform.js perfDestination). The colour, while the
+// colour walk runs, is the walk's (core/strobe.js moves S.rgb every frame),
+// so it is left as the step holds it then. Only what changed is written,
+// and named in the diagnostic.
 function runDiff() {
   diffPending = false;
   if (!armed) { journeyDiag('DIFF REJECTED', { reason: 'not armed' }); return; }
@@ -1273,32 +1416,21 @@ function runDiff() {
   const o = st.overrides;
   let moved = false, changed = JOURNEY_DIAG ? [] : null;
   for (let i = 0; i < R.length; i++) {
-    if (skip[i] || inMix[i]) continue;
-    if (i === COLOR_I && S.colorWalk > 0) { baseline[i] = R[i].get(S); continue; }
-    // What the viewer asked for is where a control is headed: a switch
-    // fading out from a window reads on until its fade lands, and a glide
-    // reads every value on its way (perform.js perfDestination).
+    if (!held[i] || (i === COLOR_I && S.colorWalk > 0)) continue;
     const c = R[i], dest = destOf(c), raw = dest !== undefined ? dest : c.get(S);
-    let v = HALF_SECOND_FADE.has(c.id) ? validValue(c, raw) : raw;
-    if (v === undefined || v !== v) continue;
+    const v = validValue(c, raw);
+    if (v === undefined) continue;
     // While authoring, the drawer follows the Journey's half-second grid as
     // soon as its finer fade control is released; never a control still on
     // its way, whose glide this write would stop.
-    if (v !== raw && dest === undefined) c.set(S, v);
-    const had = o[c.id] !== undefined;
-    if (!had && c.enabled && !c.enabled(S)) continue;
-    if (had ? o[c.id] !== v : v !== baseline[i]) {
-      if (c.id === 'textSize' && data.sizeLock) {
-        data.sizeLockValue = v;
-        for (let j = 0; j < data.steps.length; j++) data.steps[j].overrides.textSize = v;
-        overSet.add(c.id);
-      } else {
-        o[c.id] = v;
-        if (!had) overSet.add(c.id);
-      }
-      if (changed) changed.push(c.id + '=' + String(v));
-      moved = true;
-    }
+    if (v !== raw && dest === undefined && HALF_SECOND_FADE.has(c.id)) c.set(S, v);
+    if (same(c, o[c.id], v)) continue;
+    if (c.id === 'textSize' && data.sizeLock) {
+      data.sizeLockValue = v;
+      for (let j = 0; j < data.steps.length; j++) data.steps[j].overrides.textSize = v;
+    } else o[c.id] = v;
+    if (changed) changed.push(c.id + '=' + String(v));
+    moved = true;
   }
   // the whole sequencer and mix, as they are now (the mixer's own switches
   // among them, which is why they are passed over above)
@@ -1307,10 +1439,8 @@ function runDiff() {
   if (dropMixOverrides(st)) moved = true;
   if (moved) {
     persist();
-    journeyDiag('RECORDED STEP ' + (sel + 1), { changed, settingCount: Object.keys(o).length });
-  } else journeyDiag('diff found no changed settings', {
-    lParticles: o.lParticles, particlesOn: o.particlesOn
-  });
+    journeyDiag('RECORDED STEP ' + (sel + 1), { changed });
+  } else journeyDiag('diff found no changed settings');
 }
 
 function flushDiff() { if (diffPending) runDiff(); }
@@ -1322,7 +1452,6 @@ function deselect() {
   flushDiff();
   sel = -1;
   armed = false;
-  overSet.clear();
   diffPending = false;
   version++;
 }
@@ -1348,8 +1477,6 @@ export function journeySetWindowOpen(open) {
   // selected step is an editor whenever no Journey step is running.
   if (winOpen && sel >= 0 && play.stepIdx < 0 && !armed) {
     armed = true;
-    rebuildOverSet();
-    captureBaseline();
     diffPending = false;
     version++;
   }
@@ -1358,9 +1485,8 @@ export function journeySetWindowOpen(open) {
 // A click on step i's row (a second click on the selected one lets it go).
 // With the walk playing it only opens the step's fold: the walk, its ramp and
 // the scene are untouched, and nothing is recorded. Otherwise the step is
-// selected for editing: a paused or finished walk is let go, the step glides
-// in over EDIT_GLIDE_S so the drawer shows what it holds, and the baseline is
-// taken from there.
+// selected for editing: a paused or finished walk is let go, and the step
+// glides in over EDIT_GLIDE_S so the drawer shows what it holds.
 export function journeySelect(i) {
   ensureLoaded();
   journeyDiag('row clicked', { requestedStep: i, sameStep: i === sel });
@@ -1368,7 +1494,6 @@ export function journeySelect(i) {
   if (!data.steps[i]) return;
   flushDiff();
   sel = i;
-  rebuildOverSet();
   diffPending = false;
   version++;
   // During a walk, a row is direct navigation: keep the transport running
@@ -1378,19 +1503,14 @@ export function journeySelect(i) {
   if (play.playing) {
     armed = false;
     enterStep(i);
-    journeyDiag('JUMPED TO STEP ' + (i + 1), {
-      settingCount: Object.keys(data.steps[i].overrides).length,
-      particlesAfterApply: !!S.layers.particles
-    });
+    journeyDiag('JUMPED TO STEP ' + (i + 1), { particlesAfterApply: !!S.layers.particles });
     return;
   }
   stopWalk(false);
   armed = true;
   applyStep(data.steps[i], EDIT_GLIDE_S);
   cancelWordSequenceOnce();
-  captureBaseline();
   journeyDiag('EDITING STEP ' + (i + 1), {
-    settingCount: Object.keys(data.steps[i].overrides).length,
     lParticles: data.steps[i].overrides.lParticles,
     particlesOn: data.steps[i].overrides.particlesOn,
     text: data.steps[i].text
@@ -1400,7 +1520,6 @@ export function journeyDeselect() { deselect(); }
 
 // The drawer's accessors, called every frame, so each is a read.
 export const journeyEditing = () => armed && sel >= 0 && winOpen;
-export const journeyOverridden = id => overSet.has(id);
 
 // Journey mode, for the drawer's preset Ramp time: the window open with the
 // mode on, or a walk playing. While it is, a preset recalled from the drawer
@@ -1415,109 +1534,59 @@ export function journeyRampS() {
   return st ? st.rampS : 0;
 }
 
-// The drawer's dot: the control is taken out of the step. It stays where it
-// is on screen; the baseline moves to it, so it is not recorded again until
-// it moves.
-export function journeyClearOverride(id) {
-  ensureLoaded();
-  const st = data.steps[sel];
-  if (!st) return;
-  flushDiff();
-  if (id === 'textSize' && data.sizeLock) return;
-  if (st.overrides[id] === undefined) return;
-  delete st.overrides[id];
-  overSet.delete(id);
-  const i = idxOf.get(id);
-  if (i !== undefined) baseline[i] = posOf(R[i]);
-  persist();
-}
-
-// The window's clear chip: every control out of the step at once.
-export function journeyClearOverrides(i) {
-  ensureLoaded();
-  const st = data.steps[i];
-  if (!st) return;
-  st.overrides = data.sizeLock ? { textSize: data.sizeLockValue } : {};
-  if (i === sel) { rebuildOverSet(); captureBaseline(); diffPending = false; }
-  persist();
-}
-
 // ---------- the list ----------
 
-// Step 1 is the Journey's complete starting scene. Capture every control the
-// Journey can replay, including settings whose layer is currently off or
-// whose drawer row is hidden. Mixer switches and atmosphere recordings live
-// in the step's full mix block instead, so their duplicate schema controls
-// stay out of overrides.
-function snapshotAllOverrides(st) {
+// The scene as it stands, into step st: every control a step holds, at
+// where it is headed (posOf), so a scene taken while a layer fades out holds
+// it off, at the level it goes back to, and one taken mid-ramp holds where
+// the ramp is going. Settings whose layer is off or whose drawer row is
+// hidden are taken too: the step is the whole scene. The mixer's switches
+// and the recordings live in the step's mix block instead.
+function captureAll(st) {
   const o = st.overrides;
   for (let i = 0; i < R.length; i++) {
-    if (skip[i] || inMix[i]) continue;
-    // where each control is headed (posOf): a Snapshot taken while a layer
-    // fades out saves it off, at the level it goes back to
+    if (!held[i]) continue;
     const c = R[i], v = validValue(c, posOf(c));
     if (v !== undefined) o[c.id] = v;
   }
 }
 
-// A step's explicit Snapshot button: replace its control state with the
-// complete scene as it exists at this instant. Its own text, timing and
-// interaction fields remain Step fields; the sequencer and mixer are full
-// snapshots alongside every replayable control. This is deliberately manual:
-// ordinary Journey editing continues to record individual changes.
+// The Down arrow (ui/screens/journey.js journeySnapshotFromKey): step i
+// takes the whole scene again as it stands this instant, the sequencer and
+// the mix with it. Its own text, timing and interaction fields stay its own.
+// A step being edited keeps itself current anyway; this is for the step a
+// walk is on, whose live tweaks with the window shut are the viewer's for
+// the walk rather than the step's (manual).
 export function journeySnapshotStep(i) {
   ensureLoaded();
   if (!data.steps[i]) return;
   flushDiff();
   const st = data.steps[i];
-  st.overrides = {};
-  snapshotAllOverrides(st);
+  captureAll(st);
   st.seq = Array.isArray(S.seqs) ? seqStateOf(S) : null;
   st.mix = newMixBlock();
-  if (i === 0) data.fullStart = true;
+  dropMixOverrides(st);
   if (data.sizeLock && data.sizeRestore && SIZE) {
     const value = validValue(SIZE, SIZE.get(S));
     if (value !== undefined) data.sizeRestore[i] = { own: true, value };
   }
-  if (sel === i) {
-    rebuildOverSet();
-    captureBaseline();
-    diffPending = false;
-  }
+  if (sel === i) diffPending = false;
   persist();
 }
 
-// Journeys made before Step 1 became a full scene only have their old sparse
-// overrides. Upgrade them once by keeping those explicit values and filling
-// every missing replayable control from the current saved scene. The marker
-// prevents later loads from silently rewriting an intentional Step 1 edit.
-function ensureStartSnapshot() {
-  if (!data || data.fullStart || !data.steps.length) return;
-  const st = data.steps[0], o = st.overrides;
-  for (let i = 0; i < R.length; i++) {
-    if (skip[i] || inMix[i] || o[R[i].id] !== undefined) continue;
-    const v = validValue(R[i], R[i].get(S));
-    if (v !== undefined) o[R[i].id] = v;
-  }
-  if (!st.seq && Array.isArray(S.seqs)) st.seq = seqStateOf(S);
-  if (!st.mix) st.mix = newMixBlock();
-  data.fullStart = true;
-  persist();
-}
-
-// A new step at the end, selected straight away (for editing, unless the
-// walk is playing, when its fold just opens). The first step is born as a
-// complete snapshot; later steps start as diffs and record only what moves.
+// A new step at the end, born holding the whole scene as it stands, and
+// selected straight away (for editing, unless the walk is playing, when its
+// fold just opens).
 export function journeyAddStep() {
   ensureLoaded();
   if (data.steps.length >= STEPS_MAX) return -1;
   const st = makeStep();
-  if (data.steps.length === 0) { snapshotAllOverrides(st); data.fullStart = true; }
+  captureAll(st);
   if (data.sizeLock && SIZE) {
     st.overrides.textSize = data.sizeLockValue;
-    data.sizeRestore.push({ own: false, value: data.sizeLockValue });
+    data.sizeRestore.push({ own: true, value: data.sizeLockValue });
   }
-  // born holding the sequencer and the mix as they are
+  // and the sequencer and the mix as they are
   if (Array.isArray(S.seqs)) st.seq = seqStateOf(S);
   st.mix = newMixBlock();
   data.steps.push(st);
@@ -1584,9 +1653,9 @@ export function journeySetHold(i, v) {
 }
 
 // The step's text, cleaned. On the step being edited it shows at once:
-// anything the drawer changed is recorded first, and the baseline is taken
-// again afterwards, so the Text source turning to Custom is the step's text
-// doing it, not a setting the step records. On the step playing it shows at
+// anything the drawer changed is recorded first, and then the Text source
+// turning to Custom is recorded with it, as the scene the step now shows. On
+// the step playing it shows at
 // once too, cutting whatever word is up (wordNow), and a text still waiting
 // for its moment in the ramp no longer waits.
 export function journeySetText(i, text) {
@@ -1600,8 +1669,6 @@ export function journeySetText(i, text) {
     flushDiff();
     applyText(clean);
     cancelWordSequenceOnce();
-    captureBaseline();
-    diffPending = false;
   }
   else if (play.playing && i === play.stepIdx) {
     play.appearAt = -1;
@@ -1626,8 +1693,6 @@ export function journeySetName(v) {
       flushDiff();
       applyText(st.text);
       cancelWordSequenceOnce();
-      captureBaseline();
-      diffPending = false;
     }
     else applyText(st.text);
   }
@@ -1661,32 +1726,29 @@ export function journeySetPiano(i, mode) {
 // FADE line), as though the drawer had moved it, checked as a stored one is.
 // On the step on screen (the one being edited, or the one the walk is on) it
 // lands at once through the control's own set(), so it is seen and heard and
-// the drawer follows, and what is recorded is the position read back. Being
-// edited, the baseline moves with it, so the throttled diff that set()'s save
-// sets off finds nothing new to record. On the step playing, a ramp moving
-// the control lets it go, as for any hand on the drawer.
+// the drawer follows, and what is recorded is the position read back (the
+// same the diff that set()'s save sets off finds). On the step playing, a
+// ramp moving the control lets it go, as for any hand on the drawer.
 export function journeySetOverride(i, id, v) {
   ensureLoaded();
-  const st = data.steps[i], k = idxOf.get(id);
-  if (!st || k === undefined || skip[k]) return;
-  const c = R[k];
-  v = validValue(c, v);
+  const st = data.steps[i], j = idxOf.get(id);
+  if (!st || j === undefined || skip[j]) return;
+  const k = canon[j], c = R[k];
+  v = validValue(c, flip[j] ? !(v === true || v === 1) : v);
   if (v === undefined) return;
   const editing = armed && i === sel;
   if (editing || i === play.stepIdx) {
-    if (c.get(S) !== v) c.set(S, v);
+    if (!same(c, c.get(S), v)) c.set(S, v);
     v = c.get(S);
-    if (editing) baseline[k] = v;
   }
-  if (st.overrides[id] === v) return;
-  st.overrides[id] = v;
-  if (i === sel) overSet.add(id);
+  if (same(c, st.overrides[c.id], v)) return;
+  st.overrides[c.id] = v;
   persist();
 }
 
 // SIZE can be linked across the whole Journey. The first lock click keeps a
-// private copy of every step's own/inherited size. Moving SIZE while linked
-// changes every step; unlocking puts those exact per-step states back.
+// private copy of every step's own size. Moving SIZE while linked changes
+// every step; unlocking puts each step's own back.
 export function journeySizeLocked() { ensureLoaded(); return data.sizeLock; }
 
 export function journeySetTextSize(i, v) {
@@ -1699,8 +1761,6 @@ export function journeySetTextSize(i, v) {
   v = SIZE.get(S);
   data.sizeLockValue = v;
   for (let j = 0; j < data.steps.length; j++) data.steps[j].overrides.textSize = v;
-  if (sel >= 0) overSet.add('textSize');
-  if (armed && SIZE_I >= 0) baseline[SIZE_I] = v;
   persist();
 }
 
@@ -1716,21 +1776,18 @@ export function journeySetSizeLock(i, on) {
     value = validValue(SIZE, value);
     if (value === undefined) return;
     data.sizeRestore = data.steps.map(st => {
-      const own = st.overrides.textSize !== undefined;
-      return { own, value: own ? st.overrides.textSize : fallback };
+      const own = validValue(SIZE, st.overrides.textSize);
+      return { own: true, value: own !== undefined ? own : fallback };
     });
     data.sizeLock = true;
     data.sizeLockValue = value;
     for (let j = 0; j < data.steps.length; j++) data.steps[j].overrides.textSize = value;
     SIZE.set(S, value);
-    if (sel >= 0) overSet.add('textSize');
-    if (armed && SIZE_I >= 0) baseline[SIZE_I] = SIZE.get(S);
   } else {
     const restore = data.sizeRestore || [];
     for (let j = 0; j < data.steps.length; j++) {
       const entry = restore[j];
-      if (entry && entry.own) data.steps[j].overrides.textSize = entry.value;
-      else delete data.steps[j].overrides.textSize;
+      if (entry) data.steps[j].overrides.textSize = entry.value;
     }
     const live = play.stepIdx >= 0 ? play.stepIdx : armed ? sel : -1;
     const entry = live >= 0 ? restore[live] : null;
@@ -1738,8 +1795,6 @@ export function journeySetSizeLock(i, on) {
     data.sizeLock = false;
     data.sizeLockValue = null;
     data.sizeRestore = null;
-    rebuildOverSet();
-    if (armed && SIZE_I >= 0) baseline[SIZE_I] = SIZE.get(S);
   }
   diffPending = false;
   persist();
@@ -1754,25 +1809,19 @@ export function journeySetSizeLock(i, on) {
 const TEXT_LOCK_IDS = ['textMode', 'textCustomText', 'textDwell', 'textFadeIn', 'textFadeOut', 'textPhraseGap', 'textSize'];
 const TEXT_LOCK = new Set(TEXT_LOCK_IDS);
 const SIZE_LOCK = new Set(['textSize']);
-const prior = new Array(R.length);
 
 // The window's preset picker: preset k (its index in the drawer's row) is
 // loaded into the step being edited. Authoring only, so it does nothing
 // while the walk plays, and it never touches the walk.
 //
-// It replaces rather than merges: the step's overrides become the preset's
-// control positions and nothing else. The preset is recalled live, over the
-// same short glide selecting a step uses (EDIT_GLIDE_S), and its positions
-// are read back from the controls (presets.js recallPresetForStep says
-// why): every control, for a preset saved as a snapshot; for a built-in,
-// the controls it names, and any its raw state writes moved. Controls the
-// step could never hold are passed over as the diff passes them (the
-// engine's thread, the mixer's own switches), and so is a locked control a
-// snapshot did not name on purpose (its enabled rule says no; it shows a
-// neighbour's position). The sequencer and the mix stay the step's, since a
-// preset carries neither: applyStep puts them back over whatever the preset
-// moved, so what is on screen and in the speakers is what the step now
-// holds. The baseline is taken afresh from there.
+// The preset is recalled live, over the same short glide selecting a step
+// uses (EDIT_GLIDE_S), and the step then takes the whole scene it made
+// (captureAll), its positions read back from the controls (presets.js
+// recallPresetForStep says why): the preset's own over the step's for
+// everything it moved, the step's as they were for anything it left. The
+// sequencer and the mix stay the step's, since a preset carries neither:
+// applyStep puts them back over whatever the preset moved, so what is on
+// screen and in the speakers is what the step now holds.
 //
 // With the step's text locked, its text world is left exactly as it is: the
 // preset never moves those controls, its own positions for them are not
@@ -1787,36 +1836,15 @@ export function journeyLoadPreset(k) {
   if (!st) return;
   flushDiff();
   const locked = st.textLock === true;
-  for (let i = 0; i < R.length; i++) prior[i] = R[i].get(S);
-  const held = locked ? TEXT_LOCK : data.sizeLock ? SIZE_LOCK : null;
-  const named = recallPresetForStep(k, EDIT_GLIDE_S, held);
-  if (named === undefined) return;
-  const names = named ? new Set(named) : null;
-  const next = {};
-  for (let i = 0; i < R.length; i++) {
-    const c = R[i];
-    if (skip[i] || inMix[i] || (held && held.has(c.id))) continue;
-    const v = c.get(S);
-    if (v !== v) continue;
-    const off = !!c.enabled && !c.enabled(S);
-    const take = names ? names.has(c.id) || (v !== prior[i] && !off) : !off;
-    if (!take) continue;
-    const ok = validValue(c, v);
-    if (ok !== undefined) next[c.id] = ok;
-  }
-  if (locked) {
-    for (let j = 0; j < TEXT_LOCK_IDS.length; j++) {
-      const id = TEXT_LOCK_IDS[j];
-      if (st.overrides[id] !== undefined) next[id] = st.overrides[id];
-    }
-  } else st.text = '';
-  if (data.sizeLock) next.textSize = data.sizeLockValue;
-  st.overrides = next;
-  if (sel === 0) snapshotAllOverrides(st);
-  rebuildOverSet();
+  const keep = locked ? TEXT_LOCK : data.sizeLock ? SIZE_LOCK : null;
+  if (recallPresetForStep(k, EDIT_GLIDE_S, keep) === undefined) return;
+  const was = {};
+  if (keep) for (const id of keep) if (st.overrides[id] !== undefined) was[id] = st.overrides[id];
+  captureAll(st);
+  for (const id in was) st.overrides[id] = was[id];
+  if (!locked) st.text = '';
+  if (data.sizeLock) st.overrides.textSize = data.sizeLockValue;
   applyStep(st, EDIT_GLIDE_S);
-  captureBaseline();
-  diffPending = false;
   persist();
 }
 
@@ -1905,7 +1933,7 @@ function uniqueTitle(t, skip) {
 function leaveOpen() {
   flushDiff();
   stopWalk(false);
-  sel = -1; armed = false; overSet.clear(); diffPending = false;
+  sel = -1; armed = false; diffPending = false;
 }
 
 function openId(id) {
@@ -2052,7 +2080,6 @@ function enterStep(i) {
   // step was actually running.
   if (sel !== i) {
     sel = i;
-    rebuildOverSet();
     version++;
   }
   armed = false;
@@ -2103,8 +2130,6 @@ function stopWalk(rearm = true) {
   if (rearm && winOpen && data && data.steps[edit]) {
     sel = edit;
     armed = true;
-    rebuildOverSet();
-    captureBaseline();
     diffPending = false;
     version++;
   }
@@ -2145,36 +2170,31 @@ function releaseJourneyControl(id) {
   rampIds.delete(id);
 }
 
+// A hand's move, recorded into the step playing, once, under the door its
+// twins share (canon): what was asked for, turned over for a twin that reads
+// the opposite way, else where the control is headed (a layer fading out
+// from the music window still reads on until the fade lands).
 function recordLiveControl(stepIdx, id, requested) {
   if (!data || !winOpen) return;
-  const st = data.steps[stepIdx], ids = withTwins(id);
-  if (!st) return;
+  const st = data.steps[stepIdx], j = idxOf.get(id);
+  if (!st || j === undefined) return;
+  const k = canon[j], c = R[k];
   let moved = false;
   const changed = [];
-  for (let n = 0; n < ids.length; n++) {
-    const cid = ids[n], k = idxOf.get(cid);
-    if (k === undefined || skip[k] || inMix[k]) continue;
-    const c = R[k];
-    // a range control has no single get (getLo/getHi); with no requested
-    // position either there is nothing to record for it
-    if (n !== 0 || requested === undefined) { if (!c.get) continue; }
-    // with no position asked for, where it is headed (a layer fading out
-    // from the music window still reads on until the fade lands)
-    let v = n === 0 && requested !== undefined ? requested : posOf(c);
+  if (held[k]) {
+    let v = requested === undefined ? posOf(c) : flip[j] ? !(requested === true || requested === 1) : requested;
     v = validValue(c, v);
-    if (v === undefined || st.overrides[cid] === v) continue;
-    st.overrides[cid] = v;
-    changed.push(cid + '=' + String(v));
-    moved = true;
-    if (stepIdx === sel) overSet.add(cid);
+    if (v !== undefined && !same(c, st.overrides[c.id], v)) {
+      st.overrides[c.id] = v;
+      changed.push(c.id + '=' + String(v));
+      moved = true;
+    }
   }
   if (snapSeq(st)) moved = true;
   if (snapMix(st)) moved = true;
   if (!moved) return;
   persist();
-  journeyDiag('LIVE RECORDED STEP ' + (stepIdx + 1), {
-    changed, settingCount: Object.keys(st.overrides).length
-  });
+  journeyDiag('LIVE RECORDED STEP ' + (stepIdx + 1), { changed });
 }
 
 // Starts the walk at step i, entering it over its own ramp. A step being
@@ -2189,7 +2209,6 @@ export function journeyPlayFrom(i) {
   runApp(true);
   if (pauseHook) pauseHook(false);
   journeyDiag('PLAY STEP ' + (i + 1), {
-    settingCount: Object.keys(data.steps[i].overrides).length,
     lParticles: data.steps[i].overrides.lParticles,
     particlesOn: data.steps[i].overrides.particlesOn,
     text: data.steps[i].text
@@ -2305,14 +2324,6 @@ export function journeyVersion() { ensureLoaded(); return version; }
 export function journeyCount() { ensureLoaded(); return data.steps.length; }
 // The step itself, for reading its fields; edits go through the setters.
 export function journeyStepAt(i) { ensureLoaded(); return data.steps[i] || null; }
-export function journeyOverrideCount(i) {
-  ensureLoaded();
-  const st = data.steps[i];
-  if (!st) return 0;
-  let n = 0;
-  for (const id in st.overrides) n++;
-  return n;
-}
 export const journeySelected = () => sel;
 export const journeyPlaying = () => play.playing;
 export const journeyPlayIdx = () => play.stepIdx;
