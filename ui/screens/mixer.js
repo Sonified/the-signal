@@ -173,6 +173,9 @@ const MUSIC_MUTE = MUSIC_IDS.map(id => byId(id + 'Mute')), MUSIC_SOLO = MUSIC_ID
 const capsLabel = f => f.ctrl ? f.ctrl.label.toUpperCase() : '';
 const TONE_LABELS = TONE.map(capsLabel), MUSIC_LABELS = MUSIC.map(capsLabel);
 const MASTER = makeFader(byId('ambMixerMaster')), REVERB = makeFader(byId('ambMixerReverb'));
+// The Sun's Rotational hum, a second surface on its panel's Amplitude, so the
+// drawer and this row are one control and can never disagree.
+const HUM = makeFader(byId('sunHumAmp'));
 const LAYERS = [];
 for (let i = 0; i < AMB_LAYER_COUNT; i++) LAYERS.push(makeFader(ambLayerControls(i).level));
 
@@ -858,6 +861,11 @@ export function drawMixer(ui, app, fade = 1) {
     masterRow(ui, MUSIC[i], i === 0, MUSIC_LABELS[i], '%', meterCount(MUSIC_IDS[i]),
       MUSIC_MUTE[i], MUSIC_SOLO[i], chanSilenced(MUSIC_CH[i]));
   }
+
+  sectionLabel(ui, 'SOLAR ROTATIONAL HUM', false);
+  ui.spacer(5);
+  // dimmed, as a muted channel is, while the hum or the Sun is switched off
+  masterRow(ui, HUM, true, 'AMPLITUDE', '%', -1, null, null, !(S.sunHumOn && S.layers.sun));
 
   sectionLabel(ui, 'ATMOSPHERE', false);
   ui.spacer(2);
