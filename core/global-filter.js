@@ -12,6 +12,12 @@
 // lowpass pair and puts it just before its destination; this module keeps
 // the subscriptions and, when the corners move (notifyGlobalFilter, from the
 // two controls' set()), glides every pair to them with setTargetAtTime.
+// The glide is an exponential smooth, a one-pole lowpass on the control
+// itself: S.filterGlideMs (the Audio section's filterGlide, the show
+// remote's gear's Filter interpolation) is its time constant, 0 to 200 ms,
+// 25 by default; 0 jumps. Each new setting restarts the glide from wherever
+// the sound is, so the iPad's faders, arriving over the network in uneven
+// lumps, come out one smooth curve, never a staircase.
 // A pair reads the corners from S as it is made, so a chain built after a
 // boot's load starts where the saved settings left them.
 //
@@ -27,8 +33,7 @@
 // are transparent.
 import { S } from '../js/state.js';
 
-export const GF_HZ_LO = 20, GF_HZ_HI = 20000, GF_RES_MAX = 24;
-const TC = 0.015;
+export const GF_HZ_LO = 20, GF_HZ_HI = 20000, GF_RES_MAX = 24, GF_GLIDE_MAX = 200;
 
 const clampHz = (v, def) => typeof v === 'number' && v === v ? Math.max(GF_HZ_LO, Math.min(GF_HZ_HI, v)) : def;
 export const globalLowpassHz = () => clampHz(S.lpfHz, GF_HZ_HI);
@@ -36,6 +41,10 @@ export const globalHighpassHz = () => clampHz(S.hpfHz, GF_HZ_LO);
 const clampRes = v => typeof v === 'number' && v === v ? Math.max(0, Math.min(GF_RES_MAX, v)) : 0;
 export const globalLowpassRes = () => clampRes(S.lpfRes);
 export const globalHighpassRes = () => clampRes(S.hpfRes);
+const glideSec = () => {
+  const ms = S.filterGlideMs;
+  return typeof ms === 'number' && ms === ms ? Math.max(0, Math.min(GF_GLIDE_MAX, ms)) / 1000 : 0.025;
+};
 // A peak of res dB at the corner, as the Q in dB Web Audio takes (0 dB of
 // peak is -3.01 dB, Butterworth)
 const resToQdB = res => {
@@ -54,11 +63,15 @@ export function createGlobalFilter(ctx) {
   lp.type = 'lowpass'; lp.Q.value = resToQdB(globalLowpassRes()); lp.frequency.value = globalLowpassHz();
   hp.connect(lp);
   const apply = () => {
-    const t = ctx.currentTime;
-    hp.frequency.setTargetAtTime(globalHighpassHz(), t, TC);
-    lp.frequency.setTargetAtTime(globalLowpassHz(), t, TC);
-    hp.Q.setTargetAtTime(resToQdB(globalHighpassRes()), t, TC);
-    lp.Q.setTargetAtTime(resToQdB(globalLowpassRes()), t, TC);
+    const t = ctx.currentTime, tc = glideSec();
+    const to = (p, v) => {
+      if (tc > 0) p.setTargetAtTime(v, t, tc);
+      else { p.cancelScheduledValues(t); p.setValueAtTime(v, t); }
+    };
+    to(hp.frequency, globalHighpassHz());
+    to(lp.frequency, globalLowpassHz());
+    to(hp.Q, resToQdB(globalHighpassRes()));
+    to(lp.Q, resToQdB(globalLowpassRes()));
   };
   subs.add(apply);
   return { input: hp, output: lp, hp, lp, dispose() { subs.delete(apply); } };

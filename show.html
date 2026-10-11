@@ -16,7 +16,7 @@
   SPEED the slides' speed. Play/pause toggles the slides' transport; Duck
   drops the slides', the heartbeat's and the Sun hum's sound under the
   voice, its amount and fades set behind the gear, which also holds the
-  slides' Crossfade and the global filters' resonance.
+  slides' Crossfade and the global filters' resonance and interpolation.
 
   TRANSPORT: the mirror test's (remote.html), lifted. The Cloudflare relay
   and, when this page came from the laptop (http://<mac>.local:8800/show.html,
@@ -39,6 +39,8 @@
           hpf 0..1000 (global Highpass, same taper, 0 open: HP)
           lpfRes, hpfRes 0..24 (their resonance, dB of peak at the corner,
             0 flat, in 0.5 dB steps; the gear's Filters)
+          filterGlide 0..200 (ms, the time constant of the exponential
+            smooth all four glide with, 0 a jump; the gear's Filters)
           slideRate 0..1000 (500 = 1x, log 0.25..2x: SPEED)
           slidePlay true (play) / false (pause), idempotent
           slideRestart (v ignored)
@@ -179,8 +181,8 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 #modal.open { display: grid; }
 #modal .card { width: min(460px, 100%); position: relative; }
 #close { position: absolute; top: -56px; right: 0; width: 44px; height: 44px; padding: 0; font-size: 20px; }
-.slider { position: relative; height: 54px; border-radius: 10px; background: #0f1219; border: 1px solid var(--line);
-  margin-bottom: 10px; overflow: hidden; touch-action: none; }
+.slider { position: relative; height: 36px; border-radius: 8px; background: #0f1219; border: 1px solid var(--line);
+  margin-bottom: 6px; overflow: hidden; touch-action: none; }
 .slider .fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #6b5216, var(--gold)); }
 .slider .lab { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 600; mix-blend-mode: difference; }
 .slider .val { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-variant-numeric: tabular-nums; mix-blend-mode: difference; }
@@ -262,6 +264,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     <h2 style="margin-top: 18px">Filters</h2>
     <div id="sLr"></div>
     <div id="sHr"></div>
+    <div id="sFg"></div>
   </div>
 </div>
 
@@ -614,6 +617,17 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       queueCtl(r.id, db);
     }, () => resText(r.db));
   }
+  // and their interpolation: the time constant of the exponential smooth
+  // every filter move glides with on the laptop, 0 (a jump) to 200 ms in
+  // 1 ms steps, likewise living there and reported back (key fg)
+  const GLIDE_MAX = 200;
+  const glide = { id: 'filterGlide', key: 'fg', ms: 25 };
+  glide.sl = makeSlider($('sFg'), 'Filter interpolation', () => glide.ms / GLIDE_MAX, u => {
+    const ms = Math.round(u * GLIDE_MAX);
+    if (ms === glide.ms) return;
+    glide.ms = ms;
+    queueCtl(glide.id, ms);
+  }, () => glide.ms + ' ms');
   // the title clears the laptop's screen: its drawer and windows shut
   $('title').onclick = () => send({ k: 'clean' });
   $('gear').onclick = () => $('modal').classList.add('open');
@@ -703,6 +717,12 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       const v = sl[r.key];
       if (typeof v === 'number' && isFinite(v) && !r.sl.held && now - r.sl.touchedAt > 800 && !pending.has(r.id)) {
         r.db = Math.max(0, Math.min(RES_MAX, v)); r.sl.draw();
+      }
+    }
+    {
+      const v = sl[glide.key];
+      if (typeof v === 'number' && isFinite(v) && !glide.sl.held && now - glide.sl.touchedAt > 800 && !pending.has(glide.id)) {
+        glide.ms = Math.max(0, Math.min(GLIDE_MAX, Math.round(v))); glide.sl.draw();
       }
     }
     if (typeof sl.play === 'boolean') { slidePlay = sl.play; drawPlay(); }

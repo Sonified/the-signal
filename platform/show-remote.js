@@ -45,6 +45,9 @@
 //                         lpfRes       0..24    (the Lowpass's resonance, dB
 //                         hpfRes       0..24     of peak at the corner, 0
 //                                                flat; the gear's Filters)
+//                         filterGlide  0..200   (ms, the four's exponential
+//                                                smooth's time constant, 0 a
+//                                                jump; the gear's Filters)
 //                         slideRate    0..1000  (500 = 1x; log 0.25x..2x).
 //                                                The iPad only sends 0..500
 //                                                (1x at the top), and 0
@@ -98,7 +101,7 @@
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
-// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, hm: heartMaster, mw: mwtsVolume, gt: screenGate, play, on} (play: what is actually happening, the
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, gt: screenGate, play, on} (play: what is actually happening, the
 // live hold included), vp the slide video's place {t, d, r} (seconds in,
 // its length, the rate it advances at, 0 when held; null with no video of
 // known length; the iPad fills the playing cue with it, running on between
@@ -115,7 +118,7 @@ import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
-const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume']);
+const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume']);
 const STATUS_MS = 250;
 
 export function initShowRemote(hooks = {}) {
@@ -263,7 +266,7 @@ export function initShowRemote(hooks = {}) {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
       vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000 } : null,
-      sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), hm: get('heartMaster'), mw: get('mwtsVolume'),
+      sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'),
             gt: Math.round(Math.max(0, Math.min(1, +S.screenGate)) * 1000) / 10,
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };

@@ -135,7 +135,7 @@ const HALF_SECOND_FADE = new Set(['textFadeIn', 'textFadeOut', 'textDwell']);
 // (js/livesound.js): a step must never open a microphone on its own, and an
 // input's id and the buffer its hardware wants belong to this machine alone.
 // Nor the room's own level and tone: Master volume and the global Lowpass
-// and Highpass and their resonance (vol, lpf, hpf, lpfRes, hpfRes) are the operator's, ridden live from the
+// and Highpass and their resonance and glide (vol, lpf, hpf, lpfRes, hpfRes, filterGlide) are the operator's, ridden live from the
 // drawer or the show remote, so no cue may set them back. Nor the master
 // reverb's decay (pianoRevTime), set by hand and left to stay. Nor a slide's own
 // level (slideVol): it lives in the per-slide map (core/schema-slides.js),
@@ -147,7 +147,7 @@ const HALF_SECOND_FADE = new Set(['textFadeIn', 'textFadeOut', 'textDwell']);
 const R = REPLAY_CONTROLS;
 const idxOf = new Map();
 const skip = new Uint8Array(R.length);
-const NEVER_IN_STEP = new Set(['liveOn', 'liveDevice', 'liveLatency', 'vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'pianoRevTime', 'slideVol']);
+const NEVER_IN_STEP = new Set(['liveOn', 'liveDevice', 'liveLatency', 'vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'pianoRevTime', 'slideVol']);
 for (let i = 0; i < R.length; i++) {
   idxOf.set(R[i].id, i);
   if (machineControl(R[i]) || NEVER_IN_STEP.has(R[i].id)) skip[i] = 1;

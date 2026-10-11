@@ -208,6 +208,7 @@ export const S = {
   // at full and a reload can never come up black.
   screenGate: 1,
   lpfRes: 0, hpfRes: 0,       // v1: their resonance, the peak at the corner in dB (core/global-filter.js), 0 flat
+  filterGlideMs: 25,          // v1: their glide's time constant, ms, 0..200, 0 a jump (core/global-filter.js)
   amModOn: true,              // the pulse envelope on the tone; off plays it steady
   toneStrobeAm: 1,            // 'Vary with strobe' on the tone: its pulse depth, 0..1, times the master strobe
   // the tone's level and pulse depth, each wandered below its setting by up
