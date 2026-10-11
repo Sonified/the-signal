@@ -537,6 +537,15 @@ fn iconSDF(id: i32, pIn: vec2f, strokeQ: f32) -> f32 {
       }
       return min(d, body);
     }
+    case 21: { // DOWNLOAD: an arrow pointing down into an open tray
+      var d = sdSegment(p, pt(12.0, 4.0), pt(12.0, 15.0)) - hs;
+      d = min(d, sdSegment(p, pt(7.5, 10.5), pt(12.0, 15.0)) - hs);
+      d = min(d, sdSegment(p, pt(16.5, 10.5), pt(12.0, 15.0)) - hs);
+      d = min(d, sdSegment(p, pt(5.0, 16.0), pt(5.0, 20.0)) - hs);
+      d = min(d, sdSegment(p, pt(5.0, 20.0), pt(19.0, 20.0)) - hs);
+      d = min(d, sdSegment(p, pt(19.0, 20.0), pt(19.0, 16.0)) - hs);
+      return d;
+    }
     default: {
       return 1e5;
     }

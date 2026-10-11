@@ -29,7 +29,7 @@
 // the page at all.
 import { createInputQueue } from './input-queue.js';
 import { softKeyboardWanted, createSoftKeyboard, createKeyboardLink } from './soft-keyboard.js';
-import { settingsFile } from './settings-file.js';
+import { settingsFile, saveJsonFile } from './settings-file.js';
 import { displayListenScreen, displaySampleScreen } from '../js/display-watch.js';
 
 export const GUARDED_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab']);
@@ -394,6 +394,7 @@ export function createPlatform(canvas) {
     onStorage(fn) { storageCbs.push(fn); },
     clipboardWrite,
     settingsFile,
+    download: saveJsonFile,
     onVisibility(fn) { visCbs.push(fn); },
     fullscreen: { toggle: toggleFullscreen, active: fullscreenActive },
     message: showMessage,

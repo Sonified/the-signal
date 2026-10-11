@@ -67,7 +67,7 @@ import {
   journeyEditing, journeyLoadPreset, journeySetTextLock,
   journeySizeLocked, journeySetTextSize, journeySetSizeLock,
   journeyLibCount, journeyLibTitle, journeyLibOpen, journeyOpenAt, journeyNew, journeyDeleteAt,
-  journeyRenameAt, journeyMoveAt, journeyDuplicate, TITLE_MAX,
+  journeyRenameAt, journeyMoveAt, journeyDuplicate, journeyExport, TITLE_MAX,
   journeyTrigger, journeySetTrigger, journeyJumpTo,
   RAMP_MIN, RAMP_MAX, HOLD_MIN, HOLD_MAX, STEP_TEXT_MAX
 } from '../../core/journey.js';
@@ -423,6 +423,17 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && window.a
 }
 
 // fade is the chrome's idle fade, as the sequencer's.
+// The download button's file: the open journey's record, named after its
+// chip (core/journey.js journeyExport), handed to the platform to save
+// (main.js wires it, the page doing it in worker mode).
+let downloadHook = () => {};
+export function setJourneyDownloadHandler(fn) { downloadHook = fn; }
+function downloadJourney() {
+  const { title, json } = journeyExport();
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'journey';
+  downloadHook(/journey/.test(slug) ? slug + '.json' : slug + '-journey.json', json);
+}
+
 export function drawJourney(ui, app, fade = 1) {
   rampTip.hover = false;
   if (!restored) restore();
@@ -522,7 +533,8 @@ export function drawJourney(ui, app, fade = 1) {
   const titleX = lightX + 6 + BAR_GAP;
   const rowW = actW + 10 + BOX + 10 + BOX + ARROW_GAP + BOX + 10 + autoW + trigW + LOOP_GAP + LOOP_W;
   let actX = titleX + trackedW(ui, 'JOURNEY', 13, 0.13) + 8;
-  if (actX + rowW + 6 <= closeX - 6 - BOX) {
+  const gearX = closeX - 6 - BOX, dlX = gearX - 6 - BOX;
+  if (actX + rowW + 6 <= dlX) {
     ui.text.draw(dl, 'JOURNEY', titleX, baseline(ui, cy, 13), 13, W.semibold, C.title, 0, 0.13, 1);
   } else actX = titleX;
   if (btn(ui, 'jr.active', actX, cy - BTN_H / 2, actW, BTN_H)) journey.active = !active;
@@ -592,12 +604,18 @@ export function drawJourney(ui, app, fade = 1) {
 
   // the gear, just left of the ×: opens and closes the NAME strip, lit
   // while it is open
-  const gearX = closeX - 6 - BOX, gearOn = journey.settings;
+  const gearOn = journey.settings;
   if (btn(ui, 'jr.gear', gearX, cy - BOX / 2, BOX, BOX)) journey.settings = !journey.settings;
   dl.rect(gearX, cy - BOX / 2, BOX, BOX, 6, gearOn ? C.btnOnBg : C.btnBg, 1,
     gearOn ? C.btnOnBorder : btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
   dl.icon(ICON.GEAR, gearX + (BOX - ICON_S) / 2, cy - ICON_S / 2, ICON_S, ICON_S,
     gearOn ? C.btnOnInk : btnHover ? C.valueInk : C.btnInk, 1.8, 0);
+
+  // the download, left of the gear: the open journey saved as a file
+  if (btn(ui, 'jr.download', dlX, cy - BOX / 2, BOX, BOX)) downloadJourney();
+  dl.rect(dlX, cy - BOX / 2, BOX, BOX, 6, C.btnBg, 1, btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
+  dl.icon(ICON.DOWNLOAD, dlX + (BOX - ICON_S) / 2, cy - ICON_S / 2, ICON_S, ICON_S,
+    btnHover ? C.valueInk : C.btnInk, 1.8, 0);
 
   // ---- the body ----
   // Laid out from (bx, by), a cw wide window's origin: the window's own,

@@ -131,6 +131,8 @@ export function createWorkerPlatform(init, post) {
     clipboardWrite: text => request({ k: 'clip', text }),
     // Download or load a settings file: the page does it (platform/settings-file.js).
     settingsFile: kind => post({ k: 'settingsFile', kind }),
+    // A JSON file saved: the page does it (the bridge's 'download').
+    download: (filename, text) => post({ k: 'download', filename, text }),
     onVisibility(fn) { visCbs.push(fn); },
     fullscreen: {
       toggle() { post({ k: 'fullscreen' }); return true; },

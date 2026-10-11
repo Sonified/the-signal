@@ -2220,6 +2220,14 @@ export function journeyMoveAt(from, to) {
   persistLib();
 }
 
+// The open journey as a file: its record just as storage keeps it, so the
+// file reads like the saved TSC journey (documents/tsc-2026-journey.json),
+// named after its chip.
+export function journeyExport() {
+  ensureLoaded();
+  const it = lib.items[libIndex(lib.cur)];
+  return { title: it ? it.title : 'Journey', json: JSON.stringify(data, null, 1) };
+}
 export function journeyLibCount() { ensureLoaded(); return lib.items.length; }
 export function journeyLibTitle(i) { ensureLoaded(); return lib.items[i] ? lib.items[i].title : ''; }
 export function journeyLibOpen() { ensureLoaded(); return libIndex(lib.cur); }

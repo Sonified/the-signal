@@ -25,16 +25,22 @@ function gather() {
   return out;
 }
 
+// A JSON text saved as a file, the browser's own download (also the Journey
+// window's download, through platform.download).
+export function saveJsonFile(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 function download() {
   let data;
   try { data = gather(); } catch (e) { alert('Could not read your settings: ' + e.message); return; }
   const day = new Date().toISOString().slice(0, 10);
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `presence-settings-${day}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  saveJsonFile(`presence-settings-${day}.json`, JSON.stringify(data, null, 2));
 }
 
 // A file is taken only if it is an object whose every key is one of ours, so

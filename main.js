@@ -88,7 +88,7 @@ import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
-import { drawJourney, journey } from './ui/screens/journey.js';
+import { drawJourney, journey, setJourneyDownloadHandler } from './ui/screens/journey.js';
 import { drawPerformer, performer } from './ui/screens/performer.js';
 import { drawMusic, music } from './ui/screens/music.js';
 import { drawTextbank, textbank } from './ui/screens/textbank.js';
@@ -367,6 +367,7 @@ async function boot() {
   setSeqOpen(() => { sequencer.open = true; });
   setCopyHandler(txt => platform.clipboardWrite(txt));
   setSettingsFileHandler(kind => platform.settingsFile(kind));
+  setJourneyDownloadHandler((filename, text) => platform.download(filename, text));
   // Going out of sight writes this tab's own pending changes first, then
   // holds back anything later (store.js's setHidden). Coming back arms a
   // wake, so the next frame resumes gently whatever its gap (core/wake.js).
