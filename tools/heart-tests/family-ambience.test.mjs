@@ -50,6 +50,13 @@ const ambience = tag => import(`${AMB}?${tag}`);
 
 // ---------- just enough page ----------
 globalThis.window ??= globalThis;
+// The app's tickers (js/ticker.js every: the rooms' breathing, the beds'
+// pumps) run until the page closes. Unref'd, they let this process end once
+// its tests have, instead of holding it open until the runner gives up.
+{
+  const setIntervalNative = globalThis.setInterval;
+  globalThis.setInterval = (...args) => { const h = setIntervalNative(...args); h?.unref?.(); return h; };
+}
 globalThis.document ??= { getElementById: () => null, querySelector: () => null, addEventListener() {} };
 globalThis.dispatchEvent ??= () => true;
 globalThis.Audio ??= class { canPlayType() { return ''; } };

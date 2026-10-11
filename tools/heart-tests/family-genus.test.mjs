@@ -41,6 +41,13 @@ export async function resolve(spec, ctx, next) {
 
 // ---------- just enough page ----------
 globalThis.window ??= globalThis;
+// The app's tickers (js/ticker.js every: the rooms' breathing, the beds'
+// pumps) run until the page closes. Unref'd, they let this process end once
+// its tests have, instead of holding it open until the runner gives up.
+{
+  const setIntervalNative = globalThis.setInterval;
+  globalThis.setInterval = (...args) => { const h = setIntervalNative(...args); h?.unref?.(); return h; };
+}
 globalThis.document ??= { getElementById: () => null, querySelector: () => null, addEventListener() {} };
 class FakeAudioBuffer {
   constructor({ numberOfChannels = 1, length, sampleRate }) {
@@ -110,8 +117,9 @@ test('flag off: the genus graph is the native one, ending at volGain', async () 
   assert.deepEqual(node.wires.map(w => w.output), [0, 1, 2], 'one gate per output');
   assert.ok(node.wires.every(w => w.to.context === native), 'every gate is native');
   const intoMaster = native.made.filter(n => n.wires.some(w => w.to === volGain));
-  // tone gate, harmonics dry and wet, the pips' wet return
-  assert.equal(intoMaster.length, 4);
+  // tone gate, harmonics dry and wet, the pips' wet return, and the master
+  // room's return (js/room.js, built with the audio graph)
+  assert.equal(intoMaster.length, 5);
   assert.ok(native.made.every(n => n.context === native));
   await settle(400);   // let the impulses land before the next test
 });

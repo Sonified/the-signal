@@ -166,7 +166,8 @@ test('flag off: the music family builds natively and ends at volGain', async () 
   const made = native.made.slice(from);
   assert.ok(made.length > 10 && made.every(n => n.context === native), 'every node is native');
   const intoMaster = made.filter(n => n.wires.some(w => w.to === volGain));
-  assert.equal(intoMaster.length, 2, 'the dry bus and the room\'s wet return, as ever');
+  // the room's wet return is made with the audio graph now (js/room.js)
+  assert.equal(intoMaster.length, 1, 'the dry bus');
   const fdn = made.find(n => n.name === 'fdn-reverb');
   assert.ok(fdn, 'the algorithmic room is a native AudioWorkletNode');
   assert.deepEqual(fdn.opts, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
