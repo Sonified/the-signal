@@ -418,11 +418,14 @@ export function drawJourney(ui, app, fade = 1) {
   journeySetWindowOpen(journey.open && journey.active);
   // Restore the fold only into the same Journey it belonged to. Selecting it
   // through the core keeps authoring, the drawer state and the open fold in
-  // the same state as a normal row click.
+  // the same state as a normal row click. A fold the core's Resume already
+  // opened (core/journey.js cueLastStep) is left as it is: a select of the
+  // step already selected is the row's second click, which would shut it.
   if (restoreStep >= 0) {
     const step = restoreStep, lib = restoreLib;
     restoreStep = restoreLib = -1;
-    if (journey.open && journey.active && lib === journeyLibOpen() && step < journeyCount()) journeySelect(step);
+    if (journey.open && journey.active && lib === journeyLibOpen() && step < journeyCount() &&
+        step !== journeySelected()) journeySelect(step);
   }
   persist();
   const open = ui.spring('jr.open', journey.open ? 1 : 0, MOTION.panel);
