@@ -169,6 +169,7 @@ import { COLOR, SPACE, RADIUS, TYPE, TRACK, W, MOTION, HIT } from './theme.js';
 import { ICON } from './drawlist.js';
 import { journeyManualOverride, journeyLockable, journeyLocked, journeyToggleLock, journeyLockVaries, journeySetAll } from '../core/journey.js';
 import { perfSet, perfLayer, perfDestination } from '../core/perform.js';
+import { fmtAt } from './screens/perf-widgets.js';
 import { byId } from '../core/schema.js';
 import { machineControl } from '../core/presets.js';
 
@@ -1758,7 +1759,13 @@ function control(ctrl, S, shown) {
       if (!cache) { cache = { pos: NaN, text: '' }; formatCache.set(ctrl.id, cache); }
       const pos = ctrl.get(S), aim = aimOf(ctrl, S, door);
       const aimPos = typeof aim === 'number' ? aim : pos;
-      if (pos !== cache.pos) { cache.pos = pos; cache.text = ctrl.format ? ctrl.format(S) : String(pos); }
+      // Mid-glide the readout speaks the destination, as the Music window's
+      // cells do: the knob is already parked there, and the travelling value
+      // carries float dust no one asked to read.
+      if (pos !== cache.pos) {
+        cache.pos = pos;
+        cache.text = aimPos !== pos ? fmtAt(ctrl, aimPos) : ctrl.format ? ctrl.format(S) : String(pos);
+      }
       const log = isLogTaper(ctrl);
       const value01 = posToUnit(ctrl, aimPos, log);
       const fill01 = aimPos !== pos && typeof pos === 'number' ? posToUnit(ctrl, pos, log) : undefined;

@@ -89,12 +89,19 @@ export function fmtAt(c, pos) {
   e.pos = pos; e.live = live;
   const m = NUM_RE.exec(live), lp = c.get(S);
   const dec = m && m[0].indexOf('.') >= 0 ? m[0].length - m[0].indexOf('.') - 1 : 0;
+  // The number is rewritten at the fewer of the live text's decimals and
+  // the control's own step's: mid-glide the live number is an unsnapped
+  // travelling value, and taking the decimals it happens to carry would
+  // print all sixteen of them back. The tolerance below stays on the live
+  // text's own decimals, since it asks whether that number IS the position.
+  const st = c.step || 0, stDec = st >= 1 ? 0 : st > 0 ? String(st).split('.')[1].length : dec;
+  const outDec = Math.min(dec, stDec);
   // The readout's number is the position when it is the position rounded to
   // the decimals it prints: mid-glide the position carries more of them
   // (7.4321 Hz shown as 7.4), which an exact match took for a number that
   // is not the position, dropping the unit until the glide landed.
   if (m && typeof lp === 'number' && Math.abs(parseFloat(m[0]) - lp) <= 0.5 * Math.pow(10, -dec) + 1e-6 + Math.abs(lp) * 1e-3) {
-    let n = pos.toFixed(dec);
+    let n = pos.toFixed(outDec);
     if (m[0][0] === '+' && pos > 0) n = '+' + n;
     e.text = live.slice(0, m.index) + n + live.slice(m.index + m[0].length);
   } else {
