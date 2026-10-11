@@ -223,7 +223,9 @@ function buildSettings() {
     // Render > Audio engine > Limiter and Soft clip (core/output-guard.js)
     outLimiter: S.outLimiter, outSoftClip: S.outSoftClip,
     // Settings > Control overlays and its key (main.js), this machine's own
-    overlayMode: S.overlayMode, overlayKey: S.overlayKey,
+    // overlayModeRev 2: Key became the default, so a save from before it
+    // (Auto, never chosen) is let go once on load below.
+    overlayMode: S.overlayMode, overlayModeRev: 2, overlayKey: S.overlayKey,
     // Settings > Journey page reload (core/journey.js), this machine's own
     journeyReload: S.journeyReload,
     // v0 reads this straight off the <input id=lAudio> checkbox, which v1 has
@@ -705,7 +707,7 @@ export function snapshot() {
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
                       'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog', 'sunRateHz',
-                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayKey', 'journeyReload'];
+                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -960,7 +962,9 @@ function applySettings(s, live, scene) {
     applyOutputGuards();
     // Settings > Control overlays: how this screen's floating controls come
     // up, and the key that toggles them in Key mode (any one event.key).
-    if (s.overlayMode === 'auto' || s.overlayMode === 'key') S.overlayMode = s.overlayMode;
+    // A save from before Key became the default (no overlayModeRev) keeps
+    // the new default, Key.
+    if (s.overlayModeRev === 2 && (s.overlayMode === 'auto' || s.overlayMode === 'key')) S.overlayMode = s.overlayMode;
     if (typeof s.overlayKey === 'string' && s.overlayKey.length > 0 && s.overlayKey.length <= 32) S.overlayKey = s.overlayKey;
     // Settings > Journey page reload: back to the last step, or the top.
     if (s.journeyReload === 'resume' || s.journeyReload === 'restart') S.journeyReload = s.journeyReload;
