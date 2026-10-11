@@ -546,10 +546,11 @@ async function boot() {
       }
       return true;
     }
-    // With the journey window open and journey mode ACTIVE, Space plays and
-    // pauses the walk (a resume carries on where it paused) and the left and
-    // right arrows step it; a journey with no steps leaves Space to the app.
-    const journeyKeys = journey.open && journey.active && journeyCount() > 0;
+    // With journey mode ACTIVE, window open or not (as its MIDI trigger),
+    // Space plays and pauses the walk (a resume carries on where it paused)
+    // and the left and right arrows step it; a journey with no steps leaves
+    // Space to the app.
+    const journeyKeys = journey.active && journeyCount() > 0;
     if (e.code === 'Space') { if (journeyKeys) journeyTogglePlay(); else toggleRun(); return true; }
     if (journeyKeys && (k === 'ArrowLeft' || k === 'ArrowRight')) { journeyStepBy(k === 'ArrowLeft' ? -1 : 1); return true; }
     // and with its AUTO button on KEYS, the digits 1-9 jump to that step
