@@ -38,7 +38,7 @@
           slideRate 0..1000 (500 = 1x, log 0.25..2x: SPEED)
           slidePlay true (play) / false (pause), idempotent
           slideRestart (v ignored)
-          slideXfade 0..300 (hundredths of a second, 0 a cut; the gear's
+          slideXfade 0..500 (hundredths of a second, 0 a cut; the gear's
             Crossfade, sent on each change and remembered with the duck's)
     {k:'duck', on, amt, dn, up}  amt 0..1, dn and up in seconds; DUCK is
         hold-and-release: on at pointerdown, off at pointerup, pointercancel
@@ -47,7 +47,7 @@
   LAYOUT follows Robert's TouchOSC/Max surface (thumb reach, iPad held in
   two hands): the cues down the left; on the right edge, top corner one
   play/pause toggle (green playing with a pause glyph, red paused with a
-  play glyph, sitting where PAUSE used to be), below it the four tall
+  play glyph, the DUCK button's width), below it the four tall
   faders (half-width,
   hugging the right edge, as the photo has them) in the
   surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK with
@@ -107,10 +107,9 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
 #info { padding-top: 4px; display: grid; gap: 8px; }
 .bar { height: 10px; border-radius: 5px; background: #0f1219; border: 1px solid var(--line); overflow: hidden; }
 .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, #6b5216, var(--gold)); transition: width .3s; }
-/* One play/pause toggle, kept in the old PAUSE button's spot (the padding
-   is the old PLAY button and the gap above it). Green while playing with a
-   pause glyph, red while paused with a play glyph. */
-#pp { padding-top: 94px; }
+/* One play/pause toggle, top right, the DUCK button's column and width.
+   Green while playing with a pause glyph, red while paused with a play
+   glyph. */
 #playpause { height: 84px; color: #fff; display: grid; place-items: center;
   box-shadow: 0 0 22px rgba(255, 255, 255, .25), inset 0 0 0 2px #fff; transition: background .15s, border-color .15s; }
 #playpause.playing { background: #2f9a4a; border-color: #4fd06e; }
@@ -483,11 +482,11 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     () => duckSet.dn.toFixed(2) + ' s', true);
   makeSlider($('sUp'), 'Fade up', () => duckSet.up / 3, u => { duckSet.up = Math.round(u * 3 * 20) / 20; },
     () => duckSet.up.toFixed(2) + ' s', true);
-  // Crossfade: 0 to 3 s in 0.05 s steps, sent as the control's position
+  // Crossfade: 0 to 5 s in 0.05 s steps, sent as the control's position
   // (hundredths of a second) whenever it moves
-  if (!(duckSet.xf >= 0 && duckSet.xf <= 3)) duckSet.xf = DUCK_DEF.xf;
-  makeSlider($('sXf'), 'Crossfade', () => duckSet.xf / 3, u => {
-    const xf = Math.round(u * 3 * 20) / 20;
+  if (!(duckSet.xf >= 0 && duckSet.xf <= 5)) duckSet.xf = DUCK_DEF.xf;
+  makeSlider($('sXf'), 'Crossfade', () => duckSet.xf / 5, u => {
+    const xf = Math.round(u * 5 * 20) / 20;
     if (xf === duckSet.xf) return;
     duckSet.xf = xf;
     queueCtl('slideXfade', Math.round(xf * 100));
