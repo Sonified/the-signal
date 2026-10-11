@@ -1951,6 +1951,20 @@ export const VISUAL_CONTROLS = [
     parent: 'overlayMode', visible: S => S.overlayMode === 'key',
     act: () => { overlayKeyCapture.armed = !overlayKeyCapture.armed; },
     format: S => overlayKeyCapture.armed ? 'Overlay key: press a key…' : 'Overlay key: ' + overlayKeyName(S.overlayKey)
+  },
+  {
+    // Where a reload leaves the journey (core/journey.js cueLastStep).
+    // Resume: on the step the walk last entered, its fold open, so play,
+    // Space or an arrow carries on from there. Restart: at the top, as a
+    // fresh page always was. This machine's own, as every Settings row is.
+    id: 'journeyReload', section: 'settings', label: 'Journey page reload', kind: 'segment', def: 'resume',
+    options: [
+      { value: 'resume',  label: 'Resume',  domId: null },
+      { value: 'restart', label: 'Restart', domId: null }
+    ],
+    get: S => S.journeyReload === 'restart' ? 'restart' : 'resume',
+    set: (S, v) => { S.journeyReload = v === 'restart' ? 'restart' : 'resume'; save(); },
+    format: S => S.journeyReload === 'restart' ? 'Restart' : 'Resume'
   }
 ];
 

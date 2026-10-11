@@ -221,6 +221,8 @@ function buildSettings() {
     syncDiagLog: S.syncDiagLog,
     // Settings > Control overlays and its key (main.js), this machine's own
     overlayMode: S.overlayMode, overlayKey: S.overlayKey,
+    // Settings > Journey page reload (core/journey.js), this machine's own
+    journeyReload: S.journeyReload,
     // v0 reads this straight off the <input id=lAudio> checkbox, which v1 has
     // no equivalent of. Lane E2's audio-layer control is the one write path
     // for it here, stashing the boot preference on S.audioOnBoot (see the
@@ -700,7 +702,7 @@ export function snapshot() {
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
                       'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog',
-                      'overlayMode', 'overlayKey'];
+                      'overlayMode', 'overlayKey', 'journeyReload'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -950,6 +952,8 @@ function applySettings(s, live, scene) {
     // up, and the key that toggles them in Key mode (any one event.key).
     if (s.overlayMode === 'auto' || s.overlayMode === 'key') S.overlayMode = s.overlayMode;
     if (typeof s.overlayKey === 'string' && s.overlayKey.length > 0 && s.overlayKey.length <= 32) S.overlayKey = s.overlayKey;
+    // Settings > Journey page reload: back to the last step, or the top.
+    if (s.journeyReload === 'resume' || s.journeyReload === 'restart') S.journeyReload = s.journeyReload;
     // The parallax sim's sway (core/eye.js). Its switch is never saved, so a
     // load always starts with the head still.
     if (typeof s.parallaxAmount === 'number' && isFinite(s.parallaxAmount)) S.parallaxAmount = Math.max(0, Math.min(0.3, s.parallaxAmount));

@@ -164,6 +164,11 @@ const LIB_KEY = 'signal.journeys.v1';
 const keyOf = id => JOURNEY_KEY + '.' + id;
 let lib = null;
 const cache = new Map();
+// Where the walk last stood, { id, step }: written as each step is entered,
+// and read once, as the page's first journey loads, so a reload can come
+// back to it (Settings > Journey page reload, S.journeyReload).
+const POS_KEY = 'signal.journeyPos.v1';
+let cued = false;
 
 // The step whose fold is open (-1 for none), whether the window is showing,
 // whether that step is being edited (armed: drawer changes are recorded into
@@ -344,6 +349,21 @@ function ensureLoaded() {
   data = journeyById(lib.cur);
   reconcile();
   ensureStartSnapshot();
+  if (!cued) { cued = true; cueLastStep(); }
+}
+
+// Resume: the step the walk last entered comes back with its fold open and
+// nothing playing, so the window's play, Space or an arrow goes on from it
+// (journeyTogglePlay, journeyStepBy), and the scene is already where that
+// step left it, the settings having been saved. Restart leaves the walk at
+// the top. A step that is gone, or a different journey open, cues nothing.
+function cueLastStep() {
+  if (S.journeyReload === 'restart') return;
+  const p = readRaw(POS_KEY);
+  if (!p || p.id !== lib.cur || !Number.isInteger(p.step) || !data.steps[p.step]) return;
+  sel = p.step;
+  rebuildOverSet();
+  version++;
 }
 
 // After a fresh read (another tab's write), the step being edited or played
@@ -1889,6 +1909,7 @@ function enterStep(i) {
   }
   armed = false;
   play.stepIdx = i;
+  saveKey(POS_KEY, { id: lib.cur, step: i });
   play.phaseStartT = play.enterT = nowT;
   play.appearAt = -1;
   cancelWordSequenceOnce();
