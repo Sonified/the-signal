@@ -93,6 +93,7 @@ import { drawPerformer, performer } from './ui/screens/performer.js';
 import { drawMusic, music } from './ui/screens/music.js';
 import { drawTextbank, textbank } from './ui/screens/textbank.js';
 import { perfTick, perfResume, perfBusy } from './core/perform.js';
+import { stepMixGates, mixGatesBusy } from './js/mixgate.js';
 
 // Mobile browsers require a user gesture before audio can leave a suspended
 // AudioContext. A broadcast follower must keep running while it waits, so the
@@ -731,6 +732,10 @@ async function boot() {
     // the performer window's ramps (core/perform.js): every glide it has
     // in flight moves a little further, wherever the window itself is
     perfTick(t);
+    // a mute or solo gliding (js/mixgate.js): the engines' gates re-applied
+    // where their glides have got to. In worker mode the page's audio shell
+    // does this for the sound; here it only keeps this thread's answers.
+    stepMixGates();
     const metersShown = mixer.open || anim.value('mixer.open') >= 0.002;
     if (metersShown) stepAtmosphere(t, true);
     if (perfOn) t2 = platform.now();
@@ -885,7 +890,7 @@ async function boot() {
     if (pageVisible && !S.running && motionScale() === 0 && !renderArgs.sceneChanged &&
         framesAwake >= IDLE_MIN_FRAMES && t - lastInputT >= IDLE_QUIET_MS &&
         !uiUnsettled && ui.activeId === -1 && !ui.textEditing && !metersShown && !profOn && !perf.on &&
-        !perfBusy() && !journeyBusy() && !(transitionRemaining() > 0) && !wordState.visible &&
+        !perfBusy() && !journeyBusy() && !mixGatesBusy() && !(transitionRemaining() > 0) && !wordState.visible &&
         !savePending() && !choreBusy() && !idleHeld() && !engine.busy()) {
       engine.sleep();
       resting = true;

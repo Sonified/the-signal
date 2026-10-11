@@ -50,8 +50,10 @@
 // below): the eight lines and the active one, the fixed channels' mutes and
 // solos, and every atmosphere recording's level, mute and solo. A ramp
 // crossfades those too: numbers travel, a line changing waveform sounds both
-// waves at once and trades them over the ramp, mutes and solos turn at the
-// ramp's midpoint, and the rest lands as the ramp begins.
+// waves at once and trades them over the ramp, the mixer's mutes and solos
+// turn as the ramp begins while the sound under them glides over the whole
+// ramp (js/mixgate.js), a line's mute and solo turn at the ramp's midpoint,
+// and the rest lands as the ramp begins.
 //
 // The viewer keeps a library of journeys, one open at a time: the Journey
 // window's row of chips (ui/screens/journey.js). Everything above is about
@@ -559,7 +561,7 @@ function applyStep(st, sec) {
       if (c.get(S) !== v) c.set(S, v);
     }
     applyText(st.text);
-    applySeqMixNow(st);
+    applySeqMixNow(st, sec);
   } finally {
     endGlide();
   }
@@ -625,10 +627,12 @@ function throughDoor(o, mixOwned, sec, now) {
 // Everything is written straight into S (the lines' fields, the channel
 // flags, the recordings' objects), then the engine is told once: applySeqs
 // for the lines, applyMixGates for any mute or solo (which also re-syncs the
-// recordings), syncAmbLayers for levels alone. In worker mode those calls do
-// nothing here and the audio link carries it all to the page from the diff
-// it already takes every frame: the lines in their packed row, the channel
-// switches and the recordings' rows as watched controls.
+// recordings), syncAmbLayers for levels alone. A mute or solo's gate glides
+// rather than flips (js/mixgate.js), over the step's ramp, or a cut's or an
+// edit's glide. In worker mode those calls do nothing here and the audio link
+// carries it all to the page from the diff it already takes every frame: the
+// lines in their packed row, the channel switches and the recordings' rows as
+// watched controls, the glide's length ahead of them.
 
 const MIX_CTL = [];
 for (let k = 0; k < CHANNELS.length; k++) {
@@ -776,8 +780,9 @@ function writeLineSwitches(q, p) {
 }
 
 // The whole block at once: a cut, or a step selected for editing. Run inside
-// the caller's transition, so what the engine glides it glides over that.
-function applySeqMixNow(st) {
+// the caller's transition, so what the engine glides it glides over that, and
+// the mutes' and solos' gates over the same sec.
+function applySeqMixNow(st, sec) {
   let seqMoved = false, gates = false;
   const blk = st.seq, L = S.seqs;
   if (blk && Array.isArray(L)) {
@@ -814,7 +819,7 @@ function applySeqMixNow(st) {
     }
   }
   if (seqMoved) applySeqs();
-  if (gates) applyMixGates();
+  if (gates) applyMixGates(Math.max(MIN_GLIDE_S, sec));
   if (seqMoved || gates) save();
 }
 
@@ -823,9 +828,11 @@ function applySeqMixNow(st) {
 // and a field index each, from, to, and the value last written, which is how
 // a hand on the same knob is noticed and let win); the recordings' levels the
 // same way, by index and source; each line's waveform crossfade (on, and the
-// wave it is going to, so a wave changed by hand ends it); and every mute and
-// solo's from and to, turned together at the ramp's midpoint, each one only
-// if it is still where the ramp found it.
+// wave it is going to, so a wave changed by hand ends it); and every line's
+// mute and solo, from and to, turned together at the ramp's midpoint, each
+// one only if it is still where the ramp found it. The mixer's mutes and
+// solos are not among them: they turn as the ramp begins and their gates
+// glide over it (startSeqMix).
 const SQ_MAX = SEQ_COUNT * SQ_FIELDS.length;
 const sqLine = new Int8Array(SQ_MAX), sqField = new Int8Array(SQ_MAX);
 const sqFrom = new Float64Array(SQ_MAX), sqTo = new Float64Array(SQ_MAX), sqSent = new Float64Array(SQ_MAX);
@@ -838,18 +845,16 @@ const mphOn = new Uint8Array(SEQ_COUNT), mphWave = new Array(SEQ_COUNT).fill('')
 let mphAny = false;
 const lnMuteF = new Uint8Array(SEQ_COUNT), lnMuteT = new Uint8Array(SEQ_COUNT);
 const lnSoloF = new Uint8Array(SEQ_COUNT), lnSoloT = new Uint8Array(SEQ_COUNT);
-const chMuteF = new Uint8Array(CHANNELS.length), chMuteT = new Uint8Array(CHANNELS.length);
-const chSoloF = new Uint8Array(CHANNELS.length), chSoloT = new Uint8Array(CHANNELS.length);
-const gLayer = new Array(AMB_MAX).fill(null);
-const lyMuteF = new Uint8Array(AMB_MAX), lyMuteT = new Uint8Array(AMB_MAX);
-const lySoloF = new Uint8Array(AMB_MAX), lySoloT = new Uint8Array(AMB_MAX);
-let gateN = 0, gatePend = false;
+let gatePend = false;
 
 // The block's side of a ramp's start, inside its transition: what lands now
 // lands, each crossfading wave starts its second tone, and the rest is set
-// travelling. Returns whether anything is left to ramp.
+// travelling. The mixer's mutes and solos land now too, the switches showing
+// where the step is going, and their gates glide over the whole ramp
+// (js/mixgate.js applyMixGates), the faders untouched: no midpoint jump in
+// the sound. Returns whether anything is left to ramp.
 function startSeqMix(st) {
-  sqN = 0; lyN = 0; mphAny = false; gatePend = false; gateN = 0;
+  sqN = 0; lyN = 0; mphAny = false; gatePend = false;
   let seqMoved = false;
   const blk = st.seq, L = S.seqs;
   if (blk && Array.isArray(L)) {
@@ -880,63 +885,46 @@ function startSeqMix(st) {
     }
   }
   const mb = st.mix, AL = S.ambLayers;
+  let gates = false;
   if (mb) {
     for (let k = 0; k < CHANNELS.length; k++) {
       const ch = CHANNELS[k];
-      chMuteF[k] = S.chanMute[ch] ? 1 : 0; chMuteT[k] = mb.chanMute[ch] ? 1 : 0;
-      chSoloF[k] = S.chanSolo[ch] ? 1 : 0; chSoloT[k] = mb.chanSolo[ch] ? 1 : 0;
-      if (chMuteF[k] !== chMuteT[k] || chSoloF[k] !== chSoloT[k]) gatePend = true;
+      if (!!S.chanMute[ch] !== mb.chanMute[ch]) { S.chanMute[ch] = mb.chanMute[ch]; gates = true; }
+      if (!!S.chanSolo[ch] !== mb.chanSolo[ch]) { S.chanSolo[ch] = mb.chanSolo[ch]; gates = true; }
     }
     if (Array.isArray(AL)) {
       for (let i = 0; i < AL.length && i < AMB_MAX; i++) {
         const l = AL[i], b = blockLayer(mb, i, l.source);
-        gLayer[i] = l;
-        lyMuteF[i] = lyMuteT[i] = l.muted ? 1 : 0;
-        lySoloF[i] = lySoloT[i] = l.solo ? 1 : 0;
         if (!b) continue;
-        lyMuteT[i] = b.muted ? 1 : 0; lySoloT[i] = b.solo ? 1 : 0;
-        if (lyMuteT[i] !== lyMuteF[i] || lySoloT[i] !== lySoloF[i]) gatePend = true;
+        if (!!l.muted !== b.muted) { l.muted = b.muted; gates = true; }
+        if (!!l.solo !== b.solo) { l.solo = b.solo; gates = true; }
         l.peak = b.peak;
         if (l.level !== b.level) {
           const n = lyN++;
           lyIdx[n] = i; lySrc[n] = l.source; lyFrom[n] = l.level; lyTo[n] = b.level; lySent[n] = l.level;
         }
       }
-      gateN = AL.length < AMB_MAX ? AL.length : AMB_MAX;
     }
-  } else {
-    for (let k = 0; k < CHANNELS.length; k++) { chMuteF[k] = chMuteT[k] = 0; chSoloF[k] = chSoloT[k] = 0; }
   }
-  if (seqMoved) { applySeqs(); save(); }
+  if (seqMoved) applySeqs();
+  if (gates) applyMixGates(st.rampS);
+  if (seqMoved || gates) save();
   return sqN > 0 || lyN > 0 || mphAny || gatePend;
 }
 
-// The midpoint: every mute and solo the step turns, where it is still as the
-// ramp found it. Returns 1 when a line's moved, 2 when a channel's or a
-// recording's did, or both.
+// The midpoint: every line's mute and solo the step turns, where it is still
+// as the ramp found it. Returns whether any moved.
 function turnGates() {
   gatePend = false;
-  let out = 0;
+  let out = false;
   const L = S.seqs;
   if (Array.isArray(L)) {
     for (let i = 0; i < SEQ_COUNT && i < L.length; i++) {
       const q = L[i];
       if (!q) continue;
-      if (lnMuteT[i] !== lnMuteF[i] && (q.mute ? 1 : 0) === lnMuteF[i]) { q.mute = lnMuteT[i] === 1; out |= 1; }
-      if (lnSoloT[i] !== lnSoloF[i] && (q.solo ? 1 : 0) === lnSoloF[i]) { q.solo = lnSoloT[i] === 1; out |= 1; }
+      if (lnMuteT[i] !== lnMuteF[i] && (q.mute ? 1 : 0) === lnMuteF[i]) { q.mute = lnMuteT[i] === 1; out = true; }
+      if (lnSoloT[i] !== lnSoloF[i] && (q.solo ? 1 : 0) === lnSoloF[i]) { q.solo = lnSoloT[i] === 1; out = true; }
     }
-  }
-  for (let k = 0; k < CHANNELS.length; k++) {
-    const ch = CHANNELS[k];
-    if (chMuteT[k] !== chMuteF[k] && (S.chanMute[ch] ? 1 : 0) === chMuteF[k]) { S.chanMute[ch] = chMuteT[k] === 1; out |= 2; }
-    if (chSoloT[k] !== chSoloF[k] && (S.chanSolo[ch] ? 1 : 0) === chSoloF[k]) { S.chanSolo[ch] = chSoloT[k] === 1; out |= 2; }
-  }
-  const AL = S.ambLayers;
-  for (let i = 0; i < gateN; i++) {
-    const l = gLayer[i];
-    if (!l || !AL || AL[i] !== l) continue;
-    if (lyMuteT[i] !== lyMuteF[i] && (l.muted ? 1 : 0) === lyMuteF[i]) { l.muted = lyMuteT[i] === 1; out |= 2; }
-    if (lySoloT[i] !== lySoloF[i] && (l.solo ? 1 : 0) === lySoloF[i]) { l.solo = lySoloT[i] === 1; out |= 2; }
   }
   return out;
 }
@@ -944,7 +932,7 @@ function turnGates() {
 // One frame of the block's ramp, on the same eased curve as the drawer's
 // sliders. The engine hears it once for the frame, whatever moved.
 function stepSeqMix(u, e) {
-  let seqMoved = false, layMoved = false, gates = false;
+  let seqMoved = false, layMoved = false;
   const L = S.seqs;
   for (let k = 0; k < sqN; k++) {
     const line = sqLine[k];
@@ -993,15 +981,10 @@ function stepSeqMix(u, e) {
     }
     if (v !== lySent[k]) { l.level = v; lySent[k] = v; layMoved = true; }
   }
-  if (gatePend && u >= 0.5) {
-    const t = turnGates();
-    if (t & 1) seqMoved = true;
-    if (t & 2) gates = true;
-  }
+  if (gatePend && u >= 0.5 && turnGates()) seqMoved = true;
   if (seqMoved) applySeqs();
-  if (gates) applyMixGates();
-  else if (layMoved) syncAmbLayers();
-  if (seqMoved || layMoved || gates) save();
+  if (layMoved) syncAmbLayers();
+  if (seqMoved || layMoved) save();
 }
 
 // A ramp let go before it landed: a waveform crossfade still under way ends
@@ -1018,7 +1001,7 @@ function endSeqMix() {
     }
     if (moved) applySeqs();
   }
-  sqN = 0; lyN = 0; mphAny = false; gatePend = false; gateN = 0;
+  sqN = 0; lyN = 0; mphAny = false; gatePend = false;
 }
 
 // ---------- the ramp ----------

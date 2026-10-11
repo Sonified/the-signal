@@ -55,6 +55,11 @@
 //                           linked to it (the drone's level, the choir's
 //                           level, Stack and Density): the breath is this thread's,
 //                           so the page's voices are told, to a thousandth.
+//   gateGlide(sec)          a mute or solo changed here with a glide of its
+//                           own asked for (a journey step's ramp, js/
+//                           mixgate.js applyMixGates(sec)): sent ahead of the
+//                           switches' set calls, so their gates on the page
+//                           glide that long rather than a hand's declick.
 //   pianoGesture(n)         a word appeared on a step that plays the piano on
 //                           the words: one gesture, now. n is the worker's
 //                           running count (S.pianoGestureN), so several in
@@ -89,6 +94,7 @@ import {
   unpackAtmosphere, noteDrift
 } from './atmosphere.js';
 import { presetTransitionCount } from './presets.js';
+import { mixGateAsk, mixGateAskSec } from '../js/mixgate.js';
 import { save } from './store.js';
 import { signal, SIGNAL_PACK, packSignal } from './signal.js';
 import {
@@ -150,7 +156,7 @@ export function createAudioLink(post) {
 
   let lastRunning = false, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
   let lastFree = true, lastGesture = 0, lastHumCut = -1, lastHumVerb = -1, lastBreath = -1;
-  let lastSignal = -1;
+  let lastSignal = -1, lastGateAsk = 0;
   const sigPack = new Float64Array(SIGNAL_PACK);
   let seeded = false;
   const outbox = [];
@@ -168,6 +174,7 @@ export function createAudioLink(post) {
     lastTransition = presetTransitionCount();
     lastFree = S.pianoFreePlay !== false;
     lastGesture = S.pianoGestureN | 0;
+    lastGateAsk = mixGateAsk();
   }
 
   // One call, CALL_SLOTS wide (core/audio-mirror.js).
@@ -182,6 +189,9 @@ export function createAudioLink(post) {
     const t = presetTransitionCount();
     const glide = t !== lastTransition ? 1 : 0;
     lastTransition = t;
+    // a gate glide asked for since the last pass goes ahead of the switches
+    const ga = mixGateAsk();
+    if (ga !== lastGateAsk) { lastGateAsk = ga; call('gateGlide', mixGateAskSec(), 0, 0, 0); }
 
     let modeMoved = false;
     for (let i = 0; i < n; i++) {

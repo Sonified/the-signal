@@ -42,6 +42,7 @@ import {
 } from '../js/audio.js';
 import { arpPeak, seqClock, unpackSeqs, applySeqs, pianoGesture } from '../js/piano.js';
 import { ambDriftOn } from '../js/ambience.js';
+import { stepMixGates, holdMixGateGlide } from '../js/mixgate.js';
 import { CONTROLS } from './schema.js';
 import { audioToggleEffects } from './schema-audio.js';
 import {
@@ -135,7 +136,11 @@ export function createAudioShell(storage) {
     },
     // The sun's breath, for the music variances linked to it (js/piano.js
     // the drone's level, js/choir.js), or none at -1, when they hold.
-    sunBreath(v) { S.effSunBreathPos = v >= 0 ? v : undefined; }
+    sunBreath(v) { S.effSunBreathPos = v >= 0 ? v : undefined; },
+    // How long the mutes and solos in this batch glide (a journey step's
+    // ramp, js/mixgate.js): held until the batch ends, so the switches' own
+    // set() here glides their gates as the worker asked.
+    gateGlide(sec) { holdMixGateGlide(sec); }
   };
 
   let warned = false;
@@ -156,6 +161,7 @@ export function createAudioShell(storage) {
       }
     } finally {
       if (gliding) { endGlide(); gliding = false; }
+      holdMixGateGlide(-1);
     }
   }
 
@@ -188,6 +194,9 @@ export function createAudioShell(storage) {
   // posts a copy), otherwise null.
   function tick(t) {
     stepAtmosphere(t, !!(watch & W_METERS));
+    // a mute or solo gliding (js/mixgate.js): the gates re-applied where
+    // their glides have got to; nothing while none is
+    stepMixGates();
     const drifting = ambDriftOn();
     const flags = (S.audioEnabled ? F_AUDIO : 0) | (S.workletReady ? F_WORKLET : 0) | (drifting ? F_DRIFT : 0);
     const since = t - lastPost;
