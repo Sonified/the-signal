@@ -2,8 +2,9 @@
 //
 // A family moves to Heart as a whole, because its nodes connect to each
 // other: music (the piano, its drone and sequencer, the choir, the clouds
-// and the strobe stages they wear), ambience, and genus (the pulse
-// engine and its rooms). Clouds keeps its own flag name but lives in the
+// and the strobe stages they wear), ambience, genus (the pulse engine and
+// its rooms), and heartbeat (the Heartbeat layer's track and its limiter,
+// core/heartbeat.js). Clouds keeps its own flag name but lives in the
 // music island, since it plays into the music's master reverb. A module switches by asking here instead of
 // audio.js, and changes nothing else (spec 12):
 //
@@ -15,7 +16,8 @@
 // object it replaces, so the module cannot tell. The flag is
 // localStorage.signal_heart, overridden by ?heart= in the URL: absent is
 // every family (Heart is the engine, 2026-10-08), 'off' is native, 'all'
-// says the default outright, and a comma list names some ('music,clouds').
+// says the default outright, and a comma list names some ('music,clouds',
+// 'heartbeat').
 // A device that cannot run Heart (no wasm SIMD, a worklet that will not
 // load) still goes native on its own (startHeart).
 //
@@ -35,7 +37,7 @@
 // console says which families that leaves.
 import { S } from '../state.js';
 
-export const FAMILIES = ['music', 'clouds', 'ambience', 'genus'];
+export const FAMILIES = ['music', 'clouds', 'ambience', 'genus', 'heartbeat'];
 
 let nativeCtx = null, nativeMaster = null, engine = null, starting = null;
 const contexts = new Map();

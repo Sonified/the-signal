@@ -9,13 +9,13 @@ const { parseHeartFlag, ctxFor, masterFor, makeWorklet, heartOn, heartEngine, st
 const flag = (search, stored) => [...parseHeartFlag(search, stored)].sort();
 
 test('absent is every family (Heart is the engine); off is native', () => {
-  assert.deepEqual(flag('', null), ['ambience', 'clouds', 'genus', 'music']);
+  assert.deepEqual(flag('', null), ['ambience', 'clouds', 'genus', 'heartbeat', 'music']);
   assert.deepEqual(flag('', 'off'), []);
   assert.deepEqual(flag('?heart=off', 'all'), [], 'the URL overrides storage');
 });
 
 test('all, and comma lists of families, forgiving of case and spaces', () => {
-  assert.deepEqual(flag('', 'all'), ['ambience', 'clouds', 'genus', 'music']);
+  assert.deepEqual(flag('', 'all'), ['ambience', 'clouds', 'genus', 'heartbeat', 'music']);
   assert.deepEqual(flag('?heart=music,clouds', null), ['clouds', 'music']);
   assert.deepEqual(flag('?x=1&heart=Genus%2C%20ambience', 'music'), ['ambience', 'genus']);
   assert.deepEqual(flag('', 'clouds,nonsense'), ['clouds'], 'unknown names are dropped');
@@ -23,7 +23,7 @@ test('all, and comma lists of families, forgiving of case and spaces', () => {
 });
 
 test('with no page to read (node), the default still stands', () => {
-  assert.deepEqual([...parseHeartFlag()].sort(), ['ambience', 'clouds', 'genus', 'music']);
+  assert.deepEqual([...parseHeartFlag()].sort(), ['ambience', 'clouds', 'genus', 'heartbeat', 'music']);
 });
 
 test('Heart off: every family gets the native context and master', async () => {

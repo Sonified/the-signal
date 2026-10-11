@@ -354,6 +354,7 @@ A **family** moves as a whole, because its nodes connect to each other:
 | clouds | clouds.js | `masterFor('clouds')` |
 | ambience | ambience.js | `masterFor('ambience')` |
 | genus | audio.js's genus node, harmonics room, click room | `masterFor('genus')` |
+| heartbeat | core/heartbeat.js: the looping track, its level, limiter (Heart's DynamicsCompressor), trim, pause gate and meter tap; the light reads an envelope precomputed from the decoded track at the heard place (`presentTime` for where a start, stop or rate change lands), not the graph | `masterFor('heartbeat')` |
 
 - **The hook is in.** js/audio.js `ensureAudioGraph` awaits `startHeart(audioCtx, volGain)` once the worklet modules are added. route.js imports nothing; with no family flagged it loads no Heart code and returns null, and the app is exactly as it was.
 - `js/heart/route.js` exports `ctxFor(family)` (the HeartContext, or the native context when Heart is off for that family), `masterFor(family)` (Heart's master bus, or the native `volGain`) and `makeWorklet(ctx, name, opts)` (a Heart processor or a native `AudioWorkletNode`). A module replaces `getContext()`/`getMaster()`/`new AudioWorkletNode` with these three and changes nothing else.

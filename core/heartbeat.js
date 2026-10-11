@@ -15,12 +15,25 @@
 // where an analyser in the graph would be reading the future, and on one
 // that sends no samples back at all. The limiter is the heartbeat's own (the app's
 // master bus has none): it lets the level run to 400% and keep getting
-// louder without the loudest beats clipping (see LIM_THRESHOLD). The track plays on the app's own
-// AudioContext (js/audio.js getContext, the one the engine, the piano and
-// the atmosphere share) and into its master gain, as the atmosphere's
-// recordings do (js/ambience.js), so the volume slider and the transport's
-// pause gate reach it like every other voice. Only with no shared context to
-// hand does it make one of its own, straight to the speakers.
+// louder without the loudest beats clipping (see LIM_THRESHOLD).
+//
+// The track is a family of its own on Heart, the app's audio engine
+// (js/heart/route.js, 'heartbeat'): built on ctxFor('heartbeat') and ending
+// at masterFor('heartbeat'), as the atmosphere's recordings are
+// (js/ambience.js), so it renders in an island of its own, ahead of the
+// speakers, and plays through Heart's master into the app's master gain;
+// the volume slider and the transport's pause gate reach it like every
+// other voice. With Heart off for it, or a device that cannot run Heart,
+// the same two calls answer with the app's own AudioContext and master gain
+// (js/audio.js getContext and getMaster), and it plays there exactly as it
+// did before Heart. Only with no shared context to hand at all does it make
+// one of its own, straight to the speakers.
+//
+// A family builds on Heart only once Heart has started (route.js); one
+// built before that is built natively and stays there. So the graph waits
+// for the app's audio graph, which starts Heart, to settle (ensureAudioGraph,
+// awaited once), however early the layer comes on, and is built in the
+// first frame after.
 //
 // Nothing is made or fetched until the layer first comes on. The source is
 // stopped (its place kept) while the layer is off, the scene is stopped, or
@@ -33,7 +46,8 @@
 // Allocation per frame: none. A start makes one AudioBufferSourceNode, by
 // Web Audio's design.
 
-import { getContext, getMaster, sourceGate } from '../js/audio.js';
+import { getContext, getMaster, sourceGate, ensureAudioGraph } from '../js/audio.js';
+import { ctxFor, masterFor } from '../js/heart/route.js';
 import { createGlobalFilter } from './global-filter.js';
 import { chanGate, onChannelGates } from '../js/mixgate.js';
 import { tapPeak } from '../js/util.js';
@@ -53,7 +67,9 @@ const ENV_HOP = 16;
 // The level's glide, seconds: a slider drag without zipper noise.
 const LEVEL_TC = 0.03;
 
-// The limiter: a DynamicsCompressorNode set up as a near-brickwall. The track
+// The limiter: a DynamicsCompressorNode set up as a near-brickwall (on Heart,
+// its twin, Chrome's own compressor ported line for line, so everything
+// below holds on either engine). The track
 // peaks at -0.5 dBFS with a mean of -21.4 dB, so any level past about 106%
 // would clip its loudest beats while the rest of it has 20 dB to spare; the
 // limiter holds those beats down and lets everything else grow.
@@ -120,17 +136,32 @@ function warn(msg, e) {
   console.warn('heartbeat: ' + msg + (e ? ': ' + (e && e.message ? e.message : e) : ''));
 }
 
+// The app's audio graph has settled (built, or failed): Heart has started,
+// or will not, and route.js answers for good.
+let graphSettled = false, graphAsked = false;
+
 function ensureGraph() {
   if (ctx) return true;
   if (unavailable) return false;
-  ctx = getContext();
-  if (!ctx) {
-    const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
-    if (!AC) {
-      unavailable = true;
-      warn('no AudioContext on this thread (worker engine); the Heartbeat layer needs the page engine');
-      return false;
+  const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if (!AC && !getContext()) {
+    unavailable = true;
+    warn('no AudioContext on this thread (worker engine); the Heartbeat layer needs the page engine');
+    return false;
+  }
+  if (!graphSettled) {
+    if (!graphAsked) {
+      graphAsked = true;
+      const done = () => { graphSettled = true; };
+      Promise.resolve(ensureAudioGraph()).then(done, done);
     }
+    return false;
+  }
+  // The family's context and master: Heart's when it plays there, else the
+  // app's native pair; and only with neither a context of its own.
+  const routed = ctxFor('heartbeat');
+  ctx = routed || getContext();
+  if (!ctx) {
     try { ctx = new AC({ latencyHint: 'playback' }); ownCtx = true; }
     catch (e) { unavailable = true; warn('could not make an AudioContext', e); return false; }
   }
@@ -148,7 +179,7 @@ function ensureGraph() {
   trim.gain.value = LIM_TRIM;
   level.connect(limiter);
   limiter.connect(trim);
-  const master = ownCtx ? null : getMaster();
+  const master = ownCtx ? null : routed ? masterFor('heartbeat') : getMaster();
   if (master) {
     const gate = ctx.createGain();
     sourceGate(gate.gain);
