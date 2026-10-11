@@ -26,7 +26,7 @@ const SR = 48000;
 // `heart` maps each family on Heart to its context.
 const ROUTE = `
 const R = () => globalThis.__route;
-export const FAMILIES = ['music', 'clouds', 'ambience', 'genus'];
+export const FAMILIES = ['music', 'clouds', 'ambience', 'genus', 'heartbeat'];
 export function startHeart(ctx, master) { R().native = ctx; R().master = master; return Promise.resolve(R().engine || null); }
 export const ctxFor = f => R().heart[f] || R().native;
 export const masterFor = f => R().heart[f] ? R().heart[f].destination : R().master;
@@ -34,6 +34,9 @@ export const makeWorklet = (ctx, name, opts) => ctx && ctx.isHeart ? ctx.createP
 export const heartEngine = () => R().engine || null;
 export const heartOn = f => !!R().heart[f];
 export const parseHeartFlag = () => new Set(Object.keys(R().heart));
+export const peekCtxFor = f => R().heart[f] || R().native;
+export const peekMasterFor = f => R().heart[f] ? R().heart[f].destination : R().master;
+export function onFallBack() {}
 `;
 const STUB = 'data:text/javascript,' + encodeURIComponent(ROUTE);
 register('data:text/javascript,' + encodeURIComponent(`

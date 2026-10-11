@@ -98,6 +98,12 @@ class FakeNative {
   resume() { return Promise.resolve(); }
   createGain() { const n = new FakeNode(this, 'gain'); n.gain = new FakeParam(1); return n; }
   createConvolver() { const n = new FakeNode(this, 'convolver'); n.buffer = null; return n; }
+  // the app's global Lowpass and Highpass on the way out (core/global-filter.js)
+  createBiquadFilter() {
+    const n = new FakeNode(this, 'biquad');
+    for (const p of ['frequency', 'Q', 'detune', 'gain']) n[p] = new FakeParam(0);
+    return n;
+  }
   createAnalyser() {
     const n = new FakeNode(this, 'analyser');
     n.fftSize = 2048;

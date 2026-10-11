@@ -20,7 +20,7 @@ const skip = !existsSync(WASM) && 'js/heart/heart.wasm is not built yet';
 // Heart, by name to their context, and `engine` what heartEngine gives.
 const ROUTE = `
 const R = () => globalThis.__route;
-export const FAMILIES = ['music', 'clouds', 'ambience', 'genus'];
+export const FAMILIES = ['music', 'clouds', 'ambience', 'genus', 'heartbeat'];
 export function startHeart(ctx, master) { R().native = ctx; R().master = master; return Promise.resolve(R().engine || null); }
 export const ctxFor = f => R().heart[f] || R().native;
 export const masterFor = f => R().heart[f] ? R().heart[f].destination : R().master;
@@ -28,6 +28,9 @@ export const makeWorklet = (ctx, name, opts) => ctx && ctx.isHeart ? ctx.createP
 export const heartEngine = () => R().engine || null;
 export const heartOn = f => !!R().heart[f];
 export const parseHeartFlag = () => new Set(Object.keys(R().heart));
+export const peekCtxFor = f => R().heart[f] || R().native;
+export const peekMasterFor = f => R().heart[f] ? R().heart[f].destination : R().master;
+export function onFallBack() {}
 `;
 const STUB = 'data:text/javascript,' + encodeURIComponent(ROUTE);
 register('data:text/javascript,' + encodeURIComponent(`
@@ -73,6 +76,12 @@ class FakeContext {
   resume() { return Promise.resolve(); }
   createGain() { const n = new FakeNode(this, 'gain'); n.gain = new FakeParam(1); return n; }
   createConvolver() { const n = new FakeNode(this, 'convolver'); n.buffer = null; return n; }
+  // the app's global Lowpass and Highpass on the way out (core/global-filter.js)
+  createBiquadFilter() {
+    const n = new FakeNode(this, 'biquad');
+    for (const p of ['frequency', 'Q', 'detune', 'gain']) n[p] = new FakeParam(0);
+    return n;
+  }
   createBuffer(ch, len, sr) { return new FakeAudioBuffer({ numberOfChannels: ch, length: len, sampleRate: sr }); }
 }
 globalThis.AudioContext = FakeContext;
