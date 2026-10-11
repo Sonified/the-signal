@@ -955,7 +955,7 @@ const musicControls = [
     parent: 'musicPianoDrawer', label: 'Piano level', kind: 'slider',
     min: 0, max: 100, step: 1, def: 90,
     get: s => Math.round(s.pianoVol * 100),
-    set: (s, pos) => { s.pianoVol = pos / 100; save(); },
+    set: (s, pos) => { s.pianoVol = pos / 100; applyPianoTrim(); save(); },
     formatAt: pos => pos + '%',
   },
   {
@@ -2053,7 +2053,7 @@ const mixerControls = [
     id: 'mixPiano', section: 'mixer', label: 'Piano', kind: 'slider',
     min: 0, max: 100, step: 1, def: 90,
     get: s => Math.round(s.pianoVol * 100),
-    set: (s, pos) => { s.pianoVol = pos / 100; save(); },
+    set: (s, pos) => { s.pianoVol = pos / 100; applyPianoTrim(); save(); },
     formatAt: pos => pos + '%'
   },
   {

@@ -173,10 +173,11 @@ function buildGraph() {
   hp = ctx.createBiquadFilter();
   hp.type = 'highpass'; hp.Q.value = Math.SQRT1_2;
   hp.frequency.value = S.pianoHP;
-  // The piano's channel gain, after the filter: the mix gate's mute and solo
-  // (mixgate.js). S.pianoVol is baked into each note as it is struck, so a
-  // gate there would only reach notes not yet played; here it closes on the
-  // notes already ringing too, and on their feed into the room.
+  // The piano's channel gain, after the filter: Piano level, the mix gate's
+  // mute and solo (mixgate.js) and the Music window's trim. Here rather than
+  // baked into each note as it is struck, so all of them reach the notes
+  // already ringing and the ones booked ahead (a generative gesture books a
+  // minute and more), and their feed into the room.
   chan = ctx.createGain();
   chan.gain.value = chanLevel();
   hp.connect(chan);
@@ -224,7 +225,8 @@ export function applyPianoHP() {
   if (hp) glideParam(hp.frequency, S.pianoHP, 0.05);
 }
 
-// The piano's channel: its mix gate times the Music window's trim. While
+// The piano's channel: Piano level times its mix gate times the Music
+// window's trim. While
 // the piano's own switch is off the trim it last had is held, so a fade out
 // that lands (perform.js puts the trim back to its level once the switch is
 // off) never brings the notes still ringing back up; switching the piano on
@@ -232,7 +234,7 @@ export function applyPianoHP() {
 let chanTrim = 1;
 function chanLevel() {
   if (S.pianoOn !== false) chanTrim = perfTrim(S.musPiano ?? 1);
-  return chanGate('piano') * chanTrim;
+  return S.pianoVol * chanGate('piano') * chanTrim;
 }
 export function applyPianoTrim() {
   if (chan) glideParam(chan.gain, chanLevel(), 0.2);
@@ -313,7 +315,7 @@ function strike(written, vel, at) {
   s.buffer = buf;
   s.playbackRate.value = Math.pow(2, ((written - ROOT) - src) / 12);
   const g = ctx.createGain();
-  g.gain.value = vel * vel * S.pianoVol * sampleTrim(src);
+  g.gain.value = vel * vel * sampleTrim(src);
   s.connect(g); g.connect(hp);
   // never in the past: a start before the clock's zero throws
   s.start(Math.max(at, ctx.currentTime));
@@ -323,7 +325,7 @@ function keyLift(at) {
   const ctx = famCtx();
   const s = ctx.createBufferSource();
   s.buffer = pick(lifts);
-  const g = ctx.createGain(); g.gain.value = 0.35 * S.pianoVol;
+  const g = ctx.createGain(); g.gain.value = 0.35;
   s.connect(g); g.connect(hp);
   // never in the past: a start before the clock's zero throws
   s.start(Math.max(at, ctx.currentTime));
