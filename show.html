@@ -111,7 +111,10 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-#midFaders { grid-row: 2; min-height: 160px; display: flex; justify-content: center; gap: 10px; }
+/* centred in the whole empty span, which runs on past #middle across the
+   stage's 14px gap and the edge's empty left half (its faders take only its
+   right 50%, 230px of its 460) */
+#midFaders { grid-row: 2; min-height: 160px; display: flex; justify-content: center; gap: 10px; margin-right: -244px; }
 #midFaders .fader { width: 72px; }
 #edge { width: min(100%, 460px); min-height: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
 #top { display: grid; grid-template-columns: 1fr 172px; gap: 12px; align-items: start; }
@@ -173,7 +176,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   #faders { min-height: 300px; }
   #stage { display: block; }
   #middle { display: block; margin-bottom: 14px; }
-  #midFaders { height: 300px; }
+  #midFaders { height: 300px; margin-right: 0; }
   #edge { width: 100%; }
 }
 </style>
