@@ -107,12 +107,13 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
 #info { padding-top: 4px; display: grid; gap: 8px; }
 .bar { height: 10px; border-radius: 5px; background: #0f1219; border: 1px solid var(--line); overflow: hidden; }
 .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, #6b5216, var(--gold)); transition: width .3s; }
-/* One play/pause toggle filling the old PLAY+PAUSE stack's exact footprint
-   (84 + 10 + 84), the full width of its column (the DUCK button's width),
-   so nothing below it moves. Green while playing with a pause glyph, red
-   while paused with a play glyph. */
-#pp { display: grid; }
-#playpause { height: 178px; color: #fff; display: grid; place-items: center;
+/* One play/pause toggle, the DUCK button's exact size (full column width,
+   110px tall), sitting at the BOTTOM of the old PLAY+PAUSE stack's 178px
+   footprint: the top right corner stays open, and nothing below it moves.
+   Green while playing with a pause glyph, red while paused with a play
+   glyph. */
+#pp { display: grid; align-content: end; min-height: 178px; }
+#playpause { height: 110px; color: #fff; display: grid; place-items: center;
   box-shadow: 0 0 22px rgba(255, 255, 255, .25), inset 0 0 0 2px #fff; transition: background .15s, border-color .15s; }
 #playpause svg { width: 44px; height: 44px; }
 #playpause.playing { background: #2f9a4a; border-color: #4fd06e; }
