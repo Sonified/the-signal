@@ -102,6 +102,9 @@ const LEG_TC = 0.008;
 const PLAY_RETRY_MS = 1000;
 // The most video elements alive at once (see CROSSFADE).
 const MAX_VOICES = 6;
+// A seek's crossfade (the show remote's tap on the playing cue), seconds:
+// short, whatever the slides' own Crossfade is.
+const SEEK_XF = 0.25;
 const SL_FLOATS = 8;
 const HALF_PI = Math.PI / 2;
 
@@ -355,7 +358,9 @@ export function createSlides(device, format) {
     return s;
   }
 
-  function loadInto(s, file) {
+  // at: where to start, seconds (a seek's voice), through the URL's media
+  // fragment, so the first picture it reports is already the one at that time
+  function loadInto(s, file, at) {
     s.file = file;
     s.failed = false;
     s.retryAt = 0;
@@ -363,7 +368,7 @@ export function createSlides(device, format) {
     hold(s);
     setLeg(s, 0);
     s.el.loop = S.slideLoop === true;
-    s.el.src = SLIDE_DIR + encodeURIComponent(file);
+    s.el.src = SLIDE_DIR + encodeURIComponent(file) + (at > 0 ? '#t=' + at.toFixed(3) : '');
     // a new source resets the rate to the default rate, so both are set
     const r = elRate(clampNum(S.slideRate, 0, 2, 1));
     s.el.defaultPlaybackRate = r;
@@ -516,6 +521,7 @@ export function createSlides(device, format) {
   // has right now, and fades out on its own clock; nothing already fading
   // is touched. One still loading is silent and unseen, so it just empties.
   function change(file) {
+    seekTo = null;
     liveOverride = null; walkHeld = false; ppInit = false;
     const xf = clampNum(S.slideXfade, 0, 5, 0.5);
     const cur = slots[act];
@@ -538,6 +544,42 @@ export function createSlides(device, format) {
     // the new file into the active voice, which takes the controls at once
     loadInto(slots[act], file);
     if (xf > 0) { fade.pending = true; fade.dur = xf * 1000; fade.t = 0; }
+  }
+
+  // SEEK (seekSlide): the same file loads into a free voice at the new time
+  // and takes the controls at once, while the voice that was playing joins
+  // the outgoing stack and plays on, heard and seen, until the new one has
+  // its picture; then the two cross on SEEK_XF, the sound equal power, the
+  // picture smoothstep, exactly as a change of slide does. Seeking the one
+  // element in place would flush its decoder (black) and jump its sound
+  // mid-waveform (a click). Play, pause, the live override and the run
+  // factor carry over untouched: a held slide seeks and stays held. A seek
+  // while the last one is still waiting for its picture just reloads that
+  // waiting voice at the newer time. seekTo: what the iPad's bar shows while
+  // the new voice has not yet learned its length.
+  let seekTo = null;
+  function seek(f) {
+    const cur = slots[act];
+    if (!hasFile(cur)) return;
+    const prev = outs.length ? outs[outs.length - 1] : null;
+    let d = cur.el.duration;
+    if (!(d > 0 && isFinite(d)) && prev && prev.file === cur.file) d = prev.el.duration;
+    if (!(d > 0 && isFinite(d))) return;
+    const at = Math.max(0, Math.min(1, f)) * d;
+    if (hasPicture(cur) && wasOn) {
+      cur.g0 = cur.legNow >= 0 ? cur.legNow : 0;
+      cur.a0 = smooth(fadeLin());
+      cur.p = 0; cur.dur = SEEK_XF * 1000; cur.plays = !cur.el.paused; cur.v = -1;
+      outs.push(cur);
+      act = freeSlot().k;
+    } else if (!outs.length) {
+      // nothing on screen to cover the wait: a plain seek
+      try { cur.el.currentTime = at; } catch (e) {}
+      return;
+    } else empty(cur);
+    loadInto(slots[act], cur.file, at);
+    fade.pending = true; fade.running = false; fade.dur = SEEK_XF * 1000; fade.t = 0;
+    seekTo = { file: cur.file, at, d };
   }
 
   function resize(pw, ph) {
@@ -606,7 +648,7 @@ export function createSlides(device, format) {
     // in (or the incoming failed, which ends it: nothing is left to show).
     if (fade.pending) {
       if (cur.failed) { fade.pending = false; fade.t = 1; }
-      else if (hasPicture(cur)) { fade.pending = false; fade.running = true; fade.t0 = nowMs; fade.t = 0; }
+      else if (hasPicture(cur) && !cur.el.seeking) { fade.pending = false; fade.running = true; fade.t0 = nowMs; fade.t = 0; }
     }
     if (fade.running) {
       fade.t = fade.dur > 0 ? (nowMs - fade.t0) / fade.dur : 1;
@@ -763,15 +805,15 @@ export function createSlides(device, format) {
       if (!st) return null;
       const el = slots[act].el;
       const d = el.duration;
-      if (!(d > 0 && isFinite(d))) return null;
+      if (!(d > 0 && isFinite(d))) {
+        // a seek's voice still learning its length: where it is going
+        return seekTo && seekTo.file === slots[act].file ? { t: seekTo.at, d: seekTo.d, r: 0 } : null;
+      }
       return { t: Math.max(0, Math.min(d, el.currentTime || 0)), d, r: st === 1 && !el.paused ? el.playbackRate : 0 };
     },
     seek(f) {
-      if (!liveHook.state()) return;
-      const el = slots[act].el;
-      const d = el.duration;
-      if (!(d > 0 && isFinite(d)) || !isFinite(f)) return;
-      try { el.currentTime = Math.max(0, Math.min(1, f)) * d; } catch (e) {}
+      if (!liveHook.state() || !isFinite(f)) return;
+      seek(f);
       idleWake('slide seek');
     },
     walkResume() {
