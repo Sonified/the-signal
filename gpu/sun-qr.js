@@ -15,7 +15,9 @@
 // It draws in the scene pass straight after the Slides (engine drawScene,
 // then slides.draw, then this), in either route, so it sits over the sun and
 // over a slide video alike, and the overlay words and the UI still draw over
-// it. Dead centre on both axes (open focus).
+// it. Dead centre on both axes (open focus) of the field the drawer leaves
+// visible (S.edgeInset, the same centre gpu/sun.js keeps), so it stays put
+// on the sun while the drawer opens and shuts.
 //
 // SIZE: the art was authored against a ~1080p sun render at 490 x 533
 // logical px, so at Size 100% it is drawn at height = canvas height *
@@ -113,7 +115,7 @@ export function createSunQr(device, format) {
   let state = 0;            // 0 not asked for, 1 loading, 2 ready, 3 failed
   let texW = 1, texH = 1, bind = null;
   let drawing = false;
-  let lastSize = -1, lastW = -1, lastH = -1, lastOp = -1;
+  let lastSize = -1, lastW = -1, lastH = -1, lastOp = -1, lastCx = -1;
   // The fade: the drawn opacity, the switch's target (-1 before the first
   // frame), and the run from fadeFrom over fadeDur s, fadeT s in.
   let op = 0, target = -1, fadeFrom = 0, fadeT = 0, fadeDur = 0;
@@ -181,11 +183,15 @@ export function createSunQr(device, format) {
     if (op <= 0) return;
     const v = S.sunQrSize;
     const size = typeof v === 'number' && v === v ? (v < 0.25 ? 0.25 : v > 2 ? 2 : v) : 1;
-    if (size !== lastSize || pixelW !== lastW || pixelH !== lastH || op !== lastOp) {
-      lastSize = size; lastW = pixelW; lastH = pixelH; lastOp = op;
+    // The centre of the field the drawer leaves visible, as gpu/sun.js
+    // keeps it (inset in css px; pixelW / S.W is the device pixel ratio).
+    const inset = S.edgeInset > 0 && S.W > 0 ? S.edgeInset * pixelW / S.W : 0;
+    const cx = (pixelW + inset) * 0.5;
+    if (size !== lastSize || pixelW !== lastW || pixelH !== lastH || op !== lastOp || cx !== lastCx) {
+      lastSize = size; lastW = pixelW; lastH = pixelH; lastOp = op; lastCx = cx;
       const h = pixelH * QR_HEIGHT_FRAC * size;
       const w = h * texW / texH;
-      uni[0] = (pixelW - w) * 0.5; uni[1] = (pixelH - h) * 0.5; uni[2] = w; uni[3] = h;
+      uni[0] = cx - w * 0.5; uni[1] = (pixelH - h) * 0.5; uni[2] = w; uni[3] = h;
       uni[4] = pixelW; uni[5] = pixelH; uni[6] = op; uni[7] = 0;
       device.queue.writeBuffer(uniBuf, 0, uni);
     }
