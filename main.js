@@ -757,7 +757,11 @@ async function boot() {
     const keyMode = S.overlayMode === 'key';
     if (!keyMode) overlaysShown = false;
     const overlayAwake = keyMode ? (overlaysShown || guard.noticeOpen || broadcastAsking()) : chromeAwake;
-    const awake = chromeAwake || overlayAwake || S.panelOpen || mixer.open || sequencer.open || journey.open || performer.open || music.open || textbank.open;
+    // A drawer shut while the build slept (another tab, the show remote) is
+    // still out on screen, and S.edgeInset with it, until stepDrawer slides
+    // it home; so a pane still showing keeps the build awake too, or the
+    // scene would stay shifted aside under a drawer that is not drawn.
+    const awake = chromeAwake || overlayAwake || S.panelOpen || drawerEdge() > 0 || mixer.open || sequencer.open || journey.open || performer.open || music.open || textbank.open;
     const idle = !awake && events.length === 0 && !uiUnsettled && ui.activeId === -1 && lastChromeA < 0.01 && lastOverlayA < 0.01;
     if (idle) {
       // ui.begin normally hands the springs this frame's dt; the overlay's
