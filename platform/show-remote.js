@@ -18,10 +18,10 @@
 // wiped from the address bar once stored.
 //
 // App health uses transient {t:'word', k:'health', src, probe} requests on
-// each route. initShowRemote returns a callback main.js runs after a completed
-// frame; it replies on that route's status socket with {t:'word', k:'health',
-// src, to, probe}. Health requests bypass command numbering and never edit
-// settings. This checks the frame loop as well as the relay connection.
+// each route, answered at once on that route's status socket with
+// {t:'word', k:'health', src, to, probe}. Health requests bypass command
+// numbering and never edit settings. The dot says this page hears the iPad,
+// even with its window behind another (which pauses its frames).
 //
 // COMMANDS (show.html -> here), each {t:'word', src, n, k, ...}. The sender
 // rides as src, never id: a ctl's id is the control's (the first build put
@@ -261,12 +261,13 @@ export function initShowRemote(hooks = {}) {
   function take(m, path) {
     if (m.t !== 'word' || typeof m.k !== 'string') return;
     // Keep route-specific probes outside command deduplication and authoring.
-    // Reply only after main.js finishes a frame, so a stalled frame loop cannot
-    // look healthy just because its WebSocket callbacks still work.
+    // "Can you hear me?" is answered at once, on the same route's status
+    // socket: the dot means this page hears the iPad, whether or not its
+    // window is in front drawing frames.
     if (m.k === 'health') {
       if (typeof m.src !== 'string' || typeof m.probe !== 'string' || m.src.length > 128 || m.probe.length > 128) return;
-      healthRequests.set(path.name + ':' + m.src, { path: path.name, to: m.src, probe: m.probe });
-      idleWake('show remote health');
+      const reply = statusSocks.find(s => s.name === path.name);
+      if (reply) reply.send(JSON.stringify({ t: 'word', k: 'health', src: SID, to: m.src, probe: m.probe }));
       return;
     }
     const id = String(m.src || ''), n = +m.n || 0;
