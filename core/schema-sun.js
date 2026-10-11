@@ -105,7 +105,12 @@ const NUM = [
   // site's resting rate.
   ['sunHumAmp',          0,   2,   0.9,  false],
   ['sunHumCutoff',       0,   1,   0.25, false],
-  ['sunHumRate',         0,   1,   0,    false]
+  ['sunHumRate',         0,   1,   0,    false],
+  // meditatewiththesun.com's master volume: every page opened with
+  // ?event=<this broadcast session's name> fades its sound to it (that
+  // site's event.js reads it off the broadcast snapshot). Nothing here
+  // plays it; it only rides presets and the broadcast.
+  ['mwtsVolume',         0,   1,   1,    false]
 ];
 
 // A slider's rounded position can come back as 1.1500000000000001; this
@@ -562,6 +567,19 @@ export const SUN_CONTROLS = [
     format: S => humRate(S.sunHumRate).toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
     enabled: layerOn
+  },
+
+  // ---- meditatewiththesun.com: the room's volume on that site, for the
+  // phones following this broadcast (see mwtsVolume above). Never dimmed:
+  // it steers the room whether or not this screen shows the sun ----
+  subDrawer('sunMwtsDrawer', 'meditatewiththesun.com', 'sun', ['mwtsVolume']),
+  {
+    id: 'mwtsVolume', section: 'sun', label: 'Master volume', kind: 'slider',
+    parent: 'sunMwtsDrawer',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round(S.mwtsVolume * 100),
+    set: (S, pos) => { S.mwtsVolume = fit(pos / 100, 0, 1, false); save(); },
+    format: S => Math.round(S.mwtsVolume * 100) + '%'
   }
 ];
 
