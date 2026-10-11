@@ -168,6 +168,9 @@
 import { COLOR, SPACE, RADIUS, TYPE, TRACK, W, MOTION, HIT } from './theme.js';
 import { ICON } from './drawlist.js';
 import { journeyManualOverride, journeyLockable, journeyLocked, journeyToggleLock } from '../core/journey.js';
+import { perfSet, perfLayer, perfDestination } from '../core/perform.js';
+import { byId } from '../core/schema.js';
+import { machineControl } from '../core/presets.js';
 
 const TOOLTIP_DELAY_MS = 450;
 const TOOLTIP_MAX_W = 260;
@@ -230,7 +233,7 @@ export const RO_PLAIN = 0, RO_CLICK = 1, RO_HIDDEN = 2;
 // starts on the track can never land on the readout instead.
 const RO_PAD_X = 6, RO_PAD_Y = 3;
 
-function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01, inline) {
+function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01, inline, fill01) {
   const ui = this;
   const step = step01 === undefined ? 0.02 : step01;
   const nid = ui.id(id);
@@ -390,7 +393,11 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   ui.dl.rect(rx, trackCY - trackH / 2, rw, trackH, trackH / 2, tint ? COLOR.lockSoft : COLOR.well, 0, null, 0, 0);
   const shown = changed ? value : value01;
   const hasEffective = typeof effective01 === 'number' && Number.isFinite(effective01);
-  const fillW = Math.max(trackH, rw * shown);
+  // A control gliding to where it was asked (ui.control's doors) keeps its
+  // knob at the destination while the fill catches up (fill01), as the
+  // Music window's sliders do; held by the hand, both follow the hand.
+  const fillAt = changed || typeof fill01 !== 'number' ? shown : fill01;
+  const fillW = Math.max(trackH, rw * fillAt);
   ui.dl.rect(rx, trackCY - trackH / 2, fillW, trackH, trackH / 2,
     hasEffective && !tint ? COLOR.accentGlow : acc, 0, null, disabled ? 0 : 6, 0.35);
   // A continuously varying control keeps its knob at the configured value
@@ -1391,8 +1398,9 @@ function multiChips(ui, ctrl, S, enabled) {
 
 // Colour: a row of curated swatches rather than a full picker. These are the
 // hues the presets and sessions have actually used, plus white; the one that
-// matches the current colour wears a ring. A full hue/sat picker can replace
-// this later without the schema noticing, since it only calls set(S, hex).
+// matches the colour (where it is headed, while it glides) wears a ring.
+// Returns the swatch clicked, -1 for none; ui.control writes it. A full
+// hue/sat picker can replace this later without the schema noticing.
 const SWATCH_HEX = ['#d400ff', '#b455ff', '#6ea8fe', '#00ccff', '#00ffa2', '#4ad9a0',
                     '#ffb13b', '#ff7ad9', '#ff5a5a', '#ffffff'];
 const SWATCH_RGBA = SWATCH_HEX.map(h => {
@@ -1404,28 +1412,27 @@ const SW = 22, SW_GAP = 8;
 // The current colour lowercased, redone only when get() hands back a
 // different string, so a steady colour costs no string work per frame.
 let swRaw = null, swLower = '';
-function swatches(ui, ctrl, S, enabled) {
+function swatches(ui, ctrl, S, enabled, raw) {
   ui.peek();
   ui.text.lineMetrics(TYPE.sm, ui._lm);
   labelHit(ui, ui.id(ctrl.id), ctrl.label, ui.px, ui.py, ui._lm.ascent + ui._lm.descent, ui.pw, !enabled);
   ui.label(ctrl.label, TYPE.sm, W.regular, COLOR.inkDim);
   ui.nextRect(SW + 4);
-  const raw = ctrl.get(S);
   if (raw !== swRaw) { swRaw = raw; swLower = String(raw).toLowerCase(); }
   const cur = swLower;
-  let changed = false;
+  let picked = -1;
   for (let i = 0; i < SWATCH_HEX.length; i++) {
     const x = ui.rx + i * (SW + SW_GAP), y = ui.ry + 2;
     if (x + SW > ui.rx + ui.rw) break;
     const id = ui.idx(ctrl.id, i);
     ui.interact(id, x, y, SW, SW, !enabled);
-    if (ui.clicked) { ctrl.set(S, SWATCH_HEX[i]); changed = true; }
+    if (ui.clicked) picked = i;
     const h = ui.spring(id, ui.hover ? 1 : 0, MOTION.hover);
     const grow = 1 + h * 2;
     ui.dl.rect(x - grow / 2, y - grow / 2, SW + grow, SW + grow, (SW + grow) / 2, SWATCH_RGBA[i],
                cur === SWATCH_HEX[i] ? 2 : 1, cur === SWATCH_HEX[i] ? COLOR.ink : COLOR.lineSoft, 0, 0);
   }
-  return changed;
+  return picked;
 }
 
 // ---------------- slider position mapping ----------------
@@ -1511,16 +1518,16 @@ function beginReadoutEdit(ui, ctrl, nid, text, pos) {
 // one, else as the position itself. Anything that does not read as a number
 // cancels, and so does committing the seed untouched: the seed is the
 // readout rounded for display, and writing it back would quietly move a
-// value the viewer only looked at.
-function commitReadout(ctrl, S, text) {
+// value the viewer only looked at. Returns the position to write (ui.control
+// writes it), undefined for none; cur is where the control stands or is
+// headed.
+function commitReadout(ctrl, S, text, cur) {
   const t = text.trim();
-  if (!t || t === ro.seed) return false;
+  if (!t || t === ro.seed) return undefined;
   const raw = ctrl.parse ? ctrl.parse(S, t) : parseFloat(t);
-  if (typeof raw !== 'number' || !isFinite(raw)) return false;
+  if (typeof raw !== 'number' || !isFinite(raw)) return undefined;
   const pos = snapPos(ctrl, raw);
-  if (pos === ctrl.get(S)) return false;
-  ctrl.set(S, pos);
-  return true;
+  return pos === cur ? undefined : pos;
 }
 
 // A schema range (see the header): both knobs read through getLo and getHi,
@@ -1645,6 +1652,33 @@ function textControl(ui, ctrl, S, enabled) {
 const rowH = new Map();   // ctrl.id -> the row's height last frame
 const LOCK_GLYPH = 9, LOCK_GAP = 5;
 
+// A row writes through the performer's doors (core/perform.js), as the Music
+// and Performance windows' cells do, so a slider is a slider wherever it is:
+// a slider or the colour asked somewhere glides there over the performance
+// ramp, its knob (or the swatch's ring) at once where it is going and the
+// fill catching up, a drag re-aiming the glide every move, and a shift-click
+// landing now; a switch with a level of its own (a voice, a layer: the
+// schema's op) fades through it by perfLayer, as the windows' rows do; any
+// other switch or mode lands at once inside its short transition. The doors
+// tell the journey of the hand themselves. A typed readout glides like any
+// other ask (it has no shift), the arrow keys and the Alt-wheel's notches
+// too. What the doors cannot take (a text field, a range, the word themes'
+// chips, an action), a control that is not the schema's own (the drawer's
+// Ramp time) or one of this machine's own (the Render section, whose sizes
+// and buffers are not for gliding) is written straight, as ever.
+const viaDoor = ctrl => byId(ctrl.id) === ctrl && !ctrl.uiOnly && !machineControl(ctrl);
+// Where a door's control is headed, else where it is.
+function aimOf(ctrl, S, door) {
+  if (door) { const d = perfDestination(ctrl.id); if (d !== undefined) return d; }
+  return ctrl.get(S);
+}
+// Writes v through the door when there is one; returns whether it did.
+function doorWrite(ctrl, S, door, v, now) {
+  if (!door) return false;
+  if (ctrl.op && (ctrl.kind === 'toggle' || typeof v === 'boolean')) return perfLayer(ctrl.id, !!v, { now }) !== false;
+  return perfSet(ctrl.id, v, now);
+}
+
 // shown: the caller has already settled that the row shows (the drawer
 // decides once per row, and keeps a row sliding shut on screen after its own
 // rule has hidden it), so its visible() is not asked again.
@@ -1669,7 +1703,8 @@ function control(ctrl, S, shown) {
 
   if (!enabled) ui.dl.pushAlpha(0.45);
 
-  let changed = false;
+  let changed = false, doored = false;
+  const door = viaDoor(ctrl);
   ui.labelClicked = false;
   switch (ctrl.kind === 'segment' && ctrl.multi ? 'segment-multi' : ctrl.kind) {
     case 'slider': {
@@ -1691,16 +1726,25 @@ function control(ctrl, S, shown) {
         const status = ui.textField('slider.readoutEdit', ui.px + ui.pw - ro.fieldW, ui.py - RO_PAD_Y,
                                     ro.fieldW, lineH + RO_PAD_Y * 2, ro.st, TYPE.sm, 2);
         ro.drawnT = ui.t;
-        if (status === TEXT_COMMIT) { if (commitReadout(ctrl, S, ro.st.text)) changed = true; }
+        if (status === TEXT_COMMIT) {
+          const typed = commitReadout(ctrl, S, ro.st.text, aimOf(ctrl, S, door));
+          if (typed !== undefined) {
+            if (doorWrite(ctrl, S, door, typed, false)) doored = true;
+            else ctrl.set(S, typed);
+            changed = true;
+          }
+        }
         if (status !== TEXT_EDITING) { ro.nid = -1; editing = false; }
       }
 
       let cache = formatCache.get(ctrl.id);
       if (!cache) { cache = { pos: NaN, text: '' }; formatCache.set(ctrl.id, cache); }
-      const pos = ctrl.get(S);
+      const pos = ctrl.get(S), aim = aimOf(ctrl, S, door);
+      const aimPos = typeof aim === 'number' ? aim : pos;
       if (pos !== cache.pos) { cache.pos = pos; cache.text = ctrl.format ? ctrl.format(S) : String(pos); }
       const log = isLogTaper(ctrl);
-      const value01 = posToUnit(ctrl, pos, log);
+      const value01 = posToUnit(ctrl, aimPos, log);
+      const fill01 = aimPos !== pos && typeof pos === 'number' ? posToUnit(ctrl, pos, log) : undefined;
       let effective01;
       if (typeof ctrl.effective === 'function') {
         const effective = ctrl.effective(S);
@@ -1709,13 +1753,19 @@ function control(ctrl, S, shown) {
       const step01 = log ? LOG_STEP01 : ctrl.step ? (ctrl.step / ((ctrl.max - ctrl.min) || 1)) : 0.02;
       const def01 = ctrl.def !== undefined ? posToUnit(ctrl, ctrl.def, log) : undefined;
       const nv = ui.slider(ctrl.id, ctrl.label, value01, cache.text, step01, def01, !enabled,
-                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01, ctrl.inline);
+                           editing ? RO_HIDDEN : enabled ? RO_CLICK : RO_PLAIN, effective01, ctrl.inline, fill01);
       if (nv >= 0) {
+        const nudge = ui.sliderNudge !== 0;
         let newPos = snapPos(ctrl, unitToPos(ctrl, nv, log));
-        if (newPos === pos && ui.sliderNudge !== 0 && ctrl.step) newPos = snapPos(ctrl, pos + ui.sliderNudge * ctrl.step);
-        if (newPos !== pos) { ctrl.set(S, newPos); changed = true; }
+        if (newPos === aimPos && nudge && ctrl.step) newPos = snapPos(ctrl, aimPos + ui.sliderNudge * ctrl.step);
+        if (newPos !== aimPos) {
+          // a notch (the keys, the Alt-wheel) has no press, so no shift of its own
+          if (doorWrite(ctrl, S, door, newPos, nudge ? false : ui.pointerShift)) doored = true;
+          else ctrl.set(S, newPos);
+          changed = true;
+        }
       }
-      if (!editing && ui.sliderReadoutClicked) beginReadoutEdit(ui, ctrl, nid, cache.text, pos);
+      if (!editing && ui.sliderReadoutClicked) beginReadoutEdit(ui, ctrl, nid, cache.text, aimPos);
       break;
     }
     case 'segment': {
@@ -1732,7 +1782,7 @@ function control(ctrl, S, shown) {
         segmentLabelCache.set(ctrl.id, lc);
       }
       const labels = lc.labels;
-      const cur = ctrl.get(S);
+      const cur = aimOf(ctrl, S, door);
       let idx = 0;
       for (let i = 0; i < opts.length; i++) if (opts[i].value === cur) { idx = i; break; }
       let ni;
@@ -1743,14 +1793,23 @@ function control(ctrl, S, shown) {
         if (ctrl.format && ui.t - cache.at > 250) { cache.at = ui.t; cache.text = ctrl.format(S); }
         ni = ui.select(ctrl.id, ctrl.label, labels, idx, cache.text, !enabled);
       } else ni = ui.segment(ctrl.id, labels, idx, !enabled, ctrl.hideLabel ? undefined : ctrl.label);
-      if (ni !== idx) { ctrl.set(S, opts[ni].value); changed = true; }
+      if (ni !== idx) {
+        if (doorWrite(ctrl, S, door, opts[ni].value, ui.pointerShift)) doored = true;
+        else ctrl.set(S, opts[ni].value);
+        changed = true;
+      }
       break;
     }
     case 'toggle': {
-      const on = !!ctrl.get(S);
+      // a switch fading out shows off already, as the windows' rows do
+      const on = !!aimOf(ctrl, S, door);
       const nOn = ui.toggle(ctrl.id, ctrl.hasChildren ? capsLabel(ctrl) : ctrl.label,
                             on, !enabled, ctrl.hasChildren);
-      if (nOn !== on) { ctrl.set(S, nOn ? 1 : 0); changed = true; }
+      if (nOn !== on) {
+        if (doorWrite(ctrl, S, door, nOn ? 1 : 0, ui.pointerShift)) doored = true;
+        else ctrl.set(S, nOn ? 1 : 0);
+        changed = true;
+      }
       break;
     }
     case 'action': {
@@ -1764,21 +1823,30 @@ function control(ctrl, S, shown) {
     case 'segment-multi':
       changed = multiChips(ui, ctrl, S, enabled);
       break;
-    case 'color':
-      changed = swatches(ui, ctrl, S, enabled);
+    case 'color': {
+      const k = swatches(ui, ctrl, S, enabled, aimOf(ctrl, S, door));
+      if (k >= 0) {
+        if (doorWrite(ctrl, S, door, SWATCH_HEX[k], ui.pointerShift)) doored = true;
+        else ctrl.set(S, SWATCH_HEX[k]);
+        changed = true;
+      }
       break;
+    }
     case 'text':
       changed = textControl(ui, ctrl, S, enabled);
       break;
   }
-  if (ui.labelClicked && enabled && ctrl.def !== undefined && ctrl.get(S) !== ctrl.def) {
-    ctrl.set(S, ctrl.def);
+  // the name's reset, through the door as any other ask
+  if (ui.labelClicked && enabled && ctrl.def !== undefined && aimOf(ctrl, S, door) !== ctrl.def) {
+    if (doorWrite(ctrl, S, door, ctrl.def, ui.pointerShift)) doored = true;
+    else ctrl.set(S, ctrl.def);
     changed = true;
   }
 
   // A range has no single get (getLo/getHi instead); the override still
-  // marks the id as taken by hand, with no one position to hand over.
-  if (changed) journeyManualOverride(ctrl.id, ctrl.get ? ctrl.get(S) : undefined);
+  // marks the id as taken by hand, with no one position to hand over. A
+  // write through a door has told the journey already.
+  if (changed && !doored) journeyManualOverride(ctrl.id, ctrl.get ? ctrl.get(S) : undefined);
 
   ui.lockTint = false;
   if (lockable) {

@@ -18,7 +18,7 @@ import {
   applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset, renamePresetAt, presetIsUser,
   presetIsHearted, presetActiveIndex, togglePresetHeartAt, presetRampS, setPresetRampS
 } from '../../core/presets.js';
-import { perfRecallPreset, perfRecallLeft, perfShortenRecall } from '../../core/perform.js';
+import { perfRecallPreset, perfRecallLeft, perfShortenRecall, perfSet, perfLayer, perfDestination } from '../../core/perform.js';
 import { ICON } from '../drawlist.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { prof, profToggle, profSave, profCopy } from '../../core/profiler.js';
@@ -352,13 +352,26 @@ function childRuns(items, sectionId) {
   return { open, close, closeEnd: stack.length };
 }
 
-// Writes a header switch through its control's set(), so every side effect
+// Writes a header switch through the same doors its row uses (ui.control):
+// one with a level of its own (the schema's op: a voice, a layer) fades
+// through it by perform.js perfLayer, a shift-click landing now, and any
+// other lands inside its short transition by perfSet, so every side effect
 // the section's own row would run (audio starting, the store saving) runs
-// here too. A toggle gets 1 or 0, exactly as ui.control hands it one.
-function setSwitch(sw, on) {
-  const value = sw.ctrl.kind === 'toggle' ? (on ? 1 : 0) : (on ? sw.onValue : sw.offValue);
-  journeyManualOverride(sw.ctrl.id, value);
-  sw.ctrl.set(S, value);
+// here too. Should the door refuse, the control's own set() takes it, as it
+// always did. A toggle gets 1 or 0, exactly as ui.control hands it one.
+function setSwitch(ui, sw, on) {
+  const c = sw.ctrl, value = c.kind === 'toggle' ? (on ? 1 : 0) : (on ? sw.onValue : sw.offValue);
+  if (c.op && (c.kind === 'toggle' || typeof value === 'boolean')) { if (perfLayer(c.id, !!on, { now: ui.pointerShift }) !== false) return; }
+  else if (perfSet(c.id, value, ui.pointerShift)) return;
+  journeyManualOverride(c.id, value);
+  c.set(S, value);
+}
+// A header switch shows where its control is headed: off at once for one
+// fading out, as the windows' rows show it.
+function switchOn(sw) {
+  const d = perfDestination(sw.ctrl.id);
+  if (d !== undefined) return sw.ctrl.kind === 'toggle' ? !!d : d === sw.onValue;
+  return !!sw.ctrl.get(S);
 }
 
 // Which sections the viewer left open, restored at the next load. Every
@@ -1319,8 +1332,8 @@ export function drawDrawer(ui, app) {
     if (rampGlow > 0 && journeyRampingSection(grp.sec)) { ui.headGlow = rampGlow; ui.headGlowColor = JOURNEY_ACCENT; }
     // The live '(drawn / total)' count on the Rings header is retired;
     // ringsTitle above stays for the day it is wanted back.
-    const open = ui.group(grp.gid, grp.title, sw ? !!sw.ctrl.get(S) : undefined);
-    if (sw && ui.groupSwitchChanged) setSwitch(sw, ui.groupSwitch);
+    const open = ui.group(grp.gid, grp.title, sw ? switchOn(sw) : undefined);
+    if (sw && ui.groupSwitchChanged) setSwitch(ui, sw, ui.groupSwitch);
     // Keep drawing through the whole closing animation, until the toolkit
     // says the height spring has come to rest shut; from then on the body is
     // skipped, which is most of the drawer on most frames. A section that
@@ -1381,9 +1394,9 @@ export function drawDrawer(ui, app) {
           if (sw) {
             // The switch rides the strip; a click on it runs its control's
             // set() (setSwitch) and leaves the drawer open or shut as it was.
-            drawn = ui.beginFold(foldId[i], it.label, open, sumStr, sumCol, !!sw.ctrl.get(S),
+            drawn = ui.beginFold(foldId[i], it.label, open, sumStr, sumCol, switchOn(sw),
                                  !!sw.ctrl.enabled && !sw.ctrl.enabled(S));
-            if (ui.foldSwitchChanged) setSwitch(sw, ui.foldSwitch);
+            if (ui.foldSwitchChanged) setSwitch(ui, sw, ui.foldSwitch);
           } else drawn = ui.beginFold(foldId[i], it.label, open, sumStr, sumCol);
           if (ui.foldToggled) it.set(S, open ? 0 : 1);
           foldNext++;
