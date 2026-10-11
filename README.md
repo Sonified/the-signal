@@ -4,6 +4,21 @@ A browser-based tool for rhythmic audio-visual stimulation, built for meditation
 
 **→ [Open The Signal](https://presence.now.audio/)**
 
+## TSC 2026 cloud presentation backup
+
+**Presentation computer:** [Open the presentation](https://presence-presentation.pages.dev/presentation.html). **iPad:** [Open the show controller](https://presence-presentation.pages.dev/show.html). Enter the existing show password on each device. Both use room `show` by default. Keep the presentation visible in its own browser window, using the page-thread engine and a browser with WebGPU support.
+
+This is a separate, manually deployed Cloudflare Pages project, **`presence-presentation`**, with the supplied **16-step TSC 2026 Journey** installed automatically on first app load. It includes 14 optimized slide videos (420.9 MB total), silent 144p/30fps cue previews, the QR overlay, and the existing cloud Sun footage. Both devices need internet for this setup. The Mac/local-router setup remains available for a show without internet; these cloud links are not an offline installation.
+
+**For AI agents maintaining this setup:** read [the complete presentation setup and deployment guide](documents/cloud-presentation-backup.md) before changing or publishing it. The standalone site is a snapshot of this working tree, not an automatic deployment of `sun-layer`. Updating `presence.now.audio` or pushing Git does not update this backup. Its production deployment branch is `presentation`; the existing main site's project is `presence-generator`.
+
+- Journey source: [documents/tsc-2026-journey.json](documents/tsc-2026-journey.json). Browser edits stay on that browser until exported; iPad controls are performance changes and do not automatically rewrite Journey steps. The Journey row's **snapshot** button explicitly captures the live scene.
+- Media inventory: [documents/tsc-2026-media-manifest.json](documents/tsc-2026-media-manifest.json). Full slide videos are in R2 bucket `solarmeditation-media`, release `32e9063c8f301554`, served through same-origin `/slides/` routes with the `SLIDE_MEDIA` binding.
+- Packaging: [tools/build-cloud-presentation.mjs](tools/build-cloud-presentation.mjs). It copies tracked working-tree files, explicitly includes the ignored 144p previews and QR image, generates the media Function, and installs a blocking Journey seed before the app starts. `slides/` and `sun-video/` are Git-ignored; a Git push alone cannot deliver these files.
+- Frozen deployment: [50cb7ae7.presence-presentation.pages.dev/presentation.html](https://50cb7ae7.presence-presentation.pages.dev/presentation.html). Use this URL to reproduce the October 11, 2026 build; the primary URL can move to a later build. Browser storage is separate for each origin.
+
+Verified on the deployed site: all 14 videos' sizes and byte ranges, password entry, fresh Journey import and reload, cloud controller round-trip health, Audification playback/seeking and cue preview, Touching the Sun, and the QR/Sun and Guided Meditation steps. Native Chromium used an Apple Metal WebGPU adapter; QA audio was muted. Rehearse on the actual venue computer to verify its GPU, sound output, internet, and browser playback permissions.
+
 ---
 
 ## ⚠️ Photosensitivity warning — read before opening
@@ -90,7 +105,7 @@ It is also worth saying plainly that whatever effect a session has is not separa
 
 ## Technical
 
-No build step, no dependencies. Native ES modules, Canvas2D, Web Audio with an AudioWorklet. Serve the directory over HTTP and open `index.html`.
+The app runs directly from native ES modules, with WebGPU rendering and Web Audio/AudioWorklets. There is no app bundling step. Serve the directory over HTTP and open `index.html`. Cloud presentation packaging and deployment have their own workflow, documented above.
 
 ```
 python3 -m http.server 8000
@@ -105,14 +120,6 @@ node tools/serve.mjs        # http://localhost:8000/ (a port number as an argume
 ```
 
 It sends the cross-origin isolation headers that Heart, the audio engine, needs for its fastest mode (shared memory between its workers), and tells the browser never to cache, so a reload always runs what is on disk. `python3 -m http.server` still works; Heart then carries its audio in messages instead.
-
-### Presentation build
-
-The TSC 2026 talk runs from its own Cloudflare Pages project, separate from the main site: **https://presence-presentation.pages.dev/?remote**. `tools/build-cloud-presentation.mjs` packages a snapshot of the tracked files plus the talk's Journey and slide media (`documents/tsc-2026-media-manifest.json`) into an empty `/private/tmp` folder, with `tools/presentation-entry.html` as its `presentation.html`:
-
-```
-node tools/build-cloud-presentation.mjs <empty /private/tmp folder> documents/tsc-2026-media-manifest.json <exported journey.json>
-```
 
 `stereo.html` is a separate proof-of-concept for free-fusion 3D depth using a side-by-side stereo pair.
 
