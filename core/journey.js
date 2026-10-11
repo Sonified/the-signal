@@ -151,6 +151,46 @@ for (let i = 0; i < R.length; i++) {
   idxOf.set(R[i].id, i);
   if (machineControl(R[i]) || NEVER_IN_STEP.has(R[i].id)) skip[i] = 1;
 }
+
+// Twins: two controls that are doors onto the same state, as the drawer's
+// Ambience switch and the mixer's power button both are S.ambOn, or the
+// Layers group's Particles and the Particles section's On. Found by what
+// each one's get reads from S (through a proxy that only notes the paths it
+// is asked for), so a new pair is a twin the moment it exists. A live edit
+// of one records every twin too: otherwise a step keeps the other door's
+// stale position, and entering the step sets the fresh one and then the
+// stale one straight after, which undoes the edit.
+function readsOf(c) {
+  const seen = new Set();
+  const wrap = (obj, path) => new Proxy(obj, {
+    get(t, k) {
+      const v = t[k];
+      if (typeof k !== 'string') return v;
+      const p = path ? path + '.' + k : k;
+      seen.add(p);
+      return v && typeof v === 'object' && !ArrayBuffer.isView(v) ? wrap(v, p) : v;
+    }
+  });
+  try { c.get(wrap(S, '')); } catch (e) { return ''; }
+  return [...seen].sort().join('|');
+}
+const twins = new Map();
+{
+  const byReads = new Map();
+  for (let i = 0; i < R.length; i++) {
+    if (!R[i].get) continue;
+    const key = readsOf(R[i]);
+    if (!key) continue;
+    if (!byReads.has(key)) byReads.set(key, []);
+    byReads.get(key).push(R[i].id);
+  }
+  for (const ids of byReads.values()) {
+    if (ids.length < 2) continue;
+    for (const id of ids) twins.set(id, ids.filter(t => t !== id));
+  }
+}
+const withTwins = id => twins.has(id) ? [id, ...twins.get(id)] : [id];
+
 const baseline = new Array(R.length);
 const MODE = byId('textMode'), CUSTOM = byId('textCustomText');
 const COLOR_I = idxOf.has('color') ? idxOf.get('color') : -1;
@@ -1981,22 +2021,12 @@ export function journeyManualOverride(id, requested) {
   if (winOpen) {
     const target = play.stepIdx;
     queueMicrotask(() => recordLiveControl(target, id, requested));
-    releaseJourneyControl(id);
-    if (id === 'lParticles') releaseJourneyControl('particlesOn');
-    else if (id === 'particlesOn') releaseJourneyControl('lParticles');
+    for (const t of withTwins(id)) releaseJourneyControl(t);
     return;
   }
-  manual.add(id);
-  // These are two UI doors onto the same Particles switch. Taking either by
-  // hand must protect both ids from a later Journey step.
-  if (id === 'lParticles') manual.add('particlesOn');
-  else if (id === 'particlesOn') manual.add('lParticles');
-  const i = idxOf.get(id);
-  if (i !== undefined) {
-    for (let k = 0; k < tw.n; k++) if (twIdx[k] === i) twIdx[k] = -1;
-  }
-  if (COLOR && id === COLOR.id) tw.colorOn = false;
-  rampIds.delete(id);
+  // Taking one door by hand protects its twins (see twins) from a later
+  // Journey step as well.
+  for (const t of withTwins(id)) { manual.add(t); releaseJourneyControl(t); }
 }
 
 function releaseJourneyControl(id) {
@@ -2010,8 +2040,7 @@ function releaseJourneyControl(id) {
 
 function recordLiveControl(stepIdx, id, requested) {
   if (!data || !winOpen) return;
-  const st = data.steps[stepIdx], ids = id === 'lParticles' ? ['lParticles', 'particlesOn'] :
-    id === 'particlesOn' ? ['particlesOn', 'lParticles'] : [id];
+  const st = data.steps[stepIdx], ids = withTwins(id);
   if (!st) return;
   let moved = false;
   const changed = [];
