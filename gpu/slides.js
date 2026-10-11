@@ -172,6 +172,9 @@ export function setDuck(mul, seconds) {
 let liveHook = null;
 export function slidesLiveState() { return liveHook ? liveHook.state() : 0; }
 export function toggleSlidePlayLive() { if (liveHook) liveHook.toggle(); }
+// Space on a slide that has played to its end (main.js): it starts again
+// from the top, as the play button would; true when it did.
+export function replayEndedSlide() { return liveHook ? liveHook.replay() : false; }
 // The journey walk's pause and resume (core/journey.js setJourneyPauseHook,
 // wired in main.js): a pause holds a playing slide through the same live
 // override, remembering that it did; the resume lets go only a slide this
@@ -716,6 +719,11 @@ export function createSlides(device, format) {
         if (cur.el.ended) { try { cur.el.currentTime = 0; } catch (e) {} }
       }
       idleWake('slide play button');
+    },
+    replay() {
+      if (liveHook.state() !== 2 || !slots[act].el.ended) return false;
+      liveHook.toggle();
+      return true;
     },
     walkPause() {
       if (liveHook.state() !== 1) return;

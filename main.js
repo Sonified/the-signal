@@ -35,7 +35,7 @@ import { createEngine } from './gpu/engine.js';
 import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
 import { createSun } from './gpu/sun.js';
-import { createSlides, pauseSlideForWalk, resumeSlideForWalk } from './gpu/slides.js';
+import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide } from './gpu/slides.js';
 import { createSunQr } from './gpu/sun-qr.js';
 import { createStars } from './gpu/stars.js';
 import { createHeartbeat } from './gpu/heartbeat.js';
@@ -559,8 +559,11 @@ async function boot() {
     // With journey mode ACTIVE, window open or not (as its MIDI trigger),
     // Space plays and pauses the walk (a resume carries on where it paused)
     // and the left and right arrows step it; a journey with no steps leaves
-    // Space to the app.
+    // Space to the app. A slide that has played to its end takes Space
+    // first: it starts again from the top, and the walk or run is left as
+    // it stands.
     const journeyKeys = journey.active && journeyCount() > 0;
+    if (e.code === 'Space' && replayEndedSlide()) return true;
     if (e.code === 'Space') { if (journeyKeys) journeyTogglePlay(); else toggleRun(); return true; }
     if (journeyKeys && (k === 'ArrowLeft' || k === 'ArrowRight')) { journeyStepBy(k === 'ArrowLeft' ? -1 : 1); return true; }
     // the Down arrow takes the step's snapshot, as its snapshot button does
