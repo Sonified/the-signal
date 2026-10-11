@@ -16,6 +16,9 @@
 // where it is, is written into the step, so the step is always the scene on
 // screen. A control the operator has locked (journeyToggleLock) is never
 // written, and never moved.
+// iPad controls are performance-only: their changes stay out of automatic
+// recording, including later saves by other controls. A row's Snapshot
+// explicitly takes the live scene into that step, including those changes.
 //
 // Playing enters a step by comparing it with where everything is headed now
 // and touching only what differs: nothing is sent where nothing would change,
@@ -266,6 +269,25 @@ for (let i = 0; i < R.length; i++) {
 // word that a hand moved something (journeyManualOverride) is its own echo.
 const doorHeld = new Uint8Array(R.length);
 let driving = false;
+// Remote performance changes still save the live session and broadcast it,
+// but never author a step. Remember their controls until a scene is recalled
+// or the operator explicitly edits/captures them: suppressing only the
+// setter's save would let an unrelated later drawer edit capture them.
+const performanceControls = new Set();
+let performanceWriting = 0;
+
+export function journeyPerformanceControl(id, apply) {
+  performanceWriting++;
+  try {
+    for (const t of withTwins(id)) {
+      const i = idxOf.get(t);
+      if (i !== undefined) performanceControls.add(canon[i]);
+      releaseJourneyControl(t);
+      perfRelease(t);
+    }
+    return apply();
+  } finally { performanceWriting--; }
+}
 
 // Where control c will come to rest, undefined when nothing is moving it:
 // the performer's engine (perform.js perfDestination: a layer or a voice
@@ -836,6 +858,7 @@ function applyStepTiming(o, mixOwned) {
 // is left alone, so a voice already playing is not started a second time.
 // Selecting a step to edit it, and a step whose ramp is a cut, land this way.
 function applyStep(st, sec) {
+  performanceControls.clear();
   const o = st.overrides, mixOwned = !!st.mix, walk = walking(o);
   applyStepTiming(o, mixOwned);
   throughDoor(o, mixOwned, sec, true);
@@ -1536,6 +1559,7 @@ function queueDiff() {
   });
 }
 onSave(() => {
+  if (performanceWriting) return;
   if (!armed || sel < 0 || !winOpen) {
     return;
   }
@@ -1561,7 +1585,7 @@ function runDiff() {
   const o = st.overrides;
   let moved = false, changed = JOURNEY_DIAG ? [] : null;
   for (let i = 0; i < R.length; i++) {
-    if (!held[i] || lockHolds(i) || (i === COLOR_I && S.colorWalk > 0)) continue;
+    if (!held[i] || lockHolds(i) || performanceControls.has(i) || (i === COLOR_I && S.colorWalk > 0)) continue;
     const c = R[i], dest = destOf(c), raw = dest !== undefined ? dest : c.get(S);
     const v = validValue(c, raw);
     if (v === undefined) continue;
@@ -1694,6 +1718,31 @@ function captureAll(st) {
     const c = R[i], v = validValue(c, posOf(c));
     if (v !== undefined) o[c.id] = v;
   }
+}
+
+// Explicitly replace this step's scene, including live iPad adjustments.
+// Its text and transport fields stay its own; capturing never restarts the
+// walk or selects a different step.
+export function journeySnapshotStep(i) {
+  ensureLoaded();
+  const st = data.steps[i];
+  if (!st) return false;
+  flushDiff();
+  captureAll(st);
+  st.seq = Array.isArray(S.seqs) ? seqStateOf(S) : null;
+  st.mix = newMixBlock();
+  dropMixOverrides(st);
+  if (data.sizeLock && data.sizeRestore && SIZE) {
+    const value = validValue(SIZE, SIZE.get(S));
+    if (value !== undefined) data.sizeRestore[i] = { own: true, value };
+    st.overrides.textSize = data.sizeLockValue;
+  }
+  if (sel === i) {
+    performanceControls.clear();
+    diffPending = false;
+  }
+  persist();
+  return true;
 }
 
 // A new step at the end, born holding the whole scene as it stands, and
@@ -2203,6 +2252,7 @@ onWordAppear(() => {
 // moment the text source turns to the step's text and its first phrase goes
 // up straight away (stepJourney).
 function enterStep(i) {
+  performanceControls.clear();
   const st = data.steps[i];
   // The open/highlighted row follows the transport. Previously playStep
   // moved independently from sel, leaving the old row yellow while another
@@ -2271,6 +2321,10 @@ function stopWalk(rearm = true) {
 export function journeyManualOverride(id, requested) {
   // the journey's own steps going through the performer's door (throughDoor)
   if (driving) return;
+  for (const t of withTwins(id)) {
+    const i = idxOf.get(t);
+    if (i !== undefined) performanceControls.delete(canon[i]);
+  }
   if (id === 'lParticles' || id === 'particlesOn') journeyDiag('particle control changed', { id });
   if (armed && sel >= 0 && winOpen) { diffPending = true; queueDiff(); }
   if (play.stepIdx < 0 || typeof id !== 'string') return;

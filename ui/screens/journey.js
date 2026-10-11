@@ -3,8 +3,9 @@
 // own so it reads as its own instrument.
 //
 // The steps run top to bottom, a row each: a play button that starts the
-// walk at that step, STEP n and a short summary of what it holds, and an ×
-// that deletes it. A click on a row anywhere off its controls selects the
+// walk at that step, STEP n and a short summary of what it holds, snapshot
+// (which captures the live scene, including iPad changes), and an × that
+// deletes it. A click on a row anywhere off its controls selects the
 // step for editing (core/journey.js): the step glides in, and from then on
 // the drawer's changes are recorded into it, the step always holding the
 // whole scene. A second click lets it go. While the walk
@@ -59,7 +60,7 @@
 import {
   journeySetWindowOpen, journeyVersion, journeyCount, journeyStepAt,
   journeySelected, journeyPlaying, journeyPlayIdx, journeyAutoPlay, journeyMode, journeyProgress,
-  journeySelect, journeyAddStep, journeyDeleteStep, journeyMoveStep, journeyPlayFrom, journeyPause,
+  journeySelect, journeyAddStep, journeySnapshotStep, journeyDeleteStep, journeyMoveStep, journeyPlayFrom, journeyPause,
   journeyTogglePlay, journeyStepBy, journeySetMode, journeySetRamp, journeySetHold, journeySetText,
   journeySetPiano, journeySetAppear, journeyLoop, journeySetLoop,
   journeySetOverride, journeyName, journeySetName, NAME_MAX,
@@ -118,6 +119,7 @@ const C = {
   // LOOP lit: the sequencer window's green (ui/screens/sequencer.js), not
   // the journey's gold, so it reads as on at a glance
   loopOnBg: css('#62d7aa', 0.12), loopOnBorder: css('#365e50'), loopOnInk: css('#64d8ad'),
+  snapshotBg: css('#122318'), snapshotBorder: css('#3f8f68'), snapshotInk: css('#5adca1'),
   // an open step's fold: a ground a shade lighter than the pane, its edge a
   // faint gold, so the opened step reads as a raised panel of its own
   fold: css('#232d39'), foldLine: css(GOLD, 0.24),
@@ -164,6 +166,12 @@ const ADD_GAP = 8, ADD_H = 30;
 // the gear's strip: its field in a fold-coloured band a little below the bar
 const SET_TOP = 8, SET_H = SET_TOP + FIELD_H + 8;
 const DRAG_SLOP = 4;
+let snapshotAt = -1e9, snapshotStep = -1;
+const SNAPSHOT_OK_MS = 1400;
+// a row's × only arms it: the snapshot button turns to "delete?" and a tap
+// there deletes; the × again disarms (no timer: an idle window doesn't
+// redraw, so a timed-out arm would still read "delete?" on screen)
+let delArm = -1;
 // LOOP's button, square to AUTO's height, and the glyph inside it
 const LOOP_W = 26, LOOP_ICON = 14, LOOP_GAP = 4;
 // the journeys' chip row: its chips, the + and the Edit chip, in a line
@@ -868,7 +876,7 @@ function runLibOp() {
   else if (op === 3) journeyDeleteAt(libDo.i);
   else if (op === 4) journeyDuplicate();
   // the steps under the fold and the drag are another journey's now
-  textIdx = -1; drag.k = -1; drag.moved = false;
+  textIdx = -1; drag.k = -1; drag.moved = false; delArm = -1;
 }
 
 // The rows, top at y, each followed by its fold as far as the fold is open.
@@ -912,16 +920,33 @@ function drawSteps(ui, x, y, n, sel, playing, playIdx) {
 
     ui.text.draw(dl, stepLabels[i], x0 + STEP_X, baseline(ui, cyr, 12), 12, W.semibold,
       lit || selected ? C.rowLabelOn : C.rowInk, 0, 0.08, 1);
-    const sx = x0 + SUM_X, sw = CONTENT_W - SUM_X - DEL_W - 8;
+    const snapW = measureBtn(ui, 'snapshot', 10);
+    const sx = x0 + SUM_X, sw = CONTENT_W - SUM_X - DEL_W - 8 - snapW - 6;
     dl.pushClip(sx, ry, sw, ROW_H);
     ui.text.draw(dl, summaries[i], sx, baseline(ui, cyr, 12), 12, W.regular, C.rowSummaryInk, 0, 0, 1);
     dl.popClip();
 
     const dx = x0 + CONTENT_W - DEL_W;
+    const bx = dx - 6 - snapW;
+    const armed = delArm === i;
+    if (btnAt(ui, ui.idx('jr.snapshot', i), bx, cyr - BTN_H / 2, snapW, BTN_H)) {
+      if (armed) { delArm = -1; journeyDeleteStep(i); changed = true; }
+      else if (journeySnapshotStep(i)) { snapshotStep = i; snapshotAt = ui.t; }
+    }
+    if (armed) {
+      dl.rect(bx, cyr - BTN_H / 2, snapW, BTN_H, 6, C.btnBg, 1, btnHover ? C.closeHoverInk : C.closeHoverBorder, 0, 0);
+      ui.text.draw(dl, 'delete?', bx + snapW / 2, baseline(ui, cyr, 10), 10, W.regular, C.closeHoverInk, 1, 0, 1);
+    } else if (snapshotStep === i && ui.t - snapshotAt < SNAPSHOT_OK_MS) {
+      dl.rect(bx, cyr - BTN_H / 2, snapW, BTN_H, 6, C.snapshotBg, 1, C.snapshotBorder, 0, 0);
+      const is = 13;
+      dl.icon(ICON.CHECK, bx + (snapW - is) / 2, cyr - is / 2, is, is, C.snapshotInk, 1.7, 0);
+    } else drawBtn(ui, bx, cyr, snapW, BTN_H, false, 'snapshot', 10);
 
-    // the ×, which deletes the step outright
-    if (btnAt(ui, ui.idx('jr.rowDel', i), dx, cyr - DEL_W / 2, DEL_W, DEL_W)) { journeyDeleteStep(i); changed = true; }
-    ui.text.draw(dl, '×', dx + DEL_W / 2, baseline(ui, cyr, 15), 15, W.regular, btnHover ? C.closeHoverInk : C.labelDim, 1, 0, 1);
+    // the ×, which arms the delete (or disarms it)
+    if (btnAt(ui, ui.idx('jr.rowDel', i), dx, cyr - DEL_W / 2, DEL_W, DEL_W) && !changed) {
+      delArm = armed ? -1 : i;
+    }
+    ui.text.draw(dl, '×', dx + DEL_W / 2, baseline(ui, cyr, 15), 15, W.regular, btnHover || armed ? C.closeHoverInk : C.labelDim, 1, 0, 1);
 
     // the rest of the row: a click selects, a press dragged past the slop
     // lifts it
@@ -949,7 +974,7 @@ function drawSteps(ui, x, y, n, sel, playing, playIdx) {
         drag.k = -1; drag.moved = false;
         if (moved && ins >= 0) {
           const to = ins > i ? ins - 1 : ins;
-          if (to !== i) { journeyMoveStep(i, to); changed = true; }
+          if (to !== i) { journeyMoveStep(i, to); changed = true; delArm = -1; }
         } else if (!moved && clicked) journeySelect(i);
       }
     }

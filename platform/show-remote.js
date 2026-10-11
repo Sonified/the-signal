@@ -86,7 +86,8 @@
 //                         finaleChoir,           its 0..100% linearly onto
 //                         finaleAmb,             one or more levels, 100 =
 //                         finaleHum,
-//                         finaleSun
+//                         finaleSun,
+//                         finaleWind
 //                                                the finale's own level, 0
 //                                                silent; set through their
 //                                                controls, so their variance
@@ -100,7 +101,13 @@
 //                                                beside SCREEN: the Sun's
 //                                                Speed 2x..8x (4x halfway),
 //                                                its variance 0..78% and the
-//                                                Breath Amount 0..67%)
+//                                                Breath Amount 0..67%. WIND,
+//                                                beside SUN: the Sun's
+//                                                Feedback Amount 0..83% and
+//                                                Opacity 0..36%, the rings'
+//                                                opacity 0..29% over the top
+//                                                half, the flowers' 0..15%
+//                                                over the top quarter)
 //   {k:'duck', on, amt, dn, up}  the duck (gpu/slides.js setDuck, the
 //                       heartbeat's setHeartDuck and the Sun hum's
 //                       setHumDuck, the same multiplier): on, the slides',
@@ -110,14 +117,13 @@
 // The journey moves regardless of the Journey window or ACTIVE (a remote is
 // opted into by its URL, so nothing else gates it).
 //
-// A control is set straight through its schema setter (which saves, and so
-// reaches the store and the demo broadcast as a drawer move does) but NOT
-// through journeyManualOverride as the drawer's widgets are: with the
-// Journey window open that would record the fader into the playing cue for
-// good, and with it closed it would pin the control for the rest of the
-// walk, so every later cue's own speed (each cue resets it) would be
-// ignored. From the iPad a Speed move lasts until the next cue; vol, lpf and
-// hpf are never held by a cue (core/journey.js), so they last until moved.
+// Controls save the live session and broadcast it through their schema
+// setters, inside journeyPerformanceControl. That keeps them out of both
+// the authoring recorder and the walk-wide manual holds, takes any current
+// glide, and protects them from a later unrelated drawer save. Snapshot in
+// the Journey window explicitly captures those live changes into a step.
+// From the iPad a Speed move lasts until the next cue; vol, lpf and hpf are
+// never held by a cue (core/journey.js), so they last until moved.
 // The slides' own level (Master slide volume, slideVolume) is the laptop's
 // and is never sent from here.
 //
@@ -127,7 +133,7 @@
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
-// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, play, on} (play: what is actually happening, the
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, wi: finaleWind, play, on} (play: what is actually happening, the
 // live hold included), vp the slide video's place {t, d, r, f, l} (seconds in,
 // its length, the rate it advances at, 0 when held; null with no video of
 // known length; the iPad fills the playing cue with it, running on between
@@ -137,52 +143,69 @@
 
 import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
-import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyStepAt } from '../core/journey.js';
+import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyPerformanceControl } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
-import { slideRateFromPos, slideElementRate } from '../core/slide-rate.js';
 import { ampToPos } from '../js/util.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume']);
 const STATUS_MS = 250;
-// The finale row's faders: per fader, the levels it moves together, each
-// [S key = control id, its value at the fader's 100% (the finale preset's
-// own), the control's position for a value, its value at the fader's 0
-// (silent when left out), true to lay it evenly in ratio (each doubling
-// the same stretch) instead of linearly]. The first is the one reported
-// back to the iPad.
+const setLive = (c, value) => journeyPerformanceControl(c.id, () => c.set(S, value));
+// The finale row's faders (and SUN and WIND beside SCREEN): per fader, the
+// settings it moves together, each { key: the S key, which is also its
+// control's id; top: its value at the fader's 100% (the finale's own);
+// pos: the control's position for a value; bottom: its value where it
+// starts (0, silent, when left out); from: where on the fader (0..1) it
+// starts to move, held at bottom below that (0 when left out); ratio: true
+// to lay it evenly in ratio, each doubling the same stretch, instead of
+// linearly }. The first is the one reported back to the iPad.
+const pct = a => a * 100;
 const FINALE = {
-  finaleChoir: [['choirVol', 1.38, a => a * 100]],
-  finalePiano: [['pianoVol', 1, a => a * 100]],
-  finaleAmb: [['ambVol', 0.18, a => a * 100]],
-  finaleDrone: [['bedVol', 0.55, a => a * 100], ['toneVol', 0.19054607179632474, ampToPos],
-                ['cloudVol', 1, a => a * 100]],
+  finaleChoir: [{ key: 'choirVol', top: 1.38, pos: pct }],
+  finalePiano: [{ key: 'pianoVol', top: 1, pos: pct }],
+  finaleAmb: [{ key: 'ambVol', top: 0.18, pos: pct }],
+  finaleDrone: [{ key: 'bedVol', top: 0.55, pos: pct }, { key: 'toneVol', top: 0.19054607179632474, pos: ampToPos },
+                { key: 'cloudVol', top: 1, pos: pct }],
   // the Sun hum's Speed, 1x at the bottom and 2x at the top, linear in the
   // control's own log setting (core/schema-sun.js: 0.5x..16x over 0..1, so
   // 1x is 0.2 and 2x 0.4), even in pitch: 1.41x halfway
-  finaleHum: [['sunHumRate', 0.4, a => a * 1000, 0.2]],
+  finaleHum: [{ key: 'sunHumRate', top: 0.4, bottom: 0.2, pos: a => a * 1000 }],
   // SUN, beside SCREEN: the video's baseline Speed 2x to 8x, even in ratio
   // as its own slider moves (core/schema-sun.js: log 1x..16x over 0..1000,
-  // so 4x halfway), with Speed's variance 0 to 78% and the Breath's Amount
-  // 0 to 67%
-  finaleSun: [['sunSpeed', 8, a => Math.log(a) / Math.log(16) * 1000, 2, true],
-              ['sunSpeedVar', 0.78, a => a * 100], ['sunBreathAmt', 0.67, a => a * 100]]
+  // so 4x halfway), with Speed's variance 0 to 78%, the Breath's Amount
+  // 0 to 67%, and the Rotational hum's Cutoff variance 0 to 94% and Reverb
+  // mix variance 0 to 72%
+  finaleSun: [{ key: 'sunSpeed', top: 8, bottom: 2, ratio: true, pos: a => Math.log(a) / Math.log(16) * 1000 },
+              { key: 'sunSpeedVar', top: 0.78, pos: pct }, { key: 'sunBreathAmt', top: 0.67, pos: pct },
+              { key: 'sunHumCutoffVar', top: 0.94, pos: pct }, { key: 'sunHumVerbVar', top: 0.72, pos: pct }],
+  // WIND, beside SUN: the Sun's Feedback Amount 0 to 83% and Opacity 0 to
+  // 36% over the whole fader, the rings' opacity 0 to 29% over its top
+  // half, the flowers' opacity 0 to 15% over its top quarter
+  finaleWind: [{ key: 'sunFbAmt', top: 0.83, pos: pct }, { key: 'sunFbOpacity', top: 0.36, pos: pct },
+               { key: 'ringOpacity', top: 0.29, from: 0.5, pos: pct },
+               { key: 'flowerOpacity', top: 0.15, from: 0.75, pos: pct }]
 };
-// a fader's place, 0..100, from its first level
+// where a fader at u (0..1) puts one of its settings
+const finaleValue = (e, u) => {
+  const bottom = e.bottom || 0, from = e.from || 0;
+  const w = Math.max(0, (u - from) / (1 - from));
+  return e.ratio ? bottom * Math.pow(e.top / bottom, w) : bottom + w * (e.top - bottom);
+};
+// a fader's place, 0..100, read back from its first setting
 const finalePos = id => {
-  const [key, top, , bottom = 0, ratio] = FINALE[id][0];
-  const v = +S[key] || 0;
-  const u = ratio ? (v > 0 ? Math.log(v / bottom) / Math.log(top / bottom) : 0) : (v - bottom) / (top - bottom);
-  return Math.round(Math.max(0, Math.min(1, u)) * 1000) / 10;
+  const e = FINALE[id][0], bottom = e.bottom || 0, from = e.from || 0, v = +S[e.key] || 0;
+  const w = e.ratio ? (v > 0 ? Math.log(v / bottom) / Math.log(e.top / bottom) : 0) : (v - bottom) / (e.top - bottom);
+  return Math.round(Math.max(0, Math.min(1, from + Math.max(0, Math.min(1, w)) * (1 - from))) * 1000) / 10;
 };
 
 export function initShowRemote(hooks = {}) {
   if (typeof location === 'undefined' || typeof WebSocket === 'undefined') return;
   const P = new URLSearchParams(location.search);
   if (!P.has('remote')) return;
+  document.title = '🌞 TSC 2026';
   let room = (P.get('remote') || 'show').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '') || 'show';
   room = room.slice(0, 40);
   const CMD_ROOM = 'mirror-' + room, STATUS_ROOM = 'mirror-' + room + '-status';
@@ -276,26 +299,26 @@ export function initShowRemote(hooks = {}) {
         const v = +m.v;
         if (!isFinite(v)) return;
         const u = Math.max(0, Math.min(100, v)) / 100;
-        for (const [key, top, toPos, bottom = 0, ratio] of FINALE[m.id]) {
-          const c = byId(key);
-          if (c) c.set(S, toPos(ratio ? bottom * Math.pow(top / bottom, u) : bottom + u * (top - bottom)));
+        for (const e of FINALE[m.id]) {
+          const c = byId(e.key);
+          if (c) setLive(c, e.pos(finaleValue(e, u)));
         }
         return;
       }
       if (!CTL_IDS.has(m.id)) return;
       const c = byId(m.id);
       if (!c) return;
-      if (c.kind === 'action') { if (c.act) c.act(S); else c.set(S, 1); }
+      if (c.kind === 'action') journeyPerformanceControl(c.id, () => { if (c.act) c.act(S); else c.set(S, 1); });
       else if (m.id === 'slidePlay') {
         // PLAY / PAUSE mean exactly that: Play on S, and a live hold on the
         // slide on screen (gpu/slides.js: 1 playing, 2 paused or ended)
         // that says otherwise flipped to agree.
         const on = !!m.v;
-        c.set(S, on);
+        setLive(c, on);
         const st = slidesLiveState();
         if ((on && st === 2) || (!on && st === 1)) toggleSlidePlayLive();
       }
-      else if (c.kind === 'toggle') c.set(S, !!m.v);
+      else if (c.kind === 'toggle') setLive(c, !!m.v);
       else if (m.id === 'slideRate') {
         // 0 is a stop, not a slow: the slide is held paused live (as the
         // Journey window's slide button does) and let go again when the
@@ -303,7 +326,7 @@ export function initShowRemote(hooks = {}) {
         // (gpu/slides.js), so the next cue plays as authored.
         const v = Math.max(0, Math.min(c.max, Math.round(+m.v)));
         if (!isFinite(v)) return;
-        c.set(S, v);
+        setLive(c, v);
         if (v === 0) {
           if (slidesLiveState() === 1) { toggleSlidePlayLive(); speedStopped = true; }
         } else if (speedStopped) {
@@ -318,7 +341,7 @@ export function initShowRemote(hooks = {}) {
         const v = +m.v;
         if (!isFinite(v)) return;
         const u = Math.max(0, Math.min(1, v / 100));
-        c.set(S, Math.round(u * u * 100000) / 1000);
+        setLive(c, Math.round(u * u * 100000) / 1000);
       }
       else {
         const v = +m.v;
@@ -327,7 +350,7 @@ export function initShowRemote(hooks = {}) {
         const step = c.step > 0 ? c.step : 0;
         const clamped = Math.max(c.min, Math.min(c.max, v));
         const snapped = step ? c.min + Math.round((clamped - c.min) / step) * step : clamped;
-        c.set(S, Math.max(c.min, Math.min(c.max, snapped)));
+        setLive(c, Math.max(c.min, Math.min(c.max, snapped)));
       }
     } else if (m.k === 'duck') {
       const amt = Math.max(0, Math.min(1, +m.amt || 0));
@@ -350,19 +373,11 @@ export function initShowRemote(hooks = {}) {
     return {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
-      // Lets a controller distinguish pre-command reports from replies.
-      ack: Object.fromEntries(lastN),
-      cv: Array.from({ length: journeyCount() }, (_, i) => {
-        const o = journeyStepAt(i)?.overrides || {};
-        const rate = slideElementRate(slideRateFromPos(o.slideRate ?? get('slideRate')));
-        return { f: o.slideFile ?? S.slideFile, r: rate,
-          p: o.slidePlay ?? S.slidePlay !== false, l: o.slideLoop ?? S.slideLoop === true };
-      }),
       vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000,
         f: pr.f || S.slideFile, l: pr.l === true } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'),
             gt: Math.round(Math.max(0, Math.min(1, +S.screenGate)) * 1000) / 10,
-            ch: finalePos('finaleChoir'), dr: finalePos('finaleDrone'), pn: finalePos('finalePiano'), am: finalePos('finaleAmb'), hu: finalePos('finaleHum'), su: finalePos('finaleSun'),
+            ch: finalePos('finaleChoir'), dr: finalePos('finaleDrone'), pn: finalePos('finalePiano'), am: finalePos('finaleAmb'), hu: finalePos('finaleHum'), su: finalePos('finaleSun'), wi: finalePos('finaleWind'),
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };
   }
