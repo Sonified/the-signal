@@ -105,6 +105,9 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
       <button class="big" id="restart">⟲ Start</button>
     </div>
     <div class="slider" id="rateSlider"><div class="fill"></div><span class="lab">Speed</span><span class="val"></span></div>
+    <div id="volSlider"></div>
+    <div id="lpSlider"></div>
+    <div id="hpSlider"></div>
   </div>
 
   <div class="card" style="grid-column: 1 / -1">
@@ -211,7 +214,9 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
 
   // ---------- the control surface, the same on both sides ----------
   const N_SLIDERS = 3, N_BUTTONS = 4;
-  const S = { s: [0.5, 0.25, 0.75], rate: 1, playing: false };
+  // vol, lp and hp are slider positions, 0..1: volume, and the lowpass and
+  // highpass corners on a log scale, 20 Hz to 20 kHz (both open by default)
+  const S = { s: [0.5, 0.25, 0.75], rate: 1, playing: false, vol: 1, lp: 1, hp: 0 };
 
   function makeSlider(el, label, get, set, fmt) {
     if (!el.classList.contains('slider')) {
@@ -256,6 +261,20 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
     u => { let r = uToRate(u); if (Math.abs(r - 1) < 0.04) r = 1; S.rate = Math.round(r * 100) / 100; applyVideo(); send({ k: 'r', v: S.rate }); },
     () => S.rate.toFixed(2) + '×');
 
+  // Volume and the two filters, under Speed. Each move goes as {k, v} with
+  // k the field's own name (vol, lp, hp).
+  const hz = u => 20 * Math.pow(1000, u);
+  const hzText = u => { const f = hz(u); return f >= 1000 ? (f / 1000).toFixed(f >= 10000 ? 1 : 2) + ' kHz' : Math.round(f) + ' Hz'; };
+  const drawAudio = {};
+  for (const [id, key, label, fmt] of [
+    ['volSlider', 'vol', 'Volume', () => Math.round(S.vol * 100) + '%'],
+    ['lpSlider', 'lp', 'Lowpass', () => S.lp >= 1 ? 'open' : hzText(S.lp)],
+    ['hpSlider', 'hp', 'Highpass', () => S.hp <= 0 ? 'open' : hzText(S.hp)]
+  ]) {
+    drawAudio[key] = makeSlider($(id), label, () => S[key],
+      u => { S[key] = Math.round(u * 1000) / 1000; applyAudio(); send({ k: key, v: S[key] }); }, fmt);
+  }
+
   // ---------- the video ----------
   let video = null;
   if (!CTRL) {
@@ -265,7 +284,7 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
       '<input type="file" id="file" accept="video/*" hidden></div><video id="vid" playsinline></video>';
     video = $('vid');
     video.preservesPitch = false; video.mozPreservesPitch = false; video.webkitPreservesPitch = false;
-    const load = f => { if (!f) return; video.src = URL.createObjectURL(f); $('drop').firstChild.textContent = f.name + ' — '; applyVideo(); };
+    const load = f => { if (!f) return; video.src = URL.createObjectURL(f); $('drop').firstChild.textContent = f.name + ' — '; ensureAudio(); applyVideo(); };
     $('pick').onclick = () => $('file').click();
     $('file').onchange = e => load(e.target.files[0]);
     document.addEventListener('dragover', e => e.preventDefault());
@@ -273,11 +292,37 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
   } else {
     $('videoBox').innerHTML = '<div class="hint" style="margin-bottom:10px">The video plays on the presentation. These drive it.</div>';
   }
+  // The video's sound through Web Audio: highpass, lowpass, then volume.
+  // Made on the first video chosen (a click, which lets audio start); a
+  // setting that arrived before then is applied as it is made.
+  let actx = null, hpf = null, lpf = null, gain = null;
+  function ensureAudio() {
+    if (actx || !video) return;
+    try {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = actx.createMediaElementSource(video);
+      hpf = actx.createBiquadFilter(); hpf.type = 'highpass'; hpf.Q.value = 0.707;
+      lpf = actx.createBiquadFilter(); lpf.type = 'lowpass'; lpf.Q.value = 0.707;
+      gain = actx.createGain();
+      src.connect(hpf).connect(lpf).connect(gain).connect(actx.destination);
+      applyAudio(true);
+    } catch (e) { log('audio graph failed: ' + e.message); }
+  }
+  function applyAudio(jump) {
+    for (const k in drawAudio) drawAudio[k]();
+    if (!actx) return;
+    const t = actx.currentTime;
+    // open filters sit at the ends of the range, so they pass everything
+    const to = [[gain.gain, S.vol * S.vol], [lpf.frequency, S.lp >= 1 ? 20000 : hz(S.lp)], [hpf.frequency, S.hp <= 0 ? 10 : hz(S.hp)]];
+    for (const [param, v] of to) { if (jump) param.value = v; else param.setTargetAtTime(v, t, 0.015); }
+  }
+
   function applyVideo() {
     $('play').textContent = S.playing ? 'Pause' : 'Play';
     drawRate();
     if (!video || !video.src) return;
     video.playbackRate = S.rate;
+    if (actx && actx.state === 'suspended') actx.resume();
     if (S.playing && video.paused) video.play().catch(err => log('play blocked: ' + err.message + ' (click the page once)'));
     if (!S.playing && !video.paused) video.pause();
   }
@@ -377,7 +422,7 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
     if (CTRL || muted) return;
     if (m.t === 'state' && m.snap && m.snap.mirror) {
       Object.assign(S, m.snap.mirror); S.s = m.snap.mirror.s.slice();
-      drawS.forEach(d => d()); applyVideo(); return;
+      drawS.forEach(d => d()); applyVideo(); applyAudio(); return;
     }
     if (m.t !== 'word' || !m.k) return;
     const ms = m.at && !isNaN(p.offset) ? Math.round(pathNow(p) - m.at) : NaN;
@@ -393,6 +438,7 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
       else if (m.k === 'p') { S.playing = m.v; applyVideo(); }
       else if (m.k === 'r') { S.rate = m.v; applyVideo(); }
       else if (m.k === 'z') { if (video) video.currentTime = 0; }
+      else if (m.k === 'vol' || m.k === 'lp' || m.k === 'hp') { S[m.k] = m.v; applyAudio(); }
       $('latNow').textContent = isNaN(ms) ? p.name : ms + ' ms · ' + p.name;
       log('recv #' + m.n + ' ' + describe(m) + '  first via ' + p.name + (isNaN(ms) ? '  (clock not set yet)' : '  +' + ms + ' ms'));
     }
@@ -405,7 +451,10 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
       : m.k === 'b' ? 'button ' + String.fromCharCode(65 + m.i)
       : m.k === 'p' ? (m.v ? 'play' : 'pause')
       : m.k === 'r' ? 'speed ' + m.v + '×'
-      : m.k === 'z' ? 'to start' : m.k;
+      : m.k === 'z' ? 'to start'
+      : m.k === 'vol' ? 'volume ' + Math.round(m.v * 100) + '%'
+      : m.k === 'lp' ? 'lowpass ' + (m.v >= 1 ? 'open' : hzText(m.v))
+      : m.k === 'hp' ? 'highpass ' + (m.v <= 0 ? 'open' : hzText(m.v)) : m.k;
   }
   const lines = [];
   function log(s) {
