@@ -51,7 +51,7 @@ import {
 import { initStore, load, syncFromStorage } from './store.js';
 import { replayLive, applyActivePresetState } from './presets.js';
 import { signal, unpackSignal, publishSignal } from './signal.js';
-import { setCutoffHz, cutoffHz, setRoomSend } from './sun-hum.js';
+import { setCutoffHz, cutoffHz, setReverbMix } from './sun-hum.js';
 import {
   M_FLAGS, M_DRIFT, M_ARP, M_HEAD, M_ATMOS, F_AUDIO, F_WORKLET, F_DRIFT,
   DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP, W_READBACKS, CALL_SLOTS, packReadbacks
@@ -131,7 +131,7 @@ export function createAudioShell(storage) {
     },
     sunHumVerb(v) {
       S.effSunHumVerb = v >= 0 ? v : undefined;
-      setRoomSend(v >= 0 ? v : S.sunHumVerb);
+      setReverbMix(v >= 0 ? v : S.sunHumVerb);
     },
     // The sun's breath, for the music variances linked to it (js/piano.js
     // the drone's level, js/choir.js), or none at -1, when they hold.

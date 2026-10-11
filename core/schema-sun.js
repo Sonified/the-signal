@@ -19,6 +19,8 @@ import { save } from './store.js';
 import { retimeRoomPhase } from './room-clock.js';
 import { subDrawer } from './schema-visual.js';
 import * as hum from './sun-hum.js';
+import { chanGate, onChannelGates } from '../js/mixgate.js';
+import { S as appState } from '../js/state.js';
 
 // The layer switch, the kaleidoscope switch and the mirror flag are plain
 // booleans; every numeric field carries its range here. gpu/sun.js reads
@@ -138,10 +140,10 @@ const NUM = [
   ['sunHumCutoffVarPeriod', 0, 120, 20,  true ],
   ['sunHumCutoffVarPeriodOff', 0, 1, 0,  false],
   ['sunHumRate',         0,   1,   0,    false],
-  // How much of the hum is sent into the app's master room, the music's
-  // reverb (core/sun-hum.js setRoomSend). Off by default. Its variance rides
-  // a Drive as the Cutoff's does.
-  ['sunHumVerb',         0,   1,   0,    false],
+  // The hum's wet/dry into its own room (core/sun-hum.js setReverbMix): 0
+  // all dry, 1 all room. 0.3 is the site's own mix. Its variance rides a
+  // Drive as the Cutoff's does.
+  ['sunHumVerb',         0,   1,   0.3,  false],
   ['sunHumVerbVar',      0,   1,   0,    false],
   ['sunHumVerbVarPeriod', 0,  120, 20,   true ],
   ['sunHumVerbVarPeriodOff', 0, 1, 0,    false],
@@ -303,11 +305,15 @@ const rateToPos = r => r === r ? Math.round(Math.min(1, Math.max(0, Math.log(r /
 function syncHum(S) {
   hum.setVolume(S.sunHumAmp);
   hum.setMasterVolume(S.volume);
+  hum.setGate(chanGate('hum'));
   hum.setCutoffHz(humHz(typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : S.sunHumCutoff));
   hum.setRate(humRate(S.sunHumRate) * HUM_RETUNE);
-  hum.setRoomSend(typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : S.sunHumVerb);
+  hum.setReverbMix(typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : S.sunHumVerb);
   if (S.sunHumOn && S.layers.sun) hum.play(); else hum.pause();
 }
+
+// A mute or solo anywhere in the mix re-applies the hum's gate.
+onChannelGates(() => syncHum(appState));
 
 // Every control in the Sun section dims while the layer is off, the same way
 // the Kaleidoscope section does, so the viewer can see what the sun would do
@@ -677,8 +683,8 @@ export const SUN_CONTROLS = [
     enabled: layerOn
   },
   {
-    // The send into the app's master room, the reverb every music voice
-    // shares, heard while the transport runs (core/sun-hum.js).
+    // The hum's wet/dry into its own room, a mix rather than a send: at
+    // 100% no dry is left (core/sun-hum.js setReverbMix).
     id: 'sunHumVerb', section: 'sun', label: 'Reverb mix', kind: 'slider',
     parent: 'sunHumDrawer',
     min: 0, max: 100, step: 1, def: Math.round(spec('sunHumVerb')[3] * 100),

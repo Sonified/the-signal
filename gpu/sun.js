@@ -95,7 +95,7 @@ import { motionStep, motionScale } from '../core/motion.js';
 import { idleHold, idleRelease } from '../core/idle.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
-import { setCutoffHz, cutoffHz, setRoomSend } from '../core/sun-hum.js';
+import { setCutoffHz, cutoffHz, setReverbMix } from '../core/sun-hum.js';
 
 const VIDEO_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
 // The standard stem and the High quality one, the site's original snapshot
@@ -692,10 +692,10 @@ export function createSun(device, format) {
     const cut = varied('sunHumCutoff', cutSet, driveOf('sunHumCutoff', t, md, lum, S.effSunBreathPos));
     S.effSunHumCutoff = S.sunHumCutoffVar > 0 ? cut : undefined;
     setCutoffHz(cutoffHz(cut));
-    // and its send into the master room, the same way
-    const verb = varied('sunHumVerb', clampNum(S.sunHumVerb, 0, 1, 0), driveOf('sunHumVerb', t, md, lum, S.effSunBreathPos));
+    // and its Reverb mix, the same way
+    const verb = varied('sunHumVerb', clampNum(S.sunHumVerb, 0, 1, 0.3), driveOf('sunHumVerb', t, md, lum, S.effSunBreathPos));
     S.effSunHumVerb = S.sunHumVerbVar > 0 ? verb : undefined;
-    setRoomSend(verb);
+    setReverbMix(verb);
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
     // the pair the live position falls between crossfaded by smoothstep.

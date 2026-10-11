@@ -62,8 +62,12 @@ const COARSE = mq('(pointer: coarse)');
 
 let volume = 0.9;                 // the hum's own gain, 0..2
 let masterVol = 1;                // the app's Master volume, 0..1 (setMasterVolume)
+let gate = 1;                     // the mix gate's mute and solo, 0 or 1 (setGate)
+// The Levels window's meter: an analyser on the output gate, so it reads
+// what is heard, post-fader, post-gate, silent while paused (humPeak).
+let meterAn = null, meterBuf = null;
 
-let verbMix = COARSE ? 0.21 : 0.3;   // reverb wet/dry (30% drier on touch)
+let verbMix = 0.3;                  // reverb wet/dry, the Reverb mix (setReverbMix)
 let verbOn = true;                  // the room
 let verbSize = COARSE ? 1.75 : 3.5;  // tail seconds to -60 dB (half on touch)
 let dry = null, wet = null, verbTimer = 0;
@@ -75,11 +79,6 @@ let lifecycleTimer = 0, outputOpen = false, outputEverOpened = false, routeKicke
 // app context's listener, and when the gate's last close lands.
 let wanted = false, loading = null, loadFailed = false, unavailable = false;
 let appCtxHooked = null, closeEndsAt = 0, openTimer = 0, onStateChange = null;
-// The send into the app's master room (setHumRoom, setRoomSend below): the
-// room's context and input as js/piano.js hands them over, the send level,
-// and the bridge across the two contexts.
-let roomCtx = null, roomIn = null, sendLevel = 0;
-let bridgeOut = null, bridgeIn = null, sendGain = null, sendCtx = null, sendTo = null;
 
 function warn(msg, e) {
   console.warn('sun hum: ' + msg + (e ? ': ' + (e && e.message ? e.message : e) : ''));
@@ -166,7 +165,7 @@ function ensureCtx() {
   // output route is running; this prevents a live waveform/reverb tail from
   // being dropped onto a newly opened device at an arbitrary sample value.
   master = ctx.createGain();
-  master.gain.value = volume * masterVol;
+  master.gain.value = volume * masterVol * gate;
   outputGate = ctx.createGain();
   outputGate.gain.value = 0;
   onStateChange = () => {
@@ -193,10 +192,13 @@ function ensureCtx() {
   // browsers get the fallback: the graph terminates in a stream feeding
   // an <audio> element, which counts as media playback.
   // The app's global Lowpass and Highpass (core/global-filter.js), between
-  // the hum's master and its output gate: this context's own pair. (The
-  // send into the app's room is filtered there, on js/audio.js's chain.)
+  // the hum's master and its output gate: this context's own pair.
   globalFilter = createGlobalFilter(ctx);
   master.connect(globalFilter.input);
+  meterAn = ctx.createAnalyser();
+  meterAn.fftSize = 1024;
+  meterBuf = new Float32Array(meterAn.fftSize);
+  outputGate.connect(meterAn);
   if (NAV && 'audioSession' in NAV) {
     try { NAV.audioSession.type = 'playback'; } catch (e) {}
     globalFilter.output.connect(outputGate).connect(ctx.destination);
@@ -630,7 +632,7 @@ export function setCutoffHz(hz) {
 export function setVolume(v) {
   if (v === volume) return;
   volume = v;
-  if (master) master.gain.setTargetAtTime(volume * masterVol, ctx.currentTime, 0.02);
+  if (master) master.gain.setTargetAtTime(volume * masterVol * gate, ctx.currentTime, 0.02);
 }
 
 /** The app's Master volume, 0..1, scaling the hum's own volume. The hum
@@ -640,11 +642,32 @@ export function setVolume(v) {
 export function setMasterVolume(v) {
   if (v === masterVol) return;
   masterVol = v;
-  if (master) master.gain.setTargetAtTime(volume * masterVol, ctx.currentTime, 0.02);
+  if (master) master.gain.setTargetAtTime(volume * masterVol * gate, ctx.currentTime, 0.02);
 }
 
-/** Wet/dry, 0..1, crossfaded equal-power so loudness holds steady. */
+/** The mix gate (js/mixgate.js), 1 open or 0 closed by a mute or another
+    channel's solo: a multiplier on the hum's own level, its room's tail
+    included. */
+export function setGate(g) {
+  if (g === gate) return;
+  gate = g;
+  if (master) master.gain.setTargetAtTime(volume * masterVol * gate, ctx.currentTime, 0.02);
+}
+
+/** The hum's output peak, 0..1+, for the Levels window's meter. */
+export function humPeak() {
+  if (!meterAn || !playing) return 0;
+  meterAn.getFloatTimeDomainData(meterBuf);
+  let peak = 0;
+  for (let i = 0; i < meterBuf.length; i++) { const a = meterBuf[i] < 0 ? -meterBuf[i] : meterBuf[i]; if (a > peak) peak = a; }
+  return peak;
+}
+
+/** Wet/dry, 0..1, crossfaded equal-power so loudness holds steady: at 1
+    the hum is all room, no dry left. The Reverb mix setting; cheap when
+    unchanged, so its variance can set it every frame. */
 export function setReverbMix(m) {
+  if (m === verbMix) return;
   verbMix = m;
   applyVerb(0.03);
 }
@@ -654,59 +677,6 @@ export function setReverbMix(m) {
 export function setReverbEnabled(on) {
   verbOn = !!on;
   applyVerb(0.25);
-}
-
-// ---- the send to the app's master room ----
-// The hum plays on a context of its own (see the top of this file), and a
-// node can only connect to nodes on its own context, so the hum reaches the
-// music's room (js/piano.js, the room every music voice feeds) across a
-// bridge: the hum's final output, after its volume, its own room and its
-// output gate, also goes into a media stream, which the room's context
-// takes back in as a source and feeds through the send's gain into the
-// room's input. The bridge adds a few tens of milliseconds, nothing in a
-// reverb's tail. It is built the first time the send rises above 0 with
-// both ends there, and rebuilt if the music's graph is (setHumRoom again).
-// The room's input carries the music's pause gate, so the send sounds while
-// the transport runs, as every music voice's does.
-
-/** The music's room, handed over by js/piano.js whenever it builds it, as
-    the clouds' is (setCloudBus). */
-export function setHumRoom(c, input) {
-  roomCtx = c; roomIn = input;
-  plugRoom();
-}
-
-/** The send's level, 0..1. Smoothed; cheap when unchanged, so the
-    Reverb mix's variance can set it every frame. */
-export function setRoomSend(v) {
-  if (v === sendLevel) return;
-  sendLevel = v;
-  plugRoom();
-}
-
-function plugRoom() {
-  if (sendGain) sendGain.gain.setTargetAtTime(sendLevel, sendCtx.currentTime, 0.03);
-  if (!(sendLevel > 0) || !ctx || !outputGate || !roomCtx || !roomIn) return;
-  if (!ctx.createMediaStreamDestination || !roomCtx.createMediaStreamSource) return;
-  try {
-    if (!bridgeOut) {
-      bridgeOut = ctx.createMediaStreamDestination();
-      outputGate.connect(bridgeOut);
-    }
-    if (sendCtx !== roomCtx) {
-      if (bridgeIn) { try { bridgeIn.disconnect(); sendGain.disconnect(); } catch (e) {} }
-      sendCtx = roomCtx; sendTo = null;
-      bridgeIn = roomCtx.createMediaStreamSource(bridgeOut.stream);
-      sendGain = roomCtx.createGain();
-      sendGain.gain.value = sendLevel;
-      bridgeIn.connect(sendGain);
-    }
-    if (sendTo !== roomIn) {
-      if (sendTo) try { sendGain.disconnect(); } catch (e) {}
-      sendGain.connect(roomIn);
-      sendTo = roomIn;
-    }
-  } catch (e) { warn('could not reach the master room', e); }
 }
 
 /** Tail length in seconds. Debounced, then swapped by loading the idle
@@ -740,10 +710,8 @@ export function dispose() {
   if (NAV && NAV.mediaDevices && NAV.mediaDevices.removeEventListener)
     NAV.mediaDevices.removeEventListener('devicechange', recycleOutput);
   try { c.removeEventListener('statechange', onStateChange); } catch (e) {}
-  if (bridgeIn) { try { bridgeIn.disconnect(); sendGain.disconnect(); } catch (e) {} }
-  bridgeOut = null; bridgeIn = null; sendGain = null; sendCtx = null; sendTo = null;
   if (globalFilter) { globalFilter.dispose(); globalFilter = null; }
-  ctx = null; buffer = null; filter = null; master = null; outputGate = null;
+  ctx = null; buffer = null; filter = null; master = null; outputGate = null; meterAn = null;
   mediaOut = null; src = null; env = null; dry = null; wet = null;
   verbSlots = null; verbActive = 0; onStateChange = null;
   outputOpen = false; outputEverOpened = false; routeKicked = false;
