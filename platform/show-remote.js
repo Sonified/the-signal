@@ -164,6 +164,7 @@ export function initShowRemote(hooks = {}) {
     const id = String(m.src || ''), n = +m.n || 0;
     if (n <= (lastN.get(id) || 0)) return;   // the other path's copy
     lastN.set(id, n);
+    if (m.k === 'ctl' && m.id === 'mwtsVolume') console.log('[show-remote] MWTS fader -> mwtsVolume ' + m.v + '%');
     try { act(m); } catch (err) { console.warn('[show-remote] ' + m.k + ' failed:', err); }
     idleWake('show remote');
     pollStatus();

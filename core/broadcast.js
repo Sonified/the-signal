@@ -248,7 +248,16 @@ function fillGlides() {
 // sends it; anything else, the performer's own hand on another control
 // mid-glide included, sends as it always did. So the gate asks who wrote,
 // not whether anything is gliding.
+// DEBUG (meditatewiththesun.com's volume not reaching the phones): one
+// console line when mwtsVolume changes, with every session's state, and one
+// when a send carrying the change goes out.
+let mwSeen = null, mwOwed = false;
+function mwLog(what) {
+  console.log('[broadcast] mwtsVolume ' + S.mwtsVolume + ' ' + what + ' | ' + (sessions.length
+    ? sessions.map(s => s.room + ': ' + s.status + ', ' + s.watchers + ' watching').join('; ') : 'no sessions'));
+}
 function localSave() {
+  if (S.mwtsVolume !== mwSeen) { mwSeen = S.mwtsVolume; mwOwed = true; mwLog('changed'); }
   if (perfGlideWriting() || journeyGlideWriting()) { sendOnLand = true; return; }
   queueSend();
 }
@@ -285,6 +294,7 @@ function sendNow() {
     sent++;
   }
   if (sent) lastActivityMs = Date.now();
+  if (mwOwed) { mwOwed = false; mwLog('sent to ' + sent + ' room(s)'); }
 }
 
 // The state message without its closing brace, for stateFor to finish. The
