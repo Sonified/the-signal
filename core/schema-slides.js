@@ -122,11 +122,11 @@ export function applySlidesState(S, o) {
 }
 
 // ---------- per-slide volume ----------
-// Each slide remembers its own level (S.slideVols, file -> 0..1.5; full when
+// Each slide remembers its own level (S.slideVols, file -> 0..2; full when
 // unset): the drawer's Slide volume row and the Journey fold's VOL slider
 // both edit this one map, so a slide meets the show at the level it was
 // last left. gpu/slides.js reads it onto the slot's gain leg each frame.
-export const SLIDE_VOL_MAX = 1.5;
+export const SLIDE_VOL_MAX = 2;
 export function slideVolOf(S, file) {
   const m = S.slideVols;
   const v = m && typeof m[file] === 'number' ? m[file] : 1;
