@@ -81,9 +81,6 @@ function posToRate(pos) {
   return Math.round(r * 100) / 100;
 }
 
-// Every row dims while the layer is off, as the Sun section's do.
-const layerOn = S => !!S.layers.heartbeat;
-
 // One whole-percent slider over the field's own span from the NUM table,
 // so a row whose range reaches past 1 (Audio level runs to 400%, the
 // heartbeat's own limiter in core/heartbeat.js keeping it from clipping)
@@ -96,7 +93,6 @@ function percent(id, key, label) {
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, n[1], n[2], false); save(); },
     format: S => Math.round(S[key] * 100) + '%',
-    enabled: layerOn
   };
 }
 
@@ -127,7 +123,6 @@ export const HEARTBEAT_CONTROLS = [
     set: (S, pos) => { S.heartSpeed = fit(posToRate(pos), 0.25, 2, false); save(); },
     format: S => S.heartSpeed.toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
-    enabled: layerOn
   }
 ];
 

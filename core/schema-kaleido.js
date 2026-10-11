@@ -267,11 +267,6 @@ export function applyKaleidoState(S, o) {
   if (Array.isArray(o.kaleidoFamilies)) S.kaleidoFamilies = cleanFamilies(o.kaleidoFamilies, S.kaleidoSet);
 }
 
-// Every control in the Kaleidoscope section dims while the layer is off, the
-// same way the Flowers section does, so the viewer can see what the
-// kaleidoscope would do before switching it on.
-const layerOn = S => !!S.layers.kaleido;
-
 // One slider bound 1:1 to a kaleidoscope field (a multiplier, a rate or a
 // count), whose range and default come from the NUM table so the two can
 // never disagree.
@@ -283,7 +278,6 @@ function direct(id, key, label, step, format) {
     get: S => S[key],
     set: (S, pos) => { S[key] = fit(pos, n[1], n[2], n[4]); save(); },
     format,
-    enabled: layerOn
   };
   return c;
 }
@@ -297,7 +291,6 @@ function percent(id, key, label, format) {
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
     format: format || (S => Math.round(S[key] * 100) + '%'),
-    enabled: layerOn
   };
   return c;
 }
@@ -322,7 +315,6 @@ function grade(id, key, label) {
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, n[1], n[2], false); save(); },
     format: S => Math.round(S[key] * 100) + '%',
-    enabled: layerOn,
     visible: S => !!S.kaleidoGrade
   };
 }
@@ -363,7 +355,7 @@ function fbVariance(owner, key, span, switchId) {
       setLo: (S, v) => { S[lo] = fit(v, -span, 0); save(); },
       setHi: (S, v) => { S[hi] = fit(v, 0, span); save(); },
       format: S => rangeText(S[lo], S[hi]),
-      enabled: layerOn, parent: switchId || 'kaleidoTrailsDrawer', visible
+      parent: switchId || 'kaleidoTrailsDrawer', visible
     },
     {
       id: rate, section: 'kaleido', label: 'Variance rate', kind: 'slider',
@@ -372,7 +364,7 @@ function fbVariance(owner, key, span, switchId) {
       get: S => S[rate],
       set: (S, pos) => { setRate(S, rate, fit(pos, 1, 120, true)); save(); },
       format: S => S[rate] + 's / cycle',
-      enabled: layerOn, parent: switchId || 'kaleidoTrailsDrawer', visible
+      parent: switchId || 'kaleidoTrailsDrawer', visible
     }
   ];
 }
@@ -385,10 +377,7 @@ export const KALEIDO_CONTROLS = [
     get: S => !!S.layers.kaleido,
     set: (S, on) => { S.layers.kaleido = on; save(); }
   },
-  // The same switch again at the head of the Kaleidoscope section. Every
-  // other control here dims while the layer is off, so without this one the
-  // section had no way in from inside it. It has no enabled(), so it never
-  // dims itself.
+  // The same switch again at the head of the Kaleidoscope section.
   {
     id: 'kaleidoOn', section: 'kaleido', label: 'On', kind: 'toggle', def: false,
     get: S => !!S.layers.kaleido,
@@ -446,7 +435,6 @@ export const KALEIDO_CONTROLS = [
       save();
     },
     format: S => S.kaleidoOrbitMaxPeriod + 's / cycle',
-    enabled: layerOn
   })),
   under('kaleidoMotionDrawer', percent('kaleidoOrbitVar', 'kaleidoOrbitVar', 'Internal randomness')),
   // Shape spin is each shape turning about its own centre, at its own rate
@@ -485,7 +473,6 @@ export const KALEIDO_CONTROLS = [
       S.kaleidoFamilies = [];
       save();
     },
-    enabled: layerOn
   },
   {
     // Whether a set with a high resolution sheet (sets.mjs imageHi; set 1
@@ -497,7 +484,6 @@ export const KALEIDO_CONTROLS = [
     parent: 'kaleidoShapesDrawer',
     get: S => !!S.kaleidoHiRes,
     set: (S, on) => { S.kaleidoHiRes = !!on; save(); },
-    enabled: layerOn
   },
   {
     // How a change of Image set crosses over. Instant swaps the images
@@ -518,7 +504,6 @@ export const KALEIDO_CONTROLS = [
       return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
     },
     parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
-    enabled: layerOn
   },
   {
     // Multi-select over the shape families, after the word themes' chips in
@@ -549,7 +534,6 @@ export const KALEIDO_CONTROLS = [
       const n = S.kaleidoFamilies && S.kaleidoFamilies.length ? S.kaleidoFamilies.length : nFam;
       return n === nFam ? 'all shapes' : n + ' of ' + nFam;
     },
-    enabled: layerOn
   },
   // How many wedges the circle is cut into. The readout keeps the number
   // first, so clicking it to type opens on the fold count itself.
@@ -573,7 +557,6 @@ export const KALEIDO_CONTROLS = [
       save();
     },
     format: S => S.kaleidoFoldsPeriod + 's / cycle',
-    enabled: layerOn
   })),
   {
     // How a change of Symmetry (the fold count or Mirror) arrives. Instant
@@ -591,7 +574,6 @@ export const KALEIDO_CONTROLS = [
       return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
     },
     parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
-    enabled: layerOn
   },
   {
     // Whether alternate wedges are reflected, the way a real kaleidoscope's
@@ -600,7 +582,6 @@ export const KALEIDO_CONTROLS = [
     parent: 'kaleidoShapesDrawer',
     get: S => !!S.kaleidoMirror,
     set: (S, on) => { S.kaleidoMirror = !!on; save(); },
-    enabled: layerOn
   },
   under('kaleidoShapesDrawer', direct('kaleidoSize', 'kaleidoSize', 'Max size', 0.05, times2('kaleidoSize'))),
   varianceOf('kaleidoSize', percent('kaleidoSizeVar', 'kaleidoSizeVar', 'Size variance')),
@@ -612,7 +593,6 @@ export const KALEIDO_CONTROLS = [
     parent: 'kaleidoShapesDrawer',
     get: S => !!S.kaleidoConstSize,
     set: (S, on) => { S.kaleidoConstSize = !!on; save(); },
-    enabled: layerOn
   },
   // Where a shape is born across its wedge. At 0 every shape starts on the
   // wedge's axis, clear of both mirrors, so it shows whole, centred and
@@ -641,7 +621,6 @@ export const KALEIDO_CONTROLS = [
       save();
     },
     format: S => S.kaleidoOpacityPeriod + 's / cycle',
-    enabled: layerOn
   })),
   under('kaleidoBrightnessDrawer', percent('kaleidoFade', 'kaleidoFade', 'Center fade radius')),
   varianceOf('kaleidoFade', under('kaleidoBrightnessDrawer',
@@ -658,7 +637,6 @@ export const KALEIDO_CONTROLS = [
       save();
     },
     format: S => S.kaleidoFadePeriod + 's / cycle',
-    enabled: layerOn
   })),
   under('kaleidoBrightnessDrawer', direct('kaleidoFadeInS', 'kaleidoFadeInS', 'Fade in time', 0.1,
     S => (S.kaleidoFadeInS ?? 1.5) < 0.05 ? 'off' : (S.kaleidoFadeInS ?? 1.5).toFixed(1) + 's')),
@@ -681,7 +659,6 @@ export const KALEIDO_CONTROLS = [
       save();
     },
     format: S => S.kaleidoPulsePeriod + 's / cycle',
-    enabled: layerOn
   })),
 
   // Video feedback of the folded pattern, the Confetti layer's Feedback
@@ -696,7 +673,7 @@ export const KALEIDO_CONTROLS = [
   // Its dip, the app's standard (stepped with the strobe's own variances,
   // core/strobe.js), as confetti's.
   ...varianceRows('kaleidoFbOpacity', {
-    name: 'Opacity', periodMax: 120, parent: 'kaleidoTrailsDrawer', enabled: layerOn,
+    name: 'Opacity', periodMax: 120, parent: 'kaleidoTrailsDrawer',
     effective: S => (S.effKaleidoFbOpacity ?? S.kaleidoFbOpacity) * 100
   }),
   // At 0 no trail; at 100% a trail takes about two seconds to fade to half,
@@ -714,7 +691,6 @@ export const KALEIDO_CONTROLS = [
     get: S => S.kaleidoFbAmtVarRate,
     set: (S, pos) => { setRate(S, 'kaleidoFbAmtVarRate', fit(pos, 1, 120, true)); save(); },
     format: S => S.kaleidoFbAmtVarRate + 's / cycle',
-    enabled: layerOn
   })),
   // The trails' own motion: each frame's faded copy is taken a little
   // larger or smaller about the field centre (Stream) and turned about it
@@ -740,7 +716,7 @@ export const KALEIDO_CONTROLS = [
     get: S => S.kaleidoFbTwistVarOn !== false,
     set: (S, on) => { S.kaleidoFbTwistVarOn = !!on; save(); },
     format: S => S.kaleidoFbTwistVarOn !== false ? 'On' : 'Off',
-    enabled: layerOn, parent: 'kaleidoTrailsDrawer'
+    parent: 'kaleidoTrailsDrawer'
   },
   ...fbVariance('kaleidoFbTwist', 'kaleidoFbTwistVar', 2, 'kaleidoFbTwistVarOn'),
   // The whole feedback image brightens and darkens with the strobe's
@@ -758,7 +734,6 @@ export const KALEIDO_CONTROLS = [
     get: S => S.kaleidoFbPulseRate,
     set: (S, pos) => { setRate(S, 'kaleidoFbPulseRate', fit(pos, 1, 60, true)); save(); },
     format: S => S.kaleidoFbPulseRate + 's / cycle',
-    enabled: layerOn
   })),
 
   // The motifs' own color, graded before any tint toward the strobe, then
@@ -771,7 +746,6 @@ export const KALEIDO_CONTROLS = [
     parent: 'kaleidoColorDrawer',
     get: S => !!S.kaleidoGrade,
     set: (S, on) => { S.kaleidoGrade = !!on; save(); },
-    enabled: layerOn
   },
   grade('kaleidoBright', 'kaleidoBright', 'Brightness'),
   grade('kaleidoContrast', 'kaleidoContrast', 'Contrast'),
@@ -794,7 +768,6 @@ export const KALEIDO_CONTROLS = [
       save();
     },
     format: S => S.kaleidoTintPeriod + 's / cycle',
-    enabled: layerOn
   }))
 ];
 

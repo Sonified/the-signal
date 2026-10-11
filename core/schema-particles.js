@@ -194,11 +194,6 @@ export function applyParticleState(S, o) {
   }
 }
 
-// Every control in the Particles section dims while the layer is off, the
-// same way the Kaleidoscope section does, so the viewer can see what the
-// particles would do before switching them on.
-const layerOn = S => !!S.layers.particles;
-
 // Rows that only mean something in one mode. Trail is the length of a
 // streak, so it hides for the round styles; the fold controls shape the
 // kaleidoscope pass, so they hide while that pass is off.
@@ -217,7 +212,6 @@ function direct(id, key, label, step, format, sub, visible) {
     get: S => S[key],
     set: (S, pos) => { S[key] = fit(pos, n[1], n[2], n[4]); save(); },
     format,
-    enabled: layerOn
   };
   if (sub) c.sub = sub;
   if (visible) c.visible = visible;
@@ -233,7 +227,6 @@ function percent(id, key, label, format, sub, visible) {
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
     format: format || (S => Math.round(S[key] * 100) + '%'),
-    enabled: layerOn
   };
   if (sub) c.sub = sub;
   if (visible) c.visible = visible;
@@ -248,7 +241,6 @@ function choice(id, key, label, values, labels, def, sub) {
     options: values.map((value, i) => ({ value, label: labels[i], domId: null })),
     get: S => S[key],
     set: (S, v) => { S[key] = values.indexOf(v) >= 0 ? v : def; save(); },
-    enabled: layerOn
   };
   if (sub) c.sub = sub;
   return c;
@@ -260,7 +252,6 @@ function toggle(id, key, label, def, sub, visible) {
     id, section: 'particles', label, kind: 'toggle', def,
     get: S => !!S[key],
     set: (S, on) => { S[key] = !!on; save(); },
-    enabled: layerOn
   };
   if (sub) c.sub = sub;
   if (visible) c.visible = visible;
@@ -376,7 +367,7 @@ function fbVariance(owner, key, span, pct, switchId) {
       setLo: (S, v) => { S[lo] = fit(v, -span, 0); save(); },
       setHi: (S, v) => { S[hi] = fit(v, 0, span); save(); },
       format: S => rangeText(S[lo], S[hi], pct),
-      enabled: layerOn, parent: switchId || 'partFeedbackDrawer', visible
+      parent: switchId || 'partFeedbackDrawer', visible
     },
     {
       // Seconds for one swing, as the strobe's Variance rate.
@@ -386,7 +377,7 @@ function fbVariance(owner, key, span, pct, switchId) {
       get: S => S[rate],
       set: (S, pos) => { setRate(S, rate, fit(pos, 1, 120, true)); save(); },
       format: S => S[rate] + 's / cycle',
-      enabled: layerOn, parent: switchId || 'partFeedbackDrawer', visible
+      parent: switchId || 'partFeedbackDrawer', visible
     }
   ];
 }
@@ -399,10 +390,7 @@ export const PARTICLE_CONTROLS = [
     get: S => !!S.layers.particles,
     set: (S, on) => { S.layers.particles = on; save(); }
   },
-  // The same switch again at the head of the Particles section. Every other
-  // control here dims while the layer is off, so without this one the
-  // section had no way in from inside it. It has no enabled(), so it never
-  // dims itself.
+  // The same switch again at the head of the Particles section.
   {
     id: 'particlesOn', section: 'particles', label: 'On', kind: 'toggle', def: false,
     get: S => !!S.layers.particles,
@@ -425,7 +413,7 @@ export const PARTICLE_CONTROLS = [
   under('partMotionDrawer', percent('partRate', 'partRate', 'Birth rate', rateText)),
   under('partMotionDrawer', direct('partSpeed', 'partSpeed', 'Speed', 0.01, speedText)),
   ...varianceRows('partSpeed', {
-    name: 'Speed', periodMax: 120, parent: 'partMotionDrawer', enabled: layerOn,
+    name: 'Speed', periodMax: 120, parent: 'partMotionDrawer',
     effective: S => S.effPartSpeed ?? S.partSpeed
   }),
   under('partMotionDrawer', percent('partSpread', 'partSpread', 'Spread (toward screen edge)')),
@@ -440,7 +428,6 @@ export const PARTICLE_CONTROLS = [
     get: S => Math.round((S.partOrigin ?? 1) * 100),
     set: (S, pos) => { S.partOrigin = fit(pos / 100, 0.05, 1, false); save(); },
     format: S => Math.round((S.partOrigin ?? 1) * 100) + '%',
-    enabled: layerOn
   }),
   under('partMotionDrawer', direct('partSwirl', 'partSwirl', 'Swirl', 0.01, signed('partSwirl'))),
 
@@ -460,7 +447,7 @@ export const PARTICLE_CONTROLS = [
   subDrawer('partColorDrawer', 'Color', 'particles', ['partOpacity', 'partColor']),
   under('partColorDrawer', percent('partOpacity', 'partOpacity', 'Opacity')),
   ...varianceRows('partOpacity', {
-    name: 'Opacity', periodMax: 120, parent: 'partColorDrawer', enabled: layerOn,
+    name: 'Opacity', periodMax: 120, parent: 'partColorDrawer',
     effective: S => (S.effPartOpacity ?? S.partOpacity) * 100
   }),
   under('partColorDrawer', noLabel(choice('partColor', 'partColor', 'Colour', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR))),
@@ -559,7 +546,7 @@ export const PARTICLE_CONTROLS = [
     get: S => S.partFbTwistVarOn !== false,
     set: (S, on) => { S.partFbTwistVarOn = !!on; save(); },
     format: S => S.partFbTwistVarOn !== false ? 'On' : 'Off',
-    enabled: layerOn, parent: 'partFeedbackDrawer'
+    parent: 'partFeedbackDrawer'
   },
   // Twist's swing, in Twist's units, a span of 2 for the same reason.
   ...fbVariance('partFbTwist', 'partFbTwistVar', 2, false, 'partFbTwistVarOn'),
@@ -590,7 +577,7 @@ export const PARTICLE_CONTROLS = [
   under('partKaleido', toggle('partMirror', 'partMirror', 'Mirror', DEF_MIRROR, 'Kaleidoscope', isFolded)),
   under('partKaleido', direct('partFoldSpin', 'partFoldSpin', 'Rotation', 0.01, signed('partFoldSpin'), 'Kaleidoscope', isFolded)),
   ...varianceRows('partFoldSpin', {
-    name: 'Rotation', periodMax: 120, parent: 'partKaleido', visible: isFolded, enabled: layerOn,
+    name: 'Rotation', periodMax: 120, parent: 'partKaleido', visible: isFolded,
     effective: S => S.effPartFoldSpin ?? S.partFoldSpin
   }),
   // Where the feedback sits, the last row under the Kaleidoscope switch
@@ -605,7 +592,7 @@ export const PARTICLE_CONTROLS = [
     visible: isFolded,
     // with the feedback off it does nothing, so it greys out rather than
     // coming and going as the feedback is switched
-    enabled: S => layerOn(S) && S.partFeedback > 0
+    enabled: S => S.partFeedback > 0
   },
 
   // Pulse with the sequencer, behind its own switch: off, its five dials

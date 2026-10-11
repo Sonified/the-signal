@@ -497,7 +497,6 @@ const audioControls = [
     get: s => s.amLinked,
     set: (s, v) => setAmLinked(s, !!v),
     format: s => s.amLinked ? 'Link to visual' : 'Free',
-    visible: s => s.amModOn !== false
   },
   {
     id: 'amRate', section: 'audio', label: 'Pulse rate', kind: 'slider',
@@ -513,7 +512,6 @@ const audioControls = [
     },
     format: s => (s.amLinked ? s.freq : s.amRate).toFixed(1) + ' Hz',
     enabled: s => !s.amLinked,
-    visible: s => s.amModOn !== false
   },
   // ---- the four voices, each its own switch and then a sub-drawer whose
   // strip carries that switch (subDrawer in schema-visual.js, its switchId),
@@ -538,7 +536,6 @@ const audioControls = [
     // track is logarithmic, so 1-100 Hz, where the carriers people actually
     // use live, gets two thirds of the travel instead of a tenth of it.
     taper: 'log',
-    visible: s => s.toneOn
   },
   {
     id: 'toneVol', section: 'audio', label: 'Level', kind: 'slider',
@@ -548,7 +545,6 @@ const audioControls = [
     set: (s, pos) => { s.toneVol = posToAmp(pos); applyLevel('toneLevel'); save(); },
     format: s => ampToDb(s.toneVol) + ' dB',
     parse: parseDb,
-    visible: s => s.toneOn
   },
   // The level's dip, the choir's own: over one speed cycle it eases from the
   // setting down by this share and back (js/audio.js, the tone's two
@@ -556,7 +552,7 @@ const audioControls = [
   // from the page in worker mode (toneVolMulNow, core/audio-mirror.js).
   ...varianceRows('toneVol', {
     music: true, name: 'Level', apply: applyToneBreath,
-    parent: 'audioToneDrawer', visible: s => s.toneOn,
+    parent: 'audioToneDrawer',
     effective: toneDippedPos
   }),
   {
@@ -571,13 +567,12 @@ const audioControls = [
     get: s => Math.round((typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * 100),
     set: (s, pos) => { s.toneStrobeAm = pos / 100; applyAmOn(); save(); },
     format: s => Math.round((typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * 100) + '%',
-    visible: s => s.toneOn
   },
   // The pulse depth's dip, the choir's and drone's own, taken off the tone's
   // setting before the master strobe scales it (js/audio.js, toneAmDepth).
   ...varianceRows('toneStrobeAm', {
     music: true, name: 'Pulse', apply: applyToneBreath,
-    parent: 'audioToneDrawer', visible: s => s.toneOn,
+    parent: 'audioToneDrawer',
     effective: s => (typeof s.toneStrobeAm === 'number' ? s.toneStrobeAm : 1) * toneAmMulNow() * 100
   }),
   {
@@ -598,7 +593,6 @@ const audioControls = [
     get: s => s.clickMode,
     set: (s, mode) => setClickModeState(s, mode),
     format: s => s.clickMode,
-    visible: s => s.clickOn
   },
   // The level first under the mode, since it answers to whichever shape the
   // mode has chosen, with its variance folded away beneath it. The variance
@@ -614,14 +608,13 @@ const audioControls = [
     set: (s, pos) => { pipSet(s, 'vol', posToAmp(pos)); applyLevel('clickLevel'); applyLevel('clickSend'); save(); },
     format: s => ampToDb(pipGet(s, 'vol')) + ' dB',
     parse: parseDb,
-    visible: s => s.clickOn
   },
   // The two keys follow the live shape, the click's or the chirp's.
   ...varianceRows('clickVol', {
     music: true, amount: s => pipKey(s, 'modDep'), period: s => pipKey(s, 'modPer'),
     ids: ['clickModDepth', 'clickModRate'], labels: ['Variance', 'Variance time'],
     periodMin: 1, periodMax: 60, periodDef: 26, apply: applyHarmonics,
-    parent: 'audioPulseDrawer', visible: s => s.clickOn, effective: pipDippedPos
+    parent: 'audioPulseDrawer', effective: pipDippedPos
   }),
   {
     id: 'pipMs', section: 'audio', label: 'Pip width', kind: 'slider',
@@ -630,7 +623,7 @@ const audioControls = [
     get: s => s.pipMs,
     set: (s, pos) => { s.pipMs = pos; setParam('pipMs', s.pipMs); save(); },
     format: s => s.pipMs.toFixed(1) + ' ms',
-    visible: s => s.clickOn && s.clickMode === 'click'
+    visible: s => s.clickMode === 'click'
   },
   {
     id: 'chirpLow', section: 'audio', label: 'Chirp low', kind: 'slider',
@@ -639,7 +632,7 @@ const audioControls = [
     get: s => s.chirpLowHz,
     set: (s, pos) => { s.chirpLowHz = pos; refreshChirp(); save(); },
     format: s => s.chirpLowHz + ' Hz',
-    visible: s => s.clickOn && s.clickMode === 'chirp'
+    visible: s => s.clickMode === 'chirp'
   },
   {
     id: 'chirpHigh', section: 'audio', label: 'Chirp high', kind: 'slider',
@@ -648,7 +641,7 @@ const audioControls = [
     get: s => s.chirpHighHz,
     set: (s, pos) => { s.chirpHighHz = pos; refreshChirp(); save(); },
     format: s => s.chirpHighHz + ' Hz',
-    visible: s => s.clickOn && s.clickMode === 'chirp'
+    visible: s => s.clickMode === 'chirp'
   },
   {
     id: 'chirpComp', section: 'audio', label: 'Delay compensation', kind: 'slider',
@@ -657,7 +650,7 @@ const audioControls = [
     get: s => Math.round(s.chirpComp * 100),
     set: (s, pos) => { s.chirpComp = pos / 100; refreshChirp(); save(); },
     format: s => Math.round(s.chirpComp * 100) + '%',
-    visible: s => s.clickOn && s.clickMode === 'chirp'
+    visible: s => s.clickMode === 'chirp'
   },
   {
     id: 'chirpTilt', section: 'audio', label: 'Spectral tilt', kind: 'slider',
@@ -667,7 +660,7 @@ const audioControls = [
     set: (s, pos) => { s.chirpTilt = pos / 100; refreshChirp(); save(); },
     format: s => tiltName(s.chirpTilt),
     entry: 'text', parse: parseTilt,
-    visible: s => s.clickOn && s.clickMode === 'chirp'
+    visible: s => s.clickMode === 'chirp'
   },
   // Not a real control: v0 shows this row as a note ("set by the frequency
   // range and the cochlear model") with no input of its own. Kept as a
@@ -680,7 +673,7 @@ const audioControls = [
     act: () => {},
     format: s => chirpDurationMs(s.chirpLowHz, s.chirpHighHz).toFixed(1) + ' ms',
     enabled: () => false,
-    visible: s => s.clickOn && s.clickMode === 'chirp'
+    visible: s => s.clickMode === 'chirp'
   },
   {
     id: 'clickReverb', section: 'audio', label: 'Click / Chirp reverb', kind: 'slider',
@@ -689,7 +682,6 @@ const audioControls = [
     get: s => Math.round(pipGet(s, 'reverb') * 100),
     set: (s, pos) => { pipSet(s, 'reverb', pos / 100); applyReverbMix(); applyLevel('clickSend'); save(); },
     format: s => Math.round(pipGet(s, 'reverb') * 100) + '%',
-    visible: s => s.clickOn
   },
   {
     id: 'clickRevTime', section: 'audio', label: 'Click / Chirp reverb time', kind: 'slider',
@@ -698,7 +690,6 @@ const audioControls = [
     get: s => pipGet(s, 'revTime'),
     set: (s, pos) => { pipSet(s, 'revTime', pos); rebuildClickIR(); save(); },
     format: s => pipGet(s, 'revTime').toFixed(1) + 's',
-    visible: s => s.clickOn
   },
   // The lowpass sweep. One filter for the whole train, click or chirp, so it
   // sits after the shape's own rows and is not swapped by the mode.
@@ -708,7 +699,6 @@ const audioControls = [
     get: s => s.pipLpfOn,
     set: (s, on) => { s.pipLpfOn = !!on; applyPipLpf(); save(); },
     format: s => s.pipLpfOn ? 'On' : 'Off',
-    visible: s => s.clickOn
   },
   {
     id: 'pipLpfLo', section: 'audio', label: 'Filter low', kind: 'slider',
@@ -717,7 +707,7 @@ const audioControls = [
     get: s => s.pipLpfLo,
     set: (s, pos) => { s.pipLpfLo = pos; applyPipLpf(); save(); },
     format: s => fmtHz(s.pipLpfLo),
-    visible: s => s.clickOn && s.pipLpfOn
+    visible: s => s.pipLpfOn
   },
   {
     id: 'pipLpfHi', section: 'audio', label: 'Filter high', kind: 'slider',
@@ -726,7 +716,7 @@ const audioControls = [
     get: s => s.pipLpfHi,
     set: (s, pos) => { s.pipLpfHi = pos; applyPipLpf(); save(); },
     format: s => fmtHz(s.pipLpfHi),
-    visible: s => s.clickOn && s.pipLpfOn
+    visible: s => s.pipLpfOn
   },
   {
     id: 'pipLpfPeriod', section: 'audio', label: 'Filter sweep time', kind: 'slider',
@@ -735,7 +725,7 @@ const audioControls = [
     get: s => s.pipLpfPeriod,
     set: (s, pos) => { s.pipLpfPeriod = pos; applyPipLpf(); save(); },
     format: s => fmtSweep(s.pipLpfPeriod) + ' / cycle',
-    visible: s => s.clickOn && s.pipLpfOn
+    visible: s => s.pipLpfOn
   },
   {
     id: 'pipLpfWander', section: 'audio', label: 'Filter wander', kind: 'slider',
@@ -744,7 +734,7 @@ const audioControls = [
     get: s => Math.round(s.pipLpfWander * 100),
     set: (s, pos) => { s.pipLpfWander = pos / 100; applyPipLpf(); save(); },
     format: s => Math.round(s.pipLpfWander * 100) + '%',
-    visible: s => s.clickOn && s.pipLpfOn
+    visible: s => s.pipLpfOn
   },
   {
     id: 'pipLpfQ', section: 'audio', label: 'Filter resonance', kind: 'slider',
@@ -753,7 +743,7 @@ const audioControls = [
     get: s => Math.round(s.pipLpfQ * 100),
     set: (s, pos) => { s.pipLpfQ = pos / 100; applyPipLpf(); save(); },
     format: s => s.pipLpfQ.toFixed(2),
-    visible: s => s.clickOn && s.pipLpfOn
+    visible: s => s.pipLpfOn
   },
   {
     id: 'biToggle', section: 'audio', label: 'Bilateral', kind: 'toggle',
@@ -769,7 +759,6 @@ const audioControls = [
     get: s => Math.round(s.biDepth * 100),
     set: (s, pos) => { s.biDepth = pos / 100; applyHarmonics(); save(); },
     format: s => Math.round(s.biDepth * 100) + '%',
-    visible: s => s.biOn
   },
   {
     id: 'biRate', section: 'audio', label: 'Bilateral rate', kind: 'slider',
@@ -778,7 +767,6 @@ const audioControls = [
     get: s => s.biPeriod,
     set: (s, pos) => { s.biPeriod = pos; applyHarmonics(); save(); },
     format: s => s.biPeriod.toFixed(1) + 's / pass',
-    visible: s => s.biOn
   },
   {
     id: 'biHardSwitch', section: 'audio', label: 'Bilateral shape', kind: 'segment',
@@ -791,19 +779,12 @@ const audioControls = [
     get: s => s.biHardSwitch,
     set: (s, v) => { s.biHardSwitch = v; applyHarmonics(); save(); },
     format: s => s.biHardSwitch ? 'Switch' : 'Sweep',
-    visible: s => s.biOn
   },
   {
     id: 'harmToggle', section: 'audio', label: 'Harmonics', kind: 'toggle',
     get: s => s.harmOn,
     set: (s, on) => setHarmOn(s, !!on),
     format: s => s.harmOn ? 'On' : 'Off',
-    // v0 only dims this row with a 'locked' class when the tone is off; the
-    // button itself is never given a real disabled attribute, so this is a
-    // little stricter than v0's actual click handler. It matches v0's
-    // visible INTENT (the row reads as unavailable) rather than the letter
-    // of a handler that never checked.
-    enabled: s => s.toneOn
   },
   subDrawer('audioHarmonicsDrawer', 'Harmonics', 'audio', ['harmVol', 'harmCount'], 'harmToggle'),
   {
@@ -814,7 +795,6 @@ const audioControls = [
     set: (s, pos) => { s.harmVol = posToAmp(pos); applyLevel('harmLevel'); save(); },
     format: s => ampToDb(s.harmVol) + ' dB',
     parse: parseDb,
-    visible: s => s.harmOn && s.toneOn
   },
   {
     id: 'harmCount', section: 'audio', label: 'How many', kind: 'slider',
@@ -823,7 +803,6 @@ const audioControls = [
     get: s => s.harmCount,
     set: (s, pos) => { s.harmCount = pos; applyHarmonics(); save(); },
     format: s => String(s.harmCount),
-    visible: s => s.harmOn && s.toneOn
   },
   {
     id: 'harmBright', section: 'audio', label: 'Brightness', kind: 'slider',
@@ -832,7 +811,6 @@ const audioControls = [
     get: s => Math.round(s.harmBright * 100),
     set: (s, pos) => { s.harmBright = pos / 100; applyHarmonics(); save(); },
     format: s => Math.round(s.harmBright * 100) + '%',
-    visible: s => s.harmOn && s.toneOn
   },
   {
     id: 'harmSpread', section: 'audio', label: 'Stereo spread', kind: 'slider',
@@ -841,7 +819,6 @@ const audioControls = [
     get: s => Math.round(s.harmSpread * 100),
     set: (s, pos) => { s.harmSpread = pos / 100; applyHarmonics(); save(); },
     format: s => Math.round(s.harmSpread * 100) + '%',
-    visible: s => s.harmOn && s.toneOn
   },
   {
     id: 'harmPanRate', section: 'audio', label: 'Pan speed', kind: 'slider',
@@ -850,7 +827,6 @@ const audioControls = [
     get: s => s.harmPanRate,
     set: (s, pos) => { s.harmPanRate = pos; applyHarmonics(); save(); },
     format: s => s.harmPanRate.toFixed(2) + ' Hz',
-    visible: s => s.harmOn && s.toneOn
   },
   {
     id: 'shimDepth', section: 'audio', label: 'Shimmer depth', kind: 'slider',
@@ -859,7 +835,6 @@ const audioControls = [
     get: s => Math.round(s.shimDepth * 100),
     set: (s, pos) => { s.shimDepth = pos / 100; applyHarmonics(); save(); },
     format: s => Math.round(s.shimDepth * 100) + '%',
-    visible: s => s.harmOn && s.toneOn
   },
   {
     id: 'shimRate', section: 'audio', label: 'Shimmer rate', kind: 'slider',
@@ -868,7 +843,6 @@ const audioControls = [
     get: s => s.shimRate,
     set: (s, pos) => { s.shimRate = pos; applyHarmonics(); save(); },
     format: s => s.shimRate.toFixed(2) + ' Hz',
-    visible: s => s.harmOn && s.toneOn
   },
   {
     id: 'harmReverb', section: 'audio', label: 'Reverb', kind: 'slider',
@@ -877,7 +851,6 @@ const audioControls = [
     get: s => Math.round(s.harmReverb * 100),
     set: (s, pos) => { s.harmReverb = pos / 100; applyReverbMix(); save(); },
     format: s => Math.round(s.harmReverb * 100) + '%',
-    visible: s => s.harmOn && s.toneOn
   },
   // The layers-row Audio checkbox. Visually it sits with the four visual
   // layer toggles schema-visual.js owns, but it is the audio master switch,
@@ -1532,7 +1505,6 @@ const reverbControls = [
       applyRevType(); save();
     },
     format: s => (onPhone() ? s.phoneRevType !== 'conv' : s.musicRevType === 'algo') ? 'algorithmic' : 'convolution',
-    visible: s => s.musicRevOn !== false
   },
   {
     id: 'pianoReverb', section: 'reverb', label: 'Reverb level', kind: 'slider',
@@ -1540,12 +1512,11 @@ const reverbControls = [
     get: s => Math.round(s.pianoReverb * 100),
     set: (s, pos) => { s.pianoReverb = pos / 100; applyPianoReverb(); save(); },
     format: s => Math.round(s.pianoReverb * 100) + '%',
-    visible: s => s.musicRevOn !== false
   },
   // The room's level and decay each breathe by the app's standard dip
   // (js/room.js, revBreathe, on the audio clock).
   ...varianceRows('pianoReverb', {
-    music: true, name: 'Level', visible: s => s.musicRevOn !== false,
+    music: true, name: 'Level',
     effective: () => pianoEffectiveReverb() * 100
   }),
   {
@@ -1554,12 +1525,11 @@ const reverbControls = [
     get: s => s.pianoRevTime,
     set: (s, pos) => { s.pianoRevTime = pos; rebuildPianoIR(); rebuildCloudIR(); save(); },
     format: s => s.pianoRevTime.toFixed(1) + 's',
-    visible: s => s.musicRevOn !== false
   },
   // Under Convolution a new decay is a new impulse, built and crossfaded
   // in, so its speed starts at 5 s rather than 0.
   ...varianceRows('pianoRevTime', {
-    music: true, name: 'Decay', visible: s => s.musicRevOn !== false,
+    music: true, name: 'Decay',
     periodMin: 5, effective: pianoEffectiveRevTime
   }),
   {
@@ -1570,7 +1540,6 @@ const reverbControls = [
     get: s => s.pianoRevHP ?? 20,
     set: (s, pos) => { s.pianoRevHP = pos; applyRevHP(); save(); },
     format: s => (s.pianoRevHP ?? 20) <= 20 ? 'off' : s.pianoRevHP + ' Hz',
-    visible: s => s.musicRevOn !== false
   },
   {
     // Its slope (js/room.js HP_SLOPES): 6 dB an octave a one-pole, 12 to
@@ -1580,7 +1549,6 @@ const reverbControls = [
     get: s => s.pianoRevHPSlope ?? 12,
     set: (s, v) => { s.pianoRevHPSlope = +v; applyRevHPSlope(); save(); },
     format: s => (s.pianoRevHPSlope ?? 12) + ' dB/oct',
-    visible: s => s.musicRevOn !== false
   },
   {
     // How much sooner the highs die than the decay: 0 keeps every
@@ -1591,7 +1559,7 @@ const reverbControls = [
     get: s => Math.round((s.pianoRevDamp ?? 0.35) * 100),
     set: (s, pos) => { s.pianoRevDamp = pos / 100; applyPianoRevShape(); save(); },
     format: s => Math.round((s.pianoRevDamp ?? 0.35) * 100) + '%',
-    visible: s => s.musicRevOn !== false && s.musicRevType === 'algo'
+    visible: s => s.musicRevType === 'algo'
   },
   {
     // The slow drift of the network's delay lengths, which keeps a held
@@ -1601,7 +1569,7 @@ const reverbControls = [
     get: s => Math.round((s.pianoRevMod ?? 0.3) * 100),
     set: (s, pos) => { s.pianoRevMod = pos / 100; applyPianoRevShape(); save(); },
     format: s => Math.round((s.pianoRevMod ?? 0.3) * 100) + '%',
-    visible: s => s.musicRevOn !== false && s.musicRevType === 'algo'
+    visible: s => s.musicRevType === 'algo'
   }
 ];
 
@@ -1786,7 +1754,6 @@ const liveControls = [
     get: s => Math.round(s.liveLevel * 100),
     set: (s, pos) => { s.liveLevel = pos / 100; applyLiveLevel(); saveLive(); },
     format: s => Math.round(s.liveLevel * 100) + '%',
-    visible: s => s.liveOn
   },
   {
     // The Music window's trim, as musAmb is the ambience's: 100% plays
@@ -1807,7 +1774,6 @@ const liveControls = [
     get: s => Math.round(s.liveReverb * 100),
     set: (s, pos) => { s.liveReverb = pos / 100; applyLiveReverb(); saveLive(); },
     format: s => liveMixLabel(Math.round(s.liveReverb * 100)),
-    visible: s => s.liveOn
   },
   {
     // The room's length. A move builds the new impulse once the slider has
@@ -1818,7 +1784,6 @@ const liveControls = [
     get: s => s.liveRevTime,
     set: (s, pos) => { s.liveRevTime = pos; applyLiveRevTime(); saveLive(); },
     format: s => s.liveRevTime.toFixed(1) + 's',
-    visible: s => s.liveOn
   },
   // The compressor, ahead of the dry side and the room alike. The defaults
   // are its old programmed settings; the knee stays programmed. Each move
@@ -1829,7 +1794,6 @@ const liveControls = [
     get: s => s.liveThreshold,
     set: (s, pos) => { s.liveThreshold = pos; applyLiveComp(); saveLive(); },
     format: s => s.liveThreshold + ' dB',
-    visible: s => s.liveOn
   },
   {
     id: 'liveRatio', section: 'live', label: 'Ratio', kind: 'slider',
@@ -1837,7 +1801,6 @@ const liveControls = [
     get: s => s.liveRatio,
     set: (s, pos) => { s.liveRatio = pos; applyLiveComp(); saveLive(); },
     format: s => (Number.isInteger(s.liveRatio) ? s.liveRatio : s.liveRatio.toFixed(1)) + ':1',
-    visible: s => s.liveOn
   },
   {
     // The track is a cube: position p is 100 (p/100)^3 ms, so the first
@@ -1849,7 +1812,6 @@ const liveControls = [
     set: (s, pos) => { s.liveAttack = posToAttack(pos); applyLiveComp(); saveLive(); },
     format: s => s.liveAttack < 10 ? s.liveAttack.toFixed(1) + ' ms' : Math.round(s.liveAttack) + ' ms',
     parse: (s, text) => attackToPos(parseFloat(text)),
-    visible: s => s.liveOn
   },
   {
     // Log, as the other time sliders are: 10 to 100 ms gets half the travel.
@@ -1858,7 +1820,6 @@ const liveControls = [
     get: s => s.liveRelease,
     set: (s, pos) => { s.liveRelease = pos; applyLiveComp(); saveLive(); },
     format: s => s.liveRelease + ' ms',
-    visible: s => s.liveOn
   },
   // The meter: how far the compressor is pulling the sound down right now,
   // read from the node itself (in worker mode, the page's reading). Not a
@@ -1870,7 +1831,6 @@ const liveControls = [
     act: () => {},
     format: () => liveReductionLabel(liveReductionNow()),
     enabled: () => false,
-    visible: s => s.liveOn
   },
   {
     // The buffer asked of the input's own audio context, 0 to 100 ms; at 0,
@@ -1883,7 +1843,6 @@ const liveControls = [
     get: s => s.liveLatency || 0,
     set: (s, pos) => { s.liveLatency = Math.max(0, Math.min(100, Math.round(pos))); applyLiveLatency(); saveLive(); },
     format: s => liveLatencyLabel(s.liveLatency || 0, liveLatencyNow()),
-    visible: s => s.liveOn
   }
 ];
 

@@ -1361,7 +1361,6 @@ export const VISUAL_CONTROLS = [
     get: S => Math.round((S.textShadowO || 0) * 100),
     set: (S, pos) => { S.textShadowO = pos / 100; save(); },
     format: S => Math.round((S.textShadowO || 0) * 100) + '%',
-    enabled: S => S.textShadowOn !== false
   },
   {
     // How far the shadow softens past the letter's edge, on top of the little
@@ -1372,7 +1371,6 @@ export const VISUAL_CONTROLS = [
     get: S => Math.round((S.textShadowBlur || 0) * 100),
     set: (S, pos) => { S.textShadowBlur = pos / 100; save(); },
     format: S => Math.round((S.textShadowBlur || 0) * 100) + '%',
-    enabled: S => S.textShadowOn !== false
   },
   {
     // How far the dark copies swell past the letters' edges, evenly all
@@ -1383,7 +1381,6 @@ export const VISUAL_CONTROLS = [
     get: S => Math.round((S.textShadowSize || 0) * 100),
     set: (S, pos) => { S.textShadowSize = pos / 100; save(); },
     format: S => Math.round((S.textShadowSize || 0) * 100) + '%',
-    enabled: S => S.textShadowOn !== false
   },
   {
     // The shadow's own arrival: it eases in over this once a word appears.
@@ -1394,7 +1391,6 @@ export const VISUAL_CONTROLS = [
     get: S => S.textShadowFadeInMs || 0,
     set: (S, pos) => { S.textShadowFadeInMs = pos; save(); },
     format: S => (S.textShadowFadeInMs || 0) + ' ms',
-    enabled: S => S.textShadowOn !== false
   },
   {
     // And its leaving: from the moment the word starts out, the shadow
@@ -1405,7 +1401,6 @@ export const VISUAL_CONTROLS = [
     get: S => S.textShadowFadeOutMs || 0,
     set: (S, pos) => { S.textShadowFadeOutMs = pos; save(); },
     format: S => (S.textShadowFadeOutMs || 0) + ' ms',
-    enabled: S => S.textShadowOn !== false
   },
   {
     // The panel's switch, on its strip, the shadow's twin above.
@@ -1425,7 +1420,6 @@ export const VISUAL_CONTROLS = [
     get: S => Math.round((S.textPanelO || 0) * 100),
     set: (S, pos) => { S.textPanelO = pos / 100; save(); },
     format: S => Math.round((S.textPanelO || 0) * 100) + '%',
-    enabled: S => S.textPanelOn !== false
   },
   {
     // The panel's margin past the letters: a sliver at 0, the full wide
@@ -1436,7 +1430,6 @@ export const VISUAL_CONTROLS = [
     get: S => Math.round((S.textPanelSize ?? 1) * 100),
     set: (S, pos) => { S.textPanelSize = pos / 100; save(); },
     format: S => Math.round((S.textPanelSize ?? 1) * 100) + '%',
-    enabled: S => S.textPanelOn !== false
   },
   {
     // Soft edges melt the panel's rim into the scene: the hard rounded rect
@@ -1448,7 +1441,6 @@ export const VISUAL_CONTROLS = [
     get: S => Math.round((S.textPanelSoft || 0) * 100),
     set: (S, pos) => { S.textPanelSoft = pos / 100; save(); },
     format: S => Math.round((S.textPanelSoft || 0) * 100) + '%',
-    enabled: S => S.textPanelOn !== false
   },
   {
     // On, each line of a phrase gets a panel of its own, as wide as that
@@ -1459,7 +1451,6 @@ export const VISUAL_CONTROLS = [
     get: S => S.textPanelPerLine === true,
     set: (S, on) => { S.textPanelPerLine = !!on; save(); },
     format: S => S.textPanelPerLine === true ? 'On' : 'Off',
-    enabled: S => S.textPanelOn !== false
   },
   {
     // The panel's arrival, the shadow's fade in above but its own time.
@@ -1469,7 +1460,6 @@ export const VISUAL_CONTROLS = [
     get: S => S.textPanelFadeInMs || 0,
     set: (S, pos) => { S.textPanelFadeInMs = pos; save(); },
     format: S => (S.textPanelFadeInMs || 0) + ' ms',
-    enabled: S => S.textPanelOn !== false
   },
   {
     // And its leaving, from the word's first step out.
@@ -1479,7 +1469,6 @@ export const VISUAL_CONTROLS = [
     get: S => S.textPanelFadeOutMs || 0,
     set: (S, pos) => { S.textPanelFadeOutMs = pos; save(); },
     format: S => (S.textPanelFadeOutMs || 0) + ' ms',
-    enabled: S => S.textPanelOn !== false
   },
   subDrawer('textFadesDrawer', 'Fades', 'text', ['textFadeIn', 'textFadeOut']),
   {

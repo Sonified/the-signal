@@ -318,11 +318,6 @@ function syncHum(S) {
 // A mute or solo anywhere in the mix re-applies the hum's gate.
 onChannelGates(() => syncHum(appState));
 
-// Every control in the Sun section dims while the layer is off, the same way
-// the Kaleidoscope section does, so the viewer can see what the sun would do
-// before switching it on.
-const layerOn = S => !!S.layers.sun;
-
 // One slider bound 1:1 to a sun field (a multiplier, a rate or a count),
 // whose range and default come from the NUM table so the two can never
 // disagree.
@@ -334,7 +329,6 @@ function direct(id, key, label, step, format) {
     get: S => S[key],
     set: (S, pos) => { S[key] = fit(pos, n[1], n[2], n[4]); save(); },
     format,
-    enabled: layerOn
   };
 }
 
@@ -347,7 +341,6 @@ function percent(id, key, label, format) {
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
     format: format || (S => Math.round(S[key] * 100) + '%'),
-    enabled: layerOn
   };
 }
 
@@ -374,7 +367,6 @@ function grade(id, key, label) {
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, n[1], n[2], false); save(); },
     format: S => Math.round(S[key] * 100) + '%',
-    enabled: layerOn,
     visible: S => !!S.sunGrade
   };
 }
@@ -403,7 +395,6 @@ function drivenVariance(owner, name, drawer) {
       get: S => driveOf(S[dKey]),
       set: (S, v) => { S[dKey] = driveOf(v); save(); },
       format: S => DRIVE_NAMES[driveOf(S[dKey])],
-      enabled: layerOn
     }),
     varianceOf(owner, under(drawer, percent(vKey, vKey, name + ' variance',
       S => S[vKey] > 0 ? Math.round(S[vKey] * 100) + '%' : 'off'))),
@@ -419,7 +410,6 @@ function drivenVariance(owner, name, drawer) {
       },
       format: S => S[pKey] + 's',
       visible: S => driveOf(S[dKey]) === 'time',
-      enabled: layerOn
     }))
   ];
 }
@@ -444,9 +434,7 @@ export const SUN_CONTROLS = [
     get: S => !!S.layers.sun,
     set: (S, on) => { S.layers.sun = on; syncHum(S); save(); }
   },
-  // The same switch again at the head of the Sun section. Every other control
-  // here dims while the layer is off, so without this one the section had no
-  // way in from inside it. It has no enabled(), so it never dims itself.
+  // The same switch again at the head of the Sun section.
   {
     id: 'sunOn', section: 'sun', label: 'On', kind: 'toggle', def: false,
     get: S => !!S.layers.sun,
@@ -464,7 +452,6 @@ export const SUN_CONTROLS = [
     parent: 'sunSolarDrawer',
     get: S => !!S.sunHiRes,
     set: (S, on) => { S.sunHiRes = !!on; save(); },
-    enabled: layerOn
   },
   under('sunSolarDrawer', percent('sunOpacity', 'sunOpacity', 'Opacity')),
   {
@@ -479,7 +466,6 @@ export const SUN_CONTROLS = [
     parse: (S, text) => speedToPos(parseFloat(text)),
     // the live dipped rate while the variance breathes, the slider's blue line
     effective: S => typeof S.effSunSpeed === 'number' ? speedToPos(S.effSunSpeed) : undefined,
-    enabled: layerOn
   },
   // Speed's variance, folded out from under the Speed row: its driver, its
   // dip and Time's speed (see the NUM table).
@@ -504,7 +490,6 @@ export const SUN_CONTROLS = [
     set: () => {},
     format: S => S.effSunBreathIn === true ? 'Inhaling' : S.effSunBreathIn === false ? 'Exhaling' : '—',
     parse: () => NaN,
-    enabled: layerOn
   },
   under('sunBreathDrawer', direct('sunBreathRate', 'sunBreathRate', 'Rate', 0.1,
     S => S.sunBreathRate.toFixed(1) + ' / min')),
@@ -531,7 +516,6 @@ export const SUN_CONTROLS = [
     parent: 'sunFeedbackDrawer',
     get: S => S.sunFbLink !== false,
     set: (S, on) => { S.sunFbLink = !!on; save(); },
-    enabled: layerOn
   },
   // The manual Stream: each frame's faded copy is taken a little larger
   // (outward) or smaller (inward) about the centre. Greyed while the breath
@@ -539,7 +523,7 @@ export const SUN_CONTROLS = [
   under('sunFeedbackDrawer', Object.assign(
     direct('sunFbStream', 'sunFbStream', 'Stream', 0.01, S => S.sunFbStream === 0 ? 'none'
       : (S.sunFbStream > 0 ? '+' + S.sunFbStream.toFixed(2) + ' out' : S.sunFbStream.toFixed(2) + ' in')),
-    { enabled: S => layerOn(S) && S.sunFbLink === false })),
+    { enabled: S => S.sunFbLink === false })),
   {
     // Where the breath carries the Stream while linked: in at its bottom, out
     // at its top. Greyed while the link is off.
@@ -553,7 +537,7 @@ export const SUN_CONTROLS = [
     setLo: (S, v) => { S.sunFbStreamLo = fit(v, -1, 1); save(); },
     setHi: (S, v) => { S.sunFbStreamHi = fit(v, -1, 1); save(); },
     format: S => rangeText(S.sunFbStreamLo, S.sunFbStreamHi),
-    enabled: S => layerOn(S) && S.sunFbLink !== false
+    enabled: S => S.sunFbLink !== false
   },
 
   // ---- Color: the site's own grade of the picture, before the feather, so
@@ -566,7 +550,6 @@ export const SUN_CONTROLS = [
     parent: 'sunColorDrawer',
     get: S => !!S.sunGrade,
     set: (S, on) => { S.sunGrade = !!on; save(); },
-    enabled: layerOn
   },
   grade('sunBright', 'sunBright', 'Brightness'),
   grade('sunContrast', 'sunContrast', 'Contrast'),
@@ -579,7 +562,6 @@ export const SUN_CONTROLS = [
     parent: 'sunKaleidoDrawer',
     get: S => !!S.sunKaleidoOn,
     set: (S, on) => { S.sunKaleidoOn = !!on; save(); },
-    enabled: layerOn
   },
   under('sunKaleidoDrawer', percent('sunKaleidoOpacity', 'sunKaleidoOpacity', 'Opacity')),
   // How many wedges the circle is cut into. The readout keeps the number
@@ -599,7 +581,6 @@ export const SUN_CONTROLS = [
       save();
     },
     format: S => S.sunFoldsPeriod + 's / cycle',
-    enabled: layerOn
   })),
   {
     // Whether alternate wedges are reflected, the way a real kaleidoscope's
@@ -608,7 +589,6 @@ export const SUN_CONTROLS = [
     parent: 'sunKaleidoDrawer',
     get: S => !!S.sunMirror,
     set: (S, on) => { S.sunMirror = !!on; save(); },
-    enabled: layerOn
   },
   // The fold's turning, in revolutions per minute, positive clockwise.
   under('sunKaleidoDrawer', direct('sunKaleidoSpin', 'sunKaleidoSpin', 'Rotation', 0.1,
@@ -628,7 +608,6 @@ export const SUN_CONTROLS = [
       return v > 0 ? (v === Math.round(v) ? v : v.toFixed(1)) + 's' : 'instant';
     },
     parse: (S, text) => /^\s*inst/i.test(text) ? 0 : xfadeToPos(parseFloat(text)),
-    enabled: layerOn
   },
 
   // ---- Rotational hum, last of the section's drawers: the site's sound,
@@ -640,7 +619,6 @@ export const SUN_CONTROLS = [
     id: 'sunHumOn', section: 'sun', label: 'Rotational hum', kind: 'toggle', def: DEF_HUM_ON,
     get: S => !!S.sunHumOn,
     set: (S, on) => { S.sunHumOn = !!on; syncHum(S); save(); },
-    enabled: layerOn
   },
   subDrawer('sunHumDrawer', 'Rotational hum', 'sun', ['sunHumAmp', 'sunHumCutoff'], 'sunHumOn'),
   {
@@ -650,7 +628,6 @@ export const SUN_CONTROLS = [
     get: S => Math.round(S.sunHumAmp * 100),
     set: (S, pos) => { S.sunHumAmp = fit(pos / 100, 0, 2, false); syncHum(S); save(); },
     format: S => Math.round(S.sunHumAmp * 100) + '%',
-    enabled: layerOn
   },
   {
     // The lowpass's corner, 100 Hz to 10 kHz on the site's log map.
@@ -664,7 +641,6 @@ export const SUN_CONTROLS = [
     // the live cutoff while its variance plays, the slider's blue line
     effective: S => S.sunHumCutoffVar > 0 && typeof S.effSunHumCutoff === 'number'
       ? Math.round(S.effSunHumCutoff * HUM_POS) : undefined,
-    enabled: layerOn
   },
   ...drivenVariance('sunHumCutoff', 'Cutoff', 'sunHumDrawer'),
   {
@@ -684,7 +660,6 @@ export const SUN_CONTROLS = [
     },
     format: S => humRate(S.sunHumRate).toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
-    enabled: layerOn
   },
   {
     // The hum's wet/dry into the music room, a mix rather than a send: at
@@ -698,7 +673,6 @@ export const SUN_CONTROLS = [
     // the live send while its variance plays, the slider's blue line
     effective: S => S.sunHumVerbVar > 0 && typeof S.effSunHumVerb === 'number'
       ? Math.round(S.effSunHumVerb * 100) : undefined,
-    enabled: layerOn
   },
   ...drivenVariance('sunHumVerb', 'Reverb mix', 'sunHumDrawer'),
 

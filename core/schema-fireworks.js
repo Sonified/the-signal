@@ -76,9 +76,6 @@ export function applyFireworkState(S, o) {
   }
 }
 
-// Every row dims while the layer is off, as the Particles section's do.
-const layerOn = S => !!S.layers.fireworks;
-
 export const FIREWORK_CONTROLS = [
   // In the Layers group after Particles. Off by default, so a first visit
   // looks exactly as it did before.
@@ -104,7 +101,6 @@ export const FIREWORK_CONTROLS = [
     ],
     get: S => S.fwMode,
     set: (S, v) => { S.fwMode = MODES.indexOf(v) >= 0 ? v : DEF_MODE; save(); },
-    enabled: layerOn
   },
   {
     id: 'fwRate', section: 'fireworks', label: 'How often', kind: 'slider',
@@ -112,7 +108,6 @@ export const FIREWORK_CONTROLS = [
     get: S => S.fwRate,
     set: (S, pos) => { S.fwRate = fit(pos, 1, 60); save(); },
     format: S => Math.round(S.fwRate) + ' / min',
-    enabled: layerOn
   },
   {
     id: 'fwSpeed', section: 'fireworks', label: 'Speed', kind: 'slider',
@@ -120,7 +115,6 @@ export const FIREWORK_CONTROLS = [
     get: S => S.fwSpeed,
     set: (S, pos) => { S.fwSpeed = fit(pos, 0.25, 3); save(); },
     format: S => S.fwSpeed.toFixed(2) + '×',
-    enabled: layerOn
   },
   {
     id: 'fwSize', section: 'fireworks', label: 'Size', kind: 'slider',
@@ -128,7 +122,6 @@ export const FIREWORK_CONTROLS = [
     get: S => S.fwSize,
     set: (S, pos) => { S.fwSize = fit(pos, 0.4, 2); save(); },
     format: S => S.fwSize.toFixed(2) + '×',
-    enabled: layerOn
   },
   {
     id: 'fwBright', section: 'fireworks', label: 'Brightness', kind: 'slider',
@@ -136,7 +129,6 @@ export const FIREWORK_CONTROLS = [
     get: S => Math.round(S.fwBright * 100),
     set: (S, pos) => { S.fwBright = fit(pos / 100, 0, 1); save(); },
     format: S => Math.round(S.fwBright * 100) + '%',
-    enabled: layerOn
   }
 ];
 

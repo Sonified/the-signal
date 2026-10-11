@@ -125,7 +125,6 @@ function direct(id, key, label, step, format, visible) {
     get: S => S[key],
     set: (S, pos) => { S[key] = fit(pos, n[1], n[2], n[4]); save(); },
     format,
-    enabled: layerOn
   };
   if (visible) c.visible = visible;
   return c;
@@ -141,7 +140,6 @@ function percent(id, key, label, format, visible) {
     get: S => Math.round(S[key] * 100),
     set: (S, pos) => { S[key] = fit(pos / 100, 0, 1, false); save(); },
     format: format || (S => Math.round(S[key] * 100) + '%'),
-    enabled: layerOn
   };
   if (visible) c.visible = visible;
   return c;
@@ -153,11 +151,6 @@ function percent(id, key, label, format, visible) {
 // mode is the current one.
 const under = (parent, c) => { c.parent = parent; return c; };
 
-// Every control in the Flowers section dims while the layer is off, the
-// same way a v0 row locks when the thing it tunes is not running. They stay
-// editable in principle but read as inactive, so the viewer can see what the
-// flowers would do before switching them on.
-const layerOn = S => !!S.layers.flowers;
 const isTunnel = S => S.flowerMode !== 'mandala';
 const isMandala = S => S.flowerMode === 'mandala';
 
@@ -173,7 +166,7 @@ const times2 = key => S => S[key].toFixed(2) + '×';
 const fitNum = (key, v) => { const n = spec(key); return fit(v, n[1], n[2], n[4]); };
 const swing = (owner, o) => varianceRows(owner, Object.assign({
   period: owner + 'Period', periodDef: spec(owner + 'Period')[3], room: true, fit: fitNum,
-  parent: 'flowersBrightnessDrawer', enabled: layerOn,
+  parent: 'flowersBrightnessDrawer',
   effective: S => varied(S[owner], S[owner + 'Var'], S[owner + 'Phase'] || 0) * 100
 }, o));
 
@@ -186,9 +179,8 @@ export const FLOWER_CONTROLS = [
     get: S => !!S.layers.flowers,
     set: (S, on) => { S.layers.flowers = on; save(); }
   },
-  // The same switch at the head of the Flowers section, never dimmed, so the
-  // section can be turned on from inside it (everything else here dims while
-  // the layer is off).
+  // The same switch at the head of the Flowers section, so the section can
+  // be turned on from inside it.
   {
     id: 'flowersOn', section: 'flowers', label: 'On', kind: 'toggle', def: false,
     get: S => !!S.layers.flowers,
@@ -204,7 +196,6 @@ export const FLOWER_CONTROLS = [
     ],
     get: S => S.flowerMode,
     set: (S, v) => { S.flowerMode = MODES.indexOf(v) >= 0 ? v : DEF_MODE; save(); },
-    enabled: layerOn
   },
   // ---- three sub-drawers, Motion, Shape and Brightness (see subDrawer in
   // schema-visual.js), each with its rows straight after it. Mode stays

@@ -120,8 +120,6 @@ export function applySlidesState(S, o) {
   }
 }
 
-const layerOn = S => !!S.layers.slides;
-
 // ---------- per-slide volume ----------
 // Each slide remembers its own level (S.slideVols, file -> 0..1.5; full when
 // unset): the drawer's Slide volume row and the Journey fold's VOL slider
@@ -195,7 +193,6 @@ export const SLIDES_CONTROLS = [
     get: S => fileOf(S.slideFile),
     set: (S, v) => { S.slideFile = fileOf(v); save(); },
     format: S => slideLabel(S.slideFile),
-    enabled: layerOn
   },
   {
     // The picked slide's own remembered level (slideVolOf above), mirrored
@@ -206,13 +203,12 @@ export const SLIDES_CONTROLS = [
     get: S => Math.round(slideVolOf(S, fileOf(S.slideFile)) * 100),
     set: (S, pos) => setSlideVol(S, fileOf(S.slideFile), pos / 100),
     format: S => Math.round(slideVolOf(S, fileOf(S.slideFile)) * 100) + '%',
-    enabled: S => layerOn(S) && fileOf(S.slideFile) !== SLIDE_NONE
+    enabled: S => fileOf(S.slideFile) !== SLIDE_NONE
   },
   {
     id: 'slidePlay', section: 'slides', label: 'Play', kind: 'toggle', def: DEF_PLAY,
     get: S => S.slidePlay !== false,
     set: (S, on) => { S.slidePlay = !!on; save(); },
-    enabled: layerOn
   },
   // Play / pause, a drawer under the Play switch: a pause fades the sound
   // and slows the picture to a stop over Fade out, a play brings both back
@@ -227,7 +223,6 @@ export const SLIDES_CONTROLS = [
     set: (S, pos) => { S.slidePpOut = fit(Math.round(pos / 5) * 5 / 100, 0, 1); save(); },
     format: S => S.slidePpOut > 0 ? S.slidePpOut.toFixed(2) + ' s' : 'cut',
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
-    enabled: layerOn
   },
   {
     id: 'slidePpIn', section: 'slides', label: 'Fade in', kind: 'slider',
@@ -237,14 +232,12 @@ export const SLIDES_CONTROLS = [
     set: (S, pos) => { S.slidePpIn = fit(Math.round(pos / 5) * 5 / 100, 0, 1); save(); },
     format: S => S.slidePpIn > 0 ? S.slidePpIn.toFixed(2) + ' s' : 'cut',
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
-    enabled: layerOn
   },
   {
     id: 'slidePpRamp', section: 'slides', label: 'Audio speed ramp', kind: 'toggle', def: DEF_PP_RAMP,
     parent: 'slidePpDrawer',
     get: S => !!S.slidePpRamp,
     set: (S, on) => { S.slidePpRamp = !!on; save(); },
-    enabled: layerOn
   },
   {
     // Seek to the start (and play on, if Play is on). An action, so it is
@@ -252,7 +245,6 @@ export const SLIDES_CONTROLS = [
     // gpu/slides.js and never saved.
     id: 'slideRestart', section: 'slides', label: 'Restart', kind: 'action',
     set: S => { S.slideRestartN = (S.slideRestartN | 0) + 1; idleWake('slide restart'); },
-    enabled: layerOn
   },
   {
     // How long a change of slide takes, picture and sound together
@@ -265,13 +257,11 @@ export const SLIDES_CONTROLS = [
     set: (S, pos) => { S.slideXfade = fit(Math.round(pos / 5) * 5 / 100, 0, 10); save(); },
     format: S => S.slideXfade > 0 ? S.slideXfade.toFixed(2) + ' s' : 'cut',
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
-    enabled: layerOn
   },
   {
     id: 'slideLoop', section: 'slides', label: 'Loop', kind: 'toggle', def: DEF_LOOP,
     get: S => !!S.slideLoop,
     set: (S, on) => { S.slideLoop = !!on; save(); },
-    enabled: layerOn
   },
   {
     // Playback rate, pitch following speed (gpu/slides.js sets
@@ -282,7 +272,6 @@ export const SLIDES_CONTROLS = [
     set: (S, pos) => { S.slideRate = fit(posToRate(pos), 0, 2); save(); },
     format: S => S.slideRate.toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
-    enabled: layerOn
   }
 ];
 
