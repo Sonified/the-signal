@@ -136,14 +136,17 @@ const HALF_SECOND_FADE = new Set(['textFadeIn', 'textFadeOut', 'textDwell']);
 // input's id and the buffer its hardware wants belong to this machine alone.
 // Nor the room's own level and tone: Master volume and the global Lowpass
 // and Highpass (vol, lpf, hpf) are the operator's, ridden live from the
-// drawer or the show remote, so no cue may set them back. A step saved
+// drawer or the show remote, so no cue may set them back. Nor a slide's own
+// level (slideVol): it lives in the per-slide map (core/schema-slides.js),
+// edited by the fold's VOL, so a step that held a copy would set the slide
+// back to that stale copy each time it was entered. A step saved
 // holding one has it dropped as it is read, as with the controls above, and
 // an id no control has any more (the Slides' old slideLP and slideHP) is
 // passed over the same way, silently.
 const R = REPLAY_CONTROLS;
 const idxOf = new Map();
 const skip = new Uint8Array(R.length);
-const NEVER_IN_STEP = new Set(['liveOn', 'liveDevice', 'liveLatency', 'vol', 'lpf', 'hpf']);
+const NEVER_IN_STEP = new Set(['liveOn', 'liveDevice', 'liveLatency', 'vol', 'lpf', 'hpf', 'slideVol']);
 for (let i = 0; i < R.length; i++) {
   idxOf.set(R[i].id, i);
   if (machineControl(R[i]) || NEVER_IN_STEP.has(R[i].id)) skip[i] = 1;
