@@ -83,7 +83,6 @@
 import { S } from '../js/state.js';
 import { idleHold, idleRelease, idleWake } from '../core/idle.js';
 import { SLIDE_DIR, SLIDE_NONE, slideVolOf, slideVolGain } from '../core/schema-slides.js';
-import { slideElementRate as elRate } from '../core/slide-rate.js';
 import { createGlobalFilter } from '../core/global-filter.js';
 import { ensureAudioGraph, getContext, getOutputBus } from '../js/audio.js';
 
@@ -93,6 +92,7 @@ const AUDIO_TC = 0.015;
 // freezes the picture. So any rate asked below the floor lands AT the
 // floor, and only a true 0 stops the movie.
 const MIN_RATE = 0.0625;
+const elRate = r => r > 0 ? Math.max(MIN_RATE, r) : 0;
 // how long a rate of 0 keeps the element at its floor before freezing it:
 // ten of the legs' time constants, so the gain is below hearing first
 const RATE_ZERO_MS = 80;

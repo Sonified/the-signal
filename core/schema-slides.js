@@ -17,7 +17,6 @@
 import { save } from './store.js';
 import { idleWake } from './idle.js';
 import { subDrawer } from './schema-visual.js';
-import { slideRateFromPos as posToRate, slideRateToPos as rateToPos } from './slide-rate.js';
 
 // The show's videos, in running order: the file name (stored on S as the
 // dropdown's value, so it reads plainly in a saved journey) and its label.
@@ -146,11 +145,24 @@ export function setSlideVol(S, file, v) {
 // ---------- the sliders' tapers ----------
 // Rate: the turntable's left half is LINEAR, 0 (stopped) at the left end up
 // to 1x at the centre, so a slow-down glides all the way to a stop; the
-// right half stays logarithmic, 1x to 2x. A drag landing within 3%
+// right half stays logarithmic, 1x to 2x. A drag landing within RATE_SNAP
 // of 1x takes it exactly. (The sound itself bottoms out at 6.25%: Chrome
 // refuses element rates between 0 and 0.0625 - gpu/slides.js floors there,
 // and a true 0 freezes the picture.)
-const RATE_POS = 1000;
+const RATE_POS = 1000, RATE_MID = RATE_POS / 2, RATE_SNAP = 0.03;
+function rateToPos(v) {
+  if (!(v === v)) return NaN;
+  const r = v < 0 ? 0 : v > 2 ? 2 : v;
+  return Math.round(r <= 1
+    ? RATE_MID * r
+    : RATE_MID + RATE_MID * Math.log2(r));
+}
+function posToRate(pos) {
+  const p = pos > 0 ? (pos < RATE_POS ? pos : RATE_POS) : 0;
+  let r = p <= RATE_MID ? p / RATE_MID : Math.pow(2, (p - RATE_MID) / RATE_MID);
+  if (Math.abs(r - 1) <= RATE_SNAP) r = 1;
+  return Math.round(r * 100) / 100;
+}
 const timeText = seconds => seconds > 0 ? seconds.toFixed(2) + ' s' : 'cut';
 const rateText = rate => rate.toFixed(2) + 'x';
 export const SLIDES_CONTROLS = [
