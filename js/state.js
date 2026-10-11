@@ -301,6 +301,7 @@ export const S = {
   musicOn: true,
   pianoVol: 0.9, pianoReverb: 1.0, pianoRevTime: 4.5,
   pianoRevHP: 20,             // high-pass on the master room's return, Hz; 20 is the floor and reads as off
+  pianoRevHPSlope: 12,        // its slope, dB an octave: 3, 6, then 12 to 48 by 6 (js/room.js HP_SLOPES)
   pianoOn: true,              // the generative piano voice alone
   bedOn: true,                // the ocean drone's own switch
   musicRevOn: true,           // the shared music room's wet output

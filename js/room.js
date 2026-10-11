@@ -20,7 +20,7 @@
 // itself ahead of its split), so a pause stops what feeds the room while
 // the room rings on.
 import { S } from './state.js';
-import { getContext, getMaster, createRoom, swapRoom, glideParam } from './audio.js';
+import { getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd } from './audio.js';
 import { onPhone } from './handheld.js';
 import { peekCtxFor, peekMasterFor, makeWorklet, heartOn, onFallBack } from './heart/route.js';
 import { every } from './ticker.js';
@@ -29,8 +29,9 @@ import { setHumBus } from '../core/sun-hum.js';
 
 // The room's context, its input (what every voice feeds), the two ways
 // into the reverb proper (convFeed for the convolution room, algoFeed for
-// the network), the wet return and its high-pass on the way to the master.
-let ctx = null, input = null, wet = null, wetHP = null, convFeed = null;
+// the network), the wet return, and the master it plays into through the
+// Reverb high-pass (hp, below).
+let ctx = null, input = null, wet = null, out = null, convFeed = null;
 let room = null, algo = null, algoFeed = null, algoDead = false;
 let breatheTimer = 0;
 
@@ -71,15 +72,8 @@ function buildRoom(c, master) {
   if (ctx) teardown();
   ctx = c;
   wet = c.createGain(); wet.gain.value = revLevel();
-  // The Reverb high-pass, on the return after everything that joins it
-  // (either reverb type and the sequencer's line rooms), so the room's low
-  // end can be thinned without touching the dry voices. 12 dB an octave at
-  // Butterworth Q, as the piano's; 20 Hz is the floor and is effectively off.
-  wetHP = c.createBiquadFilter();
-  wetHP.type = 'highpass'; wetHP.Q.value = Math.SQRT1_2;
-  wetHP.frequency.value = revHP();
-  wet.connect(wetHP);
-  wetHP.connect(master);
+  out = master;
+  hpSwap(0);
   // The way into the reverb, whichever type plays it: every voice feeds
   // input, and input feeds the convolution room through convFeed or the
   // algorithmic one through its own feed (applyRevType).
@@ -108,10 +102,13 @@ function buildRoom(c, master) {
 // when the family moves before its first voice is built.
 function teardown() {
   clearTimeout(revUnplug); revUnplug = null;
-  for (const n of [wet, wetHP, input, convFeed, algoFeed, algo, room && room.output]) {
+  for (const n of [wet, input, convFeed, algoFeed, algo, room && room.output]) {
     try { n && n.disconnect(); } catch (e) {}
   }
-  ctx = null; input = null; wet = null; wetHP = null; convFeed = null;
+  for (const ch of [hp, hpOld]) if (ch) hpUnplug(ch);
+  clearTimeout(hpIdle); hpIdle = null;
+  ctx = null; input = null; wet = null; out = null; convFeed = null;
+  hp = null; hpOld = null;
   room = null; algo = null; algoFeed = null; algoDead = false;
   revAlgoNow = false;
 }
@@ -133,9 +130,121 @@ function startRoomAfresh() {
 export function applyRoomLevel() {
   if (wet) glideParam(wet.gain, revLevel(), 0.08);
 }
+
+// The Reverb high-pass, on the return after everything that joins it
+// (either reverb type and the sequencer's line rooms), so the room's low
+// end can be thinned without touching the dry voices. 20 Hz is the floor
+// and is effectively off. Its slope, in dB an octave:
+//   6        a one-pole: the signal less the 'one-pole' processor's low-pass
+//            (worklet.js, Heart's one_pole.rs), since BiquadFilterNode
+//            starts at 12;
+//   12 to 48 Butterworth of order 2 to 8, flat to the cutoff with no bump:
+//            biquads, with that one-pole in front for an odd order;
+//   3        half an order, which no filter has exactly, so eight one-pole
+//            shelves an octave apart below the cutoff, each rising 6 dB an
+//            octave for half an octave and flat for the other half: 3 on
+//            average, to within a fraction of a dB, down to 24 dB at the
+//            bottom, eight octaves under the cutoff and well under hearing.
+// Only the chosen slope's chain is built; a new slope builds its chain and
+// crossfades to it, and the old one is unplugged once it has faded.
+const HP_XF_TC = 0.03;
 const revHP = () => Math.max(20, +S.pianoRevHP || 20);
+const revHPSlope = () => HP_SLOPES.includes(S.pianoRevHPSlope) ? S.pianoRevHPSlope : 12;
+export const HP_SLOPES = [3, 6, 12, 18, 24, 30, 36, 42, 48];
+let hp = null, hpOld = null, hpIdle = null;
+
+// Butterworth's biquad Qs for order n, lowest first; an odd order's real
+// pole is the one-pole in front.
+function butterQs(n) {
+  const qs = [];
+  for (let k = 1; k <= n >> 1; k++) {
+    const th = n % 2 ? k * Math.PI / n : (2 * k - 1) * Math.PI / (2 * n);
+    qs.push(1 / (2 * Math.cos(th)));
+  }
+  return qs;
+}
+// A chain's stages, in order, each with the frequency params it moves and
+// each param's multiple of the cutoff.
+function hpStages(c, slope) {
+  const st = [];
+  // The signal less depth times its one-pole low-pass at mul times the
+  // cutoff: depth 1 is a first-order high-pass, less is a shelf.
+  const onePole = (mul, depth) => {
+    const lp = makeWorklet(c, 'one-pole', { outputChannelCount: [2] });
+    const into = c.createGain(), less = c.createGain(), sum = c.createGain();
+    less.gain.value = -depth;
+    into.connect(sum); into.connect(lp); lp.connect(less); less.connect(sum);
+    st.push({ in: into, out: sum, params: [[lp.parameters.get('frequency'), mul]], nodes: [into, lp, less, sum] });
+  };
+  if (slope === 3) {
+    for (let k = 0; k < 8; k++) onePole(2 ** -k, 1 - Math.SQRT1_2);
+    return st;
+  }
+  const n = slope / 6;
+  if (n % 2) onePole(1, 1);
+  for (const q of butterQs(n)) {
+    const f = c.createBiquadFilter();
+    // the spec reads a high-pass's Q in dB
+    f.type = 'highpass'; f.Q.value = 20 * Math.log10(q);
+    st.push({ in: f, out: f, params: [[f.frequency, 1]], nodes: [f] });
+  }
+  return st;
+}
+// A one-pole that cannot be made (its module missing) leaves the slope at
+// 12, which needs none.
+function hpChain(c, slope) {
+  let st;
+  try { st = hpStages(c, slope); }
+  catch (e) {
+    console.warn('room: the reverb high-pass slope is unavailable, playing 12 dB', e);
+    st = hpStages(c, 12);
+  }
+  for (let k = 1; k < st.length; k++) st[k - 1].out.connect(st[k].in);
+  const level = c.createGain();
+  level.gain.value = 0;
+  st[st.length - 1].out.connect(level);
+  return { slope, st, level };
+}
+function hpTune(ch, tc) {
+  const f = revHP();
+  for (const s of ch.st) for (const [prm, mul] of s.params) {
+    if (tc > 0) glideParam(prm, f * mul, tc); else prm.value = f * mul;
+  }
+}
+function hpUnplug(ch) {
+  try { wet && wet.disconnect(ch.st[0].in); } catch (e) {}
+  for (const s of ch.st) for (const n of s.nodes) { try { n.disconnect(); } catch (e) {} }
+  try { ch.level.disconnect(); } catch (e) {}
+}
+// Build the chosen slope's chain and fade it in over the one playing; tc 0
+// (the room just built) opens it at once.
+function hpSwap(tc) {
+  const slope = revHPSlope();
+  if (hp && hp.slope === slope) return;
+  const next = hpChain(ctx, slope);
+  hpTune(next, 0);
+  wet.connect(next.st[0].in);
+  next.level.connect(out);
+  if (!(tc > 0) || !hp) { next.level.gain.value = 1; if (hp) hpUnplug(hp); hp = next; return; }
+  // a chain still fading out from the last change goes now
+  clearTimeout(hpIdle);
+  if (hpOld) hpUnplug(hpOld);
+  hpOld = hp; hp = next;
+  glideParam(hp.level.gain, 1, tc);
+  glideParam(hpOld.level.gain, 0, tc);
+  const c = ctx, old = hpOld;
+  const wait = Math.max(0, glideEnd() - c.currentTime) + lateBy(c) + 10 * tc;
+  hpIdle = setTimeout(() => {
+    hpIdle = null;
+    if (ctx !== c || hpOld !== old) return;     // the room was rebuilt meanwhile
+    hpUnplug(old); hpOld = null;
+  }, wait * 1000);
+}
 export function applyRevHP() {
-  if (wetHP) glideParam(wetHP.frequency, revHP(), 0.05);
+  if (hp) hpTune(hp, 0.05);
+}
+export function applyRevHPSlope() {
+  if (wet) hpSwap(HP_XF_TC);
 }
 
 // The room's two variances, each the app's standard dip (core/variance.js

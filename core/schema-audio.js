@@ -26,7 +26,7 @@ import {
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn, applyToneBreath
 } from '../js/audio.js';
-import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, applyRevHP, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
+import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, applyRevHP, applyRevHPSlope, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
 import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm, cloudEffectiveAm, rebuildCloudIR } from '../js/clouds.js';
 import {
   applyChoir, applyChoirVol, applyChoirOn, choirEffectiveStack, choirEffectiveDensity
@@ -1592,6 +1592,16 @@ const reverbControls = [
     get: s => s.pianoRevHP ?? 20,
     set: (s, pos) => { s.pianoRevHP = pos; applyRevHP(); save(); },
     format: s => (s.pianoRevHP ?? 20) <= 20 ? 'off' : s.pianoRevHP + ' Hz',
+    visible: s => s.musicRevOn !== false
+  },
+  {
+    // Its slope (js/room.js HP_SLOPES): 6 dB an octave a one-pole, 12 to
+    // 48 Butterworth, 3 a half order made of one-pole shelves.
+    id: 'pianoRevHPSlope', section: 'reverb', label: 'Reverb high-pass rolloff', kind: 'segment', dropdown: true, def: 12,
+    options: [3, 6, 12, 18, 24, 30, 36, 42, 48].map(v => ({ value: v, label: v + ' dB/oct' })),
+    get: s => s.pianoRevHPSlope ?? 12,
+    set: (s, v) => { s.pianoRevHPSlope = +v; applyRevHPSlope(); save(); },
+    format: s => (s.pianoRevHPSlope ?? 12) + ' dB/oct',
     visible: s => s.musicRevOn !== false
   },
   {

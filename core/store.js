@@ -174,7 +174,7 @@ function buildSettings() {
     arpVolVar: S.arpVolVar, arpVolPeriod: S.arpVolPeriod,
     pianoReverbVar: S.pianoReverbVar, pianoReverbPeriod: S.pianoReverbPeriod,
     pianoRevTimeVar: S.pianoRevTimeVar, pianoRevTimePeriod: S.pianoRevTimePeriod,
-    musicRevType: S.musicRevType, phoneRevType: S.phoneRevType, pianoRevDamp: S.pianoRevDamp, pianoRevMod: S.pianoRevMod, pianoRevHP: S.pianoRevHP,
+    musicRevType: S.musicRevType, phoneRevType: S.phoneRevType, pianoRevDamp: S.pianoRevDamp, pianoRevMod: S.pianoRevMod, pianoRevHP: S.pianoRevHP, pianoRevHPSlope: S.pianoRevHPSlope,
     arpStrobeAmVar: S.arpStrobeAmVar, arpStrobeAmPeriod: S.arpStrobeAmPeriod, arpWave: S.arpWave, arpAtk: S.arpAtk, arpDec: S.arpDec, arpOct: S.arpOct, arpRev: S.arpRev, arpSpread: S.arpSpread, arpStrobeAm: S.arpStrobeAm,
     arpHfCut: S.arpHfCut,
       arpSwOn: S.arpSwOn, arpSwLo: S.arpSwLo, arpSwHi: S.arpSwHi, arpSwPeriod: S.arpSwPeriod, arpSwWander: S.arpSwWander,
@@ -1089,7 +1089,7 @@ function applySettings(s, live, scene) {
     if (!live || JSON.stringify(next) !== JSON.stringify(S.ambLayers)) S.ambLayers = next;
   }
   ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','arpVol','arpRate','arpAtk','arpDec','arpOct','arpRev','arpSpread','arpStrobeAm','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
-   'arpVolVar','arpVolPeriod','pianoReverbVar','pianoReverbPeriod','pianoRevTimeVar','pianoRevTimePeriod','pianoRevDamp','pianoRevMod','pianoRevHP','arpStrobeAmVar','arpStrobeAmPeriod','arpHfCut',
+   'arpVolVar','arpVolPeriod','pianoReverbVar','pianoReverbPeriod','pianoRevTimeVar','pianoRevTimePeriod','pianoRevDamp','pianoRevMod','pianoRevHP','pianoRevHPSlope','arpStrobeAmVar','arpStrobeAmPeriod','arpHfCut',
    'pianoSpread','pianoHold','pianoBass','ambVol','ambReverb','ambRevTime','ambDriftFadeS','ambKidsFreq',
    'cloudVol','cloudDensity','cloudPhrase','cloudReverb'].forEach(k => {
     if (typeof s[k] === 'number') S[k] = s[k];
