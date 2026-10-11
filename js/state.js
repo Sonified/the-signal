@@ -120,7 +120,7 @@ export const S = {
   // rather than dimming together.
   ringOpacity: 1,             // v1: the ring layer's own level under the variance
   ringPulse: 0,               // v1: how much rings brighten and darken with the strobe
-  ringBrightVar: 0.55, ringBrightPeriod: 10, ringBrightPhase: 0.5, effRingBright: 0.70,
+  ringBrightVar: 0.55, ringBrightPeriod: 10, ringBrightPhase: 0.5, effRingBright: 0.70, ringBrightVarDrive: 'time',
 
   // ---------- tunnel and edge ----------
   ringSpeedMul: 2.5, edgeCount: 60, edgeSize: 6, trailMul: 1, ringFade: 0.55, ringThick: 3, ringThickVar: 1,
@@ -148,7 +148,7 @@ export const S = {
   // each on its own accumulator and started at a different phase so the two
   // never breathe in lockstep.
   edgeSpeedVar: 0.5, edgeSpeedVarPeriod: 22, edgeSpeedVarPhase: 0,    effEdgeSpeed: 1,
-  ringSpeedVar: 0, ringSpeedVarPeriod: 20, ringSpeedVarPhase: 0,      effRingSpeedMul: 2.5,
+  ringSpeedVar: 0, ringSpeedVarPeriod: 20, ringSpeedVarPhase: 0,      effRingSpeedMul: 2.5, ringSpeedVarDrive: 'time',
   edgeSizeVar:  0.5, edgeSizeVarPeriod:  18, edgeSizeVarPhase:  0.37, effEdgeSize:  1,
 
   rings: [], particles: [], lastRingEmit: -1,

@@ -35,7 +35,7 @@ import { updateRings, updateParticles } from '../js/sim.js';
 import { motionStep, motionScale, winding } from './motion.js';
 import { roomPhase, roomPhaseState } from './room-clock.js';
 import { GAP_MS, stepWakeRamp, wakeRamp } from './wake.js';
-import { varied, stepPhase } from './variance.js';
+import { variedBy, driveOf, stepPhase } from './variance.js';
 import { registerVarianceOwner } from './variance-owners.js';
 import {
   signal, SIGNAL_ORIGIN, waveCode, phaseAt, rateAt, retimeSignal, pinSignal, steerSignal,
@@ -61,6 +61,11 @@ let prevLit = false;
 //   beacon   the key its phase rides in a broadcast's beacon (applySync)
 //   room     a room-clock state: in a room the phase is pulled onto the
 //            room's clock instead (core/room-clock.js), a no-op outside one
+//   drive    the key of a Time / Link to strobe / Link to breath choice: Time
+//            is the phase as above, the others lead the dip from the strobe's
+//            wave or the sun's breath (core/variance.js variedBy). The phase
+//            steps and rides its sync either way, so a switch back to Time
+//            lands in phase.
 // A phase rides a beacon or the room clock or neither, exactly as it did
 // when each was written out by hand; that is followers' contract, so an
 // entry's sync never changes with the table.
@@ -71,7 +76,7 @@ const VARIANCES = [
   { amount: 'edgeSpeedVar', period: 'edgeSpeedVarPeriod', phase: 'edgeSpeedVarPhase', eff: 'effEdgeSpeed', set: 'edgeSpeedMul', beacon: 'sp' },
   // the rings' Speed (js/sim.js reads the effective in place of the dial
   // while the variance is up)
-  { amount: 'ringSpeedVar', period: 'ringSpeedVarPeriod', fallback: 20, phase: 'ringSpeedVarPhase', eff: 'effRingSpeedMul', set: 'ringSpeedMul' },
+  { amount: 'ringSpeedVar', period: 'ringSpeedVarPeriod', fallback: 20, phase: 'ringSpeedVarPhase', eff: 'effRingSpeedMul', set: 'ringSpeedMul', drive: 'ringSpeedVarDrive' },
   { amount: 'edgeSizeVar', period: 'edgeSizeVarPeriod', phase: 'edgeSizeVarPhase', eff: 'effEdgeSize', set: 'edgeSize', beacon: 'zp' },
   // the edge's Pulse with strobe (gpu/scene-data.js buildEdge and
   // gpu/edge-fx.js read effEdgePulse, and its drawer row lights its bar
@@ -79,7 +84,7 @@ const VARIANCES = [
   { amount: 'edgePulseVar', period: 'edgePulseVarPeriod', fallback: 20, phase: 'edgePulseVarPhase', eff: 'effEdgePulse', set: edgePulseSet },
   // the Ring opacity dial scales the whole layer under the variance, so the
   // dips breathe inside whatever level the viewer set
-  { amount: 'ringBrightVar', period: 'ringBrightPeriod', phase: 'ringBrightPhase', eff: 'effRingBright', set: S => S.bright * (S.ringOpacity ?? 1), beacon: 'rp' },
+  { amount: 'ringBrightVar', period: 'ringBrightPeriod', phase: 'ringBrightPhase', eff: 'effRingBright', set: S => S.bright * (S.ringOpacity ?? 1), beacon: 'rp', drive: 'ringBrightVarDrive' },
   // the strobe field's Center fade radius (gpu/scene-data.js hands the
   // effective to the shader in place of the dial)
   { amount: 'fieldFadeVar', period: 'fieldFadeVarPeriod', fallback: 20, phase: 'fieldFadeVarPhase', eff: 'effFieldFade', set: S => S.fieldFade || 0 },
@@ -122,8 +127,11 @@ for (const v of VARIANCES) if (typeof v.set === 'string') { registerVarianceOwne
 // One frame of every variance: the phases step while anything moves (flick),
 // and every effective is written, stepped or not. At an amount of 0 the law
 // spends no trig and the effective is the setting; the phase still steps, so
-// a variance turned up mid-session picks up where it would have been.
-function stepVariances(t, md, flick) {
+// a variance turned up mid-session picks up where it would have been. lum is
+// this frame's raw strobe wave, for a variance linked to the strobe; the sun's
+// breath, for one linked to that, is the last frame's (the sun renders after
+// this step).
+function stepVariances(t, md, flick, lum) {
   if (flick) {
     for (let i = 0; i < VARIANCES.length; i++) {
       const v = VARIANCES[i];
@@ -136,7 +144,7 @@ function stepVariances(t, md, flick) {
   for (let i = 0; i < VARIANCES.length; i++) {
     const v = VARIANCES[i];
     const amount = v.on && S[v.on] === false ? 0 : S[v.amount];
-    S[v.eff] = varied(v.set(S), amount, S[v.phase] || 0);
+    S[v.eff] = variedBy(v.drive ? driveOf(S[v.drive]) : 'time', v.set(S), amount, S[v.phase] || 0, lum, S.effSunBreathPos);
   }
 }
 
@@ -642,7 +650,10 @@ export function stepStrobe(t) {
   // The variances (VARIANCES above). Each phase is 0 at the top of its
   // cycle, so the depth, say, starts at its full set value; the depth then
   // carries the Strobe scale, as every strobe depth does.
-  stepVariances(t, md, flick);
+  // The frame's raw wave is read first, since a variance linked to the strobe
+  // dips with it (the same value is handed on below).
+  const lum = flickerShows() ? flickerLum(shape(S.phase)) : 1;
+  stepVariances(t, md, flick, lum);
   S.effDepth *= strobeScale();
 
   if (S.perElementColor && S.colorWalk > 0 && flick) {
@@ -679,7 +690,6 @@ export function stepStrobe(t) {
   // imbalance the guard trips on, and a stop the guard itself makes skips
   // the wind-down entirely (motionHalt in main.js). The lit log stays a
   // record of running frames only.
-  const lum = flickerShows() ? flickerLum(shape(S.phase)) : 1;
   const lit = isLit(lum);
   if (S.running) pushWindow(S.litLog, lit ? 1 : 0, 120);
   lastDt = dt;

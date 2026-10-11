@@ -92,6 +92,29 @@ export function varied(set, amount, phase) {
   return amount ? set * (1 - dipDepth(amount, phase)) : set;
 }
 
+// What can drive a variance's dip, for the ones that choose (the rings'
+// Speed and Opacity; the sun's own carry the same three): the variance's own
+// clock (Time), the strobe's wave, or the sun's breath. An unknown or missing
+// value is Time, the dip as it always was.
+export const DRIVES = ['time', 'strobe', 'breath'];
+export const driveOf = v => DRIVES.indexOf(v) >= 0 ? v : 'time';
+
+// The setting as the variance plays it when a chosen driver leads. The law is
+// the same for every driver, set * (1 - amount * (1 - d)), d from 0 (the
+// driver at its bottom) to 1 (at its top, the setting in full): Time's d is
+// the cosine, 0.5 + 0.5 cos 2πφ, which is varied() above to the letter (so
+// Time calls it); the strobe's d is lum, its raw wave, 1 lit to 0 dark; the
+// breath's is the sun's breath, 0 full exhale to 1 full inhale, and while no
+// breath runs (the Sun layer off, so none is published) it is 1 and the
+// setting holds. Either is clamped to 0..1, so the dip never goes above the
+// setting.
+export function variedBy(drive, set, amount, phase, lum, breathPos) {
+  if (!amount || drive !== 'strobe' && drive !== 'breath') return varied(set, amount, phase);
+  let d = drive === 'strobe' ? lum : breathPos;
+  d = typeof d !== 'number' || d !== d ? 1 : d > 1 ? 1 : d < 0 ? 0 : d;
+  return set * (1 - amount * (1 - d));
+}
+
 // A phase moved on by dt over the period, kept in 0 to 1.
 export function stepPhase(phase, dt, period) {
   phase += dt / period;

@@ -36,7 +36,7 @@ import { FX_NAMES } from './word-fx.js';
 import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 import { varianceRows } from './schema-variance.js';
-import { varied } from './variance.js';
+import { varied, DRIVES, driveOf } from './variance.js';
 import { applyHeartLookahead, applyHeartGrow } from '../js/heart/route.js';
 
 // S stores colour as an [r,g,b] triple (js/color.js's setColorFromPicker
@@ -114,6 +114,24 @@ const surfing = S => edgeMode(S) === 'surfing';
 // The edge's Pulse with strobe, 1 (the edge as it always was) when unset.
 const edgePulse = S => typeof S.edgePulse === 'number' ? S.edgePulse : 1;
 
+// What a ring variance dips with, the first row folded out from under its
+// owner: Time (its own rate), the strobe's wave or the sun's breath, the same
+// choice the sun's variances carry (core/schema-sun.js drivenVariance). The
+// dip's law is the same for all three (core/variance.js variedBy); Time is
+// the default, the dip as it always was.
+const DRIVE_NAMES = { time: 'Time', strobe: 'Link to strobe', breath: 'Link to breath' };
+function driveRow(owner, key, label, parent) {
+  const row = {
+    id: key, section: 'tunnel', label, kind: 'segment', dropdown: true, varianceOf: owner,
+    options: DRIVES.map(v => ({ value: v, label: DRIVE_NAMES[v], domId: null })),
+    def: 'time',
+    get: S => driveOf(S[key]),
+    set: (S, v) => { S[key] = driveOf(v); save(); },
+    format: S => DRIVE_NAMES[driveOf(S[key])]
+  };
+  if (parent) row.parent = parent;
+  return row;
+}
 const fadeInOn = S => S.textFadeInOn !== false;
 const fadeOutOn = S => S.textFadeOutOn !== false;
 // Whole phrases, which can wrap to several lines: the affirmations, and the
@@ -628,9 +646,12 @@ export const VISUAL_CONTROLS = [
   // The speed's dip, the app's standard: over one rate cycle the rings ease
   // from the setting down by this share and back, never above it. The bar
   // glows with the speed as core/strobe.js dips it each frame.
+  driveRow('ringSpeed', 'ringSpeedVarDrive', 'Speed variance driver', 'tunnelTimingDrawer'),
   ...varianceRows('ringSpeed', {
     labels: ['Speed variance', 'Variance rate'], parent: 'tunnelTimingDrawer',
-    effective: S => typeof S.effRingSpeedMul === 'number' ? S.effRingSpeedMul : undefined
+    effective: S => typeof S.effRingSpeedMul === 'number' ? S.effRingSpeedMul : undefined,
+    // the rate is Time's speed, so it shows only while Time drives the dip
+    rows: { period: { visible: S => driveOf(S.ringSpeedVarDrive) === 'time' } }
   }),
   {
     // How often a new ring is born, straight in rings a second; the old
@@ -679,10 +700,18 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.ringOpacity = pos / 100; save(); },
     format: S => Math.round((S.ringOpacity ?? 1) * 100) + '%'
   },
+  driveRow('ringOpacity', 'ringBrightVarDrive', 'Ring brightness var driver'),
   ...varianceRows('ringOpacity', {
     amount: 'ringBrightVar', period: 'ringBrightPeriod', labels: ['Ring brightness var', 'Ring bright var rate'],
     amountDef: 55, periodDef: 10,
-    effective: S => varied(S.ringOpacity ?? 1, S.ringBrightVar, S.ringBrightPhase) * 100
+    // The varied level as the strobe core played it this frame, whatever
+    // drives it (core/strobe.js effRingBright is the brightness times the
+    // opacity, dipped), taken back to the opacity's own units by the
+    // brightness; with that at 0 nothing shows, so the bar rests at the dial.
+    effective: S => S.bright > 0 && typeof S.effRingBright === 'number'
+      ? Math.min(1, S.effRingBright / S.bright) * 100 : (S.ringOpacity ?? 1) * 100,
+    // the rate is Time's speed, so it shows only while Time drives the dip
+    rows: { period: { visible: S => driveOf(S.ringBrightVarDrive) === 'time' } }
   }),
   {
     id: 'ringFade', section: 'tunnel', label: 'Center fade radius', kind: 'slider',

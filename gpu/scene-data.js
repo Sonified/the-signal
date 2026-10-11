@@ -24,6 +24,7 @@ import { shape, smoothstep } from '../js/util.js';
 import { radialFade } from '../core/fade.js';
 import { flickerLevel } from '../core/strobe.js';
 import { eye } from '../core/eye.js';
+import { variedBy, driveOf } from '../core/variance.js';
 import { bandHue } from '../js/color.js';
 
 export const UNIFORM_FLOATS = 44;          // see scene.wgsl.js's struct U
@@ -295,9 +296,9 @@ function buildUniform(sd, lum, pixelW, pixelH, dpr) {
     // mid-frame (the performance window fading a layer in through its
     // opacity) would render one frame at the old level -- a flash.
     const ringBase = S.bright * (S.ringOpacity ?? 1);
-    const effRingBright = S.ringBrightVar
-      ? ringBase * (1 - S.ringBrightVar * 0.5 * (1 - Math.cos(2 * Math.PI * S.ringBrightPhase)))
-      : ringBase;
+    // The dip follows its driver (Time, the strobe or the breath), this
+    // frame's lum being the strobe's raw wave.
+    const effRingBright = variedBy(driveOf(S.ringBrightVarDrive), ringBase, S.ringBrightVar, S.ringBrightPhase, lum, S.effSunBreathPos);
     const fadeInS = (S.ringFadeInMs ?? 1000) / 1000;
     const FOCAL = maxR * Z_NEAR;
     // RETIRED 2026-10-08: the old ring lookup, kept commented for one release; Records is the only path (see scene-data.js's note)

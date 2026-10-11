@@ -45,6 +45,7 @@ import { idleWake } from './idle.js';
 import { applyEdgeDir } from '../js/sim.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
 import { CHANNELS, applyMixGates } from '../js/mixgate.js';
+import { driveOf } from './variance.js';
 import { MUSIC_LAYERS, layerOnKey, layerVolKey } from '../js/layer-defs.js';
 // A cycle (schema-flowers.js and schema-kaleido.js import save() from here),
 // but a harmless one: neither side calls into the other while it is being
@@ -121,7 +122,7 @@ function buildSettings() {
     fieldFadeVar: S.fieldFadeVar, fieldFadeVarPeriod: S.fieldFadeVarPeriod,
     color: rgbHex(S.rgb),
     cornerOpacity: S.cornerOpacity, cornerOpacityVar: S.cornerOpacityVar, cornerOpacityVarPeriod: S.cornerOpacityVarPeriod, cornerSpeed: S.cornerSpeed, cornerPulse: S.cornerPulse, cornerSize: S.cornerSize, cornerType: S.cornerType,
-    ringSpeed5: S.ringSpeedMul, ringSpeedVar: S.ringSpeedVar, ringSpeedVarPeriod: S.ringSpeedVarPeriod,
+    ringSpeed5: S.ringSpeedMul, ringSpeedVar: S.ringSpeedVar, ringSpeedVarPeriod: S.ringSpeedVarPeriod, ringSpeedVarDrive: driveOf(S.ringSpeedVarDrive),
     ringRate: S.ringRate, ringOrigin: S.ringOrigin, ringFadeInMs: S.ringFadeInMs, ringOpacity: S.ringOpacity, ringPulse: S.ringPulse, ringFade: S.ringFade, ringThick: S.ringThick, ringThickVar: S.ringThickVar, edgeCount: S.edgeCount,
     edgeSize: S.edgeSize, edgeCap: S.edgeCap, edgeOpacity: S.edgeOpacity, edgeOpacityVar: S.edgeOpacityVar, edgeOpacityVarPeriod: S.edgeOpacityVarPeriod, trailMul: S.trailMul, edgeSpeedMul: S.edgeSpeedMul,
     edgeFb: S.edgeFb, edgeFbStream: S.edgeFbStream, edgeFbTwist: S.edgeFbTwist, edgeFbOpacity: S.edgeFbOpacity,
@@ -199,7 +200,7 @@ function buildSettings() {
     skipRiskBand: S.skipRiskBand !== false,
     brightVarPeriod: S.brightVarPeriod, colorWalk: S.colorWalk,
     hueLo: S.hueLo, hueSpan: S.hueSpan,
-    ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod,
+    ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod, ringBrightVarDrive: driveOf(S.ringBrightVarDrive),
     edgeSpeedVar: S.edgeSpeedVar, edgeSpeedVarPeriod: S.edgeSpeedVarPeriod,
     edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
     carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, amLinked: S.amLinked, amModOn: S.amModOn,
@@ -874,6 +875,7 @@ function applySettings(s, live, scene) {
   else if (typeof s.ringSpeedMul === 'number' && isFinite(s.ringSpeedMul)) S.ringSpeedMul = oldRingSpeed(s.ringSpeedMul);
   if (typeof s.ringSpeedVar === 'number') S.ringSpeedVar = Math.max(0, Math.min(1, s.ringSpeedVar));
   if (typeof s.ringSpeedVarPeriod === 'number') S.ringSpeedVarPeriod = Math.max(1, Math.min(60, s.ringSpeedVarPeriod));
+  if (typeof s.ringSpeedVarDrive === 'string') S.ringSpeedVarDrive = driveOf(s.ringSpeedVarDrive);
   if (typeof s.cornerOpacity === 'number' && isFinite(s.cornerOpacity)) S.cornerOpacity = Math.max(0, Math.min(1, s.cornerOpacity));
   if (typeof s.cornerOpacityVar === 'number' && isFinite(s.cornerOpacityVar)) S.cornerOpacityVar = Math.max(0, Math.min(1, s.cornerOpacityVar));
   if (typeof s.cornerOpacityVarPeriod === 'number' && isFinite(s.cornerOpacityVarPeriod)) S.cornerOpacityVarPeriod = Math.max(1, Math.min(60, s.cornerOpacityVarPeriod));
@@ -972,6 +974,7 @@ function applySettings(s, live, scene) {
   if (typeof s.ringThickVar === 'number') S.ringThickVar = s.ringThickVar;
   if (typeof s.ringBrightVar === 'number')    S.ringBrightVar = s.ringBrightVar;
   if (typeof s.ringBrightPeriod === 'number') S.ringBrightPeriod = s.ringBrightPeriod;
+  if (typeof s.ringBrightVarDrive === 'string') S.ringBrightVarDrive = driveOf(s.ringBrightVarDrive);
   if (typeof s.edgeSpeedVar === 'number')       S.edgeSpeedVar = s.edgeSpeedVar;
   if (typeof s.edgeSpeedVarPeriod === 'number') S.edgeSpeedVarPeriod = s.edgeSpeedVarPeriod;
   if (typeof s.edgeSizeVar === 'number')        S.edgeSizeVar = s.edgeSizeVar;
