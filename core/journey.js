@@ -819,6 +819,17 @@ function takeFromGlide(c) {
   if (perfDestination(c.id) !== undefined) perfRelease(c.id);
 }
 
+// Transition durations configure the change itself. Apply them before the
+// incoming file or layer switches, and never tween them over the step's ramp.
+function applyStepTiming(o, mixOwned) {
+  for (let i = 0; i < R.length; i++) {
+    const c = R[i], v = o[c.id];
+    if (!c.journeyImmediate || v === undefined || !moves(i, mixOwned)) continue;
+    takeFromGlide(c);
+    if (!same(c, c.get(S), v)) c.set(S, v);
+  }
+}
+
 // Every control the step holds that is not already where the step puts it,
 // or headed there (settled), set through its own set() in the replay's
 // order (clickMode first), inside one transition over `sec`. What is settled
@@ -826,6 +837,7 @@ function takeFromGlide(c) {
 // Selecting a step to edit it, and a step whose ramp is a cut, land this way.
 function applyStep(st, sec) {
   const o = st.overrides, mixOwned = !!st.mix, walk = walking(o);
+  applyStepTiming(o, mixOwned);
   throughDoor(o, mixOwned, sec, true);
   beginTransition(Math.max(MIN_GLIDE_S, sec));
   try {
@@ -1417,6 +1429,7 @@ function addColor(c, hex) {
 // Only what is not already settled where the step puts it moves (applyStep).
 function startRamp(st, withText) {
   const o = st.overrides, mixOwned = !!st.mix;
+  applyStepTiming(o, mixOwned);
   throughDoor(o, mixOwned, st.rampS, false);
   beginTransition(SWITCH_GLIDE_S, st.rampS);
   try {
@@ -1434,7 +1447,7 @@ function startRamp(st, withText) {
   const walk = walking(o);
   for (let i = 0; i < R.length; i++) {
     const c = R[i], v = o[c.id];
-    if (v === undefined || (c.kind !== 'slider' && c.kind !== 'color') || doorHeld[i] || !moves(i, mixOwned) || settled(c, v)) continue;
+    if (v === undefined || c.journeyImmediate || (c.kind !== 'slider' && c.kind !== 'color') || doorHeld[i] || !moves(i, mixOwned) || settled(c, v)) continue;
     if (c.kind === 'color' && walk) continue;
     takeFromGlide(c);
     if (c.kind === 'slider') addSlider(i, c, v);
@@ -1853,6 +1866,7 @@ export function journeySetOverride(i, id, v) {
   if (v === undefined) return;
   const editing = armed && i === sel;
   if (editing || i === play.stepIdx) {
+    if (c.journeyImmediate) takeFromGlide(c);
     if (!same(c, c.get(S), v)) c.set(S, v);
     v = c.get(S);
   }

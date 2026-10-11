@@ -394,6 +394,7 @@ async function boot() {
   // the room's settings through the same live path a preset recall uses.
   // Page thread only: in worker mode the store lives in the worker, which
   // never sees the page's URL, so a normal load is what a demo runs on.
+  let finishRemoteFrame = null;
   if (!inWorker) {
     const bIntent = broadcastUrlIntent();
     if (bIntent && bIntent.follow) setOverlayFollow();
@@ -416,7 +417,7 @@ async function boot() {
     // Its title clears the screen: the drawer and every floating window
     // shut, leaving only the playback (the Levels window through its own
     // close action, as its close button does).
-    initShowRemote({
+    finishRemoteFrame = initShowRemote({
       clearScreen: () => {
         const mixClose = byId('ambMixerClose');
         if (mixer.open) { if (mixClose) mixClose.act(S); else mixer.open = false; }
@@ -914,6 +915,7 @@ async function boot() {
         profFrame(t, t1 - t0, t2 - t1, t3 - t2, t4 - t3, t5 - t4, pf);
       }
     }
+    if (finishRemoteFrame) finishRemoteFrame();
   }
 
   console.log('[boot] layers registered, starting frame loop +' + Math.round(performance.now()) + 'ms');

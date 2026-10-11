@@ -17,6 +17,7 @@
 import { save } from './store.js';
 import { idleWake } from './idle.js';
 import { subDrawer } from './schema-visual.js';
+import { slideRateFromPos as posToRate, slideRateToPos as rateToPos } from './slide-rate.js';
 
 // The show's videos, in running order: the file name (stored on S as the
 // dropdown's value, so it reads plainly in a saved journey) and its label.
@@ -36,8 +37,7 @@ export const SLIDE_FILES = [
   ['090_Harp_Trailer_Voice.mp4', 'HARP Trailer'],
   ['180_WISPR PSP CME Sonification dfb dbm vac trim_ANOMALY_B4.mp4', 'WISPR CME'],
   ['190_Touching_The_Sun.mp4', 'Touching the Sun'],
-  ['220_Ed_Mitchell_VR_Combined_Audio_Video.mp4', 'Ed Mitchell VR'],
-  ['900_QR_Meditate_With_The_Sun_ALT_304.mp4', 'QR Meditate']
+  ['220_Ed_Mitchell_VR_Combined_Audio_Video.mp4', 'Ed Mitchell VR']
 ];
 // The dropdown's options, None first. Shared with the Journey window's own
 // SLIDE menu (ui/screens/journey.js), so the two always list the same.
@@ -127,6 +127,10 @@ export function applySlidesState(S, o) {
 // both edit this one map, so a slide meets the show at the level it was
 // last left. gpu/slides.js reads it onto the slot's gain leg each frame.
 export const SLIDE_VOL_MAX = 2;
+// Keep the existing taper below unity; above unity, 200% is twice the gain.
+export const slideVolGain = v => v <= 1 ? v * v * v : v;
+// Pointer magnet only: saved levels and interpolated values stay untouched.
+export const snapSlideVol = v => Math.abs(v - 1) <= 0.03 + 1e-9 ? 1 : v;
 export function slideVolOf(S, file) {
   const m = S.slideVols;
   const v = m && typeof m[file] === 'number' ? m[file] : 1;
@@ -142,24 +146,13 @@ export function setSlideVol(S, file, v) {
 // ---------- the sliders' tapers ----------
 // Rate: the turntable's left half is LINEAR, 0 (stopped) at the left end up
 // to 1x at the centre, so a slow-down glides all the way to a stop; the
-// right half stays logarithmic, 1x to 2x. A drag landing within RATE_SNAP
+// right half stays logarithmic, 1x to 2x. A drag landing within 3%
 // of 1x takes it exactly. (The sound itself bottoms out at 6.25%: Chrome
 // refuses element rates between 0 and 0.0625 - gpu/slides.js floors there,
 // and a true 0 freezes the picture.)
-const RATE_POS = 1000, RATE_MID = RATE_POS / 2, RATE_SNAP = 0.03;
-function rateToPos(v) {
-  if (!(v === v)) return NaN;
-  const r = v < 0 ? 0 : v > 2 ? 2 : v;
-  return Math.round(r <= 1
-    ? RATE_MID * r                                  // 0..1 over 0..500, linear
-    : RATE_MID + RATE_MID * Math.log2(r));          // 1..2 over 500..1000
-}
-function posToRate(pos) {
-  const p = pos > 0 ? (pos < RATE_POS ? pos : RATE_POS) : 0;
-  let r = p <= RATE_MID ? p / RATE_MID : Math.pow(2, (p - RATE_MID) / RATE_MID);
-  if (Math.abs(r - 1) <= RATE_SNAP) r = 1;
-  return Math.round(r * 100) / 100;
-}
+const RATE_POS = 1000;
+const timeText = seconds => seconds > 0 ? seconds.toFixed(2) + ' s' : 'cut';
+const rateText = rate => rate.toFixed(2) + 'x';
 export const SLIDES_CONTROLS = [
   // In the drawer's Layers group, straight after the Sun. Off by default.
   {
@@ -184,7 +177,7 @@ export const SLIDES_CONTROLS = [
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.slideVolume * 100),
     set: (S, pos) => { S.slideVolume = fit(pos / 100, 0, 1); save(); },
-    format: S => Math.round(S.slideVolume * 100) + '%'
+    formatAt: pos => pos + '%'
   },
   {
     // Which video plays. A change loads the new file from its start.
@@ -201,9 +194,10 @@ export const SLIDES_CONTROLS = [
     // the schema, so a step replaying both lands the file first.
     id: 'slideVol', section: 'slides', label: 'Slide volume', kind: 'slider',
     min: 0, max: SLIDE_VOL_MAX * 100, step: 1, def: 100,
+    dragSnap: pos => snapSlideVol(pos / 100) * 100,
     get: S => Math.round(slideVolOf(S, fileOf(S.slideFile)) * 100),
     set: (S, pos) => setSlideVol(S, fileOf(S.slideFile), pos / 100),
-    format: S => Math.round(slideVolOf(S, fileOf(S.slideFile)) * 100) + '%',
+    formatAt: pos => pos + '%',
     enabled: S => fileOf(S.slideFile) !== SLIDE_NONE
   },
   {
@@ -222,7 +216,7 @@ export const SLIDES_CONTROLS = [
     min: 0, max: 100, step: 5, def: 20,
     get: S => Math.round(S.slidePpOut * 100),
     set: (S, pos) => { S.slidePpOut = fit(Math.round(pos / 5) * 5 / 100, 0, 1); save(); },
-    format: S => S.slidePpOut > 0 ? S.slidePpOut.toFixed(2) + ' s' : 'cut',
+    formatAt: pos => timeText(pos / 100),
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
   },
   {
@@ -231,7 +225,7 @@ export const SLIDES_CONTROLS = [
     min: 0, max: 100, step: 5, def: 20,
     get: S => Math.round(S.slidePpIn * 100),
     set: (S, pos) => { S.slidePpIn = fit(Math.round(pos / 5) * 5 / 100, 0, 1); save(); },
-    format: S => S.slidePpIn > 0 ? S.slidePpIn.toFixed(2) + ' s' : 'cut',
+    formatAt: pos => timeText(pos / 100),
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
   },
   {
@@ -249,14 +243,16 @@ export const SLIDES_CONTROLS = [
   },
   {
     // How long a change of slide takes, picture and sound together
-    // (gpu/slides.js): 0 is a cut, up to 10 s in 0.05 s steps. Its position
+    // (gpu/slides.js): 0 is a cut, up to 10 s in 0.5 s slider steps. Its position
     // is in hundredths of a second (0 to 1000), whole numbers, so the show
     // remote (platform/show-remote.js) can send it as it sends the faders.
     id: 'slideXfade', section: 'slides', label: 'Crossfade', kind: 'slider',
-    min: 0, max: 1000, step: 5, def: 50,
+    // The incoming step's transition duration must land before its file.
+    journeyImmediate: true,
+    min: 0, max: 1000, step: 50, def: 50,
     get: S => Math.round(S.slideXfade * 100),
     set: (S, pos) => { S.slideXfade = fit(Math.round(pos / 5) * 5 / 100, 0, 10); save(); },
-    format: S => S.slideXfade > 0 ? S.slideXfade.toFixed(2) + ' s' : 'cut',
+    formatAt: pos => pos > 0 ? (pos / 100).toFixed(1) + ' s' : 'cut',
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
   },
   {
@@ -271,7 +267,7 @@ export const SLIDES_CONTROLS = [
     min: 0, max: RATE_POS, step: 1, def: rateToPos(1),
     get: S => rateToPos(S.slideRate),
     set: (S, pos) => { S.slideRate = fit(posToRate(pos), 0, 2); save(); },
-    format: S => S.slideRate.toFixed(2) + 'x',
+    formatAt: pos => rateText(posToRate(pos)),
     parse: (S, text) => rateToPos(parseFloat(text)),
   }
 ];

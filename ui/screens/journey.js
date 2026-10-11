@@ -70,7 +70,7 @@ import {
   journeyTrigger, journeySetTrigger, journeyJumpTo,
   RAMP_MIN, RAMP_MAX, HOLD_MIN, HOLD_MAX, STEP_TEXT_MAX
 } from '../../core/journey.js';
-import { SLIDE_OPTIONS, SLIDE_NONE, slideLabel, slideVolOf, setSlideVol, SLIDE_VOL_MAX } from '../../core/schema-slides.js';
+import { SLIDE_OPTIONS, SLIDE_NONE, slideLabel, slideVolOf, setSlideVol, SLIDE_VOL_MAX, snapSlideVol } from '../../core/schema-slides.js';
 import { slidesLiveState, toggleSlidePlayLive } from '../../gpu/slides.js';
 import { idleWake } from '../../core/idle.js';
 import { S } from '../../js/state.js';
@@ -146,7 +146,8 @@ const FOLD_ROW_H = 32, FOLD_PAD = 5;
 const FIELD_H = 34, TEXT_ROW_H = FIELD_H + 8;
 const TX_SHUT_H = FOLD_ROW_H, TX_OPEN_H = TEXT_ROW_H + FOLD_ROW_H * 3;
 const FOLD_FIXED_H = FOLD_ROW_H * 5 + FOLD_PAD * 2;
-const foldHeight = txa => FOLD_FIXED_H + TX_SHUT_H + txa * (TX_OPEN_H - TX_SHUT_H);
+const foldHeight = (txa, video) => video ? FOLD_ROW_H * 2 + FOLD_PAD * 2
+  : FOLD_FIXED_H + TX_SHUT_H + txa * (TX_OPEN_H - TX_SHUT_H);
 // the controls start clear of INTERACTION, the longest name; VAL_W holds the
 // widest readout ("4m 55s") at 11 pt
 const FOLD_NAME_X = 8, FOLD_CTL_X = 100, VAL_W = 48;
@@ -158,6 +159,7 @@ const HR_SLIDER_X = 50, HR_NAME_W = 44, HR_GAP = 10;
 const FADE_SLIDER_X = 64, FADE_NAME_W = 68;
 // a three-way line's button, wide enough for "Beginning" at 11 pt
 const SEG_W = 74;
+const SLIDE_BOX_W = 136;
 const ADD_GAP = 8, ADD_H = 30;
 // the gear's strip: its field in a fold-coloured band a little below the bar
 const SET_TOP = 8, SET_H = SET_TOP + FIELD_H + 8;
@@ -179,6 +181,8 @@ const LOCK_S = 14;
 // step holds them as overrides like any drawer setting. Phrase gap remains
 // in Journey data but is intentionally hidden from this compact fold for now.
 const FADE_IN = byId('textFadeIn'), FADE_OUT = byId('textFadeOut');
+const SLIDE_XFADE = byId('slideXfade');
+const rampTip = { id: -1, x: 0, y: 0, w: 0, hover: false };
 const JOURNEY_FADE_STEP_MS = 500;
 const TIME_OS = byId('textDwell'), TEXT_SIZE = byId('textSize');
 // the two three-way lines' values, labels and button ids, made once
@@ -292,6 +296,13 @@ function firstWords(t) {
   if (p.length > 26) p = p.slice(0, 25) + '…';
   return p;
 }
+function stepHasSlide(st) {
+  const file = st.overrides.slideFile ?? S.slideFile;
+  return typeof file === 'string' && file !== SLIDE_NONE;
+}
+function stepCrossfade(st) {
+  return typeof st.overrides.slideXfade === 'number' ? st.overrides.slideXfade : SLIDE_XFADE.get(S);
+}
 function refreshTexts() {
   const v = journeyVersion();
   if (v === sumVersion) return;
@@ -306,7 +317,9 @@ function refreshTexts() {
     // (every step holds every setting, so there is no count to give)
     const slide = typeof st.overrides.slideFile === 'string' ? slideLabel(st.overrides.slideFile) : '';
     summaries[i] = (slide ? slide + ' · ' : '') + (st.text ? '“' + firstWords(st.text) + '” · ' : '') +
-      (trig ? '' : 'hold ' + holdTexts[i] + ' · ') + 'ramp ' + rampTexts[i];
+      (trig ? '' : 'hold ' + holdTexts[i] + ' · ') +
+      'P-Ramp ' + rampTexts[i] +
+      (stepHasSlide(st) ? ' · crossfade ' + SLIDE_XFADE.formatAt(stepCrossfade(st), S) : '');
   }
   summaries.length = n; rampTexts.length = n; holdTexts.length = n;
 }
@@ -346,12 +359,18 @@ const nameEdit = makeTextState(NAME_MAX, 'Their name');
 // A small horizontal slider (the sequencer's rate slider): a press jumps it
 // there and dragging follows. Returns the new place 0..1 while pressed, or
 // -1 when untouched.
-function hslider(ui, id, x, cy, w, u) {
+const snapVolumeU = u => snapSlideVol(Math.round(u * SLIDE_VOL_MAX * 100) / 100) / SLIDE_VOL_MAX;
+const snapCrossfadeU = u => {
+  const c = SLIDE_XFADE, span = c.max - c.min;
+  return (Math.round((c.min + u * span) / c.step) * c.step - c.min) / span;
+};
+function hslider(ui, id, x, cy, w, u, snapDrag) {
   ui.interact(id, x - 6, cy - 9, w + 12, 18, false);
   const lit = ui.hover || ui.pressed;
   if (lit) { ui.setCursorHint('ew-resize'); overBtn = true; }
   let nu = -1;
   if (ui.pressed) nu = Math.max(0, Math.min(1, (ui.pointerX - x) / w));
+  if (nu >= 0 && snapDrag) nu = snapDrag(nu);
   const s = nu >= 0 ? nu : u;
   const dl = ui.dl;
   dl.rect(x, cy - 1.5, w, 3, 1.5, C.btnBorder, 0, null, 0, 0);
@@ -397,6 +416,7 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && window.a
 
 // fade is the chrome's idle fade, as the sequencer's.
 export function drawJourney(ui, app, fade = 1) {
+  rampTip.hover = false;
   if (!restored) restore();
   // (authoring needs journey mode on as well as the window: switched off,
   // the step is let go just as when the window shuts)
@@ -429,7 +449,7 @@ export function drawJourney(ui, app, fade = 1) {
     foldA[i] = ui.spring(ui.idx('jr.foldA', i), i === sel ? 1 : 0, MOTION.panel);
     const st = journeyStepAt(i);
     txA[i] = ui.spring(ui.idx('jr.txA', i), st && textOpen(i, st) ? 1 : 0, MOTION.panel);
-    foldH[i] = foldHeight(txA[i]);
+    foldH[i] = foldHeight(txA[i], st && stepHasSlide(st));
     folds += foldA[i] * foldH[i];
   }
   const setA = ui.spring('jr.setA', journey.settings ? 1 : 0, MOTION.panel), setH = setA * SET_H;
@@ -655,6 +675,10 @@ export function drawJourney(ui, app, fade = 1) {
   // clicks on empty pane stop here instead of reaching the drawer or field
   ui.interact(ui.id('jr.backstop'), x, y, winW, h, false);
   dl.popAlpha();
+  if (rampTip.id !== -1) {
+    ui.tooltipAt(rampTip.id, rampTip.x, rampTip.y, rampTip.w, 18,
+      rampTip.hover && !pm.open, 'Parameter Ramp Time', true);
+  }
   ui.popScope();
 }
 
@@ -994,12 +1018,14 @@ function drawFold(ui, i, x0, fy) {
 
   // The first line: HOLD, VOL and RAMP in thirds, or VOL and RAMP in halves
   // in TRIGGER mode, where HOLD is hidden (the walk moves on by hand alone).
+  // Crossfade stays on the separate SLIDE line below.
   // HOLD is 5 s to 10 min (log): how long auto-play stays once the ramp is
   // done. VOL is the step's slide's own remembered level (one per file,
   // core/schema-slides.js), the drawer's Slide volume row mirrored: it edits
   // the map directly, never the step, so every step meets its slide at the
   // level it was last left; with no slide anywhere it sits dim at full.
   const keysMode = journeyMode() === 'keys';
+  const video = stepHasSlide(st);
   const third = Math.round((CONTENT_W - 6) / 3);
   if (!keysMode) {
     foldName(ui, x0, 'HOLD', cy);
@@ -1018,15 +1044,19 @@ function drawFold(ui, i, x0, fy) {
     if (none) dl.pushAlpha(0.4);
     const vol = slideVolOf(S, file);
     const sx = keysMode ? x0 + HR_SLIDER_X : v0 + 30;
-    const u = hslider(ui, ui.idx('jr.vol', i), sx, cy, vEnd - VAL_W - 4 - sx, vol / SLIDE_VOL_MAX);
-    ui.text.draw(dl, volText(vol), vEnd - 4, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
+    const u = hslider(ui, ui.idx('jr.vol', i), sx, cy, vEnd - VAL_W - 4 - sx, vol / SLIDE_VOL_MAX, snapVolumeU);
+    ui.text.draw(dl, volText(u >= 0 && !none ? u * SLIDE_VOL_MAX : vol), vEnd - 4, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
     if (none) dl.popAlpha();
     if (u >= 0 && !none) setSlideVol(S, file, Math.round(u * SLIDE_VOL_MAX * 100) / 100);
   }
-  // RAMP, 0 to 30 s in half seconds: how long the step's settings glide in
+  // RAMP, 0 to 30 s in half seconds: how long the step's settings glide in.
   {
     const r0 = keysMode ? mid + HR_GAP : x0 + 2 * third + 6;
-    ui.text.draw(dl, 'RAMP', r0, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
+    ui.text.draw(dl, 'P-Ramp', r0, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0, 1);
+    const tipId = ui.idx('jr.rampTip', i), labelW = ui.text.measure('P-Ramp', 10, W.semibold);
+    ui.interact(tipId, r0, cy - 9, labelW, 18, false);
+    rampTip.id = tipId; rampTip.x = r0; rampTip.y = cy - 9;
+    rampTip.w = labelW; rampTip.hover = ui.hover;
     const rx = r0 + (keysMode ? HR_NAME_W : 40), rw = right - VAL_W - rx;
     const u = hslider(ui, ui.idx('jr.ramp', i), rx, cy, rw, (st.rampS - RAMP_MIN) / (RAMP_MAX - RAMP_MIN));
     if (u >= 0) journeySetRamp(i, Math.round((RAMP_MIN + u * (RAMP_MAX - RAMP_MIN)) * 2) / 2);
@@ -1036,9 +1066,30 @@ function drawFold(ui, i, x0, fy) {
 
   // SLIDE: the show's video for this step (the drawer's Slides > Slide)
   foldName(ui, x0, 'SLIDE', cy);
-  slideBox(ui, i, st, cx, cy, SEG_W * 3 + 8, x0 + CONTENT_W - cx);
-  slidePlayBtn(ui, i, cx + SEG_W * 3 + 8 + 8, cy);
+  const slideX = x0 + HR_SLIDER_X;
+  const slideW = SLIDE_BOX_W;
+  slideBox(ui, i, st, slideX, cy, slideW, x0 + CONTENT_W - slideX);
+  const playX = slideX + slideW + 8;
+  slidePlayBtn(ui, i, playX, cy);
+  if (video) {
+    const label = 'XFADE';
+    const r0 = keysMode ? mid + HR_GAP : x0 + 2 * third + 6;
+    const sx = r0 + (keysMode ? HR_NAME_W : 40);
+    const fx = r0;
+    ui.text.draw(dl, label, fx, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
+    const c = SLIDE_XFADE, span = c.max - c.min;
+    let value = stepCrossfade(st);
+    const u = hslider(ui, ui.idx('jr.crossfade', i), sx, cy, right - VAL_W - sx, (value - c.min) / span, snapCrossfadeU);
+    if (u >= 0) {
+      value = Math.round((c.min + u * span) / c.step) * c.step;
+      journeySetOverride(i, c.id, value);
+    }
+    ui.text.draw(dl, c.formatAt(value, S), right, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
+  }
   ry += FOLD_ROW_H;
+
+  // Video steps show only their timing, volume and slide controls.
+  if (video) return;
 
   // ---- the text accordion, clipped to however far it is open ----
   const open = textOpen(i, st), txH = TX_SHUT_H + txA[i] * (TX_OPEN_H - TX_SHUT_H);
@@ -1273,7 +1324,11 @@ function pmRefresh(ui) {
 
 const pmUsable = i => journey.active && journeyEditing() && !journeyPlaying() && journeySelected() === i;
 const slideUsable = i => journey.active && journeySelected() === i;
-const pmUsableKind = (kind, i) => kind === 'slide' ? slideUsable(i) : pmUsable(i);
+const pmUsableKind = (kind, i) => {
+  if (kind === 'slide') return slideUsable(i);
+  const st = journeyStepAt(i);
+  return pmUsable(i) && !!st && !stepHasSlide(st);
+};
 
 function pmInput(ui) {
   pm.hover = -1;
@@ -1401,8 +1456,10 @@ function slideBox(ui, i, st, bx, cy, bw, maxW) {
   const own = st.overrides.slideFile;
   dl.rect(bx, by, bw, bh, 6, C.btnBg, 1, open ? C.btnOnBorder : btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
   if (own === undefined) dl.pushAlpha(0.68);
+  dl.pushClip(bx + PM_PAD, by, bw - PM_PAD * 2 - CHEV_S - 4, bh);
   ui.text.draw(dl, slideLabel(own !== undefined ? own : S.slideFile), bx + PM_PAD, baseline(ui, cy, 11), 11, W.regular,
     own !== undefined || btnHover || open ? C.valueInk : C.btnInk, 0, 0, 1);
+  dl.popClip();
   if (own === undefined) dl.popAlpha();
   dl.icon(ICON.CHEVRON, bx + bw - PM_PAD - CHEV_S + 2, cy - CHEV_S / 2, CHEV_S, CHEV_S,
     btnHover || open ? C.valueInk : C.btnInk, 1.6, open ? Math.PI : 0);

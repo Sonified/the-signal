@@ -82,7 +82,8 @@
 
 import { S } from '../js/state.js';
 import { idleHold, idleRelease, idleWake } from '../core/idle.js';
-import { SLIDE_DIR, SLIDE_NONE, slideVolOf } from '../core/schema-slides.js';
+import { SLIDE_DIR, SLIDE_NONE, slideVolOf, slideVolGain } from '../core/schema-slides.js';
+import { slideElementRate as elRate } from '../core/slide-rate.js';
 import { createGlobalFilter } from '../core/global-filter.js';
 import { ensureAudioGraph, getContext, getOutputBus } from '../js/audio.js';
 
@@ -92,7 +93,6 @@ const AUDIO_TC = 0.015;
 // freezes the picture. So any rate asked below the floor lands AT the
 // floor, and only a true 0 stops the movie.
 const MIN_RATE = 0.0625;
-const elRate = r => r > 0 ? Math.max(MIN_RATE, r) : 0;
 // how long a rate of 0 keeps the element at its floor before freezing it:
 // ten of the legs' time constants, so the gain is below hearing first
 const RATE_ZERO_MS = 80;
@@ -143,10 +143,9 @@ const clampNum = (v, lo, hi, def) => typeof v === 'number' && v === v ? (v < lo 
 // three quarters of the fader. Cubed, 75% is about -7.5 dB, 50% -18 dB and
 // 25% -36 dB, so the fader works evenly along its whole length.
 const slideGain = S => { const v = clampNum(S.slideVolume, 0, 1, 1); return v * v * v; };
-// A slide's own remembered level (core/schema-slides.js), on the same cubed
-// taper, read onto its slot's gain leg so the crossfade carries each file at
-// its own volume.
-const fileGain = f => { const v = slideVolOf(S, f); return v * v * v; };
+// A slide's remembered level keeps the cubed taper below 100%; above it,
+// the percentage is a gain multiplier (200% = 2x).
+const fileGain = f => slideVolGain(slideVolOf(S, f));
 // What reaches the duck: the layer's own level times the app's Master
 // volume (S.volume, the drawer's 'vol' and the show remote's VOLUME fader,
 // the same straight gain js/audio.js's master gives every voice).
@@ -194,7 +193,7 @@ export function replayEndedSlide() { return liveHook ? liveHook.replay() : false
 // paused some other way first stays paused. Any other move of the slide
 // (a new slide, Restart, Play, the button) forgets the walk's hold.
 // The show remote's cue fill (platform/show-remote.js): where the slide on
-// screen stands, {t, d, r} (seconds in, its length, the rate it is
+// screen stands, {t, d, r, f, l} (seconds in, its length, the rate it is
 // advancing at, 0 paused or ended), or null with no video of known length.
 export function slidesProgress() { return liveHook ? liveHook.progress() : null; }
 // and its seek: a tap on the playing cue puts the video at that share of
@@ -807,9 +806,10 @@ export function createSlides(device, format) {
       const d = el.duration;
       if (!(d > 0 && isFinite(d))) {
         // a seek's voice still learning its length: where it is going
-        return seekTo && seekTo.file === slots[act].file ? { t: seekTo.at, d: seekTo.d, r: 0 } : null;
+        return seekTo && seekTo.file === slots[act].file ? { t: seekTo.at, d: seekTo.d, r: 0, f: slots[act].file, l: el.loop } : null;
       }
-      return { t: Math.max(0, Math.min(d, el.currentTime || 0)), d, r: st === 1 && !el.paused ? el.playbackRate : 0 };
+      return { t: Math.max(0, Math.min(d, el.currentTime || 0)), d, r: st === 1 && !el.paused ? el.playbackRate : 0,
+        f: slots[act].file, l: el.loop };
     },
     seek(f) {
       if (!liveHook.state() || !isFinite(f)) return;

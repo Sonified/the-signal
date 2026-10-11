@@ -17,6 +17,12 @@
 // platform/broadcast-socket.js, and would overwrite it). The pw parameter is
 // wiped from the address bar once stored.
 //
+// App health uses transient {t:'word', k:'health', src, probe} requests on
+// each route. initShowRemote returns a callback main.js runs after a completed
+// frame; it replies on that route's status socket with {t:'word', k:'health',
+// src, to, probe}. Health requests bypass command numbering and never edit
+// settings. This checks the frame loop as well as the relay connection.
+//
 // COMMANDS (show.html -> here), each {t:'word', src, n, k, ...}. The sender
 // rides as src, never id: a ctl's id is the control's (the first build put
 // the sender in id too, overwriting it, so every ctl was refused):
@@ -75,6 +81,26 @@
 //                                                schema control, it sets
 //                                                S.screenGate directly, live
 //                                                only, gpu/engine.js drawGate)
+//                         finaleDrone, 0..100   (the finale row's faders,
+//                         finalePiano,           see FINALE below: each lays
+//                         finaleChoir,           its 0..100% linearly onto
+//                         finaleAmb,             one or more levels, 100 =
+//                         finaleHum,
+//                         finaleSun
+//                                                the finale's own level, 0
+//                                                silent; set through their
+//                                                controls, so their variance
+//                                                rides them. DRONE: Drone
+//                                                level, the tone's Level and
+//                                                Clouds level. PIANO: Piano
+//                                                level. CHOIR: Choir level.
+//                                                AMBIENCE: Ambience level.
+//                                                HUM: the Sun hum's Speed,
+//                                                1x at 0, 2x at 100. SUN,
+//                                                beside SCREEN: the Sun's
+//                                                Speed 2x..8x (4x halfway),
+//                                                its variance 0..78% and the
+//                                                Breath Amount 0..67%)
 //   {k:'duck', on, amt, dn, up}  the duck (gpu/slides.js setDuck, the
 //                       heartbeat's setHeartDuck and the Sun hum's
 //                       setHumDuck, the same multiplier): on, the slides',
@@ -101,25 +127,57 @@
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
-// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, gt: screenGate, play, on} (play: what is actually happening, the
-// live hold included), vp the slide video's place {t, d, r} (seconds in,
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, play, on} (play: what is actually happening, the
+// live hold included), vp the slide video's place {t, d, r, f, l} (seconds in,
 // its length, the rate it advances at, 0 when held; null with no video of
 // known length; the iPad fills the playing cue with it, running on between
-// reports at r), src/q this page's sender id and sequence.
+// reports at r; f is the actual file, l its loop setting), src/q this page's sender id and sequence.
 // It goes as a 'state' rather than a 'word' so each relay keeps the latest
 // and hands it to an iPad that joins late.
 
 import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
-import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying } from '../core/journey.js';
+import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyStepAt } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
+import { slideRateFromPos, slideElementRate } from '../core/slide-rate.js';
+import { ampToPos } from '../js/util.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume']);
 const STATUS_MS = 250;
+// The finale row's faders: per fader, the levels it moves together, each
+// [S key = control id, its value at the fader's 100% (the finale preset's
+// own), the control's position for a value, its value at the fader's 0
+// (silent when left out), true to lay it evenly in ratio (each doubling
+// the same stretch) instead of linearly]. The first is the one reported
+// back to the iPad.
+const FINALE = {
+  finaleChoir: [['choirVol', 1.38, a => a * 100]],
+  finalePiano: [['pianoVol', 1, a => a * 100]],
+  finaleAmb: [['ambVol', 0.18, a => a * 100]],
+  finaleDrone: [['bedVol', 0.55, a => a * 100], ['toneVol', 0.19054607179632474, ampToPos],
+                ['cloudVol', 1, a => a * 100]],
+  // the Sun hum's Speed, 1x at the bottom and 2x at the top, linear in the
+  // control's own log setting (core/schema-sun.js: 0.5x..16x over 0..1, so
+  // 1x is 0.2 and 2x 0.4), even in pitch: 1.41x halfway
+  finaleHum: [['sunHumRate', 0.4, a => a * 1000, 0.2]],
+  // SUN, beside SCREEN: the video's baseline Speed 2x to 8x, even in ratio
+  // as its own slider moves (core/schema-sun.js: log 1x..16x over 0..1000,
+  // so 4x halfway), with Speed's variance 0 to 78% and the Breath's Amount
+  // 0 to 67%
+  finaleSun: [['sunSpeed', 8, a => Math.log(a) / Math.log(16) * 1000, 2, true],
+              ['sunSpeedVar', 0.78, a => a * 100], ['sunBreathAmt', 0.67, a => a * 100]]
+};
+// a fader's place, 0..100, from its first level
+const finalePos = id => {
+  const [key, top, , bottom = 0, ratio] = FINALE[id][0];
+  const v = +S[key] || 0;
+  const u = ratio ? (v > 0 ? Math.log(v / bottom) / Math.log(top / bottom) : 0) : (v - bottom) / (top - bottom);
+  return Math.round(Math.max(0, Math.min(1, u)) * 1000) / 10;
+};
 
 export function initShowRemote(hooks = {}) {
   if (typeof location === 'undefined' || typeof WebSocket === 'undefined') return;
@@ -176,8 +234,18 @@ export function initShowRemote(hooks = {}) {
 
   // ---------- commands in ----------
   const lastN = new Map();   // sender id -> highest n acted on
-  function take(m) {
+  const healthRequests = new Map();
+  function take(m, path) {
     if (m.t !== 'word' || typeof m.k !== 'string') return;
+    // Keep route-specific probes outside command deduplication and authoring.
+    // Reply only after main.js finishes a frame, so a stalled frame loop cannot
+    // look healthy just because its WebSocket callbacks still work.
+    if (m.k === 'health') {
+      if (typeof m.src !== 'string' || typeof m.probe !== 'string' || m.src.length > 128 || m.probe.length > 128) return;
+      healthRequests.set(path.name + ':' + m.src, { path: path.name, to: m.src, probe: m.probe });
+      idleWake('show remote health');
+      return;
+    }
     const id = String(m.src || ''), n = +m.n || 0;
     if (n <= (lastN.get(id) || 0)) return;   // the other path's copy
     lastN.set(id, n);
@@ -199,6 +267,19 @@ export function initShowRemote(hooks = {}) {
         // not a schema control: live only, never saved (js/state.js)
         const v = +m.v;
         if (isFinite(v)) S.screenGate = Math.max(0, Math.min(1, v / 100));
+        return;
+      }
+      if (FINALE[m.id]) {
+        // linear onto each of its levels: 0 silent (or its own bottom), 100
+        // the finale's own; each level's variance multiplies whatever this
+        // sets
+        const v = +m.v;
+        if (!isFinite(v)) return;
+        const u = Math.max(0, Math.min(100, v)) / 100;
+        for (const [key, top, toPos, bottom = 0, ratio] of FINALE[m.id]) {
+          const c = byId(key);
+          if (c) c.set(S, toPos(ratio ? bottom * Math.pow(top / bottom, u) : bottom + u * (top - bottom)));
+        }
         return;
       }
       if (!CTL_IDS.has(m.id)) return;
@@ -242,7 +323,11 @@ export function initShowRemote(hooks = {}) {
       else {
         const v = +m.v;
         if (!isFinite(v)) return;
-        c.set(S, Math.max(c.min, Math.min(c.max, Math.round(v))));
+        // Use the control's step: resonance arrives in half dB, not whole dB.
+        const step = c.step > 0 ? c.step : 0;
+        const clamped = Math.max(c.min, Math.min(c.max, v));
+        const snapped = step ? c.min + Math.round((clamped - c.min) / step) * step : clamped;
+        c.set(S, Math.max(c.min, Math.min(c.max, snapped)));
       }
     } else if (m.k === 'duck') {
       const amt = Math.max(0, Math.min(1, +m.amt || 0));
@@ -265,9 +350,19 @@ export function initShowRemote(hooks = {}) {
     return {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
-      vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000 } : null,
+      // Lets a controller distinguish pre-command reports from replies.
+      ack: Object.fromEntries(lastN),
+      cv: Array.from({ length: journeyCount() }, (_, i) => {
+        const o = journeyStepAt(i)?.overrides || {};
+        const rate = slideElementRate(slideRateFromPos(o.slideRate ?? get('slideRate')));
+        return { f: o.slideFile ?? S.slideFile, r: rate,
+          p: o.slidePlay ?? S.slidePlay !== false, l: o.slideLoop ?? S.slideLoop === true };
+      }),
+      vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000,
+        f: pr.f || S.slideFile, l: pr.l === true } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'),
             gt: Math.round(Math.max(0, Math.min(1, +S.screenGate)) * 1000) / 10,
+            ch: finalePos('finaleChoir'), dr: finalePos('finaleDrone'), pn: finalePos('finalePiano'), am: finalePos('finaleAmb'), hu: finalePos('finaleHum'), su: finalePos('finaleSun'),
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };
   }
@@ -289,4 +384,11 @@ export function initShowRemote(hooks = {}) {
     statusSocks.push(s); all.push(s);
   }
   setInterval(pollStatus, STATUS_MS);
+  return () => {
+    for (const request of healthRequests.values()) {
+      const socket = statusSocks.find(s => s.name === request.path);
+      if (socket) socket.send(JSON.stringify({ t: 'word', k: 'health', src: SID, to: request.to, probe: request.probe }));
+    }
+    healthRequests.clear();
+  };
 }
