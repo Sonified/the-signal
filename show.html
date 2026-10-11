@@ -40,6 +40,8 @@
           slideRestart (v ignored)
           slideXfade 0..500 (hundredths of a second, 0 a cut; the gear's
             Crossfade, sent on each change and remembered with the duck's)
+          heartMaster 0..100 (the Heartbeat's Master, %, its sound and its
+            flash together: HEART)
     {k:'duck', on, amt, dn, up}  amt 0..1, dn and up in seconds; DUCK is
         hold-and-release: on at pointerdown, off at pointerup, pointercancel
         or the finger sliding off the button
@@ -50,8 +52,9 @@
   play glyph, the DUCK button's width), below it the four tall
   faders (half-width,
   hugging the right edge, as the photo has them) in the
-  surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK with
-  The middle stays empty for what comes next.
+  surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK.
+  The middle holds the faders that are not the surface's, level with the
+  four: HEART (the Heartbeat's Master) first, room beside it for more.
 
   ?room=<name> (default 'show'), ?mac=<host:port> (the laptop, default
   Roberts-MacBook-Pro-2.local:8800), ?relay=<host> (the cloud relay),
@@ -101,7 +104,12 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
 @keyframes flash { 0% { background: var(--flash); color: #000; box-shadow: 0 0 28px var(--flash); } }
 
 /* the right side: everything on the right edge, the middle left empty */
-#stage { min-height: 0; display: flex; justify-content: flex-end; }
+#stage { min-height: 0; display: flex; justify-content: flex-end; gap: 14px; }
+/* the middle: its faders level with the edge's four (the edge's top row is
+   the 178px play/pause block, its bottom row the 110px DUCK) */
+#middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
+#midFaders { grid-row: 2; min-height: 160px; display: flex; justify-content: center; gap: 10px; }
+#midFaders .fader { width: 72px; }
 #edge { width: min(100%, 460px); min-height: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
 #top { display: grid; grid-template-columns: 1fr 172px; gap: 12px; align-items: start; }
 #info { padding-top: 4px; display: grid; gap: 8px; }
@@ -161,6 +169,8 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   #cues { max-height: 50vh; }
   #faders { min-height: 300px; }
   #stage { display: block; }
+  #middle { display: block; margin-bottom: 14px; }
+  #midFaders { height: 300px; }
   #edge { width: 100%; }
 }
 </style>
@@ -188,6 +198,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     <div id="cues"></div>
   </div>
   <div id="stage">
+    <div id="middle"><div id="midFaders"></div></div>
     <div id="edge">
       <div id="top">
         <div id="info">
@@ -357,7 +368,11 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // default; the laptop keeps the slides' own level (Master slide volume)
     // squared taper into the Master volume (platform/show-remote.js): 50% is -12 dB,
     // 25% is -24 dB. 71 is the app's own default (0.5, -6 dB) on this curve.
-    { id: 'vol', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 71, fmt: p => Math.round(p) + '%' }
+    { id: 'vol', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 71, fmt: p => Math.round(p) + '%' },
+    // In the middle: the Heartbeat's Master, the heard beat and its flash
+    // riding together at the balance the laptop's Audio level and Visual
+    // amount set (core/schema-heartbeat.js), linear 0..100%.
+    { id: 'heartMaster', key: 'hm', label: 'HEART', color: '#ff5a7a', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
   let rafOn = false;
@@ -375,7 +390,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       '</div><div class="val"></div>';
     el.querySelector('.lab').textContent = f.label;
     el.querySelector('.lab').style.color = f.color;
-    $('faders').appendChild(el);
+    $(f.box || 'faders').appendChild(el);
     const track = el.querySelector('.track'), fill = el.querySelector('.fill'), val = el.querySelector('.val');
     track.style.borderColor = f.color + '88';
     fill.style.background = 'linear-gradient(0deg, ' + f.color + '55, ' + f.color + ')';
