@@ -41,6 +41,8 @@ const DEF_HUM_ON = false;
 // On by default, as on meditatewiththesun.com: the drifting star field
 // behind the sun (gpu/stars.js), shown whether or not the sun is.
 const DEF_STARS = true;
+// The show's QR code over everything (gpu/sun-qr.js), off until asked for.
+const DEF_QR_ON = false;
 // What drives the Speed's, Feedback Amount's and Opacity's variances: the
 // room-timed clock, the strobe or the breath. The breath by default.
 const DEF_DRIVE = 'breath';
@@ -147,7 +149,11 @@ const NUM = [
   // ?event=<this broadcast session's name> fades its sound to it (that
   // site's event.js reads it off the broadcast snapshot). Nothing here
   // plays it; it only rides presets and the broadcast.
-  ['mwtsVolume',         0,   1,   1,    false]
+  ['mwtsVolume',         0,   1,   1,    false],
+  // The show's QR code's size (gpu/sun-qr.js), a multiplier on the art's
+  // authored size (canvas height * 533 / 1080 at 1). It is the scene, so it
+  // rides presets, journeys and the broadcast like every field here.
+  ['sunQrSize',          0.25, 2,  1,    false]
 ];
 
 // A slider's rounded position can come back as 1.1500000000000001; this
@@ -210,6 +216,7 @@ export function initSunState(S) {
   if (typeof S.sunHumOn !== 'boolean') S.sunHumOn = DEF_HUM_ON;
   if (typeof S.sunHiRes !== 'boolean') S.sunHiRes = DEF_HI_RES;
   if (typeof S.sunStars !== 'boolean') S.sunStars = DEF_STARS;
+  if (typeof S.sunQrOn !== 'boolean') S.sunQrOn = DEF_QR_ON;
   for (const k of DRIVEN) S[k + 'VarDrive'] = driveOf(S[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
@@ -222,7 +229,7 @@ export function initSunState(S) {
 // kaleidoOn does, so the record does not look like a partial v0 layers
 // object.
 export function sunStateOf(S) {
-  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade, sunHumOn: !!S.sunHumOn, sunHiRes: !!S.sunHiRes, sunStars: S.sunStars !== false };
+  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade, sunHumOn: !!S.sunHumOn, sunHiRes: !!S.sunHiRes, sunStars: S.sunStars !== false, sunQrOn: !!S.sunQrOn };
   for (const k of DRIVEN) out[k + 'VarDrive'] = driveOf(S[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
@@ -242,6 +249,7 @@ export function applySunState(S, o) {
   if (typeof o.sunHumOn === 'boolean') S.sunHumOn = o.sunHumOn;
   if (typeof o.sunHiRes === 'boolean') S.sunHiRes = o.sunHiRes;
   if (typeof o.sunStars === 'boolean') S.sunStars = o.sunStars;
+  if (typeof o.sunQrOn === 'boolean') S.sunQrOn = o.sunQrOn;
   for (const k of DRIVEN) if (typeof o[k + 'VarDrive'] === 'string') S[k + 'VarDrive'] = driveOf(o[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
@@ -287,6 +295,7 @@ const rateToPos = r => r === r ? Math.round(Math.min(1, Math.max(0, Math.log(r /
 // applySunState.
 function syncHum(S) {
   hum.setVolume(S.sunHumAmp);
+  hum.setMasterVolume(S.volume);
   hum.setCutoffHz(humHz(typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : S.sunHumCutoff));
   hum.setRate(humRate(S.sunHumRate) * HUM_RETUNE);
   hum.setRoomSend(typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : S.sunHumVerb);
@@ -685,6 +694,23 @@ export const SUN_CONTROLS = [
     get: S => Math.round(S.mwtsVolume * 100),
     set: (S, pos) => { S.mwtsVolume = fit(pos / 100, 0, 1, false); save(); },
     format: S => Math.round(S.mwtsVolume * 100) + '%'
+  },
+
+  // ---- Sun QR, the section's last rows: the show's QR PNG over
+  // everything, the sun and any slide alike (gpu/sun-qr.js), dead centre.
+  // Never dimmed: it draws whether or not the sun layer is on ----
+  {
+    id: 'sunQrOn', section: 'sun', label: 'Sun QR', kind: 'toggle', def: DEF_QR_ON,
+    get: S => !!S.sunQrOn,
+    set: (S, on) => { S.sunQrOn = !!on; save(); }
+  },
+  {
+    // A multiplier on the art's authored size, 25% to 200%.
+    id: 'sunQrSize', section: 'sun', label: 'Size', kind: 'slider',
+    min: 25, max: 200, step: 1, def: Math.round(spec('sunQrSize')[3] * 100),
+    get: S => Math.round(S.sunQrSize * 100),
+    set: (S, pos) => { S.sunQrSize = fit(pos / 100, 0.25, 2, false); save(); },
+    format: S => Math.round(S.sunQrSize * 100) + '%'
   },
 
   // ---- Star field, a section of its own: meditatewiththesun.com's one

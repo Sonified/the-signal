@@ -57,7 +57,8 @@ let anchorPos = 0, anchorTime = 0, pausedPos = 0;
 // Phones get a smaller room: earbuds and tiny speakers smear long tails.
 const COARSE = mq('(pointer: coarse)');
 
-let volume = 0.9;                 // master gain, 0..1
+let volume = 0.9;                 // the hum's own gain, 0..2
+let masterVol = 1;                // the app's Master volume, 0..1 (setMasterVolume)
 
 let verbMix = COARSE ? 0.21 : 0.3;   // reverb wet/dry (30% drier on touch)
 let verbOn = true;                  // the room
@@ -162,7 +163,7 @@ function ensureCtx() {
   // output route is running; this prevents a live waveform/reverb tail from
   // being dropped onto a newly opened device at an arbitrary sample value.
   master = ctx.createGain();
-  master.gain.value = volume;
+  master.gain.value = volume * masterVol;
   outputGate = ctx.createGain();
   outputGate.gain.value = 0;
   onStateChange = () => {
@@ -621,7 +622,17 @@ export function setCutoffHz(hz) {
 export function setVolume(v) {
   if (v === volume) return;
   volume = v;
-  if (master) master.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
+  if (master) master.gain.setTargetAtTime(volume * masterVol, ctx.currentTime, 0.02);
+}
+
+/** The app's Master volume, 0..1, scaling the hum's own volume. The hum
+    keeps its own context (see the top of this file), so it follows the
+    master's level here rather than playing through the master's gain,
+    which also closes with the transport and the Audio layer's switch. */
+export function setMasterVolume(v) {
+  if (v === masterVol) return;
+  masterVol = v;
+  if (master) master.gain.setTargetAtTime(volume * masterVol, ctx.currentTime, 0.02);
 }
 
 /** Wet/dry, 0..1, crossfaded equal-power so loudness holds steady. */

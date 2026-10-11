@@ -45,6 +45,7 @@ import { pipDipNow, toneVolMulNow, toneAmMulNow } from './audio-mirror.js';
 import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows } from './schema-variance.js';
+import { setMasterVolume as setHumMaster } from './sun-hum.js';
 
 // ---------- shared helpers, ported from v0/js/ui.js closures ----------
 
@@ -360,7 +361,7 @@ const audioControls = [
     id: 'vol', section: 'audio', label: 'Master volume', kind: 'slider',
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.volume * 100),
-    set: (s, pos) => { s.volume = pos / 100; applyAudioGain(); save(); },
+    set: (s, pos) => { s.volume = pos / 100; applyAudioGain(); setHumMaster(s.volume); save(); },
     format: s => Math.round(s.volume * 100) + '%'
   },
   // The Music window's trims for the tone and the pulse (ui/screens/
