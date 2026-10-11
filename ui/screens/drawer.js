@@ -18,7 +18,7 @@ import {
   applyPresetAt, savePresetOverAt, addUserPreset, deletePresetAt, movePreset, renamePresetAt, presetIsUser,
   presetIsHearted, presetActiveIndex, togglePresetHeartAt, presetRampS, setPresetRampS
 } from '../../core/presets.js';
-import { perfRecallPreset, perfRecallLeft, perfShortenRecall, perfSet, perfLayer, perfDestination } from '../../core/perform.js';
+import { perform, loadPerform, setRampS, perfRecallPreset, perfRecallLeft, perfShortenRecall, perfSet, perfLayer, perfDestination } from '../../core/perform.js';
 import { ICON } from '../drawlist.js';
 import { loadUiState, saveUiState } from '../../core/store.js';
 import { prof, profToggle, profSave, profCopy } from '../../core/profiler.js';
@@ -467,6 +467,21 @@ const rampCtrl = {
   effective: () => journeyModeOn() ? undefined : perfRecallLeft()
 };
 const recallRampS = () => journeyModeOn() ? journeyRampS() : presetRampS();
+
+// The Performance window's Ramp time again, under the window buttons, so
+// the one live ramp is clear in two places: its handles there, and every
+// drawer row here, glide over this same time. The same value mirrored, not
+// a second setting: moving either moves both (core/perform.js setRampS,
+// which saves it as the window's own slider does). Whole seconds and 'cut'
+// at nothing, reading exactly as the window's bar does.
+const liveRampCtrl = {
+  id: 'liveRampS', label: 'Live performance ramp', kind: 'slider',
+  min: 0, max: 60, step: 1, def: 0,
+  inline: 'cut',
+  get: () => { loadPerform(); return perform.rampS; },
+  set: (s, v) => setRampS(v),
+  format: () => { loadPerform(); return perform.rampS <= 0 ? 'cut' : Math.round(perform.rampS) + 's'; }
+};
 
 const TIP_PRESET = 'Click to load  ·  Shift-click to save over';
 // a row locked against the journey (widgets.js control), on its name
@@ -1273,6 +1288,8 @@ function drawWindowButtons(ui, app) {
     if (ui.button(WIN_IDS[i], WIN_LABELS[i], app.windowOpen(i) ? 'primary' : 'chip', false)) app.toggleWindow(i);
     if (i % cols === cols - 1 || i === WIN_LABELS.length - 1) ui.endRow();
   }
+  ui.spacer(SPACE.xs);
+  ui.control(liveRampCtrl, S);
 }
 
 // The drawer's slide, stepped once per frame before anything reads it, so
