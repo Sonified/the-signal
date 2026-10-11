@@ -162,12 +162,12 @@ function buildSettings() {
     choirDensityVar: S.choirDensityVar, choirDensityPeriod: S.choirDensityPeriod,
     choirVolVar: S.choirVolVar, choirVolPeriod: S.choirVolPeriod,
     choirVolVarMode: S.choirVolVarMode, choirStackVarMode: S.choirStackVarMode,
-    choirDensityVarMode: S.choirDensityVarMode, choirStrobeAmVarMode: S.choirStrobeAmVarMode,
-    bedStrobeAmVarMode: S.bedStrobeAmVarMode,
+    choirDensityVarMode: S.choirDensityVarMode, choirVolVarDrive: driveOf(S.choirVolVarDrive),
+    choirStackVarDrive: driveOf(S.choirStackVarDrive), choirDensityVarDrive: driveOf(S.choirDensityVarDrive),
+    bedVolVar: S.bedVolVar, bedVolVarDrive: driveOf(S.bedVolVarDrive),
+    bedVolVarPeriod: S.bedVolVarPeriod, bedVolVarMode: S.bedVolVarMode,
     ...layerSettings(),
-    bedStrobeAm: S.bedStrobeAm, choirStrobeAm: S.choirStrobeAm, cloudStrobeAm: S.cloudStrobeAm,
-    choirStrobeAmVar: S.choirStrobeAmVar, choirStrobeAmPeriod: S.choirStrobeAmPeriod,
-    bedStrobeAmVar: S.bedStrobeAmVar, bedStrobeAmPeriod: S.bedStrobeAmPeriod,
+    cloudStrobeAm: S.cloudStrobeAm,
     cloudStrobeAmVar: S.cloudStrobeAmVar, cloudStrobeAmPeriod: S.cloudStrobeAmPeriod,
     pianoReverb: S.pianoReverb, pianoRevTime: S.pianoRevTime, pianoHP: S.pianoHP, musicRevOn: S.musicRevOn, bedOn: S.bedOn, pianoOn: S.pianoOn, arpOn: S.arpOn, arpVol: S.arpVol, arpRate: S.arpRate,
     arpVolVar: S.arpVolVar, arpVolPeriod: S.arpVolPeriod,
@@ -1133,15 +1133,43 @@ function applySettings(s, live, scene) {
                              ['choirStackVar', 0, 1], ['choirStackPeriod', 0, 120],
                              ['choirDensityVar', 0, 1], ['choirDensityPeriod', 0, 120],
                              ['choirVolVar', 0, 1], ['choirVolPeriod', 0, 120],
-                             ['bedStrobeAm', 0, 1], ['choirStrobeAm', 0, 1], ['cloudStrobeAm', 0, 1],
-                             ['choirStrobeAmVar', 0, 1], ['choirStrobeAmPeriod', 0, 120],
-                             ['bedStrobeAmVar', 0, 1], ['bedStrobeAmPeriod', 0, 120],
+                             ['cloudStrobeAm', 0, 1],
                              ['cloudStrobeAmVar', 0, 1], ['cloudStrobeAmPeriod', 0, 120]])
     if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = Math.max(lo, Math.min(hi, s[k]));
   // Each variance's Behavior, 'walk' or the default sinusoid.
   for (const k of ['choirVolVarMode', 'choirStackVarMode', 'choirDensityVarMode',
-                   'choirStrobeAmVarMode', 'bedStrobeAmVarMode'])
+                   'bedVolVarMode'])
     if (s[k] === 'walk' || s[k] === 'sine') S[k] = s[k];
+  // The drone level's variance (js/piano.js): amount and speed held to their
+  // sliders' ranges, and its driver. A record from before it had one carries
+  // the drone's old Vary with strobe instead (bedStrobeAm, a pulse depth
+  // 0..1): that pulse is this variance driven by the strobe, so a depth above
+  // 0 becomes Link to strobe at that amount, and 0 becomes no variance, which
+  // is how that record sounded. The old pulse's own depth wander
+  // (bedStrobeAmVar) has no place here any more and is dropped.
+  for (const [k, lo, hi] of [['bedVolVar', 0, 1], ['bedVolVarPeriod', 0, 120]])
+    if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = Math.max(lo, Math.min(hi, s[k]));
+  if (typeof s.bedVolVarDrive === 'string') S.bedVolVarDrive = driveOf(s.bedVolVarDrive);
+  else if (typeof s.bedStrobeAm === 'number' && Number.isFinite(s.bedStrobeAm)) {
+    const old = Math.max(0, Math.min(1, s.bedStrobeAm));
+    if (old > 0) S.bedVolVarDrive = 'strobe';
+    S.bedVolVar = old;
+  }
+  // The choir level's driver (js/choir.js). A record from before it had one
+  // carries the choir's old Vary with strobe (choirStrobeAm, a pulse depth
+  // 0..1) beside the level's Time variance: a pulse above 0 becomes this
+  // variance linked to the strobe at that amount (any Time wander the old
+  // level also ran is dropped, since one variance has one driver), and
+  // otherwise the level keeps its Time variance as it was.
+  if (typeof s.choirVolVarDrive === 'string') S.choirVolVarDrive = driveOf(s.choirVolVarDrive);
+  else if (typeof s.choirStrobeAm === 'number' && Number.isFinite(s.choirStrobeAm)) {
+    const old = Math.max(0, Math.min(1, s.choirStrobeAm));
+    S.choirVolVarDrive = old > 0 ? 'strobe' : 'time';
+    if (old > 0) S.choirVolVar = old;
+  }
+  // The choir's Stack and Density drivers (Time, or Link to breath).
+  for (const k of ['choirStackVarDrive', 'choirDensityVarDrive'])
+    if (typeof s[k] === 'string') S[k] = driveOf(s[k]);
   // The music layers (js/layer-defs.js), each level held to its slider's range.
   for (const L of MUSIC_LAYERS) {
     const on = layerOnKey(L), vol = layerVolKey(L);

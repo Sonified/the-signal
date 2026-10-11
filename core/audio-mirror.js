@@ -14,8 +14,9 @@
 // that someone is looking and the readings are worth sending at all.
 
 import { S } from '../js/state.js';
-import { arpPeak, seqPlayhead, seqClock, seqSwingRead, SEQ_COUNT, SEQ_SWINGS } from '../js/piano.js';
+import { arpPeak, seqPlayhead, seqClock, seqSwingRead, SEQ_COUNT, SEQ_SWINGS, bedVolMul } from '../js/piano.js';
 import { pipDipRead, toneVolMul, toneAmMul } from '../js/audio.js';
+import { choirVolMul } from '../js/choir.js';
 
 // The layout of the Float32Array the page posts (core/audio-shell.js writes
 // it, core/audio-link.js reads it): a few fixed slots, then the read-backs
@@ -54,7 +55,7 @@ export const CALL_SLOTS = 5;
 //           the slots as they were and clears the live bit)
 // Order is the wire's contract between the two threads of one build, and
 // the bits read W_SWING 8 and W_PIP 16 as they always have, then the tone's
-// level 32 and its pulse depth 64.
+// level 32 and its pulse depth 64, then the drone's level 128 and the choir's 256.
 export const SWING_SLOTS = SEQ_COUNT * SEQ_SWINGS;
 // main mode's own copy of the swings, read straight from js/piano.js
 const swingHere = new Float64Array(SWING_SLOTS);
@@ -79,7 +80,17 @@ const TONE_VOL = { width: 1, rest: 1,
 const TONE_AM = { width: 1, rest: 1,
   pack: (out, at) => { out[at] = toneAmMul(); return true; },
   here: () => toneAmMul() };
-export const READBACKS = [SWING, PIP, TONE_VOL, TONE_AM];
+// The drone's level as its variance plays it, the share of the set level
+// playing now (piano.js bedVolMul), whichever drives it; 1 while nobody
+// watches.
+const DRONE_VOL = { width: 1, rest: 1,
+  pack: (out, at) => { out[at] = bedVolMul(); return true; },
+  here: () => bedVolMul() };
+// The choir's level the same way (choir.js choirVolMul).
+const CHOIR_VOL = { width: 1, rest: 1,
+  pack: (out, at) => { out[at] = choirVolMul(); return true; },
+  here: () => choirVolMul() };
+export const READBACKS = [SWING, PIP, TONE_VOL, TONE_AM, DRONE_VOL, CHOIR_VOL];
 let slot = M_READBACKS;
 for (let i = 0; i < READBACKS.length; i++) {
   const r = READBACKS[i];
@@ -187,3 +198,8 @@ export const pipDipNow = () => readback(PIP);
 // breath and whenever there is nothing live to read.
 export const toneVolMulNow = () => readback(TONE_VOL);
 export const toneAmMulNow = () => readback(TONE_AM);
+
+// The drone level's variance as it plays: the share of its set level
+// sounding this moment, 1 whenever there is nothing live to read.
+export const bedVolMulNow = () => readback(DRONE_VOL);
+export const choirVolMulNow = () => readback(CHOIR_VOL);

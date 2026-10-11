@@ -334,6 +334,10 @@ export const S = {
   pianoStyle: 'generative',
   pianoLifts: true,
   bedVol: 0.30,
+  // The drone level's variance (js/piano.js): how far the level dips under
+  // its setting (0..1), what drives the dip ('time', 'strobe' or 'breath',
+  // core/variance.js DRIVES), and Time's Behavior and seconds a cycle.
+  bedVolVar: 0, bedVolVarDrive: 'time', bedVolVarPeriod: 20, bedVolVarMode: 'sine',
   // The choir (js/choir.js): the sandbox's Choir Performer, seven Lah voices
   // looping together. Off by default so no saved session or preset suddenly
   // sings. choirVol 1 is the performer's own level (CHOIR_LEVEL), about 2 dB
@@ -343,15 +347,17 @@ export const S = {
   choirOn: false, choirVol: 1.0,
   choirStack: 100, choirDensity: 100, choirBrightness: 0, choirFocus: 0,
   choirStackVar: 0, choirStackPeriod: 20, choirDensityVar: 0, choirDensityPeriod: 20,
+  // what drives each one's dip: its own clock ('time') or the sun's breath
+  choirStackVarDrive: 'time', choirDensityVarDrive: 'time',
   // The music layers (js/layers.js, table in js/layer-defs.js): majesticOn,
   // majesticVol, fifthOn, fifthVol and any added later. Off, and 100 %.
   ...layerDefaults(),
   choirVolVar: 0, choirVolPeriod: 20,
-  // 'Vary with strobe' on the drone, choir and clouds, as arpStrobeAm (js/strobe-am.js)
-  bedStrobeAm: 0, choirStrobeAm: 0, cloudStrobeAm: 0,
-  // the AM depth's own wander: each pulse depth roams 0..var of its slider
-  choirStrobeAmVar: 0, choirStrobeAmPeriod: 20,
-  bedStrobeAmVar: 0, bedStrobeAmPeriod: 20,
+  // what drives the choir level's dip: 'time', 'strobe' or 'breath' (js/choir.js)
+  choirVolVarDrive: 'time',
+  // 'Vary with strobe' on the clouds, as arpStrobeAm (js/strobe-am.js)
+  cloudStrobeAm: 0,
+  // the AM depth's own wander: the pulse depth roams 0..var of its slider
   cloudStrobeAmVar: 0, cloudStrobeAmPeriod: 20,
   // Live Sound (js/livesound.js): a microphone or line input. Off at every
   // load, since the switch is never saved. liveDevice is the chosen input's

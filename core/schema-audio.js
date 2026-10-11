@@ -26,11 +26,10 @@ import {
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn, applyToneBreath
 } from '../js/audio.js';
-import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyBedAm, bedEffectiveAm, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
+import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
 import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm, cloudEffectiveAm, rebuildCloudIR } from '../js/clouds.js';
 import {
-  applyChoir, applyChoirVol, applyChoirOn, applyChoirAm, choirEffectiveAm,
-  choirEffectiveLevel, choirEffectiveStack, choirEffectiveDensity
+  applyChoir, applyChoirVol, applyChoirOn, choirEffectiveStack, choirEffectiveDensity
 } from '../js/choir.js';
 import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, applyAmbRevType, applyAmbRevShape, ambEffectiveReverb, ambEffectiveRevTime, AMBIENCE_SOURCES } from '../js/ambience.js';
 import { applyMixGates } from '../js/mixgate.js';
@@ -41,10 +40,11 @@ import {
   applyLiveRevTime, applyLiveComp, liveLatencyNow, liveReductionNow, liveInputs
 } from '../js/livesound.js';
 import { startDrift, stopDrift } from './atmosphere.js';
-import { pipDipNow, toneVolMulNow, toneAmMulNow } from './audio-mirror.js';
+import { pipDipNow, toneVolMulNow, toneAmMulNow, bedVolMulNow, choirVolMulNow } from './audio-mirror.js';
 import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
-import { varianceRows } from './schema-variance.js';
+import { varianceRows, driveRow } from './schema-variance.js';
+import { driveOf } from './variance.js';
 import { setMasterVolume as setHumMaster } from './sun-hum.js';
 import { notifyGlobalFilter, GF_HZ_LO, GF_HZ_HI } from './global-filter.js';
 
@@ -85,6 +85,41 @@ const fmtSweep = sec => sec < 90 ? Math.round(sec) + 's'
 const audioLayerOn = s => s.audioOnBoot !== false;
 // The choir's rows show while the music and the choir both play.
 const choirShows = s => s.musicOn && s.choirOn;
+// A choir variance's driver: its own clock (Time) or the sun's breath. The
+// strobe is left out: the choir's voices glide on a 0.4 s ease from a 10 Hz
+// tick (js/choir.js), far too slow to follow a flash. Its speed and Behavior
+// rows show only while Time drives it.
+function choirDrive(owner, label) {
+  const row = driveRow(owner, owner + 'VarDrive', label, 'musicChoirDrawer', 'music');
+  row.options = row.options.filter(o => o.value !== 'strobe');
+  row.get = s => driveOf(s[owner + 'VarDrive']) === 'breath' ? 'breath' : 'time';
+  row.visible = choirShows;
+  return row;
+}
+const choirTimeDriven = owner => s => choirShows(s) && driveOf(s[owner + 'VarDrive']) !== 'breath';
+// The choir level's own driver, all three like the drone's: the strobe's
+// dip runs at audio rate on the choir's strobe stage (js/choir.js), unlike
+// Stack and Density, which move the voices on the tick. Applied at once.
+function choirLevelDrive() {
+  const row = driveRow('choirVol', 'choirVolVarDrive', 'Choir level variance driver', 'musicChoirDrawer', 'music');
+  row.set = (s, v) => { s.choirVolVarDrive = driveOf(v); applyChoirVol(); save(); };
+  row.visible = choirShows;
+  return row;
+}
+const choirLevelTimeDriven = s => choirShows(s) && driveOf(s.choirVolVarDrive) === 'time';
+// The drone's rows show while the music plays and the drone is on. Its
+// level's variance chooses from all three drivers, the strobe too: the
+// strobe's dip runs at audio rate (js/piano.js, the drone's strobe stage).
+// A change of driver is applied at once, since it moves the sound between
+// the level's tick and that stage. Behavior and speed are Time's alone.
+const droneShows = s => s.musicOn && s.bedOn !== false;
+function droneDrive() {
+  const row = driveRow('bedVol', 'bedVolVarDrive', 'Drone level variance driver', 'musicDroneDrawer', 'music');
+  row.set = (s, v) => { s.bedVolVarDrive = driveOf(v); applyBedVol(); save(); };
+  row.visible = droneShows;
+  return row;
+}
+const droneTimeDriven = s => droneShows(s) && driveOf(s.bedVolVarDrive) === 'time';
 // A Music window trim from its slider's 0..100 position: a share of the
 // voice's level, 0 to 1 (see musTone below).
 const trimOf = pos => Math.max(0, Math.min(1, (Number(pos) || 0) / 100));
@@ -1098,6 +1133,17 @@ const musicControls = [
     format: s => Math.round(s.bedVol * 100) + '%',
     visible: s => s.musicOn && s.bedOn !== false
   },
+  // The level's variance: what drives the dip (Time, the strobe, the sun's
+  // breath), how far under the setting it goes, and for Time its Behavior
+  // and speed. The bar shows the level as it plays (js/piano.js bedVolMul).
+  droneDrive(),
+  ...varianceRows('bedVol', {
+    music: true, name: 'Drone level', mode: true, apply: applyBedVol,
+    amount: 'bedVolVar', period: 'bedVolVarPeriod', ids: ['bedVolVar', 'bedVolVarPeriod'],
+    parent: 'musicDroneDrawer', visible: droneShows,
+    effective: s => s.bedVol * bedVolMulNow() * 100,
+    rows: { mode: { visible: droneTimeDriven }, period: { visible: droneTimeDriven } }
+  }),
   {
     // Which render of the drone plays: the same drone bounced at four detune
     // amounts (audio/music/manifest.json). A change crossfades to the new one.
@@ -1115,23 +1161,6 @@ const musicControls = [
     format: s => '.' + s.bedDetune,
     visible: s => s.musicOn && s.bedOn !== false
   },
-  {
-    // The sequencer's Vary with strobe (js/strobe-am.js): a volume pulse at
-    // the strobe's flash rate and in its waveform; 0 is none, 100% swings
-    // the voice from full down to silence on every flash.
-    id: 'bedStrobeAm', section: 'music', label: 'Vary with strobe', kind: 'slider',
-    parent: 'musicDroneDrawer',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round((s.bedStrobeAm || 0) * 100),
-    set: (s, pos) => { s.bedStrobeAm = pos / 100; applyBedAm(); save(); },
-    format: s => Math.round((s.bedStrobeAm || 0) * 100) + '%',
-    visible: s => s.musicOn && s.bedOn !== false
-  },
-  ...varianceRows('bedStrobeAm', {
-    music: true, name: 'Pulse', mode: true, apply: applyBedAm,
-    parent: 'musicDroneDrawer', visible: s => s.musicOn && s.bedOn !== false,
-    effective: () => bedEffectiveAm() * 100
-  }),
   // The drone's filter sweep: the click train's set above, on the drone's own
   // low-pass (js/piano.js), with the same ranges, tapers and readouts.
   {
@@ -1295,27 +1324,15 @@ const musicControls = [
     format: s => Math.round(s.choirVol * 100) + '%',
     visible: s => s.musicOn && s.choirOn
   },
+  // The level's variance: what drives the dip (Time, the strobe, the sun's
+  // breath), how far under the setting it goes, and for Time its Behavior
+  // and speed. The bar shows the level as it plays (js/choir.js choirVolMul).
+  choirLevelDrive(),
   ...varianceRows('choirVol', {
-    music: true, name: 'Level', mode: true, apply: applyChoirVol,
+    music: true, name: 'Choir level', mode: true, apply: applyChoirVol,
     parent: 'musicChoirDrawer', visible: choirShows,
-    effective: () => choirEffectiveLevel() * 100
-  }),
-  {
-    // The sequencer's Vary with strobe (js/strobe-am.js): a volume pulse at
-    // the strobe's flash rate and in its waveform; 0 is none, 100% swings
-    // the voice from full down to silence on every flash.
-    id: 'choirStrobeAm', section: 'music', label: 'Vary with strobe', kind: 'slider',
-    parent: 'musicChoirDrawer',
-    min: 0, max: 100, step: 1, def: 0,
-    get: s => Math.round((s.choirStrobeAm || 0) * 100),
-    set: (s, pos) => { s.choirStrobeAm = pos / 100; applyChoirAm(); save(); },
-    format: s => Math.round((s.choirStrobeAm || 0) * 100) + '%',
-    visible: s => s.musicOn && s.choirOn
-  },
-  ...varianceRows('choirStrobeAm', {
-    music: true, name: 'Pulse', mode: true, apply: applyChoirAm,
-    parent: 'musicChoirDrawer', visible: choirShows,
-    effective: () => choirEffectiveAm() * 100
+    effective: s => Math.max(0, s.choirVol) * choirVolMulNow() * 100,
+    rows: { mode: { visible: choirLevelTimeDriven }, period: { visible: choirLevelTimeDriven } }
   }),
   {
     // Fills upward through the choir from the low voice.
@@ -1327,10 +1344,12 @@ const musicControls = [
     format: s => s.choirStack < 1 ? 'low voice' : Math.round(s.choirStack) + '% filled',
     visible: s => s.musicOn && s.choirOn
   },
+  choirDrive('choirStack', 'Stack variance driver'),
   ...varianceRows('choirStack', {
     music: true, name: 'Stack', mode: true, apply: applyChoir,
     parent: 'musicChoirDrawer', visible: choirShows,
-    effective: choirEffectiveStack
+    effective: choirEffectiveStack,
+    rows: { mode: { visible: choirTimeDriven('choirStack') }, period: { visible: choirTimeDriven('choirStack') } }
   }),
   {
     // Adds the harmonic degrees one at a time: 1, then 8, 5, 3, 2, 7 and 9.
@@ -1342,10 +1361,12 @@ const musicControls = [
     format: s => choirDensityText(s.choirDensity),
     visible: s => s.musicOn && s.choirOn
   },
+  choirDrive('choirDensity', 'Density variance driver'),
   ...varianceRows('choirDensity', {
     music: true, name: 'Density', mode: true, apply: applyChoir,
     parent: 'musicChoirDrawer', visible: choirShows,
-    effective: choirEffectiveDensity
+    effective: choirEffectiveDensity,
+    rows: { mode: { visible: choirTimeDriven('choirDensity') }, period: { visible: choirTimeDriven('choirDensity') } }
   }),
   {
     // From the low voices to the high; at 0 the choir is even.

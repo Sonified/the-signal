@@ -16,11 +16,12 @@ import { setChoirBus, choirSession } from './choir.js';
 import { setLayerBus, layersSession } from './layers.js';
 import { setCloudBus } from './clouds.js';
 import { setHumRoom } from '../core/sun-hum.js';
-import { strobeAm, strobeAmEffective, strobeTap, untapStrobe } from './strobe-am.js';
+import { strobeAm, strobeTap, untapStrobe } from './strobe-am.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { inTurn, TURN } from './load-order.js';
 import { every, after, clear } from './ticker.js';
-import { breath, breathPhase, breathState } from '../core/variance.js';
+import { breath, breathPhase, breathState, resetBreath, variedBy, driveOf } from '../core/variance.js';
+import { signal, signalNow, valueAt } from '../core/signal.js';
 
 const SEMIS = [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40];
 const RELEASES = 18;
@@ -35,8 +36,11 @@ const DEG_W = { 0: 22, 2: 7, 4: 10, 7: 11, 11: 10 };
 const notes = new Map();
 const lifts = [];
 let bed = null, bedGain = null, bedMeta = null;
-// The drone's Vary with strobe, just after bedGain: everything bedGain
-// feeds downstream now takes its signal from this stage's node instead.
+// The drone's strobe stage, just after bedGain: everything bedGain feeds
+// downstream now takes its signal from this stage's node instead. It is how
+// the level's variance follows the strobe (below, the drone level's
+// variance); with any other driver its depth is 0 and it passes the drone
+// through untouched.
 let bedAm = null;
 let bedTakes = [], bedNextAt = 0, bedTimer = null, bedRunning = false;
 // The drone comes in several renders, one per detune amount (manifest.json's
@@ -77,7 +81,7 @@ const lateBy = ctx => ctx.presentTime === undefined ? 0 : Math.max(0, ctx.presen
 // unset one reads as 1. The piano's trim rides its channel gain (chan, below)
 // rather than each note, so a fade reaches the notes already ringing.
 const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
-const bedLevel = () => S.bedVol * perfTrim(S.musDrone ?? 1);
+const bedLevel = () => S.bedVol * (1 - bedVolDip) * perfTrim(S.musDrone ?? 1);
 const arpLevel = () => S.arpVol * (1 - effArpVolDepth) * perfTrim(S.musArp ?? 1);
 
 const canOpus = (() => {
@@ -809,8 +813,8 @@ function bedOn() {
   bedRunning = true;
   bedGain = ctx.createGain();
   bedGain.gain.value = 0;
-  bedAm = strobeAm(ctx, () => S.bedStrobeAm, () => S.bedStrobeAmVar, () => S.bedStrobeAmPeriod,
-    () => S.bedStrobeAmVarMode);
+  // the level's variance when the strobe drives it; no depth wander of its own
+  bedAm = strobeAm(ctx, bedPulseDepth);
   bedGain.connect(bedAm.node);
   // The drone's own low-pass, ahead of its tap so the dry path, the room and
   // the meter all hear the same filtered drone, and its own feed into the
@@ -882,7 +886,13 @@ function bedOn() {
   bedPump();
   bedTimer = every(10000, bedPump);
 
-  glideParam(bedGain.gain, bedLevel() * chanGate('drone'), 1.2);
+  // the level's variance starts from the top of its cycle, the full level
+  const now = getContext().currentTime;
+  resetBreath(bedVolB, now);
+  bedVolWander(now);
+  bedFadeEnd = now + 3 * BED_FADE_TC;
+  glideParam(bedGain.gain, bedLevel() * chanGate('drone'), BED_FADE_TC);
+  syncBedVolTimer();
 }
 
 function bedOff() {
@@ -891,6 +901,7 @@ function bedOff() {
   bedRunning = false;
   bedAm = null;
   clear(bedTimer); bedTimer = null;
+  if (bedVolTimer) { clear(bedVolTimer); bedVolTimer = null; }
   bedLpfSweep.stop(); bedVerbSweep.stop();
   const cut = bedCut, chains = bedChains, send = bedSend, rev = bedRev;
   bedCut = null; bedChains = null; bedSend = null; bedRev = null;
@@ -1018,15 +1029,73 @@ export function applyBedVerb() {
   bedVerbSweep.update();
 }
 
+// The level, its variance's amount, driver, Behavior or speed has moved.
 export function applyBedVol() {
-  if (bedGain) glideParam(bedGain.gain, bedLevel() * chanGate('drone'), 0.2);
-}
-// Vary with strobe on the drone: its depth has moved.
-export function applyBedAm() {
+  if (!bedGain) return;
+  bedVolWander(getContext().currentTime);
+  glideParam(bedGain.gain, bedLevel() * chanGate('drone'), 0.2);
   if (bedAm) bedAm.apply();
+  syncBedVolTimer();
 }
-// the depth as it plays, wander included, for the slider's glow
-export const bedEffectiveAm = () => strobeAmEffective(bedAm);
+
+// ---------- the drone level's variance ----------
+// The level dips under its setting by the variance's amount, by one law
+// whatever drives it (core/variance.js variedBy): level x (1 - amount x
+// (1 - d)), d from 0 (the driver at its bottom) to 1 (its top, the level in
+// full), so the level never goes above its setting.
+//   Time    d is the variance's own clock (core/variance.js breath),
+//           sinusoid or walk by its Behavior, one cycle a period, run on the
+//           audio clock by a 10 Hz tick that glides bedGain, so the steps
+//           blend (js/choir.js does its level the same way).
+//   Breath  d is the sun's breath (S.effSunBreathPos, 0 full exhale to 1
+//           full inhale), on the same tick. While no breath runs (the Sun
+//           layer off) there is none, and the level holds.
+//   Strobe  d is the flash itself: the drone's strobe stage (bedAm,
+//           js/strobe-am.js) takes the amount as its depth, so the dip
+//           lands sample by sample where the screen's flash does. bedGain
+//           then holds the level, and the tick is off.
+const BED_FADE_TC = 1.2;            // the drone's fade in (bedOn), a time constant
+const bedVolB = breathState();
+let bedVolDip = 0, bedVolTimer = null, bedFadeEnd = 0;
+const bedVolAmount = () => Math.max(0, Math.min(1, +S.bedVolVar || 0));
+const bedVolDrive = () => driveOf(S.bedVolVarDrive);
+// the strobe stage's depth: the amount while the strobe drives, else none
+function bedPulseDepth() { return bedVolDrive() === 'strobe' ? bedVolAmount() : 0; }
+// the dip's depth now, 0 to the amount, as a share of the level
+function bedVolWander(now) {
+  const a = bedVolAmount(), drive = bedVolDrive();
+  if (drive === 'strobe') { bedVolDip = 0; return; }
+  bedVolDip = drive === 'breath'
+    ? 1 - variedBy('breath', 1, a, 0, 1, S.effSunBreathPos)
+    : breath(bedVolB, a, S.bedVolVarPeriod, now, S.bedVolVarMode, 20);
+}
+function bedVolTick() {
+  if (!bedGain) { syncBedVolTimer(); return; }
+  const now = getContext().currentTime, was = bedVolDip;
+  bedVolWander(now);
+  // a tenth of a second, as the choir's level glides, so 10 Hz steps blend;
+  // while the drone is still fading in, its own fade's, so the fade keeps
+  // its length
+  if (bedVolDip !== was) glideParam(bedGain.gain, bedLevel() * chanGate('drone'), now < bedFadeEnd ? BED_FADE_TC : 0.1);
+}
+function syncBedVolTimer() {
+  const need = !!bedGain && bedVolAmount() > 0 && bedVolDrive() !== 'strobe';
+  if (need && !bedVolTimer) bedVolTimer = every(100, bedVolTick);
+  else if (!need && bedVolTimer) { clear(bedVolTimer); bedVolTimer = null; }
+}
+// The share of the set level playing now, 1 with no dip: the Drone level
+// slider's lit bar (core/audio-mirror.js, on either thread). Time and
+// Breath read the tick's dip. The strobe's is the stage's depth at this
+// moment's flash (the signal the screen draws, core/signal.js), which is
+// the level heard now, since the stage's clock is anchored for the
+// output's latency; 1 while the strobe is not flickering, when the stage
+// holds lit.
+export function bedVolMul() {
+  if (!bedGain) return 1;
+  if (bedVolDrive() !== 'strobe') return 1 - bedVolDip;
+  if (!bedAm || !signal.on) return 1;
+  return 1 - bedAm.depth * (1 - valueAt(signal, signalNow()));
+}
 
 // ---------- the drone's renders ----------
 function bedVersion(id) {

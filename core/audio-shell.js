@@ -132,7 +132,10 @@ export function createAudioShell(storage) {
     sunHumVerb(v) {
       S.effSunHumVerb = v >= 0 ? v : undefined;
       setRoomSend(v >= 0 ? v : S.sunHumVerb);
-    }
+    },
+    // The sun's breath, for the music variances linked to it (js/piano.js
+    // the drone's level, js/choir.js), or none at -1, when they hold.
+    sunBreath(v) { S.effSunBreathPos = v >= 0 ? v : undefined; }
   };
 
   let warned = false;

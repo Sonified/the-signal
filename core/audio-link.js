@@ -50,6 +50,11 @@
 //                           breath, the strobe or the time that drive it are
 //                           this thread's, so the page's hum is told.
 //   sunHumVerb(v)           the hum's Reverb mix the same way.
+//   sunBreath(v)            the sun's breath (S.effSunBreathPos, 0 to 1, -1
+//                           while none runs), while a music variance is
+//                           linked to it (the drone's level, the choir's
+//                           level, Stack and Density): the breath is this thread's,
+//                           so the page's voices are told, to a thousandth.
 //   pianoGesture(n)         a word appeared on a step that plays the piano on
 //                           the words: one gesture, now. n is the worker's
 //                           running count (S.pianoGestureN), so several in
@@ -98,6 +103,11 @@ const STROBE_EPS = 0.01;
 
 // post(calls) sends the outbox (a plain array the caller may clone and must
 // not keep; it is cleared straight after).
+// Whether any of the page's music variances is linked to the sun's breath.
+const breathLinked = (amount, drive) => S[amount] > 0 && S[drive] === 'breath';
+const breathHeard = () => breathLinked('bedVolVar', 'bedVolVarDrive') || breathLinked('choirVolVar', 'choirVolVarDrive') ||
+  breathLinked('choirStackVar', 'choirStackVarDrive') || breathLinked('choirDensityVar', 'choirDensityVarDrive');
+
 export function createAudioLink(post) {
   setAtmosphereRemote(true);
   mirror.on = true;
@@ -139,7 +149,7 @@ export function createAudioLink(post) {
   const seqNow = new Float32Array(SEQ_PACK), seqSent = new Float32Array(SEQ_PACK);
 
   let lastRunning = false, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
-  let lastFree = true, lastGesture = 0, lastHumCut = -1, lastHumVerb = -1;
+  let lastFree = true, lastGesture = 0, lastHumCut = -1, lastHumVerb = -1, lastBreath = -1;
   let lastSignal = -1;
   const sigPack = new Float64Array(SIGNAL_PACK);
   let seeded = false;
@@ -216,6 +226,10 @@ export function createAudioLink(post) {
     // and its Reverb mix, the same way
     const hv = typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : -1;
     if (hv !== lastHumVerb) { lastHumVerb = hv; call('sunHumVerb', hv, 0, 0, 0); }
+    // and the breath, only while a music variance follows it
+    const bp = breathHeard() && typeof S.effSunBreathPos === 'number'
+      ? Math.round(S.effSunBreathPos * 1000) / 1000 : -1;
+    if (bp !== lastBreath) { lastBreath = bp; call('sunBreath', bp, 0, 0, 0); }
 
     const eff = S.effFreq || 0, ach = S.achievedFreq || 0;
     if (Math.abs(eff - lastEff) > STROBE_EPS || Math.abs(ach - lastAch) > STROBE_EPS) {

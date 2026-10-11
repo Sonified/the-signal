@@ -29,10 +29,11 @@ import { S } from './state.js';
 import { getContext, glideParam } from './audio.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
-import { strobeAm, strobeAmEffective } from './strobe-am.js';
+import { strobeAm } from './strobe-am.js';
 import { inTurn, TURN } from './load-order.js';
 import { every, clear } from './ticker.js';
-import { breath, breathState, resetBreath, resetBreathLow } from '../core/variance.js';
+import { breath, breathState, resetBreath, resetBreathLow, variedBy, driveOf } from '../core/variance.js';
+import { signal, signalNow, valueAt } from '../core/signal.js';
 
 // Semitone above the keyboard root -> the degree sung, ascending the mode.
 const LAH = { 24: '1', 26: '2', 28: '3', 31: '5', 35: '7', 36: '8', 38: '9' };
@@ -169,8 +170,7 @@ let effStack = 100, effDensity = 100, effVolDepth = 0;
 
 // Live values for UI meters/fills. They expose the same wander values the
 // audio graph is using, without making the control schema reproduce the
-// wanderer's rolling cosine legs.
-export const choirEffectiveLevel = () => Math.max(0, S.choirVol) * (1 - effVolDepth);
+// wanderer's rolling cosine legs. The level's is choirVolMul, below.
 export const choirEffectiveStack = () => effStack;
 export const choirEffectiveDensity = () => effDensity;
 
@@ -179,7 +179,7 @@ export function setChoirBus(dry, roomIn) { dryBus = dry; roomBus = roomIn; }
 
 // The set level less the level variance's current depth, gated, and times
 // v1's Music window trim (S.musChoir, 0 to 1, where 1 plays exactly the set
-// level; v0 never sets it, so unset reads as 1). choirEffectiveLevel above
+// level; v0 never sets it, so unset reads as 1). choirVolMul below
 // leaves the trim out: it is the level's own fill, which shows the level.
 const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
 const level = () => Math.max(0, S.choirVol) * (1 - effVolDepth) * perfTrim(S.musChoir ?? 1) * chanGate('choir');
@@ -246,8 +246,8 @@ async function choirStart() {
   // meter reads; the tap feeds the dry bus and the room alike. The strobe
   // stage sits between, so the meter shows the pulse.
   const t = meterTap(ctx, dryBus, roomBus);
-  const a = strobeAm(ctx, () => S.choirStrobeAm, () => S.choirStrobeAmVar, () => S.choirStrobeAmPeriod,
-    () => S.choirStrobeAmVarMode);
+  // the level's variance when the strobe drives it; no depth wander of its own
+  const a = strobeAm(ctx, pulseDepth);
   g.connect(a.node); a.node.connect(t.analyser);
   voices = CHOIR_PARTS.map(part => {
     const loop = loops.get(part.semi);
@@ -311,14 +311,36 @@ let wanderTimer = null;
 const stackB = breathState(), densB = breathState(), volB = breathState();
 
 const clampVar = v => Math.max(0, Math.min(1, +v || 0));
+// Linked to the breath (the drawer's driver), the dip follows the sun's
+// breath instead of its own clock: the setting in full at the top of the
+// inhale, down by the amount at the bottom of the exhale (core/variance.js
+// variedBy). With no breath running (the Sun layer off) the setting holds.
+const byBreath = k => driveOf(S[k + 'VarDrive']) === 'breath';
 function wanderLevels(now) {
-  effStack = S.choirStack * (1 - breath(stackB, clampVar(S.choirStackVar), S.choirStackPeriod, now, S.choirStackVarMode));
-  effDensity = S.choirDensity * (1 - breath(densB, clampVar(S.choirDensityVar), S.choirDensityPeriod, now, S.choirDensityVarMode));
+  effStack = byBreath('choirStack')
+    ? variedBy('breath', S.choirStack, clampVar(S.choirStackVar), 0, 1, S.effSunBreathPos)
+    : S.choirStack * (1 - breath(stackB, clampVar(S.choirStackVar), S.choirStackPeriod, now, S.choirStackVarMode));
+  effDensity = byBreath('choirDensity')
+    ? variedBy('breath', S.choirDensity, clampVar(S.choirDensityVar), 0, 1, S.effSunBreathPos)
+    : S.choirDensity * (1 - breath(densB, clampVar(S.choirDensityVar), S.choirDensityPeriod, now, S.choirDensityVarMode));
 }
 // The level's kept apart from the voices' two, so the level control moves
-// only the chain gain and the voice controls only the voices.
+// only the chain gain and the voice controls only the voices. Its driver
+// chooses d in the one law, level x (1 - amount x (1 - d)):
+//   Time    the level's own clock, as it always ran
+//   Breath  the sun's breath, on the same tick (none while the Sun layer is
+//           off, when the level holds)
+//   Strobe  the flash itself, at audio rate: the chain's strobe stage (am,
+//           js/strobe-am.js) takes the amount as its depth, the chain gain
+//           holds the level, and the tick leaves the level alone
+const volDrive = () => driveOf(S.choirVolVarDrive);
+// the strobe stage's depth: the amount while the strobe drives, else none
+function pulseDepth() { return volDrive() === 'strobe' ? clampVar(S.choirVolVar) : 0; }
 function wanderVol(now) {
-  effVolDepth = breath(volB, clampVar(S.choirVolVar), S.choirVolPeriod, now, S.choirVolVarMode);
+  const drive = volDrive(), a = clampVar(S.choirVolVar);
+  effVolDepth = drive === 'strobe' ? 0
+    : drive === 'breath' ? 1 - variedBy('breath', 1, a, 0, 1, S.effSunBreathPos)
+    : breath(volB, a, S.choirVolPeriod, now, S.choirVolVarMode);
 }
 
 function wanderTick() {
@@ -337,7 +359,7 @@ function stopWanderTimer() {
 }
 function syncWanderTimer() {
   const need = !!voices && (clampVar(S.choirStackVar) > 0 || clampVar(S.choirDensityVar) > 0 ||
-    clampVar(S.choirVolVar) > 0);
+    (clampVar(S.choirVolVar) > 0 && volDrive() !== 'strobe'));
   if (need && !wanderTimer) wanderTimer = every(100, wanderTick);
   else if (!need) stopWanderTimer();
 }
@@ -352,20 +374,27 @@ export function applyChoir() {
   syncWanderTimer();
 }
 
-// The choir's level and its variance, as the drone's level is applied.
+// The choir's level and its variance (amount, driver, Behavior, speed), as
+// the drone's level is applied.
 export function applyChoirVol() {
   if (!chain) return;
   wanderVol(getContext().currentTime);
   glideParam(chain.gain, level(), 0.2);
+  if (am) am.apply();
   syncWanderTimer();
 }
 
-// Vary with strobe: the depth glides to the new setting.
-export function applyChoirAm() {
-  if (am) am.apply();
+// The share of the set level playing now, 1 with no dip: the Choir level
+// slider's lit bar (core/audio-mirror.js, on either thread), read as the
+// drone's is (js/piano.js bedVolMul). Time and Breath read the tick's dip;
+// the strobe's is the stage's depth at this moment's flash, 1 while the
+// strobe is not flickering, when the stage holds lit.
+export function choirVolMul() {
+  if (!chain) return 1;
+  if (volDrive() !== 'strobe') return 1 - effVolDepth;
+  if (!am || !signal.on) return 1;
+  return 1 - am.depth * (1 - valueAt(signal, signalNow()));
 }
-// the depth as it plays, wander included, for the slider's glow
-export const choirEffectiveAm = () => strobeAmEffective(am);
 
 // Mute and solo, a short glide so a gate closing never clicks.
 onChannelGates(() => {
