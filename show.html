@@ -124,7 +124,10 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
   border: 2px solid var(--line); overflow: hidden; touch-action: none; }
 .fader .fill { position: absolute; left: 0; right: 0; bottom: 0; opacity: .85; }
 .fader .mid { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(255,255,255,.3); }
-.fader .val { text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; min-height: 22px; }
+/* one line, fixed height, never wrapping: a wide value ("100 Hz", "1.2 kHz")
+   spills past the narrow column instead of growing it and squeezing the
+   track up */
+.fader .val { text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; height: 22px; line-height: 22px; white-space: nowrap; }
 #bottom { display: grid; grid-template-columns: 1fr 172px; gap: 12px; }
 #duck { height: 110px; font-size: 28px; letter-spacing: .1em; background: #1f4a44; border-color: #3fa596; color: #bff3ea; touch-action: none; }
 #duck.on { background: var(--bad); color: #000; border-color: #fff; box-shadow: 0 0 34px rgba(255, 122, 122, .7); }
