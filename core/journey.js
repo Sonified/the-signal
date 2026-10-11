@@ -291,8 +291,8 @@ function destOf(c) {
 }
 // What the journey records for c, and what a step entering compares with:
 // where it is headed, else where it is. The journey's own ramp counts, so
-// the scene taken mid-ramp (a step added, or the Down arrow's snapshot,
-// while a walk plays) holds where each slider is going, not where it got to.
+// the scene taken mid-ramp (a step added while a walk plays) holds where
+// each slider is going, not where it got to.
 function posOf(c) {
   if (tw.active) {
     const i = idxOf.get(c.id), k = i === undefined ? -1 : twAt[i];
@@ -1681,29 +1681,6 @@ function captureAll(st) {
     const c = R[i], v = validValue(c, posOf(c));
     if (v !== undefined) o[c.id] = v;
   }
-}
-
-// The Down arrow (ui/screens/journey.js journeySnapshotFromKey): step i
-// takes the whole scene again as it stands this instant, the sequencer and
-// the mix with it. Its own text, timing and interaction fields stay its own.
-// A step being edited keeps itself current anyway; this is for the step a
-// walk is on, whose live tweaks with the window shut are the viewer's for
-// the walk rather than the step's (manual).
-export function journeySnapshotStep(i) {
-  ensureLoaded();
-  if (!data.steps[i]) return;
-  flushDiff();
-  const st = data.steps[i];
-  captureAll(st);
-  st.seq = Array.isArray(S.seqs) ? seqStateOf(S) : null;
-  st.mix = newMixBlock();
-  dropMixOverrides(st);
-  if (data.sizeLock && data.sizeRestore && SIZE) {
-    const value = validValue(SIZE, SIZE.get(S));
-    if (value !== undefined) data.sizeRestore[i] = { own: true, value };
-  }
-  if (sel === i) diffPending = false;
-  persist();
 }
 
 // A new step at the end, born holding the whole scene as it stands, and

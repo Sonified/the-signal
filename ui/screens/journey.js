@@ -59,7 +59,7 @@
 import {
   journeySetWindowOpen, journeyVersion, journeyCount, journeyStepAt,
   journeySelected, journeyPlaying, journeyPlayIdx, journeyAutoPlay, journeyMode, journeyProgress,
-  journeySelect, journeyAddStep, journeyDeleteStep, journeyMoveStep, journeySnapshotStep, journeyPlayFrom, journeyPause,
+  journeySelect, journeyAddStep, journeyDeleteStep, journeyMoveStep, journeyPlayFrom, journeyPause,
   journeyTogglePlay, journeyStepBy, journeySetMode, journeySetRamp, journeySetHold, journeySetText,
   journeySetPiano, journeySetAppear, journeyLoop, journeySetLoop,
   journeySetOverride, journeyName, journeySetName, NAME_MAX,
@@ -118,7 +118,6 @@ const C = {
   // LOOP lit: the sequencer window's green (ui/screens/sequencer.js), not
   // the journey's gold, so it reads as on at a glance
   loopOnBg: css('#62d7aa', 0.12), loopOnBorder: css('#365e50'), loopOnInk: css('#64d8ad'),
-  snapshotInk: css('#5adca1'),
   // the fold's ground and the add chip
   field: css('#121820'), fieldBorder: css('#2a3440'), placeholder: css('#8997a6')
 };
@@ -232,21 +231,6 @@ function baseline(ui, cy, size) {
 // caller's styling. Buttons keep the pointer off the title bar's drag and
 // off a row's own press.
 let btnHover = false, overBtn = false;
-let snapshotAt = -1e9;
-let snapshotStep = -1;
-const SNAPSHOT_OK_MS = 1400, SNAP_TICK = 13;
-// The Down arrow's snapshot (main.js): the step whose panel is open (the
-// selected one, else the one playing) takes the whole scene again as it
-// stands (core/journey.js journeySnapshotStep). A tick lights on its row
-// from the next frame, on the window's own clock.
-let snapshotKeyReq = -1;
-export function journeySnapshotFromKey() {
-  const i = journeySelected() >= 0 ? journeySelected() : journeyPlayIdx();
-  if (!(i >= 0 && i < journeyCount())) return false;
-  journeySnapshotStep(i);
-  snapshotKeyReq = i;
-  return true;
-}
 // Transport clicks land after the fold has drawn. A text field therefore
 // commits its outside click before the step begins and its words are read.
 const transportDo = { op: 0, arg: 0 }; // 1 toggle, 2 step by, 3 play from
@@ -411,7 +395,6 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && window.a
 // fade is the chrome's idle fade, as the sequencer's.
 export function drawJourney(ui, app, fade = 1) {
   if (!restored) restore();
-  if (snapshotKeyReq >= 0) { snapshotStep = snapshotKeyReq; snapshotAt = ui.t; snapshotKeyReq = -1; }
   // (authoring needs journey mode on as well as the window: switched off,
   // the step is let go just as when the window shuts)
   journeySetWindowOpen(journey.open && journey.active);
@@ -902,17 +885,12 @@ function drawSteps(ui, x, y, n, sel, playing, playIdx) {
 
     ui.text.draw(dl, stepLabels[i], x0 + STEP_X, baseline(ui, cyr, 12), 12, W.semibold,
       lit || selected ? C.rowLabelOn : C.rowInk, 0, 0.08, 1);
-    const sx = x0 + SUM_X, sw = CONTENT_W - SUM_X - DEL_W - 8 - SNAP_TICK - 6;
+    const sx = x0 + SUM_X, sw = CONTENT_W - SUM_X - DEL_W - 8;
     dl.pushClip(sx, ry, sw, ROW_H);
     ui.text.draw(dl, summaries[i], sx, baseline(ui, cyr, 12), 12, W.regular, C.rowSummaryInk, 0, 0, 1);
     dl.popClip();
 
-    // Every step is the whole scene already, so the row has no snapshot
-    // button; the Down arrow's retake lights a tick here for a moment.
     const dx = x0 + CONTENT_W - DEL_W;
-    if (snapshotStep === i && ui.t - snapshotAt < SNAPSHOT_OK_MS) {
-      dl.icon(ICON.CHECK, dx - 6 - SNAP_TICK, cyr - SNAP_TICK / 2, SNAP_TICK, SNAP_TICK, C.snapshotInk, 1.7, 0);
-    }
 
     // the ×, which deletes the step outright
     if (btnAt(ui, ui.idx('jr.rowDel', i), dx, cyr - DEL_W / 2, DEL_W, DEL_W)) { journeyDeleteStep(i); changed = true; }
