@@ -45,7 +45,7 @@ import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows, driveRow } from './schema-variance.js';
 import { driveOf } from './variance.js';
-import { notifyGlobalFilter, GF_HZ_LO, GF_HZ_HI } from './global-filter.js';
+import { notifyGlobalFilter, GF_HZ_LO, GF_HZ_HI, GF_RES_MAX } from './global-filter.js';
 
 // The global Lowpass and Highpass (core/global-filter.js): positions 0 to
 // 1000 on a log taper over 20 Hz to 20 kHz, each octave the same stretch of
@@ -60,6 +60,9 @@ function gfParse(text) {
   return m ? gfHzToPos(parseFloat(m[1]) * (m[2] ? 1000 : 1)) : NaN;
 }
 const gfHz = (v, def) => typeof v === 'number' && v === v ? Math.max(GF_HZ_LO, Math.min(GF_HZ_HI, v)) : def;
+// Their resonance: the peak at the corner in dB, 0 (flat) to GF_RES_MAX
+const gfRes = v => typeof v === 'number' && v === v ? Math.max(0, Math.min(GF_RES_MAX, v)) : 0;
+const gfResText = db => db <= 0 ? 'flat' : db.toFixed(1) + ' dB';
 
 // ---------- shared helpers, ported from v0/js/ui.js closures ----------
 
@@ -434,6 +437,23 @@ const audioControls = [
     set: (s, pos) => { s.hpfHz = gfPosToHz(pos); notifyGlobalFilter(); save(); },
     format: s => gfHz(s.hpfHz, GF_HZ_LO) <= GF_HZ_LO ? 'open' : gfText(gfHz(s.hpfHz, GF_HZ_LO)),
     parse: (s, text) => /^\s*open/i.test(text) ? 0 : gfParse(text)
+  },
+  // Their resonance, a bump of up to 24 dB at each corner (0 flat, as
+  // before), riding presets and the broadcast with them and, like them,
+  // never held by a journey step. The show remote's gear sets these too.
+  {
+    id: 'lpfRes', section: 'audio', label: 'Lowpass resonance', kind: 'slider',
+    min: 0, max: GF_RES_MAX, step: 0.5, def: 0,
+    get: s => gfRes(s.lpfRes),
+    set: (s, db) => { s.lpfRes = gfRes(+db); notifyGlobalFilter(); save(); },
+    format: s => gfResText(gfRes(s.lpfRes))
+  },
+  {
+    id: 'hpfRes', section: 'audio', label: 'Highpass resonance', kind: 'slider',
+    min: 0, max: GF_RES_MAX, step: 0.5, def: 0,
+    get: s => gfRes(s.hpfRes),
+    set: (s, db) => { s.hpfRes = gfRes(+db); notifyGlobalFilter(); save(); },
+    format: s => gfResText(gfRes(s.hpfRes))
   },
   // The Music window's trims for the tone and the pulse (ui/screens/
   // music.js). Each is how much of the voice's own level plays, 0 to 100%,

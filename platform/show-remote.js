@@ -40,6 +40,9 @@
 //                                                20 kHz, 1000 open)
 //                         hpf          0..1000  (global Highpass, same taper,
 //                                                0 open)
+//                         lpfRes       0..24    (the Lowpass's resonance, dB
+//                         hpfRes       0..24     of peak at the corner, 0
+//                                                flat; the gear's Filters)
 //                         slideRate    0..1000  (500 = 1x; log 0.25x..2x).
 //                                                The iPad only sends 0..500
 //                                                (1x at the top), and 0
@@ -87,7 +90,7 @@
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
-// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, hm: heartMaster, mw: mwtsVolume, play, on} (play: what is actually happening, the
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, hm: heartMaster, mw: mwtsVolume, play, on} (play: what is actually happening, the
 // live hold included), src/q this page's sender id and sequence.
 // It goes as a 'state' rather than a 'word' so each relay keeps the latest
 // and hands it to an iPad that joins late.
@@ -101,7 +104,7 @@ import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
-const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume']);
+const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume']);
 const STATUS_MS = 250;
 
 export function initShowRemote(hooks = {}) {
@@ -240,7 +243,7 @@ export function initShowRemote(hooks = {}) {
     return {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
-      sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), hm: get('heartMaster'), mw: get('mwtsVolume'),
+      sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), hm: get('heartMaster'), mw: get('mwtsVolume'),
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };
   }

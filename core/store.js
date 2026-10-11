@@ -205,7 +205,7 @@ function buildSettings() {
     ringBrightVar: S.ringBrightVar, ringBrightPeriod: S.ringBrightPeriod, ringBrightVarDrive: driveOf(S.ringBrightVarDrive),
     edgeSpeedVar: S.edgeSpeedVar, edgeSpeedVarPeriod: S.edgeSpeedVarPeriod,
     edgeSizeVar: S.edgeSizeVar, edgeSizeVarPeriod: S.edgeSizeVarPeriod,
-    carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, lpfHz: S.lpfHz, hpfHz: S.hpfHz, amLinked: S.amLinked, amModOn: S.amModOn,
+    carrierHz: S.carrierHz, amRate: S.amRate, volume: S.volume, lpfHz: S.lpfHz, hpfHz: S.hpfHz, lpfRes: S.lpfRes, hpfRes: S.hpfRes, amLinked: S.amLinked, amModOn: S.amModOn,
     toneStrobeAm: S.toneStrobeAm,
     toneVolVar: S.toneVolVar, toneVolPeriod: S.toneVolPeriod,
     toneStrobeAmVar: S.toneStrobeAmVar, toneStrobeAmPeriod: S.toneStrobeAmPeriod,
@@ -1015,6 +1015,9 @@ function applySettings(s, live, scene) {
   // the global Lowpass and Highpass corners, Hz (core/global-filter.js)
   if (typeof s.lpfHz === 'number' && isFinite(s.lpfHz)) S.lpfHz = Math.max(20, Math.min(20000, s.lpfHz));
   if (typeof s.hpfHz === 'number' && isFinite(s.hpfHz)) S.hpfHz = Math.max(20, Math.min(20000, s.hpfHz));
+  // and their resonance, dB of peak at the corner (core/global-filter.js)
+  if (typeof s.lpfRes === 'number' && isFinite(s.lpfRes)) S.lpfRes = Math.max(0, Math.min(24, s.lpfRes));
+  if (typeof s.hpfRes === 'number' && isFinite(s.hpfRes)) S.hpfRes = Math.max(0, Math.min(24, s.hpfRes));
   // the Music window's trims, each a share of its voice's level, 0 to 1
   for (const k of ['musTone', 'musPulse', 'musPiano', 'musClouds', 'musDrone', 'musArp', 'musChoir', 'musAmb']) {
     if (typeof s[k] === 'number' && isFinite(s[k])) S[k] = Math.max(0, Math.min(1, s[k]));

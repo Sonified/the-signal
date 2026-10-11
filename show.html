@@ -15,7 +15,8 @@
   Lowpass and Highpass, all of its sound (slides, music, the Sun's hum);
   SPEED the slides' speed. Play/pause toggles the slides' transport; Duck
   drops the slides', the heartbeat's and the Sun hum's sound under the
-  voice, its amount and fades set behind the gear.
+  voice, its amount and fades set behind the gear, which also holds the
+  slides' Crossfade and the global filters' resonance.
 
   TRANSPORT: the mirror test's (remote.html), lifted. The Cloudflare relay
   and, when this page came from the laptop (http://<mac>.local:8800/show.html,
@@ -35,6 +36,8 @@
           vol 0..100 (the app's Master volume, %, default 50: VOLUME)
           lpf 0..1000 (global Lowpass, log 20 Hz..20 kHz, 1000 open: LP)
           hpf 0..1000 (global Highpass, same taper, 0 open: HP)
+          lpfRes, hpfRes 0..24 (their resonance, dB of peak at the corner,
+            0 flat, in 0.5 dB steps; the gear's Filters)
           slideRate 0..1000 (500 = 1x, log 0.25..2x: SPEED)
           slidePlay true (play) / false (pause), idempotent
           slideRestart (v ignored)
@@ -195,7 +198,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   <span class="status" id="paths"></span>
   <span class="status">room <b id="roomName"></b></span>
   <button class="big small spacer" id="switch"></button>
-  <button class="big" id="gear" aria-label="Duck settings">⚙︎</button>
+  <button class="big" id="gear" aria-label="Settings">⚙︎</button>
 </header>
 
 <main>
@@ -236,6 +239,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     <div id="sUp"></div>
     <h2 style="margin-top: 18px">Slides</h2>
     <div id="sXf"></div>
+    <h2 style="margin-top: 18px">Filters</h2>
+    <div id="sLr"></div>
+    <div id="sHr"></div>
   </div>
 </div>
 
@@ -490,6 +496,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     el.querySelector('.lab').textContent = label;
     const fill = el.querySelector('.fill'), val = el.querySelector('.val');
     const draw = () => { fill.style.width = (get() * 100) + '%'; val.textContent = fmt(); };
+    // held and touchedAt let Presence's reports leave a slider alone while
+    // a finger is on it, as the faders do
+    const sl = { draw, held: false, touchedAt: 0 };
     const at = e => { const r = el.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
     const move = e => {
       const was = get();
@@ -499,11 +508,13 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     const lift = e => {
       if (!el.hasPointerCapture(e.pointerId)) return;
       el.releasePointerCapture(e.pointerId);
+      sl.held = false; sl.touchedAt = performance.now();
       saveDuck();
       if (audition && duckPtr === null) sendDuck(false);
     };
     el.addEventListener('pointerdown', e => {
       el.setPointerCapture(e.pointerId);
+      sl.held = true; sl.touchedAt = performance.now();
       set(at(e)); draw();
       if (audition) sendDuck(true);
     });
@@ -511,6 +522,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     el.addEventListener('pointerup', lift);
     el.addEventListener('pointercancel', lift);
     draw();
+    return sl;
   }
   makeSlider($('sAmt'), 'Duck amount', () => duckSet.amt, u => { duckSet.amt = Math.round(u * 100) / 100; },
     () => Math.round(duckSet.amt * 100) + '%', true);
@@ -527,6 +539,24 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     duckSet.xf = xf;
     queueCtl('slideXfade', Math.round(xf * 100));
   }, () => duckSet.xf > 0 ? duckSet.xf.toFixed(2) + ' s' : 'cut');
+  // Filters: the global Lowpass's and Highpass's resonance (lpfRes, hpfRes),
+  // the peak at each corner, 0 (flat) to 24 dB in 0.5 dB steps, sent in dB
+  // whenever it moves. They live on the laptop, not here: Presence's reports
+  // bring them back (key lr, hr) once no finger is on them.
+  const RES_MAX = 24;
+  const resText = db => db <= 0 ? 'flat' : db.toFixed(1) + ' dB';
+  const RES = [
+    { id: 'lpfRes', key: 'lr', el: 'sLr', label: 'LP resonance', db: 0 },
+    { id: 'hpfRes', key: 'hr', el: 'sHr', label: 'HP resonance', db: 0 }
+  ];
+  for (const r of RES) {
+    r.sl = makeSlider($(r.el), r.label, () => r.db / RES_MAX, u => {
+      const db = Math.round(u * RES_MAX * 2) / 2;
+      if (db === r.db) return;
+      r.db = db;
+      queueCtl(r.id, db);
+    }, () => resText(r.db));
+  }
   // the title clears the laptop's screen: its drawer and windows shut
   $('title').onclick = () => send({ k: 'clean' });
   $('gear').onclick = () => $('modal').classList.add('open');
@@ -610,6 +640,12 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     for (const f of FADERS) {
       const v = sl[f.key];
       if (typeof v === 'number' && isFinite(v) && !f.held && now - f.touchedAt > 800 && !pending.has(f.id)) { f.pos = Math.min(f.max, v); f.draw(); }
+    }
+    for (const r of RES) {
+      const v = sl[r.key];
+      if (typeof v === 'number' && isFinite(v) && !r.sl.held && now - r.sl.touchedAt > 800 && !pending.has(r.id)) {
+        r.db = Math.max(0, Math.min(RES_MAX, v)); r.sl.draw();
+      }
     }
     if (typeof sl.play === 'boolean') { slidePlay = sl.play; drawPlay(); }
   }
