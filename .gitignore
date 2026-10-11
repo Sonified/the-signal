@@ -18,3 +18,6 @@ audio/source/Ocean_Cavern.wav
 
 # the TSC 2026 show's slide videos (core/schema-slides.js), copied locally, never committed
 slides/
+
+# the Sun's videos (gpu/sun.js), copied locally for localhost shows, never committed
+sun-video/

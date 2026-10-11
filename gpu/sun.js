@@ -113,7 +113,14 @@ import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
 import { setCutoffHz, cutoffHz, setReverbMix } from '../core/sun-hum.js';
 
-const VIDEO_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
+const CLOUD_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
+// Served from this machine (tools/serve.mjs on localhost), the Sun plays its
+// own copies in sun-video/ (git-ignored, downloaded from the cloud), so a
+// show never waits on the network; a file missing there falls back to the
+// cloud once, before the HEVC to x264 swap is spent.
+const LOCAL_BASE = '/sun-video/';
+const ON_LOCALHOST = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+let VIDEO_BASE = ON_LOCALHOST ? LOCAL_BASE : CLOUD_BASE;
 // The standard stem and the High quality one, the site's original snapshot
 // (both carry a plain x264 file and an _hevc one).
 const STEM_STD = 'sun_mosaic_20260915_23289r';
@@ -294,6 +301,13 @@ export function createSun(device, format) {
   function onVideoError(e) {
     const el = e.target;
     if (!el.error) return;   // a stale report from a source since replaced
+    if (VIDEO_BASE === LOCAL_BASE) {
+      VIDEO_BASE = CLOUD_BASE;
+      console.warn('sun: no local copy of ' + srcNow + '; playing it from the cloud');
+      resetWrap();
+      setSources(CLOUD_BASE + srcNow.slice(LOCAL_BASE.length));
+      return;
+    }
     // The one swap: the HEVC file failing falls back to the x264 one, on
     // both elements (they decode the same file).
     if (!triedX264) {
