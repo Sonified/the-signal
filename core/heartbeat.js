@@ -81,7 +81,9 @@ const LIM_TRIM = Math.pow(10, 0.6 * LIM_THRESHOLD * (1 - 1 / LIM_RATIO) / 20);
 let ctx = null, ownCtx = false, unavailable = false;
 let analyser = null, level = null, samples = null, win = 0;
 let buffer = null, loading = false, loadFailed = false;
-let src = null, startedAt = 0, offset = 0;
+// the place in the track: where the source was at anchorT (audio clock),
+// moving at rate (the Speed setting) since
+let src = null, offset = 0, anchorT = 0, anchorPos = 0, rate = 1;
 let resumeArmed = true, lastLevel = -1;
 // heartRead's results, read straight off the module (no object per frame).
 let readT = -1;
@@ -173,17 +175,18 @@ function startSource() {
   src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = true;
+  src.playbackRate.value = rate;
   src.connect(analyser);
   const at = buffer.duration > 0 ? offset % buffer.duration : 0;
   src.start(ctx.currentTime, at);
-  startedAt = ctx.currentTime - at;
+  anchorT = ctx.currentTime; anchorPos = at;
   readT = -1;
 }
 
 // Stops the source where it is, keeping its place for the next start.
 export function heartPause() {
   if (!src) return;
-  if (buffer && buffer.duration > 0) offset = (ctx.currentTime - startedAt) % buffer.duration;
+  if (buffer && buffer.duration > 0) offset = (anchorPos + (ctx.currentTime - anchorT) * rate) % buffer.duration;
   try { src.stop(); } catch (e) {}
   src.disconnect();
   src = null;
@@ -199,14 +202,36 @@ export const heartUnavailable = () => unavailable || loadFailed;
 // Once a frame while the layer is on: loads the track the first time,
 // resumes the context when armed, plays or pauses the source, and sets the
 // heard level. Returns whether a source is playing on a running clock.
-export function heartSync(play, gain) {
+// The show remote's Duck (platform/show-remote.js, the slides' setDuck
+// pattern): a multiplier on the heartbeat's level alone. It glides the live
+// gain at once, so it works while the frame loop rests, and heartSync keeps
+// honouring it on every later set. Not saved: a reload is unducked.
+let duckMul = 1;
+export function setHeartDuck(mul, seconds) {
+  duckMul = typeof mul === 'number' && mul === mul ? (mul < 0 ? 0 : mul > 1 ? 1 : mul) : 1;
+  if (!level || !ctx) return;
+  const sec = typeof seconds === 'number' && seconds >= 0 && seconds <= 10 ? seconds : 0.2;
+  level.gain.setTargetAtTime(lastLevel >= 0 ? lastLevel * duckMul : 0, ctx.currentTime, Math.max(0.003, sec / 3));
+}
+
+export function heartSync(play, gain, speed = 1) {
   if (!ensureGraph()) return false;
   load();
   if (!play) { heartPause(); return false; }
+  // Speed: a new rate takes effect now, the place so far counted at the old
+  // one, so a pause still keeps the true place in the track.
+  if (speed !== rate) {
+    if (src) {
+      const now = ctx.currentTime;
+      anchorPos += (now - anchorT) * rate; anchorT = now;
+      src.playbackRate.setValueAtTime(speed, now);
+    }
+    rate = speed;
+  }
   tryResume();
   if (gain !== lastLevel) {
     lastLevel = gain;
-    level.gain.setTargetAtTime(gain, ctx.currentTime, LEVEL_TC);
+    level.gain.setTargetAtTime(gain * duckMul, ctx.currentTime, LEVEL_TC);
   }
   if (!buffer) return false;
   if (!src) startSource();

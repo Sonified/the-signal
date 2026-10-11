@@ -27,21 +27,33 @@
 //                       (main.js's clearScreen hook), only the playback left
 //   {k:'ctl', id, v}    a control, by schema id, v in the CONTROL'S OWN
 //                       position units, exactly what byId(id).set takes:
-//                         vol          0..100   (the app's Master volume,
-//                                                %, default 50; the slides,
-//                                                the music and the Sun's hum)
+//                         vol          0..100   the FADER's position, on a
+//                                                squared taper into the app's
+//                                                Master volume (the slides,
+//                                                the music and the Sun's hum):
+//                                                gain = (v/100)^2, so 50 is
+//                                                -12 dB, 25 is -24 dB, 100 is
+//                                                0 dB. The control itself and
+//                                                the drawer stay linear; only
+//                                                this fader is curved.
 //                         lpf          0..1000  (global Lowpass, log 20 Hz..
 //                                                20 kHz, 1000 open)
 //                         hpf          0..1000  (global Highpass, same taper,
 //                                                0 open)
-//                         slideRate    0..1000  (500 = 1x; log 0.25x..2x)
+//                         slideRate    0..1000  (500 = 1x; log 0.25x..2x).
+//                                                The iPad only sends 0..500
+//                                                (1x at the top), and 0
+//                                                STOPS the slide (a live
+//                                                hold, nothing recorded);
+//                                                anything above lets it go.
 //                         slidePlay    true (PLAY) / false (PAUSE),
 //                                      each idempotent: it also lets go a
 //                                      live hold (the Journey window's
 //                                      button, a walk pause) that disagrees
 //                         slideRestart (v ignored)
-//                         slideXfade   0..300   (hundredths of a second, 0 a cut)
-//   {k:'duck', on, amt, dn, up}  the slides' duck (gpu/slides.js setDuck):
+//                         slideXfade   0..500   (hundredths of a second, 0 a cut)
+//   {k:'duck', on, amt, dn, up}  the duck (gpu/slides.js setDuck and the
+//                       heartbeat's setHeartDuck, the same multiplier):
 //                       on, the slides' gain falls to (1 - amt) over dn
 //                       seconds; off, back to full over up seconds
 // The journey moves regardless of the Journey window or ACTIVE (a remote is
@@ -74,6 +86,7 @@ import { byId } from '../core/schema.js';
 import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive } from '../gpu/slides.js';
+import { setHeartDuck } from '../core/heartbeat.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade']);
@@ -143,6 +156,8 @@ export function initShowRemote(hooks = {}) {
     idleWake('show remote');
     pollStatus();
   }
+  // the Speed fader is at 0 and has stopped the slide itself
+  let speedStopped = false;
   function act(m) {
     if (m.k === 'jump') { const i = m.i | 0; if (i >= 0) journeyJumpTo(i); }
     else if (m.k === 'clean') { if (hooks.clearScreen) hooks.clearScreen(); }
@@ -163,6 +178,30 @@ export function initShowRemote(hooks = {}) {
         if ((on && st === 2) || (!on && st === 1)) toggleSlidePlayLive();
       }
       else if (c.kind === 'toggle') c.set(S, !!m.v);
+      else if (m.id === 'slideRate') {
+        // 0 is a stop, not a slow: the slide is held paused live (as the
+        // Journey window's slide button does) and let go again when the
+        // fader leaves the bottom. A cue change clears the hold by itself
+        // (gpu/slides.js), so the next cue plays as authored.
+        const v = Math.max(0, Math.min(c.max, Math.round(+m.v)));
+        if (!isFinite(v)) return;
+        c.set(S, v);
+        if (v === 0) {
+          if (slidesLiveState() === 1) { toggleSlidePlayLive(); speedStopped = true; }
+        } else if (speedStopped) {
+          speedStopped = false;
+          if (slidesLiveState() === 2) toggleSlidePlayLive();
+        }
+      }
+      else if (m.id === 'vol') {
+        // the fader's squared taper (see the table above). The control's own
+        // position is not rounded to a whole percent here: at the quiet end
+        // whole percents would step in chunks of several dB.
+        const v = +m.v;
+        if (!isFinite(v)) return;
+        const u = Math.max(0, Math.min(1, v / 100));
+        c.set(S, Math.round(u * u * 100000) / 1000);
+      }
       else {
         const v = +m.v;
         if (!isFinite(v)) return;
@@ -171,7 +210,9 @@ export function initShowRemote(hooks = {}) {
     } else if (m.k === 'duck') {
       const amt = Math.max(0, Math.min(1, +m.amt || 0));
       const sec = m.on ? +m.dn : +m.up;
-      setDuck(m.on ? 1 - amt : 1, isFinite(sec) && sec >= 0 ? sec : 0.2);
+      const mul = m.on ? 1 - amt : 1, dur = isFinite(sec) && sec >= 0 ? sec : 0.2;
+      setDuck(mul, dur);
+      setHeartDuck(mul, dur);
     }
   }
   for (const b of bases) all.push(socket(b.base, b.name, CMD_ROOM, 'follow', take, null));
@@ -185,7 +226,7 @@ export function initShowRemote(hooks = {}) {
     return {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
-      sl: { vol: get('vol'), rate: get('slideRate'), lp: get('lpf'), hp: get('hpf'),
+      sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'),
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };
   }
