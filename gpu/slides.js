@@ -93,6 +93,11 @@ fn fsBlack() -> @location(0) vec4f {
 `;
 
 const clampNum = (v, lo, hi, def) => typeof v === 'number' && v === v ? (v < lo ? lo : v > hi ? hi : v) : def;
+// The Volume setting (0 to 1) to a gain, on a cubed taper: the ear hears
+// level in decibels, so a straight gain did almost nothing over the top
+// three quarters of the fader. Cubed, 75% is about -7.5 dB, 50% -18 dB and
+// 25% -36 dB, so the fader works evenly along its whole length.
+const slideGain = S => { const v = clampNum(S.slideVolume, 0, 1, 1); return v * v * v; };
 const smooth = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 
 // ---------- the duck ----------
@@ -301,7 +306,7 @@ export function createSlides(device, format) {
       gain = actx.createGain();
       hp.frequency.value = clampNum(S.slideHP, 20, 20000, 20);
       lp.frequency.value = clampNum(S.slideLP, 20, 20000, 20000);
-      gain.gain.value = clampNum(S.slideVolume, 0, 1, 1) * duckMul;
+      gain.gain.value = slideGain(S) * duckMul;
       hp.connect(lp); lp.connect(gain); gain.connect(actx.destination);
       for (const s of slots) {
         s.src = actx.createMediaElementSource(s.el);
@@ -344,7 +349,7 @@ export function createSlides(device, format) {
   // Without a chain each element's own volume stands in for its leg times
   // the master.
   function elementVolume(s) {
-    const v = clampNum(S.slideVolume, 0, 1, 1) * duckMul * (s.legNow >= 0 ? s.legNow : 0);
+    const v = slideGain(S) * duckMul * (s.legNow >= 0 ? s.legNow : 0);
     if (Math.abs(s.el.volume - v) > 0.001) s.el.volume = v;
   }
   // A slot's crossfade leg, glided; a no-op when it has not moved.
@@ -357,7 +362,7 @@ export function createSlides(device, format) {
   // The chain's settings, glided; each a no-op once it is where S says.
   let lastHP = -1, lastLP = -1, lastVol = -1;
   function syncAudio() {
-    const vol = clampNum(S.slideVolume, 0, 1, 1) * duckMul;
+    const vol = slideGain(S) * duckMul;
     if (!actx) {
       for (const s of slots) elementVolume(s);
       return;
@@ -371,7 +376,7 @@ export function createSlides(device, format) {
   // The duck, glided from wherever the gain is now (see setDuck); the
   // volume it lands on is noted, so syncAudio does not re-aim it fast.
   duckHook = tc => {
-    const vol = clampNum(S.slideVolume, 0, 1, 1) * duckMul;
+    const vol = slideGain(S) * duckMul;
     if (!actx) { for (const s of slots) elementVolume(s); return; }
     lastVol = vol;
     gain.gain.setTargetAtTime(vol, actx.currentTime, tc);

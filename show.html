@@ -44,9 +44,10 @@
 
   LAYOUT follows Robert's TouchOSC/Max surface (thumb reach, iPad held in
   two hands): the cues down the left; on the right edge, top corner PLAY
-  (green) over PAUSE (red), below them the four tall faders in the
+  (green) over PAUSE (red), below them the four tall faders (half-width,
+  hugging the right edge, as the photo has them) in the
   surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK with
-  PREV / restart / NEXT beside it. The middle stays empty for what comes next.
+  The middle stays empty for what comes next.
 
   ?room=<name> (default 'show'), ?mac=<host:port> (the laptop, default
   Roberts-MacBook-Pro-2.local:8800), ?relay=<host> (the cloud relay),
@@ -105,7 +106,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
 #play { background: #2f9a4a; border-color: #4fd06e; }
 #pause { background: #c0393b; border-color: #ff6b6b; }
 #pp .big.on { opacity: 1; box-shadow: 0 0 22px rgba(255, 255, 255, .25), inset 0 0 0 2px #fff; }
-#faders { min-height: 160px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+#faders { min-height: 160px; width: 50%; margin-left: auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .fader { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; }
 .fader .lab { text-align: center; font-size: 13px; font-weight: 700; letter-spacing: .08em; }
 .fader .track { position: relative; flex: 1; min-height: 120px; border-radius: 12px; background: #0f1219;
@@ -114,9 +115,6 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280p
 .fader .mid { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(255,255,255,.3); }
 .fader .val { text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; min-height: 22px; }
 #bottom { display: grid; grid-template-columns: 1fr 172px; gap: 12px; }
-#nav { display: grid; grid-template-columns: 1fr 0.8fr 1fr; gap: 10px; }
-#nav .big { height: 110px; padding: 0 6px; font-size: 18px; }
-#nav #restart { font-size: 30px; }
 #duck { height: 110px; font-size: 28px; letter-spacing: .1em; background: #1f4a44; border-color: #3fa596; color: #bff3ea; touch-action: none; }
 #duck.on { background: var(--bad); color: #000; border-color: #fff; box-shadow: 0 0 34px rgba(255, 122, 122, .7); }
 .big:active, .cue:active { filter: brightness(1.35); }
@@ -185,11 +183,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       </div>
       <div id="faders"></div>
       <div id="bottom">
-        <div id="nav">
-          <button class="big" id="prev" aria-label="Previous cue">◀ PREV</button>
-          <button class="big" id="restart" aria-label="Restart the video">⟲</button>
-          <button class="big" id="next" aria-label="Next cue">NEXT ▶</button>
-        </div>
+        <div></div>
         <button class="big" id="duck">DUCK</button>
       </div>
     </div>
@@ -330,8 +324,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const FADERS = [
     { id: 'slideLP', key: 'lp', label: 'LP', color: '#e45bf0', max: 1000, def: 1000, fmt: p => p >= 1000 ? 'open' : hzText(posToHz(p)) },
     { id: 'slideHP', key: 'hp', label: 'HP', color: '#b6f03c', max: 1000, def: 0, fmt: p => p <= 0 ? 'open' : hzText(posToHz(p)) },
-    { id: 'slideRate', key: 'rate', label: 'SPEED', color: '#f5e23a', max: 1000, def: 500, mid: true,
-      snap: p => Math.abs(p - 500) <= 15 ? 500 : p, fmt: p => posToRate(p).toFixed(2) + '×' },
+    // Speed tops out at 1x (the control's 500); the whole track is the
+    // slow half, 0.25x at the bottom. The show never runs faster than life.
+    { id: 'slideRate', key: 'rate', label: 'SPEED', color: '#f5e23a', max: 500, def: 500,
+      fmt: p => posToRate(p).toFixed(2) + '×' },
     { id: 'slideVolume', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 100, fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
@@ -387,9 +383,6 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   drawPlay();
   $('play').onclick = () => { slidePlay = true; drawPlay(); send({ k: 'ctl', id: 'slidePlay', v: true }); };
   $('pause').onclick = () => { slidePlay = false; drawPlay(); send({ k: 'ctl', id: 'slidePlay', v: false }); };
-  $('restart').onclick = () => send({ k: 'ctl', id: 'slideRestart', v: 1 });
-  $('prev').onclick = () => { send({ k: 'prev' }); if (statusStep === null && tapped > 0) { tapped--; drawCues(); } };
-  $('next').onclick = () => { send({ k: 'next' }); if (statusStep === null && tapped < CUES.length - 1) { tapped++; drawCues(); } };
 
   // ---------- the duck and its settings ----------
   // xf: the slides' Crossfade (slideXfade), seconds, kept here with the duck's
@@ -535,7 +528,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     const now = performance.now();
     for (const f of FADERS) {
       const v = sl[f.key];
-      if (typeof v === 'number' && isFinite(v) && !f.held && now - f.touchedAt > 800 && !pending.has(f.id)) { f.pos = v; f.draw(); }
+      if (typeof v === 'number' && isFinite(v) && !f.held && now - f.touchedAt > 800 && !pending.has(f.id)) { f.pos = Math.min(f.max, v); f.draw(); }
     }
     if (typeof sl.play === 'boolean') { slidePlay = sl.play; drawPlay(); }
   }
