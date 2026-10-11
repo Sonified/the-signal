@@ -35,11 +35,11 @@
 // slide never starts or stops dead. A run factor pp (1 playing, 0 stopped)
 // glides to 0 over Fade out and back to 1 over Fade in, whatever asked for
 // the pause or the play (the Play switch, the Journey's button and Space,
-// the walk, the remote). The sound's leg is scaled by pp, and the video's
-// rate is Speed x pp (floored at MIN_RATE), so the picture slows to a halt
-// and winds back up; at 0 the element is paused. With Audio speed ramp on,
-// the sound's pitch follows that rate like a turntable; off, pitch is held
-// through the ramp (preservesPitch) and the sound only fades. A new slide,
+// the walk, the remote). The sound's leg is scaled by pp, through the same
+// glided gain the crossfade rides, and at 0 the element is paused. With
+// Audio speed ramp on, the video's rate is Speed x pp too (floored at
+// MIN_RATE), so picture and pitch wind down and back up like a turntable;
+// off, the rate is never touched and the sound only fades. A new slide,
 // the layer switched on, and a doze start at their target, with no ramp.
 //
 // SOUND: each slot's createMediaElementSource -> its leg (a gain, the
@@ -575,13 +575,13 @@ export function createSlides(device, format) {
       }
       ppMoving = pp !== target;
       ppGain = pp;
-      // Speed x the run factor; pitch follows only while the ramp is on
-      // (off, it is held through a ramp and the sound just fades)
+      // The picture's rate: Speed, times the run factor only when Audio
+      // speed ramp is on (the turntable; pitch follows, as the element is
+      // built). Off, the rate is never touched by a pause: the sound just
+      // fades on its gain leg and the picture stops when it reaches 0.
       const rate = clampNum(S.slideRate, 0.25, 2, 1);
-      const eff = pp >= 1 ? rate : Math.max(MIN_RATE, rate * pp);
+      const eff = S.slidePpRamp === true && pp < 1 ? Math.max(MIN_RATE, rate * pp) : rate;
       if (Math.abs(cur.el.playbackRate - eff) > 0.001) { try { cur.el.playbackRate = eff; } catch (e) {} cur.el.defaultPlaybackRate = rate; }
-      const hold = pp < 1 && S.slidePpRamp !== true;
-      if (cur.el.preservesPitch !== hold) { cur.el.preservesPitch = hold; cur.el.mozPreservesPitch = hold; cur.el.webkitPreservesPitch = hold; }
       if (pp > 0 && !dozing) { if (!cur.el.ended) play(cur); }
       else pause(cur);
     } else { restartSeen = S.slideRestartN | 0; ppInit = false; ppMoving = false; }
