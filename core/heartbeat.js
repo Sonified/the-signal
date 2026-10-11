@@ -1,14 +1,19 @@
-// The Heartbeat layer's sound: one looping recording (audio/heartbeat.m4a)
-// and the analyser the light reads it through. gpu/heartbeat.js drives it
-// once a frame (heartSync) and reads the samples the frame just heard
+// The Heartbeat layer's sound: one looping recording (audio/heartbeat.m4a),
+// and the loudness the light reads from it. gpu/heartbeat.js drives it once
+// a frame (heartSync) and reads the loudness of the moment being heard
 // (heartRead); the envelope and the wash live there.
 //
-//   source -> analyser -> level -> limiter -> trim -> pause gate
-//          -> the app's master -> out
+//   source -> level -> limiter -> trim -> pause gate -> the app's master -> out
 //
-// The analyser sits ahead of the level, so the light keeps beating with the
-// sound turned all the way down, and the flash never follows the Audio level
-// slider up past 100% either. The limiter is the heartbeat's own (the app's
+// The light does not listen to the graph. When the track decodes, its
+// loudness is worked out once, from the samples themselves (the light's
+// envelope, below), and heartRead looks it up at the place in the track the
+// listener is hearing now. So the light keeps beating with the sound turned
+// all the way down or muted, and the flash never follows the Audio level
+// slider up past 100% either, as when an analyser sat ahead of the level;
+// and it reads the same on an engine that renders ahead of the speakers,
+// where an analyser in the graph would be reading the future, and on one
+// that sends no samples back at all. The limiter is the heartbeat's own (the app's
 // master bus has none): it lets the level run to 400% and keep getting
 // louder without the loudest beats clipping (see LIM_THRESHOLD). The track plays on the app's own
 // AudioContext (js/audio.js getContext, the one the engine, the piano and
@@ -39,6 +44,12 @@ const TRACK_URL = 'audio/heartbeat.m4a';
 // frames; a 1/30 s window read at 60 or 120 Hz lands within 1% of it, where a
 // window of one 60 Hz frame reads about 28% hotter and saturates the beat.
 const GEN_FPS = 30;
+// The light's envelope: the running sum of the track's squared mono
+// down-mix, kept every ENV_HOP frames (about 0.75 MB for the 32 s track at
+// 48 kHz), so the RMS of any window is two lookups, the few samples between
+// each end and the hop before it, and a square root: exactly the sum over
+// the window's samples, at most 30 squares a read however long the window.
+const ENV_HOP = 16;
 // The level's glide, seconds: a slider drag without zipper noise.
 const LEVEL_TC = 0.03;
 
@@ -51,8 +62,9 @@ const LEVEL_TC = 0.03;
 // out. Attack 3 ms: the node delays the sound by a fixed 6 ms and looks
 // ahead, so a 3 ms attack has the gain down before a thump reaches the
 // output, and a thump's low cycles (about 20 ms each) cannot slip past it.
-// That delay puts the sound 6 ms behind the light (the analyser reads ahead
-// of it), well inside what the eye and ear take as together.
+// That delay puts the sound 6 ms behind the light (the light reads the
+// source's own place, ahead of it), well inside what the eye and ear take as
+// together.
 // Release 0.25 s: long against those 20 ms cycles, so the gain holds through
 // the body of a beat instead of riding each cycle and distorting it, yet
 // short against the second or so between beats, so it lets go in the quiet
@@ -81,14 +93,24 @@ const LIM_RELEASE = 0.25;
 const LIM_TRIM = Math.pow(10, 0.6 * LIM_THRESHOLD * (1 - 1 / LIM_RATIO) / 20);
 
 let ctx = null, ownCtx = false, unavailable = false;
-let analyser = null, level = null, samples = null, win = 0;
+let level = null;
 // The Levels window's meter: a tap at the very end of the chain, after the
 // limiter and the pause gate, so it reads what is heard (heartPeak).
 let meterTap = null;
 let buffer = null, loading = false, loadFailed = false;
-// the place in the track: where the source was at anchorT (audio clock),
-// moving at rate (the Speed setting) since
+// The light's envelope (ENV_HOP): energy[k] is the sum of the squared mono
+// down-mix over the track's first k hops; total the whole track's; frames
+// its length and win the RMS window, in the track's frames; chL and chR its
+// samples (chR null for a mono track).
+let energy = null, total = 0, frames = 0, win = 0, chL = null, chR = null;
+// The place in the track: where the source was at anchorT (audio clock,
+// seconds), moving at rate (the Speed setting) since. Each is a time the
+// listener hears it (placeNow): on Heart a start or a speed change lands a
+// lookahead after currentTime, so until then the place before it still
+// plays, kept in prev* (hasPrev), and before heardFrom, the moment the
+// source's start is heard, nothing of it plays yet.
 let src = null, offset = 0, anchorT = 0, anchorPos = 0, rate = 1;
+let prevT = 0, prevPos = 0, prevRate = 1, hasPrev = false, heardFrom = 0;
 let resumeArmed = true, lastLevel = -1;
 // heartRead's results, read straight off the module (no object per frame).
 let readT = -1;
@@ -112,17 +134,8 @@ function ensureGraph() {
     try { ctx = new AC({ latencyHint: 'playback' }); ownCtx = true; }
     catch (e) { unavailable = true; warn('could not make an AudioContext', e); return false; }
   }
-  win = Math.round(ctx.sampleRate / GEN_FPS);
-  let fft = 2048;
-  while (fft < win && fft < 32768) fft *= 2;
-  if (win > fft) win = fft;
-  analyser = ctx.createAnalyser();
-  analyser.fftSize = fft;
-  analyser.smoothingTimeConstant = 0;
-  samples = new Float32Array(fft);
   level = ctx.createGain();
   level.gain.value = 0;
-  analyser.connect(level);
   // The limiter and its makeup trim, after the level so it is the level
   // that drives them, and before the gate (LIM_THRESHOLD above).
   const limiter = ctx.createDynamicsCompressor();
@@ -173,9 +186,57 @@ function load() {
       return r.arrayBuffer();
     })
     .then(data => ctx.decodeAudioData(data))
-    .then(b => { buffer = b; loading = false; })
+    .then(b => { buildEnvelope(b); buffer = b; loading = false; })
     .catch(e => { loading = false; loadFailed = true; warn('the track could not load; the layer stays silent', e); });
 }
+
+// The light's envelope, made once as the track decodes: the running sum of
+// its squared mono down-mix, hop by hop (ENV_HOP). The down-mix is the one
+// an AnalyserNode takes, ½(L + R), which is what HEART_NORM was measured
+// on. One pass over the samples, a few milliseconds for the whole track,
+// and nothing after it.
+function buildEnvelope(b) {
+  const n = b.length, hops = Math.ceil(n / ENV_HOP);
+  const L = b.getChannelData(0), R = b.numberOfChannels > 1 ? b.getChannelData(1) : null;
+  const e = new Float64Array(hops + 1);
+  let sum = 0;
+  for (let k = 0; k < hops; k++) {
+    const end = Math.min(n, (k + 1) * ENV_HOP);
+    let s = 0;
+    for (let i = k * ENV_HOP; i < end; i++) {
+      const x = R ? 0.5 * (L[i] + R[i]) : L[i];
+      s += x * x;
+    }
+    sum += s;
+    e[k + 1] = sum;
+  }
+  energy = e; total = sum; frames = n; chL = L; chR = R;
+  win = Math.round(b.sampleRate / GEN_FPS);
+}
+
+function square(i) {
+  const x = chR ? 0.5 * (chL[i] + chR[i]) : chL[i];
+  return x * x;
+}
+
+// The energy from the loop's start up to frame p of the track, on any lap
+// (the loop's whole laps count in, before or after). Between two frames, as
+// at a Speed other than 1, the frame p falls in counts in by its fraction.
+function energyAt(p) {
+  const lap = Math.floor(p / frames);
+  p -= lap * frames;
+  let i = Math.floor(p);
+  if (i >= frames) i = frames - 1;
+  const k = Math.floor(i / ENV_HOP);
+  let e = lap * total + energy[k];
+  for (let j = k * ENV_HOP; j < i; j++) e += square(j);
+  return e + (p - i) * square(i);
+}
+
+// When a call made now is heard: currentTime on a native context; on Heart
+// the render horizon (HeartContext.presentTime), where a start, a stop or a
+// rate change made now lands and is heard.
+const placeNow = () => ctx.presentTime !== undefined ? ctx.presentTime : ctx.currentTime;
 
 // The context may be suspended (no gesture yet, or the system took it);
 // resume() is asked once per arm: the layer switching on, or the page or
@@ -193,18 +254,21 @@ function startSource() {
   src.buffer = buffer;
   src.loop = true;
   src.playbackRate.value = rate;
-  src.connect(analyser);
-  const at = buffer.duration > 0 ? offset % buffer.duration : 0;
-  src.start(ctx.currentTime, at);
-  anchorT = ctx.currentTime; anchorPos = at;
+  src.connect(level);
+  const pos = buffer.duration > 0 ? offset % buffer.duration : 0;
+  const at = placeNow();
+  src.start(at, pos);
+  anchorT = at; anchorPos = pos; heardFrom = at; hasPrev = false;
   readT = -1;
 }
 
-// Stops the source where it is, keeping its place for the next start.
+// Stops the source where it is, keeping its place for the next start: the
+// place as it stands when the stop is heard.
 export function heartPause() {
   if (!src) return;
-  if (buffer && buffer.duration > 0) offset = (anchorPos + (ctx.currentTime - anchorT) * rate) % buffer.duration;
-  try { src.stop(); } catch (e) {}
+  const at = placeNow();
+  if (buffer && buffer.duration > 0) offset = (anchorPos + (at - anchorT) * rate) % buffer.duration;
+  try { src.stop(at); } catch (e) {}
   src.disconnect();
   src = null;
   readT = -1;
@@ -226,7 +290,7 @@ export const heartUnavailable = () => unavailable || loadFailed;
 let duckMul = 1;
 // The mix gate (js/mixgate.js): 1 open, 0 while a mute or another channel's
 // solo holds the heartbeat, on the level as the duck is. Only the sound: the
-// analyser sits ahead of the level, so the light keeps beating through it.
+// light reads the track itself, so it keeps beating through it.
 let gateMul = 1;
 const heard = () => lastLevel >= 0 ? lastLevel * duckMul * gateMul : 0;
 export function setHeartDuck(mul, seconds) {
@@ -246,13 +310,15 @@ export function heartSync(play, gain, speed = 1) {
   if (!ensureGraph()) return false;
   load();
   if (!play) { heartPause(); return false; }
-  // Speed: a new rate takes effect now, the place so far counted at the old
-  // one, so a pause still keeps the true place in the track.
+  // Speed: a new rate takes effect where it is heard, the place so far
+  // counted at the old one, so a pause still keeps the true place in the
+  // track; until then the old rate is still what plays (prev*).
   if (speed !== rate) {
     if (src) {
-      const now = ctx.currentTime;
-      anchorPos += (now - anchorT) * rate; anchorT = now;
-      src.playbackRate.setValueAtTime(speed, now);
+      const at = placeNow();
+      prevT = anchorT; prevPos = anchorPos; prevRate = rate; hasPrev = true;
+      anchorPos += (at - anchorT) * rate; anchorT = at;
+      src.playbackRate.setValueAtTime(speed, at);
     }
     rate = speed;
   }
@@ -267,19 +333,30 @@ export function heartSync(play, gain, speed = 1) {
   return ctx.state === 'running';
 }
 
-// The latest 1/30 s of sound: its RMS (the analyser's mono down-mix) into
-// heartRms, and the audio clock's step since the last read into heartDt (0
-// on the first read after a start, or a clock that has not moved).
+// The latest 1/30 s of sound: its RMS (the mono down-mix, as an analyser
+// read it) into heartRms, and the audio clock's step since the last read
+// into heartDt (0 on the first read after a start, or a clock that has not
+// moved).
+//
+// The 1/30 s is of sound as heard, ending at the place the listener is
+// hearing now: the track's place at currentTime, which on Heart, as on a
+// native context, is the clock the speakers play by. At a Speed other than
+// 1 that 1/30 s holds rate/30 s of the track, as the analyser's window did.
+// Before the source's start is heard (on Heart, a lookahead after it was
+// asked for) there is nothing to read yet, and the first read after it is
+// the first after a start.
 export function heartRead() {
   heartRms = 0; heartDt = 0;
-  if (!src || !analyser) return;
+  if (!src || !energy) return;
   const now = ctx.currentTime;
+  if (now < heardFrom) { readT = -1; return; }
   if (readT >= 0) heartDt = now - readT;
   readT = now;
   if (!(heartDt > 0)) { heartDt = 0; return; }
-  analyser.getFloatTimeDomainData(samples);
-  const end = samples.length;
-  let sum = 0;
-  for (let i = end - win; i < end; i++) sum += samples[i] * samples[i];
-  heartRms = Math.sqrt(sum / win);
+  const late = hasPrev && now < anchorT;
+  const r = late ? prevRate : rate;
+  const pos = late ? prevPos + (now - prevT) * prevRate : anchorPos + (now - anchorT) * rate;
+  const end = pos * buffer.sampleRate, span = win * r;
+  const ms = (energyAt(end) - energyAt(end - span)) / span;
+  heartRms = ms > 0 ? Math.sqrt(ms) : 0;
 }

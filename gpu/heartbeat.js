@@ -1,7 +1,7 @@
 // Owns the Heartbeat layer's light: a flat, full-screen wash of warm red
-// whose brightness is the heartbeat track's own loudness, read live from the
-// sound as it plays (core/heartbeat.js), so the sound and the light are one
-// signal. It reads S every frame and does no work at all while
+// whose brightness is the heartbeat track's own loudness, read from the
+// track at the place the listener is hearing (core/heartbeat.js), so the
+// sound and the light are one signal. It reads S every frame and does no work at all while
 // S.layers.heartbeat is off; nothing is made or fetched until it first
 // comes on.
 //
@@ -15,8 +15,9 @@
 //   colour     the peak (198, 44, 22) / 255 at the flat level HEART_K
 //
 // dt is the audio clock's step between reads, so the hold lets go at the
-// sound's pace. The heard level (Master * Audio level) never reaches the
-// analyser, so the light beats at any volume; the light's amount is
+// sound's pace. The loudness is the track's own, worked out from its samples
+// once they decode, never the heard level (Master * Audio level), so the
+// light beats at any volume, muted too; the light's amount is
 // Master * Visual amount * b.
 //
 // The wash draws the way the strobe field fills the screen (scene.js's
