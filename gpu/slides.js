@@ -12,10 +12,12 @@
 // needed: this path keeps one canvas, one compositing order and no DOM
 // stacking to manage, and the drawer can never end up under the picture.
 //
-// While the layer is on with a file chosen, the whole frame is black until
-// the picture is in, then the picture in its letterbox; with no file (None),
-// or a file that would not load, it draws nothing and the scene shows. Off,
-// nothing is drawn and the video pauses where it is.
+// While the layer is on with a file chosen, the scene shows until the
+// picture is in, then the picture fades up in its letterbox; with no file
+// (None), or a file that would not load, it draws nothing and the scene
+// shows. The layer switching OFF is a change to None: the picture fades out
+// over the scene on the same Crossfade, and the slot is emptied at the end
+// (so switching back on starts the file afresh, through its own fade up).
 //
 // CROSSFADE (S.slideXfade, seconds; 0 a cut): two video elements, slots A
 // and B, ping-pong. The live one is never touched: a new file loads into the
@@ -27,9 +29,11 @@
 // on each slot's own gain leg. At the end the outgoing slot is stopped and
 // emptied. A pick mid-fade (or mid-load) first snaps the running one to its
 // end, so there are never more than the two slots and none is left stuck.
-// From None (or from the layer just switched on) the new slide fades in over
-// black; to None the picture fades out over the scene. A fade (or a wait for
-// its picture) keeps the frame loop awake, paused or not (busy).
+// From None (or from the layer just switched on) the new slide fades in
+// over the scene - the stars stay up under it until it lands; to None (or
+// the layer switched off) the picture fades out over the scene the same
+// way. A fade (or a wait for its picture) keeps the frame loop awake,
+// paused or not (busy).
 //
 // PLAY / PAUSE RAMPS (S.slidePpOut, S.slidePpIn, S.slidePpRamp): the active
 // slide never starts or stops dead. A run factor pp (1 playing, 0 stopped)
@@ -234,10 +238,11 @@ export function createSlides(device, format) {
   // The active slot (the one the controls play), the outgoing one during a
   // fade (-1 none), what the layer was last asked to show ('' nothing yet),
   // and the fade: pending (waiting for the incoming picture), running from
-  // t0 over dur ms, fromBlack (no outgoing: over black), toNone (no
-  // incoming: the outgoing fades out over the scene).
+  // t0 over dur ms, toNone (no incoming: the outgoing fades out over the
+  // scene). wasOn: a picture has been up this session (no fade out of a
+  // freshly restored boot).
   let act = 0, out = -1, shown = '', wasOn = false;
-  const fade = { pending: false, running: false, t0: 0, dur: 0, fromBlack: false, toNone: false, t: 1 };
+  const fade = { pending: false, running: false, t0: 0, dur: 0, toNone: false, t: 1 };
   let dozing = false, nowMs = 0;
   let playWas = true, restartSeen = 0, outPlays = false;
   // the play/pause run factor (see the header): 1 running, 0 stopped; ppInit
@@ -431,7 +436,7 @@ export function createSlides(device, format) {
   // and the active one at full (still black if its picture is not in yet).
   function finishFade() {
     if (out >= 0) { empty(slots[out]); out = -1; }
-    fade.pending = fade.running = fade.fromBlack = fade.toNone = false;
+    fade.pending = fade.running = fade.toNone = false;
     fade.t = 1;
   }
   // The layer was asked for another file (or None): the running fade
@@ -461,7 +466,7 @@ export function createSlides(device, format) {
     act = 1 - act;
     loadInto(next, file);
     if (xf > 0) {
-      fade.pending = true; fade.fromBlack = out < 0; fade.dur = xf * 1000; fade.t = 0;
+      fade.pending = true; fade.dur = xf * 1000; fade.t = 0;
     }
   }
 
@@ -507,20 +512,10 @@ export function createSlides(device, format) {
     drawBlack = false; nPics = 0;
     pics[0].bind = pics[1].bind = null;
     const on = !!(S.layers && S.layers.slides);
-    const file = typeof S.slideFile === 'string' ? S.slideFile : SLIDE_NONE;
+    // The layer off is a change to None: the picture fades out over the
+    // scene on the Crossfade, through the very same path below.
+    const file = on && typeof S.slideFile === 'string' ? S.slideFile : SLIDE_NONE;
     const wantPlay = S.slidePlay !== false;
-    if (!on) {
-      // Off: any fade lands at its end, the active slide pauses where it is
-      if (slots.length) {
-        finishFade();
-        pause(slots[act]);
-        release(slots[act], 'slides off');
-      }
-      wasOn = false;
-      ppInit = false;
-      playWas = wantPlay;
-      return;
-    }
     if (file === SLIDE_NONE && (shown === '' || shown === SLIDE_NONE) && out < 0) {
       // nothing to show and nothing fading out
       shown = SLIDE_NONE;
@@ -530,9 +525,7 @@ export function createSlides(device, format) {
     }
     ensureSlots();
     if (!slots.length) { drawBlack = file !== SLIDE_NONE; return; }
-    // A slide the layer holds from before it was switched off, switched on
-    // again with the same file, simply carries on (no fade).
-    if (file !== shown || (!wasOn && file !== SLIDE_NONE && !slots[act].file)) change(file);
+    if (file !== shown) change(file);
     wasOn = true;
     const cur = slots[act];
 
@@ -612,7 +605,6 @@ export function createSlides(device, format) {
       addPic(slots[out], 1 - alpha);
       return;
     }
-    if (out < 0 && hasFile(cur) && (fade.fromBlack || fade.pending || !hasPicture(cur))) drawBlack = true;
     if (out >= 0) addPic(slots[out], 1);
     if (hasFile(cur)) addPic(cur, fade.pending ? 0 : alpha);
   }
