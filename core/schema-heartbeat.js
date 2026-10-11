@@ -17,7 +17,10 @@ const NUM = [
   // key,          min, max, def, integer
   ['heartMaster',  0,   1,   1,   false],
   ['heartAudio',   0,   4,   0.8, false],
-  ['heartVisual',  0,   1,   0.8, false]
+  ['heartVisual',  0,   1,   0.8, false],
+  // the recording's playback speed, a multiplier: varispeed, so its pitch
+  // moves with it, and the light (which reads the sound) beats with it
+  ['heartSpeed',   0.25, 2,  1,   false]
 ];
 
 // Trims a slider's position to the step's precision and clamps it into
@@ -62,6 +65,22 @@ export function applyHeartbeatState(S, o) {
   }
 }
 
+// Speed's taper, the Slides' own (schema-slides.js): logarithmic either side
+// of 1x at the centre, 0.25x at the left end and 2x at the right. A drag
+// landing within RATE_SNAP of 1x takes it exactly.
+const RATE_POS = 1000, RATE_MID = RATE_POS / 2, RATE_SNAP = 0.03;
+function rateToPos(v) {
+  if (!(v === v)) return NaN;
+  const r = v < 0.25 ? 0.25 : v > 2 ? 2 : v;
+  return Math.round(r <= 1 ? RATE_MID * (1 + Math.log2(r) / 2) : RATE_MID + RATE_MID * Math.log2(r));
+}
+function posToRate(pos) {
+  const p = pos > 0 ? (pos < RATE_POS ? pos : RATE_POS) : 0;
+  let r = p <= RATE_MID ? Math.pow(2, 2 * (p / RATE_MID - 1)) : Math.pow(2, (p - RATE_MID) / RATE_MID);
+  if (Math.abs(r - 1) <= RATE_SNAP) r = 1;
+  return Math.round(r * 100) / 100;
+}
+
 // Every row dims while the layer is off, as the Sun section's do.
 const layerOn = S => !!S.layers.heartbeat;
 
@@ -100,7 +119,16 @@ export const HEARTBEAT_CONTROLS = [
   // rows below it set.
   percent('heartMaster', 'heartMaster', 'Master'),
   percent('heartAudio', 'heartAudio', 'Audio level'),
-  percent('heartVisual', 'heartVisual', 'Visual amount')
+  percent('heartVisual', 'heartVisual', 'Visual amount'),
+  {
+    id: 'heartSpeed', section: 'heartbeat', label: 'Speed', kind: 'slider',
+    min: 0, max: RATE_POS, step: 1, def: rateToPos(1),
+    get: S => rateToPos(S.heartSpeed),
+    set: (S, pos) => { S.heartSpeed = fit(posToRate(pos), 0.25, 2, false); save(); },
+    format: S => S.heartSpeed.toFixed(2) + 'x',
+    parse: (S, text) => rateToPos(parseFloat(text)),
+    enabled: layerOn
+  }
 ];
 
 export const HEARTBEAT_SECTIONS = [
