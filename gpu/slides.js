@@ -71,9 +71,12 @@ import { SLIDE_DIR, SLIDE_NONE, slideVolOf } from '../core/schema-slides.js';
 import { createGlobalFilter } from '../core/global-filter.js';
 
 const AUDIO_TC = 0.015;
-// the slowest rate a pause ramp asks of the element; below this a browser
-// mutes the sound or refuses the rate
+// The element's own floor: Chrome refuses playbackRate between 0 and
+// 0.0625 (and mutes beneath it anyway), while exactly 0 is allowed and
+// freezes the picture. So any rate asked below the floor lands AT the
+// floor, and only a true 0 stops the movie.
 const MIN_RATE = 0.0625;
+const elRate = r => r > 0 ? Math.max(MIN_RATE, r) : 0;
 // the legs follow the fade frame by frame, on a shorter glide
 const LEG_TC = 0.008;
 // A refused play() is tried again no sooner than this, ms.
@@ -304,7 +307,7 @@ export function createSlides(device, format) {
     s.el.loop = S.slideLoop === true;
     s.el.src = SLIDE_DIR + encodeURIComponent(file);
     // a new source resets the rate to the default rate, so both are set
-    const r = clampNum(S.slideRate, 0.25, 2, 1);
+    const r = elRate(clampNum(S.slideRate, 0, 2, 1));
     s.el.defaultPlaybackRate = r;
     s.el.playbackRate = r;
   }
@@ -444,7 +447,7 @@ export function createSlides(device, format) {
   function change(file) {
     finishFade();
     liveOverride = null; walkHeld = false; ppInit = false;
-    const xf = clampNum(S.slideXfade, 0, 3, 0.5);
+    const xf = clampNum(S.slideXfade, 0, 5, 0.5);
     const cur = slots[act];
     // only a picture already up (on a layer that was on) fades out
     const live = wasOn && hasPicture(cur);
@@ -576,9 +579,9 @@ export function createSlides(device, format) {
       // speed ramp is on (the turntable; pitch follows, as the element is
       // built). Off, the rate is never touched by a pause: the sound just
       // fades on its gain leg and the picture stops when it reaches 0.
-      const rate = clampNum(S.slideRate, 0.25, 2, 1);
-      const eff = S.slidePpRamp === true && pp < 1 ? Math.max(MIN_RATE, rate * pp) : rate;
-      if (Math.abs(cur.el.playbackRate - eff) > 0.001) { try { cur.el.playbackRate = eff; } catch (e) {} cur.el.defaultPlaybackRate = rate; }
+      const rate = clampNum(S.slideRate, 0, 2, 1);
+      const eff = elRate(S.slidePpRamp === true && pp < 1 ? rate * pp : rate);
+      if (Math.abs(cur.el.playbackRate - eff) > 0.001) { try { cur.el.playbackRate = eff; } catch (e) {} cur.el.defaultPlaybackRate = eff; }
       if (pp > 0 && !dozing) { if (!cur.el.ended) play(cur); }
       else pause(cur);
     } else { restartSeen = S.slideRestartN | 0; ppInit = false; ppMoving = false; }

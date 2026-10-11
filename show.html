@@ -241,7 +241,8 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
 
   const CUES = ['Intro Slide', 'Heartbeat', 'Harmonica', 'Audification Explained', 'Nightingale', 'Shepard Tone',
     "Shepard's Rise", 'Earthquake', 'Rotating Sun', 'Spherical Harmonics — hum along!', 'HARP Trailer', 'WISPR CME',
-    'Ed Mitchell VR', 'QR + Sun', 'Guided Meditation'];
+    'Ed Mitchell VR', 'QR + Sun', 'Guided Meditation',
+    ...Array.from({ length: 10 }, (_, i) => 'Guided Meditation - Step ' + (i + 1))];
 
   // ---------- the password (remote.html's, as is) ----------
   let KEY = '';
@@ -338,7 +339,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const hzText = hz => hz >= 1000 ? (Math.round(hz / 100) / 10).toFixed(1) + ' kHz' : Math.round(hz) + ' Hz';
   const posToRate = p => {
     p = Math.max(0, Math.min(1000, p));
-    let r = p <= 500 ? Math.pow(2, 2 * (p / 500 - 1)) : Math.pow(2, (p - 500) / 500);
+    let r = p <= 500 ? p / 500 : Math.pow(2, (p - 500) / 500);
     if (Math.abs(r - 1) <= 0.03) r = 1;
     return Math.round(r * 100) / 100;
   };
@@ -347,8 +348,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     { id: 'lpf', key: 'lp', label: 'LP', color: '#e45bf0', max: 1000, def: 1000, fmt: p => p >= 1000 ? 'open' : hzText(posToHz(p)) },
     { id: 'hpf', key: 'hp', label: 'HP', color: '#b6f03c', max: 1000, def: 0, fmt: p => p <= 0 ? 'open' : hzText(posToHz(p)) },
     // Speed tops out at 1x (the control's 500); the track is the slow half,
-    // 0.25x just off the bottom, and the very bottom (0) STOPS the movie.
-    // The show never runs faster than life.
+    // LINEAR all the way down to 0, where the movie freezes (the sound's
+    // own floor is 6.25%, the slowest rate Chrome will play). The show
+    // never runs faster than life.
     { id: 'slideRate', key: 'rate', label: 'SPEED', color: '#f5e23a', max: 500, def: 500,
       fmt: p => p <= 0 ? 'stop' : posToRate(p).toFixed(2) + '×' },
     // the app's Master volume (vol), the whole interface's level, 50% by

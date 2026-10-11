@@ -53,10 +53,10 @@ export const slideLabel = v => LABEL_OF.get(fileOf(v));
 // still carrying the old slideLP and slideHP has them passed over.
 const NUM = [
   // key,          min,   max,    def
-  ['slideRate',    0.25,  2,      1],
+  ['slideRate',    0,     2,      1],
   ['slideVolume',  0,     1,      1],
   // the crossfade from one slide to the next, seconds (0 a cut)
-  ['slideXfade',   0,     3,      0.5],
+  ['slideXfade',   0,     5,      0.5],
   // the play/pause ramps, seconds (0 a cut): how long a pause takes to fade
   // the sound and slow the picture to a stop, and a play to bring both back
   ['slidePpOut',   0,     1,      0.2],
@@ -140,20 +140,23 @@ export function setSlideVol(S, file, v) {
 }
 
 // ---------- the sliders' tapers ----------
-// Rate: logarithmic either side of 1x at the centre, 0.25x (two octaves
-// down) at the left end and 2x (one up) at the right, so 1x always sits
-// mid-track. A drag landing within RATE_SNAP of 1x takes it exactly.
+// Rate: the turntable's left half is LINEAR, 0 (stopped) at the left end up
+// to 1x at the centre, so a slow-down glides all the way to a stop; the
+// right half stays logarithmic, 1x to 2x. A drag landing within RATE_SNAP
+// of 1x takes it exactly. (The sound itself bottoms out at 6.25%: Chrome
+// refuses element rates between 0 and 0.0625 - gpu/slides.js floors there,
+// and a true 0 freezes the picture.)
 const RATE_POS = 1000, RATE_MID = RATE_POS / 2, RATE_SNAP = 0.03;
 function rateToPos(v) {
   if (!(v === v)) return NaN;
-  const r = v < 0.25 ? 0.25 : v > 2 ? 2 : v;
+  const r = v < 0 ? 0 : v > 2 ? 2 : v;
   return Math.round(r <= 1
-    ? RATE_MID * (1 + Math.log2(r) / 2)            // 0.25..1 over 0..500
+    ? RATE_MID * r                                  // 0..1 over 0..500, linear
     : RATE_MID + RATE_MID * Math.log2(r));          // 1..2 over 500..1000
 }
 function posToRate(pos) {
   const p = pos > 0 ? (pos < RATE_POS ? pos : RATE_POS) : 0;
-  let r = p <= RATE_MID ? Math.pow(2, 2 * (p / RATE_MID - 1)) : Math.pow(2, (p - RATE_MID) / RATE_MID);
+  let r = p <= RATE_MID ? p / RATE_MID : Math.pow(2, (p - RATE_MID) / RATE_MID);
   if (Math.abs(r - 1) <= RATE_SNAP) r = 1;
   return Math.round(r * 100) / 100;
 }
@@ -252,13 +255,13 @@ export const SLIDES_CONTROLS = [
   },
   {
     // How long a change of slide takes, picture and sound together
-    // (gpu/slides.js): 0 is a cut, up to 3 s in 0.05 s steps. Its position
-    // is in hundredths of a second (0 to 300), whole numbers, so the show
+    // (gpu/slides.js): 0 is a cut, up to 5 s in 0.05 s steps. Its position
+    // is in hundredths of a second (0 to 500), whole numbers, so the show
     // remote (platform/show-remote.js) can send it as it sends the faders.
     id: 'slideXfade', section: 'slides', label: 'Crossfade', kind: 'slider',
-    min: 0, max: 300, step: 5, def: 50,
+    min: 0, max: 500, step: 5, def: 50,
     get: S => Math.round(S.slideXfade * 100),
-    set: (S, pos) => { S.slideXfade = fit(Math.round(pos / 5) * 5 / 100, 0, 3); save(); },
+    set: (S, pos) => { S.slideXfade = fit(Math.round(pos / 5) * 5 / 100, 0, 5); save(); },
     format: S => S.slideXfade > 0 ? S.slideXfade.toFixed(2) + ' s' : 'cut',
     parse: (S, text) => /^\s*cut/i.test(text) ? 0 : Math.round(parseFloat(text) * 100),
     enabled: layerOn
@@ -275,7 +278,7 @@ export const SLIDES_CONTROLS = [
     id: 'slideRate', section: 'slides', label: 'Speed', kind: 'slider',
     min: 0, max: RATE_POS, step: 1, def: rateToPos(1),
     get: S => rateToPos(S.slideRate),
-    set: (S, pos) => { S.slideRate = fit(posToRate(pos), 0.25, 2); save(); },
+    set: (S, pos) => { S.slideRate = fit(posToRate(pos), 0, 2); save(); },
     format: S => S.slideRate.toFixed(2) + 'x',
     parse: (S, text) => rateToPos(parseFloat(text)),
     enabled: layerOn
