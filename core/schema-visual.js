@@ -39,6 +39,9 @@ import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
 import { applyHeartLookahead, applyHeartGrow } from '../js/heart/route.js';
 import { applyOutputGuards } from './output-guard.js';
+import { GF_GLIDE_MAX } from './global-filter.js';
+
+const glideMs = v => typeof v === 'number' && v === v ? Math.round(Math.max(0, Math.min(GF_GLIDE_MAX, v))) : 25;
 
 // S stores colour as an [r,g,b] triple (js/color.js's setColorFromPicker
 // writes S.rgb, S.hue, S.hueSat, S.hueLight from it); v0 kept the hex string
@@ -1782,6 +1785,20 @@ export const VISUAL_CONTROLS = [
     get: S => S.syncDiagLog === true,
     set: (S, on) => { S.syncDiagLog = !!on; save(); },
     format: S => S.syncDiagLog === true ? 'printing' : 'off'
+  },
+  {
+    // How the global Lowpass and Highpass and their resonance glide to a
+    // new setting (core/global-filter.js): an exponential smooth's time
+    // constant, 0 (a jump) to 200 ms, so the show remote's faders, coming
+    // in over the network in uneven lumps, glide rather than step. The show
+    // remote's gear sets it too. This machine's own, like the rest of this
+    // drawer.
+    id: 'filterGlide', section: 'render', label: 'Filter interpolation', kind: 'slider', parent: 'renderAudioDrawer',
+    summaryLabel: 'Filter interp',
+    min: 0, max: GF_GLIDE_MAX, step: 1, def: 25,
+    get: S => glideMs(S.filterGlideMs),
+    set: (S, ms) => { S.filterGlideMs = glideMs(+ms); save(); },
+    format: S => glideMs(S.filterGlideMs) + ' ms'
   },
   subDrawer('renderPauseDrawer', 'Pause', 'render', ['pauseWindDown', 'pauseFlickerStop']),
   {

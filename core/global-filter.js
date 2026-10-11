@@ -13,7 +13,7 @@
 // the subscriptions and, when the corners move (notifyGlobalFilter, from the
 // two controls' set()), glides every pair to them with setTargetAtTime.
 // The glide is an exponential smooth, a one-pole lowpass on the control
-// itself: S.filterGlideMs (the Audio section's filterGlide, the show
+// itself: S.filterGlideMs (Render's Audio engine drawer's filterGlide, the show
 // remote's gear's Filter interpolation) is its time constant, 0 to 200 ms,
 // 25 by default; 0 jumps. Each new setting restarts the glide from wherever
 // the sound is, so the iPad's faders, arriving over the network in uneven
