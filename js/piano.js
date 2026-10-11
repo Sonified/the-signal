@@ -208,7 +208,7 @@ export const arpPeak   = () => audible() && arp ? tapPeak(arp.tap) : 0;
 // The master room's level and decay, its type and the algorithmic one's
 // shape all live with the room now (js/room.js); these names are kept here
 // for the drawer and v0, which import them from the piano.
-export { applyRevType, applyPianoRevShape, rebuildPianoIR, pianoEffectiveReverb, pianoEffectiveRevTime } from './room.js';
+export { applyRevType, applyPianoRevShape, applyRevHP, rebuildPianoIR, pianoEffectiveReverb, pianoEffectiveRevTime } from './room.js';
 
 // The Master reverb switch and the Reverb level, on the room's wet return
 // (js/room.js). The sequencer's lines follow at once, since a line mixed

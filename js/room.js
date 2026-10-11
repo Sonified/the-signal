@@ -29,8 +29,8 @@ import { setHumBus } from '../core/sun-hum.js';
 
 // The room's context, its input (what every voice feeds), the two ways
 // into the reverb proper (convFeed for the convolution room, algoFeed for
-// the network) and the wet return to the master.
-let ctx = null, input = null, wet = null, convFeed = null;
+// the network), the wet return and its high-pass on the way to the master.
+let ctx = null, input = null, wet = null, wetHP = null, convFeed = null;
 let room = null, algo = null, algoFeed = null, algoDead = false;
 let breatheTimer = 0;
 
@@ -71,7 +71,15 @@ function buildRoom(c, master) {
   if (ctx) teardown();
   ctx = c;
   wet = c.createGain(); wet.gain.value = revLevel();
-  wet.connect(master);
+  // The Reverb high-pass, on the return after everything that joins it
+  // (either reverb type and the sequencer's line rooms), so the room's low
+  // end can be thinned without touching the dry voices. 12 dB an octave at
+  // Butterworth Q, as the piano's; 20 Hz is the floor and is effectively off.
+  wetHP = c.createBiquadFilter();
+  wetHP.type = 'highpass'; wetHP.Q.value = Math.SQRT1_2;
+  wetHP.frequency.value = revHP();
+  wet.connect(wetHP);
+  wetHP.connect(master);
   // The way into the reverb, whichever type plays it: every voice feeds
   // input, and input feeds the convolution room through convFeed or the
   // algorithmic one through its own feed (applyRevType).
@@ -100,10 +108,10 @@ function buildRoom(c, master) {
 // when the family moves before its first voice is built.
 function teardown() {
   clearTimeout(revUnplug); revUnplug = null;
-  for (const n of [wet, input, convFeed, algoFeed, algo, room && room.output]) {
+  for (const n of [wet, wetHP, input, convFeed, algoFeed, algo, room && room.output]) {
     try { n && n.disconnect(); } catch (e) {}
   }
-  ctx = null; input = null; wet = null; convFeed = null;
+  ctx = null; input = null; wet = null; wetHP = null; convFeed = null;
   room = null; algo = null; algoFeed = null; algoDead = false;
   revAlgoNow = false;
 }
@@ -124,6 +132,10 @@ function startRoomAfresh() {
 // is what the room plays at when it is open.
 export function applyRoomLevel() {
   if (wet) glideParam(wet.gain, revLevel(), 0.08);
+}
+const revHP = () => Math.max(20, +S.pianoRevHP || 20);
+export function applyRevHP() {
+  if (wetHP) glideParam(wetHP.frequency, revHP(), 0.05);
 }
 
 // The room's two variances, each the app's standard dip (core/variance.js

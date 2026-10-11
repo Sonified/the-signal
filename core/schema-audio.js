@@ -26,7 +26,7 @@ import {
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn, applyToneBreath
 } from '../js/audio.js';
-import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
+import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, applyRevHP, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
 import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm, cloudEffectiveAm, rebuildCloudIR } from '../js/clouds.js';
 import {
   applyChoir, applyChoirVol, applyChoirOn, choirEffectiveStack, choirEffectiveDensity
@@ -1584,6 +1584,16 @@ const reverbControls = [
     music: true, name: 'Decay', visible: s => s.musicRevOn !== false,
     periodMin: 5, effective: pianoEffectiveRevTime
   }),
+  {
+    // A high-pass on the room's return (js/room.js applyRevHP), under
+    // either type: thins the reverb's low end, the dry voices untouched.
+    id: 'pianoRevHP', section: 'reverb', label: 'Reverb high-pass', kind: 'slider',
+    min: 20, max: 1000, step: 10, def: 20,
+    get: s => s.pianoRevHP ?? 20,
+    set: (s, pos) => { s.pianoRevHP = pos; applyRevHP(); save(); },
+    format: s => (s.pianoRevHP ?? 20) <= 20 ? 'off' : s.pianoRevHP + ' Hz',
+    visible: s => s.musicRevOn !== false
+  },
   {
     // How much sooner the highs die than the decay: 0 keeps every
     // frequency to the decay, as the convolution room does; full has the
