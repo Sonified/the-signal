@@ -1699,6 +1699,19 @@ export const VISUAL_CONTROLS = [
     set: (S, v) => setEngineThreadWanted(v),
     format: () => engineThreadStatus()
   },
+  {
+    // The most times a second the Sun's video takes a new playbackRate
+    // (gpu/sun.js setRate). Speed's variance sweeps the rate every frame,
+    // about 30 writes a second at 1% steps; a frozen HEVC decoder mid-show
+    // made that churn a suspect. 0 is unthrottled, as before; 1 to 40 caps
+    // it, for judging by eye how low it can go and still look smooth.
+    id: 'sunRateHz', section: 'render', label: 'Sun rate updates', kind: 'slider',
+    summaryLabel: 'Sun rate',
+    min: 0, max: 40, step: 1, def: 0,
+    get: S => S.sunRateHz ?? 0,
+    set: (S, v) => { S.sunRateHz = Math.max(0, Math.min(40, Math.round(v))); save(); },
+    format: S => (S.sunRateHz ?? 0) > 0 ? S.sunRateHz + ' /s' : 'none'
+  },
   subDrawer('renderAudioDrawer', 'Audio engine', 'render', ['heartLookaheadS', 'heartGrowX']),
   {
     // The engine's cushion: how far ahead the sound is rendered

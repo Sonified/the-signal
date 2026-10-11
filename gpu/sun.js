@@ -307,8 +307,15 @@ export function createSun(device, format) {
     if (p && p.then) p.then(() => { playPending.delete(el); }, err => { playPending.delete(el); onPlayFailed(err); });
     else playPending.delete(el);
   }
+  // Render > Sun rate updates (S.sunRateHz) caps the writes a second per
+  // element; 0 leaves every 1% drift written at once.
+  const rateAt = new WeakMap();
   function setRate(el, rate) {
-    if (Math.abs(el.playbackRate - rate) > rate * 0.01) el.playbackRate = rate;
+    if (Math.abs(el.playbackRate - rate) <= rate * 0.01) return;
+    const hz = S.sunRateHz > 0 ? Math.min(40, S.sunRateHz) : 0;
+    if (hz && nowMs - (rateAt.get(el) ?? -Infinity) < 1000 / hz) return;
+    rateAt.set(el, nowMs);
+    el.playbackRate = rate;
   }
   function makeElement(preload) {
     const el = document.createElement('video');
