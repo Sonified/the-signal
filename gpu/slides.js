@@ -599,7 +599,7 @@ export function createSlides(device, format) {
     }
 
     // ---- the active slot: Play, Loop, Speed, Restart ----
-    let ppGain = 1;
+    let ppGain = 1, rateGain = 1;
     if (hasFile(cur)) {
       const loop = S.slideLoop === true;
       if (cur.el.loop !== loop) cur.el.loop = loop;
@@ -635,8 +635,13 @@ export function createSlides(device, format) {
       // built). Off, the rate is never touched by a pause: the sound just
       // fades on its gain leg and the picture stops when it reaches 0.
       const rate = clampNum(S.slideRate, 0, 2, 1);
-      const eff = elRate(S.slidePpRamp === true && pp < 1 ? rate * pp : rate);
+      const want = S.slidePpRamp === true && pp < 1 ? rate * pp : rate;
+      const eff = elRate(want);
       if (Math.abs(cur.el.playbackRate - eff) > 0.001) { try { cur.el.playbackRate = eff; } catch (e) {} cur.el.defaultPlaybackRate = eff; }
+      // Under the element's floor the rate holds at 6.25% while the gain
+      // takes the last of the slow-down to silence, so the freeze at a
+      // true 0 lands on a quiet leg instead of cutting mid-waveform.
+      if (want < MIN_RATE) rateGain = want / MIN_RATE;
       if (pp > 0 && !dozing) { if (!cur.el.ended) play(cur); }
       else pause(cur);
     } else { restartSeen = S.slideRestartN | 0; ppInit = false; ppMoving = false; }
@@ -650,7 +655,7 @@ export function createSlides(device, format) {
     // the incoming up on sin, each outgoing down on cos from where it left
     const lin = fadeLin();
     const inGain = shown === SLIDE_NONE ? 0 : Math.sin(lin * HALF_PI);
-    setLeg(cur, hasFile(cur) ? inGain * ppGain * fileGain(cur.file) : 0);
+    setLeg(cur, hasFile(cur) ? inGain * ppGain * rateGain * fileGain(cur.file) : 0);
     for (const o of outs) setLeg(o, o.g0 * Math.cos(o.p * HALF_PI));
     syncAudio();
 
