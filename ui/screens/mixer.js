@@ -866,16 +866,14 @@ export function drawMixer(ui, app, fade = 1) {
       MUSIC_MUTE[i], MUSIC_SOLO[i], chanSilenced(MUSIC_CH[i]));
   }
 
-  sectionLabel(ui, 'SOLAR ROTATIONAL HUM', false);
+  // The sounds outside the music: the Sun's Rotational hum and the
+  // Heartbeat, each dimmed, as a muted channel is, while the gate holds it
+  // or its layer (or the hum's own switch) is off.
+  sectionLabel(ui, 'ADDITIONAL SOUNDS', false);
   ui.spacer(5);
-  // dimmed, as a muted channel is, while the gate holds it or the hum or the
-  // Sun is switched off
-  masterRow(ui, HUM, true, 'AMPLITUDE', '%', meterCount('sunHumAmp'), HUM_MUTE, HUM_SOLO,
+  masterRow(ui, HUM, true, 'SOLAR HUM', '%', meterCount('sunHumAmp'), HUM_MUTE, HUM_SOLO,
     chanSilenced('hum') || !(S.sunHumOn && S.layers.sun));
-
-  sectionLabel(ui, 'HEARTBEAT', false);
-  ui.spacer(5);
-  masterRow(ui, HEART, true, 'AUDIO LEVEL', '%', meterCount('heartAudio'), HEART_MUTE, HEART_SOLO,
+  masterRow(ui, HEART, false, 'HEARTBEAT', '%', meterCount('heartAudio'), HEART_MUTE, HEART_SOLO,
     chanSilenced('heart') || !S.layers.heartbeat);
 
   sectionLabel(ui, 'ATMOSPHERE', false);
