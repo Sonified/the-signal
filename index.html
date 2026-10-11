@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+  // The mirror test (remote.html): ?controller on the iPad, ?presentation on
+  // the laptop. Sent on before anything of the app loads.
+  if (/(^\?|[&=?])(controller|presentation)\b/.test(location.search)) location.replace('remote.html' + location.search);
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Signal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128302;</text></svg>">
@@ -46,5 +51,6 @@
      written in here, before main.js reads anything (platform/settings-file.js). -->
 <script type="module">import { applyPendingLoad } from './platform/settings-file.js'; applyPendingLoad();</script>
 <script type="module" src="main.js"></script>
+<script type="module" src="platform/midi-in.js"></script>
 </body>
 </html>
