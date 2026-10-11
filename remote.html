@@ -62,6 +62,7 @@ video { width: 100%; border-radius: 10px; background: #000; display: block; marg
 .log { font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--dim); height: 180px; overflow: hidden; margin-top: 8px; white-space: pre; }
 .hint { color: var(--dim); font-size: 13px; }
 .drop { border: 1px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; color: var(--dim); margin-bottom: 10px; }
+#mute.on { background: var(--bad); color: #000; border-color: var(--bad); }
 #lock { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 10; padding: 16px; }
 #lock form { display: grid; gap: 12px; width: min(340px, 100%); text-align: center; }
 #lock input { height: 54px; font-size: 20px; text-align: center; }
@@ -84,6 +85,7 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
   <span class="status" id="paths"></span>
   <span class="status">room <b id="roomName"></b></span>
   <button class="big" id="switch" style="height:36px;font-size:14px;margin-left:auto"></button>
+  <button class="big" id="mute" style="height:36px;font-size:14px" hidden></button>
 </header>
 
 <div class="grid">
@@ -287,6 +289,22 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
     for (const id of ['play', 'rate1', 'restart']) $(id).disabled = true;
   }
 
+  // ---------- mute: the presentation stays open but takes no moves ----------
+  // Connected and clocked as ever; every move and state that arrives is
+  // dropped until it is unmuted. Remembered on this machine across reloads.
+  let muted = false;
+  if (!CTRL) {
+    try { muted = localStorage.getItem('mirror.muted') === '1'; } catch (e) {}
+    const mb = $('mute');
+    const show = () => { mb.textContent = muted ? 'Incoming muted · unmute' : 'Mute incoming connections'; mb.classList.toggle('on', muted); };
+    mb.hidden = false; show();
+    mb.onclick = () => {
+      muted = !muted; show();
+      try { localStorage.setItem('mirror.muted', muted ? '1' : '0'); } catch (e) {}
+      log(muted ? 'incoming muted' : 'incoming unmuted');
+    };
+  }
+
   // ---------- the paths: one socket, one clock each ----------
   // Each relay answers {t:'time'} with its own clock (NTP's trick: the best
   // of a burst, by round trip), and every message leaves stamped on the
@@ -356,7 +374,7 @@ input[type=text], input[type=password] { height: 40px; border-radius: 8px; borde
   function take(m, p) {
     if (m.t === 'time') return takeTime(m, p);
     if (m.t === 'count') { p.peers = m.n; render(); return; }
-    if (CTRL) return;
+    if (CTRL || muted) return;
     if (m.t === 'state' && m.snap && m.snap.mirror) {
       Object.assign(S, m.snap.mirror); S.s = m.snap.mirror.s.slice();
       drawS.forEach(d => d()); applyVideo(); return;
