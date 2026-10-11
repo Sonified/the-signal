@@ -59,7 +59,15 @@ const seed = `(()=>{try{const marker='signal.presentationJourney.${revision}';if
   `(()=>{try{let ui;try{ui=JSON.parse(localStorage.getItem('signal.v1.ui')||'null');}catch{}\n` +
   `if(!ui||typeof ui!=='object')ui={};const w=ui.journeyWin&&typeof ui.journeyWin==='object'?ui.journeyWin:{};\n` +
   `w.active=true;ui.journeyWin=w;localStorage.setItem('signal.v1.ui',JSON.stringify(ui));\n` +
-  `}catch(error){console.error('[presentation] Journey mode could not be set',error);}})();\n`;
+  `}catch(error){console.error('[presentation] Journey mode could not be set',error);}})();\n` +
+  // Every load broadcasts the TSC2026 stream (signal.broadcast.v1, read by
+  // core/broadcast.js): key typed in, session present and switched on, so
+  // the app opens it at boot. Viewers follow at ?follow=tsc2026.
+  `(()=>{try{let b;try{b=JSON.parse(localStorage.getItem('signal.broadcast.v1')||'null');}catch{}\n` +
+  `if(!b||typeof b!=='object')b={};if(!Array.isArray(b.sessions))b.sessions=[];b.key='presence';\n` +
+  `let s=b.sessions.find(x=>x&&x.room==='tsc2026');if(!s){s={name:'TSC2026',room:'tsc2026',mode:'open',unlock:0};b.sessions.push(s);}\n` +
+  `s.active=true;localStorage.setItem('signal.broadcast.v1',JSON.stringify(b));\n` +
+  `}catch(error){console.error('[presentation] TSC2026 broadcast could not be set',error);}})();\n`;
 await fs.writeFile(path.join(output, 'presentation-seed.js'), seed);
 const indexFile = path.join(output, 'index.html');
 const index = await fs.readFile(indexFile, 'utf8');
