@@ -23,6 +23,8 @@
 //   {k:'jump', i}       journeyJumpTo(i), i 0-based (the step already playing
 //                       is left alone, as a digit key or MIDI note does)
 //   {k:'next'}/{k:'prev'}  journeyStepBy(+1 / -1)
+//   {k:'seek', f}       the playing cue tapped again: its slide video to
+//                       share f (0..1) of its length (gpu/slides.js seekSlide)
 //   {k:'clean'}         the title tapped: the drawer and every window shut
 //                       (main.js's clearScreen hook), only the playback left
 //   {k:'ctl', id, v}    a control, by schema id, v in the CONTROL'S OWN
@@ -108,7 +110,7 @@ import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
 import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
-import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress } from '../gpu/slides.js';
+import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
 
@@ -186,6 +188,7 @@ export function initShowRemote(hooks = {}) {
   function act(m) {
     if (m.k === 'jump') { const i = m.i | 0; if (i >= 0) journeyJumpTo(i); }
     else if (m.k === 'clean') { if (hooks.clearScreen) hooks.clearScreen(); }
+    else if (m.k === 'seek') seekSlide(+m.f);
     else if (m.k === 'next') journeyStepBy(1);
     else if (m.k === 'prev') journeyStepBy(-1);
     else if (m.k === 'ctl') {

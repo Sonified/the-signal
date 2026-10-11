@@ -31,6 +31,7 @@
   COMMANDS, each {t:'word', src, n, k, ...} (src the sender's id, n its
   count; NOT 'id', which is the control's id in a ctl):
     {k:'jump', i}  i 0-based          {k:'next'} / {k:'prev'}
+    {k:'seek', f}  the playing cue tapped again: its video to share f (0..1)
     {k:'ctl', id, v}  v in the control's OWN position units (what
         byId(id).set takes in core/schema-audio.js / schema-slides.js):
           vol 0..100 (the app's Master volume, %, default 50: VOLUME)
@@ -347,7 +348,18 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     b.className = 'cue';
     b.innerHTML = '<div class="prog"></div><span class="num">' + (i + 1) + '</span><span></span>';
     b.lastChild.textContent = label;
-    b.addEventListener('click', () => {
+    b.addEventListener('click', e => {
+      // the cue already playing, with a video of known length: the tap
+      // seeks it to that place across the button instead
+      const now = statusStep !== null ? statusStep : tapped;
+      if (i === now && vp) {
+        const r = b.getBoundingClientRect();
+        const f = Math.min(1, Math.max(0, (e.clientX - r.left) / (r.width || 1)));
+        send({ k: 'seek', f: Math.round(f * 10000) / 10000 });
+        vp.t = f * vp.d; vpAt = performance.now();
+        if (!vpRaf) drawProg();
+        return;
+      }
       tapped = i;
       b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap');
       send({ k: 'jump', i });

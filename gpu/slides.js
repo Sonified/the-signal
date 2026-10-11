@@ -194,6 +194,9 @@ export function replayEndedSlide() { return liveHook ? liveHook.replay() : false
 // screen stands, {t, d, r} (seconds in, its length, the rate it is
 // advancing at, 0 paused or ended), or null with no video of known length.
 export function slidesProgress() { return liveHook ? liveHook.progress() : null; }
+// and its seek: a tap on the playing cue puts the video at that share of
+// its length, f 0..1, playing or held as it was
+export function seekSlide(f) { if (liveHook) liveHook.seek(f); }
 export function pauseSlideForWalk() { if (liveHook) liveHook.walkPause(); }
 export function resumeSlideForWalk() { if (liveHook) liveHook.walkResume(); }
 
@@ -762,6 +765,14 @@ export function createSlides(device, format) {
       const d = el.duration;
       if (!(d > 0 && isFinite(d))) return null;
       return { t: Math.max(0, Math.min(d, el.currentTime || 0)), d, r: st === 1 && !el.paused ? el.playbackRate : 0 };
+    },
+    seek(f) {
+      if (!liveHook.state()) return;
+      const el = slots[act].el;
+      const d = el.duration;
+      if (!(d > 0 && isFinite(d)) || !isFinite(f)) return;
+      try { el.currentTime = Math.max(0, Math.min(1, f)) * d; } catch (e) {}
+      idleWake('slide seek');
     },
     walkResume() {
       if (!walkHeld) return;
