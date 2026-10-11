@@ -508,15 +508,11 @@ export function createSun(device, format) {
   // This frame: whether the live picture draws, whether it is folded, and
   // whether the feedback runs.
   let liveDraw = false, folded = false, fbOn = false;
-  // The Kaleidoscope's Opacity, a dry/wet mix of the raw sun and the fold
-  // (S.sunKaleidoOpacity, the wet share). Both are mostly opaque over the
-  // same disc, so an over-blend crossfades them: up to half wet, the raw
-  // sun lands full and the fold goes over it at the wet share; past half,
-  // the fold lands full and the raw sun goes over it at the dry share. The
-  // two orders agree at half, and either end draws the one picture alone.
-  // dryGain and wetGain are those shares (dryGain also carries the layer's
-  // Opacity in the live slot); wetFirst says which goes under.
-  let dryGain = 1, wetGain = 1, wetFirst = false, drawDry = true, drawWet = false;
+  // The Kaleidoscope's Opacity, a crossfade of the raw sun and the fold
+  // (S.sunKaleidoOpacity, the wet share). The sun is pure light (alpha 0,
+  // sun.wgsl.js), so the two simply add: the raw sun at 1 - wet and the
+  // fold at wet sum to one picture's worth, 50% exactly half of each.
+  let dryGain = 1, wetGain = 1, drawDry = true, drawWet = false;
 
   // ---------- the fold pair and the symmetry slide ----------
   // foldA owns the chamber and folds the symmetry the pattern is at or
@@ -742,9 +738,8 @@ export function createSun(device, format) {
     // through.
     folded = S.sunKaleidoOn === true;
     const wet = folded ? clampNum(S.sunKaleidoOpacity, 0, 1, 1) : 0;
-    wetFirst = wet > 0.5;
-    dryGain = wetFirst ? 1 - wet : 1;
-    wetGain = wetFirst ? 1 : wet;
+    dryGain = 1 - wet;
+    wetGain = wet;
     drawDry = !folded || dryGain > 0.002;
     drawWet = folded && wetGain > 0.002;
     let nFolds = 8, mirror = true;
@@ -934,13 +929,12 @@ export function createSun(device, format) {
     const lp = fb.begin(encoder, fbParams, drawing);
     if (!lp) return;
     if (drawing) {
-      // The dry/wet mix, in the same order as the live picture's.
-      if (!wetFirst) drawDryFb(lp);
+      // The crossfade, as the live picture's.
+      drawDryFb(lp);
       if (drawWet) {
         if (sliding) fbFoldB.drawFrom(lp, pFbOld, foldA.chamberView);
         fbFoldA.drawFrom(lp, pFbNew, foldA.chamberView);
       }
-      if (wetFirst) drawDryFb(lp);
     }
     fb.end(lp);
   }
@@ -958,13 +952,12 @@ export function createSun(device, format) {
     if (fbOn) fb.composite(pass, 1, fbOpacity);
     if (!bind || !liveDraw) return;
     if (folded && (!foldA || !foldA.chamberView)) return;
-    // The dry/wet mix: the share past half goes under, full.
-    if (!wetFirst) drawDryLive(pass);
+    // The crossfade: the raw sun at 1 - wet, the fold at wet, adding.
+    drawDryLive(pass);
     if (drawWet) {
       if (sliding) foldB.drawFrom(pass, pOld, foldA.chamberView);
       foldA.draw(pass, pNew);
     }
-    if (wetFirst) drawDryLive(pass);
   }
   function drawDryLive(pass) {
     if (!drawDry) return;
