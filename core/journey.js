@@ -653,18 +653,37 @@ export function syncJourneyFromStorage(key) {
 // door and covers every door of the group (lockAt), since a lock with a back
 // door is no lock. Presets, the broadcast and the show remote never read it.
 //
-// What a lock does to the journey is deliberately undecided: the operator
-// claiming a control could mean the journey never moves it and never takes
-// it into a step, or something gentler. Every place the journey takes a
-// control into a step (captureAll, runDiff, recordLiveControl) or moves one
-// as a step is entered (moves, and the door's level in throughDoor) asks the
-// one question lockHolds(i), and for now its answer is always no, so a lock
-// changes nothing about capture or apply yet; it is the one seam where
-// whichever meaning is chosen lands.
+// A lock floats the control free of the journey: no step moves it (moves,
+// and the door's level in throughDoor; a ramp under way lets it go as the
+// lock is taken) and no step takes it in (captureAll, runDiff,
+// recordLiveControl). The hand still moves it, so its locked value is simply
+// its live one, and the record holds ids alone. The steps' stored values are
+// never touched by locking or unlocking: unlocked, the next step entered
+// moves the control again. The one way to write a locked control's value
+// into the steps is the drawer's set all (journeySetAll), which unlocks it.
+//
+// Who a lock refuses is LOCK_REFUSES, asked through lockRefuses(id, who):
+// today the journey alone. Whether a preset's recall (core/perform.js
+// perfRecallPreset, presets.js) and a broadcast's followed moves
+// (perform.js perfFollowGlide) should be refused too is still open; either
+// is its entry turned to true here, with that path asking lockRefuses
+// before it moves a control.
 const LOCK_KEY = 'signal.journeyLocks.v1';
+const LOCK_REFUSES = { journey: true, preset: false, broadcast: false };
 let locks = null;
 const lockAt = new Uint8Array(R.length);
-function lockHolds(i) { return false; }
+export function lockRefuses(id, who) {
+  if (!LOCK_REFUSES[who]) return false;
+  ensureLocks();
+  const i = idxOf.get(id);
+  return i !== undefined && lockAt[i] === 1;
+}
+// The journey's own question, by place in R, asked in its loops.
+function lockHolds(i) {
+  if (!LOCK_REFUSES.journey) return false;
+  ensureLocks();
+  return lockAt[i] === 1;
+}
 function ensureLocks() {
   if (locks) return;
   locks = new Set();
@@ -696,7 +715,7 @@ export function journeyLocked(id) {
   return i !== undefined && lockAt[i] === 1;
 }
 // Locks or unlocks control id and its twins; returns whether it is now
-// locked.
+// locked. A lock taken lets the control go from a ramp under way at once.
 export function journeyToggleLock(id) {
   ensureLocks();
   const i = idxOf.get(id);
@@ -705,8 +724,55 @@ export function journeyToggleLock(id) {
   if (on) locks.add(key); else locks.delete(key);
   markLocks();
   saveKey(LOCK_KEY, [...locks]);
+  if (on) for (const t of withTwins(key)) releaseJourneyControl(t);
   version++;
   return on;
+}
+
+// Whether locked control id's live value differs from what any step of the
+// open journey holds for it (judged as a step entering judges it, settled):
+// the drawer's set all shows only then. Called each frame for a locked row,
+// so the answer is kept per id against the journey's version and the value
+// it was found for; only a new version or a moved value looks again.
+const variesMemo = new Map();
+export function journeyLockVaries(id) {
+  if (!journeyLocked(id)) return false;
+  ensureLoaded();
+  const k = canon[idxOf.get(id)], c = R[k];
+  if (!held[k]) return false;
+  const cur = validValue(c, posOf(c));
+  let m = variesMemo.get(c.id);
+  if (m && m.ver === version && same(c, m.cur, cur)) return m.out;
+  let out = false;
+  if (cur !== undefined) {
+    for (let n = 0; n < data.steps.length && !out; n++) {
+      const v = data.steps[n].overrides[c.id];
+      if (v !== undefined && !same(c, v, cur)) out = true;
+    }
+  }
+  if (!m) { m = { ver: 0, cur: undefined, out: false }; variesMemo.set(c.id, m); }
+  m.ver = version; m.cur = cur; m.out = out;
+  return out;
+}
+
+// The drawer's set all: locked control id's live value (where it is
+// headed) written into every step of the open journey under its canonical
+// door, the journey written once, and the lock dropped, since a value set
+// across the whole journey is one the journey should carry. Saved presets
+// and other journeys are untouched.
+export function journeySetAll(id) {
+  ensureLoaded();
+  const j = idxOf.get(id);
+  if (j === undefined) return false;
+  const k = canon[j], c = R[k];
+  if (!held[k]) return false;
+  const v = validValue(c, posOf(c));
+  if (v === undefined) return false;
+  for (let n = 0; n < data.steps.length; n++) data.steps[n].overrides[c.id] = v;
+  if (c.id === 'textSize' && data.sizeLock) data.sizeLockValue = v;
+  persist();
+  if (journeyLocked(c.id)) journeyToggleLock(c.id);
+  return true;
 }
 
 // ---------- applying a step ----------
@@ -1648,6 +1714,12 @@ export function journeyAddStep() {
   if (data.steps.length >= STEPS_MAX) return -1;
   const st = makeStep();
   captureAll(st);
+  // a locked control is not taken; the new step carries on the one before
+  // it, as reading the journey back would fill it (fillSteps)
+  const last = data.steps.length ? data.steps[data.steps.length - 1].overrides : null;
+  if (last) for (let i = 0; i < R.length; i++) {
+    if (held[i] && lockHolds(i) && last[R[i].id] !== undefined) st.overrides[R[i].id] = last[R[i].id];
+  }
   if (data.sizeLock && SIZE) {
     st.overrides.textSize = data.sizeLockValue;
     data.sizeRestore.push({ own: true, value: data.sizeLockValue });

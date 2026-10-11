@@ -167,7 +167,7 @@
 
 import { COLOR, SPACE, RADIUS, TYPE, TRACK, W, MOTION, HIT } from './theme.js';
 import { ICON } from './drawlist.js';
-import { journeyManualOverride, journeyLockable, journeyLocked, journeyToggleLock } from '../core/journey.js';
+import { journeyManualOverride, journeyLockable, journeyLocked, journeyToggleLock, journeyLockVaries, journeySetAll } from '../core/journey.js';
 import { perfSet, perfLayer, perfDestination } from '../core/perform.js';
 import { byId } from '../core/schema.js';
 import { machineControl } from '../core/presets.js';
@@ -1648,9 +1648,16 @@ function textControl(ui, ctrl, S, enabled) {
 // frame's, so it needs one frame on screen first. A locked row works by hand
 // as ever; it wears the rose on its track or switch (ui.lockTint, read by
 // slider, segment and toggle) and a small lock right of its name, and the
-// name's rect is left in ui.lockTip* for the screen's tooltip.
+// name's rect is left in ui.lockTip* for the screen's tooltip. Right of the
+// lock, while any step of the open journey holds the control somewhere else
+// than it stands (core/journey.js journeyLockVaries), a small rose pill,
+// set all, writes its value into every step and unlocks it (journeySetAll).
+// The pill takes its press before the row's widgets, as the lock click
+// does, so a toggle's row-wide hit never sees it.
 const rowH = new Map();   // ctrl.id -> the row's height last frame
-const LOCK_GLYPH = 9, LOCK_GAP = 5;
+const LOCK_GLYPH = 9, LOCK_GAP = 5, PILL_PAD = 6, PILL_TEXT = 'set all';
+// where the locked row's lock and pill sit this frame (lockSpot)
+const lk = { gx: 0, cy: 0, tx: 0, ty: 0, tw: 0, lineH: 0, pill: false, px: 0, py: 0, pw: 0, ph: 0 };
 
 // A row writes through the performer's doors (core/perform.js), as the Music
 // and Performance windows' cells do, so a slider is a slider wherever it is:
@@ -1700,6 +1707,16 @@ function control(ctrl, S, shown) {
   }
   const locked = lockable && journeyLocked(ctrl.id);
   ui.lockTint = locked;
+  let setAll = false, pillHover = false;
+  if (locked) {
+    lockSpot(ui, ctrl, x0, y0, rowH.get(ctrl.id) || 0);
+    if (lk.pill) {
+      ui.interact(combine2(ui.id(ctrl.id), 22), lk.px, lk.py, lk.pw, lk.ph, false);
+      pillHover = ui.hover;
+      if (pillHover) ui.setCursorHint('pointer');
+      if (ui.clicked) setAll = true;
+    }
+  }
 
   if (!enabled) ui.dl.pushAlpha(0.45);
 
@@ -1852,34 +1869,53 @@ function control(ctrl, S, shown) {
   if (lockable) {
     const h = ui.cursorY - y0;
     if (rowH.get(ctrl.id) !== h) rowH.set(ctrl.id, h);
-    if (locked) lockGlyph(ui, ctrl, x0, y0, h);
+    if (locked) lockDraw(ui, pillHover);
   }
+  // after the row has drawn: the lock drops with it, so the next frame
+  // draws the row unlocked
+  if (setAll) journeySetAll(ctrl.id);
 
   if (!enabled) ui.dl.popAlpha();
   return changed;
 }
 
-// The lock right of a locked row's name, centred on the name's line: the
-// row's first line for a stacked control, the row's middle for one laid on a
-// single line (a toggle, an inline slider). A row with no name of its own
-// wears it in the gutter to its left. The name and the lock are the
-// tooltip's rect.
-function lockGlyph(ui, ctrl, x0, y0, h) {
+// Where the lock sits, right of a locked row's name, centred on the name's
+// line: the row's first line for a stacked control, the row's middle (last
+// frame's height) for one laid on a single line (a toggle, an inline
+// slider). A row with no name of its own wears it in the gutter to its left.
+// The name and the lock are the tooltip's rect; the pill, when the steps
+// differ, follows the lock.
+function lockSpot(ui, ctrl, x0, y0, h) {
   ui.text.lineMetrics(TYPE.sm, ui._lm);
   const lineH = ui._lm.ascent + ui._lm.descent;
   const oneLine = ctrl.kind === 'toggle' || (ctrl.kind === 'slider' && ctrl.inline);
   const nameless = ctrl.kind === 'segment' && !ctrl.dropdown && ctrl.hideLabel;
-  const cy = oneLine ? y0 + (h - SPACE.xs) / 2 : y0 + lineH / 2;
+  const cy = oneLine && h > 0 ? y0 + (h - SPACE.xs) / 2 : y0 + lineH / 2;
   let lw = 0;
   if (!nameless) {
     const caps = ctrl.kind === 'toggle' && ctrl.hasChildren;
     const label = caps ? capsLabel(ctrl) : ctrl.label;
     lw = ui.text.measure(label, TYPE.sm, caps ? W.bold : W.regular) + (caps ? TRACK.caps * TYPE.sm * (label.length - 1) : 0);
   }
-  const gx = nameless ? x0 - LOCK_GAP - LOCK_GLYPH : x0 + lw + LOCK_GAP;
-  ui.dl.icon(ICON.LOCK, gx, cy - LOCK_GLYPH / 2, LOCK_GLYPH, LOCK_GLYPH, COLOR.lock, 0, 0);
-  const tx = nameless ? gx : x0, tw = nameless ? LOCK_GLYPH : lw + LOCK_GAP + LOCK_GLYPH, ty = cy - lineH / 2;
-  ui.lockTipX = tx; ui.lockTipY = ty; ui.lockTipW = tw; ui.lockTipH = lineH;
-  ui.lockTipHover = ui.pointerX >= tx && ui.pointerX < tx + tw && ui.pointerY >= ty && ui.pointerY < ty + lineH &&
+  lk.gx = nameless ? x0 - LOCK_GAP - LOCK_GLYPH : x0 + lw + LOCK_GAP;
+  lk.cy = cy; lk.lineH = lineH;
+  lk.tx = nameless ? lk.gx : x0; lk.tw = nameless ? LOCK_GLYPH : lw + LOCK_GAP + LOCK_GLYPH; lk.ty = cy - lineH / 2;
+  lk.pill = !nameless && journeyLockVaries(ctrl.id);
+  if (lk.pill) {
+    lk.pw = ui.text.measure(PILL_TEXT, TYPE.micro, W.regular) + PILL_PAD * 2;
+    lk.ph = lineH + 2;
+    lk.px = lk.gx + LOCK_GLYPH + LOCK_GAP; lk.py = cy - lk.ph / 2;
+  }
+}
+// The lock, the pill when it shows, and the tooltip's rect, after the row.
+function lockDraw(ui, pillHover) {
+  ui.dl.icon(ICON.LOCK, lk.gx, lk.cy - LOCK_GLYPH / 2, LOCK_GLYPH, LOCK_GLYPH, COLOR.lock, 0, 0);
+  if (lk.pill) {
+    ui.dl.rect(lk.px, lk.py, lk.pw, lk.ph, RADIUS.pill, pillHover ? COLOR.lockSoft : COLOR.clear, 1, COLOR.lock, 0, 0);
+    ui.text.draw(ui.dl, PILL_TEXT, lk.px + lk.pw / 2, centerBaseline(ui, lk.py, lk.ph, TYPE.micro), TYPE.micro, W.regular,
+                 COLOR.lock, 1, TRACK.ui, 1);
+  }
+  ui.lockTipX = lk.tx; ui.lockTipY = lk.ty; ui.lockTipW = lk.tw; ui.lockTipH = lk.lineH;
+  ui.lockTipHover = ui.pointerX >= lk.tx && ui.pointerX < lk.tx + lk.tw && ui.pointerY >= lk.ty && ui.pointerY < lk.ty + lk.lineH &&
     ui._pointerInClip() && !ui._pointerOccluded();
 }
