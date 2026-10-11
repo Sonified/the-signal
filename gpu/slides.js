@@ -87,6 +87,9 @@ import { createGlobalFilter } from '../core/global-filter.js';
 import { ensureAudioGraph, getContext, getOutputBus } from '../js/audio.js';
 
 const AUDIO_TC = 0.015;
+// Speed follows incoming control values with a 25 ms exponential time
+// constant. S.slideRate remains the authored/requested value.
+const SPEED_TC_MS = 25;
 // The element's own floor: Chrome refuses playbackRate between 0 and
 // 0.0625 (and mutes beneath it anyway), while exactly 0 is allowed and
 // freezes the picture. So any rate asked below the floor lands AT the
@@ -309,7 +312,7 @@ export function createSlides(device, format) {
     el.mozPreservesPitch = false;
     el.webkitPreservesPitch = false;
     const s = { k, el, file: '', failed: false, holding: false, playPending: false, retryAt: 0, legNow: -1, src: null, leg: null,
-                g0: 0, a0: 0, p: 0, dur: 0, plays: false, v: -1, vdur: 0 };
+                g0: 0, a0: 0, p: 0, dur: 0, plays: false, v: -1, vdur: 0, speed: 1, speedMoving: false };
     el.addEventListener('loadeddata', () => { release(s, 'a slide video'); idleWake('slide loaded'); });
     el.addEventListener('ended', () => idleWake('slide ended'));
     el.addEventListener('error', () => {
@@ -369,7 +372,9 @@ export function createSlides(device, format) {
     s.el.loop = S.slideLoop === true;
     s.el.src = SLIDE_DIR + encodeURIComponent(file) + (at > 0 ? '#t=' + at.toFixed(3) : '');
     // a new source resets the rate to the default rate, so both are set
-    const r = elRate(clampNum(S.slideRate, 0, 2, 1));
+    s.speed = clampNum(S.slideRate, 0, 2, 1);
+    s.speedMoving = false;
+    const r = elRate(s.speed);
     s.el.defaultPlaybackRate = r;
     s.el.playbackRate = r;
   }
@@ -377,7 +382,7 @@ export function createSlides(device, format) {
   function empty(s) {
     setLeg(s, 0);
     release(s, 'slide emptied');
-    s.file = ''; s.failed = false; s.playPending = false;
+    s.file = ''; s.failed = false; s.playPending = false; s.speedMoving = false;
     try { s.el.pause(); } catch (e) {}
     s.el.removeAttribute('src');
     try { s.el.load(); } catch (e) {}
@@ -711,7 +716,17 @@ export function createSlides(device, format) {
       // speed ramp is on (the turntable; pitch follows, as the element is
       // built). Off, the rate is never touched by a pause: the sound just
       // fades on its gain leg and the picture stops when it reaches 0.
-      const rate = clampNum(S.slideRate, 0, 2, 1);
+      const targetRate = clampNum(S.slideRate, 0, 2, 1);
+      // Retarget from the speed already reached, including uneven network
+      // arrivals. A paused player's first wake counts one frame rather than
+      // its entire idle interval; subsequent frames use elapsed time.
+      const speedDt = cur.speedMoving || !cur.el.paused ? dtMs : Math.min(dtMs, 1000 / 60);
+      cur.speed += (targetRate - cur.speed) * -Math.expm1(-speedDt / SPEED_TC_MS);
+      cur.speedMoving = Math.abs(targetRate - cur.speed) > .0001;
+      // Exponential decay needs a finite landing so exact zero can still
+      // reach the existing silent stop below the element's rate floor.
+      if (!cur.speedMoving) cur.speed = targetRate;
+      const rate = cur.speed;
       const want = S.slidePpRamp === true && pp < 1 ? rate * pp : rate;
       // Under the element's floor the rate holds at 6.25% while the gain
       // takes the last of the slow-down to silence. A true 0 freezes the
@@ -827,7 +842,7 @@ export function createSlides(device, format) {
 
   // A playing video, or a fade running or waiting for its picture, keeps the
   // frame loop awake (main.js's still frame asks), paused or not.
-  const busy = () => fade.pending || fade.running || outs.length > 0 || ppMoving || (rateZeroAt >= 0 && nowMs - rateZeroAt < RATE_ZERO_MS + 100) ||
+  const busy = () => fade.pending || fade.running || outs.length > 0 || ppMoving || slots[act]?.speedMoving || (rateZeroAt >= 0 && nowMs - rateZeroAt < RATE_ZERO_MS + 100) ||
     ((drawBlack || nPics > 0) && slots.length > 0 && !slots[act].el.paused && !slots[act].el.ended);
 
   return { update, draw, resize, doze, busy };
