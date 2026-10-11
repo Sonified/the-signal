@@ -16,7 +16,7 @@ import { save } from './store.js';
 const NUM = [
   // key,          min, max, def, integer
   ['heartMaster',  0,   1,   1,   false],
-  ['heartAudio',   0,   2,   0.8, false],
+  ['heartAudio',   0,   4,   0.8, false],
   ['heartVisual',  0,   1,   0.8, false]
 ];
 
@@ -66,8 +66,9 @@ export function applyHeartbeatState(S, o) {
 const layerOn = S => !!S.layers.heartbeat;
 
 // One whole-percent slider over the field's own span from the NUM table,
-// so a row whose range reaches past 1 (Audio level runs to 200%) shows and
-// stores the whole of it.
+// so a row whose range reaches past 1 (Audio level runs to 400%, the
+// heartbeat's own limiter in core/heartbeat.js keeping it from clipping)
+// shows and stores the whole of it.
 function percent(id, key, label) {
   const n = spec(key);
   return {

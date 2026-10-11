@@ -3,10 +3,14 @@
 // once a frame (heartSync) and reads the samples the frame just heard
 // (heartRead); the envelope and the wash live there.
 //
-//   source -> analyser -> level -> pause gate -> the app's master -> out
+//   source -> analyser -> level -> limiter -> trim -> pause gate
+//          -> the app's master -> out
 //
 // The analyser sits ahead of the level, so the light keeps beating with the
-// sound turned all the way down. The track plays on the app's own
+// sound turned all the way down, and the flash never follows the Audio level
+// slider up past 100% either. The limiter is the heartbeat's own (the app's
+// master bus has none): it lets the level run to 400% and keep getting
+// louder without the loudest beats clipping (see LIM_THRESHOLD). The track plays on the app's own
 // AudioContext (js/audio.js getContext, the one the engine, the piano and
 // the atmosphere share) and into its master gain, as the atmosphere's
 // recordings do (js/ambience.js), so the volume slider and the transport's
@@ -34,6 +38,44 @@ const TRACK_URL = 'audio/heartbeat.m4a';
 const GEN_FPS = 30;
 // The level's glide, seconds: a slider drag without zipper noise.
 const LEVEL_TC = 0.03;
+
+// The limiter: a DynamicsCompressorNode set up as a near-brickwall. The track
+// peaks at -0.5 dBFS with a mean of -21.4 dB, so any level past about 106%
+// would clip its loudest beats while the rest of it has 20 dB to spare; the
+// limiter holds those beats down and lets everything else grow.
+//
+// Hard knee (0 dB) and ratio 20: above the threshold every 20 dB in is 1 dB
+// out. Attack 3 ms: the node delays the sound by a fixed 6 ms and looks
+// ahead, so a 3 ms attack has the gain down before a thump reaches the
+// output, and a thump's low cycles (about 20 ms each) cannot slip past it.
+// That delay puts the sound 6 ms behind the light (the analyser reads ahead
+// of it), well inside what the eye and ear take as together.
+// Release 0.25 s: long against those 20 ms cycles, so the gain holds through
+// the body of a beat instead of riding each cycle and distorting it, yet
+// short against the second or so between beats, so it lets go in the quiet
+// and the next beat finds it open. The heard result is a beat that grows
+// fuller and louder in its body as the level rises, with no audible pump.
+//
+// The makeup-gain trap. The Web Audio spec has the node apply a fixed makeup
+// gain after compressing, whatever the input: (1 / curve(1.0)) ^ 0.6, the
+// curve being the static one above. With knee 0 a full-scale input comes out
+// of the curve at T + (0 - T) / ratio = 0.95 T dB, so the makeup is
+// -0.6 * 0.95 T dB. At T = -3 dB that is +1.71 dB, and the trim gain after
+// the node takes it back off (x0.821), so below the threshold the node is
+// unity and the sound at 100% and under is the sound it always was.
+//
+// The arithmetic, peak in (track's -0.5 dBFS times the level) to peak out:
+//   80%:  -2.44 dBFS in, -2.97 out (the loudest beat trimmed 0.5 dB)
+//   100%: -0.50 dBFS in, -2.88 out
+//   200%: +5.52 dBFS in, -2.57 out
+//   400%: +11.54 dBFS in, -3 + 14.54 / 20 = -2.27 dBFS out
+// Without the trim 400% would land at -0.56 dBFS, too close to clipping
+// once attack overshoot is counted; with it there are 2.27 dB of headroom.
+const LIM_THRESHOLD = -3;
+const LIM_RATIO = 20;
+const LIM_ATTACK = 0.003;
+const LIM_RELEASE = 0.25;
+const LIM_TRIM = Math.pow(10, 0.6 * LIM_THRESHOLD * (1 - 1 / LIM_RATIO) / 20);
 
 let ctx = null, ownCtx = false, unavailable = false;
 let analyser = null, level = null, samples = null, win = 0;
@@ -73,14 +115,26 @@ function ensureGraph() {
   level = ctx.createGain();
   level.gain.value = 0;
   analyser.connect(level);
+  // The limiter and its makeup trim, after the level so it is the level
+  // that drives them, and before the gate (LIM_THRESHOLD above).
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = LIM_THRESHOLD;
+  limiter.knee.value = 0;
+  limiter.ratio.value = LIM_RATIO;
+  limiter.attack.value = LIM_ATTACK;
+  limiter.release.value = LIM_RELEASE;
+  const trim = ctx.createGain();
+  trim.gain.value = LIM_TRIM;
+  level.connect(limiter);
+  limiter.connect(trim);
   const master = ownCtx ? null : getMaster();
   if (master) {
     const gate = ctx.createGain();
     sourceGate(gate.gain);
-    level.connect(gate);
+    trim.connect(gate);
     gate.connect(master);
   } else {
-    level.connect(ctx.destination);
+    trim.connect(ctx.destination);
   }
   return true;
 }

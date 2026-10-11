@@ -70,6 +70,13 @@ function clamp01(v, def) {
   return v < 0 ? 0 : (v > 1 ? 1 : v);
 }
 
+// The Audio level runs past 1, to 4 (400%, its row in core/schema-heartbeat.js),
+// so it is clamped to its own range; clamp01 here once held it at 100%.
+function clampTo(v, max, def) {
+  if (typeof v !== 'number' || !(v === v)) return def;
+  return v < 0 ? 0 : (v > max ? max : v);
+}
+
 export function createHeartbeat(device, format) {
   // Made the first time the layer is on, never at boot.
   let pipe = null, uniBuf = null, bind = null;
@@ -127,7 +134,7 @@ export function createHeartbeat(device, format) {
     ensureGpu();
 
     const master = clamp01(S.heartMaster, 1);
-    const audio = clamp01(S.heartAudio, 0.8);
+    const audio = clampTo(S.heartAudio, 4, 0.8);
     const visual = clamp01(S.heartVisual, 0.8);
     const playing = heartSync(!dozing && motionScale() > 0, master * audio);
     if (heartUnavailable()) return;
