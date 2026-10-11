@@ -683,6 +683,15 @@ export const SUN_CONTROLS = [
   },
   ...drivenVariance('sunHumVerb', 'Reverb mix', 'sunHumDrawer'),
 
+  // ---- Star field, under the hum inside the Sun section:
+  // meditatewiththesun.com's one control for its sky, the switch. Never
+  // dimmed: the stars drift whether or not the sun is shown (gpu/stars.js) ----
+  {
+    id: 'sunStars', section: 'sun', label: 'Star field', kind: 'toggle', def: DEF_STARS,
+    get: S => S.sunStars !== false,
+    set: (S, on) => { S.sunStars = !!on; save(); }
+  },
+
   // ---- meditatewiththesun.com: the room's volume on that site, for the
   // phones following this broadcast (see mwtsVolume above). Never dimmed:
   // it steers the room whether or not this screen shows the sun ----
@@ -711,19 +720,9 @@ export const SUN_CONTROLS = [
     get: S => Math.round(S.sunQrSize * 100),
     set: (S, pos) => { S.sunQrSize = fit(pos / 100, 0.25, 2, false); save(); },
     format: S => Math.round(S.sunQrSize * 100) + '%'
-  },
-
-  // ---- Star field, a section of its own: meditatewiththesun.com's one
-  // control for its sky, the switch. Never dimmed: the stars drift whether
-  // or not the sun is shown (gpu/stars.js) ----
-  {
-    id: 'sunStars', section: 'stars', label: 'Star field', kind: 'toggle', def: DEF_STARS,
-    get: S => S.sunStars !== false,
-    set: (S, on) => { S.sunStars = !!on; save(); }
   }
 ];
 
 export const SUN_SECTIONS = [
-  { id: 'sun', title: 'Sun' },
-  { id: 'stars', title: 'Star field' }
+  { id: 'sun', title: 'Sun' }
 ];
