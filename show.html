@@ -42,6 +42,8 @@
             Crossfade, sent on each change and remembered with the duck's)
           heartMaster 0..100 (the Heartbeat's Master, %, its sound and its
             flash together: HEART)
+          mwtsVolume 0..100 (meditatewiththesun.com's Master volume, %, the
+            phones following the broadcast: MWTS)
     {k:'duck', on, amt, dn, up}  amt 0..1, dn and up in seconds; DUCK is
         hold-and-release: on at pointerdown, off at pointerup, pointercancel
         or the finger sliding off the button
@@ -54,7 +56,8 @@
   hugging the right edge, as the photo has them) in the
   surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK.
   The middle holds the faders that are not the surface's, level with the
-  four: HEART (the Heartbeat's Master) first, room beside it for more.
+  four: HEART (the Heartbeat's Master), then MWTS (meditatewiththesun.com's
+  volume), room beside them for more.
 
   ?room=<name> (default 'show'), ?mac=<host:port> (the laptop, default
   Roberts-MacBook-Pro-2.local:8800), ?relay=<host> (the cloud relay),
@@ -372,7 +375,11 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // In the middle: the Heartbeat's Master, the heard beat and its flash
     // riding together at the balance the laptop's Audio level and Visual
     // amount set (core/schema-heartbeat.js), linear 0..100%.
-    { id: 'heartMaster', key: 'hm', label: 'HEART', color: '#ff5a7a', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' }
+    { id: 'heartMaster', key: 'hm', label: 'HEART', color: '#ff5a7a', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' },
+    // meditatewiththesun.com's Master volume: the phones in the room
+    // following the broadcast fade their sound to it (core/schema-sun.js
+    // mwtsVolume), linear 0..100%.
+    { id: 'mwtsVolume', key: 'mw', label: 'MWTS', color: '#ff9f43', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
   let rafOn = false;
