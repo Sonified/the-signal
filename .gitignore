@@ -15,3 +15,6 @@ audio/source/Ocean_Cavern.wav
 
 # the mirror test's local relay password (tools/mirror-local.mjs)
 .mirror-key
+
+# the TSC 2026 show's slide videos (core/schema-slides.js), copied locally, never committed
+slides/

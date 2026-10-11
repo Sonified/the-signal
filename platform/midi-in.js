@@ -1,7 +1,11 @@
-// MIDI in, first light: every note that reaches Chrome from any MIDI input
-// (Max's [noteout] into the Mac's IAC bus, say) is printed to the console as
-// [midi] lines. Nothing acts on them yet. Page thread only: Web MIDI lives
-// on the window, whichever thread the engine runs on.
+// MIDI in: every note that reaches Chrome from any MIDI input (Max's
+// [noteout] into the Mac's IAC bus, say) is printed to the console as
+// [midi] lines, and handed on as a 'signal-midi' CustomEvent on window,
+// detail { note, vel, on, ch, input }, for whoever listens: the Journey's
+// TRIGGER mode set to MIDI (ui/screens/journey.js) steps the walk with them.
+// Page thread only: Web MIDI lives on the window, whichever thread the
+// engine runs on (in worker mode the journey runs in the worker and does not
+// hear these).
 //
 // Chrome asks permission for any MIDI access, so it is opt-in: always on
 // localhost, and on the live site once the page is opened with ?midi (this
@@ -23,8 +27,13 @@ if (!midiOn) {
       input.onmidimessage = e => {
         const [st, note, vel] = e.data;
         const kind = st & 0xf0, ch = (st & 0x0f) + 1;
-        if (kind === 0x90 && vel > 0) console.log(`[midi] note ON  ${note} vel ${vel} ch ${ch} from "${input.name}"`);
-        else if (kind === 0x80 || kind === 0x90) console.log(`[midi] note off ${note} ch ${ch} from "${input.name}"`);
+        let on;
+        if (kind === 0x90 && vel > 0) { on = true; console.log(`[midi] note ON  ${note} vel ${vel} ch ${ch} from "${input.name}"`); }
+        else if (kind === 0x80 || kind === 0x90) { on = false; console.log(`[midi] note off ${note} ch ${ch} from "${input.name}"`); }
+        else return;
+        try {
+          window.dispatchEvent(new CustomEvent('signal-midi', { detail: { note, vel, on, ch, input: input.name } }));
+        } catch (err) { console.warn('[midi] a listener failed:', err); }
       };
     };
     access.inputs.forEach(listen);

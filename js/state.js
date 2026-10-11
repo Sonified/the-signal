@@ -99,6 +99,7 @@ export const S = {
   hintSweep: 2,               // v1: the hint's left-to-right dissolve speed, x the words' default Leave sweep
   hintFadeInMs: 2000,         // v1: ms the hint takes to appear (boot and every pause), 0 at once
   hintArrive: 'sweep',        // v1: how the hint appears: 'sweep' left to right, 'all' at once
+  hintShow: true,             // v1: whether the paused screen's play/pause hint shows at all (Render > Hint)
   fbResScale: 1,              // v1: Trail res, the screen feedback images' texels per device px (1, 0.75, 0.5; gpu/feedback.js)
   fbResSwitch: 'keep',        // v1: Trail switch, what a Trail res change does to the trails: 'keep' hands them over, 'clear' starts afresh
   parallaxSim: false,         // v1: simulated head sway for parallax (core/eye.js); never saved, off every load

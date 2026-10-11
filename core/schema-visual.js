@@ -1775,6 +1775,15 @@ export const VISUAL_CONTROLS = [
   },
   subDrawer('renderHintDrawer', 'Hint', 'render', ['hintFadeInMs', 'hintFadeMs']),
   {
+    // Whether the resting screen's hint (the play/pause prompt shown while
+    // the app is paused, ui/screens/overlay.js) appears at all. On by
+    // default; off, a pause or the boot shows nothing, so a projector never
+    // flashes it. This machine's own, as the whole Render section is.
+    id: 'hintShow', section: 'render', label: 'Show play/pause hint', kind: 'toggle', def: true, parent: 'renderHintDrawer',
+    get: S => S.hintShow !== false,
+    set: (S, on) => { S.hintShow = !!on; save(); }
+  },
+  {
     // How long the hint takes to appear, at boot and on every pause
     // (ui/screens/overlay.js). It replaces the fade spring's own pace for
     // the appearance only; leaving is still the smoke on a start. 0 shows

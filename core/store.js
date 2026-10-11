@@ -54,6 +54,7 @@ import { initFlowerState, flowerStateOf, applyFlowerState } from './schema-flowe
 import { initKaleidoState, kaleidoStateOf, applyKaleidoState } from './schema-kaleido.js';
 import { initParticleState, particleStateOf, applyParticleState } from './schema-particles.js';
 import { initSunState, sunStateOf, applySunState } from './schema-sun.js';
+import { initSlidesState, slidesStateOf, applySlidesState } from './schema-slides.js';
 import { initHeartbeatState, heartbeatStateOf, applyHeartbeatState } from './schema-heartbeat.js';
 import { initFireworkState, fireworkStateOf, applyFireworkState } from './schema-fireworks.js';
 import { initConfettiState, confettiStateOf, applyConfettiState } from './schema-confetti.js';
@@ -194,7 +195,7 @@ function buildSettings() {
     depthVar: S.depthVar, varPeriod: S.varPeriod, panelOpen: S.panelOpen,
     freqDrift: S.freqDrift, freqDriftOn: S.freqDriftOn, driftPeriod: S.driftPeriod, perElementColor: S.perElementColor, colorMode: S.colorMode,
     frameLock: S.frameLock, spareMode: S.spareMode, pauseWindDown: S.pauseWindDown, pauseFlickerStop: S.pauseFlickerStop !== false,
-    hintFadeMs: S.hintFadeMs, hintSweep: S.hintSweep, hintFadeInMs: S.hintFadeInMs, hintArrive: S.hintArrive,
+    hintFadeMs: S.hintFadeMs, hintSweep: S.hintSweep, hintFadeInMs: S.hintFadeInMs, hintArrive: S.hintArrive, hintShow: S.hintShow,
     fbResScale: S.fbResScale, fbResSwitch: S.fbResSwitch,
     parallaxAmount: S.parallaxAmount, parallaxSpeed: S.parallaxSpeed, walkPeriod: S.walkPeriod, brightVar: S.brightVar,
     skipRiskBand: S.skipRiskBand !== false,
@@ -429,7 +430,7 @@ function applyWordFxState(s, x) {
 }
 
 function buildExtra() {
-  return Object.assign(flowerStateOf(S), kaleidoStateOf(S), particleStateOf(S), sunStateOf(S), heartbeatStateOf(S), fireworkStateOf(S), confettiStateOf(S), mixStateOf(S), seqStateOf(S),
+  return Object.assign(flowerStateOf(S), kaleidoStateOf(S), particleStateOf(S), sunStateOf(S), slidesStateOf(S), heartbeatStateOf(S), fireworkStateOf(S), confettiStateOf(S), mixStateOf(S), seqStateOf(S),
                        wordFxStateOf(S));
 }
 
@@ -442,6 +443,7 @@ function applyExtra(x) {
   applyKaleidoState(S, x);
   applyParticleState(S, x);
   applySunState(S, x);
+  applySlidesState(S, x);
   applyHeartbeatState(S, x);
   applyFireworkState(S, x);
   applyConfettiState(S, x);
@@ -696,7 +698,7 @@ export function snapshot() {
 // thread) are never written into this object at all. Listed by name
 // rather than read off the schema, since this module must not depend on it.
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
-                      'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive',
+                      'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
                       'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog',
                       'overlayMode', 'overlayKey'];
 
@@ -818,6 +820,7 @@ export function load() {
   initKaleidoState(S);
   initParticleState(S);
   initSunState(S);
+  initSlidesState(S);
   initHeartbeatState(S);
   initFireworkState(S);
   initConfettiState(S);
@@ -930,6 +933,7 @@ function applySettings(s, live, scene) {
     if (typeof s.hintSweep === 'number') S.hintSweep = Math.max(0.6, Math.min(4, s.hintSweep));
     if (typeof s.hintFadeInMs === 'number') S.hintFadeInMs = Math.max(0, Math.min(10000, s.hintFadeInMs));
     if (s.hintArrive === 'sweep' || s.hintArrive === 'all') S.hintArrive = s.hintArrive;
+    if (typeof s.hintShow === 'boolean') S.hintShow = s.hintShow;
     // Trail res: only the three the Render section offers; anything else
     // saved stays at the default, full size.
     if (s.fbResScale === 1 || s.fbResScale === 0.75 || s.fbResScale === 0.5) S.fbResScale = s.fbResScale;

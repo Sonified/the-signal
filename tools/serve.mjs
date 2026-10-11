@@ -45,7 +45,9 @@ const TYPES = {
   '.m4a': 'audio/mp4',
   '.wav': 'audio/wav',
   '.flac': 'audio/flac',
-  '.woff2': 'font/woff2'
+  '.woff2': 'font/woff2',
+  // the Slides layer's videos (slides/, core/schema-slides.js)
+  '.mp4': 'video/mp4'
 };
 
 // On every response, the 404 and the redirects included.

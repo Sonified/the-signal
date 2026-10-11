@@ -62,8 +62,10 @@
 // no index takes the one journey the app kept before (under JOURNEY_KEY,
 // which is left as it was) as the library's first.
 //
-// A journey's record is { ver: 1, steps: [step, ...], mode, autoPlay, loop, name }, mode
-// being the AUTO button's 'off' | 'auto' | 'keys' and autoPlay its old boolean,
+// A journey's record is { ver: 1, steps: [step, ...], mode, trigger, autoPlay, loop, name }, mode
+// being the AUTO button's 'off' | 'auto' | 'keys' ('keys' is shown as TRIGGER), trigger
+// what drives TRIGGER mode, 'keys' (the digits and arrows, main.js) or 'midi' (notes,
+// ui/screens/journey.js), and autoPlay its old boolean,
 // still written (true only in 'auto') and read when a record has no mode; a step being
 //   { overrides: { [controlId]: value }, text: '', appear: 'start', textLock: false,
 //     rampS: 3, holdS: 60, piano: 'free', interaction: 'none',
@@ -248,9 +250,10 @@ function readRaw(key) {
 }
 
 const MODES = ['off', 'auto', 'keys'];
+const TRIGGERS = ['keys', 'midi'];
 
 function readJourney(raw) {
-  const d = { ver: 1, steps: [], mode: 'off', autoPlay: false, loop: false, name: '', fullStart: false,
+  const d = { ver: 1, steps: [], mode: 'off', trigger: 'keys', autoPlay: false, loop: false, name: '', fullStart: false,
               sizeLock: false, sizeLockValue: null, sizeRestore: null, ringV: 2, partV: 2 };
   if (raw && typeof raw === 'object') {
     if (Array.isArray(raw.steps)) {
@@ -271,6 +274,7 @@ function readJourney(raw) {
     }
     d.mode = MODES.includes(raw.mode) ? raw.mode : raw.autoPlay === true ? 'auto' : 'off';
     d.autoPlay = d.mode === 'auto';
+    d.trigger = TRIGGERS.includes(raw.trigger) ? raw.trigger : 'keys';
     d.loop = raw.loop === true;
     d.name = typeof raw.name === 'string' ? raw.name.slice(0, NAME_MAX) : '';
     d.fullStart = raw.fullStart === true;
@@ -1677,6 +1681,16 @@ export function journeySetMode(mode) {
 }
 export function journeySetAutoPlay(on) { journeySetMode(on ? 'auto' : 'off'); }
 
+// TRIGGER mode's source: 'keys' (the digits 1-9 jump, the arrows step,
+// main.js) or 'midi' (note n jumps to step n, 100 steps back, 101 on;
+// ui/screens/journey.js). Switching it touches nothing playing.
+export function journeySetTrigger(t) {
+  ensureLoaded();
+  if (!TRIGGERS.includes(t) || data.trigger === t) return;
+  data.trigger = t;
+  persist();
+}
+
 // KEYS mode's digit: plays step i as its row's play button does
 // (journeyPlayFrom), except that the step already playing is left alone, so
 // a held key's repeats never restart it. A digit past the last step does
@@ -1889,6 +1903,15 @@ function enterStep(i) {
 let setRunning = null;
 export function setJourneyRunning(fn) { setRunning = fn; }
 const runApp = on => { if (setRunning) setRunning(on); };
+// The walk's own pause and resume, handed in by main.js (which pairs it with
+// gpu/slides.js pauseSlideForWalk / resumeSlideForWalk, so this core module
+// imports nothing from gpu/): called with true as a playing walk pauses
+// (journeyPause, whatever asked: Space, the window's play button, a row's)
+// and false as the walk plays again: journeyTogglePlay resuming from that
+// pause, or journeyPlayFrom starting a step (the slides let go only what the
+// pause held).
+let pauseHook = null;
+export function setJourneyPauseHook(fn) { pauseHook = fn; }
 
 function stopWalk(rearm = true) {
   const edit = play.stepIdx;
@@ -1996,6 +2019,7 @@ export function journeyPlayFrom(i) {
   disarm();
   play.playing = true;
   runApp(true);
+  if (pauseHook) pauseHook(false);
   journeyDiag('PLAY STEP ' + (i + 1), {
     settingCount: Object.keys(data.steps[i].overrides).length,
     lParticles: data.steps[i].overrides.lParticles,
@@ -2014,6 +2038,7 @@ export function journeyPause() {
   play.pausedAt = nowT;
   setPianoFree(true);
   runApp(false);
+  if (pauseHook) pauseHook(true);
 }
 
 export function journeyStop() { stopWalk(); }
@@ -2034,6 +2059,7 @@ export function journeyTogglePlay() {
     play.playing = true;
     runApp(true);
     setPianoFree(st.piano !== 'text');
+    if (pauseHook) pauseHook(false);
     return;
   }
   journeyPlayFrom(sel >= 0 ? sel : 0);
@@ -2125,6 +2151,7 @@ export const journeyPlayIdx = () => play.stepIdx;
 // true only in 'auto' (the walk advancing by itself); KEYS reads false
 export function journeyAutoPlay() { ensureLoaded(); return data.autoPlay; }
 export function journeyMode() { ensureLoaded(); return data.mode; }
+export function journeyTrigger() { ensureLoaded(); return data.trigger; }
 export function journeyLoop() { ensureLoaded(); return data.loop; }
 // How far through its ramp and hold the playing step is, 0..1, while the
 // walk plays, with auto-play on or off (off, it fills and then waits full),

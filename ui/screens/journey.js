@@ -41,6 +41,19 @@
 // on where it paused, and the left and right arrows step it (main.js).
 // Switching it never stops or restarts the step playing.
 //
+// The fold's text lines (TEXT, TIME OS and SIZE, FADE IN and FADE OUT,
+// APPEAR) are an accordion: shut by default unless the step has text, a
+// chevron beside TEXT opening and shutting them. SLIDE, under HOLD and RAMP,
+// picks the show's video for the step (core/schema-slides.js) from a menu
+// of its own, recorded into the step as any drawer setting is.
+//
+// AUTO's third position reads TRIGGER (stored as 'keys'): no auto advance,
+// and a two-way KEYS | MIDI beside it chooses what moves the walk. KEYS: the
+// digits jump and the arrows step (main.js). MIDI: note-on 1-99 jumps to that
+// step, 100 steps back, 101 steps on (platform/midi-in.js's 'signal-midi'
+// event, heard here while journey mode is ACTIVE, window open or not). In
+// TRIGGER mode the fold's HOLD is hidden, the advance being by hand.
+//
 // Everything a step holds lives in the journey record (core/journey.js),
 // never on S; the window keeps only where it sits and whether it is open,
 // with the UI record (saveUiState), as the sequencer does.
@@ -55,8 +68,12 @@ import {
   journeySizeLocked, journeySetTextSize, journeySetSizeLock,
   journeyLibCount, journeyLibTitle, journeyLibOpen, journeyOpenAt, journeyNew, journeyDeleteAt,
   journeyRenameAt, journeyMoveAt, journeyDuplicate, TITLE_MAX,
+  journeyTrigger, journeySetTrigger, journeyJumpTo,
   RAMP_MIN, RAMP_MAX, HOLD_MIN, HOLD_MAX, STEP_TEXT_MAX
 } from '../../core/journey.js';
+import { SLIDE_OPTIONS, slideLabel } from '../../core/schema-slides.js';
+import { slidesLiveState, toggleSlidePlayLive } from '../../gpu/slides.js';
+import { idleWake } from '../../core/idle.js';
 import { S } from '../../js/state.js';
 import { byId } from '../../core/schema.js';
 import { presetsVersion, presetCount, presetLabel, presetIsHearted } from '../../core/presets.js';
@@ -119,12 +136,16 @@ const LIST_TOP = 8, ROW_H = 30, ROW_GAP = 4;
 // (SUM_X clears "STEP 12" at 12 pt with the same air it had at 10)
 const RPLAY = 20, STEP_X = 28, SUM_X = 92, DEL_W = 20;
 // the fold under the selected row: HOLD and RAMP share the first line, hold
-// first since it is the one auto-play lives by; TEXT gets a taller line for
-// its field; TIME OS and SIZE sit directly under it; then FADE IN / FADE OUT,
-// APPEAR, PIANO, PRESET and INTERACTION, seven plain lines in all
+// first since it is the one auto-play lives by (hidden in TRIGGER mode);
+// SLIDE under them; then the text accordion: shut, one plain line (TEXT, its
+// chevron and a dim preview); open, TEXT's taller line for its field with
+// TIME OS and SIZE, FADE IN / FADE OUT and APPEAR beneath it; then PIANO,
+// PRESET and INTERACTION
 const FOLD_ROW_H = 32, FOLD_PAD = 5;
 const FIELD_H = 34, TEXT_ROW_H = FIELD_H + 8;
-const FOLD_H = FOLD_ROW_H * 7 + TEXT_ROW_H + FOLD_PAD * 2;
+const TX_SHUT_H = FOLD_ROW_H, TX_OPEN_H = TEXT_ROW_H + FOLD_ROW_H * 3;
+const FOLD_FIXED_H = FOLD_ROW_H * 5 + FOLD_PAD * 2;
+const foldHeight = txa => FOLD_FIXED_H + TX_SHUT_H + txa * (TX_OPEN_H - TX_SHUT_H);
 // the controls start clear of INTERACTION, the longest name; VAL_W holds the
 // widest readout ("4m 55s") at 11 pt
 const FOLD_NAME_X = 8, FOLD_CTL_X = 100, VAL_W = 48;
@@ -146,8 +167,10 @@ const LOOP_W = 26, LOOP_ICON = 14, LOOP_GAP = 4;
 // that wraps when it runs out of width
 const LIB_TOP = 8, CHIP_H = 24, CHIP_GAP = 6, CHIP_PAD = 10, LIB_ADD_W = 30, LIB_EDIT_MIN_W = 110;
 const DEL_R = 7, EDIT_PAD = 8;
-const FOLD_NAMES = ['HOLD', 'TEXT', 'TIME OS', 'FADE IN', 'APPEAR', 'PIANO', 'PRESET', 'INTERACTION'];
-const FOLD_TEXT = 1;
+// TEXT's chevron, in the name column just past the name
+const TX_CHEV_X = 42, TX_CHEV_S = 11;
+// TRIGGER's two-way KEYS | MIDI beside it
+const TRIG_GAP = 4;
 // the TEXT line's lock, square to the fold's buttons, and its glyph
 const LOCK_S = 14;
 // The FADE line's two drawer controls (core/schema-visual.js), in ms. Journey
@@ -275,7 +298,7 @@ function refreshTexts() {
   const v = journeyVersion();
   if (v === sumVersion) return;
   sumVersion = v;
-  const n = journeyCount();
+  const n = journeyCount(), trig = journeyMode() === 'keys';
   for (let i = 0; i < n; i++) {
     const st = journeyStepAt(i), k = journeyOverrideCount(i);
     if (stepLabels.length <= i) stepLabels.push('STEP ' + (i + 1));
@@ -283,18 +306,32 @@ function refreshTexts() {
     rampTexts[i] = fmtRamp(st.rampS);
     holdTexts[i] = fmtHold(st.holdS);
     countTexts[i] = count;
-    summaries[i] = (st.text ? '“' + firstWords(st.text) + '” · ' : '') +
-      count + ' · hold ' + holdTexts[i] + ' · ramp ' + rampTexts[i];
+    // the step's slide first when it holds one; no hold in TRIGGER mode
+    const slide = typeof st.overrides.slideFile === 'string' ? slideLabel(st.overrides.slideFile) : '';
+    summaries[i] = (slide ? slide + ' · ' : '') + (st.text ? '“' + firstWords(st.text) + '” · ' : '') +
+      count + (trig ? '' : ' · hold ' + holdTexts[i]) + ' · ramp ' + rampTexts[i];
   }
   summaries.length = n; rampTexts.length = n; holdTexts.length = n; countTexts.length = n;
 }
 
 // ---------- per-frame layout, in typed arrays grown only when steps are added ----------
 let cap = 0, foldA = new Float32Array(0), rowTop = new Float32Array(0), rowBot = new Float32Array(0);
+let txA = new Float32Array(0), foldH = new Float32Array(0);
 function ensureCap(n) {
   if (n <= cap) return;
   cap = n + 8;
   foldA = new Float32Array(cap); rowTop = new Float32Array(cap); rowBot = new Float32Array(cap);
+  txA = new Float32Array(cap); foldH = new Float32Array(cap);
+}
+
+// The text accordion's state, per step object: what the viewer last chose
+// with the chevron; a step never toggled opens when it has text. A step whose
+// text is being typed stays open.
+const txChosen = new WeakMap();
+function textOpen(i, st) {
+  if (textEdit.active && textIdx === i) return true;
+  const v = txChosen.get(st);
+  return v !== undefined ? v : !!st.text;
 }
 
 // The row being dragged: which one, whether it has moved past the slop yet,
@@ -336,6 +373,31 @@ function uToHold(u) {
   return v < 60 ? Math.round(v) : v < 300 ? Math.round(v / 5) * 5 : Math.round(v / 10) * 10;
 }
 
+// ---------- TRIGGER mode's MIDI ----------
+// platform/midi-in.js hands every note on as a 'signal-midi' event. While
+// journey mode is ACTIVE (the window open or not) and the journey is in
+// TRIGGER mode set to MIDI: note-on 1-99 plays that step (as a digit does,
+// the step already playing left alone), 100 steps back, 101 steps on.
+// Anything else, and every note-off, is ignored. Page thread only (in worker
+// mode this module runs in the worker, where no such event arrives).
+function onMidi(e) {
+  const d = e && e.detail;
+  if (!d || !d.on) return;
+  if (!restored) restore();
+  if (!journey.active) return;
+  if (journeyMode() !== 'keys' || journeyTrigger() !== 'midi' || journeyCount() === 0) return;
+  const note = d.note | 0;
+  if (note >= 1 && note <= 99) journeyJumpTo(note - 1);
+  else if (note === 100) journeyStepBy(-1);
+  else if (note === 101) journeyStepBy(1);
+  else return;
+  // the still frame may be resting; the step's changes need frames
+  idleWake('midi trigger');
+}
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('signal-midi', onMidi);
+}
+
 // fade is the chrome's idle fade, as the sequencer's.
 export function drawJourney(ui, app, fade = 1) {
   if (!restored) restore();
@@ -365,7 +427,10 @@ export function drawJourney(ui, app, fade = 1) {
   let folds = 0;
   for (let i = 0; i < n; i++) {
     foldA[i] = ui.spring(ui.idx('jr.foldA', i), i === sel ? 1 : 0, MOTION.panel);
-    folds += foldA[i] * FOLD_H;
+    const st = journeyStepAt(i);
+    txA[i] = ui.spring(ui.idx('jr.txA', i), st && textOpen(i, st) ? 1 : 0, MOTION.panel);
+    foldH[i] = foldHeight(txA[i]);
+    folds += foldA[i] * foldH[i];
   }
   const setA = ui.spring('jr.setA', journey.settings ? 1 : 0, MOTION.panel), setH = setA * SET_H;
   const width = app.width, height = app.height;
@@ -420,10 +485,14 @@ export function drawJourney(ui, app, fade = 1) {
   // window too narrow for the whole row (a phone's) the title is left out,
   // so the transport and LOOP never run under the gear and the ×.
   const active = journey.active;
-  // (AUTO's button reads AUTO or KEYS, sized for the wider so it never shifts)
-  const actW = measureBtn(ui, 'ACTIVE', 11), autoW = Math.max(measureBtn(ui, 'AUTO', 11), measureBtn(ui, 'KEYS', 11));
+  // (AUTO's button reads AUTO or TRIGGER, sized for the wider so it never
+  // shifts; in TRIGGER mode the KEYS | MIDI pair follows it)
+  const mode = journeyMode(), trig = mode === 'keys';
+  const actW = measureBtn(ui, 'ACTIVE', 11), autoW = Math.max(measureBtn(ui, 'AUTO', 11), measureBtn(ui, 'TRIGGER', 11));
+  const keysW = measureBtn(ui, 'KEYS', 10), midiW = measureBtn(ui, 'MIDI', 10);
+  const trigW = trig ? TRIG_GAP + keysW + midiW : 0;
   const titleX = lightX + 6 + BAR_GAP;
-  const rowW = actW + 10 + BOX + 10 + BOX + ARROW_GAP + BOX + 10 + autoW + LOOP_GAP + LOOP_W;
+  const rowW = actW + 10 + BOX + 10 + BOX + ARROW_GAP + BOX + 10 + autoW + trigW + LOOP_GAP + LOOP_W;
   let actX = titleX + trackedW(ui, 'JOURNEY', 13, 0.13) + 8;
   if (actX + rowW + 6 <= closeX - 6 - BOX) {
     ui.text.draw(dl, 'JOURNEY', titleX, baseline(ui, cy, 13), 13, W.semibold, C.title, 0, 0.13, 1);
@@ -467,16 +536,26 @@ export function drawJourney(ui, app, fade = 1) {
     btnHover && !dim ? C.valueInk : C.btnInk, 1.8, -Math.PI / 2);
   if (dim) dl.popAlpha();
 
-  // AUTO cycles off, AUTO, KEYS (digits 1-9 jump to a step, main.js), off
-  const mode = journeyMode();
+  // AUTO cycles off, AUTO, TRIGGER (stored as 'keys': the walk moves on by
+  // hand, by the keys or by MIDI), off
   const autoX = nextX + BOX + 10;
   if (btn(ui, 'jr.auto', autoX, cy - BTN_H / 2, autoW, BTN_H))
     journeySetMode(mode === 'off' ? 'auto' : mode === 'auto' ? 'keys' : 'off');
-  drawBtn(ui, autoX, cy, autoW, BTN_H, mode !== 'off', mode === 'keys' ? 'KEYS' : 'AUTO', 11);
+  drawBtn(ui, autoX, cy, autoW, BTN_H, mode !== 'off', trig ? 'TRIGGER' : 'AUTO', 11);
 
-  // LOOP, right beside AUTO: dim ink off, the sequencer's green on
+  // TRIGGER's source, a two-way pair beside it: KEYS (digits jump, arrows
+  // step; main.js) or MIDI (note n jumps to step n, 100 back, 101 on)
+  if (trig) {
+    const t = journeyTrigger(), kx = autoX + autoW + TRIG_GAP, mx = kx + keysW;
+    if (btn(ui, 'jr.trigKeys', kx, cy - BTN_H / 2, keysW, BTN_H)) journeySetTrigger('keys');
+    drawBtn(ui, kx, cy, keysW, BTN_H, t === 'keys', 'KEYS', 10);
+    if (btn(ui, 'jr.trigMidi', mx, cy - BTN_H / 2, midiW, BTN_H)) journeySetTrigger('midi');
+    drawBtn(ui, mx, cy, midiW, BTN_H, t === 'midi', 'MIDI', 10);
+  }
+
+  // LOOP, right beside AUTO (or the pair): dim ink off, the sequencer's green on
   const loop = journeyLoop();
-  const loopX = autoX + autoW + LOOP_GAP;
+  const loopX = autoX + autoW + trigW + LOOP_GAP;
   if (btn(ui, 'jr.loop', loopX, cy - BTN_H / 2, LOOP_W, BTN_H)) journeySetLoop(!loop);
   dl.rect(loopX, cy - BTN_H / 2, LOOP_W, BTN_H, 6, loop ? C.loopOnBg : C.btnBg, 1,
     loop ? C.loopOnBorder : btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
@@ -779,7 +858,7 @@ function drawSteps(ui, x, y, n, sel, playing, playIdx) {
   let ry = y;
   for (let i = 0; i < n; i++) {
     const cyr = ry + ROW_H / 2;
-    const fh = foldA[i] * FOLD_H;
+    const fh = foldA[i] * foldH[i];
     rowTop[i] = ry; rowBot[i] = ry + ROW_H + fh;
     const selected = i === sel, onIt = i === playIdx, lit = onIt && playing;
     const lifted = drag.k === i && drag.moved;
@@ -906,95 +985,142 @@ function drawLifted(ui, x, n) {
   dl.popAlpha();
 }
 
-// One step's fold: its eight lines on a faint ground, top at fy.
+// A fold line's name, in the name column.
+function foldName(ui, x0, t, cy) {
+  ui.text.draw(ui.dl, t, x0 + FOLD_NAME_X, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
+}
+
+// One step's fold on a faint ground, top at fy: HOLD and RAMP, SLIDE, the
+// text accordion, PIANO, PRESET and INTERACTION.
 function drawFold(ui, i, x0, fy) {
   const dl = ui.dl, st = journeyStepAt(i);
   if (!st) return;
-  dl.rect(x0 - 5, fy + 1, CONTENT_W + 10, FOLD_H - 2, 5, C.bar, 1, C.barLine, 0, 0);
+  dl.rect(x0 - 5, fy + 1, CONTENT_W + 10, foldH[i] - 2, 5, C.bar, 1, C.barLine, 0, 0);
   const cx = x0 + FOLD_CTL_X, right = x0 + CONTENT_W - 6, mid = x0 + CONTENT_W / 2;
-  let ry = fy + FOLD_PAD;
-  for (let r = 0; r < FOLD_NAMES.length; r++) {
-    const rh = r === FOLD_TEXT ? TEXT_ROW_H : FOLD_ROW_H;
-    const cy = ry + rh / 2;
-    ry += rh;
-    ui.text.draw(dl, FOLD_NAMES[r], x0 + FOLD_NAME_X, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
-    if (r === 0) {
-      // HOLD, 5 s to 10 min (log): how long auto-play stays once the ramp
-      // is done, its value right-aligned just short of the midline
-      const hx = x0 + HR_SLIDER_X, hw = mid - HR_GAP - VAL_W - hx;
-      let u = hslider(ui, ui.idx('jr.hold', i), hx, cy, hw, holdToU(st.holdS));
-      if (u >= 0) journeySetHold(i, uToHold(u));
-      ui.text.draw(dl, holdTexts[i], mid - HR_GAP, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
-      // RAMP beside it, 0 to 30 s in half seconds: how long the step's
-      // settings glide in
-      ui.text.draw(dl, 'RAMP', mid + HR_GAP, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
-      const rx = mid + HR_GAP + HR_NAME_W, rw = right - VAL_W - rx;
-      u = hslider(ui, ui.idx('jr.ramp', i), rx, cy, rw, (st.rampS - RAMP_MIN) / (RAMP_MAX - RAMP_MIN));
-      if (u >= 0) journeySetRamp(i, Math.round((RAMP_MIN + u * (RAMP_MAX - RAMP_MIN)) * 2) / 2);
-      ui.text.draw(dl, rampTexts[i], right, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
-    } else if (r === FOLD_TEXT) {
-      // the field starts just past its short name, where the FADE sliders
-      // start, not at the buttons' column, so it has the width for phrases;
-      // the lock takes the right end
-      const tx = x0 + FADE_SLIDER_X, lx = right - BOX;
+  let ry = fy + FOLD_PAD, cy = ry + FOLD_ROW_H / 2;
+
+  // HOLD, 5 s to 10 min (log): how long auto-play stays once the ramp is
+  // done, its value right-aligned just short of the midline. Hidden in
+  // TRIGGER mode, where the walk moves on by hand alone.
+  if (journeyMode() !== 'keys') {
+    foldName(ui, x0, 'HOLD', cy);
+    const hx = x0 + HR_SLIDER_X, hw = mid - HR_GAP - VAL_W - hx;
+    const u = hslider(ui, ui.idx('jr.hold', i), hx, cy, hw, holdToU(st.holdS));
+    if (u >= 0) journeySetHold(i, uToHold(u));
+    ui.text.draw(dl, holdTexts[i], mid - HR_GAP, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
+  }
+  // RAMP beside it, 0 to 30 s in half seconds: how long the step's settings
+  // glide in
+  {
+    ui.text.draw(dl, 'RAMP', mid + HR_GAP, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
+    const rx = mid + HR_GAP + HR_NAME_W, rw = right - VAL_W - rx;
+    const u = hslider(ui, ui.idx('jr.ramp', i), rx, cy, rw, (st.rampS - RAMP_MIN) / (RAMP_MAX - RAMP_MIN));
+    if (u >= 0) journeySetRamp(i, Math.round((RAMP_MIN + u * (RAMP_MAX - RAMP_MIN)) * 2) / 2);
+    ui.text.draw(dl, rampTexts[i], right, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
+  }
+  ry += FOLD_ROW_H; cy = ry + FOLD_ROW_H / 2;
+
+  // SLIDE: the show's video for this step (the drawer's Slides > Slide)
+  foldName(ui, x0, 'SLIDE', cy);
+  slideBox(ui, i, st, cx, cy, SEG_W * 3 + 8, x0 + CONTENT_W - cx);
+  slidePlayBtn(ui, i, cx + SEG_W * 3 + 8 + 8, cy);
+  ry += FOLD_ROW_H;
+
+  // ---- the text accordion, clipped to however far it is open ----
+  const open = textOpen(i, st), txH = TX_SHUT_H + txA[i] * (TX_OPEN_H - TX_SHUT_H);
+  dl.pushClip(x0 - 5, ry, CONTENT_W + 10, txH);
+  {
+    // the first line: TEXT and its chevron (the whole name column toggles),
+    // then the field while open, or a dim preview of the text while shut
+    const rh = txA[i] > 0.5 ? TEXT_ROW_H : FOLD_ROW_H;
+    cy = ry + rh / 2;
+    foldName(ui, x0, 'TEXT', cy);
+    // (a field open for typing commits on this same press, as on any press
+    // outside it, and the lines shut once it has)
+    if (btnAt(ui, ui.idx('jr.txToggle', i), x0, cy - FOLD_ROW_H / 2, FADE_SLIDER_X - 8, FOLD_ROW_H)) txChosen.set(st, !open);
+    dl.icon(ICON.CHEVRON, x0 + TX_CHEV_X, cy - TX_CHEV_S / 2, TX_CHEV_S, TX_CHEV_S,
+      btnHover ? C.valueInk : C.label, 1.6, open ? 0 : -Math.PI / 2);
+    const tx = x0 + FADE_SLIDER_X, lx = right - BOX;
+    if (txA[i] > 0.5) {
       drawTextField(ui, i, st, tx, cy, lx - 6 - tx);
       textLock(ui, i, st, lx, cy);
-    } else if (r === 2) {
+    } else {
+      // shut: a click on the preview opens it too
+      if (btnAt(ui, ui.idx('jr.txPeek', i), tx, cy - FOLD_ROW_H / 2, right - tx, FOLD_ROW_H)) txChosen.set(st, true);
+      dl.pushClip(tx, cy - FOLD_ROW_H / 2, right - tx, FOLD_ROW_H);
+      ui.text.draw(dl, st.text ? st.text : 'no text: the words carry on as they are', tx + 2, baseline(ui, cy, 12), 12, W.regular,
+        st.text ? C.summaryInk : C.placeholder, 0, 0, 1);
+      dl.popClip();
+    }
+    let ty = ry + TEXT_ROW_H;
+    if (txA[i] > 0.01) {
       // Time on screen and text size, together immediately beneath the text.
+      cy = ty + FOLD_ROW_H / 2;
+      foldName(ui, x0, 'TIME OS', cy);
       fadeHalf(ui, ui.idx('jr.timeOS', i), i, st, TIME_OS, x0 + FADE_SLIDER_X, mid - HR_GAP, cy, fmtFade);
       ui.text.draw(dl, 'SIZE', mid + HR_GAP, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
-      const lx = right - BOX, vx = lx - 6;
+      const slx = right - BOX, vx = slx - 6;
       fadeHalf(ui, ui.idx('jr.size', i), i, st, TEXT_SIZE, mid + HR_GAP + HR_NAME_W, vx, cy, fmtSize);
-      sizeLock(ui, i, lx, cy);
-    } else if (r === 3) {
+      sizeLock(ui, i, slx, cy);
+      ty += FOLD_ROW_H; cy = ty + FOLD_ROW_H / 2;
       // FADE IN and FADE OUT, laid out as HOLD and RAMP: how long the step's
       // words take to arrive and to leave
+      foldName(ui, x0, 'FADE IN', cy);
       fadeHalf(ui, ui.idx('jr.fadeIn', i), i, st, FADE_IN, x0 + FADE_SLIDER_X, mid - HR_GAP, cy, fmtFade);
       ui.text.draw(dl, 'FADE OUT', mid + HR_GAP, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
       fadeHalf(ui, ui.idx('jr.fadeOut', i), i, st, FADE_OUT, mid + HR_GAP + FADE_NAME_W, right, cy, fmtFade);
-    } else if (r === 4) {
+      ty += FOLD_ROW_H; cy = ty + FOLD_ROW_H / 2;
       // APPEAR: when in the ramp the step's text first shows, as the step
       // begins, halfway through, or as its settings land
+      foldName(ui, x0, 'APPEAR', cy);
       for (let k = 0; k < 3; k++) {
         const bx = cx + k * (SEG_W + 4), v = APPEAR_VALUES[k];
         if (btnAt(ui, ui.idx(APPEAR_IDS[k], i), bx, cy - BTN_H / 2, SEG_W, BTN_H)) journeySetAppear(i, v);
         drawBtn(ui, bx, cy, SEG_W, BTN_H, st.appear === v, APPEAR_LABELS[k], 11);
       }
-    } else if (r === 5) {
-      // PIANO: plays freely; only one gesture as each word appears, the free
-      // player idle; or both, free play with a gesture on each word
-      for (let k = 0; k < 3; k++) {
-        const bx = cx + k * (SEG_W + 4), v = PIANO_VALUES[k];
-        if (btnAt(ui, ui.idx(PIANO_IDS[k], i), bx, cy - BTN_H / 2, SEG_W, BTN_H)) journeySetPiano(i, v);
-        drawBtn(ui, bx, cy, SEG_W, BTN_H, st.piano === v, PIANO_LABELS[k], 11);
-      }
-    } else if (r === 6) {
-      // PRESET sits just above Interaction, after the step's own text and
-      // performance choices.
-      presetBox(ui, i, cx, cy, SEG_W * 3 + 8, x0 + CONTENT_W - cx);
-    } else {
-      // INTERACTION: None is the only choice so far, shown and resting dim
-      btnHover = false;
-      dl.pushAlpha(0.45);
-      drawBtn(ui, cx, cy, SEG_W, BTN_H, false, 'None', 11);
-      dl.popAlpha();
-      // and on the right, the recorded settings' count and the chip that
-      // clears them all
-      const k = journeyOverrideCount(i);
-      const cw = measureBtn(ui, 'clear settings', 11), chipX = right - cw + 6;
-      if (k > 0) {
-        if (btnAt(ui, ui.idx('jr.clear', i), chipX, cy - BTN_H / 2, cw, BTN_H)) journeyClearOverrides(i);
-        drawBtn(ui, chipX, cy, cw, BTN_H, false, 'clear settings', 11);
-      } else {
-        btnHover = false;
-        dl.pushAlpha(0.35);
-        drawBtn(ui, chipX, cy, cw, BTN_H, false, 'clear settings', 11);
-        dl.popAlpha();
-      }
-      ui.text.draw(dl, countTexts[i], chipX - 8, baseline(ui, cy, 11), 11, W.regular,
-        k > 0 ? C.label : C.labelDim, 2, 0, 1);
     }
   }
+  dl.popClip();
+  ry += txH;
+
+  // PIANO: plays freely; only one gesture as each word appears, the free
+  // player idle; or both, free play with a gesture on each word
+  cy = ry + FOLD_ROW_H / 2;
+  foldName(ui, x0, 'PIANO', cy);
+  for (let k = 0; k < 3; k++) {
+    const bx = cx + k * (SEG_W + 4), v = PIANO_VALUES[k];
+    if (btnAt(ui, ui.idx(PIANO_IDS[k], i), bx, cy - BTN_H / 2, SEG_W, BTN_H)) journeySetPiano(i, v);
+    drawBtn(ui, bx, cy, SEG_W, BTN_H, st.piano === v, PIANO_LABELS[k], 11);
+  }
+  ry += FOLD_ROW_H; cy = ry + FOLD_ROW_H / 2;
+
+  // PRESET sits just above Interaction, after the step's own text and
+  // performance choices.
+  foldName(ui, x0, 'PRESET', cy);
+  presetBox(ui, i, cx, cy, SEG_W * 3 + 8, x0 + CONTENT_W - cx);
+  ry += FOLD_ROW_H; cy = ry + FOLD_ROW_H / 2;
+
+  // INTERACTION: None is the only choice so far, shown and resting dim
+  foldName(ui, x0, 'INTERACTION', cy);
+  btnHover = false;
+  dl.pushAlpha(0.45);
+  drawBtn(ui, cx, cy, SEG_W, BTN_H, false, 'None', 11);
+  dl.popAlpha();
+  // and on the right, the recorded settings' count and the chip that
+  // clears them all
+  const k = journeyOverrideCount(i);
+  const cw = measureBtn(ui, 'clear settings', 11), chipX = right - cw + 6;
+  if (k > 0) {
+    if (btnAt(ui, ui.idx('jr.clear', i), chipX, cy - BTN_H / 2, cw, BTN_H)) journeyClearOverrides(i);
+    drawBtn(ui, chipX, cy, cw, BTN_H, false, 'clear settings', 11);
+  } else {
+    btnHover = false;
+    dl.pushAlpha(0.35);
+    drawBtn(ui, chipX, cy, cw, BTN_H, false, 'clear settings', 11);
+    dl.popAlpha();
+  }
+  ui.text.draw(dl, countTexts[i], chipX - 8, baseline(ui, cy, 11), 11, W.regular,
+    k > 0 ? C.label : C.labelDim, 2, 0, 1);
 }
 
 // One half of a paired control line: a drawer
@@ -1116,8 +1242,14 @@ function sizeLock(ui, i, lx, cy) {
 // dim while the walk plays, and shuts should the walk start, journey mode go
 // off or its box leave the screen. Nothing here touches the walk.
 const PM_ROW_H = 24, PM_PAD = 10, PM_TEXT_X = 26, PM_HEART = 9;
-const pm = { open: false, step: -1, frame: -1, hover: -1, pick: -1, pickStep: -1, x: 0, y: 0, w: 0, n: 0,
+// The same menu serves the SLIDE line (kind 'slide'): its rows are the
+// show's videos (core/schema-slides.js SLIDE_OPTIONS), None first, and a
+// pick records the step's slideFile (journeySetOverride, which also lands it
+// at once on the step being edited or played). It answers whenever the step
+// is the selected one, the walk playing or not.
+const pm = { open: false, kind: 'preset', step: -1, frame: -1, hover: -1, pick: -1, pickStep: -1, x: 0, y: 0, w: 0, n: 0,
              boxX: 0, boxY: 0, boxW: 0, boxH: 0 };
+let slideTextW = 0;
 let pmOrder = new Int32Array(16), pmN = 0, pmVersion = -1, pmTextW = 0;
 let viewH = 0;
 
@@ -1141,16 +1273,18 @@ function pmRefresh(ui) {
 }
 
 const pmUsable = i => journey.active && journeyEditing() && !journeyPlaying() && journeySelected() === i;
+const slideUsable = i => journey.active && journeySelected() === i;
+const pmUsableKind = (kind, i) => kind === 'slide' ? slideUsable(i) : pmUsable(i);
 
 function pmInput(ui) {
   pm.hover = -1;
   if (!pm.open) return;
-  if (pm.frame !== ui.frame - 1 || !pmUsable(pm.step)) { pm.open = false; return; }
+  if (pm.frame !== ui.frame - 1 || !pmUsableKind(pm.kind, pm.step)) { pm.open = false; return; }
   const x = pm.x, y = pm.y, w = pm.w, n = pm.n;
   for (let r = 0; r < n; r++) {
     ui.interact(ui.idx('jr.pmRow', r), x, y + r * PM_ROW_H, w, PM_ROW_H, false);
     if (ui.hover) { pm.hover = r; ui.setCursorHint('pointer'); overBtn = true; }
-    if (ui.clicked) { pm.pick = pmOrder[r]; pm.pickStep = pm.step; pm.open = false; return; }
+    if (ui.clicked) { pm.pick = pm.kind === 'slide' ? r : pmOrder[r]; pm.pickStep = pm.step; pm.open = false; return; }
   }
   // a press anywhere off the menu and its box shuts it; that press still
   // lands where it was aimed, as a browser's select behaves
@@ -1167,7 +1301,10 @@ function pmInput(ui) {
 function pmRun() {
   const k = pm.pick, st = pm.pickStep;
   pm.pick = -1; pm.pickStep = -1;
-  if (k >= 0 && pmUsable(st)) journeyLoadPreset(k);
+  if (k < 0) return;
+  if (pm.kind === 'slide') {
+    if (slideUsable(st) && SLIDE_OPTIONS[k]) journeySetOverride(st, 'slideFile', SLIDE_OPTIONS[k].value);
+  } else if (pmUsable(st)) journeyLoadPreset(k);
 }
 
 // The PRESET line's box, bw wide from bx (the menu may take up to maxW, to
@@ -1176,7 +1313,7 @@ function pmRun() {
 function presetBox(ui, i, bx, cy, bw, maxW) {
   const dl = ui.dl, by = cy - BTN_H / 2, bh = BTN_H;
   const usable = pmUsable(i);
-  let open = pm.open && pm.step === i;
+  let open = pm.open && pm.kind === 'preset' && pm.step === i;
   if (!usable) {
     btnHover = false;
     if (open) { pm.open = false; open = false; }
@@ -1186,7 +1323,7 @@ function presetBox(ui, i, bx, cy, bw, maxW) {
     else {
       pmRefresh(ui);
       open = pmN > 0;
-      pm.open = open; pm.step = i; pm.hover = -1;
+      pm.open = open; pm.kind = 'preset'; pm.step = i; pm.hover = -1;
     }
   }
   dl.rect(bx, by, bw, bh, 6, C.btnBg, 1, open ? C.btnOnBorder : btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
@@ -1208,15 +1345,76 @@ function presetBox(ui, i, bx, cy, bw, maxW) {
 
 function pmDraw(ui) {
   if (!pm.open || pm.frame !== ui.frame) return;
-  const dl = ui.dl, x = pm.x, y = pm.y, w = pm.w, n = pm.n;
+  const dl = ui.dl, x = pm.x, y = pm.y, w = pm.w, n = pm.n, slides = pm.kind === 'slide';
   dl.rect(x, y, w, n * PM_ROW_H, 6, C.pane, 1, C.paneBorder, 12, 0.4);
   for (let r = 0; r < n; r++) {
-    const oy = y + r * PM_ROW_H, k = pmOrder[r], hov = r === pm.hover;
+    const oy = y + r * PM_ROW_H, k = slides ? r : pmOrder[r], hov = r === pm.hover;
     if (hov) dl.rect(x + 1, oy + 1, w - 2, PM_ROW_H - 2, 5, C.rowActive, 0, null, 0, 0);
-    if (presetIsHearted(k)) {
+    if (!slides && presetIsHearted(k)) {
       dl.icon(ICON.HEART, x + PM_PAD, oy + (PM_ROW_H - PM_HEART) / 2, PM_HEART, PM_HEART, C.label, 0, 0);
     }
-    ui.text.draw(dl, presetLabel(k), x + PM_TEXT_X, baseline(ui, oy + PM_ROW_H / 2, 11), 11, W.regular,
+    ui.text.draw(dl, slides ? SLIDE_OPTIONS[k].label : presetLabel(k), x + PM_TEXT_X, baseline(ui, oy + PM_ROW_H / 2, 11), 11, W.regular,
       hov ? C.btnOnInk : C.valueInk, 0, 0, 1);
   }
+}
+
+// The SLIDE line's play/pause, right of its box: pauses or resumes the slide
+// on screen as it plays (gpu/slides.js toggleSlidePlayLive), a live override
+// that never touches S.slidePlay, so it is neither recorded into the step nor
+// pinned for the walk, and the next slide plays as its step says. It answers
+// whether journey mode is ACTIVE or not (the window's inert is lifted round
+// it), and rests dim with no slide to play. The glyph is what a click does:
+// PAUSE while the slide plays, PLAY while it is paused or ended.
+function slidePlayBtn(ui, i, bx, cy) {
+  const dl = ui.dl, st = slidesLiveState();
+  let hov = false;
+  if (st) {
+    // lifted round this one button and put back exactly as it was
+    const inert = ui._inert;
+    ui._inert = 0;
+    if (btnAt(ui, ui.idx('jr.slidePlay', i), bx, cy - BOX / 2, BOX, BOX)) toggleSlidePlayLive();
+    hov = btnHover;
+    ui._inert = inert;
+  }
+  const playing = st === 1;
+  if (!st) dl.pushAlpha(0.35);
+  dl.rect(bx, cy - BOX / 2, BOX, BOX, 6, C.btnBg, 1, playing ? C.powerBorder : hov ? C.btnBorderHover : C.btnBorder, 0, 0);
+  dl.icon(playing ? ICON.PAUSE : ICON.PLAY, bx + (BOX - ICON_S) / 2, cy - ICON_S / 2, ICON_S, ICON_S,
+    hov ? C.valueInk : playing ? C.powerInk : C.btnInk, 2.2, 0);
+  if (!st) dl.popAlpha();
+}
+
+// The SLIDE line's box: the step's own slide, bright, or (holding none) the
+// drawer's, dim, as fadeHalf shows an inherited value. A click opens and
+// shuts the menu of the show's videos, below the box or above it.
+function slideBox(ui, i, st, bx, cy, bw, maxW) {
+  const dl = ui.dl, by = cy - BTN_H / 2, bh = BTN_H;
+  const usable = slideUsable(i);
+  let open = pm.open && pm.kind === 'slide' && pm.step === i;
+  if (!usable) {
+    btnHover = false;
+    if (open) { pm.open = false; open = false; }
+    dl.pushAlpha(0.45);
+  } else if (btnAt(ui, ui.idx('jr.slideBox', i), bx, by, bw, bh)) {
+    if (open) { pm.open = false; open = false; }
+    else { open = true; pm.open = true; pm.kind = 'slide'; pm.step = i; pm.hover = -1; }
+  }
+  const own = st.overrides.slideFile;
+  dl.rect(bx, by, bw, bh, 6, C.btnBg, 1, open ? C.btnOnBorder : btnHover ? C.btnBorderHover : C.btnBorder, 0, 0);
+  if (own === undefined) dl.pushAlpha(0.68);
+  ui.text.draw(dl, slideLabel(own !== undefined ? own : S.slideFile), bx + PM_PAD, baseline(ui, cy, 11), 11, W.regular,
+    own !== undefined || btnHover || open ? C.valueInk : C.btnInk, 0, 0, 1);
+  if (own === undefined) dl.popAlpha();
+  dl.icon(ICON.CHEVRON, bx + bw - PM_PAD - CHEV_S + 2, cy - CHEV_S / 2, CHEV_S, CHEV_S,
+    btnHover || open ? C.valueInk : C.btnInk, 1.6, open ? Math.PI : 0);
+  if (!usable) { dl.popAlpha(); return; }
+  if (!open) return;
+  if (!slideTextW) for (const o of SLIDE_OPTIONS) slideTextW = Math.max(slideTextW, ui.text.measure(o.label, 11, W.regular));
+  const n = SLIDE_OPTIONS.length;
+  const w = Math.min(maxW, Math.max(bw, slideTextW + PM_TEXT_X + PM_PAD * 2));
+  const listH = n * PM_ROW_H;
+  let ly = by + bh + 3;
+  if (ly + listH > viewH - 8 && by - 3 - listH >= 8) ly = by - 3 - listH;
+  pm.x = bx; pm.y = ly; pm.w = w; pm.n = n; pm.frame = ui.frame;
+  pm.boxX = bx; pm.boxY = by; pm.boxW = bw; pm.boxH = bh;
 }

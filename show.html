@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Show Remote</title>
+<!--
+  The show controller: the iPad Robert carries round the room, driving
+  Presence (the app at /, on the laptop, opened with ?remote). This page is
+  always the controller; the receiving end is platform/show-remote.js.
+
+  Tap a cue and Presence jumps to that journey step. Four faders (Volume,
+  Speed, Lowpass, Highpass: the Max surface's four) drive the Slides layer's
+  sound and speed; Play/Pause, Restart and the arrows its transport; Duck
+  drops the slides' sound under the voice (never the Sun's hum), its amount
+  and fades set behind the gear.
+
+  TRANSPORT: the mirror test's (remote.html), lifted. The Cloudflare relay
+  and, when this page came from the laptop (http://<mac>.local:8800/show.html,
+  tools/mirror-local.mjs), the laptop's own relay too, both at once; each
+  command goes down every open path numbered (src, n) and Presence acts on
+  whichever copy lands first. This page broadcasts on 'mirror-<room>' and
+  follows 'mirror-<room>-status', where Presence reports the step playing and
+  the Slides controls ({t:'state', k:'step', i, n, p, sl}), kept by each
+  relay for a late joiner. The password is the mirror rooms' one (POST /auth,
+  remembered as localStorage 'mirror.pw', handed over in #k= on a switch).
+
+  COMMANDS, each {t:'word', src, n, k, ...} (src the sender's id, n its
+  count; NOT 'id', which is the control's id in a ctl):
+    {k:'jump', i}  i 0-based          {k:'next'} / {k:'prev'}
+    {k:'ctl', id, v}  v in the control's OWN position units (what
+        byId(id).set takes in core/schema-slides.js):
+          slideVolume 0..100 (%)       slideRate 0..1000 (500 = 1x, log 0.25..2x)
+          slideLP 0..1000 (log 20 Hz..20 kHz, 1000 open)
+          slideHP 0..1000 (same taper, 0 open)
+          slidePlay true (PLAY) / false (PAUSE), each idempotent
+          slideRestart (v ignored)
+          slideXfade 0..300 (hundredths of a second, 0 a cut; the gear's
+            Crossfade, sent on each change and remembered with the duck's)
+    {k:'duck', on, amt, dn, up}  amt 0..1, dn and up in seconds; DUCK is
+        hold-and-release: on at pointerdown, off at pointerup, pointercancel
+        or the finger sliding off the button
+
+  LAYOUT follows Robert's TouchOSC/Max surface (thumb reach, iPad held in
+  two hands): the cues down the left; on the right edge, top corner PLAY
+  (green) over PAUSE (red), below them the four tall faders in the
+  surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK with
+  PREV / restart / NEXT beside it. The middle stays empty for what comes next.
+
+  ?room=<name> (default 'show'), ?mac=<host:port> (the laptop, default
+  Roberts-MacBook-Pro-2.local:8800), ?relay=<host> (the cloud relay),
+  ?cloud=<origin> (where Switch to Cloud goes).
+-->
+<style>
+:root {
+  --bg: #0b0d12; --panel: #151922; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6;
+  --gold: #f2c14e; --flash: #ffe28a; --ok: #6fd08c; --bad: #ff7a7a; --btn: #1d2230;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+body { padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+header { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-bottom: 12px; flex: none; }
+h1 { font-size: 20px; margin: 0; }
+.status { color: var(--dim); font-size: 13px; }
+.status b { color: var(--ink); font-weight: 600; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 6px; }
+.dot.on { background: var(--ok); }
+.spacer { margin-left: auto; }
+.big { height: 54px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--btn); color: var(--ink);
+  font-family: inherit; font-weight: 600; font-size: 16px; touch-action: manipulation; }
+.small { height: 40px; font-size: 14px; padding: 0 14px; }
+
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 0.85fr) 1.15fr; gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-height: 0; }
+.card h2 { font-size: 12px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 10px; }
+
+/* the cues */
+#cuesCard { display: flex; flex-direction: column; }
+#cues { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  display: grid; gap: 8px; align-content: start; padding: 2px; }
+.cue { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 8px 14px; text-align: left;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--btn); color: var(--ink);
+  font-family: inherit; font-weight: 600; font-size: 18px; touch-action: manipulation; transition: opacity .2s, background .2s; }
+.cue .num { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: #0f1219; border: 1px solid var(--line); color: var(--dim); font-size: 15px; font-variant-numeric: tabular-nums; }
+.cue.past { opacity: .42; }
+.cue.now { background: #3a2e0e; border-color: var(--gold); color: #fff; box-shadow: 0 0 22px rgba(242, 193, 78, .45), inset 0 0 0 1px var(--gold); }
+.cue.now .num { background: var(--gold); color: #000; border-color: var(--gold); }
+.cue.tap { animation: flash .45s ease-out; }
+@keyframes flash { 0% { background: var(--flash); color: #000; box-shadow: 0 0 28px var(--flash); } }
+
+/* the right side: everything on the right edge, the middle left empty */
+#stage { min-height: 0; display: flex; justify-content: flex-end; }
+#edge { width: min(100%, 460px); min-height: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
+#top { display: grid; grid-template-columns: 1fr 172px; gap: 12px; align-items: start; }
+#info { padding-top: 4px; display: grid; gap: 8px; }
+.bar { height: 10px; border-radius: 5px; background: #0f1219; border: 1px solid var(--line); overflow: hidden; }
+.bar > div { height: 100%; width: 0; background: linear-gradient(90deg, #6b5216, var(--gold)); transition: width .3s; }
+#pp { display: grid; gap: 10px; }
+#pp .big { height: 84px; font-size: 24px; letter-spacing: .06em; color: #fff; opacity: .55; transition: opacity .15s, box-shadow .15s; }
+#play { background: #2f9a4a; border-color: #4fd06e; }
+#pause { background: #c0393b; border-color: #ff6b6b; }
+#pp .big.on { opacity: 1; box-shadow: 0 0 22px rgba(255, 255, 255, .25), inset 0 0 0 2px #fff; }
+#faders { min-height: 160px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.fader { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; }
+.fader .lab { text-align: center; font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+.fader .track { position: relative; flex: 1; min-height: 120px; border-radius: 12px; background: #0f1219;
+  border: 2px solid var(--line); overflow: hidden; touch-action: none; }
+.fader .fill { position: absolute; left: 0; right: 0; bottom: 0; opacity: .85; }
+.fader .mid { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(255,255,255,.3); }
+.fader .val { text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; min-height: 22px; }
+#bottom { display: grid; grid-template-columns: 1fr 172px; gap: 12px; }
+#nav { display: grid; grid-template-columns: 1fr 0.8fr 1fr; gap: 10px; }
+#nav .big { height: 110px; padding: 0 6px; font-size: 18px; }
+#nav #restart { font-size: 30px; }
+#duck { height: 110px; font-size: 28px; letter-spacing: .1em; background: #1f4a44; border-color: #3fa596; color: #bff3ea; touch-action: none; }
+#duck.on { background: var(--bad); color: #000; border-color: #fff; box-shadow: 0 0 34px rgba(255, 122, 122, .7); }
+.big:active, .cue:active { filter: brightness(1.35); }
+#gear { width: 36px; height: 36px; padding: 0; font-size: 18px; border-radius: 50%; display: grid; place-items: center; }
+
+/* settings */
+#modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 5; padding: 16px; }
+#modal.open { display: grid; }
+#modal .card { width: min(460px, 100%); position: relative; }
+#close { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; padding: 0; font-size: 20px; }
+.slider { position: relative; height: 54px; border-radius: 10px; background: #0f1219; border: 1px solid var(--line);
+  margin-bottom: 10px; overflow: hidden; touch-action: none; }
+.slider .fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #6b5216, var(--gold)); }
+.slider .lab { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 600; mix-blend-mode: difference; }
+.slider .val { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-variant-numeric: tabular-nums; mix-blend-mode: difference; }
+
+#lock { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 10; padding: 16px; }
+#lock form { display: grid; gap: 12px; width: min(340px, 100%); text-align: center; }
+#lock input { height: 54px; font-size: 20px; text-align: center; }
+#lock .msg { min-height: 20px; color: var(--bad); font-size: 14px; }
+input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(--line); background: #0f1219; color: var(--ink); padding: 0 10px; font: inherit; }
+
+@media (max-width: 760px) {
+  html, body { overflow: auto; height: auto; }
+  main { grid-template-columns: 1fr; }
+  #cues { max-height: 50vh; }
+  #faders { min-height: 300px; }
+  #stage { display: block; }
+  #edge { width: 100%; }
+}
+</style>
+</head>
+<body>
+<div id="lock">
+  <form id="lockForm" autocomplete="on">
+    <h1>Show Remote</h1>
+    <input type="password" id="pw" placeholder="password" autocomplete="current-password" autofocus>
+    <button class="big" type="submit">Unlock</button>
+    <div class="msg" id="lockMsg"></div>
+  </form>
+</div>
+<header>
+  <h1>Show Remote</h1>
+  <span class="status" id="paths"></span>
+  <span class="status">room <b id="roomName"></b></span>
+  <button class="big small spacer" id="switch"></button>
+  <button class="big" id="gear" aria-label="Duck settings">⚙︎</button>
+</header>
+
+<main>
+  <div class="card" id="cuesCard">
+    <h2>Cues</h2>
+    <div id="cues"></div>
+  </div>
+  <div id="stage">
+    <div id="edge">
+      <div id="top">
+        <div id="info">
+          <div class="status" id="presence">Presence: <b>no word yet</b></div>
+          <div class="bar"><div id="showBar"></div></div>
+        </div>
+        <div id="pp">
+          <button class="big" id="play">PLAY</button>
+          <button class="big" id="pause">PAUSE</button>
+        </div>
+      </div>
+      <div id="faders"></div>
+      <div id="bottom">
+        <div id="nav">
+          <button class="big" id="prev" aria-label="Previous cue">◀ PREV</button>
+          <button class="big" id="restart" aria-label="Restart the video">⟲</button>
+          <button class="big" id="next" aria-label="Next cue">NEXT ▶</button>
+        </div>
+        <button class="big" id="duck">DUCK</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="modal">
+  <div class="card">
+    <button class="big" id="close" aria-label="Close">✕</button>
+    <h2>Duck</h2>
+    <div id="sAmt"></div>
+    <div id="sDn"></div>
+    <div id="sUp"></div>
+    <h2 style="margin-top: 18px">Slides</h2>
+    <div id="sXf"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+(() => {
+  const $ = id => document.getElementById(id);
+  const P = new URLSearchParams(location.search);
+  let room = (P.get('room') || 'show').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '') || 'show';
+  room = room.slice(0, 40);
+  const ROOM = 'mirror-' + room, STATUS_ROOM = ROOM + '-status';
+  const HOST = P.get('relay') || 'the-signal-broadcast.robertalexander-music.workers.dev';
+  const MAC = P.get('mac') || 'Roberts-MacBook-Pro-2.local:8800';
+  const CLOUD_PAGE = P.get('cloud') || 'https://sun-layer.presence-generator.pages.dev';
+  const SERVED_LOCAL = location.protocol === 'http:';
+  // Safari will not let a page from the secure site open a plain local
+  // socket, so the laptop's relay is a path only when the laptop served us.
+  const LOCAL_HOST = SERVED_LOCAL ? location.host : '';
+  $('roomName').textContent = room;
+
+  const CUES = ['Intro Slide', 'Heartbeat', 'Harmonica', 'Audification Explained', 'Shepard Tone', "Shepard's Rise",
+    'Nightingale', 'Earthquake', 'Rotating Sun', 'Spherical Harmonics — hum along!', 'HARP Trailer', 'WISPR CME',
+    'Ed Mitchell VR', 'QR + Sun', 'Guided Meditation'];
+
+  // ---------- the password (remote.html's, as is) ----------
+  let KEY = '';
+  try { KEY = localStorage.getItem('mirror.pw') || ''; } catch (e) {}
+  {
+    const hk = new URLSearchParams(location.hash.slice(1)).get('k');
+    if (hk) {
+      KEY = hk;
+      try { localStorage.setItem('mirror.pw', hk); } catch (e) {}
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+  async function check(pw) {
+    try {
+      const r = await fetch(SERVED_LOCAL ? '/auth' : 'https://' + HOST + '/auth', { method: 'POST', body: pw });
+      return r.status === 200 ? 'ok' : r.status === 403 ? 'no' : 'down';
+    } catch (e) { return 'down'; }
+  }
+  async function unlock() {
+    const lockMsg = $('lockMsg');
+    if (KEY) {
+      const v = await check(KEY);
+      if (v !== 'no') { $('lock').remove(); open(); return; }
+      try { localStorage.removeItem('mirror.pw'); } catch (e) {}
+      KEY = ''; lockMsg.textContent = 'That password no longer works.';
+    }
+    $('lockForm').onsubmit = async e => {
+      e.preventDefault();
+      const pw = $('pw').value;
+      if (!pw) return;
+      lockMsg.style.color = 'var(--dim)'; lockMsg.textContent = 'checking…';
+      const v = await check(pw);
+      lockMsg.style.color = '';
+      if (v === 'ok') {
+        KEY = pw;
+        try { localStorage.setItem('mirror.pw', pw); } catch (e) {}
+        $('lock').remove(); open();
+      } else lockMsg.textContent = v === 'no' ? 'Wrong password.' : 'Can\'t reach the relay. Check the internet.';
+    };
+  }
+
+  {
+    const sw = $('switch');
+    sw.textContent = SERVED_LOCAL ? 'Switch to Cloud' : 'Switch to Local';
+    sw.onclick = () => {
+      const q = new URLSearchParams(location.search);
+      let to;
+      if (SERVED_LOCAL) { q.delete('cloud'); to = CLOUD_PAGE + '/show?' + q.toString(); }
+      else { q.set('cloud', location.origin); to = 'http://' + MAC + '/show.html?' + q.toString(); }
+      location.href = to + '#k=' + encodeURIComponent(KEY);
+    };
+  }
+
+  // ---------- the cues ----------
+  // The step Presence reports glows gold, the ones before it dim; until a
+  // report arrives the last one tapped stands in.
+  let statusStep = null, tapped = -1;
+  const cueEls = CUES.map((label, i) => {
+    const b = document.createElement('button');
+    b.className = 'cue';
+    b.innerHTML = '<span class="num">' + (i + 1) + '</span><span></span>';
+    b.lastChild.textContent = label;
+    b.addEventListener('click', () => {
+      tapped = i;
+      b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap');
+      send({ k: 'jump', i });
+      drawCues();
+    });
+    $('cues').appendChild(b);
+    return b;
+  });
+  let shownNow = -2;
+  function drawCues() {
+    const now = statusStep !== null ? statusStep : tapped;
+    cueEls.forEach((b, i) => { b.classList.toggle('now', i === now); b.classList.toggle('past', now >= 0 && i < now); });
+    if (now !== shownNow) {
+      shownNow = now;
+      if (now >= 0 && cueEls[now]) cueEls[now].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+  drawCues();
+
+  // ---------- the faders ----------
+  // Each holds its control's own position (see the header) and shows it in
+  // plain units through the same tapers core/schema-slides.js uses. A drag
+  // is relative (it moves the fader from where it is, wherever the finger
+  // lands, so a touch never jumps the sound).
+  // Sends go at most once per animation frame. Presence's reports move a
+  // fader only when it has not been touched for a moment.
+  const HZ_LN = Math.log(1000);
+  const posToHz = p => Math.round(20 * Math.exp(HZ_LN * Math.min(1, Math.max(0, p / 1000))));
+  const hzText = hz => hz >= 1000 ? (Math.round(hz / 100) / 10) + ' kHz' : Math.round(hz) + ' Hz';
+  const posToRate = p => {
+    p = Math.max(0, Math.min(1000, p));
+    let r = p <= 500 ? Math.pow(2, 2 * (p / 500 - 1)) : Math.pow(2, (p - 500) / 500);
+    if (Math.abs(r - 1) <= 0.03) r = 1;
+    return Math.round(r * 100) / 100;
+  };
+  // In the surface's order, left to right, each in its colour there.
+  const FADERS = [
+    { id: 'slideLP', key: 'lp', label: 'LP', color: '#e45bf0', max: 1000, def: 1000, fmt: p => p >= 1000 ? 'open' : hzText(posToHz(p)) },
+    { id: 'slideHP', key: 'hp', label: 'HP', color: '#b6f03c', max: 1000, def: 0, fmt: p => p <= 0 ? 'open' : hzText(posToHz(p)) },
+    { id: 'slideRate', key: 'rate', label: 'SPEED', color: '#f5e23a', max: 1000, def: 500, mid: true,
+      snap: p => Math.abs(p - 500) <= 15 ? 500 : p, fmt: p => posToRate(p).toFixed(2) + '×' },
+    { id: 'slideVolume', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 100, fmt: p => Math.round(p) + '%' }
+  ];
+  const pending = new Map();
+  let rafOn = false;
+  function queueCtl(id, v) {
+    pending.set(id, v);
+    if (rafOn) return;
+    rafOn = true;
+    requestAnimationFrame(() => { rafOn = false; for (const [cid, cv] of pending) send({ k: 'ctl', id: cid, v: cv }); pending.clear(); });
+  }
+  for (const f of FADERS) {
+    f.pos = f.def; f.touchedAt = 0;
+    const el = document.createElement('div');
+    el.className = 'fader';
+    el.innerHTML = '<div class="lab"></div><div class="track"><div class="fill"></div>' + (f.mid ? '<div class="mid"></div>' : '') +
+      '</div><div class="val"></div>';
+    el.querySelector('.lab').textContent = f.label;
+    el.querySelector('.lab').style.color = f.color;
+    $('faders').appendChild(el);
+    const track = el.querySelector('.track'), fill = el.querySelector('.fill'), val = el.querySelector('.val');
+    track.style.borderColor = f.color + '88';
+    fill.style.background = 'linear-gradient(0deg, ' + f.color + '55, ' + f.color + ')';
+    f.draw = () => { fill.style.height = (f.pos / f.max * 100) + '%'; val.textContent = f.fmt(f.pos); };
+    const setPos = p => {
+      p = Math.round(Math.max(0, Math.min(f.max, p)));
+      if (f.snap) p = f.snap(p);
+      f.touchedAt = performance.now();
+      if (p === f.pos) return;
+      f.pos = p; f.draw(); queueCtl(f.id, p);
+    };
+    let y0 = 0, p0 = 0;
+    track.addEventListener('pointerdown', e => {
+      track.setPointerCapture(e.pointerId);
+      el.classList.add('held'); f.held = true;
+      y0 = e.clientY; p0 = f.pos; f.touchedAt = performance.now();
+    });
+    track.addEventListener('pointermove', e => {
+      if (!track.hasPointerCapture(e.pointerId)) return;
+      const h = track.getBoundingClientRect().height || 1;
+      setPos(p0 + (y0 - e.clientY) / h * f.max);
+    });
+    const up = () => { el.classList.remove('held'); f.held = false; f.touchedAt = performance.now(); };
+    track.addEventListener('pointerup', up);
+    track.addEventListener('pointercancel', up);
+    f.draw();
+  }
+
+  // ---------- transport ----------
+  // PLAY and PAUSE are two buttons, each always meaning itself (pressing
+  // either twice is harmless); the one matching what Presence reports lights.
+  let slidePlay = true;
+  const drawPlay = () => { $('play').classList.toggle('on', slidePlay); $('pause').classList.toggle('on', !slidePlay); };
+  drawPlay();
+  $('play').onclick = () => { slidePlay = true; drawPlay(); send({ k: 'ctl', id: 'slidePlay', v: true }); };
+  $('pause').onclick = () => { slidePlay = false; drawPlay(); send({ k: 'ctl', id: 'slidePlay', v: false }); };
+  $('restart').onclick = () => send({ k: 'ctl', id: 'slideRestart', v: 1 });
+  $('prev').onclick = () => { send({ k: 'prev' }); if (statusStep === null && tapped > 0) { tapped--; drawCues(); } };
+  $('next').onclick = () => { send({ k: 'next' }); if (statusStep === null && tapped < CUES.length - 1) { tapped++; drawCues(); } };
+
+  // ---------- the duck and its settings ----------
+  // xf: the slides' Crossfade (slideXfade), seconds, kept here with the duck's
+  const DUCK_DEF = { amt: 0.7, dn: 0.15, up: 0.8, xf: 0.5 };
+  let duckSet = Object.assign({}, DUCK_DEF);
+  try { Object.assign(duckSet, JSON.parse(localStorage.getItem('show.duck') || '{}')); } catch (e) {}
+  const saveDuck = () => { try { localStorage.setItem('show.duck', JSON.stringify(duckSet)); } catch (e) {} };
+  // DUCK is held, not latched: down at the touch, up again when the finger
+  // lifts, is cancelled (the system took the touch) or slides off the
+  // button. No pointer capture (the touch's implicit one is released), so
+  // sliding off does fire pointerleave. Only
+  // the finger that pressed it lets it go; the page going to the background
+  // lets it go too, so the room is never left ducked.
+  let duckPtr = null;
+  const sendDuck = on => send({ k: 'duck', on, amt: duckSet.amt, dn: duckSet.dn, up: duckSet.up });
+  const duckBtn = $('duck');
+  function duckOff(e) {
+    if (duckPtr === null || (e && e.pointerId !== undefined && e.pointerId !== duckPtr)) return;
+    duckPtr = null;
+    duckBtn.classList.remove('on');
+    sendDuck(false);
+  }
+  duckBtn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    // a touch is captured to its button implicitly; let it go, so sliding
+    // off the button reaches pointerleave
+    try { if (duckBtn.hasPointerCapture(e.pointerId)) duckBtn.releasePointerCapture(e.pointerId); } catch (err) {}
+    if (duckPtr !== null) return;
+    duckPtr = e.pointerId;
+    duckBtn.classList.add('on');
+    sendDuck(true);
+  });
+  duckBtn.addEventListener('pointerup', duckOff);
+  duckBtn.addEventListener('pointercancel', duckOff);
+  duckBtn.addEventListener('pointerleave', duckOff);
+  duckBtn.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') duckOff(); });
+
+  function makeSlider(el, label, get, set, fmt) {
+    el.className = 'slider';
+    el.innerHTML = '<div class="fill"></div><span class="lab"></span><span class="val"></span>';
+    el.querySelector('.lab').textContent = label;
+    const fill = el.querySelector('.fill'), val = el.querySelector('.val');
+    const draw = () => { fill.style.width = (get() * 100) + '%'; val.textContent = fmt(); };
+    const at = e => { const r = el.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+    el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); set(at(e)); draw(); });
+    el.addEventListener('pointermove', e => { if (el.hasPointerCapture(e.pointerId)) { set(at(e)); draw(); } });
+    el.addEventListener('pointerup', saveDuck);
+    draw();
+  }
+  makeSlider($('sAmt'), 'Duck amount', () => duckSet.amt, u => { duckSet.amt = Math.round(u * 100) / 100; },
+    () => Math.round(duckSet.amt * 100) + '%');
+  makeSlider($('sDn'), 'Fade down', () => duckSet.dn / 1, u => { duckSet.dn = Math.round(u * 100) / 100; },
+    () => duckSet.dn.toFixed(2) + ' s');
+  makeSlider($('sUp'), 'Fade up', () => duckSet.up / 3, u => { duckSet.up = Math.round(u * 3 * 20) / 20; },
+    () => duckSet.up.toFixed(2) + ' s');
+  // Crossfade: 0 to 3 s in 0.05 s steps, sent as the control's position
+  // (hundredths of a second) whenever it moves
+  if (!(duckSet.xf >= 0 && duckSet.xf <= 3)) duckSet.xf = DUCK_DEF.xf;
+  makeSlider($('sXf'), 'Crossfade', () => duckSet.xf / 3, u => {
+    const xf = Math.round(u * 3 * 20) / 20;
+    if (xf === duckSet.xf) return;
+    duckSet.xf = xf;
+    queueCtl('slideXfade', Math.round(xf * 100));
+  }, () => duckSet.xf > 0 ? duckSet.xf.toFixed(2) + ' s' : 'cut');
+  $('gear').onclick = () => $('modal').classList.add('open');
+  $('close').onclick = () => { saveDuck(); $('modal').classList.remove('open'); };
+  $('modal').addEventListener('click', e => { if (e.target === $('modal')) { saveDuck(); $('modal').classList.remove('open'); } });
+
+  // ---------- the paths (remote.html's, two rooms each) ----------
+  // Per path: the command socket (this page broadcasting on ROOM, which is
+  // where the round trip and the count of Presence screens come from) and
+  // the status socket (following STATUS_ROOM).
+  const paths = [{ name: 'cloud', base: 'wss://' + HOST }];
+  if (LOCAL_HOST) paths.push({ name: 'local', base: 'ws://' + LOCAL_HOST });
+  for (const p of paths) Object.assign(p, { cmd: mkSock(), st: mkSock(), rtt: NaN, peers: 0 });
+  function mkSock() { return { ws: null, retry: 2000, timer: 0 }; }
+  const isOpen = s => s.ws && s.ws.readyState === 1;
+
+  function render() {
+    $('paths').innerHTML = paths.map(p =>
+      '<span class="dot' + (isOpen(p.cmd) ? ' on' : '') + '"></span><b>' + p.name + '</b> ' +
+      (isOpen(p.cmd) ? (isNaN(p.rtt) ? '…' : p.rtt + ' ms') + ' · ' + p.peers + ' screen' + (p.peers === 1 ? '' : 's') : 'off')
+    ).join(' &nbsp; ');
+  }
+  function probe(p) { for (let i = 0; i < 3; i++) setTimeout(() => sendOn(p.cmd, { t: 'time', c: Date.now() }), i * 150); }
+  setInterval(() => { for (const p of paths) if (isOpen(p.cmd)) probe(p); }, 10000);
+
+  function open() {
+    for (const p of paths) { openSock(p, p.cmd, ROOM, 'broadcast'); openSock(p, p.st, STATUS_ROOM, 'follow'); }
+    render();
+    wake();
+  }
+  function openSock(p, s, roomName, role) {
+    clearTimeout(s.timer); s.timer = 0;
+    try { s.ws = new WebSocket(p.base + '/room/' + roomName + '?role=' + role + '&key=' + encodeURIComponent(KEY)); }
+    catch (e) { s.timer = setTimeout(() => openSock(p, s, roomName, role), s.retry); return; }
+    const ws = s.ws;
+    ws.onopen = () => { s.retry = 2000; if (role === 'broadcast') probe(p); render(); };
+    ws.onclose = () => {
+      if (s.ws !== ws) return;
+      if (role === 'broadcast') p.rtt = NaN;
+      render();
+      s.timer = setTimeout(() => openSock(p, s, roomName, role), s.retry); s.retry = Math.min(s.retry * 2, 15000);
+    };
+    ws.onmessage = e => { if (typeof e.data === 'string' && e.data !== 'pong') { try { take(JSON.parse(e.data), p, role); } catch (err) {} } };
+    s.reopen = () => openSock(p, s, roomName, role);
+  }
+  // Back from sleep (the iPad's screen off, the page in the background):
+  // any path that dropped is tried again now rather than after its backoff.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    for (const p of paths) for (const s of [p.cmd, p.st]) if (s.reopen && !isOpen(s) && !(s.ws && s.ws.readyState === 0)) { s.retry = 2000; s.reopen(); }
+    wake();
+  });
+  setInterval(() => { for (const p of paths) for (const s of [p.cmd, p.st]) if (isOpen(s)) s.ws.send('ping'); }, 20000);
+  function sendOn(s, m) { if (isOpen(s)) s.ws.send(JSON.stringify(m)); }
+
+  const SID = Math.random().toString(36).slice(2, 10);
+  let seq = 0;
+  // The sender rides as src: a ctl's own 'id' is the control's id, and
+  // must never be overwritten (it once was, and every fader was dropped).
+  function send(m) {
+    m.t = 'word'; m.n = ++seq; m.src = SID;
+    for (const p of paths) sendOn(p.cmd, m);
+  }
+
+  // Presence's reports: the newest from each sender wins.
+  const lastQ = new Map();
+  function take(m, p, role) {
+    if (m.t === 'time') { p.rtt = Date.now() - m.c; render(); return; }
+    if (m.t === 'count') { if (role === 'broadcast') { p.peers = m.n; render(); } return; }
+    if (role !== 'follow' || m.t !== 'state' || m.k !== 'step') return;
+    const id = String(m.src || ''), q = +m.q || 0;
+    if (q <= (lastQ.get(id) || 0)) return;
+    lastQ.set(id, q);
+    statusStep = typeof m.i === 'number' ? m.i : -1;
+    $('presence').innerHTML = 'Presence: <b>' + (statusStep >= 0 ? 'cue ' + (statusStep + 1) : 'no cue') + ' of ' + (m.n | 0) +
+      (statusStep >= 0 && !m.p ? ' · paused' : '') + '</b>';
+    $('showBar').style.width = (m.n > 0 && statusStep >= 0 ? (statusStep + 1) / m.n * 100 : 0) + '%';
+    drawCues();
+    const sl = m.sl || {};
+    const now = performance.now();
+    for (const f of FADERS) {
+      const v = sl[f.key];
+      if (typeof v === 'number' && isFinite(v) && !f.held && now - f.touchedAt > 800 && !pending.has(f.id)) { f.pos = v; f.draw(); }
+    }
+    if (typeof sl.play === 'boolean') { slidePlay = sl.play; drawPlay(); }
+  }
+
+  // ---------- keep the screen on ----------
+  let lock = null;
+  async function wake() {
+    if (lock || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+    try { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => { lock = null; }); } catch (e) {}
+  }
+  document.addEventListener('click', wake);
+
+  unlock();
+})();
+</script>
+</body>
+</html>

@@ -383,7 +383,7 @@ export async function createEngine(platform, opts) {
     if (particles && particles.setTimestampWrites) particles.setTimestampWrites(undefined);
   }
 
-  let scene = null, uiRenderer = null, blur = null, flowers = null, sun = null, stars = null, heartbeat = null, kaleido = null, particles = null, fireworks = null, confetti = null, wordCloud = null, wordSmoke = null;
+  let scene = null, uiRenderer = null, blur = null, flowers = null, sun = null, slides = null, sunQr = null, stars = null, heartbeat = null, kaleido = null, particles = null, fireworks = null, confetti = null, wordCloud = null, wordSmoke = null;
   let deviceLost = false;
   const lostCbs = [];
 
@@ -407,7 +407,7 @@ export async function createEngine(platform, opts) {
     // wake() asks again and says whether it was asleep.
     sleep() {}, wake() { return false; }, busy,
     gpu, gpuInfo,
-    start, render, registerScene, registerFlowers, registerSun, registerStars, registerHeartbeat, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
+    start, render, registerScene, registerFlowers, registerSun, registerSlides, registerSunQr, registerStars, registerHeartbeat, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
     onGpuError: fn => { gpuErrorCbs.push(fn); },
     profileBegin, profileEnd
   };
@@ -421,6 +421,8 @@ export async function createEngine(platform, opts) {
     if (scene && scene.resize) scene.resize(pixelWidth, pixelHeight, dpr);
     if (flowers && flowers.resize) flowers.resize(pixelWidth, pixelHeight, dpr);
     if (sun) sun.resize(pixelWidth, pixelHeight, dpr);
+    if (slides) slides.resize(pixelWidth, pixelHeight);
+    if (sunQr) sunQr.resize(pixelWidth, pixelHeight);
     if (stars) stars.resize(pixelWidth, pixelHeight, dpr);
     if (kaleido && kaleido.resize) kaleido.resize(pixelWidth, pixelHeight, dpr);
     if (particles && particles.resize) particles.resize(pixelWidth, pixelHeight, dpr);
@@ -449,6 +451,20 @@ export async function createEngine(platform, opts) {
   function registerSun(s) {
     sun = s;
     if (pixelWidth) sun.resize(pixelWidth, pixelHeight, engine.dpr);
+  }
+  // The show's Slides (gpu/slides.js): a fullscreen video drawn over the
+  // whole scene, straight after drawScene in either route, so every layer is
+  // under it and the overlay words and the UI are still drawn over it.
+  function registerSlides(s) {
+    slides = s;
+    if (pixelWidth) slides.resize(pixelWidth, pixelHeight);
+  }
+  // The show's QR code (gpu/sun-qr.js, the Sun section's Sun QR and Size): a
+  // PNG over everything, drawn straight after the Slides in either route, so it
+  // sits over the sun and over a slide video alike.
+  function registerSunQr(q) {
+    sunQr = q;
+    if (pixelWidth) sunQr.resize(pixelWidth, pixelHeight);
   }
   // The star field (gpu/stars.js) draws straight after the sun, screened
   // over it as meditatewiththesun.com's sky is, so it sits behind the sun
@@ -559,6 +575,8 @@ export async function createEngine(platform, opts) {
     if (scene && scene.update) scene.update(lum, frameDt, frameT);
     if (flowers) flowers.update(frameT, frameDt, lum);
     if (sun) sun.update(frameT, frameDt, lum);
+    if (slides) slides.update(frameT);
+    if (sunQr) sunQr.update(frameDt);
     if (stars) stars.update(frameT, frameDt);
     if (heartbeat) heartbeat.update(frameT, frameDt);
     if (kaleido) kaleido.update(frameT, frameDt, lum);
@@ -626,6 +644,8 @@ export async function createEngine(platform, opts) {
       directPassDesc.colorAttachments[0].view = swapView;
       const pass = encoder.beginRenderPass(directPassDesc);
       drawScene(pass);
+      if (slides) slides.draw(pass);
+      if (sunQr) sunQr.draw(pass);
       if (uiRenderer) {
         if (overlayList && overlayList.count > 0) uiRenderer.draw(pass, overlayList, null);
         if (wordCloud) wordCloud.draw(pass);
@@ -641,6 +661,8 @@ export async function createEngine(platform, opts) {
       // hint), drawn into sceneTex at full resolution.
       const scenePass = encoder.beginRenderPass(scenePassDesc);
       drawScene(scenePass);
+      if (slides) slides.draw(scenePass);
+      if (sunQr) sunQr.draw(scenePass);
       if (uiRenderer && overlayList && overlayList.count > 0) uiRenderer.draw(scenePass, overlayList, null);
       if (wordCloud) wordCloud.draw(scenePass);
       if (wordSmoke) wordSmoke.draw(scenePass);
@@ -718,7 +740,7 @@ export async function createEngine(platform, opts) {
   // or the glass owing a capture. main.js asks before letting the loop rest.
   let captureOwed = false;
   function busy() {
-    return captureOwed || !!(scene && scene.busy && scene.busy()) || !!(sun && sun.busy()) ||
+    return captureOwed || !!(scene && scene.busy && scene.busy()) || !!(sun && sun.busy()) || !!(slides && slides.busy()) || !!(sunQr && sunQr.busy()) ||
       !!(wordCloud && wordCloud.busy && wordCloud.busy()) || !!(wordSmoke && wordSmoke.busy && wordSmoke.busy());
   }
 
@@ -744,6 +766,7 @@ export async function createEngine(platform, opts) {
       asleep = true;
       // The Sun layer's video stops with the loop (gpu/sun.js doze).
       if (sun) sun.doze(true);
+      if (slides) slides.doze(true);
       if (heartbeat) heartbeat.doze(true);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       rafHandle = 0;
@@ -753,6 +776,7 @@ export async function createEngine(platform, opts) {
       asleep = false;
       slept = true;
       if (sun) sun.doze(false);
+      if (slides) slides.doze(false);
       if (heartbeat) heartbeat.doze(false);
       if (!rafHandle && !deviceLost && !pageHidden) rafHandle = requestAnimationFrame(raf);
       return true;
@@ -764,6 +788,7 @@ export async function createEngine(platform, opts) {
       asleep = false;
       slept = false;
       if (sun) sun.doze(pageHidden);
+      if (slides) slides.doze(pageHidden);
       if (heartbeat) heartbeat.doze(pageHidden);
       if (pageHidden) {
         if (rafHandle) cancelAnimationFrame(rafHandle);

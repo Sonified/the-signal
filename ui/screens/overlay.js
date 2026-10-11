@@ -538,7 +538,11 @@ export function drawOverlay(dl, text, t, width, height) {
   // the panel guard's card sits where the hint does, so the hint makes way.
   // An appearance starts only once the last one has fully gone, and the
   // spring then only carries the yielding (and a return mid-yield).
-  const want = !S.running && !guard.noticeOpen && !followTab;
+  // Render > Hint's Show play/pause hint (S.hintShow), off: the hint is
+  // never drawn, and one up as it is switched off goes at once, no fade
+  const hintOff = S.hintShow === false;
+  if (hintOff && (hintInAt >= 0 || anim.value('overlay.hint') > 0.002)) { anim.reset('overlay.hint', 0); hintInAt = -1; }
+  const want = !S.running && !guard.noticeOpen && !followTab && !hintOff;
   // paused mid-release: the rest of the hint puffs off at once and a fresh
   // hint fades in over the smoke (one field, nothing waits)
   if (want && relOn) smokeHint.finishReq = true;

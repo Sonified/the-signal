@@ -35,6 +35,8 @@ import { createEngine } from './gpu/engine.js';
 import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
 import { createSun } from './gpu/sun.js';
+import { createSlides, pauseSlideForWalk, resumeSlideForWalk } from './gpu/slides.js';
+import { createSunQr } from './gpu/sun-qr.js';
 import { createStars } from './gpu/stars.js';
 import { createHeartbeat } from './gpu/heartbeat.js';
 import { createKaleido, setKaleidoYield } from './gpu/kaleido.js';
@@ -61,8 +63,9 @@ import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionR
 import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
+import { initShowRemote } from './platform/show-remote.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
-import { stepJourney, syncJourneyFromStorage, setJourneyRunning, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
+import { stepJourney, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
 import { setSettingsFileHandler, overlayKeyCapture, OVERLAY_KEY_DEF } from './core/schema-visual.js';
@@ -200,6 +203,11 @@ async function boot() {
   // The star field behind it, meditatewiththesun.com's drifting sky; it
   // reads where the sun's disk sits to keep the stars off it.
   engine.registerStars(createStars(device, format, sun));
+  // The show's Slides, a fullscreen video over the whole scene; it makes no
+  // video element and fetches nothing until first switched on with a file.
+  engine.registerSlides(createSlides(device, format));
+  // The show's QR code over it all; it fetches nothing until first above 0.
+  engine.registerSunQr(createSunQr(device, format));
   // The Heartbeat layer; it builds nothing and fetches no sound until first
   // switched on.
   engine.registerHeartbeat(createHeartbeat(device, format));
@@ -343,6 +351,9 @@ async function boot() {
   let pageVisible = true, backInView = false;
   setToggleRun(toggleRun);
   setJourneyRunning(on => { if (on !== !!S.running) toggleRun(); });
+  // A paused walk holds a playing slide with it, and its resume lets that
+  // slide go again (gpu/slides.js; a live hold, never S.slidePlay).
+  setJourneyPauseHook(paused => { if (paused) pauseSlideForWalk(); else resumeSlideForWalk(); });
   // Media Session's play and pause (the lock screen, a headset, a media key;
   // js/background.js) are the space bar's own toggleRun. In worker mode they
   // reach this thread from the page through host.run, and the audio link is
@@ -399,6 +410,9 @@ async function boot() {
         now: platform.now
       }
     );
+    // The show remote (show.html on the iPad): ?remote makes this tab take
+    // its cues, faders and duck over the mirror relays (platform/show-remote.js).
+    initShowRemote();
   }
 
   // ---- per-frame state, allocated once ----
