@@ -249,6 +249,63 @@ export function createSun(device, format) {
   // buffered edge's growth watch over the main.
   let wrap = null, xfade = 0, wrapRetryAt = 0, wrapHeld = false;
   const bufWatch = { el: null, end: 0, at: 0 };
+
+  // ---------- DEBUG: chasing the frozen sun (window.sunDebug = false silences) ----------
+  const dbgOn = () => typeof window === 'undefined' || window.sunDebug !== false;
+  // lastUpdate: when update() last ran (performance.now); lastT / lastAdvance:
+  // the main's currentTime and when it last moved; why: the pause reason last
+  // printed; frames: decoded frames presented per element (rVFC).
+  const dbg = { lastUpdate: 0, lastT: -1, lastEl: null, lastAdvance: 0, lastPrint: 0, lastStuckPrint: 0, why: '?', timer: 0, imports: 0 };
+  const dbgFrames = new WeakMap();
+  function dbgTag(el) { return el === video ? 'main' : el === ghost ? 'ghost' : 'old'; }
+  function dbgEl(el) {
+    if (!el) return 'none';
+    const b = el.buffered; let buf = '';
+    for (let i = 0; i < b.length; i++) buf += (i ? ',' : '') + b.start(i).toFixed(1) + '-' + b.end(i).toFixed(1);
+    const fr = dbgFrames.get(el);
+    return 't=' + el.currentTime.toFixed(2) + '/' + (isFinite(el.duration) ? el.duration.toFixed(1) : el.duration)
+      + (el.paused ? ' PAUSED' : ' playing') + (el.ended ? ' ENDED' : '') + (el.seeking ? ' SEEKING' : '')
+      + ' ready=' + el.readyState + ' net=' + el.networkState + ' rate=' + el.playbackRate.toFixed(3)
+      + ' preload=' + el.preload + (playPending.has(el) ? ' PLAY-PENDING' : '')
+      + (el.error ? ' ERROR' + el.error.code : '') + ' frames=' + (fr ? fr.n : 'n/a')
+      + ' buf[' + buf + ']';
+  }
+  function dbgWatchFrames(el) {
+    if (!el.requestVideoFrameCallback) return;
+    const fr = { n: 0 };
+    dbgFrames.set(el, fr);
+    const tick = () => { fr.n++; el.requestVideoFrameCallback(tick); };
+    el.requestVideoFrameCallback(tick);
+  }
+  // Runs on a timer, not the frame loop, so it speaks even if update() stops.
+  function dbgHeartbeat() {
+    if (!dbgOn() || !video) return;
+    const gap = performance.now() - dbg.lastUpdate;
+    if (gap > 1500)
+      console.warn('sun DEBUG: update() has not run for ' + (gap / 1000).toFixed(1) + 's (frame loop asleep or stalled?) | layer ' + !!(S.layers && S.layers.sun) + ' | main ' + dbgEl(video));
+  }
+  function dbgStatus(on, scale, rate, md) {
+    if (!dbgOn() || !video) return;
+    const now = performance.now();
+    dbg.lastUpdate = now;
+    // The stuck detector: the main says it plays but its clock is not moving.
+    const ct = video.currentTime;
+    if (video !== dbg.lastEl || Math.abs(ct - dbg.lastT) > 1e-4 || video.paused) { dbg.lastEl = video; dbg.lastT = ct; dbg.lastAdvance = now; }
+    else if (now - dbg.lastAdvance > 1500 && now - dbg.lastStuckPrint > 3000) {
+      dbg.lastStuckPrint = now;
+      console.warn('sun DEBUG: STUCK, main says playing but currentTime frozen at ' + ct.toFixed(2) + ' for ' + ((now - dbg.lastAdvance) / 1000).toFixed(1) + 's | main ' + dbgEl(video) + ' | ghost ' + dbgEl(ghost) + ' | wrap ' + JSON.stringify(wrap));
+    }
+    if (now - dbg.lastPrint < 1000) return;
+    dbg.lastPrint = now;
+    console.log('sun ▸ ' + (dbg.why || 'should play') + ' | rate ' + rate.toFixed(3) + ' scale ' + scale.toFixed(3) + ' md ' + md.toFixed(4)
+      + ' | wrap ' + (wrap ? (wrap.fading ? 'fading ' + xfade.toFixed(2) : 'armed') : '-') + ' retryIn ' + Math.max(0, wrapRetryAt - nowMs / 1000).toFixed(1)
+      + ' | draw ' + liveDraw + ' bind ' + !!bind + ' imports/s ' + dbg.imports
+      + ' | kaleido ' + folded + ' spin ' + clampNum(S.sunKaleidoSpin, -6, 6, 0.5) + 'rpm ang ' + spinAng.toFixed(2)
+      + '\n   main  ' + dbgEl(video) + '\n   ghost ' + dbgEl(ghost));
+    dbg.imports = 0;
+  }
+  // ---------- /DEBUG ----------
+
   function onLoaded(e) {
     if (e.target !== video) return;
     if (holding) { holding = false; idleRelease('the sun video'); }
@@ -292,6 +349,7 @@ export function createSun(device, format) {
   function onPlayFailed(err) {
     // A play cut short by a pause or a new source (a swap) is not a
     // refusal: the next frame decides afresh, with no retry wait.
+    if (dbgOn()) console.warn('sun DEBUG: play() rejected:', err && err.name, err && err.message);
     if (err && err.name === 'AbortError') return;
     retryAt = nowMs + PLAY_RETRY_MS;
     if (!warnedPlay) {
@@ -319,6 +377,10 @@ export function createSun(device, format) {
     el.addEventListener('loadeddata', onLoaded);
     el.addEventListener('loadedmetadata', onMetadata);
     el.addEventListener('error', onVideoError);
+    // DEBUG: every element event that could mean a freeze
+    for (const ev of ['play', 'playing', 'pause', 'waiting', 'stalled', 'ended', 'emptied', 'abort', 'seeking', 'seeked'])
+      el.addEventListener(ev, () => { if (dbgOn()) console.log('sun DEBUG: <' + ev + '> on ' + dbgTag(el) + ' | ' + dbgEl(el)); });
+    dbgWatchFrames(el);
     return el;
   }
   // Made and loading the first frame the layer is on, never at boot.
@@ -341,6 +403,8 @@ export function createSun(device, format) {
     holding = true;
     idleHold();
     setSources(hevc ? urlHevc(stemNow) : urlX264(stemNow));
+    if (!dbg.timer) dbg.timer = setInterval(dbgHeartbeat, 2000);
+    if (dbgOn()) console.log('sun DEBUG: video made, ' + (hevc ? 'HEVC' : 'x264') + ' ' + srcNow);
   }
   // High quality changed: any wrap stands down, then the other stem into
   // both elements, the HEVC choice and its one x264 fallback made afresh
@@ -378,7 +442,8 @@ export function createSun(device, format) {
   // The site's standDownWrap: the ghost reparked at 0 (reloaded if its
   // stream failed), a wait before the next arm, and a main with nothing
   // left to play cut to 0 (syncVideo plays it on).
-  function standDownWrap() {
+  function standDownWrap(why) {
+    if (dbgOn()) console.warn('sun DEBUG: wrap STANDS DOWN (' + (why || '?') + ') | main ' + dbgEl(video) + ' | ghost ' + dbgEl(ghost));
     resetWrap();
     if (ghost.error) ghost.src = srcNow;
     try { ghost.currentTime = 0; } catch (e) {}
