@@ -140,8 +140,10 @@
 //   ui.cursorX / ui.cursorY / ui.regionW  (getters, current layout position)
 //   ui.pointerShift  Shift was held on the latest pointer down, so a screen
 //                    can tell a shift-click from a click
-//   ui.pointerMeta   Command (or Control) was held on the latest pointer
-//                    down: the drawer's lock click (widgets.js control)
+//   ui.pointerMeta   Command was held on the latest pointer down: the
+//                    drawer's lock click (widgets.js control). Command
+//                    alone, never Control, which is the Mac's context-menu
+//                    click and must stay the browser's.
 //   ui.textEditing   true while a ui.textField holds focus, as of the last
 //                    end(); the app reads it between frames to keep global
 //                    shortcuts off the keyboard while the viewer types
@@ -619,7 +621,7 @@ class UI {
           this._downEvent = true; this._downX = e.x; this._downY = e.y;
           this._cancelEvent = false;
           this.pointerShift = e.shift;
-          this.pointerMeta = !!(e.meta || e.ctrl);
+          this.pointerMeta = !!e.meta;
           break;
         case 'move':
           this.pointerX = e.x; this.pointerY = e.y; this.pointerType = e.pointerType;
