@@ -190,6 +190,10 @@ export function replayEndedSlide() { return liveHook ? liveHook.replay() : false
 // pause held, putting back the override that stood before, so a slide
 // paused some other way first stays paused. Any other move of the slide
 // (a new slide, Restart, Play, the button) forgets the walk's hold.
+// The show remote's cue fill (platform/show-remote.js): where the slide on
+// screen stands, {t, d, r} (seconds in, its length, the rate it is
+// advancing at, 0 paused or ended), or null with no video of known length.
+export function slidesProgress() { return liveHook ? liveHook.progress() : null; }
 export function pauseSlideForWalk() { if (liveHook) liveHook.walkPause(); }
 export function resumeSlideForWalk() { if (liveHook) liveHook.walkResume(); }
 
@@ -750,6 +754,14 @@ export function createSlides(device, format) {
       liveOverride = false;
       walkHeld = true;
       idleWake('slide walk pause');
+    },
+    progress() {
+      const st = liveHook.state();
+      if (!st) return null;
+      const el = slots[act].el;
+      const d = el.duration;
+      if (!(d > 0 && isFinite(d))) return null;
+      return { t: Math.max(0, Math.min(d, el.currentTime || 0)), d, r: st === 1 && !el.paused ? el.playbackRate : 0 };
     },
     walkResume() {
       if (!walkHeld) return;

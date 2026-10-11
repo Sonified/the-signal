@@ -92,12 +92,15 @@
 //
 // STATUS (here -> show.html): a second pair of sockets, this page the
 // broadcaster of 'mirror-<room>-status', sends
-//   {t:'state', k:'step', i, n, p, sl, src, q}
+//   {t:'state', k:'step', i, n, p, vp, sl, src, q}
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
 // {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, hm: heartMaster, mw: mwtsVolume, gt: screenGate, play, on} (play: what is actually happening, the
-// live hold included), src/q this page's sender id and sequence.
+// live hold included), vp the slide video's place {t, d, r} (seconds in,
+// its length, the rate it advances at, 0 when held; null with no video of
+// known length; the iPad fills the playing cue with it, running on between
+// reports at r), src/q this page's sender id and sequence.
 // It goes as a 'state' rather than a 'word' so each relay keeps the latest
 // and hands it to an iPad that joins late.
 
@@ -105,7 +108,7 @@ import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
 import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
-import { setDuck, slidesLiveState, toggleSlidePlayLive } from '../gpu/slides.js';
+import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
 
@@ -252,9 +255,11 @@ export function initShowRemote(hooks = {}) {
   const get = id => { const c = byId(id); return c && c.get ? c.get(S) : null; };
   const playingNow = () => { const st = slidesLiveState(); return st ? st === 1 : !!get('slidePlay'); };
   function statusMsg() {
+    const pr = slidesProgress();
     return {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
+      vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000 } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), hm: get('heartMaster'), mw: get('mwtsVolume'),
             gt: Math.round(Math.max(0, Math.min(1, +S.screenGate)) * 1000) / 10,
             play: playingNow(), on: !!(S.layers && S.layers.slides) }

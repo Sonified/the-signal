@@ -107,6 +107,12 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(252p
 .cue .num { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
   background: #0f1219; border: 1px solid var(--line); color: var(--dim); font-size: 15px; font-variant-numeric: tabular-nums; }
 .cue.past { opacity: .42; }
+/* the playing cue's video, filling left to right in soft yellow */
+.cue { position: relative; overflow: hidden; }
+.cue > span { position: relative; }
+.cue .prog { position: absolute; left: 0; top: 0; bottom: 0; width: 0; display: none; pointer-events: none;
+  background: linear-gradient(90deg, rgba(255, 226, 138, .10), rgba(255, 226, 138, .32)); border-right: 2px solid rgba(255, 226, 138, .75); }
+.cue.now .prog.on { display: block; }
 .cue.now { background: #3a2e0e; border-color: var(--gold); color: #fff; box-shadow: 0 0 22px rgba(242, 193, 78, .45), inset 0 0 0 1px var(--gold); }
 .cue.now .num { background: var(--gold); color: #000; border-color: var(--gold); }
 .cue.tap { animation: flash .45s ease-out; }
@@ -339,7 +345,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const cueEls = CUES.map((label, i) => {
     const b = document.createElement('button');
     b.className = 'cue';
-    b.innerHTML = '<span class="num">' + (i + 1) + '</span><span></span>';
+    b.innerHTML = '<div class="prog"></div><span class="num">' + (i + 1) + '</span><span></span>';
     b.lastChild.textContent = label;
     b.addEventListener('click', () => {
       tapped = i;
@@ -360,6 +366,28 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     }
   }
   drawCues();
+
+  // The playing cue's video fill: Presence reports where the slide stands
+  // (vp {t, d, r}, a few times a second) and the bar runs on between
+  // reports at the rate it gave, so it moves smoothly; r 0 holds it still.
+  let vp = null, vpAt = 0, vpRaf = 0;
+  function drawProg() {
+    vpRaf = 0;
+    const now = statusStep !== null ? statusStep : tapped;
+    cueEls.forEach((b, i) => {
+      const bar = b.firstChild;
+      const on = i === now && !!vp;
+      bar.classList.toggle('on', on);
+      if (on) bar.style.width = Math.min(100, Math.max(0, (vp.t + vp.r * (performance.now() - vpAt) / 1000) / vp.d * 100)) + '%';
+    });
+    if (vp && vp.r > 0) vpRaf = requestAnimationFrame(drawProg);
+  }
+  function setProg(m) {
+    const v = m && typeof m.d === 'number' && m.d > 0 && isFinite(m.t) ? m : null;
+    vp = v ? { t: +v.t, d: +v.d, r: Math.max(0, +v.r || 0) } : null;
+    vpAt = performance.now();
+    if (!vpRaf) drawProg();
+  }
 
   // ---------- the faders ----------
   // Each holds its control's own position (see the header) and shows it in
@@ -652,6 +680,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       (statusStep >= 0 && !m.p ? ' · paused' : '') + '</b>';
     $('showBar').style.width = (m.n > 0 && statusStep >= 0 ? (statusStep + 1) / m.n * 100 : 0) + '%';
     drawCues();
+    setProg(m.vp);
     const sl = m.sl || {};
     const now = performance.now();
     for (const f of FADERS) {
