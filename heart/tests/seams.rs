@@ -11,7 +11,7 @@ use heart::protocol_gen::{Bound, kind, params};
 #[test]
 fn node_params_match_the_protocol() {
     let init = NodeInit { sample_rate: 48000.0, seed: 1, opts: [0.0; 8] };
-    for k in kind::GAIN..=kind::GENUS {
+    for k in (kind::GAIN..=kind::GENUS).chain([kind::DYNAMICS_COMPRESSOR]) {
         let node = nodes::make(Kind::from_u32(k).expect("a kind"), &init).expect("a node");
         let (specs, rows) = (node.param_specs(), params(k));
         assert_eq!(specs.len(), rows.len(), "kind {k}: param count");

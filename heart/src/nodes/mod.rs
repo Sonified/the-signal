@@ -23,6 +23,7 @@ pub mod fdn;
 pub mod one_pole;
 pub mod strobe_signal;
 pub mod genus;
+pub mod dynamics_compressor;
 
 /// A new node of `kind`, or None for the graph's own port kinds (which
 /// graph.rs makes) and anything unknown.
@@ -41,6 +42,7 @@ pub fn make(kind: Kind, init: &NodeInit) -> Option<Box<dyn Node>> {
         Kind::OnePole => Box::new(one_pole::OnePole::new(init)),
         Kind::StrobeSignal => Box::new(strobe_signal::StrobeSignal::new(init)),
         Kind::Genus => Box::new(genus::Genus::new(init)),
+        Kind::DynamicsCompressor => Box::new(dynamics_compressor::DynamicsCompressor::new(init)),
         Kind::Egress | Kind::Ingress | Kind::Master => return None,
     })
 }

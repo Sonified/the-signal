@@ -1,5 +1,6 @@
 //! Tests for the standard Web Audio nodes (gain, constant source, stereo
-//! panner, delay, biquad, oscillator, buffer source, analyser), driven
+//! panner, delay, biquad, oscillator, buffer source, analyser, dynamics
+//! compressor), driven
 //! straight through the Node trait with a RenderCtx built by hand, and
 //! checked against values worked out here from the spec's own formulas.
 
@@ -13,6 +14,7 @@ use heart::nodes::biquad::{Biquad, Coefficients, FilterType};
 use heart::nodes::buffer_source::BufferSource;
 use heart::nodes::constant_source::ConstantSource;
 use heart::nodes::delay::Delay;
+use heart::nodes::dynamics_compressor::DynamicsCompressor;
 use heart::nodes::gain::Gain;
 use heart::nodes::oscillator::Oscillator;
 use heart::nodes::periodic_wave::{PeriodicWave, Shape};
@@ -676,4 +678,98 @@ fn analyser_passes_through_and_peaks_over_its_window() {
     let (_, _) = drive(&mut a, Some(&[vec![0.0; 128]]), &[], 1, &pool);
     assert_eq!(peak_of(&mut a), 0.0);
     assert_eq!(a.tail_frames(), 1024.0);
+}
+
+// ---------------------------------------------------------------- dynamics compressor
+
+/// The heartbeat's limiter (core/heartbeat.js): threshold −3 dB, a hard
+/// knee, ratio 20, attack 3 ms, release 0.25 s.
+fn limiter() -> Vec<P> { vec![P::C(-3.0), P::C(0.0), P::C(20.0), P::C(0.003), P::C(0.25)] }
+
+/// The spec's makeup gain for a hard knee: (1 / curve(1))^0.6, where a
+/// full-scale input comes out of the curve at T − T/ratio dB.
+fn hard_knee_makeup(t: f64, ratio: f64) -> f64 { 10f64.powf(-0.6 * (t - t / ratio) / 20.0) }
+
+fn reduction_of(c: &mut DynamicsCompressor) -> f32 {
+    let mut events = Events::default();
+    c.request_peak(4, &mut events);
+    let bytes = events.pending();
+    assert_eq!(u16::from_le_bytes([bytes[0], bytes[1]]), 102, "answered as a peak event");
+    f32::from_le_bytes(bytes[8..12].try_into().unwrap())
+}
+
+#[test]
+fn compressor_below_threshold_is_the_input_delayed_6_ms_times_the_makeup() {
+    let pool = BufferPool::default();
+    let mut c = DynamicsCompressor::new(&init(0.0));
+    assert_eq!(c.pre_delay_frames(), 288, "floor(0.006 · 48000)");
+    let frames = 3 * 48000;
+    let x = ramp(frames, |i| (0.2 * (2.0 * PI * 220.0 * i as f64 / SR as f64).sin()) as f32);
+    let (out, _) = drive(&mut c, Some(mono(&x)), &limiter(), frames / QUANTUM, &pool);
+    assert_eq!(out.len(), 2, "always two channels out");
+    assert_eq!(out[0], out[1], "a mono input is duplicated");
+    // Once the detector has settled (Chrome's starts at 0 and dips the gain
+    // for its first moments), a sound under the threshold is untouched but
+    // for the lookahead and the makeup.
+    let makeup = hard_knee_makeup(-3.0, 20.0);
+    let want: Vec<f64> = (24000..frames).map(|i| x[i - 288] as f64 * makeup).collect();
+    assert_close(&out[0][24000..], &want, 2e-4, "settled, below threshold");
+    // The meter recovers from that first dip with its 0.325 s constant.
+    assert!(reduction_of(&mut c).abs() < 0.01, "no reduction: {}", reduction_of(&mut c));
+}
+
+#[test]
+fn compressor_holds_a_loud_input_on_the_static_curve() {
+    let pool = BufferPool::default();
+    let mut c = DynamicsCompressor::new(&init(0.0));
+    let frames = 3 * 48000;
+    let x = vec![1.0f32; frames];
+    let (out, _) = drive(&mut c, Some(&[x.clone(), x]), &limiter(), frames / QUANTUM, &pool);
+    // curve(1) = T − T/20 dB, times the makeup: 0.4 · 0.95 · T dB in all.
+    let want = 10f64.powf(0.4 * 0.95 * -3.0 / 20.0);
+    for (i, &y) in out[0][40000..].iter().enumerate() {
+        assert!((y as f64 - want).abs() < 1e-3, "frame {}: {y} against {want}", 40000 + i);
+    }
+    // The meter reads the gain the curve asks for, about −2.85 dB.
+    let r = reduction_of(&mut c) as f64;
+    assert!((r - 0.95 * -3.0).abs() < 0.02, "reduction {r}");
+}
+
+#[test]
+fn compressor_lookahead_has_the_gain_down_before_a_jump_arrives() {
+    let pool = BufferPool::default();
+    let mut c = DynamicsCompressor::new(&init(0.0));
+    // Quiet for half a second, then a sudden full-scale tone: the gain is
+    // already falling when the jump leaves the pre-delay, so the output's
+    // peak stays near the threshold rather than the input's.
+    let frames = 48000;
+    let x = ramp(frames, |i| if i < 24000 { 0.05 } else { (0.99 * (2.0 * PI * 60.0 * i as f64 / SR as f64).sin()) as f32 });
+    let (out, _) = drive(&mut c, Some(mono(&x)), &limiter(), frames / QUANTUM, &pool);
+    let peak = out[0][24000..].iter().fold(0f32, |m, &y| m.max(y.abs()));
+    assert!(peak < 1.0, "the jump's peak out is {peak}");
+    // The quiet part plays at the makeup alone, until the jump is 288
+    // frames from the output: by the time it arrives the gain is already
+    // below where it was.
+    let quiet = 0.05 * hard_knee_makeup(-3.0, 20.0);
+    assert!((out[0][24000] as f64 - quiet).abs() < 1e-4, "{}", out[0][24000]);
+    assert!((out[0][24000 + 287] as f64) < quiet - 1e-3, "{}", out[0][24000 + 287]);
+}
+
+#[test]
+fn compressor_tail_and_silence() {
+    let pool = BufferPool::default();
+    let mut c = DynamicsCompressor::new(&init(0.0));
+    assert_eq!(c.tail_frames(), 5.0 * 0.325f32 as f64 * 48000.0 + 288.0);
+    let x = ramp(QUANTUM, |_| 0.5);
+    let (_, act) = drive(&mut c, Some(mono(&x)), &limiter(), 1, &pool);
+    assert_eq!(act[0], Activity::Active);
+    // Silence in: the lookahead still holds the sound for 288 frames, so
+    // three more quanta sound, and then the output is flagged silent.
+    let (out, act) = drive(&mut c, Some(&[vec![0.0; 128]]), &limiter(), 5, &pool);
+    assert_eq!(&act[..3], &[Activity::Active; 3]);
+    assert_eq!(&act[3..], &[Activity::Silent; 2]);
+    // (this call's frame 0 is the engine's 128: the sound comes out at 288)
+    assert!(out[0][..160].iter().all(|&y| y == 0.0));
+    assert!(out[0][160..288].iter().all(|&y| y != 0.0));
+    assert!(out[0][288..].iter().all(|&y| y == 0.0));
 }

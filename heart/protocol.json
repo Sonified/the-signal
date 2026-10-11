@@ -16,7 +16,8 @@
     "genus": 13,
     "egress": 14,
     "ingress": 15,
-    "master": 16
+    "master": 16,
+    "dynamics_compressor": 17
   },
   "kind_options": {
     "_": "create's opts[8], positional per kind; unlisted slots are 0",
@@ -42,7 +43,8 @@
     "genus": [],
     "fdn": [],
     "one_pole": [],
-    "strobe_signal": []
+    "strobe_signal": [],
+    "dynamics_compressor": []
   },
   "params": {
     "_": "Per kind, in wire order: [name, default, min, max, rate]. 'max' is f32::MAX, '-max' its negative, 'nyquist' half the sample rate, 'maxDelayTime' the delay's creation option; the graph clamps with the numbers, a node clamps the sample-rate-dependent ones itself.",
@@ -372,7 +374,44 @@
     ],
     "egress": [],
     "ingress": [],
-    "master": []
+    "master": [],
+    "dynamics_compressor": [
+      [
+        "threshold",
+        -24,
+        -100,
+        0,
+        "k"
+      ],
+      [
+        "knee",
+        30,
+        0,
+        40,
+        "k"
+      ],
+      [
+        "ratio",
+        12,
+        1,
+        20,
+        "k"
+      ],
+      [
+        "attack",
+        0.003,
+        0,
+        1,
+        "k"
+      ],
+      [
+        "release",
+        0.25,
+        0,
+        1,
+        "k"
+      ]
+    ]
   },
   "enums": {
     "biquad_type": {

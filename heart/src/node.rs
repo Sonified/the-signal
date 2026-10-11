@@ -36,6 +36,7 @@ pub enum Kind {
     Egress = 14,
     Ingress = 15,
     Master = 16,
+    DynamicsCompressor = 17,
 }
 
 impl Kind {
@@ -46,6 +47,7 @@ impl Kind {
             5 => Biquad, 6 => Oscillator, 7 => BufferSource, 8 => Analyser,
             9 => Convolver, 10 => Fdn, 11 => OnePole, 12 => StrobeSignal,
             13 => Genus, 14 => Egress, 15 => Ingress, 16 => Master,
+            17 => DynamicsCompressor,
             _ => return None,
         })
     }

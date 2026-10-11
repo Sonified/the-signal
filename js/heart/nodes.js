@@ -29,13 +29,13 @@ const IO = {
   gain: [1, 1], constant_source: [0, 1], stereo_panner: [1, 1], delay: [1, 1],
   biquad: [1, 1], oscillator: [0, 1], buffer_source: [0, 1], analyser: [1, 1],
   convolver: [1, 1], fdn: [1, 1], one_pole: [1, 1], strobe_signal: [0, 1],
-  genus: [0, 3], master: [1, 0]
+  genus: [0, 3], master: [1, 0], dynamics_compressor: [1, 1]
 };
 
 // The spec's channel rules per kind, where they differ from two channels,
 // 'max', 'speakers'. Heart's buses are at most stereo.
 const MAX_CHANNELS = 2;
-const CLAMPED = { stereo_panner: true, convolver: true };
+const CLAMPED = { stereo_panner: true, convolver: true, dynamics_compressor: true };
 const channelDefaults = kind => ({
   count: 2,
   mode: kind === 'master' ? 'explicit' : CLAMPED[kind] ? 'clamped-max' : 'max',
@@ -600,21 +600,9 @@ export class HeartAnalyser extends HeartNode {
   }
   get frequencyBinCount() { return this._fft / 2; }
 
-  // The latest peak the engine reported, 0 until the first arrives. Each
-  // read asks for the next one, unless an ask is already on its way, so a
-  // meter read at frame rate always shows the freshest answer.
-  peak() {
-    const now = performance.now();
-    if (now - this._askedAt > PEAK_WAIT_MS) {
-      this._askedAt = now;
-      this._sendAll((c, id) => c.peakRequest(id));
-    }
-    return this._latest;
-  }
-  _peak(v) {
-    this._latest = v;
-    this._askedAt = -Infinity;
-  }
+  // The latest peak the engine reported, 0 until the first arrives.
+  peak() { return askPeak(this); }
+  _peak(v) { heardPeak(this, v); }
 
   // A stand-in, not the waveform: Heart never sends samples back, so this
   // fills the array with the latest peak, a constant. A caller that scans
@@ -623,6 +611,47 @@ export class HeartAnalyser extends HeartNode {
   getFloatTimeDomainData(arr) {
     arr.fill(this.peak());
   }
+}
+
+// A readback through the peak event, for a node that keeps _latest and
+// _askedAt: the latest answer, asking for the next one unless an ask is
+// already on its way, so a meter read at frame rate always shows the
+// freshest answer.
+function askPeak(node) {
+  const now = performance.now();
+  if (now - node._askedAt > PEAK_WAIT_MS) {
+    node._askedAt = now;
+    node._sendAll((c, id) => c.peakRequest(id));
+  }
+  return node._latest;
+}
+function heardPeak(node, v) {
+  node._latest = v;
+  node._askedAt = -Infinity;
+}
+
+// DynamicsCompressorNode: Chrome's compressor, its kernel ported to Rust
+// (heart/src/nodes/dynamics_compressor.rs): the 6 ms lookahead, the knee,
+// the adaptive release and the spec's fixed makeup gain, all as Chrome has
+// them, so a graph built for a native compressor sounds the same here. The
+// five params are k-rate. Its output is always stereo, its input rules
+// clamped-max. `reduction` is the meter in dB, read back the way an
+// analyser's peak is (the stage answers a peak request with it), so it
+// lags the sound by a round trip and is 0 until the first answer arrives.
+export class HeartDynamicsCompressor extends HeartNode {
+  constructor(ctx) {
+    super(ctx, 'dynamics_compressor');
+    this._latest = 0;
+    this._askedAt = -Infinity;
+    this._graph.hear(this);
+  }
+  get threshold() { return param(this, 'threshold'); }
+  get knee() { return param(this, 'knee'); }
+  get ratio() { return param(this, 'ratio'); }
+  get attack() { return param(this, 'attack'); }
+  get release() { return param(this, 'release'); }
+  get reduction() { return askPeak(this); }
+  _peak(v) { heardPeak(this, v); }
 }
 
 export class HeartConvolver extends HeartNode {

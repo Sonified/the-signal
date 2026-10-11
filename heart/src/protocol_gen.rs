@@ -56,6 +56,7 @@ pub mod kind {
     pub const EGRESS: u32 = 14;
     pub const INGRESS: u32 = 15;
     pub const MASTER: u32 = 16;
+    pub const DYNAMICS_COMPRESSOR: u32 = 17;
 }
 
 /// Attribute ids for the attr command.
@@ -211,6 +212,13 @@ static INGRESS_PARAMS: [ParamRow; 0] = [
 ];
 static MASTER_PARAMS: [ParamRow; 0] = [
 ];
+static DYNAMICS_COMPRESSOR_PARAMS: [ParamRow; 5] = [
+    ParamRow { name: "threshold", default: -24.0, min: Bound::Value(-100.0), max: Bound::Value(0.0), rate: Rate::K },
+    ParamRow { name: "knee", default: 30.0, min: Bound::Value(0.0), max: Bound::Value(40.0), rate: Rate::K },
+    ParamRow { name: "ratio", default: 12.0, min: Bound::Value(1.0), max: Bound::Value(20.0), rate: Rate::K },
+    ParamRow { name: "attack", default: 0.003, min: Bound::Value(0.0), max: Bound::Value(1.0), rate: Rate::K },
+    ParamRow { name: "release", default: 0.25, min: Bound::Value(0.0), max: Bound::Value(1.0), rate: Rate::K },
+];
 
 /// A kind's params in wire order (a param id is its index here).
 pub fn params(kind: u32) -> &'static [ParamRow] {
@@ -231,6 +239,7 @@ pub fn params(kind: u32) -> &'static [ParamRow] {
         14 => &EGRESS_PARAMS,
         15 => &INGRESS_PARAMS,
         16 => &MASTER_PARAMS,
+        17 => &DYNAMICS_COMPRESSOR_PARAMS,
         _ => &[],
     }
 }

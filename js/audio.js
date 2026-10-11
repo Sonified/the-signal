@@ -815,8 +815,8 @@ export function ensureAudioGraph() {
     volGain.gain.value = 0;
     // The app's global Lowpass and Highpass (core/global-filter.js) on the
     // way out, after the master: everything that plays into volGain (every
-    // native voice, the Heart engine's bus, the heartbeat's track, the Sun
-    // hum's send to the room) passes through it. Open, it is transparent.
+    // native voice, the Heart engine's bus, the heartbeat's track; the Sun's
+    // hum is a music voice) passes through it. Open, it is transparent.
     const globalFilter = createGlobalFilter(audioCtx);
     volGain.connect(globalFilter.input);
     globalFilter.output.connect(audioCtx.destination);

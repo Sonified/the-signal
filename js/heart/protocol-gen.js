@@ -22,7 +22,8 @@ export const KINDS = Object.freeze({
   genus: 13,
   egress: 14,
   ingress: 15,
-  master: 16
+  master: 16,
+  dynamics_compressor: 17
 });
 
 // Attribute ids for Commands.attr.
@@ -140,7 +141,14 @@ export const PARAMS = Object.freeze({
   ]),
   egress: Object.freeze([]),
   ingress: Object.freeze([]),
-  master: Object.freeze([])
+  master: Object.freeze([]),
+  dynamics_compressor: Object.freeze([
+    Object.freeze(["threshold", -24, -100, 0, "k"]),
+    Object.freeze(["knee", 30, 0, 40, "k"]),
+    Object.freeze(["ratio", 12, 1, 20, "k"]),
+    Object.freeze(["attack", 0.003, 0, 1, "k"]),
+    Object.freeze(["release", 0.25, 0, 1, "k"])
+  ])
 });
 
 // Command op codes.

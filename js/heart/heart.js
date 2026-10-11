@@ -18,7 +18,8 @@
 import { Commands } from './protocol-gen.js';
 import {
   HeartGraph, HeartGain, HeartConstantSource, HeartStereoPanner, HeartDelay, HeartBiquad,
-  HeartOscillator, HeartBufferSource, HeartAnalyser, HeartConvolver, HeartProcessor, HeartMaster
+  HeartOscillator, HeartBufferSource, HeartAnalyser, HeartConvolver, HeartDynamicsCompressor,
+  HeartProcessor, HeartMaster
 } from './nodes.js';
 
 const WASM_URL = new URL('./heart.wasm', import.meta.url).href;
@@ -240,6 +241,7 @@ export class HeartContext {
   createBufferSource() { return new HeartBufferSource(this); }
   createAnalyser() { return new HeartAnalyser(this); }
   createConvolver() { return new HeartConvolver(this); }
+  createDynamicsCompressor() { return new HeartDynamicsCompressor(this); }
   // What `new AudioWorkletNode(ctx, name, opts)` makes natively, for the
   // processors Heart has in Rust: 'genus', 'one-pole', 'strobe-signal' and
   // 'fdn-reverb'. route.js makeWorklet picks between the two.

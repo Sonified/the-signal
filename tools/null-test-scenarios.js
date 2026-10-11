@@ -455,6 +455,50 @@ convolver('stereo impulse, mono input', 2, 1);
 convolver('stereo impulse, stereo input', 2, 2);
 convolver('stereo impulse, not normalised', 2, 1, false);
 
+// ----- DynamicsCompressor -----
+// Chrome's kernel, ported (heart/src/nodes/dynamics_compressor.rs): the same
+// lookahead, knee, envelope and makeup on both sides, so what is left is the
+// two libms' rounding carried through the envelope's feedback.
+function compressor(name, seconds, set, feed) {
+  scenario('DynamicsCompressor', MARK.filter, seconds, name, (ctx, kit) => {
+    const c = ctx.createDynamicsCompressor();
+    c.connect(ctx.destination);
+    set(c, ctx);
+    feed(kit, c, ctx);
+  });
+}
+// Into the compressor through a gain of `drive`, so a sound can be pushed
+// past the threshold as the heartbeat's Audio level pushes its track.
+function driven(buf, drive) {
+  return (kit, c, ctx) => {
+    const g = ctx.createGain();
+    g.gain.value = drive;
+    g.connect(c);
+    kit.play(buf(kit), 0, g);
+  };
+}
+compressor('defaults, on a tone', 2, () => {}, driven(kit => kit.tones('tones2', 2, 2), 1));
+compressor('the heartbeat\'s limiter, driven to 400%', 2, c => {
+  c.threshold.value = -3;
+  c.knee.value = 0;
+  c.ratio.value = 20;
+  c.attack.value = 0.003;
+  c.release.value = 0.25;
+}, driven(kit => kit.tones('tones2', 2, 2), 4));
+compressor('a soft knee on a mono burst', 1.5, c => {
+  c.threshold.value = -30;
+  c.knee.value = 12;
+  c.ratio.value = 4;
+  c.attack.value = 0.02;
+  c.release.value = 0.1;
+}, (kit, c) => kit.play(kit.noise('burst', 1, 0.2), 0.05, c));
+compressor('threshold and ratio automated', 2, c => {
+  c.threshold.setValueAtTime(-10, 0);
+  c.threshold.linearRampToValueAtTime(-40, 1.5);
+  c.ratio.setValueAtTime(2, 0);
+  c.ratio.setValueAtTime(16, 0.8);
+}, driven(kit => kit.tones('tones2', 2, 2), 1));
+
 // ----- the app's own processors -----
 // The native side runs js/worklet.js and js/fdn-worklet.js, the Heart side
 // their Rust ports. Genus draws random numbers only for its harmonics' pan

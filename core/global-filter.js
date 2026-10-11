@@ -4,7 +4,7 @@
 // app makes passes through on its way out.
 //
 // The app's sound lives in several AudioContexts (js/audio.js's, which the
-// Heart engine and the heartbeat's track also play into; core/sun-hum.js's;
+// Heart engine, the heartbeat's track and the Sun's hum also play into;
 // gpu/slides.js's; the heartbeat's own when it has had to make one; Live
 // Sound's monitor), and a node can only join its own context's graph. So
 // each output chain asks createGlobalFilter(ctx) for its own highpass ->
