@@ -24,9 +24,10 @@ import { S } from './state.js';
 import { MUSIC_LAYERS } from './layer-defs.js';
 
 // The music layers (js/layer-defs.js) each have a channel of their own id.
-// 'hum' is the Sun's Rotational hum (core/sun-hum.js).
+// 'hum' is the Sun's Rotational hum (core/sun-hum.js), 'heart' the
+// Heartbeat layer's recording (core/heartbeat.js).
 export const CHANNELS = ['fund', 'harm', 'pulse', 'piano', 'clouds', 'drone', 'arp', 'choir',
-  ...MUSIC_LAYERS.map(L => L.id), 'hum'];
+  ...MUSIC_LAYERS.map(L => L.id), 'hum', 'heart'];
 
 function flag(obj, ch) { return !!(obj && obj[ch]); }
 

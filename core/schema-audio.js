@@ -2058,6 +2058,8 @@ const mixerControls = [
   // the Sun's Rotational hum: mixHumMute, mixHumSolo (core/journey.js finds
   // each channel's pair by that name)
   ...gateControls('mixHum', 'hum', 'Rotational hum'),
+  // and the Heartbeat layer: mixHeartMute, mixHeartSolo
+  ...gateControls('mixHeart', 'heart', 'Heartbeat'),
   {
     id: 'mixFund', section: 'mixer', label: 'Fundamental', kind: 'slider',
     min: 0, max: 100, step: 1, def: 83,

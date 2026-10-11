@@ -21,6 +21,7 @@ import { MUSIC_LAYERS, layerPeak } from '../js/layers.js';
 import { layerMixId } from '../js/layer-defs.js';
 import { cloudPeak } from '../js/clouds.js';
 import { humPeak } from './sun-hum.js';
+import { heartPeak } from './heartbeat.js';
 import { layerGate, applyMixGates } from '../js/mixgate.js';
 import { save, flush } from './store.js';
 
@@ -180,6 +181,8 @@ const CHANNEL_PEAK_FNS = {
 for (const L of MUSIC_LAYERS) CHANNEL_PEAK_FNS[layerMixId(L)] = () => layerPeak(L.id);
 // and the Sun's Rotational hum, under its Amplitude's id
 CHANNEL_PEAK_FNS.sunHumAmp = humPeak;
+// and the Heartbeat's recording, under its Audio level's id
+CHANNEL_PEAK_FNS.heartAudio = heartPeak;
 const channelMeters = {};
 // Listed once so the per-frame meter step walks a fixed array instead of
 // building one from Object.keys every frame.

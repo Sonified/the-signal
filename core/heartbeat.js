@@ -30,6 +30,8 @@
 
 import { getContext, getMaster, sourceGate } from '../js/audio.js';
 import { createGlobalFilter } from './global-filter.js';
+import { chanGate, onChannelGates } from '../js/mixgate.js';
+import { tapPeak } from '../js/util.js';
 
 const TRACK_URL = 'audio/heartbeat.m4a';
 // The RMS window: the generator's frame, 1/30 s of sound, whatever the
@@ -80,6 +82,9 @@ const LIM_TRIM = Math.pow(10, 0.6 * LIM_THRESHOLD * (1 - 1 / LIM_RATIO) / 20);
 
 let ctx = null, ownCtx = false, unavailable = false;
 let analyser = null, level = null, samples = null, win = 0;
+// The Levels window's meter: a tap at the very end of the chain, after the
+// limiter and the pause gate, so it reads what is heard (heartPeak).
+let meterTap = null;
 let buffer = null, loading = false, loadFailed = false;
 // the place in the track: where the source was at anchorT (audio clock),
 // moving at rate (the Speed setting) since
@@ -136,6 +141,7 @@ function ensureGraph() {
     sourceGate(gate.gain);
     trim.connect(gate);
     gate.connect(master);
+    meterTap = tapAfter(gate);
   } else {
     // a context of its own: the app's global Lowpass and Highpass
     // (core/global-filter.js) go on here, as js/audio.js's master carries
@@ -143,9 +149,20 @@ function ensureGraph() {
     const gf = createGlobalFilter(ctx);
     trim.connect(gf.input);
     gf.output.connect(ctx.destination);
+    meterTap = tapAfter(trim);
   }
   return true;
 }
+
+function tapAfter(node) {
+  const a = ctx.createAnalyser();
+  a.fftSize = 1024;
+  node.connect(a);
+  return { analyser: a, samples: new Float32Array(a.fftSize) };
+}
+
+// The output peak, 0..1+, for the Levels window's meter; 0 while stopped.
+export const heartPeak = () => src ? tapPeak(meterTap) : 0;
 
 function load() {
   if (buffer || loading || loadFailed) return;
@@ -207,12 +224,23 @@ export const heartUnavailable = () => unavailable || loadFailed;
 // gain at once, so it works while the frame loop rests, and heartSync keeps
 // honouring it on every later set. Not saved: a reload is unducked.
 let duckMul = 1;
+// The mix gate (js/mixgate.js): 1 open, 0 while a mute or another channel's
+// solo holds the heartbeat, on the level as the duck is. Only the sound: the
+// analyser sits ahead of the level, so the light keeps beating through it.
+let gateMul = 1;
+const heard = () => lastLevel >= 0 ? lastLevel * duckMul * gateMul : 0;
 export function setHeartDuck(mul, seconds) {
   duckMul = typeof mul === 'number' && mul === mul ? (mul < 0 ? 0 : mul > 1 ? 1 : mul) : 1;
   if (!level || !ctx) return;
   const sec = typeof seconds === 'number' && seconds >= 0 && seconds <= 10 ? seconds : 0.2;
-  level.gain.setTargetAtTime(lastLevel >= 0 ? lastLevel * duckMul : 0, ctx.currentTime, Math.max(0.003, sec / 3));
+  level.gain.setTargetAtTime(heard(), ctx.currentTime, Math.max(0.003, sec / 3));
 }
+onChannelGates(() => {
+  const g = chanGate('heart');
+  if (g === gateMul) return;
+  gateMul = g;
+  if (level && ctx) level.gain.setTargetAtTime(heard(), ctx.currentTime, LEVEL_TC);
+});
 
 export function heartSync(play, gain, speed = 1) {
   if (!ensureGraph()) return false;
@@ -231,7 +259,8 @@ export function heartSync(play, gain, speed = 1) {
   tryResume();
   if (gain !== lastLevel) {
     lastLevel = gain;
-    level.gain.setTargetAtTime(gain * duckMul, ctx.currentTime, LEVEL_TC);
+    gateMul = chanGate('heart');
+    level.gain.setTargetAtTime(heard(), ctx.currentTime, LEVEL_TC);
   }
   if (!buffer) return false;
   if (!src) startSource();

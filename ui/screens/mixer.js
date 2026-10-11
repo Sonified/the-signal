@@ -177,6 +177,9 @@ const MASTER = makeFader(byId('ambMixerMaster')), REVERB = makeFader(byId('ambMi
 // drawer and this row are one control and can never disagree.
 const HUM = makeFader(byId('sunHumAmp'));
 const HUM_MUTE = byId('mixHumMute'), HUM_SOLO = byId('mixHumSolo');
+// The Heartbeat layer's recording the same way, on its Audio level.
+const HEART = makeFader(byId('heartAudio'));
+const HEART_MUTE = byId('mixHeartMute'), HEART_SOLO = byId('mixHeartSolo');
 const LAYERS = [];
 for (let i = 0; i < AMB_LAYER_COUNT; i++) LAYERS.push(makeFader(ambLayerControls(i).level));
 
@@ -869,6 +872,11 @@ export function drawMixer(ui, app, fade = 1) {
   // Sun is switched off
   masterRow(ui, HUM, true, 'AMPLITUDE', '%', meterCount('sunHumAmp'), HUM_MUTE, HUM_SOLO,
     chanSilenced('hum') || !(S.sunHumOn && S.layers.sun));
+
+  sectionLabel(ui, 'HEARTBEAT', false);
+  ui.spacer(5);
+  masterRow(ui, HEART, true, 'AUDIO LEVEL', '%', meterCount('heartAudio'), HEART_MUTE, HEART_SOLO,
+    chanSilenced('heart') || !S.layers.heartbeat);
 
   sectionLabel(ui, 'ATMOSPHERE', false);
   ui.spacer(2);
