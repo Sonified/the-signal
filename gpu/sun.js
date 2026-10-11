@@ -95,6 +95,7 @@ import { motionStep, motionScale } from '../core/motion.js';
 import { idleHold, idleRelease } from '../core/idle.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
+import { setCutoffHz, cutoffHz } from '../core/sun-hum.js';
 
 const VIDEO_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
 // The standard stem and the High quality one, the site's original snapshot
@@ -540,7 +541,8 @@ export function createSun(device, format) {
   const driven = {
     sunSpeed: { phase: 0, room: roomPhaseState() },
     sunFbAmt: { phase: 0, room: roomPhaseState() },
-    sunFbOpacity: { phase: 0, room: roomPhaseState() }
+    sunFbOpacity: { phase: 0, room: roomPhaseState() },
+    sunHumCutoff: { phase: 0, room: roomPhaseState() }
   };
   // A variance's drive this frame, 0 to 1 from its driver: Time's cosine, 1
   // at the cycle's start; the strobe's lum, 1 lit; the breath, 1 at the
@@ -644,6 +646,7 @@ export function createSun(device, format) {
         S.effSunSpeed = undefined;
         S.effSunFbAmt = undefined;
         S.effSunFbOpacity = undefined;
+        S.effSunHumCutoff = undefined;
         if (fb) fb.release();
         releaseFolds();
       }
@@ -673,6 +676,15 @@ export function createSun(device, format) {
     updateWrap(nowMs / 1000);
     syncVideo(true, driveOf('sunSpeed', t, md, lum, S.effSunBreathPos));
     syncWrapHold();
+
+    // The Rotational hum's Cutoff, as its variance plays it, on the 0 to 1
+    // setting, straight into the hum's filter (a no-op when it has not
+    // moved, and where there is no AudioContext: in worker mode
+    // core/audio-link.js carries effSunHumCutoff to the page's hum).
+    const cutSet = clampNum(S.sunHumCutoff, 0, 1, 0.25);
+    const cut = varied('sunHumCutoff', cutSet, driveOf('sunHumCutoff', t, md, lum, S.effSunBreathPos));
+    S.effSunHumCutoff = S.sunHumCutoffVar > 0 ? cut : undefined;
+    setCutoffHz(cutoffHz(cut));
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
     // the pair the live position falls between crossfaded by smoothstep.

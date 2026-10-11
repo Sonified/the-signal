@@ -44,7 +44,7 @@ const DEF_DRIVE = 'breath';
 const DRIVES = ['time', 'strobe', 'breath'];
 const DRIVE_NAMES = { time: 'Time', strobe: 'Link to strobe', breath: 'Link to breath' };
 const driveOf = v => DRIVES.indexOf(v) >= 0 ? v : DEF_DRIVE;
-const DRIVEN = ['sunSpeed', 'sunFbAmt', 'sunFbOpacity'];
+const DRIVEN = ['sunSpeed', 'sunFbAmt', 'sunFbOpacity', 'sunHumCutoff'];
 const NUM = [
   // key,               min,  max, def,  integer
   // the sun video's playback rate, the site's 1x to 16x
@@ -126,6 +126,12 @@ const NUM = [
   // site's resting rate.
   ['sunHumAmp',          0,   2,   0.9,  false],
   ['sunHumCutoff',       0,   1,   0.25, false],
+  // The Cutoff's variance, ridden by its Drive as the Feedback's are, on the
+  // 0 to 1 setting: at 100% the drive's bottom takes the cutoff down to
+  // 100 Hz (gpu/sun.js moves the filter each frame).
+  ['sunHumCutoffVar',    0,   1,   0,    false],
+  ['sunHumCutoffVarPeriod', 0, 120, 20,  true ],
+  ['sunHumCutoffVarPeriodOff', 0, 1, 0,  false],
   ['sunHumRate',         0,   1,   0,    false],
   // meditatewiththesun.com's master volume: every page opened with
   // ?event=<this broadcast session's name> fades its sound to it (that
@@ -244,7 +250,7 @@ export function applySunState(S, o) {
 // ---------- the Rotational hum ----------
 // The site's maps, exactly: the cutoff 100 Hz to 10 kHz and the speed
 // (AUD_SPAN_LO 0.5 to HI 16) both logarithmic over the 0 to 1 setting.
-const HUM_HZ_LO = 100, HUM_HZ_HI = 10000, HUM_HZ_LN = Math.log(HUM_HZ_HI / HUM_HZ_LO);
+const HUM_HZ_LO = hum.CUTOFF_LO, HUM_HZ_HI = hum.CUTOFF_HI, HUM_HZ_LN = Math.log(HUM_HZ_HI / HUM_HZ_LO);
 const HUM_RATE_LO = 0.5, HUM_RATE_HI = 16, HUM_RATE_LN = Math.log(HUM_RATE_HI / HUM_RATE_LO);
 // The whole speed axis is retuned by this factor before it reaches the
 // engine, two calls of Robert's stacked (both 2026-10-10): first the sound
@@ -253,7 +259,7 @@ const HUM_RATE_LO = 0.5, HUM_RATE_HI = 16, HUM_RATE_LN = Math.log(HUM_RATE_HI / 
 // and saved settings all keep their positions; only the sound under them
 // shifts.
 const HUM_RETUNE = (2.15 / 2) * 0.5;
-const humHz = v => HUM_HZ_LO * Math.pow(HUM_HZ_HI / HUM_HZ_LO, v);
+const humHz = hum.cutoffHz;
 const humRate = v => HUM_RATE_LO * Math.pow(HUM_RATE_HI / HUM_RATE_LO, v);
 // The fine sliders' positions (0 to 1000 over the 0 to 1 setting), and a
 // typed Hz or rate read back to one, clamped to the span.
@@ -264,10 +270,12 @@ const rateToPos = r => r === r ? Math.round(Math.min(1, Math.max(0, Math.log(r /
 // The hum plays only while its own switch AND the Sun layer are on; either
 // going off pauses it through its output gate. Every setting is pushed too,
 // each setter a no-op when nothing moved, so one call puts the hum wherever
-// S says. Called by every hum and layer set(), and by applySunState.
+// S says, the cutoff where its variance has it (S.effSunHumCutoff, the
+// renderer's) while one plays. Called by every hum and layer set(), and by
+// applySunState.
 function syncHum(S) {
   hum.setVolume(S.sunHumAmp);
-  hum.setCutoffHz(humHz(S.sunHumCutoff));
+  hum.setCutoffHz(humHz(typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : S.sunHumCutoff));
   hum.setRate(humRate(S.sunHumRate) * HUM_RETUNE);
   if (S.sunHumOn && S.layers.sun) hum.play(); else hum.pause();
 }
@@ -612,8 +620,12 @@ export const SUN_CONTROLS = [
     set: (S, pos) => { S.sunHumCutoff = fit(pos / HUM_POS, 0, 1, false); syncHum(S); save(); },
     format: S => Math.round(humHz(S.sunHumCutoff)) + ' Hz',
     parse: (S, text) => hzToPos(parseFloat(text)),
+    // the live cutoff while its variance plays, the slider's blue line
+    effective: S => S.sunHumCutoffVar > 0 && typeof S.effSunHumCutoff === 'number'
+      ? Math.round(S.effSunHumCutoff * HUM_POS) : undefined,
     enabled: layerOn
   },
+  ...drivenVariance('sunHumCutoff', 'Cutoff', 'sunHumDrawer'),
   {
     // How fast the series plays, 0.5x to 16x on the site's log map (1 hour
     // of sun is one sample at 48 kHz, so 1x is about 5.5 years a second).

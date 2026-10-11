@@ -45,6 +45,10 @@
 //   pianoFree(on)           the journey let the piano play freely (1) or held
 //                           its clock for the words (0): S.pianoFreePlay,
 //                           which is never saved, so it only travels here.
+//   sunHumCutoff(v)         the Rotational hum's Cutoff as its variance plays
+//                           it this frame (0 to 1, -1 while none plays): the
+//                           breath, the strobe or the time that drive it are
+//                           this thread's, so the page's hum is told.
 //   pianoGesture(n)         a word appeared on a step that plays the piano on
 //                           the words: one gesture, now. n is the worker's
 //                           running count (S.pianoGestureN), so several in
@@ -134,7 +138,7 @@ export function createAudioLink(post) {
   const seqNow = new Float32Array(SEQ_PACK), seqSent = new Float32Array(SEQ_PACK);
 
   let lastRunning = false, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
-  let lastFree = true, lastGesture = 0;
+  let lastFree = true, lastGesture = 0, lastHumCut = -1;
   let lastSignal = -1;
   const sigPack = new Float64Array(SIGNAL_PACK);
   let seeded = false;
@@ -203,6 +207,11 @@ export function createAudioLink(post) {
     if (free !== lastFree) { lastFree = free; call('pianoFree', free ? 1 : 0, 0, 0, 0); }
     const gn = S.pianoGestureN | 0;
     if (gn !== lastGesture) { lastGesture = gn; call('pianoGesture', gn, 0, 0, 0); }
+    // The Rotational hum's Cutoff as its variance plays it (gpu/sun.js), -1
+    // while none plays, so the page's hum follows the breath, the strobe or
+    // the time the renderer here reads.
+    const hc = typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : -1;
+    if (hc !== lastHumCut) { lastHumCut = hc; call('sunHumCutoff', hc, 0, 0, 0); }
 
     const eff = S.effFreq || 0, ach = S.achievedFreq || 0;
     if (Math.abs(eff - lastEff) > STROBE_EPS || Math.abs(ach - lastAch) > STROBE_EPS) {

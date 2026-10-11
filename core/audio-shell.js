@@ -51,6 +51,7 @@ import {
 import { initStore, load, syncFromStorage } from './store.js';
 import { replayLive, applyActivePresetState } from './presets.js';
 import { signal, unpackSignal, publishSignal } from './signal.js';
+import { setCutoffHz, cutoffHz } from './sun-hum.js';
 import {
   M_FLAGS, M_DRIFT, M_ARP, M_HEAD, M_ATMOS, F_AUDIO, F_WORKLET, F_DRIFT,
   DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP, W_READBACKS, CALL_SLOTS, packReadbacks
@@ -121,7 +122,13 @@ export function createAudioShell(storage) {
     // The journey's piano trigger (core/journey.js): whether the piano plays
     // freely or waits for the words, and one gesture as a word appears.
     pianoFree(on) { S.pianoFreePlay = !!on; },
-    pianoGesture() { pianoGesture(); }
+    pianoGesture() { pianoGesture(); },
+    // The hum's Cutoff as the worker's variance plays it, or back to the
+    // setting at -1 (core/audio-link.js).
+    sunHumCutoff(v) {
+      S.effSunHumCutoff = v >= 0 ? v : undefined;
+      setCutoffHz(cutoffHz(v >= 0 ? v : S.sunHumCutoff));
+    }
   };
 
   let warned = false;

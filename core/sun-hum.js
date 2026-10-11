@@ -594,6 +594,13 @@ export function setYearsPerSecond(yps) {
   setRate((yps * HOURS_PER_YEAR) / sr);
 }
 
+// The Cutoff setting's map, the site's: 0 to 1 over 100 Hz to 10 kHz,
+// logarithmic. Here rather than in the schema so the renderer (gpu/sun.js,
+// whose Cutoff variance moves it every frame) and the page's end of the
+// worker link can reach it without importing the schema's ring.
+export const CUTOFF_LO = 100, CUTOFF_HI = 10000;
+export const cutoffHz = v => CUTOFF_LO * Math.pow(CUTOFF_HI / CUTOFF_LO, v);
+
 export function setCutoffHz(hz) {
   if (hz === cutoffTarget) return;
   cutoffTarget = hz;
