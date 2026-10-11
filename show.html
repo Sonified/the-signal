@@ -68,6 +68,8 @@ body { padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inse
   display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 header { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-bottom: 12px; flex: none; }
 h1 { font-size: 20px; margin: 0; }
+#title { cursor: pointer; }
+#title:active { color: var(--gold); }
 .status { color: var(--dim); font-size: 13px; }
 .status b { color: var(--ink); font-weight: 600; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 6px; }
@@ -159,7 +161,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   </form>
 </div>
 <header>
-  <h1>Show Remote</h1>
+  <h1 id="title">Show Remote</h1>
   <span class="status" id="paths"></span>
   <span class="status">room <b id="roomName"></b></span>
   <button class="big small spacer" id="switch"></button>
@@ -473,6 +475,8 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     duckSet.xf = xf;
     queueCtl('slideXfade', Math.round(xf * 100));
   }, () => duckSet.xf > 0 ? duckSet.xf.toFixed(2) + ' s' : 'cut');
+  // the title clears the laptop's screen: its drawer and windows shut
+  $('title').onclick = () => send({ k: 'clean' });
   $('gear').onclick = () => $('modal').classList.add('open');
   $('close').onclick = () => { saveDuck(); $('modal').classList.remove('open'); };
   $('modal').addEventListener('click', e => { if (e.target === $('modal')) { saveDuck(); $('modal').classList.remove('open'); } });

@@ -23,6 +23,8 @@
 //   {k:'jump', i}       journeyJumpTo(i), i 0-based (the step already playing
 //                       is left alone, as a digit key or MIDI note does)
 //   {k:'next'}/{k:'prev'}  journeyStepBy(+1 / -1)
+//   {k:'clean'}         the title tapped: the drawer and every window shut
+//                       (main.js's clearScreen hook), only the playback left
 //   {k:'ctl', id, v}    a control, by schema id, v in the CONTROL'S OWN
 //                       position units, exactly what byId(id).set takes:
 //                         vol          0..100   (the app's Master volume,
@@ -77,7 +79,7 @@ const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade']);
 const STATUS_MS = 250;
 
-export function initShowRemote() {
+export function initShowRemote(hooks = {}) {
   if (typeof location === 'undefined' || typeof WebSocket === 'undefined') return;
   const P = new URLSearchParams(location.search);
   if (!P.has('remote')) return;
@@ -143,6 +145,7 @@ export function initShowRemote() {
   }
   function act(m) {
     if (m.k === 'jump') { const i = m.i | 0; if (i >= 0) journeyJumpTo(i); }
+    else if (m.k === 'clean') { if (hooks.clearScreen) hooks.clearScreen(); }
     else if (m.k === 'next') journeyStepBy(1);
     else if (m.k === 'prev') journeyStepBy(-1);
     else if (m.k === 'ctl') {

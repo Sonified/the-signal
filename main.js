@@ -412,7 +412,17 @@ async function boot() {
     );
     // The show remote (show.html on the iPad): ?remote makes this tab take
     // its cues, faders and duck over the mirror relays (platform/show-remote.js).
-    initShowRemote();
+    // Its title clears the screen: the drawer and every floating window
+    // shut, leaving only the playback (the Levels window through its own
+    // close action, as its close button does).
+    initShowRemote({
+      clearScreen: () => {
+        const mixClose = byId('ambMixerClose');
+        if (mixer.open) { if (mixClose) mixClose.act(S); else mixer.open = false; }
+        for (const w of [sequencer, journey, performer, music, textbank]) w.open = false;
+        S.panelOpen = false;
+      }
+    });
   }
 
   // ---- per-frame state, allocated once ----
