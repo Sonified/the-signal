@@ -140,6 +140,8 @@
 //   ui.cursorX / ui.cursorY / ui.regionW  (getters, current layout position)
 //   ui.pointerShift  Shift was held on the latest pointer down, so a screen
 //                    can tell a shift-click from a click
+//   ui.pointerMeta   Command (or Control) was held on the latest pointer
+//                    down: the drawer's lock click (widgets.js control)
 //   ui.textEditing   true while a ui.textField holds focus, as of the last
 //                    end(); the app reads it between frames to keep global
 //                    shortcuts off the keyboard while the viewer types
@@ -437,6 +439,11 @@ class UI {
     // Held modifiers are read off the down itself, not tracked from key
     // events, so a shift pressed while the canvas lacked focus still counts.
     this.pointerShift = false;
+    this.pointerMeta = false;
+    // widgets.js control's lock: the rose tint while a locked row draws, and
+    // the locked name's rect and hover for the screen's tooltip
+    this.lockTint = false;
+    this.lockTipX = 0; this.lockTipY = 0; this.lockTipW = 0; this.lockTipH = 0; this.lockTipHover = false;
     this.wheelDX = 0; this.wheelDY = 0;
     // Whether Alt/Option was held on any wheel event this frame. Plain wheel
     // input always belongs to the enclosing scroll region; only Alt+wheel
@@ -612,6 +619,7 @@ class UI {
           this._downEvent = true; this._downX = e.x; this._downY = e.y;
           this._cancelEvent = false;
           this.pointerShift = e.shift;
+          this.pointerMeta = !!(e.meta || e.ctrl);
           break;
         case 'move':
           this.pointerX = e.x; this.pointerY = e.y; this.pointerType = e.pointerType;

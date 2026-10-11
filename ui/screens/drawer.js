@@ -456,6 +456,8 @@ const rampCtrl = {
 const recallRampS = () => journeyModeOn() ? journeyRampS() : presetRampS();
 
 const TIP_PRESET = 'Click to load  ·  Shift-click to save over';
+// a row locked against the journey (widgets.js control), on its name
+const TIP_LOCKED = 'locked — ⌘ click to unlock';
 const TIP_ADD = 'Save the current settings as a new preset';
 const TIP_EDIT = 'Delete or reorder presets';
 const TIP_EDITING = 'Drag to move  ·  click to rename  ·  × to delete';
@@ -1414,9 +1416,13 @@ export function drawDrawer(ui, app) {
             ui.control(it, S, true);
             if (ramping) rampRow(ui, rx, ry, rw, ui.cursorY - ry - SPACE.xs);
             if (slot >= 0) ui.endLineChevron();
-            // a control can carry a hover tip (schema `tip`), shown like the chips'
-            if (it.tip && ui._lastHover) {
-              // A row's tip belongs to its LABEL: it shows only while the
+            // a locked row's name says how to unlock it, in the instant form
+            // a schema tip takes, and in its place
+            if (ui.lockTipHover) {
+              noteTip(ui.idx('drawer.lockTip', g * 1024 + i), ui.lockTipX, ui.lockTipY, ui.lockTipW, TIP_LOCKED, ui.lockTipH, true);
+            } else if (it.tip && ui._lastHover) {
+              // a control can carry a hover tip (schema `tip`), shown like the
+              // chips'. A row's tip belongs to its LABEL: it shows only while the
               // pointer is on the word itself, and sits left aligned just
               // above it (tooltipAt's instant form), never over the slider.
               // Measured only on hovered frames, so steady frames pay nothing.

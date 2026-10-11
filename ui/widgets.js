@@ -167,7 +167,7 @@
 
 import { COLOR, SPACE, RADIUS, TYPE, TRACK, W, MOTION, HIT } from './theme.js';
 import { ICON } from './drawlist.js';
-import { journeyManualOverride } from '../core/journey.js';
+import { journeyManualOverride, journeyLockable, journeyLocked, journeyToggleLock } from '../core/journey.js';
 
 const TOOLTIP_DELAY_MS = 450;
 const TOOLTIP_MAX_W = 260;
@@ -385,12 +385,14 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
     }
   }
 
-  ui.dl.rect(rx, trackCY - trackH / 2, rw, trackH, trackH / 2, COLOR.well, 0, null, 0, 0);
+  // a control locked against the journey (control below) wears the rose
+  const tint = ui.lockTint, acc = tint ? COLOR.lock : COLOR.accent;
+  ui.dl.rect(rx, trackCY - trackH / 2, rw, trackH, trackH / 2, tint ? COLOR.lockSoft : COLOR.well, 0, null, 0, 0);
   const shown = changed ? value : value01;
   const hasEffective = typeof effective01 === 'number' && Number.isFinite(effective01);
   const fillW = Math.max(trackH, rw * shown);
   ui.dl.rect(rx, trackCY - trackH / 2, fillW, trackH, trackH / 2,
-    hasEffective ? COLOR.accentGlow : COLOR.accent, 0, null, disabled ? 0 : 6, 0.35);
+    hasEffective && !tint ? COLOR.accentGlow : acc, 0, null, disabled ? 0 : 6, 0.35);
   // A continuously varying control keeps its knob at the configured value
   // while this lighter, softly breathing fill shows the value in use now.
   // This is the same visual grammar as a performance interpolation: the
@@ -398,7 +400,7 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   if (hasEffective) {
     const live = clamp01(effective01);
     const beat = 0.5 - 0.5 * Math.cos(ui.t * 0.001 * 1.4 * 2 * Math.PI);
-    const k = 0.28 + 0.22 * beat, a = COLOR.accent;
+    const k = 0.28 + 0.22 * beat, a = acc;
     ui.scratch1[0] = a[0] + (1 - a[0]) * k; ui.scratch1[1] = a[1] + (1 - a[1]) * k;
     ui.scratch1[2] = a[2] + (1 - a[2]) * k; ui.scratch1[3] = a[3];
     const liveW = Math.max(trackH, rw * live);
@@ -410,7 +412,7 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   const hoverA = disabled ? 0 : ui.spring(combine2(nid, 1), hover ? 1 : 0, MOTION.hover);
   const knobR = 5 + 3 * hoverA + 2 * pressA;
   const knobX = rx + shown * rw;
-  ui.dl.rect(knobX - knobR, trackCY - knobR, knobR * 2, knobR * 2, knobR, COLOR.accent, 0, null, disabled ? 0 : 8, 0.4 * pressA + 0.15);
+  ui.dl.rect(knobX - knobR, trackCY - knobR, knobR * 2, knobR * 2, knobR, acc, 0, null, disabled ? 0 : 8, 0.4 * pressA + 0.15);
 
   ui._lastId = nid; ui._lastX = fx; ui._lastY = ry; ui._lastW = fw; ui._lastH = totalH; ui._lastHover = hover;
 
@@ -705,7 +707,7 @@ function segment(id, labels, index, disabled, label) {
       ui.dl.rect(cx, cy, colW, rh, RADIUS.pill, ui.scratch0, 0, null, 0, 0);
     }
     ui.text.draw(ui.dl, labels[i], cx + colW / 2, baseline, TYPE.sm, isSel ? W.semibold : W.regular,
-      isSel ? COLOR.accent : COLOR.inkDim, 1, TRACK.ui, 1);
+      isSel ? (ui.lockTint ? COLOR.lock : COLOR.accent) : COLOR.inkDim, 1, TRACK.ui, 1);
   }
 
   // The selection highlight springs only along the row, and only in the
@@ -723,7 +725,8 @@ function segment(id, labels, index, disabled, label) {
   const invW = rw > 0 ? 1 / rw : 0;
   const fracX = ui.spring(combine2(nid, 3), (selX - rx) * invW, MOTION.panel);
   const fracW = ui.spring(combine2(nid, 5), selW * invW, MOTION.panel);
-  ui.dl.rect(rx + fracX * rw, selY, fracW * rw, selH, RADIUS.pill, COLOR.accentSoft, 1, COLOR.accent, 0, 0);
+  ui.dl.rect(rx + fracX * rw, selY, fracW * rw, selH, RADIUS.pill, ui.lockTint ? COLOR.lockSoft : COLOR.accentSoft, 1,
+             ui.lockTint ? COLOR.lock : COLOR.accent, 0, 0);
 
   if (focused && ui.focusVisible) ui._focusRing(rx, ry, rw, totalH, RADIUS.pill);
 
@@ -907,7 +910,7 @@ function toggle(id, label, on, disabled, heading) {
     disabled ? COLOR.inkFaint : heading ? COLOR.inkHead : COLOR.inkDim, 0, heading ? TRACK.caps : TRACK.ui, 1);
 
   const onA = ui.spring(combine2(nid, 6), newOn ? 1 : 0, MOTION.hover);
-  drawSwitch(ui, rx + rw - SWITCH_W, ry + h / 2 - SWITCH_H / 2, SWITCH_W, SWITCH_H, onA, newOn);
+  drawSwitch(ui, rx + rw - SWITCH_W, ry + h / 2 - SWITCH_H / 2, SWITCH_W, SWITCH_H, onA, newOn, ui.lockTint);
 
   if (focused && ui.focusVisible) ui._focusRing(rx, ry, rw, h, RADIUS.sm);
 
@@ -921,13 +924,15 @@ function toggle(id, label, on, disabled, heading) {
 // amount (0 off, 1 on) and on the state it is heading for, which picks the
 // border colour at once while the fill and knob travel. x and y are the
 // track's top left, fresh each frame, so the switch moves rigidly with
-// whatever holds it. Writes scratch0 and scratch1.
-export function drawSwitch(ui, x, y, w, h, onA, on) {
-  mix4(ui.scratch0, COLOR.well, COLOR.accentSoft, onA);
-  ui.dl.rect(x, y, w, h, h / 2, ui.scratch0, 1, on ? COLOR.accent : COLOR.lineSoft, 0, 0);
+// whatever holds it. Writes scratch0 and scratch1. tint: the rose of a
+// control locked against the journey, in place of the accent.
+export function drawSwitch(ui, x, y, w, h, onA, on, tint) {
+  const acc = tint ? COLOR.lock : COLOR.accent;
+  mix4(ui.scratch0, COLOR.well, tint ? COLOR.lockSoft : COLOR.accentSoft, onA);
+  ui.dl.rect(x, y, w, h, h / 2, ui.scratch0, 1, on ? acc : COLOR.lineSoft, 0, 0);
   const knobR = h / 2 - 2;
   const knobX = x + h / 2 + onA * (w - h);
-  mix4(ui.scratch1, COLOR.inkDim, COLOR.accent, onA);
+  mix4(ui.scratch1, COLOR.inkDim, acc, onA);
   ui.dl.rect(knobX - knobR, y + h / 2 - knobR, knobR * 2, knobR * 2, knobR, ui.scratch1, 0, null, onA > 0.5 ? 5 : 0, 0.3 * onA);
 }
 
@@ -1628,6 +1633,18 @@ function textControl(ui, ctrl, S, enabled) {
   return changed;
 }
 
+// A command-click (or control-click) anywhere on a row whose control a
+// journey step can hold locks it against the journey, or unlocks it
+// (core/journey.js journeyToggleLock), and does nothing else: the row takes
+// the whole press before any of its widgets can see it, so no value is
+// written and the label's reset never fires. The row's height is last
+// frame's, so it needs one frame on screen first. A locked row works by hand
+// as ever; it wears the rose on its track or switch (ui.lockTint, read by
+// slider, segment and toggle) and a small lock right of its name, and the
+// name's rect is left in ui.lockTip* for the screen's tooltip.
+const rowH = new Map();   // ctrl.id -> the row's height last frame
+const LOCK_GLYPH = 9, LOCK_GAP = 5;
+
 // shown: the caller has already settled that the row shows (the drawer
 // decides once per row, and keeps a row sliding shut on screen after its own
 // rule has hidden it), so its visible() is not asked again.
@@ -1635,6 +1652,21 @@ function control(ctrl, S, shown) {
   const ui = this;
   if (!shown && ctrl.visible && !ctrl.visible(S)) return false;
   const enabled = ctrl.enabled ? ctrl.enabled(S) : true;
+
+  const lockable = journeyLockable(ctrl.id);
+  ui.lockTipHover = false;
+  ui.peek();
+  const x0 = ui.px, y0 = ui.py, w0 = ui.pw;
+  if (lockable && ui.pointerMeta) {
+    const h = rowH.get(ctrl.id) || 0;
+    if (h > 0) {
+      ui.interact(combine2(ui.id(ctrl.id), 21), x0, y0, w0, h, false);
+      if (ui.clicked) journeyToggleLock(ctrl.id);
+    }
+  }
+  const locked = lockable && journeyLocked(ctrl.id);
+  ui.lockTint = locked;
+
   if (!enabled) ui.dl.pushAlpha(0.45);
 
   let changed = false;
@@ -1748,6 +1780,38 @@ function control(ctrl, S, shown) {
   // marks the id as taken by hand, with no one position to hand over.
   if (changed) journeyManualOverride(ctrl.id, ctrl.get ? ctrl.get(S) : undefined);
 
+  ui.lockTint = false;
+  if (lockable) {
+    const h = ui.cursorY - y0;
+    if (rowH.get(ctrl.id) !== h) rowH.set(ctrl.id, h);
+    if (locked) lockGlyph(ui, ctrl, x0, y0, h);
+  }
+
   if (!enabled) ui.dl.popAlpha();
   return changed;
+}
+
+// The lock right of a locked row's name, centred on the name's line: the
+// row's first line for a stacked control, the row's middle for one laid on a
+// single line (a toggle, an inline slider). A row with no name of its own
+// wears it in the gutter to its left. The name and the lock are the
+// tooltip's rect.
+function lockGlyph(ui, ctrl, x0, y0, h) {
+  ui.text.lineMetrics(TYPE.sm, ui._lm);
+  const lineH = ui._lm.ascent + ui._lm.descent;
+  const oneLine = ctrl.kind === 'toggle' || (ctrl.kind === 'slider' && ctrl.inline);
+  const nameless = ctrl.kind === 'segment' && !ctrl.dropdown && ctrl.hideLabel;
+  const cy = oneLine ? y0 + (h - SPACE.xs) / 2 : y0 + lineH / 2;
+  let lw = 0;
+  if (!nameless) {
+    const caps = ctrl.kind === 'toggle' && ctrl.hasChildren;
+    const label = caps ? capsLabel(ctrl) : ctrl.label;
+    lw = ui.text.measure(label, TYPE.sm, caps ? W.bold : W.regular) + (caps ? TRACK.caps * TYPE.sm * (label.length - 1) : 0);
+  }
+  const gx = nameless ? x0 - LOCK_GAP - LOCK_GLYPH : x0 + lw + LOCK_GAP;
+  ui.dl.icon(ICON.LOCK, gx, cy - LOCK_GLYPH / 2, LOCK_GLYPH, LOCK_GLYPH, COLOR.lock, 0, 0);
+  const tx = nameless ? gx : x0, tw = nameless ? LOCK_GLYPH : lw + LOCK_GAP + LOCK_GLYPH, ty = cy - lineH / 2;
+  ui.lockTipX = tx; ui.lockTipY = ty; ui.lockTipW = tw; ui.lockTipH = lineH;
+  ui.lockTipHover = ui.pointerX >= tx && ui.pointerX < tx + tw && ui.pointerY >= ty && ui.pointerY < ty + lineH &&
+    ui._pointerInClip() && !ui._pointerOccluded();
 }

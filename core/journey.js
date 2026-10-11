@@ -625,6 +625,7 @@ function persistLib() {
 // true when the key was the journeys'.
 export function syncJourneyFromStorage(key) {
   if (typeof key !== 'string') return false;
+  if (key === LOCK_KEY) { locks = null; version++; return true; }
   if (key === LIB_KEY) {
     const was = lib ? lib.cur : '';
     lib = null; data = null;
@@ -641,6 +642,71 @@ export function syncJourneyFromStorage(key) {
     return true;
   }
   return key === JOURNEY_KEY;
+}
+
+// ---------- locks ----------
+//
+// The operator can lock a control (a command-click on its drawer row,
+// ui/widgets.js control): the set of locked ids lives under its own key,
+// this machine's alone like the UI's own state, and never rides a preset, a
+// journey or a broadcast. A lock is kept under the twin group's canonical
+// door and covers every door of the group (lockAt), since a lock with a back
+// door is no lock. Presets, the broadcast and the show remote never read it.
+//
+// What a lock does to the journey is deliberately undecided: the operator
+// claiming a control could mean the journey never moves it and never takes
+// it into a step, or something gentler. Every place the journey takes a
+// control into a step (captureAll, runDiff, recordLiveControl) or moves one
+// as a step is entered (moves, and the door's level in throughDoor) asks the
+// one question lockHolds(i), and for now its answer is always no, so a lock
+// changes nothing about capture or apply yet; it is the one seam where
+// whichever meaning is chosen lands.
+const LOCK_KEY = 'signal.journeyLocks.v1';
+let locks = null;
+const lockAt = new Uint8Array(R.length);
+function lockHolds(i) { return false; }
+function ensureLocks() {
+  if (locks) return;
+  locks = new Set();
+  const raw = readRaw(LOCK_KEY);
+  if (Array.isArray(raw)) {
+    for (let n = 0; n < raw.length; n++) {
+      const i = typeof raw[n] === 'string' ? idxOf.get(raw[n]) : undefined;
+      if (i !== undefined && lockable(i)) locks.add(R[canon[i]].id);
+    }
+  }
+  markLocks();
+}
+function markLocks() {
+  lockAt.fill(0);
+  for (const id of locks) for (const t of withTwins(id)) { const j = idxOf.get(t); if (j !== undefined) lockAt[j] = 1; }
+}
+// A control a step can hold (the mixer's own switches belong to the mix
+// block, and this machine's controls and the operator's own are never in a
+// step) is one a lock means anything for.
+const lockable = i => !skip[i] && !inMix[i];
+export function journeyLockable(id) {
+  const i = idxOf.get(id);
+  return i !== undefined && lockable(i);
+}
+// Called for every drawer row each frame: a lookup and a byte.
+export function journeyLocked(id) {
+  ensureLocks();
+  const i = idxOf.get(id);
+  return i !== undefined && lockAt[i] === 1;
+}
+// Locks or unlocks control id and its twins; returns whether it is now
+// locked.
+export function journeyToggleLock(id) {
+  ensureLocks();
+  const i = idxOf.get(id);
+  if (i === undefined || !lockable(i)) return false;
+  const key = R[canon[i]].id, on = !locks.has(key);
+  if (on) locks.add(key); else locks.delete(key);
+  markLocks();
+  saveKey(LOCK_KEY, [...locks]);
+  version++;
+  return on;
 }
 
 // ---------- applying a step ----------
@@ -670,7 +736,7 @@ function applyText(text) {
 // they share), not taken by the viewer for this walk (manual), and not one
 // of the mixer's switches when the step's mix block holds them.
 function moves(i, mixOwned) {
-  return !skip[i] && canon[i] === i && !manual.has(R[i].id) && !(mixOwned && inMix[i]);
+  return !skip[i] && canon[i] === i && !manual.has(R[i].id) && !(mixOwned && inMix[i]) && !lockHolds(i);
 }
 // While the step's colour walk runs (its own Color walk, else the one running
 // now), the colour is the walk's, moved every frame, and a step never lands
@@ -744,7 +810,7 @@ function throughDoor(o, mixOwned, sec, now) {
       if (v === undefined || !moves(i, mixOwned)) continue;
       if ((c.kind !== 'toggle' && c.kind !== 'segment') || c.mixKey) continue;
       const is = !!c.get(S), fading = is && perfDestination(c.id) === false;
-      const L = opAt[i], lid = L >= 0 && !manual.has(R[L].id) ? R[L].id : null;
+      const L = opAt[i], lid = L >= 0 && !manual.has(R[L].id) && !lockHolds(L) ? R[L].id : null;
       const lv = lid ? o[lid] : undefined;
       const relevel = fading && !v && typeof lv === 'number' && perfDestination(lid) !== lv;
       if (!(fading && (v || voice[i])) && !(voice[i] && lid && !!v !== is) && !relevel) continue;
@@ -1416,7 +1482,7 @@ function runDiff() {
   const o = st.overrides;
   let moved = false, changed = JOURNEY_DIAG ? [] : null;
   for (let i = 0; i < R.length; i++) {
-    if (!held[i] || (i === COLOR_I && S.colorWalk > 0)) continue;
+    if (!held[i] || lockHolds(i) || (i === COLOR_I && S.colorWalk > 0)) continue;
     const c = R[i], dest = destOf(c), raw = dest !== undefined ? dest : c.get(S);
     const v = validValue(c, raw);
     if (v === undefined) continue;
@@ -1545,7 +1611,7 @@ export function journeyRampS() {
 function captureAll(st) {
   const o = st.overrides;
   for (let i = 0; i < R.length; i++) {
-    if (!held[i]) continue;
+    if (!held[i] || lockHolds(i)) continue;
     const c = R[i], v = validValue(c, posOf(c));
     if (v !== undefined) o[c.id] = v;
   }
@@ -2181,7 +2247,7 @@ function recordLiveControl(stepIdx, id, requested) {
   const k = canon[j], c = R[k];
   let moved = false;
   const changed = [];
-  if (held[k]) {
+  if (held[k] && !lockHolds(k)) {
     let v = requested === undefined ? posOf(c) : flip[j] ? !(requested === true || requested === 1) : requested;
     v = validValue(c, v);
     if (v !== undefined && !same(c, st.overrides[c.id], v)) {

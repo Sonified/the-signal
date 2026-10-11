@@ -57,6 +57,11 @@ export const COLOR = {
   accent:     c(110, 168, 254),        // v0 --ui-accent
   accentSoft: c(110, 168, 254, 0.22),
   accentGlow: c(110, 168, 254, 0.45),
+  // a control the operator has locked against the journey (ui/widgets.js
+  // control): a muted dusty rose in the same soft register as the journey's
+  // gold, a mark of ownership rather than an alarm
+  lock:       c(196, 140, 150),
+  lockSoft:   c(196, 140, 150, 0.22),
 
   // status
   warn:       c(224, 164, 76),         // v0 #warn
