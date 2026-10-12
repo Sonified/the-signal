@@ -134,8 +134,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   const gl = canvas.getContext('webgl2', { premultipliedAlpha: false });
   const VS = `#version 300 es
   in vec2 p; out vec2 uv;
-  uniform vec2 half; // the square's half size in clip space
-  void main() { uv = p * 0.5 + 0.5; uv.y = 1.0 - uv.y; gl_Position = vec4(p * half, 0.0, 1.0); }`;
+  uniform vec2 extent; // the square's half size in clip space ('half' is reserved in GLSL)
+  void main() { uv = p * 0.5 + 0.5; uv.y = 1.0 - uv.y; gl_Position = vec4(p * extent, 0.0, 1.0); }`;
   const FS = `#version 300 es
   precision highp float;
   in vec2 uv; out vec4 o;
@@ -164,7 +164,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-  const uHalf = gl.getUniformLocation(prog, 'half'), uG = gl.getUniformLocation(prog, 'g');
+  const uHalf = gl.getUniformLocation(prog, 'extent'), uG = gl.getUniformLocation(prog, 'g');
 
   // the Atmosphere sweep, gpu/sun.js: the five channels at i/4 along it
   const gains = new Float32Array(5);
