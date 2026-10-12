@@ -34,7 +34,7 @@ body { display: grid; grid-template-columns: 300px 1fr 280px; height: 100vh; }
 #layers .lh h2 { margin: 0; cursor: pointer; }
 #layers .lh h2:hover { color: var(--ink); }
 #layers .pre { display: flex; gap: 3px; }
-#side h1 { cursor: pointer; }
+#side h1, #layers h1 { cursor: pointer; }
 .keys { text-decoration: underline; text-decoration-color: var(--gold); text-decoration-thickness: 2px; text-underline-offset: 5px; }
 #layers .bub { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 11px; cursor: pointer; }
 #layers .bub.on { background: var(--gold); border-color: var(--gold); color: #000; }
@@ -301,8 +301,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       box.innerHTML = '<div class="lh"><h2>' + L.name + '</h2><div class="pre">' +
         ['Off', 1, 2, 3, 4, 5].map((b, n) => '<button class="bub' + (n === 0 ? ' offb' : '') + (sel[i] === n - 1 ? ' on' : '') + '">' + b + '</button>').join('') + '</div></div>';
       // the name puts the Atmosphere on this layer alone (i/4 along it)
-      // and takes the number keys for its presets
-      box.querySelector('h2').onclick = () => { fadeTo(i); keyLayer = i; markKeys(); };
+      box.querySelector('h2').onclick = () => fadeTo(i);
       [...box.querySelectorAll('.bub')].forEach((b, n) => { b.onclick = () => pick(i, n - 1); });
       ADJ.forEach(([label, lo, hi, def], k) => {
         const row = document.createElement('label');
@@ -325,14 +324,15 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     showLit();
     markKeys();
   }
-  // Where the number keys go (underlined): the tiers (-1, after a click on
-  // the title), or a layer's presets (after a click on its name: ` Off, 1-5)
-  let keyLayer = -1;
+  // Where the number keys go (its title underlined): the tiers (Sun Quality,
+  // left) or the presets of the layer showing (Layers, right: ` Off, 1-5)
+  let keyPresets = false;
   function markKeys() {
-    document.querySelector('#side h1').classList.toggle('keys', keyLayer < 0);
-    [...$('layerRows').children].forEach((el, i) => el.querySelector('h2').classList.toggle('keys', i === keyLayer));
+    document.querySelector('#side h1').classList.toggle('keys', !keyPresets);
+    document.querySelector('#layers h1').classList.toggle('keys', keyPresets);
   }
-  document.querySelector('#side h1').onclick = () => { keyLayer = -1; markKeys(); };
+  document.querySelector('#side h1').onclick = () => { keyPresets = false; markKeys(); };
+  document.querySelector('#layers h1').onclick = () => { keyPresets = true; markKeys(); };
   // a bubble: Off (-1) or a preset (0-4), its values onto the sliders
   function pick(i, n) {
     storeLayer(i);
@@ -530,11 +530,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     if (to !== at || fade) fadeTo(to);
   });
   // the number keys pick a tier, for quick A/B (0 the tenth, Max+ in the
-  // master set), or with a layer's name clicked, its preset (` Off, 1-5)
+  // master set), or with Layers clicked, the showing layer's preset (` Off, 1-5)
   addEventListener('keydown', e => {
-    if (keyLayer >= 0) {
-      if (e.key === '`') pick(keyLayer, -1);
-      else if (/^[1-5]$/.test(e.key)) pick(keyLayer, +e.key - 1);
+    if (keyPresets) {
+      const at = fade ? fade.layer : gains.indexOf(Math.max(...gains));
+      if (e.key === '`') pick(at, -1);
+      else if (/^[1-5]$/.test(e.key)) pick(at, +e.key - 1);
       return;
     }
     if (!/^[0-9]$/.test(e.key)) return;
