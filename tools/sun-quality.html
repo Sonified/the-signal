@@ -36,6 +36,9 @@ body { display: grid; grid-template-columns: 300px 1fr 280px; height: 100vh; }
 #layers .byp { height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; }
 #layers .byp.on { background: var(--warn); border-color: var(--warn); color: #000; }
 #layers .layer.bypassed label.row { opacity: .4; }
+#layers .ctl { cursor: pointer; color: var(--ink); user-select: none; }
+#layers .ctl.off { color: #474d5c; }
+#layers label.row.off input, #layers label.row.off output { opacity: .35; }
 #download { position: sticky; bottom: 0; align-self: flex-end; margin-top: 12px; height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; }
 #download:hover { color: var(--ink); }
 #side { background: var(--panel); border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; }
@@ -246,19 +249,24 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   // a bypassed layer keeps its settings but draws untouched (adjOut, what
   // the shader gets)
   const bypass = [false, false, false, false, false];
+  // and each control on its own: its name turns it off (drawn untouched)
+  // and on again, its value kept
+  const ctlOff = new Uint8Array(LAYERS.length * NA);
   const adjOut = Float32Array.from(DEF);
   try {
     const a = JSON.parse(localStorage.getItem('sunQualityLayers') || 'null');
     // a save from before Elevate (three per layer) takes it at 0
     if (a && a.length === LAYERS.length * NA) adj.set(a);
     else if (a && a.length === LAYERS.length * 3) for (let i = 0; i < LAYERS.length; i++) for (let k = 0; k < 3; k++) adj[i * NA + k] = a[i * 3 + k];
+    const c = JSON.parse(localStorage.getItem('sunQualityCtlOff') || 'null');
+    if (Array.isArray(c) && c.length === ctlOff.length) ctlOff.set(c);
     const b = JSON.parse(localStorage.getItem('sunQualityBypass') || 'null');
     if (Array.isArray(b) && b.length === 5) b.forEach((v, i) => { bypass[i] = !!v; });
   } catch (e) {}
-  function syncAdj() { for (let j = 0; j < adj.length; j++) adjOut[j] = bypass[(j / NA) | 0] ? DEF[j] : adj[j]; }
+  function syncAdj() { for (let j = 0; j < adj.length; j++) adjOut[j] = bypass[(j / NA) | 0] || ctlOff[j] ? DEF[j] : adj[j]; }
   const saveAdj = () => {
     syncAdj();
-    try { localStorage.setItem('sunQualityLayers', JSON.stringify([...adj])); localStorage.setItem('sunQualityBypass', JSON.stringify(bypass)); } catch (e) {}
+    try { localStorage.setItem('sunQualityLayers', JSON.stringify([...adj])); localStorage.setItem('sunQualityBypass', JSON.stringify(bypass)); localStorage.setItem('sunQualityCtlOff', JSON.stringify([...ctlOff])); } catch (e) {}
   };
   syncAdj();
   function buildLayers() {
@@ -274,8 +282,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       ADJ.forEach(([label, lo, hi, def], k) => {
         const row = document.createElement('label');
         row.className = 'row';
-        row.innerHTML = label + ' <input type="range" min="' + lo * 100 + '" max="' + hi * 100 + '"><output></output>';
-        const inp = row.querySelector('input'), out = row.querySelector('output');
+        row.innerHTML = '<span class="ctl">' + label + '</span> <input type="range" min="' + lo * 100 + '" max="' + hi * 100 + '"><output></output>';
+        const inp = row.querySelector('input'), out = row.querySelector('output'), ctl = row.querySelector('.ctl');
+        const j = i * NA + k;
+        const mark = () => { ctl.classList.toggle('off', !!ctlOff[j]); row.classList.toggle('off', !!ctlOff[j]); };
+        mark();
+        ctl.onclick = e => { e.preventDefault(); ctlOff[j] = ctlOff[j] ? 0 : 1; mark(); saveAdj(); };
         const show = () => { out.textContent = adj[i * NA + k].toFixed(2); };
         inp.value = Math.round(adj[i * NA + k] * 100); show();
         inp.oninput = () => { adj[i * NA + k] = +inp.value / 100; show(); saveAdj(); };
@@ -294,11 +306,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     saveAdj();
   }
   buildLayers();
-  $('resetLayers').onclick = () => { adj.set(DEF); bypass.fill(false); saveAdj(); buildLayers(); $('atmo').oninput(); };
+  $('resetLayers').onclick = () => { adj.set(DEF); bypass.fill(false); ctlOff.fill(0); saveAdj(); buildLayers(); $('atmo').oninput(); };
   // every layer's settings, and the view they were set in, as a JSON file
   $('download').onclick = () => {
     const out = { savedAt: new Date().toISOString(), set: SET, tier: TIERS[st.tier].name, atmosphere: +$('atmo').value / 100, layers: {} };
-    LAYERS.forEach((L, i) => { out.layers[L.name] = { brightness: adj[i * NA], contrast: adj[i * NA + 1], saturation: adj[i * NA + 2], elevate: adj[i * NA + 3], bypass: bypass[i] }; });
+    LAYERS.forEach((L, i) => { out.layers[L.name] = { brightness: adj[i * NA], contrast: adj[i * NA + 1], saturation: adj[i * NA + 2], elevate: adj[i * NA + 3], bypass: bypass[i],
+      off: ADJ.filter((_, k) => ctlOff[i * NA + k]).map(a => a[0].toLowerCase()) }; });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
     a.download = 'sun-layer-settings.json';
