@@ -110,6 +110,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
 <div id="stage"><canvas id="c"></canvas><div id="status"></div></div>
 <div id="layers">
   <h1>Layers</h1>
+  <label class="row">Crossfade <input type="range" id="xfade" min="0" max="100" value="20"><output id="xfadeOut"></output></label>
   <div class="seg"><button id="resetLayers">Reset all</button></div>
   <div id="layerRows"></div>
   <button id="download">Download settings</button>
@@ -257,7 +258,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       box.innerHTML = '<div class="lh"><h2>' + L.name + '</h2><button class="byp' + (bypass[i] ? ' on' : '') + '">Bypass</button></div>';
       const byp = box.querySelector('.byp');
       // the name puts the Atmosphere on this layer alone (i/4 along it)
-      box.querySelector('h2').onclick = () => { $('atmo').value = i * 25; $('atmo').oninput(); };
+      box.querySelector('h2').onclick = () => fadeTo(i);
       byp.onclick = () => { bypass[i] = !bypass[i]; byp.classList.toggle('on', bypass[i]); box.classList.toggle('bypassed', bypass[i]); saveAdj(); };
       ADJ.forEach(([label, lo, hi], k) => {
         const row = document.createElement('label');
@@ -372,15 +373,43 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   $('ppi').oninput = () => { const v = +$('ppi').value; if (v >= 80 && v <= 600) { st.ppi = v; save(); layout(); } };
   $('model').onchange = () => { st.phone = +$('model').value; save(); layout(); };
   $('size').oninput = () => { $('sizeOut').textContent = $('size').value + '%'; layout(); };
-  $('atmo').oninput = () => {
-    $('atmoOut').textContent = (+$('atmo').value / 100).toFixed(2);
-    setGains(+$('atmo').value / 100);
-    // which layers the Atmosphere shows, the predominant first
+  // which layers are showing, the predominant first
+  function showLit() {
     const lit = [...gains].map((v, i) => [v, i]).filter(x => x[0] > 0.005).sort((a, b) => b[0] - a[0]);
+    if (!lit.length) return;
     $('atmoLayer').innerHTML = 'Mostly <b style="color:var(--gold)">' + LAYERS[lit[0][1]].name + '</b>' +
       lit.map(x => ' · ' + LAYERS[x[1]].name + ' ' + Math.round(x[0] * 100) + '%').join('');
     [...$('layerRows').children].forEach((el, i) => el.classList.toggle('lit', i === lit[0][1]));
+  }
+  $('atmo').oninput = () => {
+    fade = null;   // a hand on the slider ends any crossfade
+    $('atmoOut').textContent = (+$('atmo').value / 100).toFixed(2);
+    setGains(+$('atmo').value / 100);
+    showLit();
   };
+  // Crossfade (top right), seconds, remembered: a layer's name fades the
+  // gains straight from what shows to that layer alone, smoothstep in time,
+  // then the Atmosphere slider lands on it
+  let fade = null;
+  try { const x = +localStorage.getItem('sunQualityXfade'); if (localStorage.getItem('sunQualityXfade') !== null && x >= 0 && x <= 100) $('xfade').value = x; } catch (e) {}
+  $('xfade').oninput = () => {
+    $('xfadeOut').textContent = (+$('xfade').value / 10).toFixed(1) + ' s';
+    try { localStorage.setItem('sunQualityXfade', $('xfade').value); } catch (e) {}
+  };
+  $('xfade').oninput();
+  function fadeTo(i) {
+    const dur = +$('xfade').value / 10 * 1000;
+    if (dur <= 0) { $('atmo').value = i * 25; $('atmo').oninput(); return; }
+    const to = new Float32Array(5); to[i] = 1;
+    fade = { from: Float32Array.from(gains), to, at: performance.now(), dur, layer: i };
+  }
+  function stepFade(now) {
+    if (!fade) return;
+    const u = Math.min(1, (now - fade.at) / fade.dur), k = u * u * (3 - 2 * u);
+    for (let j = 0; j < 5; j++) gains[j] = fade.from[j] + (fade.to[j] - fade.from[j]) * k;
+    showLit();
+    if (u >= 1) { const i = fade.layer; fade = null; $('atmo').value = i * 25; $('atmo').oninput(); }
+  }
   $('size').oninput(); $('atmo').oninput();
 
   function drawTables() {
@@ -401,7 +430,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   }
 
   // ---------- draw ----------
-  function frame() {
+  function frame(now) {
+    stepFade(now);
     if (video.readyState >= 2) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
       gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
