@@ -65,10 +65,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     <select id="model"></select>
     <h2>Phone view</h2>
     <div class="seg" id="fit">
+      <button data-f="real">Real size</button>
       <button data-f="actual">Actual pixels</button>
       <button data-f="fit">Fit window</button>
     </div>
-    <div class="hint">Actual pixels shows every phone pixel as one of yours: bigger than the real phone, and exact. Fit shrinks it to the window, which hides softness.</div>
+    <label class="row">Screen ppi <input type="number" id="ppi" min="80" max="600" step="1" style="height:28px;background:#1b2030;color:var(--ink);border:1px solid var(--line);border-radius:6px;font:inherit;padding:0 6px"><output></output></label>
+    <div class="hint">Real size matches the phone held up to your screen (set Screen ppi to your display's: 254 for a 14" or 16" MacBook Pro). Actual pixels shows every phone pixel as one of yours: bigger than the phone, and exact. Fit fills the window.</div>
   </div>
 
   <h2>Upscale per tier, this view</h2>
@@ -99,16 +101,16 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     { name: 'High', stem: 'sun_mosaic_20260915_23289r', w: 2764, mb: 399, mbps: 4.1 },
     { name: 'Max', stem: 'sun_mosaic_20260904_23284', w: 3072, mb: 777, mbps: 8.0 }
   ];
-  // CSS size and device pixel ratio of each phone
+  // CSS size, device pixel ratio and pixels per inch of each phone
   const PHONES = [
-    { name: 'iPhone 16 Pro', w: 402, h: 874, dpr: 3 },
-    { name: 'iPhone 16 / 15', w: 393, h: 852, dpr: 3 },
-    { name: 'iPhone SE', w: 375, h: 667, dpr: 2 },
-    { name: 'Pixel 8', w: 412, h: 915, dpr: 2.625 },
-    { name: 'Galaxy S24', w: 360, h: 780, dpr: 3 }
+    { name: 'iPhone 16 Pro', w: 402, h: 874, dpr: 3, ppi: 460 },
+    { name: 'iPhone 16 / 15', w: 393, h: 852, dpr: 3, ppi: 460 },
+    { name: 'iPhone SE', w: 375, h: 667, dpr: 2, ppi: 326 },
+    { name: 'Pixel 8', w: 412, h: 915, dpr: 2.625, ppi: 428 },
+    { name: 'Galaxy S24', w: 360, h: 780, dpr: 3, ppi: 416 }
   ];
   const SPEEDS = [1, 2, 4, 8];
-  const st = { tier: 1, device: 'computer', phone: 0, fit: 'fit', speed: 1 };
+  const st = { tier: 1, device: 'computer', phone: 0, fit: 'real', speed: 1, ppi: 254 };
   try { Object.assign(st, JSON.parse(localStorage.getItem('sunQuality') || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem('sunQuality', JSON.stringify(st)); } catch (e) {} };
 
@@ -196,7 +198,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       // actual: one phone pixel per device pixel of this screen
       const dpr = window.devicePixelRatio || 1;
       let cssW = canvas.width / dpr, cssH = canvas.height / dpr;
-      if (st.fit === 'fit') {
+      if (st.fit === 'real') {
+        // the phone's inches at this screen's density: its device pixels
+        // over its ppi, times this screen's ppi over its pixel ratio
+        const k = (st.ppi / dpr) / ph.ppi * ph.dpr;
+        cssW = ph.w * k; cssH = ph.h * k;
+      } else if (st.fit === 'fit') {
         const r = stage.getBoundingClientRect();
         const k = Math.min(1, (r.height - 80) / cssH, (r.width - 80) / cssW);
         cssW *= k; cssH *= k;
@@ -236,6 +243,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   [...$('fit').children].forEach(b => b.onclick = () => { st.fit = b.dataset.f; save(); render(); });
   PHONES.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = p.name + ' (' + Math.round(p.w * p.dpr) + '×' + Math.round(p.h * p.dpr) + ')'; $('model').appendChild(o); });
   $('model').value = st.phone;
+  $('ppi').value = st.ppi;
+  $('ppi').oninput = () => { const v = +$('ppi').value; if (v >= 80 && v <= 600) { st.ppi = v; save(); layout(); } };
   $('model').onchange = () => { st.phone = +$('model').value; save(); layout(); };
   $('size').oninput = () => { $('sizeOut').textContent = $('size').value + '%'; layout(); };
   $('atmo').oninput = () => { $('atmoOut').textContent = (+$('atmo').value / 100).toFixed(2); setGains(+$('atmo').value / 100); };
