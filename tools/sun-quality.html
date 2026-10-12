@@ -190,8 +190,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   precision highp float;
   in vec2 uv; out vec4 o;
   uniform sampler2D tex; uniform float g[5];
-  // per layer: brightness, contrast, saturation (1, 1, 1 untouched)
-  uniform vec3 adj[5];
+  // per layer: brightness, contrast, saturation (1 untouched) and elevate (0)
+  uniform vec4 adj[5];
   vec3 tileAt(float col, float row) { return texture(tex, (uv + vec2(col, row)) / vec2(3.0, 2.0)).rgb; }
   // one layer: brightness and contrast on its tile, then its tint, then
   // its saturation about the Rec. 709 luma, then its Atmosphere gain
@@ -199,6 +199,11 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     if (g[i] <= 0.0) return vec3(0.0);
     vec3 c = tileAt(col, row) * adj[i].x;
     c = max((c - vec3(0.5)) * adj[i].y + vec3(0.5), vec3(0.0));
+    // Elevate: a hump of lift, sin^2(pi x), 0 at black and full white (flat
+    // there too), all of it at mid grey, a tenth at 10% and 90%; at 1 mid
+    // grey rises to 0.75, and it never folds over
+    vec3 x = min(c, vec3(1.0)), sn = sin(3.14159265 * x);
+    c = x + 0.25 * adj[i].w * sn * sn;
     c *= tint / 255.0;
     float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = max(mix(vec3(l), c, adj[i].z), vec3(0.0));
@@ -230,21 +235,27 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   const uHalf = gl.getUniformLocation(prog, 'extent'), uG = gl.getUniformLocation(prog, 'g'), uAdj = gl.getUniformLocation(prog, 'adj');
 
   // the five layers, in the shader's order, and each one's brightness,
-  // contrast and saturation (adj, three per layer), remembered on this machine
+  // contrast, saturation and elevate (adj, four per layer), remembered on
+  // this machine
   const LAYERS = [{ name: '1700 Å' }, { name: '304 Å' }, { name: '171 Å' }, { name: '193 Å' }, { name: '211 Å' }];
-  const ADJ = [['Brightness', 0, 2], ['Contrast', 0, 2], ['Saturation', 0, 2]];
-  const adj = new Float32Array(15).fill(1);
+  // [label, min, max, untouched]
+  const ADJ = [['Brightness', 0, 2, 1], ['Contrast', 0, 2, 1], ['Saturation', 0, 2, 1], ['Elevate', 0, 1, 0]];
+  const NA = ADJ.length;
+  const DEF = new Float32Array(LAYERS.length * NA).map((_, j) => ADJ[j % NA][3]);
+  const adj = Float32Array.from(DEF);
   // a bypassed layer keeps its settings but draws untouched (adjOut, what
   // the shader gets)
   const bypass = [false, false, false, false, false];
-  const adjOut = new Float32Array(15).fill(1);
+  const adjOut = Float32Array.from(DEF);
   try {
     const a = JSON.parse(localStorage.getItem('sunQualityLayers') || 'null');
-    if (a && a.length === 15) adj.set(a);
+    // a save from before Elevate (three per layer) takes it at 0
+    if (a && a.length === LAYERS.length * NA) adj.set(a);
+    else if (a && a.length === LAYERS.length * 3) for (let i = 0; i < LAYERS.length; i++) for (let k = 0; k < 3; k++) adj[i * NA + k] = a[i * 3 + k];
     const b = JSON.parse(localStorage.getItem('sunQualityBypass') || 'null');
     if (Array.isArray(b) && b.length === 5) b.forEach((v, i) => { bypass[i] = !!v; });
   } catch (e) {}
-  function syncAdj() { for (let i = 0; i < 15; i++) adjOut[i] = bypass[(i / 3) | 0] ? 1 : adj[i]; }
+  function syncAdj() { for (let j = 0; j < adj.length; j++) adjOut[j] = bypass[(j / NA) | 0] ? DEF[j] : adj[j]; }
   const saveAdj = () => {
     syncAdj();
     try { localStorage.setItem('sunQualityLayers', JSON.stringify([...adj])); localStorage.setItem('sunQualityBypass', JSON.stringify(bypass)); } catch (e) {}
@@ -260,16 +271,16 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       // the name puts the Atmosphere on this layer alone (i/4 along it)
       box.querySelector('h2').onclick = () => fadeTo(i);
       byp.onclick = () => setBypass(i, !bypass[i]);
-      ADJ.forEach(([label, lo, hi], k) => {
+      ADJ.forEach(([label, lo, hi, def], k) => {
         const row = document.createElement('label');
         row.className = 'row';
         row.innerHTML = label + ' <input type="range" min="' + lo * 100 + '" max="' + hi * 100 + '"><output></output>';
         const inp = row.querySelector('input'), out = row.querySelector('output');
-        const show = () => { out.textContent = adj[i * 3 + k].toFixed(2); };
-        inp.value = Math.round(adj[i * 3 + k] * 100); show();
-        inp.oninput = () => { adj[i * 3 + k] = +inp.value / 100; show(); saveAdj(); };
-        // a double click puts it back to 1
-        inp.ondblclick = () => { adj[i * 3 + k] = 1; inp.value = 100; show(); saveAdj(); };
+        const show = () => { out.textContent = adj[i * NA + k].toFixed(2); };
+        inp.value = Math.round(adj[i * NA + k] * 100); show();
+        inp.oninput = () => { adj[i * NA + k] = +inp.value / 100; show(); saveAdj(); };
+        // a double click puts it back to untouched
+        inp.ondblclick = () => { adj[i * NA + k] = def; inp.value = def * 100; show(); saveAdj(); };
         box.appendChild(row);
       });
       $('layerRows').appendChild(box);
@@ -283,11 +294,11 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     saveAdj();
   }
   buildLayers();
-  $('resetLayers').onclick = () => { adj.fill(1); bypass.fill(false); saveAdj(); buildLayers(); $('atmo').oninput(); };
+  $('resetLayers').onclick = () => { adj.set(DEF); bypass.fill(false); saveAdj(); buildLayers(); $('atmo').oninput(); };
   // every layer's settings, and the view they were set in, as a JSON file
   $('download').onclick = () => {
     const out = { savedAt: new Date().toISOString(), set: SET, tier: TIERS[st.tier].name, atmosphere: +$('atmo').value / 100, layers: {} };
-    LAYERS.forEach((L, i) => { out.layers[L.name] = { brightness: adj[i * 3], contrast: adj[i * 3 + 1], saturation: adj[i * 3 + 2], bypass: bypass[i] }; });
+    LAYERS.forEach((L, i) => { out.layers[L.name] = { brightness: adj[i * NA], contrast: adj[i * NA + 1], saturation: adj[i * NA + 2], elevate: adj[i * NA + 3], bypass: bypass[i] }; });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
     a.download = 'sun-layer-settings.json';
@@ -444,7 +455,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
       gl.uniform2f(uHalf, sidePx / canvas.width, sidePx / canvas.height);
       gl.uniform1fv(uG, gains);
-      gl.uniform3fv(uAdj, adjOut);
+      gl.uniform4fv(uAdj, adjOut);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       $('status').textContent = TIERS[st.tier].name + ' · ' + video.videoWidth + '×' + video.videoHeight + ' · ' + video.currentTime.toFixed(1) + ' s' + (triedCloud ? ' · from the cloud' : ' · local copy');
     }
