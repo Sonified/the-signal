@@ -344,7 +344,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
         '<button class="heart' + (sel[i] >= 0 && presets[i][sel[i]].heart ? ' on' : '') + '"' + (sel[i] < 0 ? ' disabled' : '') + ' title="Heart this preset">♥</button></div></div>';
       // the name puts the Atmosphere on this layer alone (i/4 along it)
       box.querySelector('h2').onclick = () => fadeTo(i);
-      [...box.querySelectorAll('.bub')].forEach((b, n) => { b.onclick = () => pick(i, n - 1); });
+      // shift-click a preset: the current settings copied into it, then it is picked
+      [...box.querySelectorAll('.bub')].forEach((b, n) => { b.onclick = e => (e.shiftKey && n > 0 ? copyTo(i, n - 1) : pick(i, n - 1)); });
       const heart = box.querySelector('.heart');
       heart.onclick = () => {
         if (sel[i] < 0) return;
@@ -394,6 +395,14 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     loadLayer(i);
     saveAdj();
     buildLayers();
+  }
+  // the layer's current settings (the preset being edited) duplicated into
+  // preset n, its own heart kept
+  function copyTo(i, n) {
+    storeLayer(i);
+    const from = presets[i][editOf(i)], to = presets[i][n];
+    if (from !== to) { to.adj = from.adj.slice(); to.off = from.off.slice(); }
+    pick(i, n);
   }
   // the arrows' bypass: Off, or back to the preset it left
   function setBypass(i, on) { if (on !== bypass(i)) pick(i, on ? -1 : last[i]); }
