@@ -259,7 +259,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       const byp = box.querySelector('.byp');
       // the name puts the Atmosphere on this layer alone (i/4 along it)
       box.querySelector('h2').onclick = () => fadeTo(i);
-      byp.onclick = () => { bypass[i] = !bypass[i]; byp.classList.toggle('on', bypass[i]); box.classList.toggle('bypassed', bypass[i]); saveAdj(); };
+      byp.onclick = () => setBypass(i, !bypass[i]);
       ADJ.forEach(([label, lo, hi], k) => {
         const row = document.createElement('label');
         row.className = 'row';
@@ -274,6 +274,13 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       });
       $('layerRows').appendChild(box);
     });
+  }
+  function setBypass(i, on) {
+    bypass[i] = on;
+    const box = $('layerRows').children[i];
+    box.classList.toggle('bypassed', on);
+    box.querySelector('.byp').classList.toggle('on', on);
+    saveAdj();
   }
   buildLayers();
   $('resetLayers').onclick = () => { adj.fill(1); bypass.fill(false); saveAdj(); buildLayers(); $('atmo').oninput(); };
@@ -444,12 +451,14 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     requestAnimationFrame(frame);
   }
   addEventListener('resize', layout);
-  // Up and Down step through the layers on the right, crossfading (taken
-  // from any focused slider, whose Left and Right still move it)
+  // The arrows work the layers on the right (taken from any focused
+  // slider): Up and Down step through them, crossfading; Left shows the
+  // current one's color treatment, Right bypasses it
   addEventListener('keydown', e => {
-    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    if (!/^Arrow(Up|Down|Left|Right)$/.test(e.key)) return;
     e.preventDefault();
     const at = fade ? fade.layer : gains.indexOf(Math.max(...gains));
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { setBypass(at, e.key === 'ArrowRight'); return; }
     const to = Math.max(0, Math.min(LAYERS.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
     if (to !== at || fade) fadeTo(to);
   });
