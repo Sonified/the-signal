@@ -98,6 +98,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   // gpu/sun.js TIERS, with each file's size for the readout
   const TIERS = [
     { name: 'Min', stem: 'sun_mosaic_20260915_23289r_480', w: 720, mb: 46, mbps: 0.48 },
+    // a trial: Min with unsharp=5:5:0.5 in the downscale, its peaks back near Low's
+    { name: 'Min+', stem: 'sun_mosaic_20260915_23289r_480s', w: 720, mb: 62, mbps: 0.64 },
     { name: 'Low', stem: 'sun_mosaic_20260915_23289r_720', w: 1080, mb: 91, mbps: 0.94 },
     { name: 'Standard', stem: 'sun_mosaic_20260915_23289r_1080', w: 1620, mb: 170, mbps: 1.75 },
     { name: 'High', stem: 'sun_mosaic_20260915_23289r', w: 2764, mb: 399, mbps: 4.1 },
