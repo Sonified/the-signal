@@ -99,8 +99,9 @@
 // main's place and the play state carry over, and the play waits for the
 // seek; the ghost starts over, parked at 0.
 //
-// The quality ladder (TIERS, Robert's names): Low (1080x720), Standard
-// (1620x1080), High (the recipe cut, 2764x1842) and Max (the original,
+// The quality ladder (TIERS, Robert's names, Standard in the middle): Min
+// (720x480), Low (1080x720), Standard (1620x1080), High (the recipe cut,
+// 2764x1842) and Max (the original,
 // 3072x2048, only with Max quality on, S.sunHiRes). From the cloud, the
 // first load times a real ranged fetch (PROBE_BYTES, cut off at
 // PROBE_WAIT_MS, the bytes that came counted either way) and takes the
@@ -141,12 +142,13 @@ let VIDEO_BASE = ON_LOCALHOST ? LOCAL_BASE : CLOUD_BASE;
 // snapshot; every tier carries a plain x264 file and an _hevc one.
 const STEM_HIGH = 'sun_mosaic_20260915_23289r';
 const STEM_MAX = 'sun_mosaic_20260904_23284';
-// The ladder, low to high: the two below High are scaled from it
-// (1080x720 and 1620x1080, CRF 26 HEVC / 25 x264, 1 s keyframes, full
+// The ladder, low to high: the three below High are scaled from it
+// (720x480, 1080x720 and 1620x1080, CRF 26 HEVC / 25 x264, 1 s keyframes, full
 // range bt470bg, as the site's own encodes). bar: the link (Mbps) to choose
 // it; ~: its HEVC bitrate.
 const TIERS = [
-  { name: 'Low', stem: STEM_HIGH + '_720', bar: 0 },         // ~0.9 Mbps
+  { name: 'Min', stem: STEM_HIGH + '_480', bar: 0 },         // ~0.46 Mbps
+  { name: 'Low', stem: STEM_HIGH + '_720', bar: 2.5 },       // ~0.94
   { name: 'Standard', stem: STEM_HIGH + '_1080', bar: 5 },   // ~1.7
   { name: 'High', stem: STEM_HIGH, bar: 10 },                // ~4.1
   { name: 'Max', stem: STEM_MAX, bar: 20 }                   // ~8.0

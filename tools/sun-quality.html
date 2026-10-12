@@ -97,6 +97,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   const LOCAL = '/sun-video/';
   // gpu/sun.js TIERS, with each file's size for the readout
   const TIERS = [
+    { name: 'Min', stem: 'sun_mosaic_20260915_23289r_480', w: 720, mb: 46, mbps: 0.48 },
     { name: 'Low', stem: 'sun_mosaic_20260915_23289r_720', w: 1080, mb: 91, mbps: 0.94 },
     { name: 'Standard', stem: 'sun_mosaic_20260915_23289r_1080', w: 1620, mb: 170, mbps: 1.75 },
     { name: 'High', stem: 'sun_mosaic_20260915_23289r', w: 2764, mb: 399, mbps: 4.1 },
@@ -111,7 +112,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     { name: 'Galaxy S24', w: 360, h: 780, dpr: 3, ppi: 416 }
   ];
   const SPEEDS = [1, 2, 4, 8];
-  const st = { tier: 1, device: 'computer', phone: 0, fit: 'real', speed: 1, ppi: 254 };
+  const st = { tier: 2, device: 'computer', phone: 0, fit: 'real', speed: 1, ppi: 254 };
   try { Object.assign(st, JSON.parse(localStorage.getItem('sunQuality') || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem('sunQuality', JSON.stringify(st)); } catch (e) {} };
 
