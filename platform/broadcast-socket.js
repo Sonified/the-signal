@@ -17,10 +17,12 @@
 // drawer's sessions just work on the local build; `?relay=localhost:8787`
 // points a tab at `wrangler dev` when the worker itself is being changed.
 //
-// Each socket reconnects with a doubling wait capped at 8 s, forever once it
-// has connected at least once (a demo should survive a sleeping laptop), but
-// gives up after five straight failures to connect at all, which is what a
-// wrong key or an undeployed relay looks like. A 'ping' goes up every 20 s to
+// Each socket reconnects with a doubling wait capped at 8 s, forever: a show
+// on a hotel's Wi-Fi must come back whenever the network does (TSC 2026's
+// broadcast gave up for good after five failed tries while the room's
+// network was down). Five straight failures to connect at all, which is
+// also what a wrong key or an undeployed relay looks like, say so once in
+// the console, and the retries go on. A 'ping' goes up every 20 s to
 // hold the connection through Cloudflare's idle timeout; the relay answers
 // 'pong' without waking the room.
 
@@ -60,7 +62,8 @@ export function makeFollowUrl(room, target = 'live') {
 //   onMessage(text)  each relay message
 //   onBinary(buf)    each binary frame, as an ArrayBuffer (a piece of the
 //                    broadcaster's live sound, core/live-audio.js); optional
-//   onStatus(s)      'open' | 'lost' (was connected, retrying) | 'dead' (gave up)
+//   onStatus(s)      'open' | 'lost' (was connected, retrying); never 'dead'
+//                    now, which the callers still handle
 // Returns { send(data), close() }; data is a string or an ArrayBuffer, and a
 // send while disconnected is dropped (the broadcaster resends a fresh
 // snapshot on every 'open', and a fresh live sound header, so nothing is owed).
@@ -95,10 +98,8 @@ export function openBroadcastSocket(room, role, key, handlers) {
       open = false;
       if (closed) return;
       fails++;
-      if (!everOpen && fails >= CONNECT_TRIES) {
-        console.warn('[broadcast] could not reach the relay at ' + host + ' for room "' + room + '" after ' + fails + ' tries; giving up (wrong key, or the relay is not deployed?)');
-        handlers.onStatus('dead');
-        return;
+      if (!everOpen && fails === CONNECT_TRIES) {
+        console.warn('[broadcast] could not reach the relay at ' + host + ' for room "' + room + '" after ' + fails + ' tries; still trying every ' + RETRY_CAP_MS / 1000 + ' s (the network, a wrong key, or the relay not deployed?)');
       }
       if (was) handlers.onStatus('lost');
       retryTimer = setTimeout(connect, Math.min(RETRY_CAP_MS, 1000 * Math.pow(2, fails)));
