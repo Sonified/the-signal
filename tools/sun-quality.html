@@ -157,6 +157,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     MASTER.push({ name: n, file: 'test/master_' + k + '.mp4', w, mbps: a }, { name: n + '+', file: 'test/master_' + k + '_s.mp4', w, mbps: b },
       { name: n + '+c28', file: 'test/master_' + k + '_s_c28.mp4', w, mbps: c });
   }
+  // the keyframe pulse (the dark areas breathing once a second at CRF 28),
+  // a last row: High+c28 as it was, then even (I, P and B frames at equal
+  // quality, CRF 29) and flat (that, no cutree, CRF 31), both near its size
+  MASTER.push({ name: 'High+c28', file: 'test/master_high_s_c28.mp4', w: 2764, mbps: 6.3 },
+    { name: 'even c29', file: 'test/master_high_s_c29_even.mp4', w: 2764, mbps: 5.7 },
+    { name: 'flat c31', file: 'test/master_high_s_c31_flat.mp4', w: 2764, mbps: 5.2 });
   const TIERS = SET === 'master' ? MASTER : DELIVERY;
   const fileOf = t => t.file || t.stem + '_hevc.mp4';
   // CSS size, device pixel ratio and pixels per inch of each phone
