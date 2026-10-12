@@ -340,19 +340,22 @@ export function createSun(device, format) {
   async function measure() {
     const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = setTimeout(() => { if (ctl) ctl.abort(); }, PROBE_WAIT_MS);
-    const t0 = performance.now();
-    let got = 0;
+    let got = 0, t1 = -1;
     try {
       // no-store: a cached range would read as infinitely fast
       const r = await fetch(urlHevc(STEM_HIGH), { headers: { Range: 'bytes=0-' + (PROBE_BYTES - 1) }, cache: 'no-store', signal: ctl ? ctl.signal : undefined });
       if (!r.ok) throw Error('HTTP ' + r.status);
+      // the clock starts at the reply: the connection's setup and first
+      // round trip are latency, not speed, and timed in they read a 50 Mbps
+      // link as 15-30 (the cutoff still counts from the request)
+      t1 = performance.now();
       const rd = r.body.getReader();
       for (;;) { const c = await rd.read(); if (c.done) break; got += c.value.byteLength; }
     } catch (e) {
       if (!(e && e.name === 'AbortError')) { console.log('sun: the link probe failed (' + (e && e.message) + ')'); return 0; }
     } finally { clearTimeout(timer); }
-    const secs = (performance.now() - t0) / 1000;
-    return secs > 0 ? got * 8 / secs / 1e6 : 0;
+    const secs = (performance.now() - t1) / 1000;
+    return t1 >= 0 && secs > 0 ? got * 8 / secs / 1e6 : 0;
   }
   // The highest tier a link of mbps clears, within Max quality's say.
   function tierFor(mbps) {
