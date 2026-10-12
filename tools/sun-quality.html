@@ -312,8 +312,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     requestAnimationFrame(frame);
   }
   addEventListener('resize', layout);
-  // the number keys pick a tier, for quick A/B
-  addEventListener('keydown', e => { const n = +e.key; if (n >= 1 && n <= TIERS.length) { st.tier = n - 1; save(); render('tier'); } });
+  // the number keys pick a tier, for quick A/B; 0 is the tenth (Max+ in the master set)
+  addEventListener('keydown', e => {
+    if (!/^[0-9]$/.test(e.key)) return;
+    const n = e.key === '0' ? 10 : +e.key;
+    if (n <= TIERS.length) { st.tier = n - 1; save(); render('tier'); }
+  });
   mark(); load(false); layout();
   requestAnimationFrame(frame);
 })();
