@@ -99,10 +99,13 @@
 // main's place and the play state carry over, and the play waits for the
 // seek; the ghost starts over, parked at 0.
 //
-// The quality ladder (TIERS, Robert's names, Standard in the middle): Min
-// (720x480), Low (1080x720), Standard (1620x1080), High (the recipe cut,
-// 2764x1842) and Max (the original,
-// 3072x2048, only with Max quality on, S.sunHiRes). From the cloud, the
+// The quality ladder (TIERS, Robert's names, documents/sun-quality-ladder.md):
+// SD (720x480), HD (1080x720), HD+ (1620x1080), High (the recipe cut,
+// 2764x1842) and Max (the original, 3072x2048, only with Max quality on,
+// S.sunHiRes); Min (540x360) joins below SD with the re-rendered files. A
+// phone climbs no higher than High (its screen shows no more), and a
+// computer drops no lower than SD (Robert's call: below it the big screen
+// waits for frames rather than shows a soft Sun). From the cloud, the
 // first load times a real ranged fetch (PROBE_BYTES, cut off at
 // PROBE_WAIT_MS, the bytes that came counted either way) and takes the
 // highest tier whose bar the link clears, each bar 2 to 3 times its file's
@@ -147,9 +150,9 @@ const STEM_MAX = 'sun_mosaic_20260904_23284';
 // range bt470bg, as the site's own encodes). bar: the link (Mbps) to choose
 // it; ~: its HEVC bitrate.
 const TIERS = [
-  { name: 'Min', stem: STEM_HIGH + '_480', bar: 0 },         // ~0.46 Mbps
-  { name: 'Low', stem: STEM_HIGH + '_720', bar: 2.5 },       // ~0.94
-  { name: 'Standard', stem: STEM_HIGH + '_1080', bar: 5 },   // ~1.7
+  { name: 'SD', stem: STEM_HIGH + '_480', bar: 0 },          // ~0.46 Mbps
+  { name: 'HD', stem: STEM_HIGH + '_720', bar: 2.5 },        // ~0.94
+  { name: 'HD+', stem: STEM_HIGH + '_1080', bar: 5 },        // ~1.7
   { name: 'High', stem: STEM_HIGH, bar: 10 },                // ~4.1
   { name: 'Max', stem: STEM_MAX, bar: 20 }                   // ~8.0
 ];
@@ -333,7 +336,13 @@ export function createSun(device, format) {
   // layer's last frame; and when a network error's reload is due (0 none).
   const starveWatch = { el: null, t: -1, at: 0 };
   let tier = -1, upTo = -1, wrapUp = -1, probing = false, again = false, hiWas = null, seenAt = 0, netRetryAt = 0;
-  const topTier = () => S.sunHiRes === true ? MAX_TIER : MAX_TIER - 1;
+  // A phone (a coarse pointer on a small screen) tops out at High; a
+  // computer's floor is SD (see the top of this file).
+  const PHONE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches &&
+    typeof screen !== 'undefined' && Math.min(screen.width, screen.height) < 600;
+  const T_HIGH = TIERS.findIndex(t => t.name === 'High');
+  const floorTier = PHONE ? 0 : Math.max(0, TIERS.findIndex(t => t.name === 'SD'));
+  const topTier = () => PHONE ? T_HIGH : S.sunHiRes === true ? MAX_TIER : T_HIGH;
   const urlFor = stem => triedX264 ? urlX264(stem) : urlHevc(stem);
 
   // The link's speed in Mbps: a ranged fetch of the High file's head, cut
@@ -359,9 +368,10 @@ export function createSun(device, format) {
     const secs = (performance.now() - t1) / 1000;
     return t1 >= 0 && secs > 0 ? got * 8 / secs / 1e6 : 0;
   }
-  // The highest tier a link of mbps clears, within Max quality's say.
+  // The highest tier a link of mbps clears, within Max quality's say and
+  // the device's floor.
   function tierFor(mbps) {
-    let i = 0;
+    let i = floorTier;
     while (i < topTier() && mbps >= TIERS[i + 1].bar) i++;
     return i;
   }
@@ -393,7 +403,7 @@ export function createSun(device, format) {
   // A tier not keeping up: one down, at once, and no rise until the next
   // return from away.
   function stepDown(why) {
-    if (tier <= 0 || VIDEO_BASE === LOCAL_BASE) return false;
+    if (tier <= floorTier || VIDEO_BASE === LOCAL_BASE) return false;
     upTo = -1;
     console.warn('sun: ' + why + '; stepping down to ' + TIERS[tier - 1].name + ' quality');
     setTier(tier - 1);
@@ -725,7 +735,7 @@ export function createSun(device, format) {
   // mid-wrap or paused, the watch starts over.
   function watchStarve(now) {
     const v = video;
-    if (!v || tier <= 0 || videoFailed || seekTo >= 0 || wrap ||
+    if (!v || tier <= floorTier || videoFailed || seekTo >= 0 || wrap ||
         (v.paused && !playPending.has(v)) || v.ended || v.readyState >= 3) { starveWatch.el = null; return; }
     const t = v.currentTime;
     if (starveWatch.el !== v || t !== starveWatch.t) { starveWatch.el = v; starveWatch.t = t; starveWatch.at = now; return; }
