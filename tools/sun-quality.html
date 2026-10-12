@@ -34,6 +34,11 @@ body { display: grid; grid-template-columns: 400px 1fr 280px; height: 100vh; }
 #layers .lh h2 { margin: 0; cursor: pointer; }
 #layers .lh h2:hover { color: var(--ink); }
 #layers .pre { display: flex; gap: 3px; }
+#tierStats { margin-top: 8px; font-variant-numeric: tabular-nums; }
+#tierStats .nm { color: var(--gold); font-weight: 600; height: 20px; }
+#tierStats .cells { display: grid; grid-template-columns: 92px 64px 62px 62px 62px; gap: 2px 6px; }
+#tierStats .k { color: var(--dim); font-size: 11px; }
+#tierStats .v { color: var(--ink); }
 #side h1, #layers h1 { cursor: pointer; }
 .keys { text-decoration: underline; text-decoration-color: var(--gold); text-decoration-thickness: 2px; text-underline-offset: 5px; }
 #layers .bub { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 11px; cursor: pointer; }
@@ -84,7 +89,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   </div>
   <h2>Quality</h2>
   <div class="seg" id="tiers"></div>
-  <div class="hint" id="tierStats" style="color:var(--ink)"></div>
+  <div id="tierStats"></div>
 
   <h2>Device</h2>
   <div class="seg" id="devices">
@@ -518,9 +523,11 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     // the picked tier's numbers, right under its button
     {
       const t = TIERS[st.tier], tile = t.w / 3, up = sidePx / tile;
-      $('tierStats').innerHTML = '<b style="color:var(--gold)">' + t.name + '</b> · ' + t.w + '×' + Math.round(t.w * 2 / 3) + ' · Sun ' + Math.round(tile) + ' px' +
-        (t.mbps ? ' · ' + t.mbps + ' Mbps' : '') + (t.mb ? ' · ' + t.mb + ' MB' : '') +
-        ' · upscale <span class="' + (up <= 1.05 ? 'up-ok' : 'up-soft') + '">' + up.toFixed(2) + '×</span>';
+      // fixed cells, so the numbers hold still as the name changes
+      const cells = [['Size', t.w + '×' + Math.round(t.w * 2 / 3)], ['Sun', Math.round(tile) + ' px'], ['Mbps', t.mbps ? t.mbps : '–'],
+        ['MB', t.mb ? t.mb : '–'], ['Upscale', '<span class="' + (up <= 1.05 ? 'up-ok' : 'up-soft') + '">' + up.toFixed(2) + '×</span>']];
+      $('tierStats').innerHTML = '<div class="nm">' + t.name + '</div><div class="cells">' +
+        cells.map(c => '<span class="k">' + c[0] + '</span>').join('') + cells.map(c => '<span class="v">' + c[1] + '</span>').join('') + '</div>';
     }
     $('ups').innerHTML = TIERS.map((t, i) => {
       const tile = t.w / 3, up = sidePx / tile;
