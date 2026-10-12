@@ -59,6 +59,10 @@ h2 { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: upper
 .seg button { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #1b2030; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
 .seg button.on { background: var(--gold); color: #000; border-color: var(--gold); }
 #fit button, #tiers button { font-size: 12px; padding: 0 2px; white-space: nowrap; }
+#tiers button { position: relative; padding-right: 14px; }
+#tiers .fav { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #474d5c; cursor: pointer; }
+#tiers .fav.on { color: #ff5a7a; }
+#tiers button.on .fav:not(.on) { color: rgba(0,0,0,.35); }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 td { padding: 3px 0; border-bottom: 1px solid #1c2130; vertical-align: top; }
 td:last-child { text-align: right; }
@@ -388,7 +392,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   $('resetLayers').onclick = () => { adj.set(DEF); ctlOff.fill(0); saveAdj(); buildLayers(); $('atmo').oninput(); };
   // every layer's presets, which is picked, and the view they were set in, as a JSON file
   $('download').onclick = () => {
-    const out = { savedAt: new Date().toISOString(), set: SET, tier: TIERS[st.tier].name, atmosphere: +$('atmo').value / 100, layers: {} };
+    const out = { savedAt: new Date().toISOString(), set: SET, tier: TIERS[st.tier].name, atmosphere: +$('atmo').value / 100,
+      favorites: Object.values(st[favKey] || {}).map(i => TIERS[i] && TIERS[i].name).filter(Boolean), layers: {} };
     LAYERS.forEach((L, i) => {
       const ps = {};
       presets[i].forEach((p, n) => { ps[n + 1] = { brightness: p.adj[0], contrast: p.adj[1], saturation: p.adj[2], elevate: p.adj[3], off: ADJ.filter((_, k) => p.off[k]).map(a => a[0].toLowerCase()), hearted: !!p.heart }; });
@@ -471,6 +476,25 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     mark(); layout();
   }
   seg($('tiers'), TIERS, 'tier', t => t.name);
+  // a heart on each, one favorite per row of four (per set, remembered)
+  const favKey = 'fav_' + SET;
+  if (!st[favKey] || typeof st[favKey] !== 'object') st[favKey] = {};
+  [...$('tiers').children].forEach((b, i) => {
+    const h = document.createElement('span');
+    h.className = 'fav'; h.textContent = '♥'; h.title = 'Favorite in this row';
+    h.onclick = e => {
+      e.stopPropagation();
+      const row = (i / 4) | 0, f = st[favKey];
+      if (f[row] === i) delete f[row]; else f[row] = i;
+      save(); markFavs();
+    };
+    b.appendChild(h);
+  });
+  function markFavs() {
+    const f = st[favKey];
+    [...$('tiers').children].forEach((b, i) => b.querySelector('.fav').classList.toggle('on', f[(i / 4) | 0] === i));
+  }
+  markFavs();
   seg($('speeds'), SPEEDS, 'speed', s => s + '×');
   [...$('sets').children].forEach(b => {
     b.classList.toggle('on', b.dataset.s === SET);
