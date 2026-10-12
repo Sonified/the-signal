@@ -23,7 +23,11 @@
 :root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; --warn: #ff9f6b; --ok: #6fd08c; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-body { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+body { display: grid; grid-template-columns: 300px 1fr 280px; height: 100vh; }
+#layers { background: var(--panel); border-left: 1px solid var(--line); padding: 14px; overflow-y: auto; }
+#layers .layer { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
+#layers .layer.lit h2 { color: var(--gold); }
+#layers label.row { grid-template-columns: 74px 1fr 40px; }
 #side { background: var(--panel); border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; }
 h1 { font-size: 17px; margin: 0 0 12px; }
 h2 { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin: 16px 0 6px; }
@@ -86,6 +90,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   <h2>Picture</h2>
   <label class="row">Sun size <input type="range" id="size" min="20" max="100" value="80"><output id="sizeOut"></output></label>
   <label class="row">Atmosphere <input type="range" id="atmo" min="0" max="100" value="25"><output id="atmoOut"></output></label>
+  <div class="hint" id="atmoLayer"></div>
   <h2>Speed</h2>
   <div class="seg" id="speeds"></div>
 
@@ -93,6 +98,11 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   <table id="screen"></table>
 </div>
 <div id="stage"><canvas id="c"></canvas><div id="status"></div></div>
+<div id="layers">
+  <h1>Layers</h1>
+  <div class="seg"><button id="resetLayers">Reset all</button></div>
+  <div id="layerRows"></div>
+</div>
 
 <script>
 'use strict';
@@ -168,14 +178,27 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   precision highp float;
   in vec2 uv; out vec4 o;
   uniform sampler2D tex; uniform float g[5];
+  // per layer: brightness, contrast, saturation (1, 1, 1 untouched)
+  uniform vec3 adj[5];
   vec3 tileAt(float col, float row) { return texture(tex, (uv + vec2(col, row)) / vec2(3.0, 2.0)).rgb; }
+  // one layer: brightness and contrast on its tile, then its tint, then
+  // its saturation about the Rec. 709 luma, then its Atmosphere gain
+  vec3 layer(float col, float row, vec3 tint, int i) {
+    if (g[i] <= 0.0) return vec3(0.0);
+    vec3 c = tileAt(col, row) * adj[i].x;
+    c = max((c - vec3(0.5)) * adj[i].y + vec3(0.5), vec3(0.0));
+    c *= tint / 255.0;
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = max(mix(vec3(l), c, adj[i].z), vec3(0.0));
+    return c * g[i];
+  }
   void main() {
     vec3 c = vec3(0.0);
-    c += tileAt(0.0, 0.0) * vec3(255.0, 154.0, 138.0) / 255.0 * g[0];
-    c += tileAt(1.0, 0.0) * vec3(255.0, 77.0, 46.0) / 255.0 * g[1];
-    c += tileAt(2.0, 0.0) * vec3(255.0, 194.0, 51.0) / 255.0 * g[2];
-    c += tileAt(0.0, 1.0) * vec3(201.0, 138.0, 75.0) / 255.0 * g[3];
-    c += tileAt(1.0, 1.0) * vec3(180.0, 140.0, 255.0) / 255.0 * g[4];
+    c += layer(0.0, 0.0, vec3(255.0, 154.0, 138.0), 0);
+    c += layer(1.0, 0.0, vec3(255.0, 77.0, 46.0), 1);
+    c += layer(2.0, 0.0, vec3(255.0, 194.0, 51.0), 2);
+    c += layer(0.0, 1.0, vec3(201.0, 138.0, 75.0), 3);
+    c += layer(1.0, 1.0, vec3(180.0, 140.0, 255.0), 4);
     c = min(c, vec3(1.0));
     float r = length(uv - vec2(0.5)) * 2.0;
     float w = max(mix(0.6, 0.0, 0.40), 0.003);
@@ -192,7 +215,38 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-  const uHalf = gl.getUniformLocation(prog, 'extent'), uG = gl.getUniformLocation(prog, 'g');
+  const uHalf = gl.getUniformLocation(prog, 'extent'), uG = gl.getUniformLocation(prog, 'g'), uAdj = gl.getUniformLocation(prog, 'adj');
+
+  // the five layers, in the shader's order, and each one's brightness,
+  // contrast and saturation (adj, three per layer), remembered on this machine
+  const LAYERS = [{ name: '1700 Å' }, { name: '304 Å' }, { name: '171 Å' }, { name: '193 Å' }, { name: '211 Å' }];
+  const ADJ = [['Brightness', 0, 2], ['Contrast', 0, 2], ['Saturation', 0, 2]];
+  const adj = new Float32Array(15).fill(1);
+  try { const a = JSON.parse(localStorage.getItem('sunQualityLayers') || 'null'); if (a && a.length === 15) adj.set(a); } catch (e) {}
+  const saveAdj = () => { try { localStorage.setItem('sunQualityLayers', JSON.stringify([...adj])); } catch (e) {} };
+  function buildLayers() {
+    $('layerRows').innerHTML = '';
+    LAYERS.forEach((L, i) => {
+      const box = document.createElement('div');
+      box.className = 'layer';
+      box.innerHTML = '<h2>' + L.name + '</h2>';
+      ADJ.forEach(([label, lo, hi], k) => {
+        const row = document.createElement('label');
+        row.className = 'row';
+        row.innerHTML = label + ' <input type="range" min="' + lo * 100 + '" max="' + hi * 100 + '"><output></output>';
+        const inp = row.querySelector('input'), out = row.querySelector('output');
+        const show = () => { out.textContent = adj[i * 3 + k].toFixed(2); };
+        inp.value = Math.round(adj[i * 3 + k] * 100); show();
+        inp.oninput = () => { adj[i * 3 + k] = +inp.value / 100; show(); saveAdj(); };
+        // a double click puts it back to 1
+        inp.ondblclick = () => { adj[i * 3 + k] = 1; inp.value = 100; show(); saveAdj(); };
+        box.appendChild(row);
+      });
+      $('layerRows').appendChild(box);
+    });
+  }
+  buildLayers();
+  $('resetLayers').onclick = () => { adj.fill(1); saveAdj(); buildLayers(); $('atmo').oninput(); };
 
   // the Atmosphere sweep, gpu/sun.js: the five channels at i/4 along it
   const gains = new Float32Array(5);
@@ -279,7 +333,15 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   $('ppi').oninput = () => { const v = +$('ppi').value; if (v >= 80 && v <= 600) { st.ppi = v; save(); layout(); } };
   $('model').onchange = () => { st.phone = +$('model').value; save(); layout(); };
   $('size').oninput = () => { $('sizeOut').textContent = $('size').value + '%'; layout(); };
-  $('atmo').oninput = () => { $('atmoOut').textContent = (+$('atmo').value / 100).toFixed(2); setGains(+$('atmo').value / 100); };
+  $('atmo').oninput = () => {
+    $('atmoOut').textContent = (+$('atmo').value / 100).toFixed(2);
+    setGains(+$('atmo').value / 100);
+    // which layers the Atmosphere shows, the predominant first
+    const lit = [...gains].map((v, i) => [v, i]).filter(x => x[0] > 0.005).sort((a, b) => b[0] - a[0]);
+    $('atmoLayer').innerHTML = 'Mostly <b style="color:var(--gold)">' + LAYERS[lit[0][1]].name + '</b>' +
+      lit.map(x => ' · ' + LAYERS[x[1]].name + ' ' + Math.round(x[0] * 100) + '%').join('');
+    [...$('layerRows').children].forEach((el, i) => el.classList.toggle('lit', i === lit[0][1]));
+  };
   $('size').oninput(); $('atmo').oninput();
 
   function drawTables() {
@@ -306,6 +368,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
       gl.uniform2f(uHalf, sidePx / canvas.width, sidePx / canvas.height);
       gl.uniform1fv(uG, gains);
+      gl.uniform3fv(uAdj, adj);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       $('status').textContent = TIERS[st.tier].name + ' · ' + video.videoWidth + '×' + video.videoHeight + ' · ' + video.currentTime.toFixed(1) + ' s' + (triedCloud ? ' · from the cloud' : ' · local copy');
     }
