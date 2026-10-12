@@ -23,7 +23,7 @@
 :root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; --warn: #ff9f6b; --ok: #6fd08c; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-body { display: grid; grid-template-columns: 440px 1fr 245px; height: 100vh; }
+body { display: grid; grid-template-columns: 400px 1fr 245px; height: 100vh; }
 #layers { background: var(--panel); border-left: 1px solid var(--line); padding: 14px; overflow-y: auto; }
 #layers .layer { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
 #layers .layer.lit h2 { color: var(--gold); }
@@ -178,9 +178,10 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   //             SAO smudging the dark) + aq-mode 3 (bits to the dark areas),
   //             CRF 29, near ft28's size
   // [name, width, Mbps plain, +c28, ft28, ft31, gr] for this 10 s
+  // (SD is Standard, short for the buttons; its files keep 'standard')
   for (const [n, w, a, c, g, f, r] of [['Tiny', 540, 0.32, 0.32, 0.32, 0.18, 0.34], ['Min', 720, 0.56, 0.56, 0.59, 0.32, 0.60], ['Low', 1080, 1.18, 1.17, 1.40, 0.70, 1.45],
-    ['Standard', 1620, 2.45, 2.35, 3.43, 1.61, 3.23], ['High', 2764, 6.7, 6.3, 11.4, 5.2, 11.5], ['Max', 3072, 9.0, 8.3, 16.6, 7.2, 16.9]]) {
-    const k = n.toLowerCase();
+    ['SD', 1620, 2.45, 2.35, 3.43, 1.61, 3.23], ['High', 2764, 6.7, 6.3, 11.4, 5.2, 11.5], ['Max', 3072, 9.0, 8.3, 16.6, 7.2, 16.9]]) {
+    const k = n === 'SD' ? 'standard' : n.toLowerCase();
     MASTER.push({ name: n, file: 'test/master_' + k + '.mp4', w, mbps: a },
       { name: n + ' +c28', file: 'test/master_' + k + '_s_c28.mp4', w, mbps: c },
       { name: n + ' ft28', file: 'test/master_' + k + '_s_c28_flat.mp4', w, mbps: g },
@@ -491,9 +492,10 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   // favorites saved by position (four across) before names: carried over
   for (const row in st[favKey]) {
     const v = st[favKey][row];
-    if (typeof v !== 'number') continue;
+    // Standard became SD on the master buttons
+    if (typeof v === 'string') { if (SET === 'master' && v.startsWith('Standard')) st[favKey][row] = 'SD' + v.slice(8); continue; }
     if (SET === 'master') {
-      const fam = ['Tiny', 'Min', 'Low', 'Standard', 'High', 'Max'][(v / 4) | 0];
+      const fam = ['Tiny', 'Min', 'Low', 'SD', 'High', 'Max'][(v / 4) | 0];
       st[favKey][row] = fam ? fam + ['', ' +c28', ' ft28', ' ft31'][v % 4] : undefined;
     } else st[favKey][row] = TIERS[v] && TIERS[v].name;
     if (!st[favKey][row]) delete st[favKey][row];
