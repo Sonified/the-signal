@@ -103,16 +103,16 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     <div class="hint">Real size matches the phone held up to your screen (set Screen ppi to your display's: 254 for a 14" or 16" MacBook Pro). Actual pixels shows every phone pixel as one of yours: bigger than the phone, and exact. Fit fills the window.</div>
   </div>
 
-  <h2>Upscale per tier, this view</h2>
-  <table id="ups"></table>
-  <div class="hint">The Sun's square on screen ÷ one tile of the video. Up to about 1.0× is crisp; above that the screen stretches the video.</div>
-
   <h2>Picture</h2>
   <label class="row">Sun size <input type="range" id="size" min="20" max="100" value="80"><output id="sizeOut"></output></label>
   <label class="row">Atmosphere <input type="range" id="atmo" min="0" max="100" value="25"><output id="atmoOut"></output></label>
   <div class="hint" id="atmoLayer"></div>
   <h2>Speed</h2>
   <div class="seg" id="speeds"></div>
+
+  <h2>Upscale per tier, this view</h2>
+  <table id="ups"></table>
+  <div class="hint">The Sun's square on screen ÷ one tile of the video. Up to about 1.0× is crisp; above that the screen stretches the video.</div>
 
   <h2>This computer</h2>
   <table id="screen"></table>
