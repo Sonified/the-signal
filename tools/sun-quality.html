@@ -23,7 +23,7 @@
 :root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; --warn: #ff9f6b; --ok: #6fd08c; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-body { display: grid; grid-template-columns: 300px 1fr 280px; height: 100vh; }
+body { display: grid; grid-template-columns: 500px 1fr 280px; height: 100vh; }
 #layers { background: var(--panel); border-left: 1px solid var(--line); padding: 14px; overflow-y: auto; }
 #layers .layer { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
 #layers .layer.lit h2 { color: var(--gold); }
@@ -148,21 +148,22 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     { name: 'Max', stem: 'sun_mosaic_20260904_23284', w: 3072, mb: 777, mbps: 8.0 }
   ];
   const MASTER = [];
-  // a row per tier, three across: plain (CRF 26), + (sharpened, unsharp
-  // 5:5:0.5) and +c28 (sharpened at CRF 28); [name, width, Mbps each] for
-  // this 10 s. (High+ at CRF 30, test/master_high_s_c30.mp4, was tried too.)
-  for (const [n, w, a, b, c] of [['Tiny', 540, 0.32, 0.43, 0.32], ['Min', 720, 0.56, 0.77, 0.56], ['Low', 1080, 1.18, 1.67, 1.17],
-    ['Standard', 1620, 2.45, 3.45, 2.35], ['High', 2764, 6.7, 9.8, 6.3], ['Max', 3072, 9.0, 13.4, 8.3]]) {
+  // A row per tier, Tiny first, four across to compare:
+  //   plain     no sharpening (CRF 26)
+  //   +c28      sharpened (unsharp 5:5:0.5), CRF 28: has a keyframe pulse in
+  //             the dark areas, once a second, worst at the low tiers
+  //   flat c28  the same, keyframes and the frames between at equal quality
+  //             (ipratio/pbratio 1, no cutree): the pulse fix alone
+  //   flat c31  the pulse fix at CRF 31, near +c28's size at High
+  // [name, width, Mbps plain, +c28, flat c28, flat c31] for this 10 s
+  for (const [n, w, a, c, g, f] of [['Tiny', 540, 0.32, 0.32, 0.32, 0.18], ['Min', 720, 0.56, 0.56, 0.59, 0.32], ['Low', 1080, 1.18, 1.17, 1.40, 0.70],
+    ['Standard', 1620, 2.45, 2.35, 3.43, 1.61], ['High', 2764, 6.7, 6.3, 11.4, 5.2], ['Max', 3072, 9.0, 8.3, 16.6, 7.2]]) {
     const k = n.toLowerCase();
-    MASTER.push({ name: n, file: 'test/master_' + k + '.mp4', w, mbps: a }, { name: n + '+', file: 'test/master_' + k + '_s.mp4', w, mbps: b },
-      { name: n + '+c28', file: 'test/master_' + k + '_s_c28.mp4', w, mbps: c });
+    MASTER.push({ name: n, file: 'test/master_' + k + '.mp4', w, mbps: a },
+      { name: n + ' +c28', file: 'test/master_' + k + '_s_c28.mp4', w, mbps: c },
+      { name: n + ' flat28', file: 'test/master_' + k + '_s_c28_flat.mp4', w, mbps: g },
+      { name: n + ' flat31', file: 'test/master_' + k + '_s_c31_flat.mp4', w, mbps: f });
   }
-  // the keyframe pulse (the dark areas breathing once a second at CRF 28),
-  // a last row: High+c28 as it was, then even (I, P and B frames at equal
-  // quality, CRF 29) and flat (that, no cutree, CRF 31), both near its size
-  MASTER.push({ name: 'High+c28', file: 'test/master_high_s_c28.mp4', w: 2764, mbps: 6.3 },
-    { name: 'even c29', file: 'test/master_high_s_c29_even.mp4', w: 2764, mbps: 5.7 },
-    { name: 'flat c31', file: 'test/master_high_s_c31_flat.mp4', w: 2764, mbps: 5.2 });
   const TIERS = SET === 'master' ? MASTER : DELIVERY;
   const fileOf = t => t.file || t.stem + '_hevc.mp4';
   // CSS size, device pixel ratio and pixels per inch of each phone
@@ -462,8 +463,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     b.classList.toggle('on', b.dataset.s === SET);
     b.onclick = () => { if (b.dataset.s !== SET) location.search = b.dataset.s === 'master' ? '?set=master' : ''; };
   });
-  // the master set three across (plain, +, +c28); the delivery set four across
-  $('tiers').style.cssText = 'grid-auto-flow: row; grid-template-columns: repeat(' + (SET === 'master' ? 3 : 4) + ', 1fr)';
+  // both sets four across (the master set: plain, +c28, flat28, flat31)
+  $('tiers').style.cssText = 'grid-auto-flow: row; grid-template-columns: repeat(4, 1fr)';
   [...$('devices').children].forEach(b => b.onclick = () => { st.device = b.dataset.d; save(); render(); });
   [...$('fit').children].forEach(b => b.onclick = () => { st.fit = b.dataset.f; save(); render(); });
   PHONES.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = p.name + ' (' + Math.round(p.w * p.dpr) + '×' + Math.round(p.h * p.dpr) + ')'; $('model').appendChild(o); });
@@ -570,6 +571,13 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       return;
     }
     if (!/^[0-9]$/.test(e.key)) return;
+    // the master set: 1 2 3 4 are the columns (plain, +c28, flat28, flat31)
+    // of the row picked, so a tier is compared by clicking it once and
+    // flicking 1-4
+    if (SET === 'master') {
+      if (e.key >= '1' && e.key <= '4') { st.tier = st.tier - st.tier % 4 + (+e.key - 1); save(); render('tier'); }
+      return;
+    }
     const n = e.key === '0' ? 10 : +e.key;
     if (n <= TIERS.length) { st.tier = n - 1; save(); render('tier'); }
   });
