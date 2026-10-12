@@ -31,7 +31,8 @@ body { display: grid; grid-template-columns: 300px 1fr 280px; height: 100vh; }
 #layers { display: flex; flex-direction: column; }
 #layerRows { flex: 1; }
 #layers .lh { display: flex; align-items: center; justify-content: space-between; margin: 0 0 4px; }
-#layers .lh h2 { margin: 0; }
+#layers .lh h2 { margin: 0; cursor: pointer; }
+#layers .lh h2:hover { color: var(--ink); }
 #layers .byp { height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; }
 #layers .byp.on { background: var(--warn); border-color: var(--warn); color: #000; }
 #layers .layer.bypassed label.row { opacity: .4; }
@@ -254,6 +255,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       box.className = 'layer' + (bypass[i] ? ' bypassed' : '');
       box.innerHTML = '<div class="lh"><h2>' + L.name + '</h2><button class="byp' + (bypass[i] ? ' on' : '') + '">Bypass</button></div>';
       const byp = box.querySelector('.byp');
+      // the name puts the Atmosphere on this layer alone (i/4 along it)
+      box.querySelector('h2').onclick = () => { $('atmo').value = i * 25; $('atmo').oninput(); };
       byp.onclick = () => { bypass[i] = !bypass[i]; byp.classList.toggle('on', bypass[i]); box.classList.toggle('bypassed', bypass[i]); saveAdj(); };
       ADJ.forEach(([label, lo, hi], k) => {
         const row = document.createElement('label');
