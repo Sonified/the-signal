@@ -45,7 +45,7 @@
 // meanwhile, and the usual crossfade hands over; the dead element is then
 // reloaded, a fresh decoder parked as the ghost. A ghost that cannot show
 // frames in GHOST_WAIT_S reloads both elements in place (swapSource), as
-// High quality off and on did by hand.
+// Max quality off and on did by hand.
 //
 // The breath is the layer's master signal: one sine, S.sunBreathRate breaths
 // a minute on the layer's motion clock (a paused scene holds it), with two
@@ -94,21 +94,27 @@
 // still scene; syncVideo is the one place that plays it, and only with no
 // reason left, so no reason's end can undo another's pause.
 //
-// High quality (S.sunHiRes) streams the site's original snapshot, about
-// twice the bytes, from another stem on the same base. A change stands any
-// wrap down and swaps both elements' source in place (swapSource): the
+// A tier change stands any wrap down and swaps both elements' source in
+// place (swapSource), whatever the tier, the same base and naming: the
 // main's place and the play state carry over, and the play waits for the
 // seek; the ghost starts over, parked at 0.
 //
-// High quality is a wish the link must carry (meditatewiththesun's rule,
-// its probeLink): from the cloud, the first load times a real ranged fetch
-// of the standard file's head, and only a link that clears LINK_BAR_MBPS
-// gets the original (it needs 8 Mbps sustained; the bar leaves headroom for
-// the slides streaming beside it). Any sign the High file is not keeping
-// up (a stall, the clock starved of data for STARVE_S, a network error)
-// steps down to the standard file for the rest of the session, never
-// probed again; switching High quality off and on clears it and measures
-// afresh. The local copies (localhost) skip all of this.
+// The quality ladder (TIERS, Robert's names): Low (1080x720), Standard
+// (1620x1080), High (the recipe cut, 2764x1842) and Max (the original,
+// 3072x2048, only with Max quality on, S.sunHiRes). From the cloud, the
+// first load times a real ranged fetch (PROBE_BYTES, cut off at
+// PROBE_WAIT_MS, the bytes that came counted either way) and takes the
+// highest tier whose bar the link clears, each bar 2 to 3 times its file's
+// bitrate so the slides streaming beside it still fit.
+//
+// Down fast, up slow. Any sign a tier is not keeping up (a stall, the clock
+// starved of data for STARVE_S, a network error, a dead rescue) drops one
+// tier at once, in place, and holds it there. Up only after
+// AWAY_S away (the page hidden, the laptop asleep, the layer off): the link
+// is measured afresh, a slower one drops at once, a faster one rises ONE
+// tier per loop, at the wrap's crossfade (the ghost loads the next tier), so
+// nobody sees it. Max quality flipped is a fresh wish: measured afresh and
+// swapped at once. The local copies (localhost) skip all of this.
 //
 // Allocation per frame: the external textures (one, two while a wrap fades)
 // and their bind group, which WebGPU makes new by design. Nothing else.
@@ -131,22 +137,34 @@ const CLOUD_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
 const LOCAL_BASE = '/sun-video/';
 const ON_LOCALHOST = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 let VIDEO_BASE = ON_LOCALHOST ? LOCAL_BASE : CLOUD_BASE;
-// The standard stem and the High quality one, the site's original snapshot
-// (both carry a plain x264 file and an _hevc one).
-const STEM_STD = 'sun_mosaic_20260915_23289r';
-const STEM_HI = 'sun_mosaic_20260904_23284';
+// The High stem (the recipe cut) and the Max one, the site's original
+// snapshot; every tier carries a plain x264 file and an _hevc one.
+const STEM_HIGH = 'sun_mosaic_20260915_23289r';
+const STEM_MAX = 'sun_mosaic_20260904_23284';
+// The ladder, low to high: the two below High are scaled from it
+// (1080x720 and 1620x1080, CRF 26 HEVC / 25 x264, 1 s keyframes, full
+// range bt470bg, as the site's own encodes). bar: the link (Mbps) to choose
+// it; ~: its HEVC bitrate.
+const TIERS = [
+  { name: 'Low', stem: STEM_HIGH + '_720', bar: 0 },         // ~0.9 Mbps
+  { name: 'Standard', stem: STEM_HIGH + '_1080', bar: 5 },   // ~1.7
+  { name: 'High', stem: STEM_HIGH, bar: 10 },                // ~4.1
+  { name: 'Max', stem: STEM_MAX, bar: 20 }                   // ~8.0
+];
+const MAX_TIER = TIERS.length - 1;
 const urlX264 = stem => VIDEO_BASE + stem + '.mp4';
 const urlHevc = stem => VIDEO_BASE + stem + '_hevc.mp4';
 // The link probe (see the top of this file): the bytes timed, the bar in
 // Mbps (meditatewiththesun's, Robert's call 2026-09-16), and the most it may
-// take before the link counts as slow: the bar fetches the bytes in 0.4 s,
-// so a probe still running at 1.5 s has already failed, and a slow link
-// pays no more than what 1.5 s brings (Robert's call, 2026-10-12).
+// take: a slow link pays no more than what 1.5 s brings, and the bytes that
+// came by then still give its speed (Robert's call, 2026-10-12).
 const PROBE_BYTES = 1000000;
-const LINK_BAR_MBPS = 20;
 const PROBE_WAIT_MS = 1500;
-// High's clock stood this many wall seconds without the data to move on is
-// a link that is not keeping up; a network error's reload waits this long.
+// Away this long (wall seconds without a frame of the layer), the link is
+// measured afresh on return.
+const AWAY_S = 3600;
+// A tier's clock stood this many wall seconds without the data to move on
+// is a link that is not keeping up; a network error's reload waits this long.
 const STARVE_S = 4;
 const NET_RETRY_MS = 3000;
 const HEVC_TYPE = 'video/mp4; codecs="hvc1.1.6.L120.B0"';
@@ -306,51 +324,74 @@ export function createSun(device, format) {
   const bufWatch = { el: null, end: 0, at: 0 };
   // The stall watch over the main: its clock as last seen, and since when.
   const stallWatch = { el: null, t: -1, at: 0 };
-  // High's starvation watch, the same shape; the link probe's verdict ('',
-  // 'probing', 'fast', 'slow'); whether High has stepped down this session;
-  // High quality as last seen (a flip clears the two); and when a network
-  // error's reload is due (0 none).
+  // The starvation watch, the same shape; the tier playing (-1 none yet);
+  // the tier a return measured, risen to a loop at a time (-1 none); the
+  // tier the ghost is loading for this loop's wrap (-1 the same file); a
+  // probe in flight, and a flip owed one after it; Max quality as last seen; the wall clock at the
+  // layer's last frame; and when a network error's reload is due (0 none).
   const starveWatch = { el: null, t: -1, at: 0 };
-  let link = '', lowered = false, hiWas = null, netRetryAt = 0;
+  let tier = -1, upTo = -1, wrapUp = -1, probing = false, again = false, hiWas = null, seenAt = 0, netRetryAt = 0;
+  const topTier = () => S.sunHiRes === true ? MAX_TIER : MAX_TIER - 1;
+  const urlFor = stem => triedX264 ? urlX264(stem) : urlHevc(stem);
 
-  // The stem the elements should be on, or null while the probe decides.
-  function wantStem() {
-    if (S.sunHiRes !== true || lowered) return STEM_STD;
-    if (VIDEO_BASE === LOCAL_BASE) return STEM_HI;
-    if (link === '') probeLink();
-    return link === 'fast' ? STEM_HI : link === 'slow' ? STEM_STD : null;
-  }
-  // PORTABILITY: fetch on the page thread, as the elements below are.
-  function probeLink() {
-    link = 'probing';
-    // the frame loop stays awake to take the verdict
-    idleHold();
-    const url = urlHevc(STEM_STD);
+  // The link's speed in Mbps: a ranged fetch of the High file's head, cut
+  // off at PROBE_WAIT_MS, the bytes that came by then counted (0 on an
+  // error). PORTABILITY: fetch on the page thread, as the elements below are.
+  async function measure() {
     const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = setTimeout(() => { if (ctl) ctl.abort(); }, PROBE_WAIT_MS);
     const t0 = performance.now();
-    // no-store: a cached range would read as infinitely fast
-    fetch(url, { headers: { Range: 'bytes=0-' + (PROBE_BYTES - 1) }, cache: 'no-store', signal: ctl ? ctl.signal : undefined })
-      .then(r => r.ok ? r.arrayBuffer() : Promise.reject(Error('HTTP ' + r.status)))
-      .then(buf => {
-        const secs = (performance.now() - t0) / 1000;
-        const mbps = secs > 0 ? buf.byteLength * 8 / secs / 1e6 : 0;
-        link = buf.byteLength >= PROBE_BYTES / 2 && mbps >= LINK_BAR_MBPS ? 'fast' : 'slow';
-        console.log('sun: the link measured ' + mbps.toFixed(1) + ' Mbps (High quality needs ' + LINK_BAR_MBPS + '); ' +
-          (link === 'fast' ? 'playing High quality' : 'playing the standard video'));
-      })
-      .catch(e => {
-        link = 'slow';
-        console.log('sun: the link probe ' + (e && e.name === 'AbortError' ? 'took over ' + PROBE_WAIT_MS / 1000 + ' s' : 'failed (' + (e && e.message) + ')') + '; playing the standard video');
-      })
-      .finally(() => { clearTimeout(timer); idleRelease('the sun link probe'); });
+    let got = 0;
+    try {
+      // no-store: a cached range would read as infinitely fast
+      const r = await fetch(urlHevc(STEM_HIGH), { headers: { Range: 'bytes=0-' + (PROBE_BYTES - 1) }, cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+      if (!r.ok) throw Error('HTTP ' + r.status);
+      const rd = r.body.getReader();
+      for (;;) { const c = await rd.read(); if (c.done) break; got += c.value.byteLength; }
+    } catch (e) {
+      if (!(e && e.name === 'AbortError')) { console.log('sun: the link probe failed (' + (e && e.message) + ')'); return 0; }
+    } finally { clearTimeout(timer); }
+    const secs = (performance.now() - t0) / 1000;
+    return secs > 0 ? got * 8 / secs / 1e6 : 0;
   }
-  // High not keeping up: the standard file from here on, in place.
+  // The highest tier a link of mbps clears, within Max quality's say.
+  function tierFor(mbps) {
+    let i = 0;
+    while (i < topTier() && mbps >= TIERS[i + 1].bar) i++;
+    return i;
+  }
+  // why: 'start' (the first load waits on it), 'flip' (Max quality changed:
+  // the answer is swapped to at once) or 'return' (back from away: lower at
+  // once, higher a loop at a time).
+  function probeLink(why) {
+    // a flip while another probe runs is measured after it
+    if (probing) { if (why === 'flip') again = true; return; }
+    probing = true;
+    // the frame loop stays awake to take the verdict
+    idleHold();
+    measure().then(mbps => {
+      probing = false;
+      const to = tierFor(mbps);
+      console.log('sun: the link measured ' + mbps.toFixed(1) + ' Mbps; ' + TIERS[to].name + ' quality' + (why === 'return' ? ' (back from away)' : ''));
+      if (why === 'start' || !video) tier = to;
+      else if (to < tier || why === 'flip') { if (to !== tier) setTier(to); upTo = -1; }
+      else if (to > tier) upTo = to;
+      idleRelease('the sun link probe');
+      if (again) { again = false; probeLink('flip'); }
+    });
+  }
+  // A tier now, in place (swapSource).
+  function setTier(i) {
+    tier = i;
+    swapSource(TIERS[i].stem);
+  }
+  // A tier not keeping up: one down, at once, and no rise until the next
+  // return from away.
   function stepDown(why) {
-    if (stemNow !== STEM_HI || VIDEO_BASE === LOCAL_BASE) return false;
-    lowered = true;
-    console.warn('sun: ' + why + '; stepping down to the standard video for this session');
-    swapSource(STEM_STD);
+    if (tier <= 0 || VIDEO_BASE === LOCAL_BASE) return false;
+    upTo = -1;
+    console.warn('sun: ' + why + '; stepping down to ' + TIERS[tier - 1].name + ' quality');
+    setTier(tier - 1);
     return true;
   }
 
@@ -361,6 +402,7 @@ export function createSun(device, format) {
   // Both elements onto a source; the ghost goes back to waiting, unloaded.
   function setSources(url) {
     srcNow = url;
+    wrapUp = -1;
     playPending.clear();
     video.src = url;
     ghost.preload = 'none';
@@ -381,7 +423,7 @@ export function createSun(device, format) {
     // would only ask the same link for more bytes).
     if (el.error.code === 2) {
       if (el === ghost) { if (wrap) standDownWrap(); return; }
-      if (stepDown('the High quality video lost the network')) return;
+      if (stepDown('the ' + TIERS[tier].name + ' quality video lost the network')) return;
       if (!netRetryAt) {
         console.warn('sun: the video lost the network; reloading it in ' + NET_RETRY_MS / 1000 + ' s');
         netRetryAt = nowMs + NET_RETRY_MS;
@@ -463,11 +505,13 @@ export function createSun(device, format) {
       console.warn('sun: no document on this thread (worker engine); the Sun layer needs the page engine');
       return;
     }
-    const stem = wantStem();
-    if (!stem) return;   // the link probe decides first (a few seconds at most)
+    if (tier < 0) {
+      if (VIDEO_BASE === LOCAL_BASE) tier = topTier();
+      else { probeLink('start'); if (tier < 0) return; }   // the probe decides first (1.5 s at most)
+    }
     video = makeElement('auto');
     ghost = makeElement('none');
-    stemNow = stem;
+    stemNow = TIERS[tier].stem;
     const hevc = !!video.canPlayType(HEVC_TYPE);
     triedX264 = !hevc;
     // A paused frame loop stays awake until the first picture is in.
@@ -475,7 +519,7 @@ export function createSun(device, format) {
     idleHold();
     setSources(hevc ? urlHevc(stemNow) : urlX264(stemNow));
   }
-  // High quality changed: any wrap stands down, then the other stem into
+  // A tier changed: any wrap stands down, then the other stem into
   // both elements, the HEVC choice and its one x264 fallback made afresh
   // for it. The main's place is kept and sought back to once the new file's
   // metadata is in; until then syncVideo holds off playing (and the wrap
@@ -513,7 +557,14 @@ export function createSun(device, format) {
   // left to play cut to 0 (syncVideo plays it on).
   function standDownWrap() {
     resetWrap();
-    if (ghost.error) ghost.src = srcNow;
+    // a rise whose ghost could not show frames: given up until the next
+    // return from away, the ghost back on this tier's file
+    if (wrapUp >= 0) {
+      console.warn('sun: ' + TIERS[wrapUp].name + ' quality did not load in time; staying on ' + TIERS[tier].name);
+      wrapUp = -1; upTo = -1;
+      ghost.preload = 'none';
+      ghost.src = srcNow;
+    } else if (ghost.error) ghost.src = srcNow;
     try { ghost.currentTime = 0; } catch (e) {}
     wrapRetryAt = nowMs / 1000 + WRAP_RETRY_S;
     if (video.ended || video.readyState < 3 || video.currentTime >= LOOP_END_S) { try { video.currentTime = 0; } catch (e) {} }
@@ -552,6 +603,14 @@ export function createSun(device, format) {
     // The fade's span in video-seconds at this rate; the ghost loads once
     // the network is seen losing, or a few wall seconds before the edge.
     const span = XFADE_S * Math.max(0.1, v.playbackRate);
+    // A pending rise rides this wrap: the ghost loads the next tier up from
+    // its start, in the same few seconds before the edge (never while the
+    // network is seen losing).
+    if (!v.paused && !wrap && wrapUp < 0 && upTo > tier && !losing && remain <= span + 4 * v.playbackRate) {
+      wrapUp = tier + 1;
+      g.preload = 'auto';
+      g.src = urlFor(TIERS[wrapUp].stem);
+    }
     if (!v.paused && g.preload === 'none' && (losing || remain <= span + 4 * v.playbackRate))
       g.preload = 'auto';
 
@@ -597,6 +656,17 @@ export function createSun(device, format) {
         v.preload = 'none';
         v.src = srcNow;
         console.warn('sun: rescued, the ghost has taken over and the stalled element reloads');
+      } else if (wrapUp >= 0) {
+        // the rise landed: this tier from here on, the old element parked
+        // on its file as a new ghost is
+        tier = wrapUp; wrapUp = -1;
+        if (upTo <= tier) upTo = -1;
+        stemNow = TIERS[tier].stem;
+        srcNow = urlFor(stemNow);
+        playPending.delete(v);
+        v.preload = 'none';
+        v.src = srcNow;
+        console.log('sun: risen to ' + TIERS[tier].name + ' quality at the loop');
       } else {
         try { v.currentTime = 0; } catch (e) {}
       }
@@ -632,10 +702,10 @@ export function createSun(device, format) {
       if (ahead < Math.min(STALL_AHEAD_S, dur - t - 0.05)) return;
     }
     stallWatch.el = null;
-    if (stepDown('the High quality video stalled at ' + t.toFixed(2) + 's')) return;
+    if (stepDown('the ' + TIERS[tier].name + ' quality video stalled at ' + t.toFixed(2) + 's')) return;
     console.warn('sun: the video stalled at ' + t.toFixed(2) + 's (clock still ' + (now - stallWatch.at).toFixed(1) + 's, ready ' + v.readyState + (v.seeking ? ', seeking' : '') + '); the ghost takes over');
     const g = ghost;
-    if (g.error) g.src = srcNow;
+    if (g.error || wrapUp >= 0) { g.src = srcNow; wrapUp = -1; }
     g.preload = 'auto';
     try { g.currentTime = Math.min(t + 0.05, Math.max(0, dur - 0.1)); } catch (e) {}
     g.playbackRate = v.playbackRate;
@@ -644,19 +714,19 @@ export function createSun(device, format) {
     playEl(g);
   }
 
-  // High's starvation watch (see the top of this file): a main meant to be
+  // The starvation watch (see the top of this file): a main meant to be
   // playing (or with its play() in flight, which a starved first load is)
   // whose clock has stood STARVE_S without the data to move on. Mid-swap,
   // mid-wrap or paused, the watch starts over.
   function watchStarve(now) {
     const v = video;
-    if (!v || stemNow !== STEM_HI || lowered || videoFailed || seekTo >= 0 || wrap ||
+    if (!v || tier <= 0 || videoFailed || seekTo >= 0 || wrap ||
         (v.paused && !playPending.has(v)) || v.ended || v.readyState >= 3) { starveWatch.el = null; return; }
     const t = v.currentTime;
     if (starveWatch.el !== v || t !== starveWatch.t) { starveWatch.el = v; starveWatch.t = t; starveWatch.at = now; return; }
     if (now - starveWatch.at < STARVE_S) return;
     starveWatch.el = null;
-    stepDown('the High quality video waited ' + STARVE_S + ' s for data at ' + t.toFixed(2) + 's');
+    stepDown('the ' + TIERS[tier].name + ' quality video waited ' + STARVE_S + ' s for data at ' + t.toFixed(2) + 's');
   }
 
   // Plays while the layer is on, awake, the scene moving and the variance
@@ -864,14 +934,15 @@ export function createSun(device, format) {
       return;
     }
     wasOn = true;
-    // High quality flipped: a fresh wish, measured afresh
-    const hi = S.sunHiRes === true;
-    if (hiWas !== null && hi !== hiWas) { lowered = false; if (link !== 'probing') link = ''; }
-    hiWas = hi;
+    // Max quality flipped, or back from AWAY_S away: the link measured
+    // afresh (see the top of this file)
+    const hi = S.sunHiRes === true, wall = Date.now();
+    const flipped = hiWas !== null && hi !== hiWas, back = seenAt > 0 && wall - seenAt >= AWAY_S * 1000;
+    hiWas = hi; seenAt = wall;
+    if (video && tier >= 0 && VIDEO_BASE !== LOCAL_BASE && (flipped || back)) probeLink(flipped ? 'flip' : 'return');
+    else if (video && VIDEO_BASE === LOCAL_BASE && flipped) setTier(topTier());
     ensureVideo();
     if (video && netRetryAt && nowMs >= netRetryAt) { netRetryAt = 0; swapSource(stemNow); }
-    const want = wantStem();
-    if (video && want && stemNow !== want) swapSource(want);
 
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
     const md = dt > 0 ? motionStep(dt) : 0;

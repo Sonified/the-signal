@@ -445,10 +445,11 @@ export const SUN_CONTROLS = [
   // itself ----
   subDrawer('sunSolarDrawer', 'Solar Parameters', 'sun', ['sunSize', 'sunAtmo']),
   {
-    // High quality: the site's original snapshot, streamed at roughly twice
-    // the bytes of the standard file. A change swaps the source in place,
-    // keeping the place and the play state (gpu/sun.js swapSource).
-    id: 'sunHiRes', section: 'sun', label: 'High quality', kind: 'toggle', def: DEF_HI_RES,
+    // Max quality: lets the Sun's quality ladder reach its top tier, the
+    // site's original snapshot (gpu/sun.js TIERS), when the link clears it.
+    // A change measures the link afresh and swaps in place, keeping the
+    // place and the play state (gpu/sun.js swapSource).
+    id: 'sunHiRes', section: 'sun', label: 'Max quality', kind: 'toggle', def: DEF_HI_RES,
     parent: 'sunSolarDrawer',
     get: S => !!S.sunHiRes,
     set: (S, on) => { S.sunHiRes = !!on; save(); },
