@@ -36,7 +36,8 @@ body { display: grid; grid-template-columns: 300px 1fr 280px; height: 100vh; }
 #layers .byp { height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; }
 #layers .byp.on { background: var(--warn); border-color: var(--warn); color: #000; }
 #layers .layer.bypassed label.row { opacity: .4; }
-#download { position: sticky; bottom: 0; margin-top: 12px; height: 38px; border-radius: 8px; border: 1px solid var(--gold); background: #1b2030; color: var(--gold); font: inherit; font-weight: 600; cursor: pointer; }
+#download { position: sticky; bottom: 0; align-self: flex-end; margin-top: 12px; height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; }
+#download:hover { color: var(--ink); }
 #side { background: var(--panel); border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; }
 h1 { font-size: 17px; margin: 0 0 12px; }
 h2 { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin: 16px 0 6px; }
