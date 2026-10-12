@@ -53,6 +53,11 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
 <div id="side">
   <h1>Sun Quality</h1>
 
+  <h2>Source</h2>
+  <div class="seg" id="sets">
+    <button data-s="delivery">Delivery files</button>
+    <button data-s="master">Master test</button>
+  </div>
   <h2>Quality</h2>
   <div class="seg" id="tiers"></div>
 
@@ -95,16 +100,30 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   const $ = id => document.getElementById(id);
   const CLOUD = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
   const LOCAL = '/sun-video/';
-  // gpu/sun.js TIERS, with each file's size for the readout
-  const TIERS = [
+  // Two sets: the delivery files (gpu/sun.js TIERS, with trials) and the
+  // master test, 10 s of the 2026-03-18 master day at every tier's size,
+  // plain and sharpened (sun-video/test/, tools: scratchpad mastertest.sh).
+  // ?set=master picks the second. Each file's size for the readout.
+  const SET = new URLSearchParams(location.search).get('set') === 'master' ? 'master' : 'delivery';
+  const DELIVERY = [
     { name: 'Min', stem: 'sun_mosaic_20260915_23289r_480', w: 720, mb: 46, mbps: 0.48 },
-    // a trial: Min with unsharp=5:5:0.5 in the downscale, its peaks back near Low's
+    // trials: Min with unsharp=5:5:0.5 in the downscale, its peaks back near
+    // Low's; and that 10% brighter (luma x1.1)
     { name: 'Min+', stem: 'sun_mosaic_20260915_23289r_480s', w: 720, mb: 62, mbps: 0.64 },
+    { name: 'Min+ ☀', stem: 'sun_mosaic_20260915_23289r_480b', w: 720, mb: 67, mbps: 0.69 },
     { name: 'Low', stem: 'sun_mosaic_20260915_23289r_720', w: 1080, mb: 91, mbps: 0.94 },
     { name: 'Standard', stem: 'sun_mosaic_20260915_23289r_1080', w: 1620, mb: 170, mbps: 1.75 },
     { name: 'High', stem: 'sun_mosaic_20260915_23289r', w: 2764, mb: 399, mbps: 4.1 },
     { name: 'Max', stem: 'sun_mosaic_20260904_23284', w: 3072, mb: 777, mbps: 8.0 }
   ];
+  const MASTER = [];
+  // [name, width, Mbps plain, Mbps sharpened] (HEVC CRF 26, this 10 s)
+  for (const [n, w, a, b] of [['Min', 720, 0.56, 0.77], ['Low', 1080, 1.18, 1.67], ['Standard', 1620, 2.45, 3.45], ['High', 2764, 6.7, 9.8], ['Max', 3072, 9.0, 13.4]]) {
+    const k = n.toLowerCase();
+    MASTER.push({ name: n, file: 'test/master_' + k + '.mp4', w, mbps: a }, { name: n + '+', file: 'test/master_' + k + '_s.mp4', w, mbps: b });
+  }
+  const TIERS = SET === 'master' ? MASTER : DELIVERY;
+  const fileOf = t => t.file || t.stem + '_hevc.mp4';
   // CSS size, device pixel ratio and pixels per inch of each phone
   const PHONES = [
     { name: 'iPhone 16 Pro', w: 402, h: 874, dpr: 3, ppi: 460 },
@@ -114,9 +133,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     { name: 'Galaxy S24', w: 360, h: 780, dpr: 3, ppi: 416 }
   ];
   const SPEEDS = [1, 2, 4, 8];
-  const st = { tier: 2, device: 'computer', phone: 0, fit: 'real', speed: 1, ppi: 254 };
+  const st = { tier: 3, device: 'computer', phone: 0, fit: 'real', speed: 1, ppi: 254 };
   try { Object.assign(st, JSON.parse(localStorage.getItem('sunQuality') || '{}')); } catch (e) {}
-  const save = () => { try { localStorage.setItem('sunQuality', JSON.stringify(st)); } catch (e) {} };
+  // each set remembers its own tier
+  st.tier = st['tier_' + SET] ?? st.tier;
+  if (!(st.tier >= 0 && st.tier < TIERS.length)) st.tier = 0;
+  const save = () => { st['tier_' + SET] = st.tier; try { localStorage.setItem('sunQuality', JSON.stringify(st)); } catch (e) {} };
 
   // ---------- the video ----------
   const video = document.createElement('video');
@@ -125,11 +147,11 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   function load(keepTime) {
     const t = keepTime ? video.currentTime : 0;
     triedCloud = false;
-    video.src = LOCAL + TIERS[st.tier].stem + '_hevc.mp4';
+    video.src = LOCAL + fileOf(TIERS[st.tier]);
     video.addEventListener('loadedmetadata', () => { try { video.currentTime = t; } catch (e) {} video.playbackRate = st.speed; video.play().catch(() => {}); }, { once: true });
   }
   video.addEventListener('error', () => {
-    if (triedCloud) { $('status').textContent = 'Could not load ' + TIERS[st.tier].name + ' locally or from the cloud.'; return; }
+    if (triedCloud || !TIERS[st.tier].stem) { $('status').textContent = 'Could not load ' + TIERS[st.tier].name + ' locally or from the cloud.'; return; }
     triedCloud = true;
     video.src = CLOUD + TIERS[st.tier].stem + '_hevc.mp4';
     video.play().catch(() => {});
@@ -243,6 +265,12 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   }
   seg($('tiers'), TIERS, 'tier', t => t.name);
   seg($('speeds'), SPEEDS, 'speed', s => s + '×');
+  [...$('sets').children].forEach(b => {
+    b.classList.toggle('on', b.dataset.s === SET);
+    b.onclick = () => { if (b.dataset.s !== SET) location.search = b.dataset.s === 'master' ? '?set=master' : ''; };
+  });
+  // the master set in pairs, plain beside sharpened; the delivery set four across
+  $('tiers').style.cssText = 'grid-auto-flow: row; grid-template-columns: repeat(' + (SET === 'master' ? 2 : 4) + ', 1fr)';
   [...$('devices').children].forEach(b => b.onclick = () => { st.device = b.dataset.d; save(); render(); });
   [...$('fit').children].forEach(b => b.onclick = () => { st.fit = b.dataset.f; save(); render(); });
   PHONES.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = p.name + ' (' + Math.round(p.w * p.dpr) + '×' + Math.round(p.h * p.dpr) + ')'; $('model').appendChild(o); });
@@ -257,7 +285,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   function drawTables() {
     $('ups').innerHTML = TIERS.map((t, i) => {
       const tile = t.w / 3, up = sidePx / tile;
-      return '<tr class="' + (i === st.tier ? 'on' : '') + '"><td>' + t.name + ' <span style="color:var(--dim)">' + Math.round(tile) + ' px · ' + t.mbps + ' Mbps · ' + t.mb + ' MB</span></td>' +
+      return '<tr class="' + (i === st.tier ? 'on' : '') + '"><td>' + t.name + ' <span style="color:var(--dim)">' + Math.round(tile) + ' px' + (t.mbps ? ' · ' + t.mbps + ' Mbps' : '') + (t.mb ? ' · ' + t.mb + ' MB' : '') + '</span></td>' +
         '<td class="' + (up <= 1.05 ? 'up-ok' : 'up-soft') + '">' + up.toFixed(2) + '×</td></tr>';
     }).join('') + '<tr><td>Sun on screen</td><td>' + Math.round(sidePx) + ' px</td></tr>';
     const dpr = window.devicePixelRatio || 1;
