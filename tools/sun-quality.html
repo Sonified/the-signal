@@ -340,8 +340,11 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   }
   // Where the number keys go (its title underlined): the tiers (Sun Quality,
   // left) or the presets of the layer showing (Layers, right: ` Off, 1-5)
+  // (remembered on this machine)
   let keyPresets = false;
+  try { keyPresets = localStorage.getItem('sunQualityKeys') === 'presets'; } catch (e) {}
   function markKeys() {
+    try { localStorage.setItem('sunQualityKeys', keyPresets ? 'presets' : 'tiers'); } catch (e) {}
     document.querySelector('#side h1').classList.toggle('keys', !keyPresets);
     document.querySelector('#layers h1').classList.toggle('keys', keyPresets);
   }
