@@ -154,6 +154,10 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     const k = n.toLowerCase();
     MASTER.push({ name: n, file: 'test/master_' + k + '.mp4', w, mbps: a }, { name: n + '+', file: 'test/master_' + k + '_s.mp4', w, mbps: b });
   }
+  // after them (so the keys keep their places): Tiny (360p) plain and
+  // sharpened, and High+ at CRF 28 and 30 (its cost down)
+  MASTER.push({ name: 'Tiny', file: 'test/master_tiny.mp4', w: 540, mbps: 0.32 }, { name: 'Tiny+', file: 'test/master_tiny_s.mp4', w: 540, mbps: 0.43 },
+    { name: 'High+ c28', file: 'test/master_high_s_c28.mp4', w: 2764, mbps: 6.3 }, { name: 'High+ c30', file: 'test/master_high_s_c30.mp4', w: 2764, mbps: 4.0 });
   const TIERS = SET === 'master' ? MASTER : DELIVERY;
   const fileOf = t => t.file || t.stem + '_hevc.mp4';
   // CSS size, device pixel ratio and pixels per inch of each phone
