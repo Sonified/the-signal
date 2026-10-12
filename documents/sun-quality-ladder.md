@@ -1,0 +1,70 @@
+# The Sun quality ladder
+
+Decided 2026-10-12, after the TSC 2026 talk's guided meditation froze on hotel Wi-Fi (the 8 Mbps file stalled and nothing stepped down). This covers the six tiers, how each is encoded, where the files come from, which devices get which tiers, and what is still to do. It applies to both Presence (`gpu/sun.js`) and meditatewiththesun.com (`~/GitHub/solarmeditation/site/main.js`).
+
+## The ladder
+
+Robert's picks, judged by eye on `tools/sun-quality.html` (Master test set) on a 16" MacBook Pro and a simulated iPhone.
+
+| Tier | Recipe | Video | Sun (one tile) | Mbps* | Full file, est.** | Offered on |
+|---|---|---|---|---|---|---|
+| Tiny | gr | 540×360 | 180 px | 0.34 | ~27 MB | phone, computer |
+| Min | gr | 720×480 | 240 px | 0.60 | ~47 MB | phone, computer |
+| Low | gr | 1080×720 | 360 px | 1.45 | ~110 MB | phone, computer |
+| SD | +c28 | 1620×1080 | 540 px | 2.35 | ~180 MB | phone, computer |
+| High | +c28 | 2764×1842 | 921 px | 6.3 | ~490 MB | phone, computer |
+| Max | +c28 | 3072×2048 | 1024 px | 8.3 | ~640 MB | computer only |
+
+\* Measured on the 10 s test week (2026-03-18 onward), HEVC.
+\** The 13-minute 1x HEVC file, scaled down about 20% because the test week is busier than average. Re-measure after the real render.
+
+**Why phones stop at High:** a phone held upright shows the Sun about 965 px across, so High (921 px of Sun) is already about 1:1 and Max adds nothing but bytes. On a laptop the Sun can be 1700 px across, where even Max is stretched (1.66×). That's why computers get Max.
+
+**The Sun is one tile.** The mosaic is a 3×2 grid of SDO channels (1700, 304, 171 / 193, 211, empty). The player blends five tiles, so the Sun's real resolution is a third of the video's width. The empty tile costs under 1% of the file. Dropping a channel to make a 2×2 grid saves 12–33% of bytes depending on the channel, or makes each tile 1.5× wider at the same file width. Considered, not done.
+
+## The recipes
+
+All from the near-lossless day masters, never from a delivery file: `~/GitHub/solarmeditation/renders/cache/master/<YYYYMMDD>_<hash>.mp4`. There are 581 days, 3072×2048, H.264 at about 81 Mbps, 48 frames per day (one frame per 30 minutes of solar time). Encodes go through `tools/sun-encode.sh`.
+
+| Recipe | What it is | Settings |
+|---|---|---|
+| **+c28** | Sharpened in the downscale, CRF 28 | `EXTRA_VF="unsharp=5:5:0.5" CRF=28` |
+| **gr** | Sharpened, x265 grain mode, dark areas protected, CRF 29 | `EXTRA_VF="unsharp=5:5:0.5" CRF=29 TUNE=grain X265="aq-mode=3"` |
+
+Each tier also needs an x264 twin (for browsers without HEVC) and, for meditatewiththesun's phones, a 4x rung (every 4th frame) of each. The ladder's earlier files took the 4x rung from High's 4x file, frame for frame.
+
+### What we learned getting here
+
+- **The masters matter.** Rendering from the masters instead of re-compressing delivery files is why High +c28 beats the old Max at about 30% fewer bits.
+- **Sharpening** (`unsharp=5:5:0.5`) puts back the local contrast and the bright peaks that downscaling and compression flatten. It costs about 45% more bits at the same CRF. Raising CRF from 26 to 28 takes about that back, spending the bits on detail the eye sees.
+- **The keyframe pulse.** At CRF 28 the dark areas "breathe" once a second: each keyframe redraws the grain, then the frames between let it fade. Measured on Tiny, keyframes were 3.9 dB cleaner than the frames around them. It's worst at the low tiers, which is why they use **gr**: x265's grain mode keeps texture in every frame and turns off the SAO filter that smudges dark areas, and aq-mode 3 gives dark regions more bits. Pulse on Tiny: +c28 3.9 dB, gr 1.7 dB, at the same size.
+- **Also tried:** "flat" (`ipratio=1.0:pbratio=1.0:no-cutree=1`) cut the pulse to 1.4 dB but showed artifacts from SD up. Motion interpolation across data gaps is ruled out: plasma breaks optical flow.
+- **Min brightness:** small tiers lose the brightest one-pixel peaks to averaging (the average stays the same), so they read slightly dimmer. Sharpening restores most of it. A trial 10% luma lift on Min was made but not adopted.
+
+## The color grade
+
+`assets/sun-grade.json` holds Robert's per-layer grade (brightness, contrast, elevate, saturation), with the math and its order written out. The same bytes live in `~/GitHub/solarmeditation/site/assets/sun-grade.json`; change one, copy it to the other. Elevate is a mid-tone lift that leaves black and white alone: `c + 0.25 * elevate * sin²(πc)`. Neither player applies the grade yet.
+
+## How the player picks a tier
+
+`gpu/sun.js` (Presence, on sun-layer) and meditatewiththesun's `site/main.js` (local commits, not deployed) share the rules:
+
+- **Pick on load:** a 1 MB ranged fetch of the High file, cut off at 1.5 s, timed from the server's reply, gives the link speed. The player takes the highest tier whose bar it clears (Max only with the Max quality toggle on).
+- **Down fast:** a stall, 4 s starved of data, a network error, or a failed rescue drops one tier at once, in place.
+- **Up slow:** only after an hour away does it measure again. A slower link drops at once; a faster one rises one tier per loop, at the loop's crossfade.
+
+The code today knows five tiers (Min, Low, Standard, High, Max) built from the old delivery files. It needs updating to the ladder above: add Tiny, use the new files, and cap phones at High.
+
+## Still to do
+
+1. **Render the real files** from the masters for the full 23,289-frame cut (the same frames as `sun_mosaic_20260915_23289r`, so the loop point at frame 15255 still holds): six tiers, each HEVC and x264, plus 4x rungs. Then check them on calm and busy stretches, not just the test week.
+2. **Crossfade across data gaps** in the masters instead of hard cuts. The next task, not started.
+3. **Upload to R2** (`solarmeditation-media`): needs Robert's go-ahead each time.
+4. **Update both players:** the new tier names and files, Tiny, phones capped at High, and the bars re-derived from the new bitrates.
+5. **Apply `sun-grade.json`** in Presence's Sun shader and meditatewiththesun's.
+6. **meditatewiththesun** stays local until Robert has tested it.
+
+## Tools
+
+- `tools/sun-quality.html` (http://localhost:8000/tools/sun-quality.html): the comparison page. It has Delivery and Master test sets, Computer and simulated Phone views (use Actual pixels at normal laptop distance to judge a phone), per-layer grade sliders with presets and hearts, favorites, Copy favorites, and Download settings. The 10-second test clips live in `sun-video/test/` (git-ignored).
+- `tools/sun-encode.sh`: one encode, per the recipes above.
