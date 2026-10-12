@@ -156,13 +156,13 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     return v;
   })();
   const DELIVERY = [
-    { name: 'Min', stem: 'sun_mosaic_20260915_23289r_480', w: 720, mb: 46, mbps: 0.48 },
+    { name: 'SD', stem: 'sun_mosaic_20260915_23289r_480', w: 720, mb: 46, mbps: 0.48 },
     // trials: Min with unsharp=5:5:0.5 in the downscale, its peaks back near
     // Low's; and that 10% brighter (luma x1.1)
-    { name: 'Min+', stem: 'sun_mosaic_20260915_23289r_480s', w: 720, mb: 62, mbps: 0.64 },
-    { name: 'Min+ ☀', stem: 'sun_mosaic_20260915_23289r_480b', w: 720, mb: 67, mbps: 0.69 },
-    { name: 'Low', stem: 'sun_mosaic_20260915_23289r_720', w: 1080, mb: 91, mbps: 0.94 },
-    { name: 'Standard', stem: 'sun_mosaic_20260915_23289r_1080', w: 1620, mb: 170, mbps: 1.75 },
+    { name: 'SD+', stem: 'sun_mosaic_20260915_23289r_480s', w: 720, mb: 62, mbps: 0.64 },
+    { name: 'SD+ ☀', stem: 'sun_mosaic_20260915_23289r_480b', w: 720, mb: 67, mbps: 0.69 },
+    { name: 'HD', stem: 'sun_mosaic_20260915_23289r_720', w: 1080, mb: 91, mbps: 0.94 },
+    { name: 'HD+', stem: 'sun_mosaic_20260915_23289r_1080', w: 1620, mb: 170, mbps: 1.75 },
     { name: 'High', stem: 'sun_mosaic_20260915_23289r', w: 2764, mb: 399, mbps: 4.1 },
     { name: 'Max', stem: 'sun_mosaic_20260904_23284', w: 3072, mb: 777, mbps: 8.0 }
   ];
@@ -178,10 +178,10 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   //             SAO smudging the dark) + aq-mode 3 (bits to the dark areas),
   //             CRF 29, near ft28's size
   // [name, width, Mbps plain, +c28, ft28, ft31, gr] for this 10 s
-  // (SD is Standard, short for the buttons; its files keep 'standard')
-  for (const [n, w, a, c, g, f, r] of [['Tiny', 540, 0.32, 0.32, 0.32, 0.18, 0.34], ['Min', 720, 0.56, 0.56, 0.59, 0.32, 0.60], ['Low', 1080, 1.18, 1.17, 1.40, 0.70, 1.45],
-    ['SD', 1620, 2.45, 2.35, 3.43, 1.61, 3.23], ['High', 2764, 6.7, 6.3, 11.4, 5.2, 11.5], ['Max', 3072, 9.0, 8.3, 16.6, 7.2, 16.9]]) {
-    const k = n === 'SD' ? 'standard' : n.toLowerCase();
+  // Robert's names (2026-10-12): Min 360, SD 480, HD 720, HD+ 1080, High,
+  // Max; the test files keep the names they were rendered under (k)
+  for (const [n, k, w, a, c, g, f, r] of [['Min', 'tiny', 540, 0.32, 0.32, 0.32, 0.18, 0.34], ['SD', 'min', 720, 0.56, 0.56, 0.59, 0.32, 0.60], ['HD', 'low', 1080, 1.18, 1.17, 1.40, 0.70, 1.45],
+    ['HD+', 'standard', 1620, 2.45, 2.35, 3.43, 1.61, 3.23], ['High', 'high', 2764, 6.7, 6.3, 11.4, 5.2, 11.5], ['Max', 'max', 3072, 9.0, 8.3, 16.6, 7.2, 16.9]]) {
     MASTER.push({ name: n, file: 'test/master_' + k + '.mp4', w, mbps: a },
       { name: n + ' +c28', file: 'test/master_' + k + '_s_c28.mp4', w, mbps: c },
       { name: n + ' ft28', file: 'test/master_' + k + '_s_c28_flat.mp4', w, mbps: g },
@@ -493,13 +493,22 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   for (const row in st[favKey]) {
     const v = st[favKey][row];
     // Standard became SD on the master buttons
-    if (typeof v === 'string') { if (SET === 'master' && v.startsWith('Standard')) st[favKey][row] = 'SD' + v.slice(8); continue; }
+    // the names before Min/SD/HD/HD+ carried over, once
+    if (typeof v === 'string') {
+      if (!st['favRenamed_' + SET]) {
+        const ren = SET === 'master' ? { Tiny: 'Min', Min: 'SD', Low: 'HD', SD: 'HD+', Standard: 'HD+' } : { Min: 'SD', Low: 'HD', Standard: 'HD+' };
+        const m = /^([A-Za-z]+)(.*)$/.exec(v);
+        if (m && ren[m[1]]) st[favKey][row] = ren[m[1]] + m[2];
+      }
+      continue;
+    }
     if (SET === 'master') {
-      const fam = ['Tiny', 'Min', 'Low', 'SD', 'High', 'Max'][(v / 4) | 0];
+      const fam = ['Min', 'SD', 'HD', 'HD+', 'High', 'Max'][(v / 4) | 0];
       st[favKey][row] = fam ? fam + ['', ' +c28', ' ft28', ' ft31'][v % 4] : undefined;
     } else st[favKey][row] = TIERS[v] && TIERS[v].name;
     if (!st[favKey][row]) delete st[favKey][row];
   }
+  st['favRenamed_' + SET] = true;   // each set's favorites renamed once
   save();
   [...$('tiers').children].forEach((b, i) => {
     const h = document.createElement('span');
