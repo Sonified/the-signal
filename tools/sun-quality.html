@@ -289,7 +289,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   const LAYERS = [{ name: '1700 Å' }, { name: '304 Å' }, { name: '171 Å' }, { name: '193 Å' }, { name: '211 Å' }];
   // [label, min, max, untouched]
   // boost only: each slider starts at untouched (Robert never lowers these)
-  const ADJ = [['Brightness', 1, 1.5, 1], ['Contrast', 1, 1.5, 1], ['Saturation', 1, 1.5, 1], ['Elevate', 0, 1, 0]];
+  const ADJ = [['Brightness', 1, 1.3, 1], ['Contrast', 1, 1.3, 1], ['Saturation', 1, 1.3, 1], ['Elevate', 0, 1, 0]];
   const NA = ADJ.length, NP = 5;
   const DEF = new Float32Array(LAYERS.length * NA).map((_, j) => ADJ[j % NA][3]);
   const adj = Float32Array.from(DEF);
