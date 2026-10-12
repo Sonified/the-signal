@@ -529,6 +529,11 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     const to = Math.max(0, Math.min(LAYERS.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
     if (to !== at || fade) fadeTo(to);
   });
+  // n m , . / jump to the five layers in order, crossfading
+  addEventListener('keydown', e => {
+    const i = 'nm,./'.indexOf(e.key);
+    if (i >= 0 && !e.metaKey && !e.ctrlKey) { e.preventDefault(); fadeTo(i); }
+  });
   // the number keys pick a tier, for quick A/B (0 the tenth, Max+ in the
   // master set), or with Layers clicked, the showing layer's preset (` Off, 1-5)
   addEventListener('keydown', e => {
