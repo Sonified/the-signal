@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sun Quality</title>
+<!--
+  The Sun's quality ladder side by side with this machine's screen: the
+  composite exactly as Presence draws it (gpu/sun.wgsl.js: the five channel
+  tiles of the 3 x 2 mosaic, tinted and summed as light, the Atmosphere
+  blend, the circular feather), from any tier's file, on the Computer (the
+  page's own screen, at its own pixels) or a simulated Phone (drawn at the
+  phone's own device pixels).
+
+  The number that matters is the upscale: the Sun's square on screen in
+  device pixels over one tile of the video (a third of its width). Above 1x
+  the screen has more pixels than the video gives it, and it softens.
+
+  Served by tools/serve.mjs: http://localhost:8000/tools/sun-quality.html
+  Plays this Mac's copies in sun-video/ first, the cloud's if one is missing.
+-->
+<style>
+:root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; --warn: #ff9f6b; --ok: #6fd08c; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+#side { background: var(--panel); border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; }
+h1 { font-size: 17px; margin: 0 0 12px; }
+h2 { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin: 16px 0 6px; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+.seg button { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #1b2030; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+.seg button.on { background: var(--gold); color: #000; border-color: var(--gold); }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+td { padding: 3px 0; border-bottom: 1px solid #1c2130; vertical-align: top; }
+td:last-child { text-align: right; }
+tr.on td { color: var(--gold); }
+.up-ok { color: var(--ok); } .up-soft { color: var(--warn); }
+label.row { display: grid; grid-template-columns: 90px 1fr 46px; align-items: center; gap: 8px; margin: 6px 0; color: var(--dim); }
+label.row output { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+#stage { position: relative; overflow: auto; display: grid; place-items: center; }
+#stage.on-computer canvas { width: 100%; height: 100%; display: block; }
+#stage.on-computer { overflow: hidden; }
+.phone { position: relative; border: 10px solid #1d1f26; border-radius: 46px; background: #000; box-shadow: 0 0 0 2px #2e323d, 0 30px 80px rgba(0,0,0,.6); overflow: hidden; margin: 24px; }
+.phone::before { content: ""; position: absolute; top: 10px; left: 50%; width: 30%; height: 26px; transform: translateX(-50%); background: #000; border-radius: 16px; z-index: 2; }
+.phone canvas { display: block; }
+#status { position: absolute; left: 12px; bottom: 10px; color: var(--dim); font-size: 12px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>Sun Quality</h1>
+
+  <h2>Quality</h2>
+  <div class="seg" id="tiers"></div>
+
+  <h2>Device</h2>
+  <div class="seg" id="devices">
+    <button data-d="computer">Computer</button>
+    <button data-d="phone">Phone</button>
+  </div>
+  <div id="phoneOpts" hidden>
+    <h2>Phone model</h2>
+    <select id="model"></select>
+    <h2>Phone view</h2>
+    <div class="seg" id="fit">
+      <button data-f="actual">Actual pixels</button>
+      <button data-f="fit">Fit window</button>
+    </div>
+    <div class="hint">Actual pixels shows every phone pixel as one of yours: bigger than the real phone, and exact. Fit shrinks it to the window, which hides softness.</div>
+  </div>
+
+  <h2>Upscale per tier, this view</h2>
+  <table id="ups"></table>
+  <div class="hint">The Sun's square on screen ÷ one tile of the video. Up to about 1.0× is crisp; above that the screen stretches the video.</div>
+
+  <h2>Picture</h2>
+  <label class="row">Sun size <input type="range" id="size" min="20" max="100" value="80"><output id="sizeOut"></output></label>
+  <label class="row">Atmosphere <input type="range" id="atmo" min="0" max="100" value="25"><output id="atmoOut"></output></label>
+  <h2>Speed</h2>
+  <div class="seg" id="speeds"></div>
+
+  <h2>This computer</h2>
+  <table id="screen"></table>
+</div>
+<div id="stage"><canvas id="c"></canvas><div id="status"></div></div>
+
+<script>
+'use strict';
+(() => {
+  const $ = id => document.getElementById(id);
+  const CLOUD = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
+  const LOCAL = '/sun-video/';
+  // gpu/sun.js TIERS, with each file's size for the readout
+  const TIERS = [
+    { name: 'Low', stem: 'sun_mosaic_20260915_23289r_720', w: 1080, mb: 91, mbps: 0.94 },
+    { name: 'Standard', stem: 'sun_mosaic_20260915_23289r_1080', w: 1620, mb: 170, mbps: 1.75 },
+    { name: 'High', stem: 'sun_mosaic_20260915_23289r', w: 2764, mb: 399, mbps: 4.1 },
+    { name: 'Max', stem: 'sun_mosaic_20260904_23284', w: 3072, mb: 777, mbps: 8.0 }
+  ];
+  // CSS size and device pixel ratio of each phone
+  const PHONES = [
+    { name: 'iPhone 16 Pro', w: 402, h: 874, dpr: 3 },
+    { name: 'iPhone 16 / 15', w: 393, h: 852, dpr: 3 },
+    { name: 'iPhone SE', w: 375, h: 667, dpr: 2 },
+    { name: 'Pixel 8', w: 412, h: 915, dpr: 2.625 },
+    { name: 'Galaxy S24', w: 360, h: 780, dpr: 3 }
+  ];
+  const SPEEDS = [1, 2, 4, 8];
+  const st = { tier: 1, device: 'computer', phone: 0, fit: 'fit', speed: 1 };
+  try { Object.assign(st, JSON.parse(localStorage.getItem('sunQuality') || '{}')); } catch (e) {}
+  const save = () => { try { localStorage.setItem('sunQuality', JSON.stringify(st)); } catch (e) {} };
+
+  // ---------- the video ----------
+  const video = document.createElement('video');
+  video.crossOrigin = 'anonymous'; video.muted = true; video.loop = true; video.playsInline = true;
+  let triedCloud = false;
+  function load(keepTime) {
+    const t = keepTime ? video.currentTime : 0;
+    triedCloud = false;
+    video.src = LOCAL + TIERS[st.tier].stem + '_hevc.mp4';
+    video.addEventListener('loadedmetadata', () => { try { video.currentTime = t; } catch (e) {} video.playbackRate = st.speed; video.play().catch(() => {}); }, { once: true });
+  }
+  video.addEventListener('error', () => {
+    if (triedCloud) { $('status').textContent = 'Could not load ' + TIERS[st.tier].name + ' locally or from the cloud.'; return; }
+    triedCloud = true;
+    video.src = CLOUD + TIERS[st.tier].stem + '_hevc.mp4';
+    video.play().catch(() => {});
+  });
+
+  // ---------- the composite, as gpu/sun.wgsl.js ----------
+  const canvas = $('c');
+  const gl = canvas.getContext('webgl2', { premultipliedAlpha: false });
+  const VS = `#version 300 es
+  in vec2 p; out vec2 uv;
+  uniform vec2 half; // the square's half size in clip space
+  void main() { uv = p * 0.5 + 0.5; uv.y = 1.0 - uv.y; gl_Position = vec4(p * half, 0.0, 1.0); }`;
+  const FS = `#version 300 es
+  precision highp float;
+  in vec2 uv; out vec4 o;
+  uniform sampler2D tex; uniform float g[5];
+  vec3 tileAt(float col, float row) { return texture(tex, (uv + vec2(col, row)) / vec2(3.0, 2.0)).rgb; }
+  void main() {
+    vec3 c = vec3(0.0);
+    c += tileAt(0.0, 0.0) * vec3(255.0, 154.0, 138.0) / 255.0 * g[0];
+    c += tileAt(1.0, 0.0) * vec3(255.0, 77.0, 46.0) / 255.0 * g[1];
+    c += tileAt(2.0, 0.0) * vec3(255.0, 194.0, 51.0) / 255.0 * g[2];
+    c += tileAt(0.0, 1.0) * vec3(201.0, 138.0, 75.0) / 255.0 * g[3];
+    c += tileAt(1.0, 1.0) * vec3(180.0, 140.0, 255.0) / 255.0 * g[4];
+    c = min(c, vec3(1.0));
+    float r = length(uv - vec2(0.5)) * 2.0;
+    float w = max(mix(0.6, 0.0, 0.40), 0.003);
+    c *= 1.0 - smoothstep(0.90 - w * 0.5, 0.90 + w * 0.5, r);
+    o = vec4(c, 1.0);
+  }`;
+  function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(s)); return s; }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const aP = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP, 2, gl.FLOAT, false, 0, 0);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  const uHalf = gl.getUniformLocation(prog, 'half'), uG = gl.getUniformLocation(prog, 'g');
+
+  // the Atmosphere sweep, gpu/sun.js: the five channels at i/4 along it
+  const gains = new Float32Array(5);
+  function setGains(a) {
+    gains.fill(0);
+    const x = a * 4, i = Math.floor(x);
+    if (i >= 4) { gains[4] = 1; return; }
+    const f = x - i, s = f * f * (3 - 2 * f);
+    gains[i] = 1 - s; gains[i + 1] = s;
+  }
+
+  // ---------- layout: the canvas at the target's own device pixels ----------
+  let sidePx = 0;   // the Sun's square, device pixels of the target screen
+  function layout() {
+    const stage = $('stage');
+    stage.className = 'on-' + st.device;
+    const old = stage.querySelector('.phone');
+    if (st.device === 'computer') {
+      if (old) { stage.prepend(canvas); old.remove(); }
+      const dpr = window.devicePixelRatio || 1;
+      const r = stage.getBoundingClientRect();
+      canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+      canvas.style.width = canvas.style.height = '';
+    } else {
+      const ph = PHONES[st.phone];
+      let frame = old;
+      if (!frame) { frame = document.createElement('div'); frame.className = 'phone'; stage.prepend(frame); frame.appendChild(canvas); }
+      canvas.width = Math.round(ph.w * ph.dpr); canvas.height = Math.round(ph.h * ph.dpr);
+      // actual: one phone pixel per device pixel of this screen
+      const dpr = window.devicePixelRatio || 1;
+      let cssW = canvas.width / dpr, cssH = canvas.height / dpr;
+      if (st.fit === 'fit') {
+        const r = stage.getBoundingClientRect();
+        const k = Math.min(1, (r.height - 80) / cssH, (r.width - 80) / cssW);
+        cssW *= k; cssH *= k;
+      }
+      canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    }
+    sidePx = +$('size').value / 100 * Math.min(canvas.width, canvas.height);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    drawTables();
+  }
+
+  // ---------- the side panel ----------
+  function seg(el, items, key, label) {
+    el.innerHTML = '';
+    items.forEach((it, i) => {
+      const b = document.createElement('button');
+      b.textContent = label(it, i);
+      b.onclick = () => { st[key] = typeof it === 'object' ? i : it; save(); render(key); };
+      el.appendChild(b);
+    });
+  }
+  function mark() {
+    [...$('tiers').children].forEach((b, i) => b.classList.toggle('on', i === st.tier));
+    [...$('devices').children].forEach(b => b.classList.toggle('on', b.dataset.d === st.device));
+    [...$('fit').children].forEach(b => b.classList.toggle('on', b.dataset.f === st.fit));
+    [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', SPEEDS[i] === st.speed));
+    $('phoneOpts').hidden = st.device !== 'phone';
+  }
+  function render(key) {
+    if (key === 'tier') load(true);
+    if (key === 'speed') video.playbackRate = st.speed;
+    mark(); layout();
+  }
+  seg($('tiers'), TIERS, 'tier', t => t.name);
+  seg($('speeds'), SPEEDS, 'speed', s => s + '×');
+  [...$('devices').children].forEach(b => b.onclick = () => { st.device = b.dataset.d; save(); render(); });
+  [...$('fit').children].forEach(b => b.onclick = () => { st.fit = b.dataset.f; save(); render(); });
+  PHONES.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = p.name + ' (' + Math.round(p.w * p.dpr) + '×' + Math.round(p.h * p.dpr) + ')'; $('model').appendChild(o); });
+  $('model').value = st.phone;
+  $('model').onchange = () => { st.phone = +$('model').value; save(); layout(); };
+  $('size').oninput = () => { $('sizeOut').textContent = $('size').value + '%'; layout(); };
+  $('atmo').oninput = () => { $('atmoOut').textContent = (+$('atmo').value / 100).toFixed(2); setGains(+$('atmo').value / 100); };
+  $('size').oninput(); $('atmo').oninput();
+
+  function drawTables() {
+    $('ups').innerHTML = TIERS.map((t, i) => {
+      const tile = t.w / 3, up = sidePx / tile;
+      return '<tr class="' + (i === st.tier ? 'on' : '') + '"><td>' + t.name + ' <span style="color:var(--dim)">' + Math.round(tile) + ' px · ' + t.mbps + ' Mbps · ' + t.mb + ' MB</span></td>' +
+        '<td class="' + (up <= 1.05 ? 'up-ok' : 'up-soft') + '">' + up.toFixed(2) + '×</td></tr>';
+    }).join('') + '<tr><td>Sun on screen</td><td>' + Math.round(sidePx) + ' px</td></tr>';
+    const dpr = window.devicePixelRatio || 1;
+    const rows = [
+      ['Screen', screen.width + ' × ' + screen.height + ' pt'],
+      ['Pixel ratio', dpr + '×'],
+      ['Native pixels', Math.round(screen.width * dpr) + ' × ' + Math.round(screen.height * dpr)],
+      ['Window', innerWidth + ' × ' + innerHeight + ' pt'],
+      ['Color depth', screen.colorDepth + ' bit']
+    ];
+    $('screen').innerHTML = rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('');
+  }
+
+  // ---------- draw ----------
+  function frame() {
+    if (video.readyState >= 2) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+      gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.uniform2f(uHalf, sidePx / canvas.width, sidePx / canvas.height);
+      gl.uniform1fv(uG, gains);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      $('status').textContent = TIERS[st.tier].name + ' · ' + video.videoWidth + '×' + video.videoHeight + ' · ' + video.currentTime.toFixed(1) + ' s' + (triedCloud ? ' · from the cloud' : ' · local copy');
+    }
+    requestAnimationFrame(frame);
+  }
+  addEventListener('resize', layout);
+  // the number keys pick a tier, for quick A/B
+  addEventListener('keydown', e => { const n = +e.key; if (n >= 1 && n <= TIERS.length) { st.tier = n - 1; save(); render('tier'); } });
+  mark(); load(false); layout();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
