@@ -84,6 +84,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   </div>
   <h2>Quality</h2>
   <div class="seg" id="tiers"></div>
+  <div class="hint" id="tierStats" style="color:var(--ink)"></div>
 
   <h2>Device</h2>
   <div class="seg" id="devices">
@@ -514,6 +515,13 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   $('size').oninput(); $('atmo').oninput();
 
   function drawTables() {
+    // the picked tier's numbers, right under its button
+    {
+      const t = TIERS[st.tier], tile = t.w / 3, up = sidePx / tile;
+      $('tierStats').innerHTML = '<b style="color:var(--gold)">' + t.name + '</b> · ' + t.w + '×' + Math.round(t.w * 2 / 3) + ' · Sun ' + Math.round(tile) + ' px' +
+        (t.mbps ? ' · ' + t.mbps + ' Mbps' : '') + (t.mb ? ' · ' + t.mb + ' MB' : '') +
+        ' · upscale <span class="' + (up <= 1.05 ? 'up-ok' : 'up-soft') + '">' + up.toFixed(2) + '×</span>';
+    }
     $('ups').innerHTML = TIERS.map((t, i) => {
       const tile = t.w / 3, up = sidePx / tile;
       return '<tr class="' + (i === st.tier ? 'on' : '') + '"><td>' + t.name + ' <span style="color:var(--dim)">' + Math.round(tile) + ' px' + (t.mbps ? ' · ' + t.mbps + ' Mbps' : '') + (t.mb ? ' · ' + t.mb + ' MB' : '') + '</span></td>' +
