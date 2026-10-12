@@ -28,6 +28,14 @@ body { display: grid; grid-template-columns: 300px 1fr 280px; height: 100vh; }
 #layers .layer { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
 #layers .layer.lit h2 { color: var(--gold); }
 #layers label.row { grid-template-columns: 74px 1fr 40px; }
+#layers { display: flex; flex-direction: column; }
+#layerRows { flex: 1; }
+#layers .lh { display: flex; align-items: center; justify-content: space-between; margin: 0 0 4px; }
+#layers .lh h2 { margin: 0; }
+#layers .byp { height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; }
+#layers .byp.on { background: var(--warn); border-color: var(--warn); color: #000; }
+#layers .layer.bypassed label.row { opacity: .4; }
+#download { position: sticky; bottom: 0; margin-top: 12px; height: 38px; border-radius: 8px; border: 1px solid var(--gold); background: #1b2030; color: var(--gold); font: inherit; font-weight: 600; cursor: pointer; }
 #side { background: var(--panel); border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; }
 h1 { font-size: 17px; margin: 0 0 12px; }
 h2 { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin: 16px 0 6px; }
@@ -102,6 +110,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   <h1>Layers</h1>
   <div class="seg"><button id="resetLayers">Reset all</button></div>
   <div id="layerRows"></div>
+  <button id="download">Download settings</button>
 </div>
 
 <script>
@@ -222,14 +231,30 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   const LAYERS = [{ name: '1700 Å' }, { name: '304 Å' }, { name: '171 Å' }, { name: '193 Å' }, { name: '211 Å' }];
   const ADJ = [['Brightness', 0, 2], ['Contrast', 0, 2], ['Saturation', 0, 2]];
   const adj = new Float32Array(15).fill(1);
-  try { const a = JSON.parse(localStorage.getItem('sunQualityLayers') || 'null'); if (a && a.length === 15) adj.set(a); } catch (e) {}
-  const saveAdj = () => { try { localStorage.setItem('sunQualityLayers', JSON.stringify([...adj])); } catch (e) {} };
+  // a bypassed layer keeps its settings but draws untouched (adjOut, what
+  // the shader gets)
+  const bypass = [false, false, false, false, false];
+  const adjOut = new Float32Array(15).fill(1);
+  try {
+    const a = JSON.parse(localStorage.getItem('sunQualityLayers') || 'null');
+    if (a && a.length === 15) adj.set(a);
+    const b = JSON.parse(localStorage.getItem('sunQualityBypass') || 'null');
+    if (Array.isArray(b) && b.length === 5) b.forEach((v, i) => { bypass[i] = !!v; });
+  } catch (e) {}
+  function syncAdj() { for (let i = 0; i < 15; i++) adjOut[i] = bypass[(i / 3) | 0] ? 1 : adj[i]; }
+  const saveAdj = () => {
+    syncAdj();
+    try { localStorage.setItem('sunQualityLayers', JSON.stringify([...adj])); localStorage.setItem('sunQualityBypass', JSON.stringify(bypass)); } catch (e) {}
+  };
+  syncAdj();
   function buildLayers() {
     $('layerRows').innerHTML = '';
     LAYERS.forEach((L, i) => {
       const box = document.createElement('div');
-      box.className = 'layer';
-      box.innerHTML = '<h2>' + L.name + '</h2>';
+      box.className = 'layer' + (bypass[i] ? ' bypassed' : '');
+      box.innerHTML = '<div class="lh"><h2>' + L.name + '</h2><button class="byp' + (bypass[i] ? ' on' : '') + '">Bypass</button></div>';
+      const byp = box.querySelector('.byp');
+      byp.onclick = () => { bypass[i] = !bypass[i]; byp.classList.toggle('on', bypass[i]); box.classList.toggle('bypassed', bypass[i]); saveAdj(); };
       ADJ.forEach(([label, lo, hi], k) => {
         const row = document.createElement('label');
         row.className = 'row';
@@ -246,7 +271,17 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     });
   }
   buildLayers();
-  $('resetLayers').onclick = () => { adj.fill(1); saveAdj(); buildLayers(); $('atmo').oninput(); };
+  $('resetLayers').onclick = () => { adj.fill(1); bypass.fill(false); saveAdj(); buildLayers(); $('atmo').oninput(); };
+  // every layer's settings, and the view they were set in, as a JSON file
+  $('download').onclick = () => {
+    const out = { savedAt: new Date().toISOString(), set: SET, tier: TIERS[st.tier].name, atmosphere: +$('atmo').value / 100, layers: {} };
+    LAYERS.forEach((L, i) => { out.layers[L.name] = { brightness: adj[i * 3], contrast: adj[i * 3 + 1], saturation: adj[i * 3 + 2], bypass: bypass[i] }; });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
+    a.download = 'sun-layer-settings.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
 
   // the Atmosphere sweep, gpu/sun.js: the five channels at i/4 along it
   const gains = new Float32Array(5);
@@ -368,7 +403,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
       gl.uniform2f(uHalf, sidePx / canvas.width, sidePx / canvas.height);
       gl.uniform1fv(uG, gains);
-      gl.uniform3fv(uAdj, adj);
+      gl.uniform3fv(uAdj, adjOut);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       $('status').textContent = TIERS[st.tier].name + ' · ' + video.videoWidth + '×' + video.videoHeight + ' · ' + video.currentTime.toFixed(1) + ' s' + (triedCloud ? ' · from the cloud' : ' · local copy');
     }
