@@ -6,19 +6,23 @@ Decided 2026-10-12, after the TSC 2026 talk's guided meditation froze on hotel W
 
 Robert's picks, judged by eye on `tools/sun-quality.html` (Master test set) on a 16" MacBook Pro and a simulated iPhone.
 
-| Tier | Recipe | Video | Sun (one tile) | Mbps* | Full file, est.** | Offered on |
-|---|---|---|---|---|---|---|
-| Tiny | gr | 540×360 | 180 px | 0.34 | ~27 MB | phone, computer |
-| Min | gr | 720×480 | 240 px | 0.60 | ~47 MB | phone, computer |
-| Low | gr | 1080×720 | 360 px | 1.45 | ~110 MB | phone, computer |
-| SD | +c28 | 1620×1080 | 540 px | 2.35 | ~180 MB | phone, computer |
-| High | +c28 | 2764×1842 | 921 px | 6.3 | ~490 MB | phone, computer |
-| Max | +c28 | 3072×2048 | 1024 px | 8.3 | ~640 MB | computer only |
+| Tier | Recipe | Video | Sun (one tile) | Mbps* | Full file, est.** | Phone | Computer |
+|---|---|---|---|---|---|---|---|
+| Min | gr | 540×360 | 180 px | 0.34 | ~27 MB | yes | no |
+| SD | gr | 720×480 | 240 px | 0.60 | ~47 MB | yes | yes (its floor) |
+| HD | gr | 1080×720 | 360 px | 1.45 | ~110 MB | yes | yes |
+| HD+ | +c28 | 1620×1080 | 540 px | 2.35 | ~180 MB | yes | yes |
+| High | +c28 | 2764×1842 | 921 px | 6.3 | ~490 MB | yes (its top) | yes |
+| Max | +c28 | 3072×2048 | 1024 px | 8.3 | ~640 MB | no | yes, with Max quality on |
+
+The names are Robert's (2026-10-12). SD and HD sit where video people expect them (480p, 720p), and HD+ is 1080. The test files in `sun-video/test/` keep the names they were rendered under: tiny, min, low, standard, high, max.
 
 \* Measured on the 10 s test week (2026-03-18 onward), HEVC.
 \** The 13-minute 1x HEVC file, scaled down about 20% because the test week is busier than average. Re-measure after the real render.
 
 **Why phones stop at High:** a phone held upright shows the Sun about 965 px across, so High (921 px of Sun) is already about 1:1 and Max adds nothing but bytes. On a laptop the Sun can be 1700 px across, where even Max is stretched (1.66×). That's why computers get Max.
+
+**Why computers start at SD:** an aesthetic call. Min's 180 px Sun would be stretched almost tenfold on a laptop. A computer on a link too slow for SD stays on SD and waits for frames (choppier playback) rather than showing a soft Sun.
 
 **The Sun is one tile.** The mosaic is a 3×2 grid of SDO channels (1700, 304, 171 / 193, 211, empty). The player blends five tiles, so the Sun's real resolution is a third of the video's width. The empty tile costs under 1% of the file. Dropping a channel to make a 2×2 grid saves 12–33% of bytes depending on the channel, or makes each tile 1.5× wider at the same file width. Considered, not done.
 
@@ -49,18 +53,18 @@ Each tier also needs an x264 twin (for browsers without HEVC) and, for meditatew
 
 `gpu/sun.js` (Presence, on sun-layer) and meditatewiththesun's `site/main.js` (local commits, not deployed) share the rules:
 
-- **Pick on load:** a 1 MB ranged fetch of the High file, cut off at 1.5 s, timed from the server's reply, gives the link speed. The player takes the highest tier whose bar it clears (Max only with the Max quality toggle on).
+- **Pick on load:** a 1 MB ranged fetch of the High file, cut off at 1.5 s, timed from the server's reply, gives the link speed. The player takes the highest tier whose bar it clears, within the device's range (phones up to High; computers from SD, and Max only with the Max quality toggle on).
 - **Down fast:** a stall, 4 s starved of data, a network error, or a failed rescue drops one tier at once, in place.
 - **Up slow:** only after an hour away does it measure again. A slower link drops at once; a faster one rises one tier per loop, at the loop's crossfade.
 
-The code today knows five tiers (Min, Low, Standard, High, Max) built from the old delivery files. It needs updating to the ladder above: add Tiny, use the new files, and cap phones at High.
+The code today has the new names and the device range (phones cap at High, computers floor at SD), but only five tiers (SD, HD, HD+, High, Max) built from the old delivery files. Still to do: add Min, and switch to the new files.
 
 ## Still to do
 
 1. **Render the real files** from the masters for the full 23,289-frame cut (the same frames as `sun_mosaic_20260915_23289r`, so the loop point at frame 15255 still holds): six tiers, each HEVC and x264, plus 4x rungs. Then check them on calm and busy stretches, not just the test week.
 2. **Crossfade across data gaps** in the masters instead of hard cuts. The next task, not started.
 3. **Upload to R2** (`solarmeditation-media`): needs Robert's go-ahead each time.
-4. **Update both players:** the new tier names and files, Tiny, phones capped at High, and the bars re-derived from the new bitrates.
+4. **Update both players:** add Min, switch to the new files, and re-derive the bars from the new bitrates. (The names and the phone/computer range are already in.)
 5. **Apply `sun-grade.json`** in Presence's Sun shader and meditatewiththesun's.
 6. **meditatewiththesun** stays local until Robert has tested it.
 
