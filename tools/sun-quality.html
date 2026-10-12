@@ -35,6 +35,8 @@ body { display: grid; grid-template-columns: 400px 1fr 280px; height: 100vh; }
 #layers .lh h2:hover { color: var(--ink); }
 #layers .pre { display: flex; gap: 3px; }
 #tierStats { margin-top: 8px; font-variant-numeric: tabular-nums; }
+.mini { height: 22px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 11px; text-transform: none; letter-spacing: 0; cursor: pointer; }
+.mini:hover { color: var(--ink); }
 #tierStats .cells { display: grid; grid-template-columns: 92px 64px 62px 62px 62px; gap: 2px 6px; }
 #tierStats .k { color: var(--dim); font-size: 11px; }
 #tierStats .v { color: var(--ink); }
@@ -90,7 +92,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     <button data-s="delivery">Delivery files</button>
     <button data-s="master">Master test</button>
   </div>
-  <h2>Quality</h2>
+  <h2 style="display:flex;align-items:center;justify-content:space-between">Quality <button id="copyFavs" class="mini">Copy favorites</button></h2>
   <div class="seg" id="tiers"></div>
   <div id="tierStats"></div>
 
@@ -495,6 +497,25 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     [...$('tiers').children].forEach((b, i) => b.querySelector('.fav').classList.toggle('on', f[(i / 4) | 0] === i));
   }
   markFavs();
+  // Copy favorites: every favorited version's numbers, and the view they
+  // were judged in, as one JSON block on the clipboard
+  $('copyFavs').onclick = async () => {
+    const f = st[favKey], dpr = window.devicePixelRatio || 1;
+    const out = {
+      set: SET,
+      view: st.device === 'phone' ? PHONES[st.phone].name + ' (' + st.fit + ')' : 'computer ' + Math.round(screen.width * dpr) + '×' + Math.round(screen.height * dpr),
+      sunOnScreenPx: Math.round(sidePx),
+      favorites: Object.keys(f).sort((a, b) => a - b).map(row => {
+        const t = TIERS[f[row]], tile = t.w / 3;
+        return { name: t.name, file: fileOf(t), size: t.w + 'x' + Math.round(t.w * 2 / 3), sunPx: Math.round(tile),
+          mbps: t.mbps ?? null, mb: t.mb ?? null, upscale: +(sidePx / tile).toFixed(2) };
+      })
+    };
+    const b = $('copyFavs');
+    try { await navigator.clipboard.writeText(JSON.stringify(out, null, 2)); b.textContent = 'Copied ' + out.favorites.length; }
+    catch (e) { b.textContent = 'Copy failed'; }
+    setTimeout(() => { b.textContent = 'Copy favorites'; }, 1500);
+  };
   seg($('speeds'), SPEEDS, 'speed', s => s + '×');
   [...$('sets').children].forEach(b => {
     b.classList.toggle('on', b.dataset.s === SET);
