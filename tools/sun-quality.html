@@ -140,7 +140,15 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   // master test, 10 s of the 2026-03-18 master day at every tier's size,
   // plain and sharpened (sun-video/test/, tools: scratchpad mastertest.sh).
   // ?set=master picks the second. Each file's size for the readout.
-  const SET = new URLSearchParams(location.search).get('set') === 'master' ? 'master' : 'delivery';
+  // ?set= says which; without it, the one last used (remembered)
+  const SET = (() => {
+    const q = new URLSearchParams(location.search).get('set');
+    let v = q;
+    if (!v) { try { v = localStorage.getItem('sunQualitySet'); } catch (e) {} }
+    v = v === 'master' ? 'master' : 'delivery';
+    try { localStorage.setItem('sunQualitySet', v); } catch (e) {}
+    return v;
+  })();
   const DELIVERY = [
     { name: 'Min', stem: 'sun_mosaic_20260915_23289r_480', w: 720, mb: 46, mbps: 0.48 },
     // trials: Min with unsharp=5:5:0.5 in the downscale, its peaks back near
@@ -180,7 +188,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     { name: 'Galaxy S24', w: 360, h: 780, dpr: 3, ppi: 416 }
   ];
   const SPEEDS = [1, 2, 4, 8];
-  const st = { tier: 3, device: 'computer', phone: 0, fit: 'real', speed: 1, ppi: 254 };
+  const st = { tier: 3, device: 'computer', phone: 0, fit: 'real', speed: 1, ppi: 254, size: 80, atmo: 25 };
   try { Object.assign(st, JSON.parse(localStorage.getItem('sunQuality') || '{}')); } catch (e) {}
   // each set remembers its own tier
   st.tier = st['tier_' + SET] ?? st.tier;
@@ -466,7 +474,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   seg($('speeds'), SPEEDS, 'speed', s => s + '×');
   [...$('sets').children].forEach(b => {
     b.classList.toggle('on', b.dataset.s === SET);
-    b.onclick = () => { if (b.dataset.s !== SET) location.search = b.dataset.s === 'master' ? '?set=master' : ''; };
+    b.onclick = () => { if (b.dataset.s !== SET) location.search = '?set=' + b.dataset.s; };
   });
   // both sets four across (the master set: plain, +c28, flat28, flat31)
   $('tiers').style.cssText = 'grid-auto-flow: row; grid-template-columns: repeat(4, 1fr)';
@@ -477,7 +485,9 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   $('ppi').value = st.ppi;
   $('ppi').oninput = () => { const v = +$('ppi').value; if (v >= 80 && v <= 600) { st.ppi = v; save(); layout(); } };
   $('model').onchange = () => { st.phone = +$('model').value; save(); layout(); };
-  $('size').oninput = () => { $('sizeOut').textContent = $('size').value + '%'; layout(); };
+  // Sun size and the Atmosphere are remembered with the rest
+  $('size').value = st.size; $('atmo').value = st.atmo;
+  $('size').oninput = () => { st.size = +$('size').value; save(); $('sizeOut').textContent = $('size').value + '%'; layout(); };
   // which layers are showing, the predominant first
   function showLit() {
     const lit = [...gains].map((v, i) => [v, i]).filter(x => x[0] > 0.005).sort((a, b) => b[0] - a[0]);
@@ -488,6 +498,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   }
   $('atmo').oninput = () => {
     fade = null;   // a hand on the slider ends any crossfade
+    st.atmo = +$('atmo').value; save();
     $('atmoOut').textContent = (+$('atmo').value / 100).toFixed(2);
     setGains(+$('atmo').value / 100);
     showLit();
