@@ -139,10 +139,12 @@ const urlX264 = stem => VIDEO_BASE + stem + '.mp4';
 const urlHevc = stem => VIDEO_BASE + stem + '_hevc.mp4';
 // The link probe (see the top of this file): the bytes timed, the bar in
 // Mbps (meditatewiththesun's, Robert's call 2026-09-16), and the most it may
-// take before the link counts as slow.
-const PROBE_BYTES = 1500000;
+// take before the link counts as slow: the bar fetches the bytes in 0.4 s,
+// so a probe still running at 1.5 s has already failed, and a slow link
+// pays no more than what 1.5 s brings (Robert's call, 2026-10-12).
+const PROBE_BYTES = 1000000;
 const LINK_BAR_MBPS = 20;
-const PROBE_WAIT_MS = 4000;
+const PROBE_WAIT_MS = 1500;
 // High's clock stood this many wall seconds without the data to move on is
 // a link that is not keeping up; a network error's reload waits this long.
 const STARVE_S = 4;
