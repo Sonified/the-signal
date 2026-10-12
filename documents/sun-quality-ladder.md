@@ -68,3 +68,6 @@ The code today knows five tiers (Min, Low, Standard, High, Max) built from the o
 
 - `tools/sun-quality.html` (http://localhost:8000/tools/sun-quality.html): the comparison page. It has Delivery and Master test sets, Computer and simulated Phone views (use Actual pixels at normal laptop distance to judge a phone), per-layer grade sliders with presets and hearts, favorites, Copy favorites, and Download settings. The 10-second test clips live in `sun-video/test/` (git-ignored).
 - `tools/sun-encode.sh`: one encode, per the recipes above.
+- `tools/sun-master-tests.sh`: rebuilds the master week (`sun-video/test/master_week.mp4`) and every test clip; `pulse` measures the keyframe pulse. The one-off trial encodes and measurements made along the way are in `sun-video/test/trials/`.
+- meditatewiththesun's headless checks of the ladder: `~/GitHub/solarmeditation/tools/ladder_smoke/`.
+- `tools/mirror-probe.mjs`: the show remote's "can you hear me" check from the command line.
