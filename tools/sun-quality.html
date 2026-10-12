@@ -444,6 +444,15 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     requestAnimationFrame(frame);
   }
   addEventListener('resize', layout);
+  // Up and Down step through the layers on the right, crossfading (taken
+  // from any focused slider, whose Left and Right still move it)
+  addEventListener('keydown', e => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    const at = fade ? fade.layer : gains.indexOf(Math.max(...gains));
+    const to = Math.max(0, Math.min(LAYERS.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
+    if (to !== at || fade) fadeTo(to);
+  });
   // the number keys pick a tier, for quick A/B; 0 is the tenth (Max+ in the master set)
   addEventListener('keydown', e => {
     if (!/^[0-9]$/.test(e.key)) return;
