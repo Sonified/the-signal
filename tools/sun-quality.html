@@ -35,7 +35,6 @@ body { display: grid; grid-template-columns: 400px 1fr 280px; height: 100vh; }
 #layers .lh h2:hover { color: var(--ink); }
 #layers .pre { display: flex; gap: 3px; }
 #tierStats { margin-top: 8px; font-variant-numeric: tabular-nums; }
-#tierStats .nm { color: var(--gold); font-weight: 600; height: 20px; }
 #tierStats .cells { display: grid; grid-template-columns: 92px 64px 62px 62px 62px; gap: 2px 6px; }
 #tierStats .k { color: var(--dim); font-size: 11px; }
 #tierStats .v { color: var(--ink); }
@@ -523,10 +522,10 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
     // the picked tier's numbers, right under its button
     {
       const t = TIERS[st.tier], tile = t.w / 3, up = sidePx / tile;
-      // fixed cells, so the numbers hold still as the name changes
+      // fixed cells, so the numbers hold still from tier to tier
       const cells = [['Size', t.w + '×' + Math.round(t.w * 2 / 3)], ['Sun', Math.round(tile) + ' px'], ['Mbps', t.mbps ? t.mbps : '–'],
         ['MB', t.mb ? t.mb : '–'], ['Upscale', '<span class="' + (up <= 1.05 ? 'up-ok' : 'up-soft') + '">' + up.toFixed(2) + '×</span>']];
-      $('tierStats').innerHTML = '<div class="nm">' + t.name + '</div><div class="cells">' +
+      $('tierStats').innerHTML = '<div class="cells">' +
         cells.map(c => '<span class="k">' + c[0] + '</span>').join('') + cells.map(c => '<span class="v">' + c[1] + '</span>').join('') + '</div>';
     }
     $('ups').innerHTML = TIERS.map((t, i) => {
