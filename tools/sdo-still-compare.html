@@ -81,7 +81,7 @@ canvas.drag { cursor: grabbing; }
     in vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
     const fs = `#version 300 es
     precision highp float;
-    uniform sampler2D tex; uniform vec2 center; uniform float radius, zoom, mag, flat; uniform vec2 ipoint, canvasSize;
+    uniform sampler2D tex; uniform vec2 center; uniform float radius, zoom, mag, plateau; uniform vec2 ipoint, canvasSize;   // 'flat' is reserved in GLSL
     out vec4 o;
     void main() {
       vec2 px = vec2(gl_FragCoord.x, canvasSize.y - gl_FragCoord.y);
@@ -89,7 +89,7 @@ canvas.drag { cursor: grabbing; }
       float r = length(d) / radius;
       if (r > 1.0) discard;
       // full zoom out to the flat share of the radius, then easing to 1x
-      float t = clamp((r - flat) / max(1.0 - flat, 0.001), 0.0, 1.0);
+      float t = clamp((r - plateau) / max(1.0 - plateau, 0.001), 0.0, 1.0);
       float k = 1.0 - t * t;
       float m = 1.0 + (mag - 1.0) * k * k;
       vec2 uv = ipoint + d / (zoom * m);
@@ -133,7 +133,7 @@ canvas.drag { cursor: grabbing; }
     gl.uniform1f(U('radius'), R);
     gl.uniform1f(U('zoom'), st.zoom);
     gl.uniform1f(U('mag'), st.mag);
-    gl.uniform1f(U('flat'), st.flat);
+    gl.uniform1f(U('plateau'), st.flat);
     gl.uniform2f(U('ipoint'), st.cx + (lx - c.width / 2) / st.zoom, st.cy + (ly - c.height / 2) / st.zoom);
     gl.uniform2f(U('canvasSize'), lens.width, lens.height);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
