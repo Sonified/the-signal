@@ -192,11 +192,17 @@ def check(plan_path, master):
         line = f'{name:16s} p {p:5d}  {times[a]}' + (f' + {times[b]}  k {k + 1}/{n}  w {(k + 1) / (n + 1):.3f}' if b >= 0 else '') + \
                f'  PSNR(Y) vs expected {e:5.1f} dB  vs neighbours {" ".join(f"{x:.1f}" for x in near)}'
         if fb is not None: line += f'  vs A alone {psnr(got, fa):.1f}  vs B alone {psnr(got, fb):.1f}'
-        if not best or e < 40: ok = False; line += '  <-- CHECK'
+        if not best or e < 40 or (name in ('first', 'last') and b >= 0): ok = False; line += '  <-- CHECK'
         print(line, flush=True); lines.append(line)
         png(got, os.path.join(cdir, f'{name}_p{p}.png'))
         if b >= 0 and name.endswith('_mid'):
             png(fa, os.path.join(cdir, f'{name}_p{p}_A.png')); png(fb, os.path.join(cdir, f'{name}_p{p}_B.png'))
+    # the program's ends: one plain frame each, no blend
+    for name, p in (('first', 0), ('last', len(L) - 1)):
+        a, b, k, n = L[p]
+        line = f'{name} frame {p}: ' + (f'plain, {times[a]} (keyed frame {a})' if b < 0 else f'A BLEND of {times[a]} and {times[b]}')
+        if b >= 0: ok = False
+        print(line); lines.append(line)
     open(os.path.join(cdir, 'check.txt'), 'w').write('\n'.join(lines) + '\n' + ('ALL OK' if ok else 'PROBLEMS') + '\n')
     print('ALL OK' if ok else 'PROBLEMS')
     sys.exit(0 if ok else 1)

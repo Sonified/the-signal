@@ -1,4 +1,5 @@
 {
+ "trim": "first and last stretch dropped so the program neither opens nor ends on a dissolve (Robert, 2026-10-13)",
  "source": {
   "plan": "documents/sun-program-plan-2026-10-13.txt",
   "record": "Two years · Sep 2024 – Sep 2026 · 77,972 frames · 2024-09-05 00:08 → 2026-09-04 20:57 UTC (729.9 days)",
@@ -10,40 +11,10 @@
  "fps": 30,
  "width": 3072,
  "height": 2048,
- "kept": 34801,
- "overlap": 4029,
- "total": 30772,
+ "kept": 34345,
+ "overlap": 3600,
+ "total": 30745,
  "stretches": [
-  {
-   "first": 52496,
-   "last": 52882,
-   "firstUtc": "2024-09-05T00:08:18Z",
-   "lastUtc": "2024-09-07T16:38:42Z",
-   "frames": 387,
-   "pieces": [
-    {
-     "day": "20240905",
-     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240905_84a47d1a43e8.mp4",
-     "from": 0,
-     "to": 142,
-     "frames": 143
-    },
-    {
-     "day": "20240906",
-     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240906_cb68ffac6bc6.mp4",
-     "from": 0,
-     "to": 143,
-     "frames": 144
-    },
-    {
-     "day": "20240907",
-     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240907_3c7d5e0d2689.mp4",
-     "from": 0,
-     "to": 99,
-     "frames": 100
-    }
-   ]
-  },
   {
    "first": 52883,
    "last": 55421,
@@ -1885,22 +1856,6 @@
      "frames": 77
     }
    ]
-  },
-  {
-   "first": 130401,
-   "last": 130469,
-   "firstUtc": "2026-09-04T09:38:30Z",
-   "lastUtc": "2026-09-04T20:57:54Z",
-   "frames": 69,
-   "pieces": [
-    {
-     "day": "20260904",
-     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260904_96820a446b78.mp4",
-     "from": 33,
-     "to": 101,
-     "frames": 69
-    }
-   ]
   }
  ],
  "fades": [
@@ -1913,28 +1868,16 @@
   360,
   360,
   360,
-  360,
-  360,
-  69
+  360
  ],
  "junctions": [
-  {
-   "name": "gap 1",
-   "fade": 360,
-   "outLastUtc": "2024-09-07T16:38:42Z",
-   "inFirstUtc": "2024-09-07T19:41:42Z",
-   "start": 27,
-   "end": 386,
-   "outFrom": 52523,
-   "inFrom": 52883
-  },
   {
    "name": "gaps 2–17",
    "fade": 360,
    "outLastUtc": "2024-09-25T12:49:06Z",
    "inFirstUtc": "2024-11-03T02:38:42Z",
-   "start": 2206,
-   "end": 2565,
+   "start": 2179,
+   "end": 2538,
    "outFrom": 55062,
    "inFrom": 60633
   },
@@ -1943,8 +1886,8 @@
    "fade": 360,
    "outLastUtc": "2024-11-19T23:29:18Z",
    "inFirstUtc": "2025-02-13T07:38:54Z",
-   "start": 4271,
-   "end": 4630,
+   "start": 4244,
+   "end": 4603,
    "outFrom": 62698,
    "inFrom": 68490
   },
@@ -1953,8 +1896,8 @@
    "fade": 360,
    "outLastUtc": "2025-03-26T12:49:06Z",
    "inFirstUtc": "2025-04-28T00:49:18Z",
-   "start": 9811,
-   "end": 10170,
+   "start": 9784,
+   "end": 10143,
    "outFrom": 74030,
    "inFrom": 78615
   },
@@ -1963,8 +1906,8 @@
    "fade": 360,
    "outLastUtc": "2025-05-14T12:18:06Z",
    "inFirstUtc": "2025-05-14T14:58:18Z",
-   "start": 11813,
-   "end": 12172,
+   "start": 11786,
+   "end": 12145,
    "outFrom": 80617,
    "inFrom": 80977
   },
@@ -1973,8 +1916,8 @@
    "fade": 360,
    "outLastUtc": "2025-06-04T12:48:18Z",
    "inFirstUtc": "2025-06-04T14:38:42Z",
-   "start": 14449,
-   "end": 14808,
+   "start": 14422,
+   "end": 14781,
    "outFrom": 83613,
    "inFrom": 83973
   },
@@ -1983,8 +1926,8 @@
    "fade": 360,
    "outLastUtc": "2025-07-09T18:08:30Z",
    "inFirstUtc": "2025-08-10T05:48:54Z",
-   "start": 19129,
-   "end": 19488,
+   "start": 19102,
+   "end": 19461,
    "outFrom": 88653,
    "inFrom": 92956
   },
@@ -1993,8 +1936,8 @@
    "fade": 360,
    "outLastUtc": "2025-08-23T07:18:54Z",
    "inFirstUtc": "2025-08-24T01:19:54Z",
-   "start": 20643,
-   "end": 21002,
+   "start": 20616,
+   "end": 20975,
    "outFrom": 94470,
    "inFrom": 94831
   },
@@ -2003,8 +1946,8 @@
    "fade": 360,
    "outLastUtc": "2025-09-10T11:08:42Z",
    "inFirstUtc": "2026-03-18T15:38:54Z",
-   "start": 22779,
-   "end": 23138,
+   "start": 22752,
+   "end": 23111,
    "outFrom": 96967,
    "inFrom": 107181
   },
@@ -2013,8 +1956,8 @@
    "fade": 360,
    "outLastUtc": "2026-04-15T14:49:42Z",
    "inFirstUtc": "2026-04-29T21:07:34Z",
-   "start": 26418,
-   "end": 26777,
+   "start": 26391,
+   "end": 26750,
    "outFrom": 110820,
    "inFrom": 113085
   },
@@ -2023,42 +1966,22 @@
    "fade": 360,
    "outLastUtc": "2026-05-14T10:38:54Z",
    "inFirstUtc": "2026-08-03T01:38:54Z",
-   "start": 28133,
-   "end": 28492,
+   "start": 28106,
+   "end": 28465,
    "outFrom": 114800,
    "inFrom": 125897
-  },
-  {
-   "name": "gaps 216–220",
-   "fade": 69,
-   "outLastUtc": "2026-08-21T12:42:06Z",
-   "inFirstUtc": "2026-09-04T09:38:30Z",
-   "start": 30703,
-   "end": 30771,
-   "outFrom": 128467,
-   "inFrom": 130401
   }
  ],
  "runs": [
   {
-   "a": 52496,
-   "n": 27
-  },
-  {
-   "a": 52523,
-   "b": 52883,
-   "n": 360,
-   "fade": 0
-  },
-  {
-   "a": 53243,
-   "n": 1819
+   "a": 52883,
+   "n": 2179
   },
   {
    "a": 55062,
    "b": 60633,
    "n": 360,
-   "fade": 1
+   "fade": 0
   },
   {
    "a": 60993,
@@ -2068,7 +1991,7 @@
    "a": 62698,
    "b": 68490,
    "n": 360,
-   "fade": 2
+   "fade": 1
   },
   {
    "a": 68850,
@@ -2078,7 +2001,7 @@
    "a": 74030,
    "b": 78615,
    "n": 360,
-   "fade": 3
+   "fade": 2
   },
   {
    "a": 78975,
@@ -2088,7 +2011,7 @@
    "a": 80617,
    "b": 80977,
    "n": 360,
-   "fade": 4
+   "fade": 3
   },
   {
    "a": 81337,
@@ -2098,7 +2021,7 @@
    "a": 83613,
    "b": 83973,
    "n": 360,
-   "fade": 5
+   "fade": 4
   },
   {
    "a": 84333,
@@ -2108,7 +2031,7 @@
    "a": 88653,
    "b": 92956,
    "n": 360,
-   "fade": 6
+   "fade": 5
   },
   {
    "a": 93316,
@@ -2118,7 +2041,7 @@
    "a": 94470,
    "b": 94831,
    "n": 360,
-   "fade": 7
+   "fade": 6
   },
   {
    "a": 95191,
@@ -2128,7 +2051,7 @@
    "a": 96967,
    "b": 107181,
    "n": 360,
-   "fade": 8
+   "fade": 7
   },
   {
    "a": 107541,
@@ -2138,7 +2061,7 @@
    "a": 110820,
    "b": 113085,
    "n": 360,
-   "fade": 9
+   "fade": 8
   },
   {
    "a": 113445,
@@ -2148,19 +2071,13 @@
    "a": 114800,
    "b": 125897,
    "n": 360,
-   "fade": 10
+   "fade": 9
   },
   {
    "a": 126257,
-   "n": 2210
-  },
-  {
-   "a": 128467,
-   "b": 130401,
-   "n": 69,
-   "fade": 11
+   "n": 2279
   }
  ],
- "firstUtc": "2024-09-05T00:08:18Z",
- "lastUtc": "2026-09-04T20:57:54Z"
+ "firstUtc": "2024-09-07T19:41:42Z",
+ "lastUtc": "2026-08-21T12:42:06Z"
 }

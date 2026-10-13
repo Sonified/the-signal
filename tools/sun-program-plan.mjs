@@ -11,15 +11,22 @@
 // starts with that minute (it must be exactly one). Prints each stretch's
 // frame count against the PLAN's and exits 1 on any mismatch.
 //
-//   node tools/sun-program-plan.mjs [documents/sun-program-plan-2026-10-13.txt] [out.json]
+// --drop-ends then drops the first and last kept stretch and their fades,
+// so the program neither opens nor ends on a dissolve (Robert, 2026-10-13:
+// the 2026-10-13 export's first stretch is 387 frames under a 360 fade and
+// its last 69 frames entirely inside one). The PLAN is checked whole first.
+//
+//   node tools/sun-program-plan.mjs [--drop-ends] [documents/sun-program-plan-2026-10-13.txt] [out.json]
 //   SOLAR=~/GitHub/solarmeditation (default)
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const txtPath = resolve(process.argv[2] || join(ROOT, 'documents/sun-program-plan-2026-10-13.txt'));
-const outPath = resolve(process.argv[3] || txtPath.replace(/\.txt$/, '.json'));
+const DROP_ENDS = process.argv.includes('--drop-ends');
+const argv = process.argv.slice(2).filter(a => a !== '--drop-ends');
+const txtPath = resolve(argv[0] || join(ROOT, 'documents/sun-program-plan-2026-10-13.txt'));
+const outPath = resolve(argv[1] || txtPath.replace(/\.txt$/, '.json'));
 const SOLAR = process.env.SOLAR || join(homedir(), 'GitHub/solarmeditation');
 const FR = join(SOLAR, 'renders/fullrecord');
 const MASTERS = join(SOLAR, 'renders/cache/master');
@@ -61,7 +68,7 @@ const dayOf = i => { let lo = 0, hi = days.length - 1; while (lo < hi) { const m
 // ---- stretches: record start .. first out, each in .. next out, last in .. record end ----
 const bounds = [[recStart, J[0].outLast], ...J.map((j, q) => [j.inFirst, q + 1 < J.length ? J[q + 1].outLast : recEnd])];
 let bad = 0;
-const stretches = bounds.map(([a, b], s) => {
+let stretches = bounds.map(([a, b], s) => {
   const first = at(a), last = at(b), frames = last - first + 1;
   const ok = frames === wantLen[s];
   if (!ok) bad++;
@@ -76,15 +83,31 @@ const stretches = bounds.map(([a, b], s) => {
   }
   return { first, last, firstUtc: times[first], lastUtc: times[last], frames, pieces };
 });
-const fades = J.map(j => j.fade);
+let fades = J.map(j => j.fade);
 fades.forEach((n, q) => {
   if (n > stretches[q].frames || n > stretches[q + 1].frames) die(`fade ${q} (${n}) longer than a stretch`);
   if ((q > 0 ? fades[q - 1] : 0) + n > stretches[q].frames) die(`stretch ${q} cannot hold its two fades`);
 });
-const kept = stretches.reduce((x, s) => x + s.frames, 0), over = fades.reduce((x, n) => x + n, 0), total = kept - over;
-console.log(`kept ${kept}, overlap ${over}, program ${total} (PLAN ${wantTotal})`);
-if (bad) die(bad + ' stretch count(s) differ from the PLAN: stopping');
-if (total !== wantTotal) die('program total differs from the PLAN');
+const sum = a => a.reduce((x, y) => x + y, 0);
+{ const kept = sum(stretches.map(s => s.frames)), over = sum(fades);
+  console.log(`kept ${kept}, overlap ${over}, program ${kept - over} (PLAN ${wantTotal})`);
+  if (bad) die(bad + ' stretch count(s) differ from the PLAN: stopping');
+  if (kept - over !== wantTotal) die('program total differs from the PLAN'); }
+let trim = null, J0 = null, JN = null;
+if (DROP_ENDS) {
+  stretches = stretches.slice(1, -1); fades = fades.slice(1, -1); J0 = J.splice(0, 1)[0]; JN = J.splice(-1, 1)[0];
+  const want = wantLen.slice(1, -1);
+  stretches.forEach((s, i) => { if (s.frames !== want[i]) die(`after the trim, stretch ${i} has ${s.frames}, not ${want[i]}`); });
+  trim = 'first and last stretch dropped so the program neither opens nor ends on a dissolve (Robert, 2026-10-13)';
+  console.log(`--drop-ends: ${stretches.length} stretches (${stretches.map(s => s.frames).join(', ')}), ${fades.length} fades (${fades.join(', ')})`);
+  console.log(`  starts clean on ${times[stretches[0].first]}, ends clean on ${times[stretches[stretches.length - 1].last]}`);
+}
+const kept = sum(stretches.map(s => s.frames)), over = sum(fades), total = kept - over;
+if (DROP_ENDS) {
+  const want = wantTotal - wantLen[0] - wantLen[wantLen.length - 1] + J0.fade + JN.fade;
+  console.log(`kept ${kept}, overlap ${over}, program ${total} (PLAN less its ends: ${want})`);
+  if (total !== want) die('trimmed total differs');
+}
 
 // ---- the program: piece j starts at P[j]; fade q covers [P[q+1], P[q+1] + n) ----
 const P = [0];
@@ -107,6 +130,7 @@ stretches.forEach((s, j) => {
 if (runs.reduce((x, r) => x + r.n, 0) !== total) die('runs do not add up');
 
 const out = {
+  trim,
   source: { plan: txtPath.replace(ROOT, ''), record: recLine.replace(/^record: /, ''), keyed: join(FR, 'mosaic_times.json'), planTsv: join(FR, 'plan.tsv'), masters: MASTERS },
   blend: 'plain average in display values: overlap frame k of n is A x (1 - w) + B x w, w = (k + 1) / (n + 1); time shown is B\'s once w >= 0.5',
   fps: 30, width: 3072, height: 2048,

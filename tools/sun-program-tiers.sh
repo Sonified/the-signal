@@ -9,13 +9,15 @@
 # Names: <stem>_<h>_hevc.mp4 and the x264 twin <stem>_<h>.mp4; the 4x rungs
 # (every 4th frame, so rung frame k is program frame 4k) <stem>_<h>_4x_hevc.mp4
 # and <stem>_<h>_4x.mp4, each in its tier's own recipe.
-# Order: the six HEVC first (SD and Max leading), then the x264 twins, then
-# the rungs. JOBS at once (default 3). Each file is built as .building.mp4,
+# Order: the six 1x HEVC (SD and Max leading), the six 4x HEVC rungs (what
+# phones play), the six 1x x264 twins, the six 4x x264 rungs. JOBS at once
+# (default 3). Each file is built as .building.mp4,
 # verified (frame count, a full -xerror decode, hvc1 / full range / bt470bg
 # tags) and only then renamed; a line per file goes into STATUS.md.
 # Rerun to resume: finished files are skipped.
 #
-#   tools/sun-program-tiers.sh [stem]        default sun_program_20261013_30772
+#   tools/sun-program-tiers.sh [stem]        default sun_program_20261013_30745
+#   (the master is sun-video/program/<stem>_master.mp4)
 #   JOBS=3 ONLY="480 2048" CODECS="hevc" RUNGS=0|1|only ...
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -67,19 +69,17 @@ if [ "${1:-}" = one ]; then
   exit 0
 fi
 
-STEM="${1:-sun_program_20261013_30772}"
-MASTER="$DIR/$(echo "$STEM" | sed -E 's/^(sun_program_[0-9]{8})_.*/\1/')_master.mp4"
+STEM="${1:-sun_program_20261013_30745}"
+MASTER="$DIR/${STEM}_master.mp4"
 [ -f "$MASTER" ] || { echo "no master $MASTER"; exit 1; }
 TOTAL=$(ffprobe -v error -count_packets -select_streams v:0 -show_entries stream=nb_read_packets -of csv=p=0 "$MASTER")
 ORDER="${ONLY:-480 2048 360 720 1080 1842}"
 CODECS="${CODECS:-hevc x264}"
 LIST=()
-if [ "${RUNGS:-1}" != only ]; then
-  for c in $CODECS; do for h in $ORDER; do LIST+=("$h $c 1"); done; done
-fi
-if [ "${RUNGS:-1}" != 0 ]; then
-  for c in $CODECS; do for h in $ORDER; do LIST+=("$h $c 4"); done; done
-fi
+for c in $CODECS; do
+  if [ "${RUNGS:-1}" != only ]; then for h in $ORDER; do LIST+=("$h $c 1"); done; fi
+  if [ "${RUNGS:-1}" != 0 ]; then for h in $ORDER; do LIST+=("$h $c 4"); done; fi
+done
 if [ ! -f "$DIR/STATUS.md" ]; then
   { echo "# Sun program tiers"
     echo
