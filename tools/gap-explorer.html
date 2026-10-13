@@ -1230,6 +1230,24 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     setTimeout(() => { b.textContent = label; }, 1500);
   }
   $('copyRun').onclick = () => copyText($('copyRun'), figureLines().join('\n'), 'Copy');
+  // the record and what the plan keeps of it, in numbers (Copy settings)
+  function recordLines() {
+    const stat = a => { const b = [...a].sort((x, y) => x - y); return b.length ? { min: b[0], med: b[b.length >> 1], max: b[b.length - 1], sum: b.reduce((x, y) => x + y, 0) } : { min: 0, med: 0, max: 0, sum: 0 }; };
+    const h = stat(gapHours), segs = stat(segLen), str = stat(plan.len), fades = stat([...plan.f]);
+    const kept = plan.len.reduce((x, y) => x + y, 0), days = ms => (ms / 864e5).toFixed(1);
+    // what each rule leaves out: the bridge's cut, and the stretches merged away
+    const cutFr = bridgeOn() ? cutTo - cutFrom : 0, mergedFr = NF - kept - cutFr;
+    const keptSolar = plan.pst.reduce((x, s0, j) => x + (ms[plan.end[j] - 1] - ms[s0]), 0);
+    const short = segLen.filter(n => n < 2 * MAX_FADE).length;
+    return ['RECORD', 
+      'record: ' + RECORDS[REC].label + ' · ' + num(NF) + ' frames · ' + utc(0).slice(0, 16) + ' → ' + utc(NF - 1).slice(0, 16) + ' UTC (' + days(ms[NF - 1] - ms[0]) + ' days)',
+      'gaps: ' + G + ' (holes over 45 min) · ' + h.min.toFixed(1) + ' h shortest · ' + h.med.toFixed(1) + ' h median · ' + h.max.toFixed(1) + ' h longest · ' + days(h.sum * 36e5) + ' days of holes in all',
+      'stretches between gaps: ' + S + ' · ' + segs.min + ' shortest · ' + segs.med + ' median · ' + segs.max + ' longest (frames) · ' + short + ' shorter than ' + 2 * MAX_FADE + ' (can\'t feed a full fade both ends)',
+      'kept: ' + num(kept) + ' of ' + num(NF) + ' frames (' + Math.round(kept / NF * 100) + '%) · left out: ' + num(cutFr) + ' by the month bridge, ' + num(mergedFr) + ' by merges and auto bridges',
+      'kept stretches: ' + plan.len.length + ' · ' + str.min + ' shortest · ' + str.med + ' median · ' + str.max + ' longest (frames) · ' + days(keptSolar) + ' days of solar time shown',
+      'fades: ' + plan.J + ' · ' + fades.min + ' shortest · ' + fades.med + ' median · ' + fades.max + ' longest (frames) · ' + num(plan.over) + ' frames overlapped',
+      'result: ' + num(plan.total) + ' frames = ' + clock(plan.total / FPS) + ' at 30 fps (straight cut ' + clock(NF / FPS) + ') · at 4× ' + clock(plan.total / FPS / 4) + ' · at 16× ' + clock(plan.total / FPS / 16)];
+  }
   // Copy settings (beside the title): everything, to paste into a chat and
   // rebuild exactly this program: the figures, every setting, the view and
   // place, each override, and the plan junction by junction
@@ -1243,6 +1261,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
         (st.zoom ? ' · timeline zoom frames ' + Math.round(st.zoom[0]) + '-' + Math.round(st.zoom[1]) : ''),
       'month bridge: ' + (bridgeOn() ? 'on' : 'off') + ' · ' + utc(cutFrom) + ' → ' + utc(cutTo) + ' UTC (frames ' + cutFrom + '-' + (cutTo - 1) + ')',
       'overrides: ' + (Object.keys(pins).length ? Object.entries(pins).map(([k, v]) => (k === 'bridge' ? 'bridge' : k.slice(0, 16)) + ' = ' + v).join(' · ') : 'none'),
+      '', ...recordLines(),
       '', 'PLAN (junction · where · stretches out → in · fade)'];
     plan.rec.forEach((r, q) => {
       const name = r < 0 ? 'bridge' : junctionName(q).toLowerCase();
