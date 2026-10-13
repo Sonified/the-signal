@@ -111,8 +111,11 @@ input[type=range] { width: 100%; }
     <button data-c="90">90</button><button data-c="180">180</button><button data-c="270">270</button><button data-c="360">360</button>
   </div>
   <h2 style="margin-top:10px">New layer</h2>
-  <div class="seg" id="blends" title="How the incoming footage comes in over the outgoing">
+  <div class="seg blendrow" title="How the incoming footage comes in over the outgoing">
     <button data-l="avg">Average</button><button data-l="max" title="The brighter of the two, halfway">Max</button><button data-l="min" title="The darker of the two, halfway">Min</button><button data-l="avgmax" title="Half Average, half Max">AvgMax</button>
+  </div>
+  <div class="seg blendrow" style="margin-top:4px">
+    <button data-l="maxinavgout" title="Max while the new rises, then the old dissolves by a plain blend">Max in · Avg out</button><button data-l="highlights" title="Max where it is bright, Average in the midtones and darks">Highlights</button><button data-l="softmax" title="A soft maximum: near-equal areas melt together, clear winners still win">Softmax</button>
   </div>
   <h2 style="margin-top:10px">Living dissolve</h2>
   <div class="seg" id="dison">
@@ -206,7 +209,9 @@ input[type=range] { width: 100%; }
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   if (!SPEEDS.includes(st.speed)) st.speed = 1;
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
-  if (!['avg', 'max', 'min', 'avgmax'].includes(st.blend)) st.blend = 'avg';
+  // the New layer modes, as the shader numbers them
+  const BLENDS = { avg: 0, max: 1, min: 2, avgmax: 3, maxinavgout: 4, highlights: 5, softmax: 6 };
+  if (!(st.blend in BLENDS)) st.blend = 'avg';
   MAX_FADE = CAPS.includes(st.cap) ? st.cap : 360;
   // the living dissolve's settings (see the shader): on, equal, spread
   // 0..0.95, globs (noise scale) 0.5..6, evolve (drift per hour of solar
@@ -714,7 +719,7 @@ struct U {
   adj: array<vec4f, 5>, // per layer: brightness, contrast, saturation, elevate
   dis: vec4f,    // the living dissolve: on (1), spread, globs (noise scale), evolve
   dis2: vec4f,   // the Sun's rotation angle (rad), time (h), rotate with the Sun (1), the map's opacity
-  dis3: vec4f,   // the map's preview fade position (0..1, used outside a fade), the new layer (0 average, 1 max, 2 min, 3 avgmax), unused x2
+  dis3: vec4f,   // the map's preview fade position (0..1, used outside a fade), the New layer mode (see mosaic), unused x2
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var texA: texture_external;
@@ -801,32 +806,52 @@ fn dissolveMap(tuv: vec2f) -> vec3f {
 // The mosaic at a point (0..1 across the whole 3 x 2 frame): A, or A and B
 // overlapped at weight w (the dissolve's at this point). The branch on the
 // uniform overlap weight is uniform.
-// How the new layer comes in (the New layer row): Average, a straight
-// blend; Max, the new rising in where it is brighter and the old leaving
-// last, so halfway it is the brighter of the two everywhere; Min, the same
-// with the darker. Max and Min ride two ramps, the incoming at full by
-// halfway and the outgoing full until then, so each starts as pure old and
-// ends as pure new. Max takes the brighter per channel. Min compares
-// brightness (Rec. 709 luma) and takes the whole color of the darker
-// moment, softened over a small difference so edges don't jag: per channel
-// it mixed red from one moment with green from the other and turned the
-// Sun green. The mode is a uniform, so the branches are uniform.
+// How the new layer comes in (the New layer rows), each pure old at the
+// fade's start and pure new at its end. gin and gout are two ramps: the
+// incoming at full by halfway, the outgoing full until then.
+//   0 Average    a straight blend
+//   1 Max        the brighter per channel (Robert's favorite: the brightest
+//                new features erupt first, coronal holes arrive last)
+//   2 Min        the darker, by brightness (Rec. 709 luma), whole colors
+//                (per channel it mixed moments and turned the Sun green),
+//                softened over a small difference so edges don't jag
+//   3 AvgMax     half Average, half Max
+//   4 Max in, Avg out   Max while the new rises, then the old dissolves by
+//                a plain blend instead of lingering where it is brighter
+//   5 Highlights Max where the brighter of the two is bright, Average in
+//                the midtones and darks
+//   6 Softmax    a soft maximum, the power mean (x^6 + y^6)^(1/6): exact
+//                at both ends, near-equal areas melting together (a slight
+//                glow where they match), clear winners still winning
+// The mode is a uniform, so the branches on it are uniform.
 fn mosaic(st: vec2f, w: f32) -> vec3f {
   let a = textureSampleBaseClampToEdge(texA, samp, st).rgb;
   if (u.view.y <= 0.0) { return a; }
   let b = textureSampleBaseClampToEdge(texB, samp, st).rgb;
   let gin = min(1.0, w * 2.0);
   let gout = min(1.0, (1.0 - w) * 2.0);
+  let avg = a * (1.0 - w) + b * w;
+  let mx = max(a * gout, b * gin);
+  let mode = i32(round(u.dis3.y));
   let Y = vec3f(0.2126, 0.7152, 0.0722);
-  if (u.dis3.y > 1.5) {
+  if (mode == 1) { return mx; }
+  if (mode == 2) {
     let a2 = mix(vec3f(1.0), a, gout);
     let b2 = mix(vec3f(1.0), b, gin);
     return mix(a2, b2, 1.0 - smoothstep(-0.02, 0.02, dot(b2, Y) - dot(a2, Y)));
   }
-  // Max per channel, the original (Robert prefers it: the eruptions)
-  if (u.dis3.y > 2.5) { return mix(a * (1.0 - w) + b * w, max(a * gout, b * gin), 0.5); }   // AvgMax: half each
-  if (u.dis3.y > 0.5) { return max(a * gout, b * gin); }
-  return a * (1.0 - w) + b * w;
+  if (mode == 3) { return mix(avg, mx, 0.5); }
+  if (mode == 4) {
+    if (w < 0.5) { return mx; }
+    return mix(max(a, b), b, w * 2.0 - 1.0);
+  }
+  if (mode == 5) { return mix(avg, mx, smoothstep(0.35, 0.75, dot(max(a, b), Y))); }
+  if (mode == 6) {
+    let x = a * gout;
+    let y = b * gin;
+    return pow(pow(x, vec3f(6.0)) + pow(y, vec3f(6.0)), vec3f(1.0 / 6.0));
+  }
+  return avg;
 }
 
 // One layer, in assets/sun-grade.json's order: brightness, contrast,
@@ -954,7 +979,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     uni.set([D.on ? 1 : 0, D.spread, D.scale, D.evolve], 40);
     uni.set([(ms[a0] - ms[0]) / (27.2753 * 864e5) * 2 * Math.PI, (ms[a0] - ms[0]) / 36e5, D.rot ? 1 : 0, mapAlpha()], 44);
     // the map's preview fade outside a real one: 0 to 1 every 4 s
-    uni.set([(performance.now() / 4000) % 1, { avg: 0, max: 1, min: 2, avgmax: 3 }[st.blend] ?? 0, 0, 0], 48);
+    uni.set([(performance.now() / 4000) % 1, BLENDS[st.blend] ?? 0, 0, 0], 48);
     device.queue.writeBuffer(uniBuf, 0, uni);
     const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: uniBuf } }, { binding: 1, resource: extA },
@@ -967,6 +992,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
 
   // ---------- the side panel ----------
   const segBtns = (id, attr) => [...$(id).children].map(b => [b, b.dataset[attr]]);
+  const blendBtns = () => [...document.querySelectorAll('.blendrow button')];
   function markAll() {
     segBtns('views', 'v').forEach(([b, v]) => b.classList.toggle('on', v === st.view));
     segBtns('grades', 'g').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === st.grade));
@@ -977,7 +1003,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     segBtns('dison', 'd').forEach(([b, v]) => b.classList.toggle('on', v === (st.dis.on ? (st.dis.equal ? '2' : '1') : '0')));
     segBtns('disrot', 'r').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.rot));
     segBtns('dismap', 'm').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.map));
-    segBtns('blends', 'l').forEach(([b, v]) => b.classList.toggle('on', v === st.blend));
+    blendBtns().forEach(b => b.classList.toggle('on', b.dataset.l === st.blend));
     [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', SPEEDS[i] === st.speed));
     $('nRow').classList.toggle('off', st.policy !== 'fixed');
     $('atmoRow').classList.toggle('off', st.view === 'raw');
@@ -1000,7 +1026,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   }
   for (const id of ['disScale', 'disSpread', 'disEvolve']) for (const ev of ['pointerdown', 'input']) $(id).addEventListener(ev, touchMap);
   segBtns('dismap', 'm').forEach(([b, v]) => { b.onclick = () => { st.dis.map = v === '1'; save(); markAll(); }; });
-  segBtns('blends', 'l').forEach(([b, v]) => { b.onclick = () => { st.blend = v; save(); markAll(); }; });
+  blendBtns().forEach(b => { b.onclick = () => { st.blend = b.dataset.l; save(); markAll(); }; });
   // the living dissolve's controls (the shader reads them every frame)
   segBtns('dison', 'd').forEach(([b, v]) => { b.onclick = () => { st.dis.on = v !== '0'; st.dis.equal = v === '2'; touchMap(); save(); replan(); }; });
   segBtns('disrot', 'r').forEach(([b, v]) => { b.onclick = () => { st.dis.rot = v === '1'; touchMap(); save(); markAll(); }; });
