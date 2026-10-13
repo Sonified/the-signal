@@ -62,8 +62,12 @@ canvas.drag { cursor: grabbing; }
     const im = imgs[st.size];
     g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
     if (im.complete && im.naturalWidth) {
-      // every size drawn over the same square, so only the detail changes
-      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      // every size drawn over the same square, so only the detail changes.
+      // Shrinking smooths at high quality (the GPU's mipmaps, cheap);
+      // enlarging is bilinear, as a video player does: Chrome's high-quality
+      // enlarging runs a costly filter on the CPU every frame, which made the
+      // 1024 (the most enlarged) the laggiest
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = st.zoom > st.size ? 'low' : 'high';
       const x = c.width / 2 - st.cx * st.zoom, y = c.height / 2 - st.cy * st.zoom;
       g.drawImage(im, x, y, st.zoom, st.zoom);
     }
@@ -76,6 +80,7 @@ canvas.drag { cursor: grabbing; }
       const z = st.zoom * LOUPE;
       g.save();
       g.beginPath(); g.arc(lx, ly, R, 0, Math.PI * 2); g.clip();
+      g.imageSmoothingQuality = z > st.size ? 'low' : 'high';
       g.fillStyle = '#000'; g.fillRect(lx - R, ly - R, 2 * R, 2 * R);
       g.drawImage(im, lx - ix * z, ly - iy * z, z, z);
       g.restore();
@@ -110,7 +115,10 @@ canvas.drag { cursor: grabbing; }
     save(); draw();
   }, { passive: false });
   // the loupe follows the cursor
-  c.addEventListener('mousemove', e => { mouse = { x: e.clientX * devicePixelRatio, y: e.clientY * devicePixelRatio }; if (!drag) draw(); });
+  // redrawn at most once a frame, however fast the mouse reports
+  let queued = false;
+  const redraw = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; draw(); }); };
+  c.addEventListener('mousemove', e => { mouse = { x: e.clientX * devicePixelRatio, y: e.clientY * devicePixelRatio }; if (!drag) redraw(); });
   c.addEventListener('mouseleave', () => { mouse = null; draw(); });
   // drag to pan
   c.addEventListener('pointerdown', e => { c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, cx: st.cx, cy: st.cy }; c.classList.add('drag'); });
