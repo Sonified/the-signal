@@ -108,18 +108,29 @@ button.on { border-color: var(--gold); color: var(--gold); background: #211e16; 
 
   const c = $('c'), g = c.getContext('2d');
   const fit = () => Math.min(c.width, c.height);
+  // a size change dissolves: the outgoing video under, the new one over it
+  // fading in across FADE ms, once the new one has the same moment decoded
+  const FADE = 500;
+  let from = null, fadeT0 = 0;
   function draw() {
     const dpr = devicePixelRatio, w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
     const z = st.zoom || fit();
-    g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
-    if (vid.readyState >= 2) {
+    const cx = st.zoom ? st.cx : 0.5, cy = st.zoom ? st.cy : 0.5;
+    const put = (v, a) => {
+      if (v.readyState < 2) return;
       // shrinking smooths at high quality; enlarging is bilinear, as a
       // video player does (Chrome's high-quality enlarge is a CPU filter)
-      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = z > vid.videoWidth ? 'low' : 'high';
-      const cx = st.zoom ? st.cx : 0.5, cy = st.zoom ? st.cy : 0.5;
-      g.drawImage(vid, c.width / 2 - cx * z, c.height / 2 - cy * z, z, z);
-    }
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = z > v.videoWidth ? 'low' : 'high';
+      g.globalAlpha = a;
+      g.drawImage(v, c.width / 2 - cx * z, c.height / 2 - cy * z, z, z);
+      g.globalAlpha = 1;
+    };
+    g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+    const a = from ? Math.min(1, (performance.now() - fadeT0) / FADE) : 1;
+    if (from && a < 1) put(from, 1);
+    put(vid, a);
+    if (from) { if (a < 1) redraw(); else { from.pause(); from = null; } }
   }
   let queued = false;
   const redraw = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; draw(); }); };
@@ -166,20 +177,49 @@ button.on { border-color: var(--gold); color: var(--gold); background: #211e16; 
   }
   for (const s of SIZES) { const v = vids[s]; v.loop = st.loop; v.playbackRate = st.speed; watch(v); }
 
-  const seek = k => { k = Math.max(0, Math.min(N - 1, k)); vid.currentTime = timeOf(k); shown = k; readout(); };
-  const toggle = () => { if (vid.paused) { if (frameOf(vid.currentTime) >= N - 1 && !st.loop) seek(0); vid.play().catch(() => {}); } else vid.pause(); };
+  // a pending size change (its video seeking in) or a dissolve still running
+  // ends here, before anything else moves the playhead
+  let swap = 0, next = null;
+  function settle() {
+    swap++;
+    if (next) { next.pause(); next = null; }
+    if (from) { from.pause(); from = null; redraw(); }
+  }
+  const seek = k => { settle(); k = Math.max(0, Math.min(N - 1, k)); vid.currentTime = timeOf(k); shown = k; readout(); };
+  const toggle = () => { settle(); if (vid.paused) { if (frameOf(vid.currentTime) >= N - 1 && !st.loop) seek(0); vid.play().catch(() => {}); } else vid.pause(); };
   const step = d => { vid.pause(); seek(shown + d); };
-  // the other size at the same moment, playing if this one was
+  // the other size at the same moment, playing if this one was. The shown
+  // video keeps going while the other seeks; playing, it seeks a little
+  // ahead and waits for the shown one to reach it, so the two run in step
+  // through the dissolve
   function setSize(s) {
-    if (s === st.size || !vids[s]) return;
-    const was = vid, playing = !was.paused, t = timeOf(shown);
-    was.pause();
-    st.size = s; save();
-    vid = vids[s];
-    vid.playbackRate = st.speed; vid.loop = st.loop;
-    vid.currentTime = t;
-    if (playing) vid.play().catch(() => {});
-    readout(); redraw();
+    if (!vids[s] || vids[s] === next) return;
+    settle();
+    if (s === st.size) return;
+    const was = vid, playing = !was.paused, my = swap;
+    const nv = next = vids[s];
+    nv.playbackRate = st.speed; nv.loop = st.loop;
+    const k = playing ? Math.min(N - 1, frameOf(was.currentTime + 0.35 * st.speed)) : shown;
+    const go = () => {
+      if (my !== swap) return;
+      next = null; st.size = s; save();
+      vid = nv; from = was; fadeT0 = performance.now();
+      if (playing) vid.play().catch(() => {});
+      readout(); redraw();
+    };
+    nv.addEventListener('seeked', () => {
+      if (my !== swap) return;
+      if (!playing) return go();
+      const t0 = performance.now(), t = nv.currentTime;
+      const wait = () => {
+        if (my !== swap) return;
+        // in step, or the old one stopped, looped round, or is lagging
+        if (was.currentTime >= t - 0.5 / FPS || was.paused || was.currentTime < t - 2 * st.speed || performance.now() - t0 > 1500) go();
+        else requestAnimationFrame(wait);
+      };
+      wait();
+    }, { once: true });
+    nv.currentTime = timeOf(k);
   }
   function setSpeed(x) { st.speed = Math.max(0.25, Math.min(4, x)); for (const s of SIZES) vids[s].playbackRate = st.speed; save(); readout(); }
 
