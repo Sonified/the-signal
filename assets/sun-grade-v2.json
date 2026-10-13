@@ -1,0 +1,21 @@
+{
+  "about": "The Sun's color grade, per SDO layer: Robert's hearted presets from tools/sun-quality.html (the-signal), 2026-10-13. v2, kept for reference; assets/sun-grade.json (v3) is the one in use. One file, the same bytes in the-signal (assets/sun-grade.json) and meditatewiththesun (site/assets/sun-grade.json); change it in one, copy it to the other.",
+  "version": 2,
+  "math": [
+    "Per layer, on its tile of the mosaic (0..1 per channel), in this order:",
+    "1. brightness: c *= brightness",
+    "2. contrast: c = max((c - 0.5) * contrast + 0.5, 0)",
+    "3. elevate: x = min(c, 1); c = x + 0.25 * elevate * sin(pi * x)^2  (black and full white unmoved, mid grey lifted most)",
+    "4. tint: c *= the layer's tint / 255",
+    "5. saturation: l = dot(c, (0.2126, 0.7152, 0.0722)); c = max(mix(l, c, saturation), 0)",
+    "6. c *= the layer's Atmosphere gain; the layers sum as light, then clamp to 1",
+    "Untouched: brightness 1, contrast 1, elevate 0, saturation 1."
+  ],
+  "layers": {
+    "1700":  { "brightness": 1.13, "contrast": 1.11, "elevate": 0.5, "saturation": 1.01 },
+    "304":   { "brightness": 1, "contrast": 1.05, "elevate": 0.23, "saturation": 1 },
+    "171":   { "brightness": 1.01, "contrast": 1.05, "elevate": 0.43, "saturation": 1.04 },
+    "193":   { "brightness": 1.19, "contrast": 1.07, "elevate": 0.73, "saturation": 1 },
+    "211":   { "brightness": 1.19, "contrast": 1.1, "elevate": 0.43, "saturation": 1.04 }
+  }
+}

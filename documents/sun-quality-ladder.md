@@ -47,7 +47,7 @@ Each tier also needs an x264 twin (for browsers without HEVC) and, for meditatew
 
 ## The color grade
 
-`assets/sun-grade.json` holds Robert's per-layer grade (brightness, contrast, elevate, saturation), with the math and its order written out. It is **v2** (2026-10-13), the one in use; v1 is kept as `assets/sun-grade-v1.json`, and both raw downloads from the quality page are in `documents/sun-grade-exports/`. The same bytes live in `~/GitHub/solarmeditation/site/assets/sun-grade.json`; change one, copy it to the other. Elevate is a mid-tone lift that leaves black and white alone: `c + 0.25 * elevate * sin²(πc)`. Neither player applies the grade yet.
+`assets/sun-grade.json` holds Robert's per-layer grade (brightness, contrast, elevate, saturation), with the math and its order written out. It is **v3** (2026-10-13), the one in use; v2 and v1 are kept as `assets/sun-grade-v2.json` and `-v1.json`, and both raw downloads from the quality page are in `documents/sun-grade-exports/`. The same bytes live in `~/GitHub/solarmeditation/site/assets/sun-grade.json`; change one, copy it to the other. Elevate is a mid-tone lift that leaves black and white alone: `c + 0.25 * elevate * sin²(πc)`. Neither player applies the grade yet.
 
 ## How the player picks a tier
 
