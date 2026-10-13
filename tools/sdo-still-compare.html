@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDO Resolution</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>">
+<!--
+  One SDO frame at NASA's browse sizes, 1024, 2048 and 4096, drawn at the
+  same size in the same place, so flipping between them shows only the
+  detail. Zoom and pan hold across the flip. sun-video/stills/ holds the
+  frames (git-ignored; 1024 from our archive, the others fetched from
+  sdo.gsfc.nasa.gov/assets/img/browse/<y>/<m>/<d>/<stamp>_<size>_<channel>.jpg).
+    http://localhost:8000/tools/sdo-still-compare.html?f=20250317_140634&ch=0171
+  Keys: 1 2 4 the size, wheel zoom at the cursor, drag to pan, double-click
+  to fit. Everything is remembered.
+-->
+<style>
+:root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
+#bar { position: fixed; top: 10px; left: 10px; z-index: 2; display: flex; gap: 6px; align-items: center; background: rgba(18,21,29,.85); border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px; }
+#bar button { height: 28px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line); background: #1b2030; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+#bar button.on { background: var(--gold); color: #000; border-color: var(--gold); }
+#info { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: 6px; white-space: nowrap; }
+canvas { display: block; width: 100vw; height: 100vh; cursor: grab; }
+canvas.drag { cursor: grabbing; }
+</style>
+</head>
+<body>
+<div id="bar"><span id="sizes"></span><span id="info"></span></div>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+(() => {
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  const F = q.get('f') || '20250317_140634', CH = q.get('ch') || '0171';
+  const SIZES = [1024, 2048, 4096];
+  const KEY = 'sdoStill:' + F + ':' + CH;
+  // the view: which size, the zoom (screen px per image unit, the image
+  // being 1 x 1) and the image point at the screen's centre
+  const st = { size: 2048, zoom: 0, cx: 0.5, cy: 0.5 };
+  try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+  const imgs = {};
+  for (const s of SIZES) {
+    const im = new Image();
+    im.src = '/sun-video/stills/' + F + '_' + s + '_' + CH + '.jpg';
+    im.onload = draw;
+    imgs[s] = im;
+  }
+  const c = $('c'), g = c.getContext('2d');
+  const fit = () => Math.min(innerWidth, innerHeight) * 0.96 * devicePixelRatio;
+  function draw() {
+    const dpr = devicePixelRatio;
+    c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+    if (!st.zoom) st.zoom = fit();
+    const im = imgs[st.size];
+    g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+    if (im.complete && im.naturalWidth) {
+      // every size drawn over the same square, so only the detail changes
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      const x = c.width / 2 - st.cx * st.zoom, y = c.height / 2 - st.cy * st.zoom;
+      g.drawImage(im, x, y, st.zoom, st.zoom);
+    }
+    // how many screen pixels each image pixel covers at this zoom
+    const per = st.zoom / st.size;
+    $('info').textContent = 'AIA ' + CH.replace(/^0/, '') + ' · ' + F.slice(0, 4) + '-' + F.slice(4, 6) + '-' + F.slice(6, 8) + ' ' + F.slice(9, 11) + ':' + F.slice(11, 13) + ':' + F.slice(13, 15) + ' UTC · ' +
+      st.size + ' px · ' + (per >= 1 ? 'each image pixel ' + per.toFixed(1) + ' screen px' : per.toFixed(2) + ' image px per screen px') + (im.complete && im.naturalWidth ? '' : ' · loading…');
+    [...$('sizes').children].forEach(b => b.classList.toggle('on', +b.dataset.s === st.size));
+  }
+  for (const s of SIZES) {
+    const b = document.createElement('button');
+    b.textContent = s; b.dataset.s = s;
+    b.onclick = () => { st.size = s; save(); draw(); };
+    $('sizes').appendChild(b);
+  }
+  addEventListener('keydown', e => {
+    const s = { 1: 1024, 2: 2048, 4: 4096 }[e.key];
+    if (s) { st.size = s; save(); draw(); }
+  });
+  // wheel zoom about the cursor
+  c.addEventListener('wheel', e => {
+    e.preventDefault();
+    const dpr = devicePixelRatio, mx = e.clientX * dpr, my = e.clientY * dpr;
+    const ix = st.cx + (mx - c.width / 2) / st.zoom, iy = st.cy + (my - c.height / 2) / st.zoom;
+    st.zoom = Math.max(fit() * 0.5, Math.min(fit() * 64, st.zoom * Math.exp(-e.deltaY * 0.0015)));
+    st.cx = ix - (mx - c.width / 2) / st.zoom; st.cy = iy - (my - c.height / 2) / st.zoom;
+    save(); draw();
+  }, { passive: false });
+  // drag to pan
+  let drag = null;
+  c.addEventListener('pointerdown', e => { c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, cx: st.cx, cy: st.cy }; c.classList.add('drag'); });
+  c.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dpr = devicePixelRatio;
+    st.cx = drag.cx - (e.clientX - drag.x) * dpr / st.zoom; st.cy = drag.cy - (e.clientY - drag.y) * dpr / st.zoom;
+    draw();
+  });
+  const end = () => { if (drag) { drag = null; c.classList.remove('drag'); save(); } };
+  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+  c.addEventListener('dblclick', () => { st.zoom = fit(); st.cx = st.cy = 0.5; save(); draw(); });
+  addEventListener('resize', draw);
+  draw();
+})();
+</script>
+</body>
+</html>
