@@ -136,6 +136,7 @@ input[type=range] { width: 100%; }
 
   <h2>Speed</h2>
   <div class="seg" id="speeds"></div>
+  <label class="row" style="margin-top:4px">Speed <input type="range" id="speedSlider" min="-200" max="400" step="1"><output id="speedOut"></output></label>
 
   <h2><span id="gapName">Gap</span> <span><button class="mini" id="prevGap">‹</button> <button class="mini" id="nextGap">›</button></span></h2>
   <div class="cells" id="gapCells"></div>
@@ -159,7 +160,7 @@ input[type=range] { width: 100%; }
   <div class="cells" id="bridgeCells" style="margin-top:4px"></div>
   <div class="hint">A cut: these frames are left out of the program. Drag its edges by the grips above the timeline.</div>
 
-  <div class="keys" style="margin-top:12px"><b>space</b> play/pause · <b>, .</b> frame step · <b>[ ]</b> gap before/after (and jump there) · <b>1 2 4 8</b> speed, <b>- =</b> slower/faster · <b>v</b> Sun/raw · wheel on the timeline zooms</div>
+  <div class="keys" style="margin-top:12px"><b>space</b> play/pause · <b>, .</b> frame step · <b>[ ]</b> gap before/after (and jump there) · <b>1 2 4 8 6</b> speed (6 = 16×), <b>- =</b> slower/faster · <b>v</b> Sun/raw · wheel on the timeline zooms</div>
 </div>
 <div id="stage"><canvas id="c"></canvas><div id="stamp"><div class="line"></div></div><div id="status">Loading…</div><div id="note"></div></div>
 <div id="nowBox"><div class="cells" id="now"></div></div>
@@ -206,10 +207,14 @@ input[type=range] { width: 100%; }
   try { REC = JSON.parse(localStorage.getItem('gapExplorer') || '{}').record || 'cut'; } catch (e) {}
   if (!RECORDS[REC]) REC = 'cut';
   const DIR = RECORDS[REC].dir;
-  const FILES = { 1: DIR + 'sun_mosaic_hevc.mp4', 4: DIR + 'sun_mosaic_4x_hevc.mp4' };
-  const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
-  let HAS4 = true;
-  const rungOf = s => (s >= 4 && HAS4 ? 4 : 1);
+  const FILES = { 1: DIR + 'sun_mosaic_hevc.mp4', 4: DIR + 'sun_mosaic_4x_hevc.mp4', 8: DIR + 'sun_mosaic_8x_hevc.mp4' };
+  // The speed buttons; the Speed slider sets anything from the first to the
+  // last, on a log scale. 16x reads the 8x rung at playbackRate 2 (its frame
+  // k is the 1x file's 8k).
+  const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+  const SPEED_MIN = 0.25, SPEED_MAX = 16;
+  let HAS4 = true, HAS8 = true;
+  const rungOf = s => (s >= 16 && HAS8 ? 8 : s >= 4 && HAS4 ? 4 : 1);
   // Timing of the incoming decoder, in wall seconds (scaled to source frames
   // by the speed): it starts LEAD_S before its fade from frames before its
   // head (never drawn), so play()'s latency is spent where it can't be seen;
@@ -229,7 +234,7 @@ input[type=range] { width: 100%; }
   const OLD_BRIDGE_FROM = '2026-07-04T16:59:18Z';
   const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true, dis: null, blend: 'avg' };
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
-  if (!SPEEDS.includes(st.speed)) st.speed = 1;
+  st.speed = Math.max(SPEED_MIN, Math.min(SPEED_MAX, +st.speed || 1));
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
   // the New layer modes, as the shader numbers them
   const BLENDS = { avg: 0, max: 1, min: 2, avgmax: 3, maxinavgout: 4, highlights: 5, softmax: 6 };
@@ -286,7 +291,7 @@ input[type=range] { width: 100%; }
       fetch('/assets/sun-grade.json').then(r => r.json())
     ]);
   } catch (e) { $('status').textContent = 'Could not load ' + DIR + 'mosaic_times.json or assets/sun-grade.json: ' + e.message; return; }
-  HAS4 = await fetch(FILES[4], { method: 'HEAD' }).then(r => r.ok, () => false);
+  [HAS4, HAS8] = await Promise.all([4, 8].map(n => fetch(FILES[n], { method: 'HEAD' }).then(r => r.ok, () => false)));
   const NF = times.length;
   const ms = Float64Array.from(times, t => Date.parse(t));
   // the merge spans in this record's frames (an empty span where it holds none of them)
@@ -587,7 +592,7 @@ input[type=range] { width: 100%; }
     v.muted = true; v.playsInline = true; v.preload = 'auto'; v.disablePictureInPicture = true;
     return { name, v, mt: 0, at: 0, gap: -1, loaded: false, gen: 0, err: 0, woke: false };
   });
-  let R = rungOf(st.speed);           // 1 or 4: the 1x file or the rung
+  let R = rungOf(st.speed);           // 1, 4 or 8: the 1x file or a rung
   let master = pool[0];
   let playing = false;
   let missedAt = -1e9;
@@ -1065,7 +1070,10 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     segBtns('disrot', 'r').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.rot));
     segBtns('dismap', 'm').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.map));
     blendBtns().forEach(b => b.classList.toggle('on', b.dataset.l === st.blend));
-    [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', SPEEDS[i] === st.speed));
+    [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', Math.abs(SPEEDS[i] - st.speed) < 1e-3));
+    // the slider is log2 of the speed, in hundredths (-200 = 0.25x, 400 = 16x)
+    $('speedSlider').value = Math.round(Math.log2(st.speed) * 100);
+    $('speedOut').textContent = +st.speed.toFixed(2) + '×';
     $('nRow').classList.toggle('off', st.policy !== 'fixed');
     $('atmoRow').classList.toggle('off', st.view === 'raw');
     $('grades').classList.toggle('off', st.view === 'raw');
@@ -1117,6 +1125,14 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     };
   });
   SPEEDS.forEach(s => { const b = document.createElement('button'); b.textContent = s + '×'; b.onclick = () => setSpeed(s); $('speeds').appendChild(b); });
+  // the Speed slider: any speed, dragged live; it snaps to a button's speed
+  // within 3% so 1x, 2x and the rest are easy to land on
+  $('speedSlider').oninput = () => {
+    let v = Math.pow(2, +$('speedSlider').value / 100);
+    const near = SPEEDS.find(x => Math.abs(x - v) / x < 0.03);
+    if (near) v = near;
+    setSpeed(Math.max(SPEED_MIN, Math.min(SPEED_MAX, Math.round(v * 100) / 100)));
+  };
   // buttons give their focus back, so space stays play/pause
   document.addEventListener('click', e => { if (e.target.tagName === 'BUTTON') e.target.blur(); });
 
@@ -1265,7 +1281,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     } else { put('Gap', 'none ahead'); put('Fade', '–'); }
     put('Overlap', fd ? pad(fd.k + 1, 3) + ' of ' + pad(fd.n, 3) + '  w ' + fd.w.toFixed(2) : '–');
     put('B in step', fd ? (fd.ok ? (Math.round(fd.b.err) >= 0 ? '+' : '') + Math.round(fd.b.err) + ' fr' : 'loading') : '–');
-    put('File', R === 1 ? '1x  ' + st.speed + '× rate' : '4x rung  ' + base() + '× rate');
+    put('File', R === 1 ? '1x  ' + +st.speed.toFixed(2) + '× rate' : R + 'x rung  ' + +base().toFixed(2) + '× rate');
     // the date alone (Robert's call; the readouts have the time), each
     // changed character fading in on its hidden layer as the old fades out
     const stamp = utc(shown).slice(0, 10);
@@ -1288,7 +1304,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     else if (fd && !fd.ok) note = 'incoming decoder loading';
     else if (now - missedAt < 2000) note = 'a fade was missed (decoder late)';
     if ($('note').textContent !== note) $('note').textContent = note;
-    const s = (playing ? 'playing ' : 'paused ') + st.speed + '× · ' + (R === 1 ? 'sun_mosaic_hevc.mp4' : 'sun_mosaic_4x_hevc.mp4') + ' · ' + REC + ' · ' + st.policy + (bridgeOn() ? ' · bridge (cut) on' : '');
+    const s = (playing ? 'playing ' : 'paused ') + +st.speed.toFixed(2) + '× · ' + (R === 1 ? 'sun_mosaic_hevc.mp4' : 'sun_mosaic_' + R + 'x_hevc.mp4') + ' · ' + REC + ' · ' + st.policy + (bridgeOn() ? ' · bridge (cut) on' : '');
     if ($('status').textContent !== s) $('status').textContent = s;
   }
 
@@ -1506,7 +1522,10 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     else if (k === ',' || k === '.') { e.preventDefault(); step(k === '.' ? 1 : -1); }
     else if (k === '[' || k === ']') { e.preventDefault(); selectQ(selQ() + (k === ']' ? 1 : -1), true); }
     else if ('1248'.includes(k) && k.length === 1) setSpeed(+k);
-    else if (k === '-' || k === '=' || k === '+') { const i = SPEEDS.indexOf(st.speed) + (k === '-' ? -1 : 1); if (i >= 0 && i < SPEEDS.length) setSpeed(SPEEDS[i]); }
+    else if (k === '6') setSpeed(16);
+    // the next button's speed down or up from wherever the slider left it
+    else if (k === '-') { const v = [...SPEEDS].reverse().find(x => x < st.speed - 1e-3); if (v) setSpeed(v); }
+    else if (k === '=' || k === '+') { const v = SPEEDS.find(x => x > st.speed + 1e-3); if (v) setSpeed(v); }
     else if (k === 'v') { st.view = st.view === 'raw' ? 'composite' : 'raw'; save(); markAll(); layoutStage(); }
   });
 
