@@ -112,7 +112,7 @@ input[type=range] { width: 100%; }
   </div>
   <h2 style="margin-top:10px">New layer</h2>
   <div class="seg" id="blends" title="How the incoming footage comes in over the outgoing">
-    <button data-l="avg">Average</button><button data-l="max" title="The brighter of the two, halfway">Max</button><button data-l="min" title="The darker of the two, halfway">Min</button>
+    <button data-l="avg">Average</button><button data-l="max" title="The brighter of the two, halfway">Max</button><button data-l="min" title="The darker of the two, halfway">Min</button><button data-l="avgmax" title="Half Average, half Max">AvgMax</button>
   </div>
   <h2 style="margin-top:10px">Living dissolve</h2>
   <div class="seg" id="dison">
@@ -206,7 +206,7 @@ input[type=range] { width: 100%; }
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   if (!SPEEDS.includes(st.speed)) st.speed = 1;
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
-  if (!['avg', 'max', 'min'].includes(st.blend)) st.blend = 'avg';
+  if (!['avg', 'max', 'min', 'avgmax'].includes(st.blend)) st.blend = 'avg';
   MAX_FADE = CAPS.includes(st.cap) ? st.cap : 360;
   // the living dissolve's settings (see the shader): on, equal, spread
   // 0..0.95, globs (noise scale) 0.5..6, evolve (drift per hour of solar
@@ -714,7 +714,7 @@ struct U {
   adj: array<vec4f, 5>, // per layer: brightness, contrast, saturation, elevate
   dis: vec4f,    // the living dissolve: on (1), spread, globs (noise scale), evolve
   dis2: vec4f,   // the Sun's rotation angle (rad), time (h), rotate with the Sun (1), the map's opacity
-  dis3: vec4f,   // the map's preview fade position (0..1, used outside a fade), the new layer (0 average, 1 max, 2 min), unused x2
+  dis3: vec4f,   // the map's preview fade position (0..1, used outside a fade), the new layer (0 average, 1 max, 2 min, 3 avgmax), unused x2
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var texA: texture_external;
@@ -824,6 +824,7 @@ fn mosaic(st: vec2f, w: f32) -> vec3f {
     return mix(a2, b2, 1.0 - smoothstep(-0.02, 0.02, dot(b2, Y) - dot(a2, Y)));
   }
   // Max per channel, the original (Robert prefers it: the eruptions)
+  if (u.dis3.y > 2.5) { return mix(a * (1.0 - w) + b * w, max(a * gout, b * gin), 0.5); }   // AvgMax: half each
   if (u.dis3.y > 0.5) { return max(a * gout, b * gin); }
   return a * (1.0 - w) + b * w;
 }
@@ -953,7 +954,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     uni.set([D.on ? 1 : 0, D.spread, D.scale, D.evolve], 40);
     uni.set([(ms[a0] - ms[0]) / (27.2753 * 864e5) * 2 * Math.PI, (ms[a0] - ms[0]) / 36e5, D.rot ? 1 : 0, mapAlpha()], 44);
     // the map's preview fade outside a real one: 0 to 1 every 4 s
-    uni.set([(performance.now() / 4000) % 1, { avg: 0, max: 1, min: 2 }[st.blend] ?? 0, 0, 0], 48);
+    uni.set([(performance.now() / 4000) % 1, { avg: 0, max: 1, min: 2, avgmax: 3 }[st.blend] ?? 0, 0, 0], 48);
     device.queue.writeBuffer(uniBuf, 0, uni);
     const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: uniBuf } }, { binding: 1, resource: extA },
