@@ -1,0 +1,38 @@
+GAP EXPLORER SETTINGS · 2026-10-13T05:24Z
+record: Two years · Sep 2024 – Sep 2026
+fades: dynamic · longest 360 · new layer avg
+auto bridges: on · keep ≥ 1800 · merges on · month bridge on (2026-07-02 → 2026-08-03)
+program: 17:05.7  30,772 fr
+no bridge: 17:09.2  30,875 fr
+straight cut: 43:19.1  77,972 fr
+overlap: 4,029 fr  134.3 s
+junctions: 11×360 · 1 less · 0 hard
+grade: v3 (assets/sun-grade.json) · atmosphere 0.25 · view raw mosaic
+living dissolve: plain
+fixed N 111 (not in use) · speed 4×
+place: frame 21232 · 2025-03-21 22:08:42 UTC · selected gap 1 · timeline zoom frames 0-77972
+month bridge: on · 2026-07-02 06:09:18 → 2026-08-03 01:38:54 UTC (frames 69444-73398)
+overrides: none
+
+RECORD
+record: Two years · Sep 2024 – Sep 2026 · 77,972 frames · 2024-09-05 00:08 → 2026-09-04 20:57 UTC (729.9 days)
+gaps: 220 (holes over 45 min) · 0.8 h shortest · 2.5 h median · 2338.0 h longest · 185.8 days of holes in all
+stretches between gaps: 221 · 1 shortest · 128 median · 5900 longest (frames) · 190 shorter than 720 (can't feed a full fade both ends)
+kept: 34,801 of 77,972 frames (45%) · left out: 3,955 by the month bridge, 39,216 by merges and auto bridges
+kept stretches: 13 · 69 shortest · 2496 median · 5900 longest (frames) · 243.0 days of solar time shown
+fades: 12 · 69 shortest · 360 median · 360 longest (frames) · 4,029 frames overlapped
+result: 30,772 frames = 17:05.7 at 30 fps (straight cut 43:19.1) · at 4× 4:16.4 · at 16× 1:04.1
+
+PLAN (junction · where · stretches out → in · fade)
+gap 1 · 2024-09-07 16:38 → 2024-09-07 19:41 · 387 → 2539 · 360
+gaps 2–17 · 2024-09-25 12:49 → 2024-11-03 02:38 · 2539 → 2425 · 360
+gaps 18–54 · 2024-11-19 23:29 → 2025-02-13 07:38 · 2425 → 5900 · 360
+gaps 55–72 · 2025-03-26 12:49 → 2025-04-28 00:49 · 5900 → 2362 · 360
+gap 73 · 2025-05-14 12:18 → 2025-05-14 14:58 · 2362 → 2996 · 360
+gap 74 · 2025-06-04 12:48 → 2025-06-04 14:38 · 2996 → 5040 · 360
+gaps 75–111 · 2025-07-09 18:08 → 2025-08-10 05:48 · 5040 → 1874 · 360
+gaps 112–113 · 2025-08-23 07:18 → 2025-08-24 01:19 · 1874 → 2496 · 360
+gaps 114–162 · 2025-09-10 11:08 → 2026-03-18 15:38 · 2496 → 3999 · 360
+gaps 163–171 · 2026-04-15 14:49 → 2026-04-29 21:07 · 3999 → 2075 · 360
+gaps 172–178 · 2026-05-14 10:38 → 2026-08-03 01:38 · 2075 → 2639 · 360
+gaps 216–220 · 2026-08-21 12:42 → 2026-09-04 09:38 · 2639 → 69 · 69
