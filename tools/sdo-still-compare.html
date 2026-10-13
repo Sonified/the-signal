@@ -16,15 +16,20 @@
   to fit, L the loupe (a circle up and left of the cursor, magnifying what
   lies under its own centre: Flat, or Bubble easing to 1x at the rim; Zoom
   1-10x and Flat center up top). Everything is remembered.
+  Play mode: the week in sun-video/stills/<ch>_2048/ (list.txt its stamps,
+  tools/sdo-fetch-size.sh) as a moving picture under the same zoom, pan and
+  loupe; 1 2 flip to our 1024s of the same moments in <ch>_1024/
+  (tools/sdo-link-1024.sh), no 4096 for the week. Space plays and pauses,
+  the arrows step a frame, the slider scrubs the week, and it loops.
 -->
 <style>
 :root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
-#bar { position: fixed; top: 10px; left: 10px; z-index: 2; display: flex; gap: 6px; align-items: center; background: rgba(18,21,29,.85); border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px; }
-#bar button { height: 28px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line); background: #1b2030; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
-#bar button.on { background: var(--gold); color: #000; border-color: var(--gold); }
-#info { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: 6px; white-space: nowrap; }
+#bar, #pbar { position: fixed; top: 10px; left: 10px; z-index: 2; display: flex; gap: 6px; align-items: center; background: rgba(18,21,29,.85); border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px; }
+#bar button, #pbar button { height: 28px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line); background: #1b2030; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+#bar button.on, #pbar button.on { background: var(--gold); color: #000; border-color: var(--gold); }
+#info, #pinfo { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: 6px; white-space: nowrap; }
 canvas { display: block; width: 100vw; height: 100vh; cursor: grab; }
 #lens { position: fixed; inset: 0; pointer-events: none; }
 .sep { color: var(--dim); font-size: 12px; margin: 0 2px 0 8px; }
@@ -32,13 +37,22 @@ canvas { display: block; width: 100vw; height: 100vh; cursor: grab; }
 .sl input { width: 90px; }
 .sl output { color: var(--ink); min-width: 32px; font-variant-numeric: tabular-nums; }
 canvas.drag { cursor: grabbing; }
+#bar button:disabled { opacity: .35; cursor: default; }
+#pbar { top: 58px; }
+#pbar[hidden] { display: none; }
+#scrub { width: 340px; }
+#pinfo { min-width: 330px; }
 </style>
 </head>
 <body>
-<div id="bar"><button id="native" title="All three at their original size, left to right, one image pixel per screen pixel (drag to pan)">Original size</button><span id="sizes"></span><span class="sep">Loupe</span><span id="loupes"></span>
+<div id="bar"><button id="native" title="All three at their original size, left to right, one image pixel per screen pixel (drag to pan)">Original size</button><button id="playmode" disabled title="The week of 2048 frames as a moving picture">Play mode</button><span id="sizes"></span><span class="sep">Loupe</span><span id="loupes"></span>
   <label class="sl">Zoom <input type="range" id="mag" min="10" max="100" step="1"><output id="magOut"></output></label>
   <label class="sl" id="flatRow">Flat center <input type="range" id="flat" min="0" max="90" step="1"><output id="flatOut"></output></label>
   <span id="info"></span></div>
+<div id="pbar" hidden><button id="pp" title="Play or pause (space)">Play</button><button id="back" title="One frame back (←)">‹</button><button id="fwd" title="One frame on (→)">›</button>
+  <label class="sl">Week <input type="range" id="scrub" min="0" max="0" step="1"></label>
+  <label class="sl">Rate <input type="range" id="fps" min="5" max="60" step="1"><output id="fpsOut"></output></label>
+  <span id="pinfo"></span></div>
 <canvas id="c"></canvas><canvas id="lens"></canvas>
 <script>
 'use strict';
@@ -61,6 +75,20 @@ canvas.drag { cursor: grabbing; }
   if (!['off', 'flat', 'bubble'].includes(st.loupe)) st.loupe = 'flat';
   st.mag = Math.max(1, Math.min(10, +st.mag || 5)); st.flat = Math.max(0, Math.min(0.9, +st.flat || 0));
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+  // play mode keeps its own settings, so the still at ?f= is as it was:
+  // on, the frame rate, the frame (saved on pause, step, scrub and leaving)
+  // and its size (1024 or 2048). Playing itself is never remembered.
+  const PKEY = 'sdoStill:play:' + CH;
+  const pl = { on: false, fps: 30, i: 0, size: 2048 };
+  try { Object.assign(pl, JSON.parse(localStorage.getItem(PKEY) || '{}')); } catch (e) {}
+  pl.fps = Math.max(5, Math.min(60, Math.round(+pl.fps) || 30)); pl.i = Math.max(0, Math.floor(+pl.i) || 0);
+  if (pl.size !== 1024) pl.size = 2048;
+  const savePlay = () => { try { localStorage.setItem(PKEY, JSON.stringify(pl)); } catch (e) {} };
+  // the week's stamps; playing; the playhead in frames; the frame on screen { i, s, bm }
+  let frames = [], playing = false, pos = 0, cur = null, looping = false, scrubbing = false;
+  const when = f => f.slice(0, 4) + '-' + f.slice(4, 6) + '-' + f.slice(6, 8) + ' ' + f.slice(9, 11) + ':' + f.slice(11, 13) + ':' + f.slice(13, 15);
+  // an <img> or a decoded frame, ready to draw
+  const ok = im => !!im && (im instanceof ImageBitmap ? im.width > 0 : im.complete && im.naturalWidth > 0);
   const imgs = {};
   for (const s of SIZES) {
     const im = new Image();
@@ -110,7 +138,21 @@ canvas.drag { cursor: grabbing; }
   })();
   const U = n => gl.getUniformLocation(prog, n);
   const texOf = {};
+  let playTex = null, playTexBm = null;   // play mode: one texture, refilled when the frame changes
   function texture(im) {
+    if (im instanceof ImageBitmap) {
+      if (!playTex) {
+        playTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, playTex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      }
+      gl.bindTexture(gl.TEXTURE_2D, playTex);
+      if (playTexBm !== im) { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, im); gl.generateMipmap(gl.TEXTURE_2D); playTexBm = im; }
+      return playTex;
+    }
     if (texOf[im.src]) return texOf[im.src];
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -126,7 +168,7 @@ canvas.drag { cursor: grabbing; }
     if (lens.width !== c.width || lens.height !== c.height) { lens.width = c.width; lens.height = c.height; }   // resized only when the window is
     gl.viewport(0, 0, lens.width, lens.height);
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-    if (st.native || st.loupe !== 'bubble' || !mouse || drag || !(im.complete && im.naturalWidth)) return;
+    if (st.native || st.loupe !== 'bubble' || !mouse || drag || !ok(im)) return;
     const dpr = devicePixelRatio, R = 150 * dpr, off = R * 0.85;
     const lx = mouse.x - off, ly = mouse.y - off;
     gl.bindTexture(gl.TEXTURE_2D, texture(im));
@@ -149,44 +191,51 @@ canvas.drag { cursor: grabbing; }
     g.imageSmoothingEnabled = false;
     let x = 20 * dpr + st.nx;
     g.font = (12 * dpr) + 'px -apple-system, sans-serif'; g.fillStyle = '#8a93a6';
-    for (const s of SIZES) {
-      const im = imgs[s];
+    // in play mode, the moving frame alone
+    const list = pl.on ? (cur ? [[cur.s, cur.bm]] : []) : SIZES.map(s => [s, imgs[s]]);
+    for (const [s, im] of list) {
       g.fillText(s + ' × ' + s + ' · original size', x, top + st.ny - 10 * dpr);
-      if (im.complete && im.naturalWidth) g.drawImage(im, x, top + st.ny, s, s);
+      if (ok(im)) g.drawImage(im, x, top + st.ny, s, s);
       x += s + gap;
     }
-    drawBubble(imgs[st.size]);
+    drawBubble(pic());
     $('info').textContent = 'original size: one image pixel per screen pixel · drag to pan, double-click to go back to the start';
   }
   function draw() {
     const dpr = devicePixelRatio;
     c.width = innerWidth * dpr; c.height = innerHeight * dpr;
     $('native').classList.toggle('on', st.native);
+    $('playmode').classList.toggle('on', pl.on); $('pbar').hidden = !pl.on;
+    [...$('sizes').children].forEach(b => {
+      b.classList.toggle('on', +b.dataset.s === (pl.on ? pl.size : st.size));
+      b.disabled = pl.on && +b.dataset.s === 4096; b.title = b.disabled ? 'No 4096 for this week' : '';
+    });
+    if (pl.on) showPlay();
     if (st.native) return drawNative();   // the loupes rest in this view
     if (!st.zoom) st.zoom = fit();
-    const im = imgs[st.size];
+    const im = pic(), size = picSize();
     g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
-    if (im.complete && im.naturalWidth) {
+    if (ok(im)) {
       // every size drawn over the same square, so only the detail changes.
       // Shrinking smooths at high quality (the GPU's mipmaps, cheap);
       // enlarging is bilinear, as a video player does: Chrome's high-quality
       // enlarging runs a costly filter on the CPU every frame, which made the
       // 1024 (the most enlarged) the laggiest
-      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = st.zoom > st.size ? 'low' : 'high';
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = st.zoom > size ? 'low' : 'high';
       const x = c.width / 2 - st.cx * st.zoom, y = c.height / 2 - st.cy * st.zoom;
       g.drawImage(im, x, y, st.zoom, st.zoom);
     }
     // the loupe: a circle up and to the left of the cursor, showing what is
     // under its own centre at LOUPE x (never while dragging)
     drawBubble(im);
-    if (st.loupe === 'flat' && mouse && !drag && im.complete && im.naturalWidth) {
+    if (st.loupe === 'flat' && mouse && !drag && ok(im)) {
       const R = 130 * dpr, off = R * 0.85;
       const lx = mouse.x - off, ly = mouse.y - off;
       const ix = st.cx + (lx - c.width / 2) / st.zoom, iy = st.cy + (ly - c.height / 2) / st.zoom;
       const z = st.zoom * st.mag;
       g.save();
       g.beginPath(); g.arc(lx, ly, R, 0, Math.PI * 2); g.clip();
-      g.imageSmoothingQuality = z > st.size ? 'low' : 'high';
+      g.imageSmoothingQuality = z > size ? 'low' : 'high';
       g.fillStyle = '#000'; g.fillRect(lx - R, ly - R, 2 * R, 2 * R);
       g.drawImage(im, lx - ix * z, ly - iy * z, z, z);
       g.restore();
@@ -194,10 +243,9 @@ canvas.drag { cursor: grabbing; }
       g.lineWidth = 1.5 * dpr; g.strokeStyle = 'rgba(242,193,78,.7)'; g.stroke();
     }
     // how many screen pixels each image pixel covers at this zoom
-    const per = st.zoom / st.size;
-    $('info').textContent = 'AIA ' + CH.replace(/^0/, '') + ' · ' + F.slice(0, 4) + '-' + F.slice(4, 6) + '-' + F.slice(6, 8) + ' ' + F.slice(9, 11) + ':' + F.slice(11, 13) + ':' + F.slice(13, 15) + ' UTC · ' +
-      st.size + ' px · ' + (per >= 1 ? 'each image pixel ' + per.toFixed(1) + ' screen px' : per.toFixed(2) + ' image px per screen px') + (im.complete && im.naturalWidth ? '' : ' · loading…');
-    [...$('sizes').children].forEach(b => b.classList.toggle('on', +b.dataset.s === st.size));
+    const per = st.zoom / size;
+    $('info').textContent = 'AIA ' + CH.replace(/^0/, '') + ' · ' + (pl.on ? '' : when(F) + ' UTC · ') +   // play mode's time is in the play bar
+      size + ' px · ' + (per >= 1 ? 'each image pixel ' + per.toFixed(1) + ' screen px' : per.toFixed(2) + ' image px per screen px') + (ok(im) ? '' : ' · loading…');
     [...$('loupes').children].forEach(b => b.classList.toggle('on', b.dataset.l === st.loupe));
     $('mag').value = Math.round(st.mag * 10); $('magOut').textContent = st.mag.toFixed(1) + '×';
     $('flat').value = Math.round(st.flat * 100); $('flatOut').textContent = Math.round(st.flat * 100) + '%';
@@ -212,7 +260,7 @@ canvas.drag { cursor: grabbing; }
   for (const s of SIZES) {
     const b = document.createElement('button');
     b.textContent = s; b.dataset.s = s;
-    b.onclick = () => { st.size = s; save(); draw(); };
+    b.onclick = () => setSize(s);
     $('sizes').appendChild(b);
   }
   $('mag').oninput = () => { st.mag = +$('mag').value / 10; save(); draw(); };
@@ -220,9 +268,15 @@ canvas.drag { cursor: grabbing; }
   addEventListener('keydown', e => {
     // 1 2 3 in order (4 too, for 4096)
     const s = { 1: 1024, 2: 2048, 3: 4096, 4: 4096 }[e.key];
-    if (s) { st.size = s; save(); draw(); }
+    if (s) setSize(s);
     // L steps the loupe: off, 5x, bubble
     if (e.key === 'l' || e.key === 'L') { st.loupe = { off: 'flat', flat: 'bubble', bubble: 'off' }[st.loupe]; save(); draw(); }
+    // play mode: space plays and pauses, the arrows step a frame (a focused
+    // button or slider blurred, so it doesn't click or step as well)
+    if (pl.on && frames.length && (e.key === ' ' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault(); if (e.target.blur) e.target.blur();
+      if (e.key === ' ') togglePlay(); else step(e.key === 'ArrowLeft' ? -1 : 1);
+    }
   });
   // wheel zoom about the cursor
   c.addEventListener('wheel', e => {
@@ -238,7 +292,8 @@ canvas.drag { cursor: grabbing; }
   // the loupe follows the cursor
   // redrawn at most once a frame, however fast the mouse reports
   let queued = false;
-  const redraw = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; draw(); }); };
+  // (in play mode the play loop's own frame draws it)
+  const redraw = () => { if (queued) return; queued = true; if (!looping) requestAnimationFrame(() => { queued = false; draw(); }); };
   c.addEventListener('mousemove', e => { mouse = { x: e.clientX * devicePixelRatio, y: e.clientY * devicePixelRatio }; if (!drag) redraw(); });
   c.addEventListener('mouseleave', () => { mouse = null; draw(); });
   // drag to pan
@@ -254,6 +309,113 @@ canvas.drag { cursor: grabbing; }
   c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
   c.addEventListener('dblclick', () => { if (st.native) { st.nx = st.ny = 0; } else { st.zoom = fit(); st.cx = st.cy = 0.5; } save(); draw(); });
   $('native').onclick = () => { st.native = !st.native; save(); draw(); };
+  // ---- play mode. 2048 JPEG decode is the cost, so frames are fetched and
+  // decoded (createImageBitmap, off the main thread) into a ring a second
+  // and a half ahead of the playhead, a few at a time. The clock never waits:
+  // each tick shows the newest decoded frame at or before the playhead and
+  // holds the last one until a newer is ready. Frames behind it are closed,
+  // so memory stays at the ring (a 2048 is 16 MB decoded).
+  const pic = () => pl.on ? cur && cur.bm : imgs[st.size];
+  const picSize = () => pl.on ? (cur ? cur.s : pl.size) : st.size;
+  const ring = new Map();   // 's:i' -> { i, s, bm, ctrl, dead, failed }
+  let busy = 0;   // decodes in flight, dropped ones included until they settle
+  const MAXQ = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) >> 1));
+  const ahead = () => Math.max(8, Math.min(36, Math.round(pl.fps * 1.5)));
+  function load(i, s) {
+    const e = { i, s, bm: null, ctrl: new AbortController(), dead: false, failed: false };
+    ring.set(s + ':' + i, e); busy++;
+    fetch('/sun-video/stills/' + CH + '_' + s + '/' + frames[i] + '_' + s + '_' + CH + '.jpg', { signal: e.ctrl.signal })
+      .then(r => { if (!r.ok) throw Error(r.status); return r.blob(); })
+      .then(b => createImageBitmap(b))
+      .then(bm => { if (e.dead) bm.close(); else e.bm = bm; }, () => { e.failed = true; })   // a missing frame is skipped, never retried
+      .finally(() => busy--);
+  }
+  function drop(e) {
+    ring.delete(e.s + ':' + e.i); e.dead = true; e.ctrl.abort();
+    if (e.bm) { e.bm.close(); e.bm = null; }
+  }
+  // true when the frame on screen changed
+  function pump() {
+    const n = frames.length, t = Math.floor(pos), A = ahead(), s = pl.size;
+    if (!n) return false;
+    const back = i => (t - i + n) % n;   // frames behind the playhead (0 at it)
+    let best = cur && cur.s === s && back(cur.i) <= A ? cur : null, changed = false;
+    for (const e of ring.values()) if (e.s === s && e.bm && back(e.i) <= A && (!best || back(e.i) < back(best.i))) best = e;
+    if (best && best !== cur) {
+      ring.delete(best.s + ':' + best.i);
+      if (cur) cur.bm.close();
+      cur = { i: best.i, s: best.s, bm: best.bm }; changed = true;
+    }
+    // keep this size's frames ahead, and those behind still decoding that
+    // are newer than the one on screen; the rest go
+    const held = cur && cur.s === s && back(cur.i) <= A ? back(cur.i) : A + 1;
+    for (const e of [...ring.values()]) if (e.s !== s || ((e.i - t + n) % n > A && back(e.i) >= held)) drop(e);
+    for (let d = 0; d <= A && busy < MAXQ; d++) {
+      const i = (t + d) % n;
+      if (!(cur && cur.s === s && cur.i === i) && !ring.has(s + ':' + i)) load(i, s);
+    }
+    return changed;
+  }
+  let lastNow = 0, lastT = -1;
+  function tick(now) {
+    if (!pl.on) { looping = false; if (queued) { queued = false; draw(); } return; }   // a redraw asked for as play mode ended
+    requestAnimationFrame(tick);
+    const dt = lastNow ? Math.min(250, now - lastNow) : 0; lastNow = now;
+    if (!frames.length) return;
+    if (playing && !scrubbing) pos = (pos + dt * pl.fps / 1000) % frames.length;   // loops at the end
+    if (pump() || queued) { queued = false; draw(); }
+    else if (Math.floor(pos) !== lastT) showPlay();
+    lastT = Math.floor(pos);
+  }
+  // the play bar: the playhead on the slider, the frame on screen in words
+  function showPlay() {
+    const n = frames.length, t = Math.floor(pos), e = ring.get(pl.size + ':' + t);
+    if (!scrubbing) $('scrub').value = t;
+    $('pp').textContent = playing ? 'Pause' : 'Play'; $('pp').classList.toggle('on', playing);
+    $('fps').value = pl.fps; $('fpsOut').textContent = pl.fps + ' fps';
+    $('pinfo').textContent = !n ? 'loading the week…' : !cur ? 'loading…' :
+      'frame ' + (cur.i + 1) + ' / ' + n + ' · ' + when(frames[cur.i]) + ' UTC' +
+      (e && e.failed ? ' · frame ' + (t + 1) + ' missing' : cur.i !== t || cur.s !== pl.size ? ' · catching up' : '');
+  }
+  function setPlayMode(on) {
+    if (!on) keepPlace();
+    pl.on = on; savePlay();
+    if (on) { pos = Math.min(pl.i, frames.length - 1); if (!looping) { looping = true; lastNow = 0; requestAnimationFrame(tick); } }
+    else {
+      playing = false; queued = false;
+      for (const e of [...ring.values()]) drop(e);
+      if (cur) { cur.bm.close(); cur = null; }
+    }
+    draw();
+  }
+  // play mode has 1024 and 2048 only, and a size of its own
+  function setSize(s) {
+    if (!pl.on) { st.size = s; save(); }
+    else if (s !== 4096) { pl.size = s; savePlay(); pump(); }
+    draw();
+  }
+  const keepPlace = () => { if (pl.on && frames.length) { pl.i = Math.floor(pos); savePlay(); } };
+  function togglePlay() { playing = !playing; if (!playing) keepPlace(); draw(); }
+  function step(d) { const n = frames.length; if (!n) return; playing = false; pos = ((Math.floor(pos) + d) % n + n) % n; keepPlace(); pump(); draw(); }
+  $('playmode').onclick = () => setPlayMode(!pl.on);
+  $('pp').onclick = togglePlay;
+  $('back').onclick = () => step(-1); $('fwd').onclick = () => step(1);
+  // a scrub starts loading at the new spot at once
+  $('scrub').oninput = () => { pos = +$('scrub').value; keepPlace(); pump(); draw(); };
+  $('scrub').addEventListener('pointerdown', () => { scrubbing = true; });
+  addEventListener('pointerup', () => { scrubbing = false; }); addEventListener('pointercancel', () => { scrubbing = false; });
+  $('fps').oninput = () => { pl.fps = +$('fps').value; savePlay(); showPlay(); };
+  addEventListener('pagehide', keepPlace);
+  document.addEventListener('visibilitychange', keepPlace);
+  // the week's frames, in time order
+  fetch('/sun-video/stills/' + CH + '_2048/list.txt').then(r => r.ok ? r.text() : '').catch(() => '').then(t => {
+    frames = t.split('\n').map(f => f.trim()).filter(f => /^\d{8}_\d{6}$/.test(f)).sort();
+    const b = $('playmode');
+    if (!frames.length) { b.title = 'No week of frames in sun-video/stills/' + CH + '_2048/ (tools/sdo-fetch-size.sh)'; pl.on = false; return draw(); }
+    b.disabled = false; $('scrub').max = frames.length - 1;
+    pl.i = Math.min(pl.i, frames.length - 1);
+    if (pl.on) setPlayMode(true);
+  });
   addEventListener('resize', draw);
   draw();
 })();
