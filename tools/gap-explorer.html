@@ -806,11 +806,11 @@ fn dissolveMap(tuv: vec2f) -> vec3f {
 // last, so halfway it is the brighter of the two everywhere; Min, the same
 // with the darker. Max and Min ride two ramps, the incoming at full by
 // halfway and the outgoing full until then, so each starts as pure old and
-// ends as pure new. They compare brightness (Rec. 709 luma) and take the
-// whole color of the brighter or darker moment, softened over a small
-// difference so edges don't jag: per-channel max/min mixed red from one
-// moment with green from the other and turned the Sun green. The mode is
-// a uniform, so the branches are uniform.
+// ends as pure new. Max takes the brighter per channel. Min compares
+// brightness (Rec. 709 luma) and takes the whole color of the darker
+// moment, softened over a small difference so edges don't jag: per channel
+// it mixed red from one moment with green from the other and turned the
+// Sun green. The mode is a uniform, so the branches are uniform.
 fn mosaic(st: vec2f, w: f32) -> vec3f {
   let a = textureSampleBaseClampToEdge(texA, samp, st).rgb;
   if (u.view.y <= 0.0) { return a; }
@@ -823,11 +823,8 @@ fn mosaic(st: vec2f, w: f32) -> vec3f {
     let b2 = mix(vec3f(1.0), b, gin);
     return mix(a2, b2, 1.0 - smoothstep(-0.02, 0.02, dot(b2, Y) - dot(a2, Y)));
   }
-  if (u.dis3.y > 0.5) {
-    let a2 = a * gout;
-    let b2 = b * gin;
-    return mix(a2, b2, smoothstep(-0.02, 0.02, dot(b2, Y) - dot(a2, Y)));
-  }
+  // Max per channel, the original (Robert prefers it: the eruptions)
+  if (u.dis3.y > 0.5) { return max(a * gout, b * gin); }
   return a * (1.0 - w) + b * w;
 }
 
