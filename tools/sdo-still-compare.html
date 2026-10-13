@@ -14,7 +14,8 @@
     http://localhost:8000/tools/sdo-still-compare.html?f=20250317_140634&ch=0171
   Keys: 1 2 3 the size (4 also 4096), wheel zoom at the cursor, drag to pan, double-click
   to fit, L the loupe (a circle up and left of the cursor, magnifying what
-  lies under its own centre at 5x). Everything is remembered.
+  lies under its own centre: Flat, or Bubble easing to 1x at the rim; Zoom
+  1-10x and Flat center up top). Everything is remembered.
 -->
 <style>
 :root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; }
@@ -27,11 +28,17 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 canvas { display: block; width: 100vw; height: 100vh; cursor: grab; }
 #lens { position: fixed; inset: 0; pointer-events: none; }
 .sep { color: var(--dim); font-size: 12px; margin: 0 2px 0 8px; }
+.sl { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; margin-left: 8px; white-space: nowrap; }
+.sl input { width: 90px; }
+.sl output { color: var(--ink); min-width: 32px; font-variant-numeric: tabular-nums; }
 canvas.drag { cursor: grabbing; }
 </style>
 </head>
 <body>
-<div id="bar"><span id="sizes"></span><span class="sep">Loupe</span><span id="loupes"></span><span id="info"></span></div>
+<div id="bar"><span id="sizes"></span><span class="sep">Loupe</span><span id="loupes"></span>
+  <label class="sl">Zoom <input type="range" id="mag" min="10" max="100" step="1"><output id="magOut"></output></label>
+  <label class="sl" id="flatRow">Flat center <input type="range" id="flat" min="0" max="90" step="1"><output id="flatOut"></output></label>
+  <span id="info"></span></div>
 <canvas id="c"></canvas><canvas id="lens"></canvas>
 <script>
 'use strict';
@@ -43,12 +50,15 @@ canvas.drag { cursor: grabbing; }
   const KEY = 'sdoStill:' + F + ':' + CH;
   // the view: which size, the zoom (screen px per image unit, the image
   // being 1 x 1) and the image point at the screen's centre
-  const st = { size: 2048, zoom: 0, cx: 0.5, cy: 0.5, loupe: 'flat' };
+  // mag: the loupe's zoom at its centre, 1-10x; flat: the share of the
+  // bubble's radius held at full zoom before it eases out to 1x at the rim
+  const st = { size: 2048, zoom: 0, cx: 0.5, cy: 0.5, loupe: 'flat', mag: 5, flat: 0 };
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   // the loupe: 'off', 'flat' (5x throughout) or 'bubble' (5x at the centre,
   // easing to 1x at the rim, so its edge meets the picture seamlessly)
   if (st.loupe === true) st.loupe = 'flat'; else if (st.loupe === false) st.loupe = 'off';
   if (!['off', 'flat', 'bubble'].includes(st.loupe)) st.loupe = 'flat';
+  st.mag = Math.max(1, Math.min(10, +st.mag || 5)); st.flat = Math.max(0, Math.min(0.9, +st.flat || 0));
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
   const imgs = {};
   for (const s of SIZES) {
@@ -61,8 +71,9 @@ canvas.drag { cursor: grabbing; }
   const LOUPE = 5;
   // ---- the bubble loupe: a WebGL2 layer over the picture. A point at r of
   // the lens's radius (0 centre, 1 rim) shows the image point under the
-  // lens centre plus its offset over m(r) = 1 + (LOUPE - 1)(1 - r^2)^2 times
-  // the picture's zoom: 5x at the centre, 1x at the rim, smooth between.
+  // lens centre plus its offset over m(r) times the picture's zoom: the
+  // Zoom (st.mag) out to the Flat center's share of the radius, then
+  // 1 + (mag - 1)(1 - t^2)^2 easing to 1x at the rim, smooth throughout.
   // Each size is a mipmapped texture, sampled trilinear on the GPU.
   const lens = $('lens'), gl = lens.getContext('webgl2', { premultipliedAlpha: false });
   const prog = (() => {
@@ -70,14 +81,16 @@ canvas.drag { cursor: grabbing; }
     in vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
     const fs = `#version 300 es
     precision highp float;
-    uniform sampler2D tex; uniform vec2 center; uniform float radius, zoom, mag; uniform vec2 ipoint, canvasSize;
+    uniform sampler2D tex; uniform vec2 center; uniform float radius, zoom, mag, flat; uniform vec2 ipoint, canvasSize;
     out vec4 o;
     void main() {
       vec2 px = vec2(gl_FragCoord.x, canvasSize.y - gl_FragCoord.y);
       vec2 d = px - center;
       float r = length(d) / radius;
       if (r > 1.0) discard;
-      float k = 1.0 - r * r;
+      // full zoom out to the flat share of the radius, then easing to 1x
+      float t = clamp((r - flat) / max(1.0 - flat, 0.001), 0.0, 1.0);
+      float k = 1.0 - t * t;
       float m = 1.0 + (mag - 1.0) * k * k;
       vec2 uv = ipoint + d / (zoom * m);
       vec3 c = (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec3(0.0) : texture(tex, uv).rgb;
@@ -119,7 +132,8 @@ canvas.drag { cursor: grabbing; }
     gl.uniform2f(U('center'), lx, ly);
     gl.uniform1f(U('radius'), R);
     gl.uniform1f(U('zoom'), st.zoom);
-    gl.uniform1f(U('mag'), LOUPE);
+    gl.uniform1f(U('mag'), st.mag);
+    gl.uniform1f(U('flat'), st.flat);
     gl.uniform2f(U('ipoint'), st.cx + (lx - c.width / 2) / st.zoom, st.cy + (ly - c.height / 2) / st.zoom);
     gl.uniform2f(U('canvasSize'), lens.width, lens.height);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -149,7 +163,7 @@ canvas.drag { cursor: grabbing; }
       const R = 130 * dpr, off = R * 0.85;
       const lx = mouse.x - off, ly = mouse.y - off;
       const ix = st.cx + (lx - c.width / 2) / st.zoom, iy = st.cy + (ly - c.height / 2) / st.zoom;
-      const z = st.zoom * LOUPE;
+      const z = st.zoom * st.mag;
       g.save();
       g.beginPath(); g.arc(lx, ly, R, 0, Math.PI * 2); g.clip();
       g.imageSmoothingQuality = z > st.size ? 'low' : 'high';
@@ -165,8 +179,11 @@ canvas.drag { cursor: grabbing; }
       st.size + ' px · ' + (per >= 1 ? 'each image pixel ' + per.toFixed(1) + ' screen px' : per.toFixed(2) + ' image px per screen px') + (im.complete && im.naturalWidth ? '' : ' · loading…');
     [...$('sizes').children].forEach(b => b.classList.toggle('on', +b.dataset.s === st.size));
     [...$('loupes').children].forEach(b => b.classList.toggle('on', b.dataset.l === st.loupe));
+    $('mag').value = Math.round(st.mag * 10); $('magOut').textContent = st.mag.toFixed(1) + '×';
+    $('flat').value = Math.round(st.flat * 100); $('flatOut').textContent = Math.round(st.flat * 100) + '%';
+    $('flatRow').style.display = st.loupe === 'bubble' ? '' : 'none';
   }
-  for (const [l, t] of [['off', 'Off'], ['flat', '5×'], ['bubble', 'Bubble']]) {
+  for (const [l, t] of [['off', 'Off'], ['flat', 'Flat'], ['bubble', 'Bubble']]) {
     const b = document.createElement('button');
     b.textContent = t; b.dataset.l = l;
     b.onclick = () => { st.loupe = l; save(); draw(); };
@@ -178,6 +195,8 @@ canvas.drag { cursor: grabbing; }
     b.onclick = () => { st.size = s; save(); draw(); };
     $('sizes').appendChild(b);
   }
+  $('mag').oninput = () => { st.mag = +$('mag').value / 10; save(); draw(); };
+  $('flat').oninput = () => { st.flat = +$('flat').value / 100; save(); draw(); };
   addEventListener('keydown', e => {
     // 1 2 3 in order (4 too, for 4096)
     const s = { 1: 1024, 2: 2048, 3: 4096, 4: 4096 }[e.key];
