@@ -193,7 +193,11 @@ input[type=range] { width: 100%; }
   // The bridge's default cut, Robert's choppy month, by the UTC of its first
   // dropped frame and of the first frame after it (not frame numbers, so it
   // holds if the record is re-cut).
-  const BRIDGE_FROM = '2026-07-04T16:59:18Z', BRIDGE_TO = '2026-08-03T01:38:54Z';
+  // the bridge's default: from gap 17 (Jul 1, the 9.2 h hole; its 519-frame
+  // stretch is cut with the rest, Robert's call 2026-10-13) to Aug 3
+  const BRIDGE_FROM = '2026-07-02T06:09:18Z', BRIDGE_TO = '2026-08-03T01:38:54Z';
+  // a saved bridge still at the old start (Jul 4, inside gap 17's stretch) moves too
+  const OLD_BRIDGE_FROM = '2026-07-04T16:59:18Z';
   const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true, dis: null };
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   if (!SPEEDS.includes(st.speed)) st.speed = 1;
@@ -215,6 +219,7 @@ input[type=range] { width: 100%; }
   const planN = () => Math.round(st.n * stretch());
   st.n = Math.max(0, Math.min(MAX_FADE, Math.round(+st.n || 0)));
   st.bridge = Object.assign({ on: false, from: BRIDGE_FROM, to: BRIDGE_TO }, st.bridge && typeof st.bridge === 'object' ? st.bridge : {});
+  if (st.bridge.from === OLD_BRIDGE_FROM) st.bridge.from = BRIDGE_FROM;
   const save = () => { try { localStorage.setItem('gapExplorer', JSON.stringify(st)); } catch (e) {} };
 
   // ---------- the record ----------
