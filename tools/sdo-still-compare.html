@@ -13,7 +13,8 @@
   sdo.gsfc.nasa.gov/assets/img/browse/<y>/<m>/<d>/<stamp>_<size>_<channel>.jpg).
     http://localhost:8000/tools/sdo-still-compare.html?f=20250317_140634&ch=0171
   Keys: 1 2 4 the size, wheel zoom at the cursor, drag to pan, double-click
-  to fit. Everything is remembered.
+  to fit, L the loupe (a circle up and left of the cursor showing what is
+  under it at 5x). Everything is remembered.
 -->
 <style>
 :root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; }
@@ -40,7 +41,7 @@ canvas.drag { cursor: grabbing; }
   const KEY = 'sdoStill:' + F + ':' + CH;
   // the view: which size, the zoom (screen px per image unit, the image
   // being 1 x 1) and the image point at the screen's centre
-  const st = { size: 2048, zoom: 0, cx: 0.5, cy: 0.5 };
+  const st = { size: 2048, zoom: 0, cx: 0.5, cy: 0.5, loupe: true };
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
   const imgs = {};
@@ -51,6 +52,8 @@ canvas.drag { cursor: grabbing; }
     imgs[s] = im;
   }
   const c = $('c'), g = c.getContext('2d');
+  const LOUPE = 5;
+  let mouse = null, drag = null;   // the cursor in canvas px; a pan in progress
   const fit = () => Math.min(innerWidth, innerHeight) * 0.96 * devicePixelRatio;
   function draw() {
     const dpr = devicePixelRatio;
@@ -63,6 +66,21 @@ canvas.drag { cursor: grabbing; }
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
       const x = c.width / 2 - st.cx * st.zoom, y = c.height / 2 - st.cy * st.zoom;
       g.drawImage(im, x, y, st.zoom, st.zoom);
+    }
+    // the loupe: what is under the cursor, at LOUPE x, in a circle up and
+    // to the left of it (never while dragging)
+    if (st.loupe && mouse && !drag && im.complete && im.naturalWidth) {
+      const R = 130 * dpr, off = R * 0.85;
+      const lx = mouse.x - off, ly = mouse.y - off;
+      const ix = st.cx + (mouse.x - c.width / 2) / st.zoom, iy = st.cy + (mouse.y - c.height / 2) / st.zoom;
+      const z = st.zoom * LOUPE;
+      g.save();
+      g.beginPath(); g.arc(lx, ly, R, 0, Math.PI * 2); g.clip();
+      g.fillStyle = '#000'; g.fillRect(lx - R, ly - R, 2 * R, 2 * R);
+      g.drawImage(im, lx - ix * z, ly - iy * z, z, z);
+      g.restore();
+      g.beginPath(); g.arc(lx, ly, R, 0, Math.PI * 2);
+      g.lineWidth = 1.5 * dpr; g.strokeStyle = 'rgba(242,193,78,.7)'; g.stroke();
     }
     // how many screen pixels each image pixel covers at this zoom
     const per = st.zoom / st.size;
@@ -79,6 +97,7 @@ canvas.drag { cursor: grabbing; }
   addEventListener('keydown', e => {
     const s = { 1: 1024, 2: 2048, 4: 4096 }[e.key];
     if (s) { st.size = s; save(); draw(); }
+    if (e.key === 'l' || e.key === 'L') { st.loupe = !st.loupe; save(); draw(); }
   });
   // wheel zoom about the cursor
   c.addEventListener('wheel', e => {
@@ -89,8 +108,10 @@ canvas.drag { cursor: grabbing; }
     st.cx = ix - (mx - c.width / 2) / st.zoom; st.cy = iy - (my - c.height / 2) / st.zoom;
     save(); draw();
   }, { passive: false });
+  // the loupe follows the cursor
+  c.addEventListener('mousemove', e => { mouse = { x: e.clientX * devicePixelRatio, y: e.clientY * devicePixelRatio }; if (!drag) draw(); });
+  c.addEventListener('mouseleave', () => { mouse = null; draw(); });
   // drag to pan
-  let drag = null;
   c.addEventListener('pointerdown', e => { c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, cx: st.cx, cy: st.cy }; c.classList.add('drag'); });
   c.addEventListener('pointermove', e => {
     if (!drag) return;
