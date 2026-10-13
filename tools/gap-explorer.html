@@ -136,17 +136,9 @@ input[type=range] { width: 100%; }
   <div class="seg" id="dismap" style="margin-top:4px" title="Blue: still the old footage · gold: already the new · white: blending now (a looping preview outside a fade)">
     <button data-m="0">Map on touch</button><button data-m="1">Show map</button>
   </div>
-  <label class="row" id="nRow">Length N <input type="range" id="n" min="0" max="180"><output id="nOut"></output></label>
-  <div class="cells" id="runtime"></div>
-
   <h2>Speed</h2>
   <div class="seg" id="speeds"></div>
   <label class="row" style="margin-top:4px">Speed <input type="range" id="speedSlider" min="-200" max="500" step="1"><output id="speedOut"></output></label>
-
-  <h2><span id="gapName">Gap</span> <span><button class="mini" id="prevGap">‹</button> <button class="mini" id="nextGap">›</button></span></h2>
-  <div class="cells" id="gapCells"></div>
-  <label class="row" id="pinRow">Override <input type="range" id="pin" min="0" max="180"><output id="pinOut"></output></label>
-  <div style="display:flex;gap:4px"><button class="mini" id="pinReset">Use the policy</button><button class="mini" id="pinClear">Clear all overrides</button></div>
 
   <h2>Bridge</h2>
   <div class="seg" id="islands" style="margin-bottom:6px">
@@ -163,6 +155,16 @@ input[type=range] { width: 100%; }
     <button data-b="1" title="A cut: the frames between are left out of the program and one dissolve crosses them. Drag its edges by the grips above the timeline (they snap to gaps).">Bridge the choppy month</button>
   </div>
   <div class="cells" id="bridgeCells" style="margin-top:4px"></div>
+
+  <label class="row" id="nRow">Length N <input type="range" id="n" min="0" max="180"><output id="nOut"></output></label>
+  <div class="cells" id="runtime"></div>
+
+
+  <h2><span id="gapName">Gap</span> <span><button class="mini" id="prevGap">‹</button> <button class="mini" id="nextGap">›</button></span></h2>
+  <div class="cells" id="gapCells"></div>
+  <label class="row" id="pinRow">Override <input type="range" id="pin" min="0" max="180"><output id="pinOut"></output></label>
+  <div style="display:flex;gap:4px"><button class="mini" id="pinReset">Use the policy</button><button class="mini" id="pinClear">Clear all overrides</button></div>
+
   <div class="hint">A cut: these frames are left out of the program. Drag its edges by the grips above the timeline.</div>
 
   <div class="keys" style="margin-top:12px"><b>space</b> play/pause · <b>, .</b> frame step · <b>[ ]</b> gap before/after (and jump there) · <b>1 2 4 8 6 3</b> speed (6 = 16×, 3 = 32×), <b>- =</b> slower/faster · <b>v</b> Sun/raw · wheel on the timeline zooms</div>
