@@ -52,7 +52,8 @@ h2 { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: upper
 .mini { height: 21px; font-size: 11px; padding: 0 7px; text-transform: none; letter-spacing: 0; }
 .mini:disabled { opacity: .35; cursor: default; }
 label.row { display: grid; grid-template-columns: 82px 1fr 52px; align-items: center; gap: 8px; margin: 5px 0; color: var(--dim); }
-label.row output { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+label.row output { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+label.row output small { color: var(--dim); font-size: 10px; }
 label.row.off { opacity: .35; }
 input[type=range] { width: 100%; }
 .hint { color: var(--dim); font-size: 11px; margin-top: 4px; }
@@ -1136,7 +1137,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   segBtns('islands', 'i').forEach(([b, v]) => { b.onclick = () => { st.islands = v === '1'; save(); replan(); }; });
   segBtns('autos', 'a').forEach(([b, v]) => { b.onclick = () => { st.auto = v === '1'; save(); replan(); }; });
   // Keep: 0 on the slider means "twice the Longest fade" (shown as auto)
-  function showKeep() { $('keep').value = st.keep > 0 ? st.keep : 0; $('keepOut').textContent = st.keep > 0 ? st.keep : keepMin() + ' auto'; }
+  // one line: the frames, and a small dim "auto" while it follows the Longest fade
+  function showKeep() { $('keep').value = st.keep > 0 ? st.keep : 0; $('keepOut').innerHTML = st.keep > 0 ? st.keep : keepMin() + '<small> auto</small>'; }
   $('keep').oninput = () => { st.keep = +$('keep').value; save(); showKeep(); if (st.auto) replan(); };
   showKeep();
   // The map: on while a Living control is touched and 1.5 s after (fading
