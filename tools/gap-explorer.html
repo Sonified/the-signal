@@ -123,7 +123,7 @@ input[type=range] { width: 100%; }
 
   <h2>Bridge</h2>
   <div class="seg" id="islands" style="margin-bottom:6px">
-    <button data-i="1" title="Gaps 3-6, 7-9 and 12-13 fade as one: runs of under 30 frames between gaps, and the spans from gap 3 to 6 and 12 to 13, are left out">Merge 3–6, 7–9, 12–13</button>
+    <button data-i="1" title="Gaps 1-2, 3-6, 7-9 and 12-13 fade as one: runs of under 30 frames between gaps, and the spans from gap 1 to 2, 3 to 6 and 12 to 13, are left out">Merge 1–2, 3–6, 7–9, 12–13</button>
     <button data-i="0">Keep islands</button>
   </div>
   <div class="seg" id="bridges">
@@ -144,8 +144,9 @@ input[type=range] { width: 100%; }
 (async () => {
   const $ = id => document.getElementById(id);
   const FPS = 30;
-  // The longest fade any policy may give, frames: 180 approved, and 90,
-  // 270 and 360 to try (Longest fade, in the Fades panel; remembered)
+  // The longest fade any policy may give, frames: 360 (Robert's pick,
+  // 2026-10-13, Dynamic), and 90, 180 and 270 to compare (Longest fade, in
+  // the Fades panel; remembered)
   const CAPS = [90, 180, 270, 360];
   let MAX_FADE = 180;
   // A run of footage shorter than this between two gaps is an island (Apr
@@ -155,10 +156,11 @@ input[type=range] { width: 100%; }
   const ISLAND = 30;
   // And spans Robert merged by name: every piece starting inside [from, to)
   // (source frames) is left out, so the gap before it and the gap after it
-  // fade as one. Gaps 3 to 6 (Apr 22-24): two 1-frame islands and the
-  // 213-frame run between them; gaps 12 and 13 (May 25-27): the 199-frame
-  // run between them. Same switch as the islands.
-  const SPANS = [[4985, 5200], [9564, 9763]];
+  // fade as one: gaps 1 and 2 (Apr 15-17, the 237-frame run between);
+  // gaps 3 to 6 (Apr 22-24: two 1-frame islands and the 213-frame run
+  // between them); gaps 12 and 13 (May 25-27, the 199-frame run between).
+  // Same switch as the islands.
+  const SPANS = [[3999, 4236], [4985, 5200], [9564, 9763]];
   const GAP_MS = 45 * 60 * 1000; // a gap: two frames further apart than this
   // The keyed cut and its 4x rung (frame k of the rung is frame 4k of the
   // 1x file). 4x and 8x read the rung at playbackRate 1 and 2: 240 fps of
@@ -179,11 +181,11 @@ input[type=range] { width: 100%; }
   // dropped frame and of the first frame after it (not frame numbers, so it
   // holds if the record is re-cut).
   const BRIDGE_FROM = '2026-07-04T16:59:18Z', BRIDGE_TO = '2026-08-03T01:38:54Z';
-  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 180, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true };
+  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true };
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   if (!SPEEDS.includes(st.speed)) st.speed = 1;
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
-  MAX_FADE = CAPS.includes(st.cap) ? st.cap : 180;
+  MAX_FADE = CAPS.includes(st.cap) ? st.cap : 360;
   st.n = Math.max(0, Math.min(MAX_FADE, Math.round(+st.n || 0)));
   st.bridge = Object.assign({ on: false, from: BRIDGE_FROM, to: BRIDGE_TO }, st.bridge && typeof st.bridge === 'object' ? st.bridge : {});
   const save = () => { try { localStorage.setItem('gapExplorer', JSON.stringify(st)); } catch (e) {} };
