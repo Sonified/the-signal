@@ -147,6 +147,11 @@ input[type=range] { width: 100%; }
     <button data-i="1" title="Gaps 1-2, 3-6, 7-9 and 12-13 fade as one: runs of under 30 frames between gaps, and the spans from gap 1 to 2, 3 to 6 and 12 to 13, are left out">Merge 1–2, 3–6, 7–9, 12–13</button>
     <button data-i="0">Keep islands</button>
   </div>
+  <div class="seg" id="autos" style="margin-bottom:4px">
+    <button data-a="1" title="Leave out every inner stretch shorter than Keep, so its gaps fade as one: only stretches that can feed a full fade on both ends stay">Auto bridges</button>
+    <button data-a="0">No auto bridges</button>
+  </div>
+  <label class="row">Keep ≥ <input type="range" id="keep" min="0" max="3000" step="30"><output id="keepOut"></output></label>
   <div class="seg" id="bridges">
     <button data-b="0">Off</button>
     <button data-b="1" title="A cut: the frames between are left out of the program and one dissolve crosses them. Drag its edges by the grips above the timeline (they snap to gaps).">Bridge the choppy month</button>
@@ -248,6 +253,14 @@ input[type=range] { width: 100%; }
   st.bridge = Object.assign({ on: false, from: BRIDGE_FROM, to: BRIDGE_TO }, st.bridge && typeof st.bridge === 'object' ? st.bridge : {});
   if (st.bridge.from === OLD_BRIDGE_FROM) st.bridge.from = BRIDGE_FROM;
   const save = () => { try { localStorage.setItem('gapExplorer', JSON.stringify(st)); } catch (e) {} };
+  // Auto bridges (Robert, 2026-10-13: "create bridges intelligently"): an
+  // inner stretch shorter than keepMin is left out, and the gaps around it
+  // fade as one, so only stretches that can feed a full fade on both ends
+  // stay. keepMin follows the Longest fade (twice it) unless the Keep slider
+  // has been set; his own picks in the two-year record (kept 868 and up,
+  // bridged 524 and under) fall either side of the 720 it gives at 360.
+  if (typeof st.auto !== 'boolean') st.auto = false;
+  const keepMin = () => (st.keep > 0 ? st.keep : 2 * MAX_FADE);
   // The Data menu: each record keeps its own place (position, zoom, the gap
   // picked); switching saves this one's, restores the other's and reloads.
   st.record = REC;
@@ -443,12 +456,13 @@ input[type=range] { width: 100%; }
     // named for the first; merged
     // maps every record gap swallowed this way to the junction it joined.
     const merged = {};
-    if (st.islands) {
+    if (st.islands || st.auto) {
       const P2 = [pst[0]], L2 = [len[0]], R2 = [];
       let carry = null;
       for (let j = 1; j < pst.length; j++) {
         const into = carry !== null ? carry : rec[j - 1];
-        if (j < pst.length - 1 && (len[j] < ISLAND || SPANS.some(([a, b]) => pst[j] >= a && pst[j] < b))) {
+        const drop = (st.islands && (len[j] < ISLAND || SPANS.some(([a, b]) => pst[j] >= a && pst[j] < b))) || (st.auto && len[j] < keepMin());
+        if (j < pst.length - 1 && drop) {
           if (carry === null) carry = rec[j - 1];
           if (rec[j] >= 0) merged[rec[j]] = carry;
           continue;
@@ -1041,6 +1055,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     segBtns('policies', 'p').forEach(([b, v]) => b.classList.toggle('on', v === st.policy));
     segBtns('bridges', 'b').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === bridgeOn()));
     segBtns('islands', 'i').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.islands));
+    segBtns('autos', 'a').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.auto));
+    showKeep();
     segBtns('caps', 'c').forEach(([b, v]) => b.classList.toggle('on', +v === MAX_FADE));
     segBtns('dison', 'd').forEach(([b, v]) => b.classList.toggle('on', v === (st.dis.on ? (st.dis.equal ? '2' : '1') : '0')));
     segBtns('disrot', 'r').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.rot));
@@ -1055,6 +1071,11 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   segBtns('grades', 'g').forEach(([b, v]) => { b.onclick = () => { st.grade = v === '1'; save(); markAll(); }; });
   segBtns('policies', 'p').forEach(([b, v]) => { b.onclick = () => { st.policy = v; save(); replan(); }; });
   segBtns('islands', 'i').forEach(([b, v]) => { b.onclick = () => { st.islands = v === '1'; save(); replan(); }; });
+  segBtns('autos', 'a').forEach(([b, v]) => { b.onclick = () => { st.auto = v === '1'; save(); replan(); }; });
+  // Keep: 0 on the slider means "twice the Longest fade" (shown as auto)
+  function showKeep() { $('keep').value = st.keep > 0 ? st.keep : 0; $('keepOut').textContent = st.keep > 0 ? st.keep : keepMin() + ' auto'; }
+  $('keep').oninput = () => { st.keep = +$('keep').value; save(); showKeep(); if (st.auto) replan(); };
+  showKeep();
   // The map: on while a Living control is touched and 1.5 s after (fading
   // over the last half second), or always with Show map
   let mapUntil = 0;
