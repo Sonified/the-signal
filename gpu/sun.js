@@ -14,11 +14,8 @@
 // fresh in update() and its bind group made with it; render() submits in the
 // same task.
 //
-// The loop runs over the first four solar rotations only, not the whole
-// file: LOOP_END_S stands in for the file's end. July's eclipse season drops
-// frames daily, so the file after early July is full of jumps (39 of its 51
-// gaps over 2 h fall after this edge), and four whole rotations bring the
-// sun round to the same face, so the wrap lands on matching geometry.
+// The loop runs over the whole program (LOOP_END_S is Infinity, so the
+// file's end is the edge): its gaps are Robert's crossfades, baked in.
 //
 // The loop is the site's crossfade over the edge, not video.loop (whose seek
 // to 0 on a streamed file finds nothing buffered there and drops to black):
@@ -100,10 +97,9 @@
 // seek; the ghost starts over, parked at 0.
 //
 // The quality ladder (TIERS, Robert's names, documents/sun-quality-ladder.md):
-// SD (720x480), HD (1080x720), HD+ (1620x1080), High (the recipe cut,
-// 2764x1842) and Max (the original, 3072x2048, only with Max quality on,
-// S.sunHiRes); Min (540x360) joins below SD with the re-rendered files. A
-// phone climbs no higher than High (its screen shows no more), and a
+// Min (540x360), SD (720x480), HD (1080x720), HD+ (1620x1080), High
+// (2764x1842) and Max (3072x2048, only with Max quality on, S.sunHiRes). A
+// phone ranges Min to High (its screen shows no more), and a
 // computer drops no lower than SD (Robert's call: below it the big screen
 // waits for frames rather than shows a soft Sun). From the cloud, the
 // first load times a real ranged fetch (PROBE_BYTES, cut off at
@@ -135,28 +131,28 @@ import { setCutoffHz, cutoffHz, setReverbMix } from '../core/sun-hum.js';
 
 const CLOUD_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
 // Served from this machine (tools/serve.mjs on localhost), the Sun plays its
-// own copies in sun-video/ (git-ignored, downloaded from the cloud), so a
-// show never waits on the network; a file missing there falls back to the
-// cloud once, before the HEVC to x264 swap is spent.
-const LOCAL_BASE = '/sun-video/';
+// own copies in sun-video/program/ (git-ignored, where the program is
+// rendered), so a show never waits on the network; a file missing there
+// falls back to the cloud once, before the HEVC to x264 swap is spent.
+const LOCAL_BASE = '/sun-video/program/';
 const ON_LOCALHOST = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 let VIDEO_BASE = ON_LOCALHOST ? LOCAL_BASE : CLOUD_BASE;
-// The High stem (the recipe cut) and the Max one, the site's original
-// snapshot; every tier carries a plain x264 file and an _hevc one.
-const STEM_HIGH = 'sun_mosaic_20260915_23289r';
-const STEM_MAX = 'sun_mosaic_20260904_23284';
-// The ladder, low to high: the three below High are scaled from it
-// (720x480, 1080x720 and 1620x1080, CRF 26 HEVC / 25 x264, 1 s keyframes, full
-// range bt470bg, as the site's own encodes). bar: the link (Mbps) to choose
-// it; ~: its HEVC bitrate.
+// The program: Robert's two years with his crossfades baked in, rendered
+// from the caption-keyed day masters, 30,745 frames. Min, SD and HD use the
+// gr recipe, HD+, High and Max +c28. Every tier carries a plain x264 file
+// and an _hevc one.
+const STEM_PROGRAM = 'sun_program_20261013_30745';
+// The ladder, low to high. bar: the link (Mbps) to choose it. The bars are
+// PROVISIONAL until the new files' measured bitrates are in.
 const TIERS = [
-  { name: 'SD', stem: STEM_HIGH + '_480', bar: 0 },          // ~0.46 Mbps
-  { name: 'HD', stem: STEM_HIGH + '_720', bar: 2.5 },        // ~0.94
-  { name: 'HD+', stem: STEM_HIGH + '_1080', bar: 5 },        // ~1.7
-  { name: 'High', stem: STEM_HIGH, bar: 10 },                // ~4.1
-  { name: 'Max', stem: STEM_MAX, bar: 20 }                   // ~8.0
+  { name: 'Min', stem: STEM_PROGRAM + '_360', bar: 0 },      // 540x360
+  { name: 'SD', stem: STEM_PROGRAM + '_480', bar: 1 },       // 720x480
+  { name: 'HD', stem: STEM_PROGRAM + '_720', bar: 2.5 },     // 1080x720
+  { name: 'HD+', stem: STEM_PROGRAM + '_1080', bar: 5 },     // 1620x1080
+  { name: 'High', stem: STEM_PROGRAM + '_1842', bar: 10 },   // 2764x1842
+  { name: 'Max', stem: STEM_PROGRAM + '_2048', bar: 20 }     // 3072x2048
 ];
-const MAX_TIER = TIERS.length - 1;
+const MAX_TIER = TIERS.findIndex(t => t.name === 'Max');
 const urlX264 = stem => VIDEO_BASE + stem + '.mp4';
 const urlHevc = stem => VIDEO_BASE + stem + '_hevc.mp4';
 // The link probe (see the top of this file): the bytes timed, the bar in
@@ -209,12 +205,9 @@ const XFADE_S = 0.5;
 const BUFFER_MARGIN_S = 1.5;
 const GHOST_WAIT_S = 6;
 const WRAP_RETRY_S = 4;
-// The loop's end in video seconds: frame 15255 of the 30 fps file, four
-// Carrington rotations (4 x 27.2753 days) after its first frame (2026-03-18
-// 15:38 to 2026-07-05 18:08 UTC, from meditatewiththesun's
-// mosaic_times.json). Both stems carry the same frames up to frame 16424,
-// so the one edge serves both.
-const LOOP_END_S = 15255 / 30;
+// The loop's end in video seconds: none short of the file's end, the whole
+// program plays (the old cut's four-rotation edge, frame 15255, is retired).
+const LOOP_END_S = Infinity;
 // A playing main whose clock has stood this many wall seconds, with at least
 // STALL_AHEAD_S of buffer past it (less is the network, the wrap's to
 // handle), is stalled.
@@ -336,7 +329,7 @@ export function createSun(device, format) {
   // layer's last frame; and when a network error's reload is due (0 none).
   const starveWatch = { el: null, t: -1, at: 0 };
   let tier = -1, upTo = -1, wrapUp = -1, probing = false, again = false, hiWas = null, seenAt = 0, netRetryAt = 0;
-  // A phone (a coarse pointer on a small screen) tops out at High; a
+  // A phone (a coarse pointer on a small screen) ranges Min to High; a
   // computer's floor is SD (see the top of this file).
   const PHONE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches &&
     typeof screen !== 'undefined' && Math.min(screen.width, screen.height) < 600;
@@ -354,7 +347,7 @@ export function createSun(device, format) {
     let got = 0, t1 = -1;
     try {
       // no-store: a cached range would read as infinitely fast
-      const r = await fetch(urlHevc(STEM_HIGH), { headers: { Range: 'bytes=0-' + (PROBE_BYTES - 1) }, cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+      const r = await fetch(urlHevc(TIERS[T_HIGH].stem), { headers: { Range: 'bytes=0-' + (PROBE_BYTES - 1) }, cache: 'no-store', signal: ctl ? ctl.signal : undefined });
       if (!r.ok) throw Error('HTTP ' + r.status);
       // the clock starts at the reply: the connection's setup and first
       // round trip are latency, not speed, and timed in they read a 50 Mbps
