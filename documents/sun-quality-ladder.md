@@ -71,6 +71,7 @@ The code today has the new names and the device range (phones cap at High, compu
 ## Tools
 
 - `tools/sun-quality.html` (http://localhost:8000/tools/sun-quality.html): the comparison page. It has Delivery and Master test sets, Computer and simulated Phone views (use Actual pixels at normal laptop distance to judge a phone), per-layer grade sliders with presets and hearts, favorites, Copy favorites, and Download settings. The 10-second test clips live in `sun-video/test/` (git-ignored).
+- `tools/gap-explorer.html` (http://localhost:8000/tools/gap-explorer.html): the 58 data gaps of the keyed cut (`sun-video/keyed/`) on a whole-record timeline, and the program played live with moving crossfades under Hard cut, Fixed N or Dynamic (the handoff's allocator), per-gap overrides and the optional bridge cut over the choppy month; prints the gap list and Dynamic allocation to the console. `tools/gap-explorer-check.mjs` looks at it in headless Chrome.
 - `tools/sun-encode.sh`: one encode, per the recipes above.
 - `tools/sun-master-tests.sh`: rebuilds the master week (`sun-video/test/master_week.mp4`) and every test clip; `pulse` measures the keyframe pulse. The one-off trial encodes and measurements made along the way are in `sun-video/test/trials/`.
 - meditatewiththesun's headless checks of the ladder: `~/GitHub/solarmeditation/tools/ladder_smoke/`.
