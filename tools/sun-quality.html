@@ -133,7 +133,7 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   <label class="row">Crossfade <input type="range" id="xfade" min="0" max="100" value="20"><output id="xfadeOut"></output></label>
   <div class="seg"><button id="resetLayers">Reset all</button></div>
   <div id="layerRows"></div>
-  <button id="download">Download settings</button>
+  <button id="download">Copy settings</button>
 </div>
 
 <script>
@@ -409,8 +409,8 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
   function setBypass(i, on) { if (on !== bypass(i)) pick(i, on ? -1 : last[i]); }
   // Reset all: the picked preset of every layer back to untouched
   $('resetLayers').onclick = () => { adj.set(DEF); ctlOff.fill(0); saveAdj(); buildLayers(); $('atmo').oninput(); };
-  // every layer's presets, which is picked, and the view they were set in, as a JSON file
-  $('download').onclick = () => {
+  // every layer's presets, which is picked, and the view they were set in, as JSON on the clipboard
+  $('download').onclick = async () => {
     const out = { savedAt: new Date().toISOString(), set: SET, tier: TIERS[st.tier].name, atmosphere: +$('atmo').value / 100,
       favorites: Object.values(st[favKey] || {}).filter(n => typeof n === 'string'), layers: {} };
     LAYERS.forEach((L, i) => {
@@ -418,11 +418,10 @@ select { width: 100%; height: 32px; background: #1b2030; color: var(--ink); bord
       presets[i].forEach((p, n) => { ps[n + 1] = { brightness: p.adj[0], contrast: p.adj[1], saturation: p.adj[2], elevate: p.adj[3], off: ADJ.filter((_, k) => p.off[k]).map(a => a[0].toLowerCase()), hearted: !!p.heart }; });
       out.layers[L.name] = { picked: sel[i] < 0 ? 'off' : sel[i] + 1, hearted: presets[i].map((p, n) => p.heart ? n + 1 : 0).filter(Boolean), presets: ps };
     });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
-    a.download = 'sun-layer-settings.json';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    // copied, not downloaded (Robert pastes it straight into a chat)
+    const b = $('download');
+    try { await navigator.clipboard.writeText(JSON.stringify(out, null, 2)); b.textContent = 'Copied'; } catch (e) { b.textContent = 'Copy failed'; }
+    setTimeout(() => { b.textContent = 'Copy settings'; }, 1500);
   };
 
   // the Atmosphere sweep, gpu/sun.js: the five channels at i/4 along it
