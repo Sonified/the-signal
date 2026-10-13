@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gap Explorer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>">
 <!--
   The Sun record's data gaps, and the crossfades that could replace their
   hard cuts, played live before anything is rendered.
@@ -118,6 +119,10 @@ input[type=range] { width: 100%; }
   <div style="display:flex;gap:4px"><button class="mini" id="pinReset">Use the policy</button><button class="mini" id="pinClear">Clear all overrides</button></div>
 
   <h2>Bridge</h2>
+  <div class="seg" id="islands" style="margin-bottom:6px">
+    <button data-i="1" title="Gaps 3-6 and 7-9 fade as one: runs of under 30 frames between gaps, and the span from gap 3 to gap 6, are left out">Merge 3–6, 7–9</button>
+    <button data-i="0">Keep islands</button>
+  </div>
   <div class="seg" id="bridges">
     <button data-b="0">Off</button>
     <button data-b="1" title="A cut: the frames between are left out of the program and one dissolve crosses them. Drag its edges by the grips above the timeline (they snap to gaps).">Bridge the choppy month</button>
@@ -137,6 +142,16 @@ input[type=range] { width: 100%; }
   const $ = id => document.getElementById(id);
   const FPS = 30;
   const MAX_FADE = 180;          // the approved dissolve, frames
+  // A run of footage shorter than this between two gaps is an island (Apr
+  // 22, 24 and 29: 1 to 3 frames): with Merge islands on (the default,
+  // Robert's call 2026-10-12) it is left out and its two gaps become one
+  // junction with a full fade, as gaps 7, 8 and 9 become one.
+  const ISLAND = 30;
+  // And spans Robert merged by name: every piece starting inside [from, to)
+  // (source frames) is left out, so the gap before it and the gap after it
+  // fade as one. Gaps 3 to 6 (Apr 22-24): two 1-frame islands and the
+  // 213-frame run between them. Same switch as the islands.
+  const SPANS = [[4985, 5200]];
   const GAP_MS = 45 * 60 * 1000; // a gap: two frames further apart than this
   // The keyed cut and its 4x rung (frame k of the rung is frame 4k of the
   // 1x file). 4x and 8x read the rung at playbackRate 1 and 2: 240 fps of
@@ -157,7 +172,7 @@ input[type=range] { width: 100%; }
   // dropped frame and of the first frame after it (not frame numbers, so it
   // holds if the record is re-cut).
   const BRIDGE_FROM = '2026-07-04T16:59:18Z', BRIDGE_TO = '2026-08-03T01:38:54Z';
-  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null };
+  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true };
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   if (!SPEEDS.includes(st.speed)) st.speed = 1;
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
@@ -324,20 +339,41 @@ input[type=range] { width: 100%; }
   // ends in starting at cutTo. rec[q] is the record gap junction q stands
   // for, -1 for the bridge.
   function piecesFor(bridge) {
-    const pst = [], len = [], rec = [];
+    let pst = [], len = [], rec = [];
     const add = (s, n, r) => { if (pst.length) rec.push(r); pst.push(s); len.push(n); };
-    if (!bridge) { for (let j = 0; j < S; j++) add(segStart[j], segLen[j], j - 1); return { pst, len, rec }; }
-    const ja = segOf(cutFrom - 1), jb = segOf(cutTo);
-    for (let j = 0; j < ja; j++) add(segStart[j], segLen[j], j - 1);
-    add(segStart[ja], cutFrom - segStart[ja], ja - 1);
-    add(cutTo, segStart[jb] + segLen[jb] - cutTo, -1);
-    for (let j = jb + 1; j < S; j++) add(segStart[j], segLen[j], j - 1);
-    return { pst, len, rec };
+    if (!bridge) { for (let j = 0; j < S; j++) add(segStart[j], segLen[j], j - 1); }
+    else {
+      const ja = segOf(cutFrom - 1), jb = segOf(cutTo);
+      for (let j = 0; j < ja; j++) add(segStart[j], segLen[j], j - 1);
+      add(segStart[ja], cutFrom - segStart[ja], ja - 1);
+      add(cutTo, segStart[jb] + segLen[jb] - cutTo, -1);
+      for (let j = jb + 1; j < S; j++) add(segStart[j], segLen[j], j - 1);
+    }
+    // Merge islands: an inner piece under ISLAND frames, or inside one of
+    // the SPANS, is left out, and the junctions either side of it become one,
+    // named for the first; merged
+    // maps every record gap swallowed this way to the junction it joined.
+    const merged = {};
+    if (st.islands) {
+      const P2 = [pst[0]], L2 = [len[0]], R2 = [];
+      let carry = null;
+      for (let j = 1; j < pst.length; j++) {
+        const into = carry !== null ? carry : rec[j - 1];
+        if (j < pst.length - 1 && (len[j] < ISLAND || SPANS.some(([a, b]) => pst[j] >= a && pst[j] < b))) {
+          if (carry === null) carry = rec[j - 1];
+          if (rec[j] >= 0) merged[rec[j]] = carry;
+          continue;
+        }
+        R2.push(into); carry = null; P2.push(pst[j]); L2.push(len[j]);
+      }
+      pst = P2; len = L2; rec = R2;
+    }
+    return { pst, len, rec, merged };
   }
   // Piece j starts at program frame P[j]; each fade overlaps the end of a
   // piece with the start of the next, so P[j + 1] = P[j] + len[j] - f[j].
   function computePlan(bridge) {
-    const { pst, len, rec } = piecesFor(bridge);
+    const { pst, len, rec, merged } = piecesFor(bridge);
     // Hard cut is today's file: no overrides, but the bridge keeps its
     // dissolve (180 unless set), since crossing a month needs one.
     const raw = rec.map(r => (r < 0 ? (pins.bridge >= 0 ? pins.bridge : MAX_FADE) : st.policy === 'hard' ? -1 : pins[keyOf(r)] >= 0 ? pins[keyOf(r)] : -1));
@@ -348,7 +384,7 @@ input[type=range] { width: 100%; }
     let over = 0;
     for (let j = 1; j < pst.length; j++) { P[j] = P[j - 1] + len[j - 1] - f[j - 1]; over += f[j - 1]; }
     const kept = len.reduce((a, b) => a + b, 0);
-    return { pst, len, end, rec, f, P, pin, over, total: kept - over, dropped: NF - kept, J: rec.length };
+    return { pst, len, end, rec, merged, f, P, pin, over, total: kept - over, dropped: NF - kept, J: rec.length };
   }
   let plan = null, altPlan = null;
   function makePlan() { plan = computePlan(bridgeOn()); altPlan = computePlan(!bridgeOn()); }
@@ -391,7 +427,16 @@ input[type=range] { width: 100%; }
   const clock = s => { const m = Math.floor(s / 60); return m + ':' + (s - m * 60).toFixed(1).padStart(4, '0'); };
   const utc = i => times[Math.max(0, Math.min(NF - 1, i))].replace('T', ' ').replace('Z', '');
   const hm = i => utc(i).slice(0, 16);
-  const junctionName = q => (plan.rec[q] >= 0 ? 'Gap ' + (plan.rec[q] + 1) : 'Bridge');
+  // the junction a record gap is part of (itself, or the one it merged into)
+  const qOfGap = g => { const q = plan.rec.indexOf(g); if (q >= 0) return q; const m = plan.merged[g]; return m === undefined ? -1 : plan.rec.indexOf(m); };
+  // 'Gap 7', or 'Gaps 7-9' where islands merged gaps into it
+  function junctionName(q) {
+    const r = plan.rec[q];
+    if (r < 0) return 'Bridge';
+    let last = r;
+    for (const g in plan.merged) if (plan.merged[g] === r) last = Math.max(last, +g);
+    return last > r ? 'Gaps ' + (r + 1) + '–' + (last + 1) : 'Gap ' + (r + 1);
+  }
 
   // ---------- the console report ----------
   // Every gap, its neighbors, the most it could have and Dynamic's
@@ -768,6 +813,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     segBtns('grades', 'g').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === st.grade));
     segBtns('policies', 'p').forEach(([b, v]) => b.classList.toggle('on', v === st.policy));
     segBtns('bridges', 'b').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === bridgeOn()));
+    segBtns('islands', 'i').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.islands));
     [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', SPEEDS[i] === st.speed));
     $('nRow').classList.toggle('off', st.policy !== 'fixed');
     $('atmoRow').classList.toggle('off', st.view === 'raw');
@@ -776,6 +822,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   segBtns('views', 'v').forEach(([b, v]) => { b.onclick = () => { st.view = v; save(); markAll(); layoutStage(); }; });
   segBtns('grades', 'g').forEach(([b, v]) => { b.onclick = () => { st.grade = v === '1'; save(); markAll(); }; });
   segBtns('policies', 'p').forEach(([b, v]) => { b.onclick = () => { st.policy = v; save(); replan(); }; });
+  segBtns('islands', 'i').forEach(([b, v]) => { b.onclick = () => { st.islands = v === '1'; save(); replan(); }; });
   segBtns('bridges', 'b').forEach(([b, v]) => {
     b.onclick = () => {
       st.bridge.on = v === '1';
@@ -828,7 +875,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
       if (q >= 0) return q;
       st.sel = Math.max(0, segOf(cutFrom - 1));
     }
-    return Math.max(0, plan.rec.indexOf(st.sel));
+    return Math.max(0, qOfGap(st.sel));
   }
   function showGap() {
     const q = selQ(), r = plan.rec[q], key = pinKey(r);
@@ -1099,8 +1146,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   }
   function gapTip(g) {
     if (inCut(g)) return 'Gap ' + (g + 1) + ' of ' + G + '   ' + gapHours[g].toFixed(2) + ' h\ninside the cut: bridged over, not in the program';
-    const q = plan.rec.indexOf(g), head = segStart[g + 1];
-    return 'Gap ' + (g + 1) + ' of ' + G + '   ' + gapHours[g].toFixed(2) + ' h\n' +
+    const q = qOfGap(g), head = segStart[g + 1];
+    return 'Gap ' + (g + 1) + ' of ' + G + '   ' + gapHours[g].toFixed(2) + ' h' + (plan.rec[q] !== g ? '   (merged into ' + junctionName(q) + ')' : '') + '\n' +
       hm(head - 1) + ' → ' + hm(head).slice(11) + ' UTC\n' +
       'frames before ' + plan.len[q] + ' · after ' + plan.len[q + 1] + '\n' +
       'planned fade ' + plan.f[q] + (pins[keyOf(g)] >= 0 && st.policy !== 'hard' ? ' (set here)' : '') + ' · most ' + mostOf(plan.len, q);
