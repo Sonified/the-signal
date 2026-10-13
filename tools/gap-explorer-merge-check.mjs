@@ -6,7 +6,7 @@ const html = readFileSync(new URL('./gap-explorer.html', import.meta.url), 'utf8
 const times = JSON.parse(readFileSync(new URL('../sun-video/keyed/mosaic_times.json', import.meta.url), 'utf8'));
 const grab = (start, end) => { const a = html.indexOf(start), b = html.indexOf(end, a); return html.slice(a, b); };
 const src = [
-  "const MAX_FADE = 180; const ISLAND = 30; const SPANS = [[4985, 5200]]; const GAP_MS = 45 * 60 * 1000;",
+  "const MAX_FADE = 180; const ISLAND = 30; const SPANS = [[4985, 5200], [9564, 9763]]; const GAP_MS = 45 * 60 * 1000;",
   "const st = { islands: true, policy: 'dynamic' }; const pins = {}; const keyOf = () => 'x';",
   "const NF = times.length; const ms = Float64Array.from(times, t => Date.parse(t));",
   "const segStart = [0]; for (let i = 1; i < NF; i++) if (ms[i] - ms[i - 1] > GAP_MS) segStart.push(i); const S = segStart.length;",

@@ -120,7 +120,7 @@ input[type=range] { width: 100%; }
 
   <h2>Bridge</h2>
   <div class="seg" id="islands" style="margin-bottom:6px">
-    <button data-i="1" title="Gaps 3-6 and 7-9 fade as one: runs of under 30 frames between gaps, and the span from gap 3 to gap 6, are left out">Merge 3–6, 7–9</button>
+    <button data-i="1" title="Gaps 3-6, 7-9 and 12-13 fade as one: runs of under 30 frames between gaps, and the spans from gap 3 to 6 and 12 to 13, are left out">Merge 3–6, 7–9, 12–13</button>
     <button data-i="0">Keep islands</button>
   </div>
   <div class="seg" id="bridges">
@@ -150,8 +150,9 @@ input[type=range] { width: 100%; }
   // And spans Robert merged by name: every piece starting inside [from, to)
   // (source frames) is left out, so the gap before it and the gap after it
   // fade as one. Gaps 3 to 6 (Apr 22-24): two 1-frame islands and the
-  // 213-frame run between them. Same switch as the islands.
-  const SPANS = [[4985, 5200]];
+  // 213-frame run between them; gaps 12 and 13 (May 25-27): the 199-frame
+  // run between them. Same switch as the islands.
+  const SPANS = [[4985, 5200], [9564, 9763]];
   const GAP_MS = 45 * 60 * 1000; // a gap: two frames further apart than this
   // The keyed cut and its 4x rung (frame k of the rung is frame 4k of the
   // 1x file). 4x and 8x read the rung at playbackRate 1 and 2: 240 fps of
