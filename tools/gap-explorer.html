@@ -93,7 +93,7 @@ input[type=range] { width: 100%; }
 </head>
 <body>
 <div id="side">
-  <h1>Gap Explorer</h1>
+  <h1 style="display:flex;align-items:center;justify-content:space-between">Gap Explorer <button class="mini" id="copyAll" title="Copy every setting, the figures and the plan, to paste into a chat">Copy settings</button></h1>
   <select id="record" title="Which record to load (each keeps its own place)" style="width:100%;height:30px;margin:0 0 6px;background:#1b2030;color:var(--ink);border:1px solid var(--line);border-radius:7px;font:inherit"></select>
 
   <h2>Picture</h2>
@@ -1211,9 +1211,9 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   const cells = rows => rows.map(([k, v, cls]) => '<span class="k">' + k + '</span><span class="v' + (cls ? ' ' + cls : '') + '">' + v + '</span>').join('');
   // Copy (top right of the figures): the figures and the settings that
   // make them, Keep included, as plain text to paste into a chat
-  $('copyRun').onclick = async () => {
+  function figureLines() {
     const f = plan.f, at = f.filter(x => x === planCap()).length, cut = f.filter(x => x === 0).length;
-    const lines = [
+    return [
       'record: ' + RECORDS[REC].label,
       'fades: ' + st.policy + (st.policy === 'fixed' ? ' N ' + st.n : '') + ' · longest ' + MAX_FADE + ' · new layer ' + st.blend + (st.dis.on ? ' · ' + (st.dis.equal ? 'equal living' : 'living') : ''),
       'auto bridges: ' + (st.auto ? 'on · keep ≥ ' + keepMin() + (st.keep > 0 ? '' : ' (auto)') : 'off') + ' · merges ' + (st.islands ? 'on' : 'off') +
@@ -1224,9 +1224,31 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
       'overlap: ' + num(plan.over) + ' fr  ' + (plan.over / FPS).toFixed(1) + ' s',
       'junctions: ' + at + '×' + planCap() + ' · ' + (plan.J - at - cut) + ' less · ' + cut + ' hard'
     ];
-    const b = $('copyRun');
-    try { await navigator.clipboard.writeText(lines.join('\n')); b.textContent = 'Copied'; } catch (e) { b.textContent = 'Failed'; }
-    setTimeout(() => { b.textContent = 'Copy'; }, 1500);
+  }
+  async function copyText(b, text, label) {
+    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; } catch (e) { b.textContent = 'Failed'; }
+    setTimeout(() => { b.textContent = label; }, 1500);
+  }
+  $('copyRun').onclick = () => copyText($('copyRun'), figureLines().join('\n'), 'Copy');
+  // Copy settings (beside the title): everything, to paste into a chat and
+  // rebuild exactly this program: the figures, every setting, the view and
+  // place, each override, and the plan junction by junction
+  $('copyAll').onclick = () => {
+    const a = srcOf(master), D = st.dis;
+    const lines = ['GAP EXPLORER SETTINGS · ' + new Date().toISOString().slice(0, 16) + 'Z', ...figureLines(),
+      'grade: ' + (st.grade ? 'v' + (gradeFile.version || '?') + ' (assets/sun-grade.json)' : 'off') + ' · atmosphere ' + (st.atmo / 100).toFixed(2) + ' · view ' + (st.view === 'raw' ? 'raw mosaic' + (st.solo >= 0 ? ' (tile ' + (st.solo + 1) + ' alone)' : '') : 'Sun'),
+      'living dissolve: ' + (D.on ? (D.equal ? 'equal living' : 'living') + ' · spread ' + Math.round(D.spread * 100) + '% · globs ' + D.scale + ' · evolve ' + D.evolve + ' · ' + (D.rot ? 'rotate' : 'still') : 'plain'),
+      'fixed N ' + st.n + (st.policy === 'fixed' ? ' (in use)' : ' (not in use)') + ' · speed ' + +st.speed.toFixed(2) + '×',
+      'place: frame ' + a + ' · ' + utc(a) + ' UTC' + (st.sel >= 0 ? ' · selected gap ' + (st.sel + 1) : st.sel === -1 ? ' · bridge selected' : '') +
+        (st.zoom ? ' · timeline zoom frames ' + Math.round(st.zoom[0]) + '-' + Math.round(st.zoom[1]) : ''),
+      'month bridge: ' + (bridgeOn() ? 'on' : 'off') + ' · ' + utc(cutFrom) + ' → ' + utc(cutTo) + ' UTC (frames ' + cutFrom + '-' + (cutTo - 1) + ')',
+      'overrides: ' + (Object.keys(pins).length ? Object.entries(pins).map(([k, v]) => (k === 'bridge' ? 'bridge' : k.slice(0, 16)) + ' = ' + v).join(' · ') : 'none'),
+      '', 'PLAN (junction · where · stretches out → in · fade)'];
+    plan.rec.forEach((r, q) => {
+      const name = r < 0 ? 'bridge' : junctionName(q).toLowerCase();
+      lines.push(name + ' · ' + utc(plan.end[q] - 1).slice(0, 16) + ' → ' + utc(plan.pst[q + 1]).slice(0, 16) + ' · ' + plan.len[q] + ' → ' + plan.len[q + 1] + ' · ' + plan.f[q]);
+    });
+    copyText($('copyAll'), lines.join('\n'), 'Copy settings');
   };
   function showRuntime() {
     const f = plan.f, J = plan.J;
