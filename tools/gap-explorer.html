@@ -820,9 +820,12 @@ fn dissolveMap(tuv: vec2f) -> vec3f {
 //                a plain blend instead of lingering where it is brighter
 //   5 Highlights Max where the brighter of the two is bright, Average in
 //                the midtones and darks
-//   6 Softmax    a soft maximum, the power mean (x^6 + y^6)^(1/6): exact
-//                at both ends, near-equal areas melting together (a slight
-//                glow where they match), clear winners still winning
+//   6 Softmax    a soft maximum that never brightens: each moment's value
+//                weighted by exp(12 x its value) and by its own ramp, so a
+//                clearly brighter one dominates, near-equal ones average,
+//                the result stays between the two (never above the
+//                brighter), and the ramps keep both ends exact. (A power
+//                mean glowed wherever the moments matched.)
 // The mode is a uniform, so the branches on it are uniform.
 fn mosaic(st: vec2f, w: f32) -> vec3f {
   let a = textureSampleBaseClampToEdge(texA, samp, st).rgb;
@@ -849,7 +852,9 @@ fn mosaic(st: vec2f, w: f32) -> vec3f {
   if (mode == 6) {
     let x = a * gout;
     let y = b * gin;
-    return pow(pow(x, vec3f(6.0)) + pow(y, vec3f(6.0)), vec3f(1.0 / 6.0));
+    let ex = gout * exp(12.0 * x);
+    let ey = gin * exp(12.0 * y);
+    return (x * ex + y * ey) / max(ex + ey, vec3f(1e-6));
   }
   return avg;
 }
