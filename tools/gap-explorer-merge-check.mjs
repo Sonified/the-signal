@@ -28,7 +28,7 @@ const src = [
   "const kept = len.reduce((a, b) => a + b, 0), over = f.reduce((a, b) => a + b, 0), prog = kept - over;",
   "const groups = {}; for (const g in merged) (groups[merged[g]] = groups[merged[g]] || []).push(+g);",
   "if (LIST) rec.forEach((r, q) => { const all = [r, ...(groups[r] || [])].sort((a, b) => a - b); const name = all.length > 1 ? 'gaps ' + (all[0] + 1) + '-' + (all[all.length - 1] + 1) : 'gap ' + (r + 1); console.log(name.padEnd(12), times[segStart[r + 1] - 1].slice(0, 10), 'stretches', String(len[q]).padStart(5), '->', String(len[q + 1]).padStart(5), ' fade', f[q]); });",
-  "const clock = n => Math.floor(n / 1800) + ':' + String(Math.round(n / 30 % 60)).padStart(2, '0');",
+  "const clock = n => { const s = Math.round(n / 30); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };",
   "console.log(`${RECORD}${AUTO ? ' auto' : ''} cap ${MAX_FADE}: ${segStart.length - 1} gaps -> ${f.length} junctions, ${[...f].filter(x => x === MAX_FADE).length} at ${MAX_FADE}, ${[...f].filter(x => x === 0).length} hard; keeps ${kept} of ${NF} frames; program ${clock(prog)} (straight ${clock(NF)})`);"
 ].join('\n');
 new Function('times', 'RECORD', 'AUTO', 'LIST', src)(times, rec, AUTO, LIST);
