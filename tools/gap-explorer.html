@@ -88,6 +88,7 @@ input[type=range] { width: 100%; }
 <body>
 <div id="side">
   <h1>Gap Explorer</h1>
+  <select id="record" title="Which record to load (each keeps its own place)" style="width:100%;height:30px;margin:0 0 6px;background:#1b2030;color:var(--ink);border:1px solid var(--line);border-radius:7px;font:inherit"></select>
 
   <h2>Picture</h2>
   <div class="seg" id="views">
@@ -180,14 +181,30 @@ input[type=range] { width: 100%; }
   // gaps 3 to 6 (Apr 22-24: two 1-frame islands and the 213-frame run
   // between them); gaps 12 and 13 (May 25-27, the 199-frame run between).
   // Same switch as the islands.
-  const SPANS = [[3999, 4236], [4985, 5200], [9564, 9763]];
+  // By UTC (the first frame of the span and the first after it), so they
+  // hold in any record; turned into frames once the record is loaded.
+  const SPANS_UTC = [['2026-04-15T16:38:42Z', '2026-04-17T08:58:54Z'], ['2026-04-22T17:26:44Z', '2026-04-24T16:39:18Z'],
+    ['2026-05-26T02:09:06Z', '2026-05-27T16:38:54Z']];
+  let SPANS = [];
   const GAP_MS = 45 * 60 * 1000; // a gap: two frames further apart than this
-  // The keyed cut and its 4x rung (frame k of the rung is frame 4k of the
-  // 1x file). 4x and 8x read the rung at playbackRate 1 and 2: 240 fps of
-  // 3072-wide HEVC from the 1x file is more than a decoder can give.
-  const FILES = { 1: '/sun-video/keyed/sun_mosaic_hevc.mp4', 4: '/sun-video/keyed/sun_mosaic_4x_hevc.mp4' };
+  // The records the Data menu offers, each a folder of sun-video/ holding
+  // the 1x file, its 4x rung (frame k of the rung is frame 4k of the 1x
+  // file) and its timestamps. 4x and 8x read the rung at playbackRate 1 and
+  // 2: 240 fps of 3072-wide HEVC from the 1x file is more than a decoder
+  // can give; a record whose rung is not built yet plays them from the 1x.
+  const RECORDS = {
+    cut: { label: 'The cut · Mar 18 – Sep 4, 2026', dir: '/sun-video/keyed/' },
+    twoyear: { label: 'Two years · Sep 2024 – Sep 2026', dir: '/sun-video/twoyear/' },
+    fullrecord: { label: 'Full record · Sep 2023 – today', dir: '/sun-video/fullrecord/' }
+  };
+  let REC = 'cut';
+  try { REC = JSON.parse(localStorage.getItem('gapExplorer') || '{}').record || 'cut'; } catch (e) {}
+  if (!RECORDS[REC]) REC = 'cut';
+  const DIR = RECORDS[REC].dir;
+  const FILES = { 1: DIR + 'sun_mosaic_hevc.mp4', 4: DIR + 'sun_mosaic_4x_hevc.mp4' };
   const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
-  const rungOf = s => (s >= 4 ? 4 : 1);
+  let HAS4 = true;
+  const rungOf = s => (s >= 4 && HAS4 ? 4 : 1);
   // Timing of the incoming decoder, in wall seconds (scaled to source frames
   // by the speed): it starts LEAD_S before its fade from frames before its
   // head (never drawn), so play()'s latency is spent where it can't be seen;
@@ -231,17 +248,37 @@ input[type=range] { width: 100%; }
   st.bridge = Object.assign({ on: false, from: BRIDGE_FROM, to: BRIDGE_TO }, st.bridge && typeof st.bridge === 'object' ? st.bridge : {});
   if (st.bridge.from === OLD_BRIDGE_FROM) st.bridge.from = BRIDGE_FROM;
   const save = () => { try { localStorage.setItem('gapExplorer', JSON.stringify(st)); } catch (e) {} };
+  // The Data menu: each record keeps its own place (position, zoom, the gap
+  // picked); switching saves this one's, restores the other's and reloads.
+  st.record = REC;
+  st.byRec = st.byRec && typeof st.byRec === 'object' ? st.byRec : {};
+  {
+    const sel = $('record');
+    for (const [k, r] of Object.entries(RECORDS)) sel.insertAdjacentHTML('beforeend', '<option value="' + k + '">' + r.label + '</option>');
+    sel.value = REC;
+    // a record not rendered yet stays in the menu, greyed out
+    for (const opt of sel.options) fetch(RECORDS[opt.value].dir + 'mosaic_times.json', { method: 'HEAD' }).then(r => { if (!r.ok) { opt.disabled = true; opt.textContent += ' (rendering)'; } }, () => {});
+    sel.onchange = () => {
+      st.byRec[REC] = { pos: st.pos, zoom: st.zoom, sel: st.sel };
+      Object.assign(st, { pos: 0, zoom: null, sel: 0 }, st.byRec[sel.value] || {});
+      st.record = sel.value; save(); location.reload();
+    };
+  }
 
   // ---------- the record ----------
   let times, gradeFile;
   try {
     [times, gradeFile] = await Promise.all([
-      fetch('/sun-video/keyed/mosaic_times.json').then(r => r.json()),
+      fetch(DIR + 'mosaic_times.json').then(r => r.json()),
       fetch('/assets/sun-grade.json').then(r => r.json())
     ]);
-  } catch (e) { $('status').textContent = 'Could not load sun-video/keyed/mosaic_times.json or assets/sun-grade.json: ' + e.message; return; }
+  } catch (e) { $('status').textContent = 'Could not load ' + DIR + 'mosaic_times.json or assets/sun-grade.json: ' + e.message; return; }
+  HAS4 = await fetch(FILES[4], { method: 'HEAD' }).then(r => r.ok, () => false);
   const NF = times.length;
   const ms = Float64Array.from(times, t => Date.parse(t));
+  // the merge spans in this record's frames (an empty span where it holds none of them)
+  const firstFrom = t => { let lo = 0, hi = NF; while (lo < hi) { const m = (lo + hi) >> 1; if (ms[m] < t) lo = m + 1; else hi = m; } return lo; };
+  SPANS = SPANS_UTC.map(([a, b]) => [firstFrom(Date.parse(a)), firstFrom(Date.parse(b))]);
   // Segments: the live runs between gaps. Gap g joins segment g to g + 1;
   // its head, segStart[g + 1], is the first frame after the hole.
   const segStart = [0], gapHours = [];
@@ -598,7 +635,7 @@ input[type=range] { width: 100%; }
       watch(el);
     }
   }
-  pool.forEach(el => el.v.addEventListener('error', () => { $('status').textContent = 'Could not play ' + FILES[R] + ' (is tools/serve.mjs running from the repo, with sun-video/keyed/ in place?)'; }));
+  pool.forEach(el => el.v.addEventListener('error', () => { $('status').textContent = 'Could not play ' + FILES[R] + ' (is tools/serve.mjs running from the repo, with ' + DIR + ' in place?)'; }));
 
   // Go to program frame p: A at its frame, and B too inside a fade.
   function seekProgram(p) {
@@ -1227,7 +1264,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     else if (fd && !fd.ok) note = 'incoming decoder loading';
     else if (now - missedAt < 2000) note = 'a fade was missed (decoder late)';
     if ($('note').textContent !== note) $('note').textContent = note;
-    const s = (playing ? 'playing ' : 'paused ') + st.speed + '× · ' + (R === 1 ? 'sun_mosaic_hevc.mp4' : 'sun_mosaic_4x_hevc.mp4') + ' · ' + st.policy + (bridgeOn() ? ' · bridge (cut) on' : '');
+    const s = (playing ? 'playing ' : 'paused ') + st.speed + '× · ' + (R === 1 ? 'sun_mosaic_hevc.mp4' : 'sun_mosaic_4x_hevc.mp4') + ' · ' + REC + ' · ' + st.policy + (bridgeOn() ? ' · bridge (cut) on' : '');
     if ($('status').textContent !== s) $('status').textContent = s;
   }
 
