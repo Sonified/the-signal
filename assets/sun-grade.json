@@ -1,5 +1,5 @@
 {
-  "about": "The Sun's color grade, per SDO layer: Robert's hearted presets from tools/sun-quality.html (the-signal), 2026-10-13. v3, the one in use (v2 and v1 are assets/sun-grade-v2.json and -v1.json). One file, the same bytes in the-signal (assets/sun-grade.json) and meditatewiththesun (site/assets/sun-grade.json); change it in one, copy it to the other.",
+  "about": "The Sun's color grade, per SDO layer: Robert's hearted presets from tools/sun-quality.html (the-signal), 2026-10-13 (the 1700 base layer brightened the same evening). v3, the one in use (v2 and v1 are assets/sun-grade-v2.json and -v1.json). One file, the same bytes in the-signal (assets/sun-grade.json) and meditatewiththesun (site/assets/sun-grade.json); change it in one, copy it to the other.",
   "version": 3,
   "math": [
     "Per layer, on its tile of the mosaic (0..1 per channel), in this order:",
@@ -12,7 +12,7 @@
     "Untouched: brightness 1, contrast 1, elevate 0, saturation 1."
   ],
   "layers": {
-    "1700":  { "brightness": 1.13, "contrast": 1.11, "elevate": 0.5, "saturation": 1.01 },
+    "1700":  { "brightness": 1.3, "contrast": 1.11, "elevate": 0.41, "saturation": 1.01 },
     "304":   { "brightness": 1, "contrast": 1.05, "elevate": 0.23, "saturation": 1 },
     "171":   { "brightness": 1.01, "contrast": 1.05, "elevate": 0.43, "saturation": 1.04 },
     "193":   { "brightness": 1.27, "contrast": 1, "elevate": 0.59, "saturation": 1 },
