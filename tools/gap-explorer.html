@@ -965,6 +965,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   let mapUntil = 0;
   const touchMap = () => { mapUntil = performance.now() + 1500; };
   function mapAlpha() {
+    // the map describes the Living dissolve: with Plain it never shows
+    if (!st.dis.on) return 0;
     if (st.dis.map) return 1;
     const left = mapUntil - performance.now();
     return left <= 0 ? 0 : Math.min(1, left / 500);
