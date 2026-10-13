@@ -35,7 +35,7 @@ canvas.drag { cursor: grabbing; }
 </style>
 </head>
 <body>
-<div id="bar"><span id="sizes"></span><span class="sep">Loupe</span><span id="loupes"></span>
+<div id="bar"><button id="native" title="All three at their original size, left to right, one image pixel per screen pixel (drag to pan)">Original size</button><span id="sizes"></span><span class="sep">Loupe</span><span id="loupes"></span>
   <label class="sl">Zoom <input type="range" id="mag" min="10" max="100" step="1"><output id="magOut"></output></label>
   <label class="sl" id="flatRow">Flat center <input type="range" id="flat" min="0" max="90" step="1"><output id="flatOut"></output></label>
   <span id="info"></span></div>
@@ -52,7 +52,8 @@ canvas.drag { cursor: grabbing; }
   // being 1 x 1) and the image point at the screen's centre
   // mag: the loupe's zoom at its centre, 1-10x; flat: the share of the
   // bubble's radius held at full zoom before it eases out to 1x at the rim
-  const st = { size: 2048, zoom: 0, cx: 0.5, cy: 0.5, loupe: 'flat', mag: 5, flat: 0 };
+  // native: all three side by side at their original size (nx, ny their pan)
+  const st = { size: 2048, zoom: 0, cx: 0.5, cy: 0.5, loupe: 'flat', mag: 5, flat: 0, native: false, nx: 0, ny: 0 };
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   // the loupe: 'off', 'flat' (5x throughout) or 'bubble' (5x at the centre,
   // easing to 1x at the rim, so its edge meets the picture seamlessly)
@@ -125,7 +126,7 @@ canvas.drag { cursor: grabbing; }
     if (lens.width !== c.width || lens.height !== c.height) { lens.width = c.width; lens.height = c.height; }   // resized only when the window is
     gl.viewport(0, 0, lens.width, lens.height);
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-    if (st.loupe !== 'bubble' || !mouse || drag || !(im.complete && im.naturalWidth)) return;
+    if (st.native || st.loupe !== 'bubble' || !mouse || drag || !(im.complete && im.naturalWidth)) return;
     const dpr = devicePixelRatio, R = 150 * dpr, off = R * 0.85;
     const lx = mouse.x - off, ly = mouse.y - off;
     gl.bindTexture(gl.TEXTURE_2D, texture(im));
@@ -140,9 +141,28 @@ canvas.drag { cursor: grabbing; }
   }
   let mouse = null, drag = null;   // the cursor in canvas px; a pan in progress
   const fit = () => Math.min(innerWidth, innerHeight) * 0.96 * devicePixelRatio;
+  // Original size: 1024, 2048 and 4096 left to right, each image pixel on
+  // one screen pixel, labelled above (never over the Sun), dragged to pan
+  function drawNative() {
+    const dpr = devicePixelRatio, gap = 40 * dpr, top = 70 * dpr;
+    g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+    g.imageSmoothingEnabled = false;
+    let x = 20 * dpr + st.nx;
+    g.font = (12 * dpr) + 'px -apple-system, sans-serif'; g.fillStyle = '#8a93a6';
+    for (const s of SIZES) {
+      const im = imgs[s];
+      g.fillText(s + ' × ' + s + ' · original size', x, top + st.ny - 10 * dpr);
+      if (im.complete && im.naturalWidth) g.drawImage(im, x, top + st.ny, s, s);
+      x += s + gap;
+    }
+    drawBubble(imgs[st.size]);
+    $('info').textContent = 'original size: one image pixel per screen pixel · drag to pan, double-click to go back to the start';
+  }
   function draw() {
     const dpr = devicePixelRatio;
     c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+    $('native').classList.toggle('on', st.native);
+    if (st.native) return drawNative();   // the loupes rest in this view
     if (!st.zoom) st.zoom = fit();
     const im = imgs[st.size];
     g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
@@ -207,6 +227,8 @@ canvas.drag { cursor: grabbing; }
   // wheel zoom about the cursor
   c.addEventListener('wheel', e => {
     e.preventDefault();
+    // original size stays original: the wheel pans instead
+    if (st.native) { st.nx -= e.deltaX * devicePixelRatio; st.ny -= e.deltaY * devicePixelRatio; save(); draw(); return; }
     const dpr = devicePixelRatio, mx = e.clientX * dpr, my = e.clientY * dpr;
     const ix = st.cx + (mx - c.width / 2) / st.zoom, iy = st.cy + (my - c.height / 2) / st.zoom;
     st.zoom = Math.max(fit() * 0.5, Math.min(fit() * 64, st.zoom * Math.exp(-e.deltaY * 0.0015)));
@@ -220,16 +242,18 @@ canvas.drag { cursor: grabbing; }
   c.addEventListener('mousemove', e => { mouse = { x: e.clientX * devicePixelRatio, y: e.clientY * devicePixelRatio }; if (!drag) redraw(); });
   c.addEventListener('mouseleave', () => { mouse = null; draw(); });
   // drag to pan
-  c.addEventListener('pointerdown', e => { c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, cx: st.cx, cy: st.cy }; c.classList.add('drag'); });
+  c.addEventListener('pointerdown', e => { c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, cx: st.cx, cy: st.cy, nx: st.nx, ny: st.ny }; c.classList.add('drag'); });
   c.addEventListener('pointermove', e => {
     if (!drag) return;
     const dpr = devicePixelRatio;
+    if (st.native) { st.nx = drag.nx + (e.clientX - drag.x) * dpr; st.ny = drag.ny + (e.clientY - drag.y) * dpr; draw(); return; }
     st.cx = drag.cx - (e.clientX - drag.x) * dpr / st.zoom; st.cy = drag.cy - (e.clientY - drag.y) * dpr / st.zoom;
     draw();
   });
   const end = () => { if (drag) { drag = null; c.classList.remove('drag'); save(); } };
   c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
-  c.addEventListener('dblclick', () => { st.zoom = fit(); st.cx = st.cy = 0.5; save(); draw(); });
+  c.addEventListener('dblclick', () => { if (st.native) { st.nx = st.ny = 0; } else { st.zoom = fit(); st.cx = st.cy = 0.5; } save(); draw(); });
+  $('native').onclick = () => { st.native = !st.native; save(); draw(); };
   addEventListener('resize', draw);
   draw();
 })();
