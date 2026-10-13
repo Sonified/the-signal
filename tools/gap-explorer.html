@@ -416,9 +416,9 @@ input[type=range] { width: 100%; }
   // piece with the start of the next, so P[j + 1] = P[j] + len[j] - f[j].
   function computePlan(bridge) {
     const { pst, len, rec, merged } = piecesFor(bridge);
-    // Hard cut is today's file: no overrides, but the bridge keeps its
-    // dissolve (180 unless set), since crossing a month needs one.
-    const raw = rec.map(r => (r < 0 ? (pins.bridge >= 0 ? pins.bridge : planCap()) : st.policy === 'hard' ? -1 : pins[keyOf(r)] >= 0 ? pins[keyOf(r)] : -1));
+    // Hard cut is every junction cut, the bridge's too (Robert, 2026-10-13:
+    // he wants to see all of it hard), overrides set aside.
+    const raw = rec.map(r => (st.policy === 'hard' ? -1 : r < 0 ? (pins.bridge >= 0 ? pins.bridge : planCap()) : pins[keyOf(r)] >= 0 ? pins[keyOf(r)] : -1));
     const pin = clampPins(len, raw);
     const f = st.policy === 'hard' ? Int32Array.from(pin, x => Math.max(0, x)) : st.policy === 'fixed' ? fixedFades(len, planN(), pin) : dynamicFades(len, pin);
     checkFades(len, f, st.policy + (bridge ? ' + bridge' : ''));
