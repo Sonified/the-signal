@@ -87,6 +87,10 @@ input[type=range] { width: 100%; }
 #tl canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 #tip { position: absolute; bottom: calc(100% + 6px); display: none; background: #181c27; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font-size: 12px; white-space: pre; pointer-events: none; font-variant-numeric: tabular-nums; z-index: 2; }
 #whole { position: absolute; right: 8px; top: 6px; display: none; }
+/* Copy mode, top left of the timeline: lit while on */
+#copyMode { position: absolute; left: 8px; top: 6px; z-index: 2; }
+#copyMode.on { background: var(--gold); color: #000; border-color: var(--gold); }
+#tl.copying { cursor: copy; }
 .keys { color: var(--dim); font-size: 11px; line-height: 1.6; margin-top: 10px; }
 .keys b { color: var(--ink); font-weight: 500; }
 </style>
@@ -172,7 +176,7 @@ input[type=range] { width: 100%; }
 </div>
 <div id="stage"><canvas id="c"></canvas><div id="stamp"><div class="line"></div></div><div id="aia"><span>AIA 1700<i>photosphere</i></span><span>AIA 304<i>chromosphere</i></span><span>AIA 171<i>quiet corona</i></span><span>AIA 193<i>corona · coronal holes</i></span><span>AIA 211<i>active corona</i></span></div><div id="status">Loading…</div><div id="note"></div></div>
 <div id="nowBox"><div class="cells" id="now"></div></div>
-<div id="tl"><canvas id="tlc"></canvas><div id="tip"></div><button class="mini" id="whole">Whole record</button></div>
+<div id="tl"><canvas id="tlc"></canvas><div id="tip"></div><button class="mini" id="copyMode" title="Copy mode: a click on the timeline copies that frame's details (playback carries on)">Copy</button><button class="mini" id="whole">Whole record</button></div>
 
 <script>
 'use strict';
@@ -1603,7 +1607,32 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   }
   // click or drag: scrub (a click on a gap selects it); a grip: move the cut
   let dragging = false, dragEdge = '', wasPlaying = false, pendingScrub = -1;
+  // Copy mode (the Copy button, top left of the timeline): a click copies
+  // the frame there, its UTC and the gaps either side, as the crossfade
+  // player's copy did; it still scrubs there, and playback carries on
+  let copying = false;
+  $('copyMode').onclick = e => { e.stopPropagation(); copying = !copying; $('copyMode').classList.toggle('on', copying); tl.classList.toggle('copying', copying); };
+  $('copyMode').addEventListener('pointerdown', e => e.stopPropagation());
+  const hmDur = h => { const m = Math.round(h * 60); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); };
+  function copyFrame(f) {
+    f = Math.max(0, Math.min(NF - 1, f));
+    let prev = -1, next = -1;
+    for (let g = 0; g < G; g++) { if (segStart[g + 1] <= f) prev = g; else { next = g; break; } }
+    const lines = ['frame ' + f + ' · ' + utc(f).slice(0, 16) + ' UTC'];
+    if (prev >= 0) lines.push('last gap: ' + (prev + 1) + ' at frame ' + segStart[prev + 1] + ' (' + hmDur(gapHours[prev]) + ')');
+    if (next >= 0) lines.push('next gap: ' + (next + 1) + ' at frame ' + segStart[next + 1] + ' (' + hmDur(gapHours[next]) + ')');
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      $('copyMode').textContent = 'Copied ' + f;
+      clearTimeout(copyFrame.t); copyFrame.t = setTimeout(() => { $('copyMode').textContent = 'Copy'; }, 1500);
+    }, () => {});
+  }
   tl.addEventListener('pointerdown', e => {
+    if (copying) {
+      const f = Math.round(srcAt(e.offsetX));
+      copyFrame(f);
+      seekProgram(progOf(f));
+      return;
+    }
     tl.setPointerCapture(e.pointerId);
     wasPlaying = playing; setPlaying(false);
     dragEdge = edgeNear(e.offsetX, e.offsetY);
