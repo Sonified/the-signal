@@ -1,0 +1,248 @@
+{
+  "savedAt": "2026-10-12T22:21:15.976Z",
+  "set": "master",
+  "tier": "Max",
+  "atmosphere": 0.32,
+  "layers": {
+    "1700 Å": {
+      "picked": 1,
+      "hearted": [
+        1
+      ],
+      "presets": {
+        "1": {
+          "brightness": 1.1299999952316284,
+          "contrast": 1.1100000143051147,
+          "saturation": 1.0099999904632568,
+          "elevate": 0.20000000298023224,
+          "off": [],
+          "hearted": true
+        },
+        "2": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "3": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "4": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "5": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        }
+      }
+    },
+    "304 Å": {
+      "picked": 1,
+      "hearted": [
+        1
+      ],
+      "presets": {
+        "1": {
+          "brightness": 1.0499999523162842,
+          "contrast": 1.0499999523162842,
+          "saturation": 1,
+          "elevate": 0.09000000357627869,
+          "off": [],
+          "hearted": true
+        },
+        "2": {
+          "brightness": 1.190000057220459,
+          "contrast": 1.159999966621399,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "3": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "4": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "5": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        }
+      }
+    },
+    "171 Å": {
+      "picked": 1,
+      "hearted": [
+        2
+      ],
+      "presets": {
+        "1": {
+          "brightness": 1.0800000429153442,
+          "contrast": 1.1100000143051147,
+          "saturation": 1.0399999618530273,
+          "elevate": 0.20000000298023224,
+          "off": [],
+          "hearted": false
+        },
+        "2": {
+          "brightness": 1.0800000429153442,
+          "contrast": 1.0499999523162842,
+          "saturation": 1.0399999618530273,
+          "elevate": 0.20000000298023224,
+          "off": [],
+          "hearted": true
+        },
+        "3": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "4": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "5": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        }
+      }
+    },
+    "193 Å": {
+      "picked": 1,
+      "hearted": [
+        1
+      ],
+      "presets": {
+        "1": {
+          "brightness": 1.1299999952316284,
+          "contrast": 1.2200000286102295,
+          "saturation": 1.0800000429153442,
+          "elevate": 0,
+          "off": [],
+          "hearted": true
+        },
+        "2": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "3": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "4": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "5": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        }
+      }
+    },
+    "211 Å": {
+      "picked": 1,
+      "hearted": [
+        1
+      ],
+      "presets": {
+        "1": {
+          "brightness": 1.159999966621399,
+          "contrast": 1.2000000476837158,
+          "saturation": 1.1299999952316284,
+          "elevate": 0.20999999344348907,
+          "off": [],
+          "hearted": true
+        },
+        "2": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "3": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "4": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        },
+        "5": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "elevate": 0,
+          "off": [],
+          "hearted": false
+        }
+      }
+    }
+  }
+}
