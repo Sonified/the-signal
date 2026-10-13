@@ -12,7 +12,7 @@
   frames (git-ignored; 1024 from our archive, the others fetched from
   sdo.gsfc.nasa.gov/assets/img/browse/<y>/<m>/<d>/<stamp>_<size>_<channel>.jpg).
     http://localhost:8000/tools/sdo-still-compare.html?f=20250317_140634&ch=0171
-  Keys: 1 2 4 the size, wheel zoom at the cursor, drag to pan, double-click
+  Keys: 1 2 3 the size (4 also 4096), wheel zoom at the cursor, drag to pan, double-click
   to fit, L the loupe (a circle up and left of the cursor, magnifying what
   lies under its own centre at 5x). Everything is remembered.
 -->
@@ -95,7 +95,8 @@ canvas.drag { cursor: grabbing; }
     $('sizes').appendChild(b);
   }
   addEventListener('keydown', e => {
-    const s = { 1: 1024, 2: 2048, 4: 4096 }[e.key];
+    // 1 2 3 in order (4 too, for 4096)
+    const s = { 1: 1024, 2: 2048, 3: 4096, 4: 4096 }[e.key];
     if (s) { st.size = s; save(); draw(); }
     if (e.key === 'l' || e.key === 'L') { st.loupe = !st.loupe; save(); draw(); }
   });
