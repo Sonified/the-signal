@@ -1,0 +1,2166 @@
+{
+ "source": {
+  "plan": "documents/sun-program-plan-2026-10-13.txt",
+  "record": "Two years · Sep 2024 – Sep 2026 · 77,972 frames · 2024-09-05 00:08 → 2026-09-04 20:57 UTC (729.9 days)",
+  "keyed": "/Users/robertalexander/GitHub/solarmeditation/renders/fullrecord/mosaic_times.json",
+  "planTsv": "/Users/robertalexander/GitHub/solarmeditation/renders/fullrecord/plan.tsv",
+  "masters": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master"
+ },
+ "blend": "plain average in display values: overlap frame k of n is A x (1 - w) + B x w, w = (k + 1) / (n + 1); time shown is B's once w >= 0.5",
+ "fps": 30,
+ "width": 3072,
+ "height": 2048,
+ "kept": 34801,
+ "overlap": 4029,
+ "total": 30772,
+ "stretches": [
+  {
+   "first": 52496,
+   "last": 52882,
+   "firstUtc": "2024-09-05T00:08:18Z",
+   "lastUtc": "2024-09-07T16:38:42Z",
+   "frames": 387,
+   "pieces": [
+    {
+     "day": "20240905",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240905_84a47d1a43e8.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240906",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240906_cb68ffac6bc6.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20240907",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240907_3c7d5e0d2689.mp4",
+     "from": 0,
+     "to": 99,
+     "frames": 100
+    }
+   ]
+  },
+  {
+   "first": 52883,
+   "last": 55421,
+   "firstUtc": "2024-09-07T19:41:42Z",
+   "lastUtc": "2024-09-25T12:49:06Z",
+   "frames": 2539,
+   "pieces": [
+    {
+     "day": "20240907",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240907_3c7d5e0d2689.mp4",
+     "from": 100,
+     "to": 125,
+     "frames": 26
+    },
+    {
+     "day": "20240908",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240908_ab7ec49d7ada.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240909",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240909_9a39b99f6fc9.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240910",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240910_c6c09f92674b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240911",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240911_b7281627752b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240912",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240912_6d8cd6463df7.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20240913",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240913_f645ea57b20c.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240914",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240914_bb1df23e722c.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240915",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240915_c95d4942c02b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240916",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240916_ee4aa5a10e4a.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20240917",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240917_29e6c1e473fd.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20240918",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240918_3ea6e4666a87.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20240919",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240919_2733390d6a6b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240920",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240920_41e5cabf20a3.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20240921",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240921_dbc3a89bca2b.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20240922",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240922_6a82816104fa.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20240923",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240923_3f53c825cd13.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20240924",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240924_4f13b25d3ba5.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20240925",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20240925_1b84b0176291.mp4",
+     "from": 0,
+     "to": 75,
+     "frames": 76
+    }
+   ]
+  },
+  {
+   "first": 60633,
+   "last": 63057,
+   "firstUtc": "2024-11-03T02:38:42Z",
+   "lastUtc": "2024-11-19T23:29:18Z",
+   "frames": 2425,
+   "pieces": [
+    {
+     "day": "20241103",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241103_4101eeeb2d2a.mp4",
+     "from": 7,
+     "to": 135,
+     "frames": 129
+    },
+    {
+     "day": "20241104",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241104_4cea1334aaf3.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241105",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241105_cd24d525480b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20241106",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241106_0c5cdf6853c2.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241107",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241107_a644f071cb0b.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241108",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241108_cc06e5c2e839.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20241109",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241109_fa020b18f799.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20241110",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241110_11801008e983.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241111",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241111_c27048d5093e.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241112",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241112_867a6117f380.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241113",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241113_40bf4f0ead9c.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241114",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241114_c18853ba4217.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20241115",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241115_762ffdd116fd.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241116",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241116_fcbe77caefe3.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241117",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241117_713f743823fe.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241118",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241118_eedd49756ea4.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20241119",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20241119_fd7270e63d13.mp4",
+     "from": 0,
+     "to": 139,
+     "frames": 140
+    }
+   ]
+  },
+  {
+   "first": 68490,
+   "last": 74389,
+   "firstUtc": "2025-02-13T07:38:54Z",
+   "lastUtc": "2025-03-26T12:49:06Z",
+   "frames": 5900,
+   "pieces": [
+    {
+     "day": "20250213",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250213_7df350692d94.mp4",
+     "from": 1,
+     "to": 90,
+     "frames": 90
+    },
+    {
+     "day": "20250214",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250214_3ed679ce3f22.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250215",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250215_70f0edfeda61.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250216",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250216_3708f0a8519f.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250217",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250217_b4260a3008b9.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250218",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250218_1f5b030656b6.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250219",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250219_b8fd93f76c01.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250220",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250220_a8fae2a0cc1d.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250221",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250221_55402a82fd5b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250222",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250222_636cc8478a47.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250223",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250223_2a892f4a12ac.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250224",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250224_8440bde6f720.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250225",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250225_d74de4dfbfae.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250226",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250226_6c90122ddf4e.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250227",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250227_5ab6e7d20937.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250228",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250228_074566c0abb6.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250301",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250301_1c89318c5c31.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250302",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250302_96bc889f26bd.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250303",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250303_9ff3ce9b1ceb.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250304",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250304_b076534da302.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250305",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250305_0457e04d507b.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250306",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250306_1bad053f0006.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250307",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250307_c36dc8d73fcf.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250308",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250308_9f5b539d52fd.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250309",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250309_afd1c17a1c00.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250310",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250310_96de6451401b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250311",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250311_41a889c87336.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250312",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250312_881696bfad7b.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250313",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250313_f8a9e8fb00a4.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250314",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250314_a390964d3596.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250315",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250315_5d2c64f22364.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250316",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250316_dc07e3b0bdf0.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250317",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250317_f27d45b1000d.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250318",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250318_9944f9c41de6.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250319",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250319_0d8d5a442003.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250320",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250320_888c4bcdbe2c.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250321",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250321_bf11c62e5ae9.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250322",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250322_dab09c5100fc.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250323",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250323_acf37219fdff.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250324",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250324_bcba1a92cba8.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250325",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250325_7de33785c14e.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20250326",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250326_f9fad265536f.mp4",
+     "from": 0,
+     "to": 76,
+     "frames": 77
+    }
+   ]
+  },
+  {
+   "first": 78615,
+   "last": 80976,
+   "firstUtc": "2025-04-28T00:49:18Z",
+   "lastUtc": "2025-05-14T12:18:06Z",
+   "frames": 2362,
+   "pieces": [
+    {
+     "day": "20250428",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250428_de78444c0a94.mp4",
+     "from": 0,
+     "to": 138,
+     "frames": 139
+    },
+    {
+     "day": "20250429",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250429_3db12c377f7f.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250430",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250430_1f439f87ecbe.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250501",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250501_f59bbf3eae79.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250502",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250502_7f19f5d70495.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250503",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250503_30121fb7fe07.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250504",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250504_ede66c0c2928.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250505",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250505_e3b96634708d.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250506",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250506_9014e55bf08d.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250507",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250507_0bd4882f055f.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250508",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250508_4298828d9cc2.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250509",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250509_2ea9f4498337.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250510",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250510_b77b9ee51ed2.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250511",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250511_583f07aea4d3.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250512",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250512_0756b6a77db4.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250513",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250513_4a1ed0ab7601.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250514",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250514_bd0c585faa1c.mp4",
+     "from": 0,
+     "to": 73,
+     "frames": 74
+    }
+   ]
+  },
+  {
+   "first": 80977,
+   "last": 83972,
+   "firstUtc": "2025-05-14T14:58:18Z",
+   "lastUtc": "2025-06-04T12:48:18Z",
+   "frames": 2996,
+   "pieces": [
+    {
+     "day": "20250514",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250514_bd0c585faa1c.mp4",
+     "from": 74,
+     "to": 128,
+     "frames": 55
+    },
+    {
+     "day": "20250515",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250515_35973f689754.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250516",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250516_28b849d43c63.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250517",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250517_c974ad99e903.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250518",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250518_e5194fc74a2a.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250519",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250519_d87c8565bece.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250520",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250520_1b442d7d4892.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20250521",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250521_60c5415c5853.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250522",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250522_d1ac44731633.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250523",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250523_62a3195990ce.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250524",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250524_e491e9f5dd5e.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250525",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250525_014323fa7945.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250526",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250526_cdbccfb9b931.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20250527",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250527_de25ba39129b.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250528",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250528_350dfddaeaa6.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250529",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250529_e4f024a37346.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250530",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250530_4b921ee4ab14.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250531",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250531_8e20829d2f44.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250601",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250601_0b13810e42e0.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250602",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250602_8ef28aa400e9.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250603",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250603_b02c0f1b1a3e.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250604",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250604_0d58c23702de.mp4",
+     "from": 0,
+     "to": 75,
+     "frames": 76
+    }
+   ]
+  },
+  {
+   "first": 83973,
+   "last": 89012,
+   "firstUtc": "2025-06-04T14:38:42Z",
+   "lastUtc": "2025-07-09T18:08:30Z",
+   "frames": 5040,
+   "pieces": [
+    {
+     "day": "20250604",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250604_0d58c23702de.mp4",
+     "from": 76,
+     "to": 132,
+     "frames": 57
+    },
+    {
+     "day": "20250605",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250605_4e28d3278400.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250606",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250606_5de9469f21d4.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250607",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250607_b91647d1e874.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250608",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250608_75f0a9859896.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250609",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250609_60b72dc2b50a.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250610",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250610_0450aef33840.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250611",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250611_bc05ee06489a.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250612",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250612_251094386bfa.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250613",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250613_d8605b4a2a37.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250614",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250614_134911f29dcf.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250615",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250615_d8ba9b277828.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250616",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250616_aba92e79f6e6.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250617",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250617_46c611d68b8f.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20250618",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250618_1c7c2f1ea817.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250619",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250619_8eb1c32dec8d.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250620",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250620_5c1b09061a12.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250621",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250621_8faf708cf65d.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250622",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250622_2e4c576ccdac.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250623",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250623_0b693e302ec1.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250624",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250624_00ef88487aa5.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250625",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250625_87dfb67904c0.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250626",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250626_b326e43bf342.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250627",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250627_f90be521b588.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250628",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250628_e637f86da224.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250629",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250629_f77fb24995be.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250630",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250630_5fd1ee17e2db.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250701",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250701_3a7ef6b52d6e.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250702",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250702_a597b9f7644c.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250703",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250703_0763592a0578.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250704",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250704_e90fc5ba50cd.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250705",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250705_27959188f2c8.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250706",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250706_c9aca6bd4876.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250707",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250707_f46bfb6e0f32.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250708",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250708_9eb849341698.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20250709",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250709_03432d3dfb47.mp4",
+     "from": 0,
+     "to": 107,
+     "frames": 108
+    }
+   ]
+  },
+  {
+   "first": 92956,
+   "last": 94829,
+   "firstUtc": "2025-08-10T05:48:54Z",
+   "lastUtc": "2025-08-23T07:18:54Z",
+   "frames": 1874,
+   "pieces": [
+    {
+     "day": "20250810",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250810_6fe19970d388.mp4",
+     "from": 24,
+     "to": 133,
+     "frames": 110
+    },
+    {
+     "day": "20250811",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250811_e7b336edf178.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250812",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250812_8c2f040b612b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250813",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250813_e26a8e217547.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250814",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250814_395a3d278b48.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250815",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250815_16016ceafe3d.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250816",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250816_1586d7ec42b8.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250817",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250817_52bfe8df71f7.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250818",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250818_341b915ffaa9.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250819",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250819_e83896147331.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250820",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250820_56cf8db7636d.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250821",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250821_10a97a379a77.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250822",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250822_586124707a62.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250823",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250823_05ff30a6c0b9.mp4",
+     "from": 0,
+     "to": 44,
+     "frames": 45
+    }
+   ]
+  },
+  {
+   "first": 94831,
+   "last": 97326,
+   "firstUtc": "2025-08-24T01:19:54Z",
+   "lastUtc": "2025-09-10T11:08:42Z",
+   "frames": 2496,
+   "pieces": [
+    {
+     "day": "20250824",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250824_540b0cc41933.mp4",
+     "from": 0,
+     "to": 135,
+     "frames": 136
+    },
+    {
+     "day": "20250825",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250825_1b48dc29f9e8.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250826",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250826_c8df5632a784.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250827",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250827_0013e5991cfa.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250828",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250828_35f026d88969.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250829",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250829_4b39ac66a6ec.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250830",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250830_92077de44e17.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250831",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250831_1e5e6c2caaed.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250901",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250901_3657f40cafd0.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250902",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250902_845a5f3b7ed6.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250903",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250903_676962f9d1d6.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250904",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250904_0d4655ed87fc.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250905",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250905_6d01c29bc750.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20250906",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250906_9537c0ec05dc.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250907",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250907_8a0cbf07fad8.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20250908",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250908_6fbaf1ab4481.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250909",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250909_f65be809a44e.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20250910",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20250910_a6e0db388e59.mp4",
+     "from": 0,
+     "to": 66,
+     "frames": 67
+    }
+   ]
+  },
+  {
+   "first": 107181,
+   "last": 111179,
+   "firstUtc": "2026-03-18T15:38:54Z",
+   "lastUtc": "2026-04-15T14:49:42Z",
+   "frames": 3999,
+   "pieces": [
+    {
+     "day": "20260318",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260318_e85d42516307.mp4",
+     "from": 0,
+     "to": 47,
+     "frames": 48
+    },
+    {
+     "day": "20260319",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260319_930f4fbd876a.mp4",
+     "from": 0,
+     "to": 136,
+     "frames": 137
+    },
+    {
+     "day": "20260320",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260320_0e7e550d3242.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260321",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260321_e053b3405b7a.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260322",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260322_c76d3405b7f4.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260323",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260323_36a7d61071ba.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260324",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260324_c12e60bd6c75.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20260325",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260325_659151b9d883.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20260326",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260326_cc1b3069e93e.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260327",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260327_6a1c1f53e812.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260328",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260328_cc6d3a77c2cd.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260329",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260329_bc5ea4014fda.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260330",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260330_8442d6661cd5.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20260331",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260331_314c6f1bd58b.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260401",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260401_c9e45c82e653.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260402",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260402_ecc0fc45a9b3.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260403",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260403_bebf47326702.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260404",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260404_8cc347624107.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260405",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260405_636136716e29.mp4",
+     "from": 0,
+     "to": 139,
+     "frames": 140
+    },
+    {
+     "day": "20260406",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260406_f901aa0b2140.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260407",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260407_35c051d92408.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260408",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260408_24b090e82c1c.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260409",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260409_569d256ce9ed.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260410",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260410_d21d372e119b.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260411",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260411_d732c693ccb8.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260412",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260412_88ff7d20ca9c.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260413",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260413_f83eaf533c54.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20260414",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260414_bd5cf877be4f.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260415",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260415_a0e46722185d.mp4",
+     "from": 0,
+     "to": 88,
+     "frames": 89
+    }
+   ]
+  },
+  {
+   "first": 113085,
+   "last": 115159,
+   "firstUtc": "2026-04-29T21:07:34Z",
+   "lastUtc": "2026-05-14T10:38:54Z",
+   "frames": 2075,
+   "pieces": [
+    {
+     "day": "20260429",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260429_650daf5d2990.mp4",
+     "from": 94,
+     "to": 109,
+     "frames": 16
+    },
+    {
+     "day": "20260430",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260430_bdf454931302.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260501",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260501_65aa25296cee.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260502",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260502_38abe0887b7c.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260503",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260503_efe9d22644c8.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20260504",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260504_4603675ecfc6.mp4",
+     "from": 0,
+     "to": 139,
+     "frames": 140
+    },
+    {
+     "day": "20260505",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260505_ad777ad5ed38.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20260506",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260506_a2d3936f030c.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260507",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260507_c8985f124d19.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260508",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260508_4e68a7f0eb1d.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260509",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260509_08feee29bf4d.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20260510",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260510_5bdfbea0073d.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260511",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260511_da1fb521a8ee.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260512",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260512_8b981423f3cd.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20260513",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260513_66d7d9cfd600.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260514",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260514_8f8a638e2bd7.mp4",
+     "from": 0,
+     "to": 63,
+     "frames": 64
+    }
+   ]
+  },
+  {
+   "first": 125897,
+   "last": 128535,
+   "firstUtc": "2026-08-03T01:38:54Z",
+   "lastUtc": "2026-08-21T12:42:06Z",
+   "frames": 2639,
+   "pieces": [
+    {
+     "day": "20260803",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260803_b81c50839ddb.mp4",
+     "from": 9,
+     "to": 140,
+     "frames": 132
+    },
+    {
+     "day": "20260804",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260804_c81251284ddf.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260805",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260805_7bbec175e0f8.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260806",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260806_aa9068a2e3f2.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20260807",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260807_7b9818264608.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20260808",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260808_29362a67884a.mp4",
+     "from": 0,
+     "to": 141,
+     "frames": 142
+    },
+    {
+     "day": "20260809",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260809_113d94572985.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260810",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260810_079ecab80e9c.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260811",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260811_15ca0502e489.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260812",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260812_04b46ec302f0.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260813",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260813_9773b56389dc.mp4",
+     "from": 0,
+     "to": 140,
+     "frames": 141
+    },
+    {
+     "day": "20260814",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260814_955c910a9b4e.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260815",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260815_72c1d559296a.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260816",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260816_9052b0fb6428.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260817",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260817_df08e10bd4e5.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260818",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260818_417ba9e080af.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260819",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260819_0c2dbc1e93d4.mp4",
+     "from": 0,
+     "to": 142,
+     "frames": 143
+    },
+    {
+     "day": "20260820",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260820_02bf641d7dc8.mp4",
+     "from": 0,
+     "to": 143,
+     "frames": 144
+    },
+    {
+     "day": "20260821",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260821_c9e0c7878b95.mp4",
+     "from": 0,
+     "to": 76,
+     "frames": 77
+    }
+   ]
+  },
+  {
+   "first": 130401,
+   "last": 130469,
+   "firstUtc": "2026-09-04T09:38:30Z",
+   "lastUtc": "2026-09-04T20:57:54Z",
+   "frames": 69,
+   "pieces": [
+    {
+     "day": "20260904",
+     "master": "/Users/robertalexander/GitHub/solarmeditation/renders/cache/master/20260904_96820a446b78.mp4",
+     "from": 33,
+     "to": 101,
+     "frames": 69
+    }
+   ]
+  }
+ ],
+ "fades": [
+  360,
+  360,
+  360,
+  360,
+  360,
+  360,
+  360,
+  360,
+  360,
+  360,
+  360,
+  69
+ ],
+ "junctions": [
+  {
+   "name": "gap 1",
+   "fade": 360,
+   "outLastUtc": "2024-09-07T16:38:42Z",
+   "inFirstUtc": "2024-09-07T19:41:42Z",
+   "start": 27,
+   "end": 386,
+   "outFrom": 52523,
+   "inFrom": 52883
+  },
+  {
+   "name": "gaps 2–17",
+   "fade": 360,
+   "outLastUtc": "2024-09-25T12:49:06Z",
+   "inFirstUtc": "2024-11-03T02:38:42Z",
+   "start": 2206,
+   "end": 2565,
+   "outFrom": 55062,
+   "inFrom": 60633
+  },
+  {
+   "name": "gaps 18–54",
+   "fade": 360,
+   "outLastUtc": "2024-11-19T23:29:18Z",
+   "inFirstUtc": "2025-02-13T07:38:54Z",
+   "start": 4271,
+   "end": 4630,
+   "outFrom": 62698,
+   "inFrom": 68490
+  },
+  {
+   "name": "gaps 55–72",
+   "fade": 360,
+   "outLastUtc": "2025-03-26T12:49:06Z",
+   "inFirstUtc": "2025-04-28T00:49:18Z",
+   "start": 9811,
+   "end": 10170,
+   "outFrom": 74030,
+   "inFrom": 78615
+  },
+  {
+   "name": "gap 73",
+   "fade": 360,
+   "outLastUtc": "2025-05-14T12:18:06Z",
+   "inFirstUtc": "2025-05-14T14:58:18Z",
+   "start": 11813,
+   "end": 12172,
+   "outFrom": 80617,
+   "inFrom": 80977
+  },
+  {
+   "name": "gap 74",
+   "fade": 360,
+   "outLastUtc": "2025-06-04T12:48:18Z",
+   "inFirstUtc": "2025-06-04T14:38:42Z",
+   "start": 14449,
+   "end": 14808,
+   "outFrom": 83613,
+   "inFrom": 83973
+  },
+  {
+   "name": "gaps 75–111",
+   "fade": 360,
+   "outLastUtc": "2025-07-09T18:08:30Z",
+   "inFirstUtc": "2025-08-10T05:48:54Z",
+   "start": 19129,
+   "end": 19488,
+   "outFrom": 88653,
+   "inFrom": 92956
+  },
+  {
+   "name": "gaps 112–113",
+   "fade": 360,
+   "outLastUtc": "2025-08-23T07:18:54Z",
+   "inFirstUtc": "2025-08-24T01:19:54Z",
+   "start": 20643,
+   "end": 21002,
+   "outFrom": 94470,
+   "inFrom": 94831
+  },
+  {
+   "name": "gaps 114–162",
+   "fade": 360,
+   "outLastUtc": "2025-09-10T11:08:42Z",
+   "inFirstUtc": "2026-03-18T15:38:54Z",
+   "start": 22779,
+   "end": 23138,
+   "outFrom": 96967,
+   "inFrom": 107181
+  },
+  {
+   "name": "gaps 163–171",
+   "fade": 360,
+   "outLastUtc": "2026-04-15T14:49:42Z",
+   "inFirstUtc": "2026-04-29T21:07:34Z",
+   "start": 26418,
+   "end": 26777,
+   "outFrom": 110820,
+   "inFrom": 113085
+  },
+  {
+   "name": "gaps 172–178",
+   "fade": 360,
+   "outLastUtc": "2026-05-14T10:38:54Z",
+   "inFirstUtc": "2026-08-03T01:38:54Z",
+   "start": 28133,
+   "end": 28492,
+   "outFrom": 114800,
+   "inFrom": 125897
+  },
+  {
+   "name": "gaps 216–220",
+   "fade": 69,
+   "outLastUtc": "2026-08-21T12:42:06Z",
+   "inFirstUtc": "2026-09-04T09:38:30Z",
+   "start": 30703,
+   "end": 30771,
+   "outFrom": 128467,
+   "inFrom": 130401
+  }
+ ],
+ "runs": [
+  {
+   "a": 52496,
+   "n": 27
+  },
+  {
+   "a": 52523,
+   "b": 52883,
+   "n": 360,
+   "fade": 0
+  },
+  {
+   "a": 53243,
+   "n": 1819
+  },
+  {
+   "a": 55062,
+   "b": 60633,
+   "n": 360,
+   "fade": 1
+  },
+  {
+   "a": 60993,
+   "n": 1705
+  },
+  {
+   "a": 62698,
+   "b": 68490,
+   "n": 360,
+   "fade": 2
+  },
+  {
+   "a": 68850,
+   "n": 5180
+  },
+  {
+   "a": 74030,
+   "b": 78615,
+   "n": 360,
+   "fade": 3
+  },
+  {
+   "a": 78975,
+   "n": 1642
+  },
+  {
+   "a": 80617,
+   "b": 80977,
+   "n": 360,
+   "fade": 4
+  },
+  {
+   "a": 81337,
+   "n": 2276
+  },
+  {
+   "a": 83613,
+   "b": 83973,
+   "n": 360,
+   "fade": 5
+  },
+  {
+   "a": 84333,
+   "n": 4320
+  },
+  {
+   "a": 88653,
+   "b": 92956,
+   "n": 360,
+   "fade": 6
+  },
+  {
+   "a": 93316,
+   "n": 1154
+  },
+  {
+   "a": 94470,
+   "b": 94831,
+   "n": 360,
+   "fade": 7
+  },
+  {
+   "a": 95191,
+   "n": 1776
+  },
+  {
+   "a": 96967,
+   "b": 107181,
+   "n": 360,
+   "fade": 8
+  },
+  {
+   "a": 107541,
+   "n": 3279
+  },
+  {
+   "a": 110820,
+   "b": 113085,
+   "n": 360,
+   "fade": 9
+  },
+  {
+   "a": 113445,
+   "n": 1355
+  },
+  {
+   "a": 114800,
+   "b": 125897,
+   "n": 360,
+   "fade": 10
+  },
+  {
+   "a": 126257,
+   "n": 2210
+  },
+  {
+   "a": 128467,
+   "b": 130401,
+   "n": 69,
+   "fade": 11
+  }
+ ],
+ "firstUtc": "2024-09-05T00:08:18Z",
+ "lastUtc": "2026-09-04T20:57:54Z"
+}
