@@ -107,6 +107,9 @@ input[type=range] { width: 100%; }
     <button data-p="fixed">Fixed</button>
     <button data-p="dynamic">Dynamic</button>
   </div>
+  <div class="seg" id="caps" title="The longest fade any policy may give, frames (180 approved)" style="margin:6px 0">
+    <button data-c="90">90</button><button data-c="180">180</button><button data-c="270">270</button><button data-c="360">360</button>
+  </div>
   <label class="row" id="nRow">Length N <input type="range" id="n" min="0" max="180"><output id="nOut"></output></label>
   <div class="cells" id="runtime"></div>
 
@@ -141,7 +144,10 @@ input[type=range] { width: 100%; }
 (async () => {
   const $ = id => document.getElementById(id);
   const FPS = 30;
-  const MAX_FADE = 180;          // the approved dissolve, frames
+  // The longest fade any policy may give, frames: 180 approved, and 90,
+  // 270 and 360 to try (Longest fade, in the Fades panel; remembered)
+  const CAPS = [90, 180, 270, 360];
+  let MAX_FADE = 180;
   // A run of footage shorter than this between two gaps is an island (Apr
   // 22, 24 and 29: 1 to 3 frames): with Merge islands on (the default,
   // Robert's call 2026-10-12) it is left out and its two gaps become one
@@ -173,10 +179,11 @@ input[type=range] { width: 100%; }
   // dropped frame and of the first frame after it (not frame numbers, so it
   // holds if the record is re-cut).
   const BRIDGE_FROM = '2026-07-04T16:59:18Z', BRIDGE_TO = '2026-08-03T01:38:54Z';
-  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true };
+  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 180, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true };
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   if (!SPEEDS.includes(st.speed)) st.speed = 1;
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
+  MAX_FADE = CAPS.includes(st.cap) ? st.cap : 180;
   st.n = Math.max(0, Math.min(MAX_FADE, Math.round(+st.n || 0)));
   st.bridge = Object.assign({ on: false, from: BRIDGE_FROM, to: BRIDGE_TO }, st.bridge && typeof st.bridge === 'object' ? st.bridge : {});
   const save = () => { try { localStorage.setItem('gapExplorer', JSON.stringify(st)); } catch (e) {} };
@@ -454,7 +461,7 @@ input[type=range] { width: 100%; }
     }
     lines.push('');
     lines.push('frames ' + num(NF) + ', gaps ' + G + ', segments ' + S + ' (shortest ' + Math.min(...segLen) + ' frames)');
-    lines.push('dynamic: ' + f.filter(x => x === MAX_FADE).length + ' gaps at 180, ' + f.filter(x => x > 0 && x < MAX_FADE).length + ' shorter, ' + f.filter(x => x === 0).length + ' hard cuts; shortest ' + Math.min(...f) + ', longest ' + Math.max(...f));
+    lines.push('dynamic: ' + f.filter(x => x === MAX_FADE).length + ' gaps at ' + MAX_FADE + ', ' + f.filter(x => x > 0 && x < MAX_FADE).length + ' shorter, ' + f.filter(x => x === 0).length + ' hard cuts; shortest ' + Math.min(...f) + ', longest ' + Math.max(...f));
     lines.push('overlap ' + num(over) + ' frames; program ' + num(prog) + ' frames = ' + clock(prog / FPS) + ' against the straight cut ' + clock(NF / FPS));
     // the bridge at its default cut, Dynamic, 180 at the bridge
     const ja = segOf(cutFrom - 1), jb = segOf(cutTo);
@@ -815,6 +822,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     segBtns('policies', 'p').forEach(([b, v]) => b.classList.toggle('on', v === st.policy));
     segBtns('bridges', 'b').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === bridgeOn()));
     segBtns('islands', 'i').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.islands));
+    segBtns('caps', 'c').forEach(([b, v]) => b.classList.toggle('on', +v === MAX_FADE));
     [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', SPEEDS[i] === st.speed));
     $('nRow').classList.toggle('off', st.policy !== 'fixed');
     $('atmoRow').classList.toggle('off', st.view === 'raw');
@@ -824,6 +832,10 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   segBtns('grades', 'g').forEach(([b, v]) => { b.onclick = () => { st.grade = v === '1'; save(); markAll(); }; });
   segBtns('policies', 'p').forEach(([b, v]) => { b.onclick = () => { st.policy = v; save(); replan(); }; });
   segBtns('islands', 'i').forEach(([b, v]) => { b.onclick = () => { st.islands = v === '1'; save(); replan(); }; });
+  // Longest fade: the cap every policy and override works under, live
+  const setCap = c => { MAX_FADE = st.cap = c; $('n').max = c; if (st.n > c) st.n = c; $('n').value = st.n; };
+  segBtns('caps', 'c').forEach(([b, v]) => { b.onclick = () => { setCap(+v); save(); replan(); }; });
+  $('n').max = MAX_FADE;
   segBtns('bridges', 'b').forEach(([b, v]) => {
     b.onclick = () => {
       st.bridge.on = v === '1';
@@ -859,7 +871,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
       [bridgeOn() ? 'No bridge' : 'With bridge', clock(altPlan.total / FPS) + '  ' + pad(num(altPlan.total), 6) + ' fr'],
       ['Straight cut', clock(NF / FPS) + '  ' + pad(num(NF), 6) + ' fr'],
       ['Overlap', pad(num(plan.over), 5) + ' fr  ' + (plan.over / FPS).toFixed(1) + ' s'],
-      ['Junctions', pad(at, 2) + '×180 · ' + pad(J - at - cut, 2) + ' less · ' + pad(cut, 2) + ' hard']
+      ['Junctions', pad(at, 2) + '×' + MAX_FADE + ' · ' + pad(J - at - cut, 2) + ' less · ' + pad(cut, 2) + ' hard']
     ]);
     const qb = plan.rec.indexOf(-1);
     $('bridgeCells').innerHTML = cells([
