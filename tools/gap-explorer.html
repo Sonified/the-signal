@@ -678,9 +678,12 @@ input[type=range] { width: 100%; }
     let q = nextEvent(a);
     // A frame can pass between two of ours: A may already stand in the next
     // piece while the junction it just finished still holds its B. That
-    // junction is still the one to hand over.
+    // junction is still the one to hand over, adjacent pieces or not: at a
+    // merged junction A can step clean over a dropped 1-frame island in one
+    // tick (gaps 53-54 in the two-year record), and without this it played
+    // on from the next piece's head, the clock rewinding by the fade.
     const jp = pieceOf(a) - 1;
-    if (jp >= 0 && holder(jp) && plan.pst[jp + 1] === plan.end[jp]) q = jp;
+    if (jp >= 0 && holder(jp)) q = jp;
     if (playing && ready(m)) {
       if (m.v.paused) { setRate(m, base()); play(m); }
       // the program's end: round again
