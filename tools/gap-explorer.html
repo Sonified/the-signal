@@ -67,6 +67,11 @@ input[type=range] { width: 100%; }
 /* the date character by character, as tools in solarmeditation's xfade_player:
    only a changed character crossfades, at equal power (no dip), over 0.5 s */
 #stamp .line { display: flex; }
+/* in the raw mosaic, each channel tile's name in its own lower-right corner */
+#aia { display: none; }
+#aia span { position: absolute; display: block; text-align: right; line-height: 1.25; color: #9aa2b2; opacity: .8; letter-spacing: .03em; white-space: nowrap; pointer-events: none; transform: translate(-100%, -100%); }
+#aia i { font-style: normal; color: #6b7386; letter-spacing: 0; }
+#aia i::before { content: ' · '; }
 #stamp .c { display: inline-grid; }
 #stamp .c span { grid-area: 1 / 1; opacity: 0; transition: opacity .5s cubic-bezier(.6, 0, 1, 1); text-align: center; }
 #stamp .c span.on { opacity: 1; transition: opacity .5s cubic-bezier(0, 0, .4, 1); }
@@ -136,7 +141,7 @@ input[type=range] { width: 100%; }
 
   <h2>Speed</h2>
   <div class="seg" id="speeds"></div>
-  <label class="row" style="margin-top:4px">Speed <input type="range" id="speedSlider" min="-200" max="400" step="1"><output id="speedOut"></output></label>
+  <label class="row" style="margin-top:4px">Speed <input type="range" id="speedSlider" min="-200" max="500" step="1"><output id="speedOut"></output></label>
 
   <h2><span id="gapName">Gap</span> <span><button class="mini" id="prevGap">‹</button> <button class="mini" id="nextGap">›</button></span></h2>
   <div class="cells" id="gapCells"></div>
@@ -160,9 +165,9 @@ input[type=range] { width: 100%; }
   <div class="cells" id="bridgeCells" style="margin-top:4px"></div>
   <div class="hint">A cut: these frames are left out of the program. Drag its edges by the grips above the timeline.</div>
 
-  <div class="keys" style="margin-top:12px"><b>space</b> play/pause · <b>, .</b> frame step · <b>[ ]</b> gap before/after (and jump there) · <b>1 2 4 8 6</b> speed (6 = 16×), <b>- =</b> slower/faster · <b>v</b> Sun/raw · wheel on the timeline zooms</div>
+  <div class="keys" style="margin-top:12px"><b>space</b> play/pause · <b>, .</b> frame step · <b>[ ]</b> gap before/after (and jump there) · <b>1 2 4 8 6 3</b> speed (6 = 16×, 3 = 32×), <b>- =</b> slower/faster · <b>v</b> Sun/raw · wheel on the timeline zooms</div>
 </div>
-<div id="stage"><canvas id="c"></canvas><div id="stamp"><div class="line"></div></div><div id="status">Loading…</div><div id="note"></div></div>
+<div id="stage"><canvas id="c"></canvas><div id="stamp"><div class="line"></div></div><div id="aia"><span>AIA 1700<i>photosphere</i></span><span>AIA 304<i>chromosphere</i></span><span>AIA 171<i>quiet corona</i></span><span>AIA 193<i>corona · coronal holes</i></span><span>AIA 211<i>active corona</i></span></div><div id="status">Loading…</div><div id="note"></div></div>
 <div id="nowBox"><div class="cells" id="now"></div></div>
 <div id="tl"><canvas id="tlc"></canvas><div id="tip"></div><button class="mini" id="whole">Whole record</button></div>
 
@@ -211,8 +216,11 @@ input[type=range] { width: 100%; }
   // The speed buttons; the Speed slider sets anything from the first to the
   // last, on a log scale. 16x reads the 8x rung at playbackRate 2 (its frame
   // k is the 1x file's 8k).
-  const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
-  const SPEED_MIN = 0.25, SPEED_MAX = 16;
+  // 32x reads the 8x rung at playbackRate 4, about 120 fps of 3072-wide HEVC:
+  // Robert's M1 Max kept up with that from the 4x rung (16x before the 8x
+  // rung existed), so it is in the list
+  const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
+  const SPEED_MIN = 0.25, SPEED_MAX = 32;
   let HAS4 = true, HAS8 = true;
   const rungOf = s => (s >= 16 && HAS8 ? 8 : s >= 4 && HAS4 ? 4 : 1);
   // Timing of the incoming decoder, in wall seconds (scaled to source frames
@@ -232,9 +240,10 @@ input[type=range] { width: 100%; }
   const BRIDGE_FROM = '2026-07-02T06:09:18Z', BRIDGE_TO = '2026-08-03T01:38:54Z';
   // a saved bridge still at the old start (Jul 4, inside gap 17's stretch) moves too
   const OLD_BRIDGE_FROM = '2026-07-04T16:59:18Z';
-  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true, dis: null, blend: 'avg' };
+  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true, dis: null, blend: 'avg', solo: -1 };
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   st.speed = Math.max(SPEED_MIN, Math.min(SPEED_MAX, +st.speed || 1));
+  if (!(Number.isInteger(st.solo) && st.solo >= 0 && st.solo <= 4)) st.solo = -1;   // the raw tile shown alone, or -1
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
   // the New layer modes, as the shader numbers them
   const BLENDS = { avg: 0, max: 1, min: 2, avgmax: 3, maxinavgout: 4, highlights: 5, softmax: 6 };
@@ -628,7 +637,11 @@ input[type=range] { width: 100%; }
     el.v.currentTime = (rf + 0.5) / FPS;
   }
   const play = el => { el.v.play().catch(() => {}); };
-  const setRate = (el, r) => { if (Math.abs(el.v.playbackRate - r) > 0.002) el.v.playbackRate = r; };
+  // Chrome takes playbackRate 1/16 to 16 and throws outside it (which would
+  // stop the frame loop): the incoming decoder's nudge at 16x from the 1x
+  // file, mid-drag, would ask for 20
+  const RATE_MIN = 0.0625, RATE_MAX = 16;
+  const setRate = (el, r) => { r = Math.max(RATE_MIN, Math.min(RATE_MAX, r)); if (Math.abs(el.v.playbackRate - r) > 0.002) el.v.playbackRate = r; };
   const holder = q => pool.find(el => el !== master && el.gap === q);
   const freeEl = () => pool.find(el => el !== master && el.gap === -1);
   function release(el) { el.gap = -1; el.v.pause(); setRate(el, base()); }
@@ -645,13 +658,21 @@ input[type=range] { width: 100%; }
     el.gap = q; el.woke = false; el.err = 0; el.v.pause(); setRate(el, base());
     seekEl(el, Math.max(0, Math.min(pos, head + Math.max(n, 1) - 1)), true);
   }
+  // Every decoder onto FILES[R], then `then`. A newer load (a second rung
+  // switch before this one finished) supersedes it: the older one's
+  // listeners would otherwise still fire on the new file and seek to the
+  // place it was asked for, not the newest.
+  let loadGen = 0;
   function loadAll(then) {
     let left = pool.length;
+    const gen = ++loadGen;
+    // The old file's frame reports stop now and the new file's start once
+    // all three are in, so a first frame presented before the seek (frame
+    // 0) never reads as where the program is.
     for (const el of pool) {
-      el.loaded = false; el.gap = -1;
-      el.v.addEventListener('loadedmetadata', () => { el.loaded = true; if (--left === 0) then(); }, { once: true });
+      el.loaded = false; el.gap = -1; el.gen++;
+      el.v.addEventListener('loadedmetadata', () => { if (gen !== loadGen) return; el.loaded = true; if (--left === 0) { pool.forEach(watch); then(); } }, { once: true });
       el.v.src = FILES[R];
-      watch(el);
     }
   }
   pool.forEach(el => el.v.addEventListener('error', () => { $('status').textContent = 'Could not play ' + FILES[R] + ' (is tools/serve.mjs running from the repo, with ' + DIR + ' in place?)'; }));
@@ -669,7 +690,10 @@ input[type=range] { width: 100%; }
   // decoders as they stand
   window.gapExplorer = {
     decoders: () => pool.map(el => ({ name: el.name, master: el === master, gap: el.gap, src: srcOf(el), paused: el.v.paused, ready: ready(el), rate: +el.v.playbackRate.toFixed(3), err: +el.err.toFixed(1) })),
-    plan: () => plan
+    plan: () => plan,
+    // the file in hand and how many times the decoders have loaded one
+    rung: () => R,
+    loads: () => loadGen
   };
 
   // Each frame, before drawing: keep the next two junctions' decoders
@@ -772,7 +796,7 @@ input[type=range] { width: 100%; }
 struct U {
   rect: vec4f,   // the picture in canvas pixels: x, y, width, height
   canvas: vec4f, // canvas width, height
-  view: vec4f,   // raw (1) or the Sun (0), the overlap weight w, graded (1), unused
+  view: vec4f,   // raw (1) or the Sun (0), the overlap weight w, graded (1), the raw tile shown alone (1-5, 0 the grid)
   g0: vec4f,     // Atmosphere gains: 1700, 304, 171, 193
   g1: vec4f,     // gain 211
   adj: array<vec4f, 5>, // per layer: brightness, contrast, saturation, elevate
@@ -945,7 +969,15 @@ fn layer(uv: vec2f, col: f32, row: f32, tint: vec3f, i: i32, gain: f32, w: f32) 
 fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   let uv = clamp((p.xy - u.rect.xy) / u.rect.zw, vec2f(0.0), vec2f(1.0));
   // the raw mosaic: each tile's own point on the Sun sets its weight
-  if (u.view.x > 0.5) { return vec4f(mosaic(uv, weightAt(fract(uv * vec2f(3.0, 2.0)))), 1.0); }
+  if (u.view.x > 0.5) {
+    // one tile alone, filling the picture: its square of the mosaic
+    if (u.view.w > 0.5) {
+      let t = u.view.w - 1.0;
+      let cell = vec2f(t - 3.0 * floor(t / 3.0), floor(t / 3.0));
+      return vec4f(mosaic((uv + cell) / vec2f(3.0, 2.0), weightAt(uv)), 1.0);
+    }
+    return vec4f(mosaic(uv, weightAt(fract(uv * vec2f(3.0, 2.0)))), 1.0);
+  }
   // the Sun: every channel at this point shares one weight, so a region
   // crosses over in all its colors at once
   let wd = weightAt(uv);
@@ -1007,7 +1039,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     const dpr = window.devicePixelRatio || 1, r = $('stage').getBoundingClientRect();
     canvas.width = Math.max(1, Math.round(r.width * dpr)); canvas.height = Math.max(1, Math.round(r.height * dpr));
     const W = canvas.width, H = canvas.height;
-    if (st.view === 'raw') {
+    const solo = st.view === 'raw' && st.solo >= 0;
+    if (st.view === 'raw' && !solo) {
       const w = Math.min(W * 0.98, H * 0.98 * 1.5), h = w / 1.5;
       rect = [(W - w) / 2, (H - h) / 2, w, h];
     } else {
@@ -1016,11 +1049,25 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     }
     // the date in the raw mosaic's empty sixth tile (lower right)
     const stamp = $('stamp');
-    stamp.style.display = st.view === 'raw' ? 'grid' : 'none';
+    stamp.style.display = st.view === 'raw' && !solo ? 'grid' : 'none';
     const tw = rect[2] / 3 / dpr, th = rect[3] / 2 / dpr;
     stamp.style.left = (rect[0] / dpr + 2 * tw) + 'px'; stamp.style.top = (rect[1] / dpr + th) + 'px';
     stamp.style.width = tw + 'px'; stamp.style.height = th + 'px';
     stamp.style.fontSize = Math.max(10, tw * 0.075) + 'px';
+    // each channel tile's AIA name in its lower-right corner (raw view only)
+    const aia = $('aia');
+    aia.style.display = st.view === 'raw' ? 'block' : 'none';
+    // alone, a tile is the whole picture: its own label in the picture's corner
+    const cw = solo ? rect[2] / dpr : tw, ch = solo ? rect[3] / dpr : th;
+    // the label keeps the size it has in the grid, alone or not: sized from
+    // the grid's tile width at this window, whichever view is up
+    const gridTw = Math.min(W * 0.98, H * 0.98 * 1.5) / 3 / dpr;
+    const fs = Math.max(8, gridTw * 0.03), pad = fs * 0.7;
+    [...aia.children].forEach((sp, i) => {
+      sp.style.display = solo && i !== st.solo ? 'none' : '';
+      const cx = solo ? 1 : i % 3 + 1, cy = solo ? 1 : Math.floor(i / 3) + 1;
+      Object.assign(sp.style, { left: (rect[0] / dpr + cw * cx - pad) + 'px', top: (rect[1] / dpr + ch * cy - pad) + 'px', fontSize: fs + 'px' });
+    });
   }
 
   function draw() {
@@ -1028,12 +1075,15 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     const fd = fadeNow();
     const imp = el => { try { return el.v.readyState >= 2 ? device.importExternalTexture({ source: el.v }) : null; } catch (e) { return null; } };
     // No frame from A (a fresh load): skip, and the canvas keeps the last.
+    // Nor while A is still loading or seeking: a reloaded file shows its
+    // frame 0 until the seek lands, a flash of the record's start.
+    if (!master.loaded || master.v.seeking) return;
     const extA = imp(master);
     if (!extA) return;
     const extB = fd && fd.ok ? imp(fd.b) : null;
     uni.set(rect, 0);
     uni.set([canvas.width, canvas.height, 0, 0], 4);
-    uni.set([st.view === 'raw' ? 1 : 0, extB ? fd.w : 0, st.grade ? 1 : 0, 0], 8);
+    uni.set([st.view === 'raw' ? 1 : 0, extB ? fd.w : 0, st.grade ? 1 : 0, st.view === 'raw' && st.solo >= 0 ? st.solo + 1 : 0], 8);
     uni.set([gains[0], gains[1], gains[2], gains[3]], 12);
     uni.set([gains[4], 0, 0, 0], 16);
     // the living dissolve: its settings, and the Sun's rotation and the
@@ -1071,7 +1121,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     segBtns('dismap', 'm').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.map));
     blendBtns().forEach(b => b.classList.toggle('on', b.dataset.l === st.blend));
     [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', Math.abs(SPEEDS[i] - st.speed) < 1e-3));
-    // the slider is log2 of the speed, in hundredths (-200 = 0.25x, 400 = 16x)
+    // the slider is log2 of the speed, in hundredths (-200 = 0.25x, 500 = 32x)
     $('speedSlider').value = Math.round(Math.log2(st.speed) * 100);
     $('speedOut').textContent = +st.speed.toFixed(2) + '×';
     $('nRow').classList.toggle('off', st.policy !== 'fixed');
@@ -1126,13 +1176,19 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   });
   SPEEDS.forEach(s => { const b = document.createElement('button'); b.textContent = s + '×'; b.onclick = () => setSpeed(s); $('speeds').appendChild(b); });
   // the Speed slider: any speed, dragged live; it snaps to a button's speed
-  // within 3% so 1x, 2x and the rest are easy to land on
-  $('speedSlider').oninput = () => {
+  // within 3% so 1x, 2x and the rest are easy to land on. Dragging changes
+  // the rate live on the file in hand; letting go loads the speed's rung.
+  const sliderSpeed = () => {
     let v = Math.pow(2, +$('speedSlider').value / 100);
     const near = SPEEDS.find(x => Math.abs(x - v) / x < 0.03);
     if (near) v = near;
-    setSpeed(Math.max(SPEED_MIN, Math.min(SPEED_MAX, Math.round(v * 100) / 100)));
+    return Math.max(SPEED_MIN, Math.min(SPEED_MAX, Math.round(v * 100) / 100));
   };
+  $('speedSlider').oninput = () => setSpeed(sliderSpeed(), true);
+  // the drag's end: change, and pointerup too, since the snap rewrites the
+  // slider's value mid-drag and Chrome may then see no change to report
+  const settleRung = () => { if (rungOf(st.speed) !== R) setSpeed(st.speed); };
+  for (const ev of ['change', 'pointerup', 'pointercancel']) $('speedSlider').addEventListener(ev, settleRung);
   // buttons give their focus back, so space stays play/pause
   document.addEventListener('click', e => { if (e.target.tagName === 'BUTTON') e.target.blur(); });
 
@@ -1238,12 +1294,23 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     playing = on;
     if (!on) for (const el of pool) el.v.pause();
   }
-  function setSpeed(s) {
-    const p = programNow(), nR = rungOf(s);
+  // live: the Speed slider mid-drag. A rung switch reloads every decoder
+  // (the picture holds for a moment), so while the finger is down the file
+  // in hand is kept as long as Chrome can play it at that speed (only the
+  // 8x rung under 0.5x and the 1x file over 16x cannot: then the speed's
+  // own rung loads at once), and the right rung is loaded once, when
+  // the drag ends: passing back and forth over 4x or 16x never reloads.
+  function setSpeed(s, live) {
+    const p = programNow();
+    const nR = live && s / R >= RATE_MIN && s / R <= RATE_MAX ? R : rungOf(s);
     st.speed = s; save(); markAll();
     if (nR !== R) {
-      // the other file: every decoder reloads, then finds its place
-      for (const el of pool) { el.mt = el.mt * R / nR; el.err = 0; }
+      // the other file: every decoder reloads, then finds its place. Until
+      // then pool[0], the master to be, holds the master's place in the new
+      // file's time (the readouts, the playhead and a second switch read
+      // it), whichever decoder was the master.
+      const mt = master.mt * R / nR;
+      for (const el of pool) { el.mt = mt; el.err = 0; }
       R = nR; master = pool[0];
       loadAll(() => seekProgram(p));
     } else {
@@ -1304,8 +1371,10 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     else if (fd && !fd.ok) note = 'incoming decoder loading';
     else if (now - missedAt < 2000) note = 'a fade was missed (decoder late)';
     if ($('note').textContent !== note) $('note').textContent = note;
-    const s = (playing ? 'playing ' : 'paused ') + +st.speed.toFixed(2) + '× · ' + (R === 1 ? 'sun_mosaic_hevc.mp4' : 'sun_mosaic_' + R + 'x_hevc.mp4') + ' · ' + REC + ' · ' + st.policy + (bridgeOn() ? ' · bridge (cut) on' : '');
-    if ($('status').textContent !== s) $('status').textContent = s;
+    // the status line only speaks for problems (Robert never read the
+    // running "playing 8x ..." summary): clear it once playing is under way,
+    // leaving any error a load or decoder wrote
+    if ($('status').textContent === 'Loading…') $('status').textContent = '';
   }
 
   // ---------- the timeline: the whole record on the source frames ----------
@@ -1514,6 +1583,22 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   }, { passive: false });
   $('whole').onclick = () => { v0 = 0; v1 = NF; st.zoom = null; save(); dirtyTl = true; };
 
+  // In the raw view a click on a tile shows it alone, filling the picture;
+  // a click again goes back to the grid (the empty sixth tile does nothing)
+  canvas.addEventListener('click', e => {
+    if (st.view !== 'raw') return;
+    if (st.solo >= 0) st.solo = -1;
+    else {
+      const dpr = window.devicePixelRatio || 1, r = canvas.getBoundingClientRect();
+      const u = ((e.clientX - r.left) * dpr - rect[0]) / rect[2], v = ((e.clientY - r.top) * dpr - rect[1]) / rect[3];
+      if (u < 0 || u >= 1 || v < 0 || v >= 1) return;
+      const i = Math.floor(v * 2) * 3 + Math.floor(u * 3);
+      if (i > 4) return;
+      st.solo = i;
+    }
+    save(); layoutStage();
+  });
+
   // ---------- keys ----------
   addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1523,6 +1608,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     else if (k === '[' || k === ']') { e.preventDefault(); selectQ(selQ() + (k === ']' ? 1 : -1), true); }
     else if ('1248'.includes(k) && k.length === 1) setSpeed(+k);
     else if (k === '6') setSpeed(16);
+    else if (k === '3') setSpeed(32);
     // the next button's speed down or up from wherever the slider left it
     else if (k === '-') { const v = [...SPEEDS].reverse().find(x => x < st.speed - 1e-3); if (v) setSpeed(v); }
     else if (k === '=' || k === '+') { const v = SPEEDS.find(x => x > st.speed + 1e-3); if (v) setSpeed(v); }
@@ -1533,7 +1619,12 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   new ResizeObserver(() => { layoutStage(); dirtyTl = true; }).observe($('stage'));
   new ResizeObserver(() => { dirtyTl = true; }).observe($('tl'));
   markAll(); showRuntime(); showGap(); layoutStage();
-  loadAll(() => seekProgram(progOf(st.pos)));
+  // the remembered place, held by the master until the files are in
+  {
+    const p0 = progOf(st.pos);
+    pool[0].mt = Math.floor(st.pos / R) / FPS;
+    loadAll(() => seekProgram(p0));
+  }
   let lastSave = 0;
   function frame(now) {
     if (pendingScrub >= 0) { seekProgram(progOf(Math.max(0, Math.min(NF - 1, pendingScrub)))); pendingScrub = -1; }
@@ -1542,7 +1633,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     readouts(now);
     const head = Math.round(xOf(srcOf(master)) * 2);
     if (dirtyTl || head !== lastHead || fadeNow()) { drawTl(); dirtyTl = false; lastHead = head; }
-    if (now - lastSave > 1000) { lastSave = now; const p = srcOf(master); if (p !== st.pos) { st.pos = p; save(); } }
+    // (not while the files load: the place is only held then)
+    if (now - lastSave > 1000 && master.loaded) { lastSave = now; const p = srcOf(master); if (p !== st.pos) { st.pos = p; save(); } }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

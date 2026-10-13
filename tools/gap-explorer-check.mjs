@@ -8,11 +8,14 @@
 //   node tools/gap-explorer-check.mjs [steps]
 //
 // steps: a comma list run in order, each "<what>:<seconds>", where what is
-// a key to press (space , . [ ] 1 2 4 8 v), "bridge" (switch it on),
-// "reload",
-// "shot" (a screenshot), "#id" or "[data-x=y]" (click it) or "#id=value"
-// (set a slider); sampling the readouts every 250 ms between steps (EVERY=ms
-// to change, DEC=1 to sample the decoders instead).
+// a key to press (space, comma or , . [ ] 1 2 4 8 6 3 v), "bridge" (switch
+// it on), "reload", "shot" (a screenshot), "#id" or "[data-x=y]" (click
+// it), "#id=value" (set a slider as a drag does, input only; or a menu:
+// #record=twoyear) or "#id^" (let go of a slider: change and pointerup);
+// sampling the readouts (with the rung in hand and how many times the
+// decoders have loaded a file) every 250 ms between steps (EVERY=ms to
+// change, DEC=1 to sample the decoders instead, READ=<expression> to sample
+// that).
 // Needs tools/serve.mjs on port 8000.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -43,7 +46,7 @@ const evaluate = async expr => (await send('Runtime.evaluate', { expression: exp
 await send('Runtime.enable'); await send('Page.enable');
 await send('Page.navigate', { url: 'http://localhost:8000/tools/gap-explorer.html' });
 // the readouts, one line
-const READ = process.env.DEC ? `JSON.stringify(gapExplorer.decoders().map(d => d.name + (d.master ? "*" : "") + " g" + d.gap + " " + d.src + (d.paused ? " p" : " >") + (d.ready ? "" : " ~") + " r" + d.rate + " e" + d.err))` : `[...document.querySelectorAll("#now .v")].map(e => e.textContent).join(" | ") + " || " + document.getElementById("note").textContent`;
+const READ = process.env.READ ? process.env.READ : process.env.DEC ? `JSON.stringify(gapExplorer.decoders().map(d => d.name + (d.master ? "*" : "") + " g" + d.gap + " " + d.src + (d.paused ? " p" : " >") + (d.ready ? "" : " ~") + " r" + d.rate + " e" + d.err))` : `[...document.querySelectorAll("#now .v")].map(e => e.textContent).join(" | ") + " || " + document.getElementById("note").textContent + " || rung " + gapExplorer.rung() + " loads " + gapExplorer.loads()`;
 let shots = 0;
 for (const [what, secs] of steps) {
   if (what === 'shot') {
@@ -55,15 +58,18 @@ for (const [what, secs] of steps) {
     await send('Page.reload');
   } else if (what === 'bridge') {
     await evaluate(`document.querySelector('#bridges [data-b="1"]').click()`);
+  } else if (what.startsWith('#') && what.endsWith('^')) {
+    // the end of a slider drag
+    await evaluate(`(e => { for (const t of ['change', 'pointerup']) e.dispatchEvent(new Event(t)); })(document.querySelector(${JSON.stringify(what.slice(0, -1))}))`);
   } else if (what.startsWith('#') && what.includes('=')) {
     // a slider: #id=value
     const [sel, val] = what.split('=');
-    await evaluate(`(e => { e.value = ${JSON.stringify(val)}; e.oninput(); })(document.querySelector(${JSON.stringify(sel)}))`);
+    await evaluate(`(e => { e.value = ${JSON.stringify(val)}; (e.oninput || e.onchange)(); })(document.querySelector(${JSON.stringify(sel)}))`);
   } else if (what.startsWith('#') || what.startsWith('[')) {
     // a button, by selector
     await evaluate(`document.querySelector(${JSON.stringify(what)}).click()`);
   } else if (what !== 'wait') {
-    const key = what === 'space' ? ' ' : what;
+    const key = what === 'space' ? ' ' : what === 'comma' ? ',' : what;
     await evaluate(`dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)} }))`);
   }
   console.log(stamp() + ' step ' + what);
