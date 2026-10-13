@@ -13,8 +13,8 @@
   sdo.gsfc.nasa.gov/assets/img/browse/<y>/<m>/<d>/<stamp>_<size>_<channel>.jpg).
     http://localhost:8000/tools/sdo-still-compare.html?f=20250317_140634&ch=0171
   Keys: 1 2 4 the size, wheel zoom at the cursor, drag to pan, double-click
-  to fit, L the loupe (a circle up and left of the cursor showing what is
-  under it at 5x). Everything is remembered.
+  to fit, L the loupe (a circle up and left of the cursor, magnifying what
+  lies under its own centre at 5x). Everything is remembered.
 -->
 <style>
 :root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; }
@@ -67,12 +67,12 @@ canvas.drag { cursor: grabbing; }
       const x = c.width / 2 - st.cx * st.zoom, y = c.height / 2 - st.cy * st.zoom;
       g.drawImage(im, x, y, st.zoom, st.zoom);
     }
-    // the loupe: what is under the cursor, at LOUPE x, in a circle up and
-    // to the left of it (never while dragging)
+    // the loupe: a circle up and to the left of the cursor, showing what is
+    // under its own centre at LOUPE x (never while dragging)
     if (st.loupe && mouse && !drag && im.complete && im.naturalWidth) {
       const R = 130 * dpr, off = R * 0.85;
       const lx = mouse.x - off, ly = mouse.y - off;
-      const ix = st.cx + (mouse.x - c.width / 2) / st.zoom, iy = st.cy + (mouse.y - c.height / 2) / st.zoom;
+      const ix = st.cx + (lx - c.width / 2) / st.zoom, iy = st.cy + (ly - c.height / 2) / st.zoom;
       const z = st.zoom * LOUPE;
       g.save();
       g.beginPath(); g.arc(lx, ly, R, 0, Math.PI * 2); g.clip();
