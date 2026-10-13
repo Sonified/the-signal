@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDO Week</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>">
+<!--
+  A week of one SDO channel as a real video, played the way the site will
+  play it: 30 fps HEVC, one video at a time, here at 1024 or 2048 with the
+  same timestamps, flipped at the same moment so only the detail changes.
+  Made by tools/sdo-week-video.sh into sun-video/week/ (git-ignored):
+  <channel>_<size>_hevc.mp4 and <channel>_times.json.
+    http://localhost:8000/tools/sdo-week-player.html?ch=0171
+  The picture is a canvas the size of the stage in device pixels, the video
+  drawn into it, so a fitted 2048 lands at about one image pixel per device
+  pixel on a Retina screen (the bar says how many). Every readout lives in
+  the bar under the picture, never over the Sun.
+  Keys: space play/pause, , . or arrows a frame back/forward, - = slower /
+  faster, 1 the 1024, 2 the 2048, L loop; wheel zoom at the cursor, drag to
+  pan, double-click to fit. Everything is remembered.
+-->
+<style>
+:root { --bg: #07080c; --panel: #12151d; --line: #262c3a; --ink: #e8ecf4; --dim: #8a93a6; --gold: #f2c14e; --warn: #ff9f6b; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
+body { display: grid; grid-template-rows: minmax(0, 1fr) auto; height: 100vh; }
+#stage { position: relative; overflow: hidden; min-height: 0; background: #000; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#stage canvas.drag { cursor: grabbing; }
+#bar { background: var(--panel); border-top: 1px solid var(--line); padding: 6px 10px 8px; }
+#scrub { width: 100%; display: block; margin: 0 0 6px; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.seg { display: flex; gap: 3px; }
+button { height: 25px; border-radius: 6px; border: 1px solid var(--line); background: #1b2030; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; padding: 0 9px; white-space: nowrap; }
+button:hover { color: var(--ink); }
+/* the picked button: a gold edge and text, not a gold block */
+button.on { border-color: var(--gold); color: var(--gold); background: #211e16; }
+#play { width: 62px; color: var(--ink); }
+.sep { color: var(--dim); font-size: 11px; margin: 0 0 0 8px; }
+.cell { color: var(--ink); font: 12px/25px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; font-variant-numeric: tabular-nums; }
+.cell.dim { color: var(--dim); }
+#warn { color: var(--warn); font-size: 12px; }
+.keys { color: var(--dim); font-size: 11px; margin-left: auto; white-space: nowrap; }
+.keys b { color: var(--ink); font-weight: 500; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div id="bar">
+  <input type="range" id="scrub" min="0" max="0" step="1" value="0" title="Scrub: every frame of the week">
+  <div class="row">
+    <button id="play" title="Play / pause (space)">Play</button>
+    <span class="seg"><button id="back" title="A frame back (, or ←)">‹</button><button id="fwd" title="A frame forward (. or →)">›</button></span>
+    <button id="loop" title="Loop at the end (L)">Loop</button>
+    <span class="sep">Speed</span><span class="seg" id="speeds"></span>
+    <span class="sep">Size</span><span class="seg" id="sizes"></span>
+    <span class="sep"></span>
+    <span class="cell" id="when"></span>
+    <span class="cell dim" id="stats"></span>
+    <span id="warn"></span>
+    <span class="keys"><b>space</b> play · <b>← →</b> frame · <b>- =</b> speed · <b>1 2</b> size · <b>L</b> loop · wheel zoom, drag pan, double-click fit</span>
+  </div>
+</div>
+<script>
+'use strict';
+(async () => {
+  const $ = id => document.getElementById(id);
+  const FPS = 30;
+  const q = new URLSearchParams(location.search);
+  const CH = q.get('ch') || '0171';
+  const SIZES = [1024, 2048];
+  const SPEEDS = [0.25, 0.5, 1, 2, 4];
+  const KEY = 'sdoWeek:' + CH;
+  // the view: which size, playbackRate, loop, the zoom (device px per image
+  // unit, the image being 1 x 1; 0 = fit, which follows the window) with the
+  // image point at the stage's centre, and the frame last shown
+  const st = { size: 2048, speed: 1, loop: true, zoom: 0, cx: 0.5, cy: 0.5, frame: 0 };
+  try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+  if (!SIZES.includes(st.size)) st.size = 2048;
+  st.speed = Math.max(0.25, Math.min(4, +st.speed || 1));
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+
+  let times = [];
+  try { times = await (await fetch('/sun-video/week/' + CH + '_times.json')).json(); }
+  catch (e) { $('warn').textContent = 'No sun-video/week/' + CH + '_times.json: run tools/sdo-week-video.sh ' + CH + ' 2048,1024'; }
+  const N = Math.max(1, times.length);
+  $('scrub').max = N - 1;
+
+  // one video per size, only the shown one ever plays
+  const vids = {}, bytes = {};
+  for (const s of SIZES) {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.src = '/sun-video/week/' + CH + '_' + s + '_hevc.mp4';
+    v.onerror = () => { $('warn').textContent = 'Cannot play ' + v.src.split('/').pop() + (v.error && v.error.code === 4 ? ' (no HEVC decoder here?)' : ''); };
+    vids[s] = v;
+    // the file's size, for the bitrate
+    fetch(v.src, { method: 'HEAD' }).then(r => { bytes[s] = +r.headers.get('content-length') || 0; readout(); }).catch(() => {});
+  }
+  let vid = vids[st.size];
+
+  // frame k is shown from k/30 s; seeks land mid-frame so rounding never
+  // picks a neighbour
+  const frameOf = t => Math.max(0, Math.min(N - 1, Math.floor(t * FPS + 1e-3)));
+  const timeOf = k => (k + 0.5) / FPS;
+  let shown = Math.max(0, Math.min(N - 1, st.frame | 0));
+
+  const c = $('c'), g = c.getContext('2d');
+  const fit = () => Math.min(c.width, c.height);
+  function draw() {
+    const dpr = devicePixelRatio, w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    const z = st.zoom || fit();
+    g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+    if (vid.readyState >= 2) {
+      // shrinking smooths at high quality; enlarging is bilinear, as a
+      // video player does (Chrome's high-quality enlarge is a CPU filter)
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = z > vid.videoWidth ? 'low' : 'high';
+      const cx = st.zoom ? st.cx : 0.5, cy = st.zoom ? st.cy : 0.5;
+      g.drawImage(vid, c.width / 2 - cx * z, c.height / 2 - cy * z, z, z);
+    }
+  }
+  let queued = false;
+  const redraw = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; draw(); }); };
+
+  const pad = (x, n) => String(x).padStart(n, ' ');
+  function readout() {
+    const t = times[shown] || '';
+    $('when').textContent = 'frame ' + pad(shown + 1, String(N).length) + ' / ' + N + '  ' + t.replace('T', ' ').replace('Z', ' UTC');
+    const z = st.zoom || fit(), w = vid.videoWidth || st.size;
+    const per = z / w;
+    const mbps = bytes[st.size] ? (bytes[st.size] * 8 / (N / FPS) / 1e6).toFixed(1) + ' Mbps' : '… Mbps';
+    const q = vid.getVideoPlaybackQuality ? vid.getVideoPlaybackQuality() : null;
+    $('stats').textContent = w + ' px · ' + mbps + ' · ' + (bytes[st.size] ? Math.round(bytes[st.size] / 1048576) + ' MB' : '…') + ' · ' +
+      (per >= 1 ? 'each image px ' + per.toFixed(2) + ' device px' : per.toFixed(2) + ' device px per image px') +
+      ' · ' + (st.speed * FPS) + ' fps' + (q && q.droppedVideoFrames ? ' · dropped ' + q.droppedVideoFrames : '');
+    $('scrub').value = shown;
+    $('play').textContent = vid.paused ? 'Play' : 'Pause';
+    $('loop').classList.toggle('on', st.loop);
+    [...$('speeds').children].forEach(b => b.classList.toggle('on', +b.dataset.s === st.speed));
+    [...$('sizes').children].forEach(b => b.classList.toggle('on', +b.dataset.s === st.size));
+  }
+
+  // the last position, saved at most twice a second while playing
+  let lastSave = 0;
+  function showFrame(k) {
+    shown = k;
+    if (st.frame !== k) { st.frame = k; const now = performance.now(); if (now - lastSave > 500 || vid.paused) { lastSave = now; save(); } }
+    readout(); redraw();
+  }
+  // each decoded frame, exactly (its media time is k/30)
+  function watch(v) {
+    if (v.requestVideoFrameCallback) {
+      const cb = (now, meta) => { if (v === vid) showFrame(frameOf(meta.mediaTime)); v.requestVideoFrameCallback(cb); };
+      v.requestVideoFrameCallback(cb);
+    } else {
+      const tick = () => { if (v === vid && !v.paused) showFrame(frameOf(v.currentTime)); requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    }
+    v.addEventListener('seeked', () => { if (v === vid) showFrame(frameOf(v.currentTime)); });
+    v.addEventListener('play', () => { if (v === vid) readout(); });
+    v.addEventListener('pause', () => { if (v === vid) { save(); readout(); } });
+    v.addEventListener('ended', () => { if (v === vid) readout(); });
+    v.addEventListener('loadeddata', () => { if (v === vid) { redraw(); readout(); } });
+  }
+  for (const s of SIZES) { const v = vids[s]; v.loop = st.loop; v.playbackRate = st.speed; watch(v); }
+
+  const seek = k => { k = Math.max(0, Math.min(N - 1, k)); vid.currentTime = timeOf(k); shown = k; readout(); };
+  const toggle = () => { if (vid.paused) { if (frameOf(vid.currentTime) >= N - 1 && !st.loop) seek(0); vid.play().catch(() => {}); } else vid.pause(); };
+  const step = d => { vid.pause(); seek(shown + d); };
+  // the other size at the same moment, playing if this one was
+  function setSize(s) {
+    if (s === st.size || !vids[s]) return;
+    const was = vid, playing = !was.paused, t = timeOf(shown);
+    was.pause();
+    st.size = s; save();
+    vid = vids[s];
+    vid.playbackRate = st.speed; vid.loop = st.loop;
+    vid.currentTime = t;
+    if (playing) vid.play().catch(() => {});
+    readout(); redraw();
+  }
+  function setSpeed(x) { st.speed = Math.max(0.25, Math.min(4, x)); for (const s of SIZES) vids[s].playbackRate = st.speed; save(); readout(); }
+
+  for (const x of SPEEDS) {
+    const b = document.createElement('button');
+    b.textContent = x + '×'; b.dataset.s = x; b.title = (x * FPS) + ' fps';
+    b.onclick = () => setSpeed(x);
+    $('speeds').appendChild(b);
+  }
+  for (const [i, s] of SIZES.entries()) {
+    const b = document.createElement('button');
+    b.textContent = s; b.dataset.s = s; b.title = 'Key ' + (i + 1);
+    b.onclick = () => setSize(s);
+    $('sizes').appendChild(b);
+  }
+  $('play').onclick = toggle;
+  $('back').onclick = () => step(-1);
+  $('fwd').onclick = () => step(1);
+  $('loop').onclick = () => { st.loop = !st.loop; for (const s of SIZES) vids[s].loop = st.loop; save(); readout(); };
+  // scrubbing pauses nothing: a playing video carries on from where it lands
+  $('scrub').oninput = () => seek(+$('scrub').value);
+  // the scrub bar keeps its arrows for the keys below
+  $('scrub').addEventListener('keydown', e => e.preventDefault());
+
+  addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (k === ' ') { e.preventDefault(); toggle(); }
+    else if (k === 'ArrowRight' || k === '.') { e.preventDefault(); step(1); }
+    else if (k === 'ArrowLeft' || k === ',') { e.preventDefault(); step(-1); }
+    else if (k === '1' || k === '2') setSize(SIZES[+k - 1]);
+    else if (k === 'l' || k === 'L') $('loop').onclick();
+    else if (k === '-' || k === '=' || k === '+') {
+      const i = SPEEDS.indexOf(st.speed), j = i < 0 ? 2 : i + (k === '-' ? -1 : 1);
+      setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, j))]);
+    }
+  });
+  // buttons never keep the focus, so space always plays
+  document.addEventListener('mouseup', () => { if (document.activeElement && document.activeElement.tagName === 'BUTTON') document.activeElement.blur(); });
+
+  // wheel zoom about the cursor
+  c.addEventListener('wheel', e => {
+    e.preventDefault();
+    const dpr = devicePixelRatio, r = c.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * dpr, my = (e.clientY - r.top) * dpr;
+    const z = st.zoom || fit(), cx = st.zoom ? st.cx : 0.5, cy = st.zoom ? st.cy : 0.5;
+    const ix = cx + (mx - c.width / 2) / z, iy = cy + (my - c.height / 2) / z;
+    st.zoom = Math.max(fit() * 0.5, Math.min(fit() * 64, z * Math.exp(-e.deltaY * 0.0015)));
+    st.cx = ix - (mx - c.width / 2) / st.zoom; st.cy = iy - (my - c.height / 2) / st.zoom;
+    save(); readout(); redraw();
+  }, { passive: false });
+  // drag to pan
+  let drag = null;
+  c.addEventListener('pointerdown', e => {
+    c.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, y: e.clientY, cx: st.cx, cy: st.cy }; c.classList.add('drag');
+  });
+  c.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dpr = devicePixelRatio;
+    // a fitted view becomes a fixed one only once it is actually moved
+    if (!st.zoom) { st.zoom = fit(); drag.cx = drag.cy = 0.5; }
+    st.cx = drag.cx - (e.clientX - drag.x) * dpr / st.zoom; st.cy = drag.cy - (e.clientY - drag.y) * dpr / st.zoom;
+    redraw();
+  });
+  const end = () => { if (drag) { drag = null; c.classList.remove('drag'); save(); } };
+  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+  // fit, and keep fitting as the window changes
+  c.addEventListener('dblclick', () => { st.zoom = 0; st.cx = st.cy = 0.5; save(); readout(); redraw(); });
+  addEventListener('resize', () => { draw(); readout(); });
+  addEventListener('pagehide', save);
+
+  vid.currentTime = timeOf(shown);
+  draw(); readout();
+})();
+</script>
+</body>
+</html>
