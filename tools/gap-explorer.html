@@ -110,6 +110,10 @@ input[type=range] { width: 100%; }
   <div class="seg" id="caps" title="The longest fade any policy may give, frames (180 approved)" style="margin:6px 0">
     <button data-c="90">90</button><button data-c="180">180</button><button data-c="270">270</button><button data-c="360">360</button>
   </div>
+  <h2 style="margin-top:10px">New layer</h2>
+  <div class="seg" id="blends" title="How the incoming footage comes in over the outgoing">
+    <button data-l="avg">Average</button><button data-l="max" title="The brighter of the two, halfway">Max</button><button data-l="min" title="The darker of the two, halfway">Min</button>
+  </div>
   <h2 style="margin-top:10px">Living dissolve</h2>
   <div class="seg" id="dison">
     <button data-d="0">Plain</button><button data-d="1" title="Each region of the Sun crosses over at its own moment, on a slow noise field">Living</button><button data-d="2" title="Living, with every region's own blend taking the whole Longest fade where the footage has room (the window grows by 1 / (1 - spread))">Equal living</button>
@@ -198,10 +202,11 @@ input[type=range] { width: 100%; }
   const BRIDGE_FROM = '2026-07-02T06:09:18Z', BRIDGE_TO = '2026-08-03T01:38:54Z';
   // a saved bridge still at the old start (Jul 4, inside gap 17's stretch) moves too
   const OLD_BRIDGE_FROM = '2026-07-04T16:59:18Z';
-  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true, dis: null };
+  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true, dis: null, blend: 'avg' };
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   if (!SPEEDS.includes(st.speed)) st.speed = 1;
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
+  if (!['avg', 'max', 'min'].includes(st.blend)) st.blend = 'avg';
   MAX_FADE = CAPS.includes(st.cap) ? st.cap : 360;
   // the living dissolve's settings (see the shader): on, equal, spread
   // 0..0.95, globs (noise scale) 0.5..6, evolve (drift per hour of solar
@@ -709,7 +714,7 @@ struct U {
   adj: array<vec4f, 5>, // per layer: brightness, contrast, saturation, elevate
   dis: vec4f,    // the living dissolve: on (1), spread, globs (noise scale), evolve
   dis2: vec4f,   // the Sun's rotation angle (rad), time (h), rotate with the Sun (1), the map's opacity
-  dis3: vec4f,   // the map's preview fade position (0..1, used outside a fade), unused x3
+  dis3: vec4f,   // the map's preview fade position (0..1, used outside a fade), the new layer (0 average, 1 max, 2 min), unused x2
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var texA: texture_external;
@@ -796,10 +801,20 @@ fn dissolveMap(tuv: vec2f) -> vec3f {
 // The mosaic at a point (0..1 across the whole 3 x 2 frame): A, or A and B
 // overlapped at weight w (the dissolve's at this point). The branch on the
 // uniform overlap weight is uniform.
+// How the new layer comes in (the New layer row): Average, a straight
+// blend; Max, the new rising in where it is brighter and the old leaving
+// last, so halfway it is the brighter of the two everywhere; Min, the same
+// with the darker. Max and Min ride two ramps, the incoming at full by
+// halfway and the outgoing full until then, so each starts as pure old and
+// ends as pure new. The mode is a uniform, so the branches are uniform.
 fn mosaic(st: vec2f, w: f32) -> vec3f {
   let a = textureSampleBaseClampToEdge(texA, samp, st).rgb;
   if (u.view.y <= 0.0) { return a; }
   let b = textureSampleBaseClampToEdge(texB, samp, st).rgb;
+  let gin = min(1.0, w * 2.0);
+  let gout = min(1.0, (1.0 - w) * 2.0);
+  if (u.dis3.y > 1.5) { return min(mix(vec3f(1.0), a, gout), mix(vec3f(1.0), b, gin)); }
+  if (u.dis3.y > 0.5) { return max(a * gout, b * gin); }
   return a * (1.0 - w) + b * w;
 }
 
@@ -928,7 +943,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     uni.set([D.on ? 1 : 0, D.spread, D.scale, D.evolve], 40);
     uni.set([(ms[a0] - ms[0]) / (27.2753 * 864e5) * 2 * Math.PI, (ms[a0] - ms[0]) / 36e5, D.rot ? 1 : 0, mapAlpha()], 44);
     // the map's preview fade outside a real one: 0 to 1 every 4 s
-    uni.set([(performance.now() / 4000) % 1, 0, 0, 0], 48);
+    uni.set([(performance.now() / 4000) % 1, { avg: 0, max: 1, min: 2 }[st.blend] ?? 0, 0, 0], 48);
     device.queue.writeBuffer(uniBuf, 0, uni);
     const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: uniBuf } }, { binding: 1, resource: extA },
@@ -951,6 +966,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     segBtns('dison', 'd').forEach(([b, v]) => b.classList.toggle('on', v === (st.dis.on ? (st.dis.equal ? '2' : '1') : '0')));
     segBtns('disrot', 'r').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.rot));
     segBtns('dismap', 'm').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.map));
+    segBtns('blends', 'l').forEach(([b, v]) => b.classList.toggle('on', v === st.blend));
     [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', SPEEDS[i] === st.speed));
     $('nRow').classList.toggle('off', st.policy !== 'fixed');
     $('atmoRow').classList.toggle('off', st.view === 'raw');
@@ -973,6 +989,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   }
   for (const id of ['disScale', 'disSpread', 'disEvolve']) for (const ev of ['pointerdown', 'input']) $(id).addEventListener(ev, touchMap);
   segBtns('dismap', 'm').forEach(([b, v]) => { b.onclick = () => { st.dis.map = v === '1'; save(); markAll(); }; });
+  segBtns('blends', 'l').forEach(([b, v]) => { b.onclick = () => { st.blend = v; save(); markAll(); }; });
   // the living dissolve's controls (the shader reads them every frame)
   segBtns('dison', 'd').forEach(([b, v]) => { b.onclick = () => { st.dis.on = v !== '0'; st.dis.equal = v === '2'; touchMap(); save(); replan(); }; });
   segBtns('disrot', 'r').forEach(([b, v]) => { b.onclick = () => { st.dis.rot = v === '1'; touchMap(); save(); markAll(); }; });
