@@ -110,6 +110,16 @@ input[type=range] { width: 100%; }
   <div class="seg" id="caps" title="The longest fade any policy may give, frames (180 approved)" style="margin:6px 0">
     <button data-c="90">90</button><button data-c="180">180</button><button data-c="270">270</button><button data-c="360">360</button>
   </div>
+  <h2 style="margin-top:10px">Living dissolve</h2>
+  <div class="seg" id="dison">
+    <button data-d="0">Plain</button><button data-d="1" title="Each region of the Sun crosses over at its own moment, on a slow noise field">Living</button>
+  </div>
+  <label class="row">Globs <input type="range" id="disScale" min="50" max="600"><output id="disScaleOut"></output></label>
+  <label class="row">Spread <input type="range" id="disSpread" min="0" max="95"><output id="disSpreadOut"></output></label>
+  <label class="row">Evolve <input type="range" id="disEvolve" min="0" max="100"><output id="disEvolveOut"></output></label>
+  <div class="seg" id="disrot" style="margin-top:4px">
+    <button data-r="1">Rotate with Sun</button><button data-r="0">Still</button>
+  </div>
   <label class="row" id="nRow">Length N <input type="range" id="n" min="0" max="180"><output id="nOut"></output></label>
   <div class="cells" id="runtime"></div>
 
@@ -181,11 +191,14 @@ input[type=range] { width: 100%; }
   // dropped frame and of the first frame after it (not frame numbers, so it
   // holds if the record is re-cut).
   const BRIDGE_FROM = '2026-07-04T16:59:18Z', BRIDGE_TO = '2026-08-03T01:38:54Z';
-  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true };
+  const st = { view: 'composite', grade: true, atmo: 25, policy: 'dynamic', n: 180, cap: 360, speed: 1, pos: 0, sel: 0, zoom: null, bridge: null, islands: true, dis: null };
   try { Object.assign(st, JSON.parse(localStorage.getItem('gapExplorer') || '{}')); } catch (e) {}
   if (!SPEEDS.includes(st.speed)) st.speed = 1;
   if (!['hard', 'fixed', 'dynamic'].includes(st.policy)) st.policy = 'dynamic';
   MAX_FADE = CAPS.includes(st.cap) ? st.cap : 360;
+  // the living dissolve's settings (see the shader): on, spread 0..0.95,
+  // globs (noise scale) 0.5..6, evolve (drift per hour of solar time), rotate
+  st.dis = Object.assign({ on: false, spread: 0.7, scale: 1.6, evolve: 0.02, rot: true }, st.dis && typeof st.dis === 'object' ? st.dis : {});
   st.n = Math.max(0, Math.min(MAX_FADE, Math.round(+st.n || 0)));
   st.bridge = Object.assign({ on: false, from: BRIDGE_FROM, to: BRIDGE_TO }, st.bridge && typeof st.bridge === 'object' ? st.bridge : {});
   const save = () => { try { localStorage.setItem('gapExplorer', JSON.stringify(st)); } catch (e) {} };
@@ -675,6 +688,8 @@ struct U {
   g0: vec4f,     // Atmosphere gains: 1700, 304, 171, 193
   g1: vec4f,     // gain 211
   adj: array<vec4f, 5>, // per layer: brightness, contrast, saturation, elevate
+  dis: vec4f,    // the living dissolve: on (1), spread, globs (noise scale), evolve
+  dis2: vec4f,   // the Sun's rotation angle (rad), time (s), rotate with the Sun (1), unused
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var texA: texture_external;
@@ -688,21 +703,74 @@ fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
   return vec4f(px.x / u.canvas.x * 2.0 - 1.0, 1.0 - px.y / u.canvas.y * 2.0, 0.0, 1.0);
 }
 
+// ---- the living dissolve ----
+// Off, the whole frame blends at the overlap weight w. On, each point of
+// the Sun crosses over at its own moment inside the fade: a smooth 3D noise
+// field (large soft globs), sampled on the Sun as a sphere and optionally
+// spun at its rotation rate, gives every point an offset o in 0..1, and its
+// own weight runs from 0 to 1 over the part of the window the spread
+// leaves, starting at spread x o. So at any moment some regions are still
+// the old footage, some already the new, and soft bands between them blend.
+// Every pixel is still a blend of the two real, moving frames.
+fn hash3(p: vec3f) -> f32 {
+  let q = vec3u(vec3i(floor(p)) + vec3i(4096));
+  var h = ((q.x * 73856093u) ^ (q.y * 19349663u)) ^ (q.z * 83492791u);
+  h = (h ^ (h >> 13u)) * 1274126177u;
+  h = h ^ (h >> 16u);
+  return f32(h & 16777215u) / 16777215.0;
+}
+fn vnoise(p: vec3f) -> f32 {
+  let i = floor(p);
+  let f = fract(p);
+  let w = f * f * (3.0 - 2.0 * f);
+  let x0 = mix(mix(hash3(i), hash3(i + vec3f(1.0, 0.0, 0.0)), w.x), mix(hash3(i + vec3f(0.0, 1.0, 0.0)), hash3(i + vec3f(1.0, 1.0, 0.0)), w.x), w.y);
+  let x1 = mix(mix(hash3(i + vec3f(0.0, 0.0, 1.0)), hash3(i + vec3f(1.0, 0.0, 1.0)), w.x), mix(hash3(i + vec3f(0.0, 1.0, 1.0)), hash3(i + vec3f(1.0, 1.0, 1.0)), w.x), w.y);
+  return mix(x0, x1, w.z);
+}
+fn fbm(p: vec3f) -> f32 {
+  return (vnoise(p) * 0.5 + vnoise(p * 2.03 + vec3f(5.2)) * 0.25 + vnoise(p * 4.07 + vec3f(1.7)) * 0.125) / 0.875;
+}
+// the weight at a point of a tile (0..1 across one channel's square)
+fn weightAt(tuv: vec2f) -> f32 {
+  let t = u.view.y;
+  if (u.dis.x < 0.5) { return t; }
+  // the point on the Sun under it: the photosphere fills 0.775 of the
+  // tile's half width (gpu/sun.js); beyond the limb, the plane through it
+  let d = (tuv - vec2f(0.5)) * 2.0 / 0.775;
+  let r2 = dot(d, d);
+  var p = vec3f(d.x, d.y, 0.0);
+  if (r2 < 1.0) { p.z = sqrt(1.0 - r2); }
+  // turned back by the Sun's rotation (about its north-south axis, the
+  // image's vertical), so the field rides on the surface, east limb to west
+  if (u.dis2.z > 0.5) {
+    let c = cos(u.dis2.x);
+    let sn = sin(u.dis2.x);
+    p = vec3f(p.x * c - p.z * sn, p.y, p.x * sn + p.z * c);
+  }
+  let drift = vec3f(0.37, 0.71, 0.59) * (u.dis2.y * u.dis.w);
+  // the noise stretched to fill 0..1, so the crossings span the window
+  let o = clamp((fbm(p * u.dis.z + drift) - 0.5) * 2.4 + 0.5, 0.0, 1.0);
+  let sp = u.dis.y;
+  let k = clamp((t - sp * o) / max(1.0 - sp, 0.001), 0.0, 1.0);
+  return k * k * (3.0 - 2.0 * k);
+}
+
 // The mosaic at a point (0..1 across the whole 3 x 2 frame): A, or A and B
-// overlapped. w is a uniform, so the branch is uniform.
-fn mosaic(st: vec2f) -> vec3f {
+// overlapped at weight w (the dissolve's at this point). The branch on the
+// uniform overlap weight is uniform.
+fn mosaic(st: vec2f, w: f32) -> vec3f {
   let a = textureSampleBaseClampToEdge(texA, samp, st).rgb;
   if (u.view.y <= 0.0) { return a; }
   let b = textureSampleBaseClampToEdge(texB, samp, st).rgb;
-  return a * (1.0 - u.view.y) + b * u.view.y;
+  return a * (1.0 - w) + b * w;
 }
 
 // One layer, in assets/sun-grade.json's order: brightness, contrast,
 // elevate, tint, saturation, then its Atmosphere gain. Ungraded: tint and
 // gain only, as the players draw today.
-fn layer(uv: vec2f, col: f32, row: f32, tint: vec3f, i: i32, gain: f32) -> vec3f {
+fn layer(uv: vec2f, col: f32, row: f32, tint: vec3f, i: i32, gain: f32, w: f32) -> vec3f {
   if (gain <= 0.0) { return vec3f(0.0); }
-  var c = mosaic((uv + vec2f(col, row)) / vec2f(3.0, 2.0));
+  var c = mosaic((uv + vec2f(col, row)) / vec2f(3.0, 2.0), w);
   if (u.view.z > 0.5) {
     let g = u.adj[i];
     c = c * g.x;
@@ -723,23 +791,27 @@ fn layer(uv: vec2f, col: f32, row: f32, tint: vec3f, i: i32, gain: f32) -> vec3f
 @fragment
 fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   let uv = clamp((p.xy - u.rect.xy) / u.rect.zw, vec2f(0.0), vec2f(1.0));
-  if (u.view.x > 0.5) { return vec4f(mosaic(uv), 1.0); }
+  // the raw mosaic: each tile's own point on the Sun sets its weight
+  if (u.view.x > 0.5) { return vec4f(mosaic(uv, weightAt(fract(uv * vec2f(3.0, 2.0)))), 1.0); }
+  // the Sun: every channel at this point shares one weight, so a region
+  // crosses over in all its colors at once
+  let wd = weightAt(uv);
   var c = vec3f(0.0);
-  c += layer(uv, 0.0, 0.0, vec3f(255.0, 154.0, 138.0), 0, u.g0.x);
-  c += layer(uv, 1.0, 0.0, vec3f(255.0, 77.0, 46.0), 1, u.g0.y);
-  c += layer(uv, 2.0, 0.0, vec3f(255.0, 194.0, 51.0), 2, u.g0.z);
-  c += layer(uv, 0.0, 1.0, vec3f(201.0, 138.0, 75.0), 3, u.g0.w);
-  c += layer(uv, 1.0, 1.0, vec3f(180.0, 140.0, 255.0), 4, u.g1.x);
+  c += layer(uv, 0.0, 0.0, vec3f(255.0, 154.0, 138.0), 0, u.g0.x, wd);
+  c += layer(uv, 1.0, 0.0, vec3f(255.0, 77.0, 46.0), 1, u.g0.y, wd);
+  c += layer(uv, 2.0, 0.0, vec3f(255.0, 194.0, 51.0), 2, u.g0.z, wd);
+  c += layer(uv, 0.0, 1.0, vec3f(201.0, 138.0, 75.0), 3, u.g0.w, wd);
+  c += layer(uv, 1.0, 1.0, vec3f(180.0, 140.0, 255.0), 4, u.g1.x, wd);
   c = min(c, vec3f(1.0));
   // the site's circular feather: size 0.90, hardness 0.40
   let r = length(uv - vec2f(0.5)) * 2.0;
-  let w = max(mix(0.6, 0.0, 0.40), 0.003);
+  let w = max(mix(0.6f, 0.0f, 0.40f), 0.003f);   // f32 written out: naga won't settle abstract floats here
   c = c * (1.0 - smoothstep(0.90 - w * 0.5, 0.90 + w * 0.5, r));
   return vec4f(c, 1.0);
 }`;
   const canvas = $('c');
   let device = null, ctx = null, pipeline = null, sampler = null, uniBuf = null;
-  const uni = new Float32Array(40);
+  const uni = new Float32Array(48);
   try {
     const adapter = navigator.gpu && await navigator.gpu.requestAdapter();
     if (!adapter) throw Error('no WebGPU adapter');
@@ -806,6 +878,12 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     uni.set([st.view === 'raw' ? 1 : 0, extB ? fd.w : 0, st.grade ? 1 : 0, 0], 8);
     uni.set([gains[0], gains[1], gains[2], gains[3]], 12);
     uni.set([gains[4], 0, 0, 0], 16);
+    // the living dissolve: its settings, and the Sun's rotation and the
+    // clock at A's frame (its UTC, so the field turns at the Sun's own rate,
+    // 360 degrees in 27.2753 days, whatever the playback speed)
+    const D = st.dis, a0 = Math.max(0, Math.min(NF - 1, srcOf(master)));
+    uni.set([D.on ? 1 : 0, D.spread, D.scale, D.evolve], 40);
+    uni.set([(ms[a0] - ms[0]) / (27.2753 * 864e5) * 2 * Math.PI, (ms[a0] - ms[0]) / 36e5, D.rot ? 1 : 0, 0], 44);
     device.queue.writeBuffer(uniBuf, 0, uni);
     const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: uniBuf } }, { binding: 1, resource: extA },
@@ -825,6 +903,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     segBtns('bridges', 'b').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === bridgeOn()));
     segBtns('islands', 'i').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.islands));
     segBtns('caps', 'c').forEach(([b, v]) => b.classList.toggle('on', +v === MAX_FADE));
+    segBtns('dison', 'd').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.on));
+    segBtns('disrot', 'r').forEach(([b, v]) => b.classList.toggle('on', (v === '1') === !!st.dis.rot));
     [...$('speeds').children].forEach((b, i) => b.classList.toggle('on', SPEEDS[i] === st.speed));
     $('nRow').classList.toggle('off', st.policy !== 'fixed');
     $('atmoRow').classList.toggle('off', st.view === 'raw');
@@ -834,6 +914,15 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   segBtns('grades', 'g').forEach(([b, v]) => { b.onclick = () => { st.grade = v === '1'; save(); markAll(); }; });
   segBtns('policies', 'p').forEach(([b, v]) => { b.onclick = () => { st.policy = v; save(); replan(); }; });
   segBtns('islands', 'i').forEach(([b, v]) => { b.onclick = () => { st.islands = v === '1'; save(); replan(); }; });
+  // the living dissolve's controls (the shader reads them every frame)
+  segBtns('dison', 'd').forEach(([b, v]) => { b.onclick = () => { st.dis.on = v === '1'; save(); markAll(); }; });
+  segBtns('disrot', 'r').forEach(([b, v]) => { b.onclick = () => { st.dis.rot = v === '1'; save(); markAll(); }; });
+  for (const [id, key, k, fmt] of [['disScale', 'scale', 100, x => x.toFixed(2)], ['disSpread', 'spread', 100, x => Math.round(x * 100) + '%'],
+    ['disEvolve', 'evolve', 1000, x => x.toFixed(3)]]) {
+    const inp = $(id), out = $(id + 'Out');
+    inp.value = Math.round(st.dis[key] * k); out.textContent = fmt(st.dis[key]);
+    inp.oninput = () => { st.dis[key] = +inp.value / k; out.textContent = fmt(st.dis[key]); save(); };
+  }
   // Longest fade: the cap every policy and override works under, live
   const setCap = c => { MAX_FADE = st.cap = c; $('n').max = c; if (st.n > c) st.n = c; $('n').value = st.n; };
   segBtns('caps', 'c').forEach(([b, v]) => { b.onclick = () => { setCap(+v); save(); replan(); }; });
