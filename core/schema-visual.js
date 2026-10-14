@@ -39,7 +39,7 @@ import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
-import { applyHeartLookahead, applyHeartGrow, simulateUnderrun } from '../js/heart/route.js';
+import { applyHeartLookahead, applyHeartGrow, applyHeartXfade, simulateUnderrun } from '../js/heart/route.js';
 import { applyOutputGuards } from './output-guard.js';
 import { GF_GLIDE_MAX } from './global-filter.js';
 
@@ -1741,6 +1741,17 @@ export const VISUAL_CONTROLS = [
     get: S => S.heartGrowX ?? 1.5,
     set: (S, v) => { S.heartGrowX = Math.max(1.1, Math.min(2, v)); applyHeartGrow(); save(); },
     formatAt: pos => '×' + pos.toFixed(1)
+  },
+  {
+    // The underrun concealment's turnaround (js/heart/conceal.js): each
+    // time the ping-pong reaches an end of the last half second, the pass
+    // going back and the pass coming forward crossfade over this long, and
+    // the return to the live sound fades over it too. 0 is a hard turn.
+    id: 'heartXfadeMs', section: 'render', label: 'Crossfade', kind: 'slider', parent: 'renderAudioDrawer',
+    min: 0, max: 200, step: 5, def: 50,
+    get: S => S.heartXfadeMs ?? 50,
+    set: (S, v) => { S.heartXfadeMs = Math.max(0, Math.min(200, Math.round(v))); applyHeartXfade(); save(); },
+    formatAt: pos => pos > 0 ? Math.round(pos) + ' ms' : 'Hard turn'
   },
   {
     // A test of what an underrun sounds like (js/heart/route.js

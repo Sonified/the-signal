@@ -93,6 +93,14 @@ function growSetting() {
 export function applyHeartGrow() {
   if (engine) engine.setGrow(growSetting());
 }
+// The concealment's turnaround crossfade (the drawer's Crossfade), seconds.
+function xfadeSetting() {
+  const v = S.heartXfadeMs;
+  return (typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(200, v)) : 50) / 1000;
+}
+export function applyHeartXfade() {
+  if (engine) engine.setXfade(xfadeSetting());
+}
 
 // The drawer's Simulate underrun: `count` dropouts of `ms` each with `ms`
 // of sound between, or, `random`, each gap and each stretch of sound
@@ -123,7 +131,7 @@ async function boot(ctx, master) {
     const [{ startEngine }, { HeartContext, Shadow }] = await Promise.all([
       import('./engine.js'), import('./heart.js')
     ]);
-    eng = await startEngine(ctx, { lookahead: lookaheadSetting(), grow: growSetting() });
+    eng = await startEngine(ctx, { lookahead: lookaheadSetting(), grow: growSetting(), xfade: xfadeSetting() });
     if (!eng) {
       console.warn('Heart: this device cannot run it, so every family plays natively');
       return null;

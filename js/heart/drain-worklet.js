@@ -105,9 +105,9 @@ export class Drain {
   // fixed. `diag` (?heartdiag=1, engine.js) posts each run of underruns and
   // each step of the lookahead to the page. `conceal`, frames of history,
   // or 0: an underrun plays that history ping-pong instead of silence
-  // (conceal.js).
-  constructor({ control = null, stages = 1, post, lookahead = null, diag = false, conceal = 0 }) {
-    this.conceal = conceal > 0 ? new Conceal({ size: conceal }) : null;
+  // (conceal.js), its turns crossfaded over `xfade` frames.
+  constructor({ control = null, stages = 1, post, lookahead = null, diag = false, conceal = 0, xfade = 0 }) {
+    this.conceal = conceal > 0 ? new Conceal({ size: conceal, xfade }) : null;
     this.ctl = control;
     this.stages = stages;
     this.post = post;
@@ -433,7 +433,7 @@ if (typeof registerProcessor === 'function') {
       this.alive = true;
       this.drain = new Drain({
         control: o.control, stages: o.stages, lookahead: o.lookahead || null, diag: o.diag === true,
-        conceal: o.conceal | 0,
+        conceal: o.conceal | 0, xfade: o.xfade | 0,
         post: m => this.port.postMessage(m)
       });
       // A shared ring comes in the options; a message ring's port has to be
@@ -447,6 +447,7 @@ if (typeof registerProcessor === 'function') {
         else if (d.type === 'grow') this.drain.setGrow(+d.x);
         else if (d.type === 'fullscreen') this.drain.setFullscreen(d.on === true);
         else if (d.type === 'rest') this.drain.setResting(d.on === true);
+        else if (d.type === 'xfade') { if (this.drain.conceal) this.drain.conceal.setXfade(d.frames | 0); }
         else if (d.type === 'simulate') this.drain.simulate(Int32Array.from(d.quanta));
         else if (d.type === 'close') { this.alive = false; this.drain.close(); }
       };

@@ -233,7 +233,9 @@ async function assemble(engine, ctx, module, opts) {
     numberOfInputs: 0,
     numberOfOutputs: 1,
     outputChannelCount: [2],
-    processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG, conceal: (opts.conceal ?? CONCEAL) ? toFrames(CONCEAL_SECONDS) : 0 }
+    processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG,
+      conceal: (opts.conceal ?? CONCEAL) ? toFrames(CONCEAL_SECONDS) : 0,
+      xfade: Math.round((opts.xfade ?? 0) * sampleRate) }
   });
   if (!shared) output.port.postMessage({ type: 'ring', ring: finalRing.reader }, transfer(finalRing.reader));
   output.port.onmessage = e => {
@@ -514,6 +516,11 @@ async function assemble(engine, ctx, module, opts) {
       if (closed || !(x >= 1.1 && x <= 2)) return;
       policy.grow = x;
       output.port.postMessage({ type: 'grow', x });
+    },
+    // The concealment's turnaround crossfade, live (the drawer's Crossfade).
+    setXfade(sec) {
+      if (closed || !(sec >= 0)) return;
+      output.port.postMessage({ type: 'xfade', frames: Math.round(sec * sampleRate) });
     },
     // The drawer's Simulate underrun: milliseconds, gap, sound, gap, ...
     // The drain plays each gap as a dry ring (drain-worklet.js simulate).

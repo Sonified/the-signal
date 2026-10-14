@@ -23,7 +23,7 @@ function writeChunk(ring, start) {
 }
 
 test('conceal: a ping-pong of the history, continuous going in and at each turn', () => {
-  const c = new Conceal({ size: 512, fade: 64, hold: 1e9 });
+  const c = new Conceal({ size: 512, xfade: 0, hold: 1e9 });
   const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
   let f = 0;
   for (let q = 0; q < 4; q++) {
@@ -38,8 +38,38 @@ test('conceal: a ping-pong of the history, continuous going in and at each turn'
   assert.ok(got.includes(0) && got.filter(v => v === 511).length > 0, 'turns at both ends');
 });
 
+test('conceal: a crossfaded turn blends the pass going back into the pass coming forward', () => {
+  const c = new Conceal({ size: 512, xfade: 64, hold: 1e9 });
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  let f = 0;
+  for (let q = 0; q < 4; q++) {
+    for (let i = 0; i < QUANTUM; i++, f++) { L[i] = f; R[i] = -f; }
+    c.wet(L, R);
+  }
+  const got = [];
+  for (let q = 0; q < 12; q++) { c.dry(L, R); got.push(...L); }
+  // Going in, as without a crossfade: the mirror of what was just played.
+  assert.deepEqual(got.slice(0, 3), [510, 509, 508]);
+  // The two heads cross halfway: the oldest 64 frames are met at their
+  // middle (frame 32), each head at the normal rate. Blending two ramps
+  // going opposite ways steepens the sum a little, never to a jump.
+  assert.ok(Math.abs(Math.min(...got) - 32) < 0.01, `crossed at ${Math.min(...got)}`);
+  for (let i = 1; i < got.length; i++) assert.ok(Math.abs(got[i] - got[i - 1]) < 1.5, `step ${i}`);
+  // And it does come back up: the pass coming forward.
+  const low = got.indexOf(Math.min(...got));
+  assert.ok(got[low + 100] > got[low] + 50);
+});
+
+test('conceal: Crossfade 0 is a hard turn, and a new length applies from the next stall', () => {
+  const c = new Conceal({ size: 512, xfade: 64 });
+  c.setXfade(0);
+  assert.equal(c.xfade, 0);
+  c.setXfade(1e6);
+  assert.equal(c.xfade, 128, 'no more than a quarter of the history');
+});
+
 test('conceal: fades out under the returning audio, then records again', () => {
-  const c = new Conceal({ size: 512, fade: 128, hold: 1e9 });
+  const c = new Conceal({ size: 512, hold: 1e9 });
   const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
   for (let q = 0; q < 4; q++) { L.fill(0.5); R.fill(0.5); c.wet(L, R); }
   c.dry(L, R);
@@ -56,7 +86,7 @@ test('conceal: fades out under the returning audio, then records again', () => {
 });
 
 test('conceal: a long stall decays to silence, and the audio fades back in', () => {
-  const c = new Conceal({ size: 256, fade: 128, hold: 256, decay: 256 });
+  const c = new Conceal({ size: 256, hold: 256, decay: 256 });
   const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
   for (let q = 0; q < 2; q++) { L.fill(0.5); R.fill(0.5); c.wet(L, R); }
   for (let q = 0; q < 6; q++) c.dry(L, R);
