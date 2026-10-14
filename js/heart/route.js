@@ -36,6 +36,7 @@
 // itself could rebuild its graph natively, so it stays on Heart, and the
 // console says which families that leaves.
 import { S } from '../state.js';
+import { signal, signalNow, rateAt } from '../../core/signal.js';
 
 export const FAMILIES = ['music', 'clouds', 'ambience', 'genus', 'heartbeat'];
 
@@ -93,13 +94,28 @@ function growSetting() {
 export function applyHeartGrow() {
   if (engine) engine.setGrow(growSetting());
 }
-// The concealment's turnaround crossfade (the drawer's Crossfade), seconds.
-function xfadeSetting() {
-  const v = S.heartXfadeMs;
-  return (typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(200, v)) : 50) / 1000;
+// The underrun concealment (the drawer's Loop mode, Loop length, Crossfade
+// and Quantize repair), lengths in seconds.
+const num = (v, lo, hi, def) => typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def;
+function concealSetting() {
+  return {
+    mode: S.heartLoopMode === 'forward' ? 1 : 0,
+    quantize: S.heartQuantize === true,
+    loop: num(S.heartLoopS, 0.1, 1, 0.5),
+    xfade: num(S.heartXfadeMs, 0, 200, 50) / 1000
+  };
 }
-export function applyHeartXfade() {
-  if (engine) engine.setXfade(xfadeSetting());
+export function applyHeartConceal() {
+  if (engine) engine.setConceal(concealSetting());
+}
+// The tone's and the strobe's rates, for a forward loop to fit whole cycles
+// of, told to the drain twice a second: the strobe's rate drifts.
+let periodsTimer = null;
+function tellPeriods() {
+  if (!engine) return;
+  let strobe = 0;
+  try { strobe = rateAt(signal, signalNow()); } catch (e) {}
+  engine.setPeriods(S.toneOn ? S.carrierHz : 0, strobe);
 }
 
 // The drawer's Simulate underrun: `count` dropouts of `ms` each with `ms`
@@ -131,7 +147,7 @@ async function boot(ctx, master) {
     const [{ startEngine }, { HeartContext, Shadow }] = await Promise.all([
       import('./engine.js'), import('./heart.js')
     ]);
-    eng = await startEngine(ctx, { lookahead: lookaheadSetting(), grow: growSetting(), xfade: xfadeSetting() });
+    eng = await startEngine(ctx, { lookahead: lookaheadSetting(), grow: growSetting(), concealSet: concealSetting() });
     if (!eng) {
       console.warn('Heart: this device cannot run it, so every family plays natively');
       return null;
@@ -151,6 +167,8 @@ async function boot(ctx, master) {
     }
     eng.on('error', fallBack);
     engine = eng;
+    tellPeriods();
+    if (!periodsTimer) periodsTimer = setInterval(tellPeriods, 500);
     return eng;
   } catch (e) {
     // Principle 5: nothing goes silent because Heart could not start.

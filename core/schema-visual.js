@@ -39,7 +39,7 @@ import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
-import { applyHeartLookahead, applyHeartGrow, applyHeartXfade, simulateUnderrun } from '../js/heart/route.js';
+import { applyHeartLookahead, applyHeartGrow, applyHeartConceal, simulateUnderrun } from '../js/heart/route.js';
 import { applyOutputGuards } from './output-guard.js';
 import { GF_GLIDE_MAX } from './global-filter.js';
 
@@ -1743,15 +1743,44 @@ export const VISUAL_CONTROLS = [
     formatAt: pos => '×' + pos.toFixed(1)
   },
   {
-    // The underrun concealment's turnaround (js/heart/conceal.js): each
-    // time the ping-pong reaches an end of the last half second, the pass
-    // going back and the pass coming forward crossfade over this long, and
-    // the return to the live sound fades over it too. 0 is a hard turn.
+    // The underrun concealment (js/heart/conceal.js): what plays when the
+    // engine falls behind, a loop of the last stretch heard. Ping-pong
+    // plays it back and forth; Forward plays it forwards over and over,
+    // its length snapped to whole cycles of the tone and the strobe, so a
+    // steady low tone carries straight on through the seam.
+    id: 'heartLoopMode', section: 'render', label: 'Loop mode', kind: 'segment', parent: 'renderAudioDrawer',
+    options: [{ value: 'pingpong', label: 'Ping-pong' }, { value: 'forward', label: 'Forward' }],
+    def: 'pingpong',
+    get: S => S.heartLoopMode === 'forward' ? 'forward' : 'pingpong',
+    set: (S, v) => { S.heartLoopMode = v === 'forward' ? 'forward' : 'pingpong'; applyHeartConceal(); save(); }
+  },
+  {
+    // How much of the last sound heard the loop plays. Forward fits it to
+    // whole cycles of the tone and strobe, which can move it.
+    id: 'heartLoopS', section: 'render', label: 'Loop length', kind: 'slider', parent: 'renderAudioDrawer',
+    min: 0.1, max: 1, step: 0.05, def: 0.5,
+    get: S => S.heartLoopS ?? 0.5,
+    set: (S, v) => { S.heartLoopS = Math.max(0.1, Math.min(1, v)); applyHeartConceal(); save(); },
+    formatAt: pos => Math.round(pos * 1000) + ' ms'
+  },
+  {
+    // Each turn of a ping-pong and each seam of a forward loop crossfade
+    // over this long, and so does the way back to the live sound. 0 is a
+    // hard turn.
     id: 'heartXfadeMs', section: 'render', label: 'Crossfade', kind: 'slider', parent: 'renderAudioDrawer',
     min: 0, max: 200, step: 5, def: 50,
     get: S => S.heartXfadeMs ?? 50,
-    set: (S, v) => { S.heartXfadeMs = Math.max(0, Math.min(200, Math.round(v))); applyHeartXfade(); save(); },
+    set: (S, v) => { S.heartXfadeMs = Math.max(0, Math.min(200, Math.round(v))); applyHeartConceal(); save(); },
     formatAt: pos => pos > 0 ? Math.round(pos) + ' ms' : 'Hard turn'
+  },
+  {
+    // A dropout always plays whole loops, and the sound only comes back at
+    // the end of one; still behind then, it plays the loop again.
+    id: 'heartQuantize', section: 'render', label: 'Quantize repair', kind: 'toggle', parent: 'renderAudioDrawer',
+    def: false,
+    get: S => S.heartQuantize === true,
+    set: (S, on) => { S.heartQuantize = !!on; applyHeartConceal(); save(); },
+    format: S => S.heartQuantize === true ? 'whole loops' : 'off'
   },
   {
     id: 'simGapMs', section: 'render', label: 'Dropout length', kind: 'slider', parent: 'renderAudioDrawer',

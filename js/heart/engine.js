@@ -119,11 +119,13 @@ const OVERLOAD_TICKS = 4, OVERLOAD_QUIET_MS = 30000;
 // lookahead, and a heartbeat every two seconds (fill, lookahead, each
 // stage's ms a chunk). Page only, as ?confdiag (gpu/confetti.js); off, it is
 // one boolean.
-// An underrun plays the last CONCEAL_SECONDS played, ping-pong, instead of
-// silence (js/heart/conceal.js). ?heartconceal=0 turns it off, to hear the
+// An underrun loops what was last played instead of silence
+// (js/heart/conceal.js), from a history CONCEAL_SECONDS long, so a Loop
+// length of a second still has room to be snapped to whole cycles. A stall
+// is looped for CONCEAL_HOLD seconds before it fades to silence. ?heartconceal=0 turns it off, to hear the
 // bare gaps, and so does opts.conceal false (the tests that count silent
 // quanta as underruns).
-const CONCEAL_SECONDS = 0.5;
+const CONCEAL_SECONDS = 2.5, CONCEAL_HOLD = 3;
 const CONCEAL = (() => { try { return !/[?&]heartconceal=0(&|$)/.test(location.search); } catch (e) { return true; } })();
 const DIAG = (() => { try { return /[?&]heartdiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
 const DIAG_BEAT_MS = 2000;
@@ -183,6 +185,9 @@ async function assemble(engine, ctx, module, opts) {
   const shared = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer === 'function';
   const sampleRate = ctx.sampleRate;
   const toFrames = seconds => Math.ceil(seconds * sampleRate / QUANTUM) * QUANTUM;
+  const concealFrames = ({ mode, quantize, loop, xfade }) => ({ mode, quantize,
+    loop: loop >= 0 ? Math.round(loop * sampleRate) : undefined,
+    xfade: xfade >= 0 ? Math.round(xfade * sampleRate) : undefined });
   const small = opts.handheld ?? handheld();
   const lookahead = toFrames(opts.lookahead ?? (shared ? (small ? HANDHELD_SAB : LOOKAHEAD_SAB) : (small ? HANDHELD_MESSAGE : LOOKAHEAD_MESSAGE)));
   const maxAhead = Math.max(lookahead, toFrames(opts.maxLookahead ?? LOOKAHEAD_MAX));
@@ -235,7 +240,7 @@ async function assemble(engine, ctx, module, opts) {
     outputChannelCount: [2],
     processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG,
       conceal: (opts.conceal ?? CONCEAL) ? toFrames(CONCEAL_SECONDS) : 0,
-      xfade: Math.round((opts.xfade ?? 0) * sampleRate) }
+      concealSet: { ...concealFrames(opts.concealSet || {}), hold: Math.round(CONCEAL_HOLD * sampleRate) } }
   });
   if (!shared) output.port.postMessage({ type: 'ring', ring: finalRing.reader }, transfer(finalRing.reader));
   output.port.onmessage = e => {
@@ -517,10 +522,19 @@ async function assemble(engine, ctx, module, opts) {
       policy.grow = x;
       output.port.postMessage({ type: 'grow', x });
     },
-    // The concealment's turnaround crossfade, live (the drawer's Crossfade).
-    setXfade(sec) {
-      if (closed || !(sec >= 0)) return;
-      output.port.postMessage({ type: 'xfade', frames: Math.round(sec * sampleRate) });
+    // The concealment's settings, live (the drawer's Loop mode, Loop
+    // length, Crossfade and Quantize repair): { mode, quantize, loop, xfade },
+    // the lengths in seconds.
+    setConceal(set) {
+      if (closed) return;
+      output.port.postMessage({ type: 'conceal', set: concealFrames(set) });
+    },
+    // The tone's and the strobe's rates in Hz (0 for none), which a forward
+    // loop fits whole cycles of.
+    setPeriods(toneHz, strobeHz) {
+      if (closed) return;
+      output.port.postMessage({ type: 'periods',
+        tone: toneHz > 0 ? sampleRate / toneHz : 0, strobe: strobeHz > 0 ? sampleRate / strobeHz : 0 });
     },
     // The drawer's Simulate underrun: milliseconds, gap, sound, gap, ...
     // The drain plays each gap as a dry ring (drain-worklet.js simulate).

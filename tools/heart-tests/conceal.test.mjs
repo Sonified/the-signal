@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Drain } from '../../js/heart/drain-worklet.js';
-import { Conceal } from '../../js/heart/conceal.js';
+import { Conceal, FORWARD } from '../../js/heart/conceal.js';
 import { SharedRing, makeControl, CHUNK, QUANTUM, PLAYED } from '../../js/heart/ring.js';
 
 const sine = f => Math.sin(f * 0.01);
@@ -23,7 +23,7 @@ function writeChunk(ring, start) {
 }
 
 test('conceal: a ping-pong of the history, continuous going in and at each turn', () => {
-  const c = new Conceal({ size: 512, xfade: 0, hold: 1e9 });
+  const c = new Conceal({ size: 1024, loop: 512, xfade: 0, hold: 1e9 });
   const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
   let f = 0;
   for (let q = 0; q < 4; q++) {
@@ -39,7 +39,7 @@ test('conceal: a ping-pong of the history, continuous going in and at each turn'
 });
 
 test('conceal: a crossfaded turn blends the pass going back into the pass coming forward', () => {
-  const c = new Conceal({ size: 512, xfade: 64, hold: 1e9 });
+  const c = new Conceal({ size: 1024, loop: 512, xfade: 64, hold: 1e9 });
   const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
   let f = 0;
   for (let q = 0; q < 4; q++) {
@@ -62,9 +62,9 @@ test('conceal: a crossfaded turn blends the pass going back into the pass coming
 
 test('conceal: Crossfade 0 is a hard turn, and a new length applies from the next stall', () => {
   const c = new Conceal({ size: 512, xfade: 64 });
-  c.setXfade(0);
+  c.configure({ xfade: 0 });
   assert.equal(c.xfade, 0);
-  c.setXfade(1e6);
+  c.configure({ xfade: 1e6 });
   assert.equal(c.xfade, 128, 'no more than a quarter of the history');
 });
 
@@ -199,4 +199,80 @@ test('conceal: many dropouts in a row never jump, so nothing clicks', () => {
   }
   // The sine moves at most 0.01 a frame; two of it crossfading, a little more.
   assert.ok(maxJump < 0.05, `largest step ${maxJump.toFixed(3)} at frame ${at}`);
+});
+
+// A 40 Hz tone at 48 kHz: 1200 frames a cycle.
+const tone = f => 0.8 * Math.sin(2 * Math.PI * f / 1200);
+
+test('forward loop: a steady tone carries straight on through a stall, as if nothing happened', () => {
+  const c = new Conceal({ size: 120000, loop: 24000, xfade: 2400, mode: FORWARD, hold: 1e9 });
+  c.setPeriods(1200, 16000);
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  let f = 0;
+  for (let q = 0; q < 600; q++) { for (let i = 0; i < QUANTUM; i++, f++) L[i] = R[i] = tone(f); c.wet(L, R); }
+  // Three seconds of stall: many loops, many seams.
+  let worst = 0;
+  for (let q = 0; q < 1100; q++) {
+    c.dry(L, R);
+    for (let i = 0; i < QUANTUM; i++, f++) worst = Math.max(worst, Math.abs(L[i] - tone(f)));
+  }
+  assert.ok(worst < 1e-4, `strays from the tone by ${worst}`);
+  // And the sound comes back on the same tone: no dip, no bump.
+  for (let q = 0; q < 40; q++) {
+    for (let i = 0; i < QUANTUM; i++) L[i] = R[i] = tone(f + i);
+    c.wet(L, R);
+    for (let i = 0; i < QUANTUM; i++, f++) worst = Math.max(worst, Math.abs(L[i] - tone(f)));
+  }
+  assert.ok(worst < 1e-4, `the return strays by ${worst}`);
+});
+
+test('forward loop: the length fits whole cycles of the tone and the strobe', () => {
+  const c = new Conceal({ size: 120000, loop: 24000, mode: FORWARD });
+  c.setPeriods(1200, 16000);       // 40 Hz and 3 Hz
+  assert.equal(c.fit(100000), 48000, 'half a second fits neither the strobe; a second fits both');
+  c.setPeriods(1200, 0);
+  assert.equal(c.fit(100000), 24000, 'the tone alone: the Loop length is already whole cycles');
+  c.setPeriods(0, 0);
+  assert.equal(c.fit(100000), 24000);
+});
+
+test('forward loop: music going in and at the seams never jumps', () => {
+  const ring = new SharedRing(SharedRing.describe(2, 8192));
+  const drain = new Drain({ post: () => {}, conceal: 24000, concealSet: { loop: 6000, xfade: 480, mode: FORWARD } });
+  drain.attach(ring);
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  let written = 0;
+  const feed = () => { while (written < (drain.played + 1) * QUANTUM + 8 * CHUNK && ring.writable() >= CHUNK) { writeChunk(ring, written); written += CHUNK; } };
+  feed();
+  for (let q = 0; q < 200; q++) { feed(); drain.play(L, R, 0); }
+  let seed = 11;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const pattern = [];
+  for (let i = 0; i < 59; i++) pattern.push(1 + Math.floor(rnd() * 20));
+  drain.simulate(Int32Array.from(pattern));
+  let prev = L[QUANTUM - 1], maxJump = 0;
+  for (let q = 0; q < 900; q++) {
+    feed();
+    drain.play(L, R, 0);
+    for (let i = 0; i < QUANTUM; i++) { maxJump = Math.max(maxJump, Math.abs(L[i] - prev)); prev = L[i]; }
+  }
+  assert.ok(maxJump < 0.05, `largest step ${maxJump.toFixed(3)}`);
+});
+
+test('quantize repair: a short dropout plays a whole loop before the sound comes back', () => {
+  const c = new Conceal({ size: 8192, loop: 1024, xfade: 0, mode: FORWARD, quantize: true, hold: 1e9 });
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  for (let q = 0; q < 40; q++) { L.fill(0.5); R.fill(0.5); c.wet(L, R); }
+  c.dry(L, R);                      // one quantum dry
+  let held = QUANTUM;
+  for (let q = 0; q < 20; q++) {
+    L.fill(9); R.fill(9);           // the sound is back, marked 9
+    c.wet(L, R);
+    const first9 = L.findIndex(v => v > 1);
+    if (first9 < 0) { held += QUANTUM; continue; }
+    held += first9;
+    break;
+  }
+  // 1024 frames of loop, then the return fade's first frames are mostly loop.
+  assert.ok(held >= 1024 && held < 1024 + 2 * QUANTUM, `held ${held}`);
 });
