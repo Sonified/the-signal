@@ -119,6 +119,12 @@ const OVERLOAD_TICKS = 4, OVERLOAD_QUIET_MS = 30000;
 // lookahead, and a heartbeat every two seconds (fill, lookahead, each
 // stage's ms a chunk). Page only, as ?confdiag (gpu/confetti.js); off, it is
 // one boolean.
+// An underrun plays the last CONCEAL_SECONDS played, ping-pong, instead of
+// silence (js/heart/conceal.js). ?heartconceal=0 turns it off, to hear the
+// bare gaps, and so does opts.conceal false (the tests that count silent
+// quanta as underruns).
+const CONCEAL_SECONDS = 0.5;
+const CONCEAL = (() => { try { return !/[?&]heartconceal=0(&|$)/.test(location.search); } catch (e) { return true; } })();
 const DIAG = (() => { try { return /[?&]heartdiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
 const DIAG_BEAT_MS = 2000;
 
@@ -227,7 +233,7 @@ async function assemble(engine, ctx, module, opts) {
     numberOfInputs: 0,
     numberOfOutputs: 1,
     outputChannelCount: [2],
-    processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG }
+    processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG, conceal: (opts.conceal ?? CONCEAL) ? toFrames(CONCEAL_SECONDS) : 0 }
   });
   if (!shared) output.port.postMessage({ type: 'ring', ring: finalRing.reader }, transfer(finalRing.reader));
   output.port.onmessage = e => {

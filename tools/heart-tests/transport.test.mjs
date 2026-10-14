@@ -92,7 +92,7 @@ function fakeContext() {
 async function run(t, isolated, workers) {
   globalThis.crossOriginIsolated = isolated;
   const ctx = fakeContext();
-  const engine = await startEngine(ctx, { workers, seed: 0, wasmUrl: WASM_URL });
+  const engine = await startEngine(ctx, { workers, seed: 0, wasmUrl: WASM_URL, conceal: false });
   try {
     assert.ok(engine, 'the engine started');
     assert.equal(engine.mode, isolated ? 'sab' : 'message');
@@ -176,7 +176,7 @@ async function adapts(t, isolated, workers) {
   // The floors sit above where 200 ms stalls leave the ratchet (about
   // 363 ms), so hiding and fullscreen each visibly raise it.
   const engine = await startEngine(ctx, {
-    workers, seed: 0, wasmUrl: WASM_URL, handheld: false, steadySeconds: 1,
+    workers, seed: 0, wasmUrl: WASM_URL, conceal: false, handheld: false, steadySeconds: 1,
     lookahead: isolated ? 0.045 : 0.09,   // small on purpose: the stalls must dent it
     hiddenLookahead: 0.45, fullscreenLookahead: 0.5
   });
@@ -246,7 +246,7 @@ async function overload(t, isolated, workers) {
   globalThis.crossOriginIsolated = isolated;
   const ctx = fakeContext();
   const infos = capture('info'), warns = capture('warn');
-  const engine = await startEngine(ctx, { workers, seed: 0, wasmUrl: WASM_URL, handheld: false });
+  const engine = await startEngine(ctx, { workers, seed: 0, wasmUrl: WASM_URL, conceal: false, handheld: false });
   try {
     await wait(200);
     // 14 ms to render a chunk that lasts 10.7.
@@ -282,7 +282,7 @@ async function overload(t, isolated, workers) {
 async function rests(t, isolated, workers) {
   globalThis.crossOriginIsolated = isolated;
   const ctx = fakeContext();
-  const engine = await startEngine(ctx, { workers, seed: 0, wasmUrl: WASM_URL, handheld: false });
+  const engine = await startEngine(ctx, { workers, seed: 0, wasmUrl: WASM_URL, conceal: false, handheld: false });
   try {
     const log = ctx.log;
     await wait(600);

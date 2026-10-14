@@ -9,9 +9,10 @@
 // F of the first quantum that finds audio waiting, and the drain posts F
 // once; from then on engine frame n plays at native frame F + n, exactly,
 // for the rest of the session. It holds that line through an underrun: a
-// quantum whose frames have not arrived plays silence, is counted, and is
-// still counted as played, and when the late frames do arrive they are
-// dropped rather than played late. A late block costs a gap, never a shift,
+// quantum whose frames have not arrived plays silence (or, with
+// concealment on, the last half second played ping-pong, conceal.js), is
+// counted, and is still counted as played, and when the late frames do
+// arrive they are dropped rather than played late. A late block costs a gap, never a shift,
 // so the strobe and everything timed against currentTime stay true.
 //
 // Every quantum moves the played count on by one. With SharedArrayBuffer it
@@ -81,6 +82,7 @@
 import {
   QUANTUM, CHUNK, PLAYED, UNDERRUNS, LOOKAHEAD, LOOKAHEAD_NEXT, wakeOf, ringBell, openRing
 } from './ring.js';
+import { Conceal } from './conceal.js';
 
 // About a quarter second at 48 kHz, in quanta.
 const STATS_EVERY = 96;
@@ -101,8 +103,11 @@ export class Drain {
   // `lookahead`, all in frames but `steady` (quanta): { base, max, hidden,
   // fullscreen, steady, startHidden, startFullscreen }, or null to keep it
   // fixed. `diag` (?heartdiag=1, engine.js) posts each run of underruns and
-  // each step of the lookahead to the page.
-  constructor({ control = null, stages = 1, post, lookahead = null, diag = false }) {
+  // each step of the lookahead to the page. `conceal`, frames of history,
+  // or 0: an underrun plays that history ping-pong instead of silence
+  // (conceal.js).
+  constructor({ control = null, stages = 1, post, lookahead = null, diag = false, conceal = 0 }) {
+    this.conceal = conceal > 0 ? new Conceal({ size: conceal }) : null;
     this.ctl = control;
     this.stages = stages;
     this.post = post;
@@ -150,6 +155,7 @@ export class Drain {
       this.post({ type: 'start', F: now });
     }
     if (this.resting) {
+      if (this.conceal) this.conceal.reset();
       L.fill(0);
       R.fill(0);
       this.debt += n;
@@ -175,6 +181,7 @@ export class Drain {
     // The next frame waiting is ahead of its moment: a wake's first frame,
     // which plays when its engine frame falls due, silence until then.
     if (this.debt < 0) {
+      if (this.conceal) this.conceal.quiet();
       L.fill(0);
       R.fill(0);
       this.debt += n;
@@ -188,6 +195,7 @@ export class Drain {
       if (ready >= n) this.refill = false;
     }
     if (this.refill && ready < n) {
+      if (this.conceal) this.conceal.quiet();
       L.fill(0);
       R.fill(0);
       this.debt += n;
@@ -198,11 +206,12 @@ export class Drain {
       ring.read(0, L, 0, n);
       ring.read(1, R, 0, n);
       ring.release(n);
+      if (this.conceal) this.conceal.wet(L, R);
       if (this.dry && this.diag) this.tellDiag('wet', ready);
       this.dry = false;
     } else {
-      L.fill(0);
-      R.fill(0);
+      if (this.conceal) this.conceal.dry(L, R);
+      else { L.fill(0); R.fill(0); }
       this.debt += n;
       this.underruns++;
       if (this.ctl) Atomics.add(this.ctl, UNDERRUNS, 1);
@@ -389,6 +398,7 @@ if (typeof registerProcessor === 'function') {
       this.alive = true;
       this.drain = new Drain({
         control: o.control, stages: o.stages, lookahead: o.lookahead || null, diag: o.diag === true,
+        conceal: o.conceal | 0,
         post: m => this.port.postMessage(m)
       });
       // A shared ring comes in the options; a message ring's port has to be
