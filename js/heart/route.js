@@ -94,15 +94,18 @@ function growSetting() {
 export function applyHeartGrow() {
   if (engine) engine.setGrow(growSetting());
 }
-// The underrun concealment (the drawer's Loop mode, Loop length, Crossfade
-// and Quantize repair), lengths in seconds.
+// The underrun concealment (the drawer's Loop mode, Loop length, Crossfade,
+// Quantize repair and the wash), lengths in seconds.
 const num = (v, lo, hi, def) => typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def;
 function concealSetting() {
   return {
     mode: S.heartLoopMode === 'forward' ? 1 : 0,
     quantize: S.heartQuantize === true,
     loop: num(S.heartLoopS, 0.1, 1, 0.5),
-    xfade: num(S.heartXfadeMs, 0, 200, 50) / 1000
+    xfade: num(S.heartXfadeMs, 0, 200, 50) / 1000,
+    wash: num(S.heartWash, 0, 1, 0.6),
+    washRise: num(S.heartWashRiseS, 0.25, 5, 1.5),
+    washDecay: num(S.heartWashDecayS, 1, 10, 4)
   };
 }
 export function applyHeartConceal() {

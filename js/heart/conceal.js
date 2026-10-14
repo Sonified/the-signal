@@ -35,6 +35,16 @@
 // is the drain's as before: the late frames are still dropped and the clock
 // never shifts.
 //
+// The wash (the drawer's Wash, Wash rise and Wash decay): the longer a
+// stall goes on, the more of the loop is heard through a reverb (wash.js).
+// Over `washRise` frames from the start of a stall, the mix moves from dry
+// to `wash` wet, equal power; when the sound comes back the loop stops
+// feeding the room as it fades, and the room rings out under the live
+// sound at the level it had reached, until it falls silent and sleeps. A
+// stall that comes while it still rings starts dry again, and the room's
+// level only ever rises until it sleeps, so nothing steps. At Wash 0 the
+// room is never fed and costs nothing.
+//
 // A stall longer than `hold` frames is no longer a hiccup to cover, so the
 // concealment then fades to silence over `decay` frames and stays silent;
 // the audio coming back then fades in from silence.
@@ -57,6 +67,7 @@ const TABLE = 1024;
 const SIN = new Float32Array(TABLE + 1);
 for (let i = 0; i <= TABLE; i++) SIN[i] = Math.sin(i / TABLE * Math.PI / 2);
 const MIN_RETURN = 128;
+import { Wash } from './wash.js';
 // How far a forward loop may stray from the Loop length to fit whole
 // cycles, as a share of it, weighed against how well it fits.
 const NEAR = 0.25;
@@ -68,7 +79,13 @@ const MISFIT = 10;
 export const PINGPONG = 0, FORWARD = 1;
 
 export class Conceal {
-  constructor({ size, loop = size, xfade = 0, mode = PINGPONG, quantize = false, hold = 48000, decay = 24000 }) {
+  constructor({ size, loop = size, xfade = 0, mode = PINGPONG, quantize = false, hold = 48000, decay = 24000,
+    rate = 48000, wash = 0, washRise = rate, washDecay = 4 }) {
+    this.room = new Wash(rate);
+    this.wash = 0;        // the most of the mix the room takes, 0 to 1
+    this.washRise = rate; // frames from the start of a stall to that
+    this.washG = 0;       // the room's level, which only rises while it rings
+    this.dryG = 1;        // the loop's own level in the mix
     this.size = size;
     this.cap = 2 * size;
     this.hL = new Float32Array(this.cap);
@@ -79,7 +96,7 @@ export class Conceal {
     this.xfade = 0;
     this.mode = PINGPONG;
     this.quantize = false;
-    this.configure({ loop, xfade, mode, quantize });
+    this.configure({ loop, xfade, mode, quantize, wash, washRise, washDecay });
     this.tone = 0;        // frames a cycle of the tone, 0 for none
     this.strobe = 0;      // frames a cycle of the strobe, 0 for none
     this.hold = hold;
@@ -118,7 +135,10 @@ export class Conceal {
 
   // The drawer's settings, live: Loop length and Crossfade in frames, the
   // Loop mode, and Quantize repair. A run under way keeps what it began with.
-  configure({ loop, xfade, mode, quantize }) {
+  configure({ loop, xfade, mode, quantize, wash, washRise, washDecay }) {
+    if (wash !== undefined) this.wash = Math.max(0, Math.min(1, +wash || 0));
+    if (washRise !== undefined) this.washRise = Math.max(1, washRise | 0);
+    if (washDecay !== undefined && washDecay > 0) this.room.tune(washDecay);
     if (loop !== undefined) this.loop = Math.max(256, Math.min(this.size >> 1, loop | 0));
     if (xfade !== undefined) this.xfade = Math.max(0, Math.min(this.size >> 2, xfade | 0));
     if (mode !== undefined) this.mode = mode === FORWARD ? FORWARD : PINGPONG;
@@ -134,6 +154,8 @@ export class Conceal {
 
   // Forgets the history (a rest) and any concealment under way.
   reset() {
+    this.room.sleep();
+    this.washG = 0;
     this.filled = 0;
     this.active = false;
     this.out = 0;
@@ -284,6 +306,32 @@ export class Conceal {
     else if (this.pa <= 0) { this.pa = 0; this.da = 1; }
   }
 
+  // One frame of a stall into L[i] and R[i]: the loop, and the room it is
+  // turning into.
+  stallFrame(L, R, i) {
+    this.frame();
+    if (this.wash <= 0) {
+      this.dryG = 1;
+      if (this.room.awake) this.roomOnly(L, R, i, 0, 0, this.l, this.r);
+      else { L[i] = this.l; R[i] = this.r; }
+      return;
+    }
+    const u = Math.min(1, this.age / this.washRise), sh = SIN[(u * TABLE) | 0];
+    const k = (this.wash * sh * sh * TABLE) | 0;
+    this.dryG = SIN[TABLE - k];
+    if (SIN[k] > this.washG) this.washG = SIN[k];
+    this.roomOnly(L, R, i, this.l, this.r, this.l * this.dryG, this.r * this.dryG);
+  }
+
+  // The room fed (xl, xr), its ring added to (yl, yr), into L[i] and R[i].
+  roomOnly(L, R, i, xl, xr, yl, yr) {
+    const room = this.room;
+    room.step(xl, xr);
+    L[i] = yl + room.ol * this.washG;
+    R[i] = yr + room.or * this.washG;
+    if (!room.awake) this.washG = 0;
+  }
+
   // What was heard, frames `from` on, into the history. During a stall it
   // goes ahead of base, and stops before it would reach what is being read.
   record(L, R, from) {
@@ -312,11 +360,8 @@ export class Conceal {
     if (!this.active || (this.out > 0 && !this.overflow)) this.start();
     this.out = 0;
     this.release = false;
-    for (let i = 0; i < n; i++) {
-      this.frame();
-      L[i] = this.l;
-      R[i] = this.r;
-    }
+    this.room.block(n);
+    for (let i = 0; i < n; i++) this.stallFrame(L, R, i);
     this.record(L, R, 0);
   }
 
@@ -326,30 +371,35 @@ export class Conceal {
   wet(L, R) {
     const n = L.length;
     let i = 0;
+    this.room.block(n);
     if (this.active) {
       // Quantized, the sound waits for the end of the loop under way.
       if (this.quantize && this.out === 0 && !this.release) {
         for (; i < n; i++) {
           if (this.cyc === 0 && this.age > 0) { this.release = true; break; }
-          this.frame();
-          L[i] = this.l;
-          R[i] = this.r;
+          this.stallFrame(L, R, i);
         }
         if (!this.release) { this.record(L, R, 0); return; }
       }
       if (this.out === 0) this.ret = Math.max(MIN_RETURN, this.xfade);
-      const len = this.ret, fwd = this.fwd;
+      const len = this.ret, fwd = this.fwd, feed = this.wash > 0, room = this.room;
       for (; i < n && this.out < len; i++, this.out++) {
         this.frame();
         const k = ((this.out + 0.5) * TABLE / len) | 0;
         let a = SIN[k], b = SIN[TABLE - k];
         if (fwd) { a *= a; b = 1 - a; }
-        L[i] = L[i] * a + this.l * b;
-        R[i] = R[i] * a + this.r * b;
+        const cl = this.l * b, cr = this.r * b;
+        if (feed || room.awake) {
+          this.roomOnly(L, R, i, feed ? cl : 0, feed ? cr : 0, L[i] * a + cl * this.dryG, R[i] * a + cr * this.dryG);
+        } else {
+          L[i] = L[i] * a + cl;
+          R[i] = R[i] * a + cr;
+        }
       }
       if (this.out < len) { this.record(L, R, 0); return; }
       // Done: what was heard up to here goes in, unless the stall outran
       // its room, and then the history starts over from here.
+      for (let j = i; j < n && this.room.awake; j++) this.roomOnly(L, R, j, 0, 0, L[j], R[j]);
       const over = this.overflow;
       if (!over) this.record(L, R, 0);
       this.active = false;
@@ -359,10 +409,12 @@ export class Conceal {
       if (over) { this.filled = 0; this.record(L, R, i); }
       return;
     }
+    // The room ringing out under the sound.
+    for (; i < n && this.room.awake; i++) this.roomOnly(L, R, i, 0, 0, L[i], R[i]);
     this.record(L, R, 0);
   }
 
   // A quantum played as silence on purpose (rest, refill, a wake's wait):
   // no concealment, none to fade out of, and the history starts over.
-  quiet() { this.active = false; this.out = 0; this.release = false; this.filled = 0; }
+  quiet() { this.active = false; this.out = 0; this.release = false; this.filled = 0; this.room.sleep(); this.washG = 0; }
 }

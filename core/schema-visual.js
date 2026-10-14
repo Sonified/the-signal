@@ -1783,6 +1783,31 @@ export const VISUAL_CONTROLS = [
     format: S => S.heartQuantize === true ? 'whole loops' : 'off'
   },
   {
+    // The longer a stall goes on, the more of the loop is heard through a
+    // reverb (js/heart/wash.js): from dry at the start of the stall to this
+    // much wet over Wash rise. When the sound comes back the room rings out
+    // under it over Wash decay. 0 is no room.
+    id: 'heartWash', section: 'render', label: 'Wash', kind: 'slider', parent: 'renderAudioDrawer',
+    min: 0, max: 1, step: 0.05, def: 0.6,
+    get: S => S.heartWash ?? 0.6,
+    set: (S, v) => { S.heartWash = Math.max(0, Math.min(1, v)); applyHeartConceal(); save(); },
+    formatAt: pos => pos > 0 ? Math.round(pos * 100) + '% wet' : 'Off'
+  },
+  {
+    id: 'heartWashRiseS', section: 'render', label: 'Wash rise', kind: 'slider', parent: 'renderAudioDrawer',
+    min: 0.25, max: 5, step: 0.25, def: 1.5,
+    get: S => S.heartWashRiseS ?? 1.5,
+    set: (S, v) => { S.heartWashRiseS = Math.max(0.25, Math.min(5, v)); applyHeartConceal(); save(); },
+    formatAt: pos => pos.toFixed(2).replace(/0$/, '') + ' s to full'
+  },
+  {
+    id: 'heartWashDecayS', section: 'render', label: 'Wash decay', kind: 'slider', parent: 'renderAudioDrawer',
+    min: 1, max: 10, step: 0.5, def: 4,
+    get: S => S.heartWashDecayS ?? 4,
+    set: (S, v) => { S.heartWashDecayS = Math.max(1, Math.min(10, v)); applyHeartConceal(); save(); },
+    formatAt: pos => pos.toFixed(1) + ' s'
+  },
+  {
     id: 'simGapMs', section: 'render', label: 'Dropout length', kind: 'slider', parent: 'renderAudioDrawer',
     summaryLabel: 'Dropout',
     min: 10, max: 1000, step: 10, def: 200,

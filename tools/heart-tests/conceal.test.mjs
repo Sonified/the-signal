@@ -276,3 +276,59 @@ test('quantize repair: a short dropout plays a whole loop before the sound comes
   // 1024 frames of loop, then the return fade's first frames are mostly loop.
   assert.ok(held >= 1024 && held < 1024 + 2 * QUANTUM, `held ${held}`);
 });
+
+test('wash: a stall starts dry and turns to the room over Wash rise, then the room rings out and sleeps', () => {
+  const make = wash => new Conceal({ size: 120000, loop: 24000, xfade: 2400, mode: FORWARD, hold: 1e9, wash, washRise: 48000, washDecay: 2 });
+  const a = make(1), b = make(0);
+  a.setPeriods(1200, 0); b.setPeriods(1200, 0);
+  const La = new Float32Array(QUANTUM), Ra = new Float32Array(QUANTUM), Lb = new Float32Array(QUANTUM), Rb = new Float32Array(QUANTUM);
+  let f = 0;
+  for (let q = 0; q < 300; q++) {
+    for (let i = 0; i < QUANTUM; i++, f++) La[i] = Ra[i] = Lb[i] = Rb[i] = tone(f);
+    a.wet(La, Ra); b.wet(Lb, Rb);
+  }
+  // How far the washed stall is from the dry one, early and once risen.
+  const diff = quanta => {
+    let d = 0;
+    for (let q = 0; q < quanta; q++) {
+      a.dry(La, Ra); b.dry(Lb, Rb);
+      for (let i = 0; i < QUANTUM; i++) d = Math.max(d, Math.abs(La[i] - Lb[i]));
+    }
+    return d;
+  };
+  const early = diff(8);            // the first 21 ms
+  diff(400);                        // past the second of rise
+  const late = diff(20);
+  assert.ok(early < 0.05, `early ${early}`);
+  assert.ok(late > 0.3, `late ${late}`);
+  // The sound comes back: the room still rings under it a while, then sleeps.
+  for (let q = 0; q < 40; q++) { La.fill(0); Ra.fill(0); a.wet(La, Ra); }
+  assert.ok(a.room.awake && La.some(v => v !== 0), 'rings under the returning sound');
+  for (let q = 0; q < 48000 * 3 / QUANTUM; q++) { La.fill(0); Ra.fill(0); a.wet(La, Ra); }
+  assert.equal(a.room.awake, false, 'asleep once rung out');
+  assert.ok(La.every(v => v === 0));
+});
+
+test('wash: many dropouts with the room on never jump', () => {
+  const ring = new SharedRing(SharedRing.describe(2, 8192));
+  const drain = new Drain({ post: () => {}, conceal: 24000, concealSet: { loop: 6000, xfade: 480, mode: FORWARD, wash: 0.8, washRise: 4800 } });
+  drain.attach(ring);
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  let written = 0;
+  const feed = () => { while (written < (drain.played + 1) * QUANTUM + 8 * CHUNK && ring.writable() >= CHUNK) { writeChunk(ring, written); written += CHUNK; } };
+  feed();
+  for (let q = 0; q < 200; q++) { feed(); drain.play(L, R, 0); }
+  let seed = 5;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const pattern = [];
+  for (let i = 0; i < 59; i++) pattern.push(1 + Math.floor(rnd() * 40));
+  drain.simulate(Int32Array.from(pattern));
+  let prev = L[QUANTUM - 1], maxJump = 0, peak = 0;
+  for (let q = 0; q < 2000; q++) {
+    feed();
+    drain.play(L, R, 0);
+    for (let i = 0; i < QUANTUM; i++) { maxJump = Math.max(maxJump, Math.abs(L[i] - prev)); prev = L[i]; peak = Math.max(peak, Math.abs(L[i])); }
+  }
+  assert.ok(maxJump < 0.05, `largest step ${maxJump.toFixed(3)}`);
+  assert.ok(peak < 2, `peak ${peak.toFixed(2)}`);
+});

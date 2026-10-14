@@ -185,9 +185,10 @@ async function assemble(engine, ctx, module, opts) {
   const shared = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer === 'function';
   const sampleRate = ctx.sampleRate;
   const toFrames = seconds => Math.ceil(seconds * sampleRate / QUANTUM) * QUANTUM;
-  const concealFrames = ({ mode, quantize, loop, xfade }) => ({ mode, quantize,
+  const concealFrames = ({ mode, quantize, loop, xfade, wash, washRise, washDecay }) => ({ mode, quantize, wash, washDecay,
     loop: loop >= 0 ? Math.round(loop * sampleRate) : undefined,
-    xfade: xfade >= 0 ? Math.round(xfade * sampleRate) : undefined });
+    xfade: xfade >= 0 ? Math.round(xfade * sampleRate) : undefined,
+    washRise: washRise > 0 ? Math.round(washRise * sampleRate) : undefined });
   const small = opts.handheld ?? handheld();
   const lookahead = toFrames(opts.lookahead ?? (shared ? (small ? HANDHELD_SAB : LOOKAHEAD_SAB) : (small ? HANDHELD_MESSAGE : LOOKAHEAD_MESSAGE)));
   const maxAhead = Math.max(lookahead, toFrames(opts.maxLookahead ?? LOOKAHEAD_MAX));
@@ -240,7 +241,7 @@ async function assemble(engine, ctx, module, opts) {
     outputChannelCount: [2],
     processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG,
       conceal: (opts.conceal ?? CONCEAL) ? toFrames(CONCEAL_SECONDS) : 0,
-      concealSet: { ...concealFrames(opts.concealSet || {}), hold: Math.round(CONCEAL_HOLD * sampleRate) } }
+      concealSet: { ...concealFrames(opts.concealSet || {}), hold: Math.round(CONCEAL_HOLD * sampleRate), rate: sampleRate } }
   });
   if (!shared) output.port.postMessage({ type: 'ring', ring: finalRing.reader }, transfer(finalRing.reader));
   output.port.onmessage = e => {
@@ -523,8 +524,9 @@ async function assemble(engine, ctx, module, opts) {
       output.port.postMessage({ type: 'grow', x });
     },
     // The concealment's settings, live (the drawer's Loop mode, Loop
-    // length, Crossfade and Quantize repair): { mode, quantize, loop, xfade },
-    // the lengths in seconds.
+    // length, Crossfade, Quantize repair, Wash, Wash rise and Wash decay):
+    // { mode, quantize, loop, xfade, wash, washRise, washDecay }, the
+    // lengths in seconds.
     setConceal(set) {
       if (closed) return;
       output.port.postMessage({ type: 'conceal', set: concealFrames(set) });
