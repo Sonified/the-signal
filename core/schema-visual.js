@@ -39,7 +39,7 @@ import { save, loadUiState, saveUiState } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
-import { applyHeartLookahead, applyHeartGrow } from '../js/heart/route.js';
+import { applyHeartLookahead, applyHeartGrow, simulateUnderrun } from '../js/heart/route.js';
 import { applyOutputGuards } from './output-guard.js';
 import { GF_GLIDE_MAX } from './global-filter.js';
 
@@ -1741,6 +1741,38 @@ export const VISUAL_CONTROLS = [
     get: S => S.heartGrowX ?? 1.5,
     set: (S, v) => { S.heartGrowX = Math.max(1.1, Math.min(2, v)); applyHeartGrow(); save(); },
     formatAt: pos => '×' + pos.toFixed(1)
+  },
+  {
+    // A test of what an underrun sounds like (js/heart/route.js
+    // simulateUnderrun): the drain plays dropouts as if the ring had run
+    // dry, concealment and all, without the cushion learning from them.
+    // Fixed: Dropouts gaps of the Length, with the Length of sound between.
+    // Random: each gap, and each stretch of sound between, its own length
+    // up to the Length.
+    id: 'simUnderrun', section: 'render', label: 'Simulate underrun', kind: 'action', parent: 'renderAudioDrawer',
+    act: S => simulateUnderrun(S.simGapCount ?? 1, S.simGapMs ?? 200, S.simGapRandom === true)
+  },
+  {
+    id: 'simGapMs', section: 'render', label: 'Dropout length', kind: 'slider', parent: 'renderAudioDrawer',
+    summaryLabel: 'Dropout',
+    min: 10, max: 1000, step: 10, def: 200,
+    get: S => S.simGapMs ?? 200,
+    set: (S, v) => { S.simGapMs = Math.max(10, Math.min(1000, Math.round(v))); save(); },
+    formatAt: (pos, S) => (S && S.simGapRandom === true ? 'up to ' : '') + Math.round(pos) + ' ms'
+  },
+  {
+    id: 'simGapRandom', section: 'render', label: 'Random lengths', kind: 'toggle', parent: 'renderAudioDrawer',
+    def: false,
+    get: S => S.simGapRandom === true,
+    set: (S, on) => { S.simGapRandom = !!on; save(); },
+    format: S => S.simGapRandom === true ? 'random' : 'fixed'
+  },
+  {
+    id: 'simGapCount', section: 'render', label: 'Dropouts', kind: 'slider', parent: 'renderAudioDrawer',
+    min: 1, max: 100, step: 1, def: 1,
+    get: S => S.simGapCount ?? 1,
+    set: (S, v) => { S.simGapCount = Math.max(1, Math.min(100, Math.round(v))); save(); },
+    formatAt: pos => Math.round(pos) + (Math.round(pos) === 1 ? ' dropout' : ' dropouts')
   },
   {
     // Whether the strobe's audio allows for the output's latency (js/

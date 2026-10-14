@@ -94,6 +94,20 @@ export function applyHeartGrow() {
   if (engine) engine.setGrow(growSetting());
 }
 
+// The drawer's Simulate underrun: `count` dropouts of `ms` each with `ms`
+// of sound between, or, `random`, each gap and each stretch of sound
+// between its own length from a quantum up to `ms`. Handed to the drain as
+// milliseconds, gap, sound, gap, ... ending on a gap.
+export function simulateUnderrun(count, ms, random) {
+  if (!engine) { console.warn('simulate underrun: Heart is not playing'); return; }
+  const pattern = [];
+  for (let i = 0; i < count; i++) {
+    if (i > 0) pattern.push(random ? Math.random() * ms : ms);
+    pattern.push(random ? Math.random() * ms : ms);
+  }
+  engine.simulateUnderrun(pattern);
+}
+
 export function startHeart(ctx, master) {
   nativeCtx = ctx;
   nativeMaster = master;

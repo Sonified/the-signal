@@ -139,6 +139,11 @@ export class Drain {
     this.news = { type: 'lookahead', next: 0, target: 0, underruns: 0 };
     this.diag = diag ? { type: 'diag', what: '', played: 0, underruns: 0, run: 0, ready: 0, target: 0, next: 0, held: 0, floor: 0 } : null;
     this.runFrom = 0;
+    // Simulate underrun (the drawer's test): quanta of gap, sound, gap, ...,
+    // where it is in them, and how many of the current one are left.
+    this.sim = null;
+    this.simAt = 0;
+    this.simLeft = 0;
     if (lookahead && lookahead.startFullscreen) this.setFullscreen(true);
     if (lookahead && lookahead.startHidden) this.setHidden(true);
   }
@@ -202,6 +207,16 @@ export class Drain {
       this.tick();
       return;
     }
+    // A simulated gap plays as a dry ring does, concealment and all, and
+    // its frames are dropped as late, but it is not an underrun: nothing
+    // is counted, learned or grown from it.
+    if (this.sim && this.simDry()) {
+      if (this.conceal) this.conceal.dry(L, R);
+      else { L.fill(0); R.fill(0); }
+      this.debt += n;
+      this.tick();
+      return;
+    }
     if (ready >= n) {
       ring.read(0, L, 0, n);
       ring.read(1, R, 0, n);
@@ -239,6 +254,26 @@ export class Drain {
   // The page's word (engine.js rest and wake). Resting, the count the stages
   // read stands still; waking, it is published at once and the stages,
   // already told where to jump, are rung so a sleeping one hears it.
+  // The drawer's Simulate underrun: `quanta`, gap, sound, gap, ... A new
+  // one replaces any still playing.
+  simulate(quanta) {
+    this.sim = quanta.length ? quanta : null;
+    this.simAt = 0;
+    this.simLeft = this.sim ? this.sim[0] : 0;
+  }
+
+  // One quantum of the simulation: whether it is a gap. Even entries are
+  // gaps, odd ones sound; past the last, the simulation is over.
+  simDry() {
+    const s = this.sim;
+    while (this.simLeft === 0) {
+      if (++this.simAt >= s.length) { this.sim = null; return false; }
+      this.simLeft = s[this.simAt];
+    }
+    this.simLeft--;
+    return (this.simAt & 1) === 0;
+  }
+
   setResting(on) {
     if (on === this.resting) return;
     this.resting = on;
@@ -412,6 +447,7 @@ if (typeof registerProcessor === 'function') {
         else if (d.type === 'grow') this.drain.setGrow(+d.x);
         else if (d.type === 'fullscreen') this.drain.setFullscreen(d.on === true);
         else if (d.type === 'rest') this.drain.setResting(d.on === true);
+        else if (d.type === 'simulate') this.drain.simulate(Int32Array.from(d.quanta));
         else if (d.type === 'close') { this.alive = false; this.drain.close(); }
       };
     }

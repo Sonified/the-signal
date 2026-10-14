@@ -515,6 +515,13 @@ async function assemble(engine, ctx, module, opts) {
       policy.grow = x;
       output.port.postMessage({ type: 'grow', x });
     },
+    // The drawer's Simulate underrun: milliseconds, gap, sound, gap, ...
+    // The drain plays each gap as a dry ring (drain-worklet.js simulate).
+    simulateUnderrun(ms) {
+      if (closed || !ms.length) return;
+      const quanta = ms.map(v => Math.max(1, Math.round(v / 1000 * sampleRate / QUANTUM)));
+      output.port.postMessage({ type: 'simulate', quanta });
+    },
     rest,
     wake,
     isResting: () => resting,

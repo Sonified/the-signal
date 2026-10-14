@@ -114,3 +114,29 @@ test('drain without concealment still plays silence', () => {
   drain.play(L, R, 0);
   assert.ok(L.every(v => v === 0));
 });
+
+test('simulated underrun: gaps where the pattern says, frames still on time, nothing learned', () => {
+  const ring = new SharedRing(SharedRing.describe(2, 4096));
+  const ctl = makeControl(1);
+  const drain = new Drain({ control: ctl, stages: 1, post: () => {} });
+  drain.attach(ring);
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  let written = 0;
+  const feed = () => { while (written < (drain.played + 1) * QUANTUM + 4 * CHUNK && ring.writable() >= CHUNK) { writeChunk(ring, written); written += CHUNK; } };
+  feed();
+  drain.play(L, R, 0);
+  // Gap 3, sound 2, gap 1.
+  drain.simulate(Int32Array.from([3, 2, 1]));
+  const silent = [];
+  for (let q = 0; q < 10; q++) {
+    feed();
+    const at = drain.played * QUANTUM;
+    drain.play(L, R, 0);
+    const quiet = L.every(v => v === 0);
+    silent.push(quiet);
+    if (!quiet) assert.ok(Math.abs(L[0] - sine(at)) < 1e-6, `quantum ${q} plays engine frame ${at}`);
+  }
+  assert.deepEqual(silent, [true, true, true, false, false, true, false, false, false, false]);
+  assert.equal(drain.underruns, 0);
+  assert.equal(Atomics.load(ctl, PLAYED), 11);
+});
