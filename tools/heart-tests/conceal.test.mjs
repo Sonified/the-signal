@@ -170,3 +170,33 @@ test('simulated underrun: gaps where the pattern says, frames still on time, not
   assert.equal(drain.underruns, 0);
   assert.equal(Atomics.load(ctl, PLAYED), 11);
 });
+
+test('conceal: many dropouts in a row never jump, so nothing clicks', () => {
+  const ring = new SharedRing(SharedRing.describe(2, 8192));
+  const drain = new Drain({ post: () => {}, conceal: 24000, xfade: 480 });
+  drain.attach(ring);
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  let written = 0;
+  const feed = () => { while (written < (drain.played + 1) * QUANTUM + 8 * CHUNK && ring.writable() >= CHUNK) { writeChunk(ring, written); written += CHUNK; } };
+  feed();
+  for (let q = 0; q < 200; q++) { feed(); drain.play(L, R, 0); }
+  // Thirty dropouts, gaps and sound between each up to 20 quanta, at random
+  // but the same random every run.
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const pattern = [];
+  for (let i = 0; i < 59; i++) pattern.push(1 + Math.floor(rnd() * 20));
+  drain.simulate(Int32Array.from(pattern));
+  let prev = L[QUANTUM - 1], maxJump = 0, at = 0;
+  for (let q = 0; q < 900; q++) {
+    feed();
+    drain.play(L, R, 0);
+    for (let i = 0; i < QUANTUM; i++) {
+      const d = Math.abs(L[i] - prev);
+      if (d > maxJump) { maxJump = d; at = q * QUANTUM + i; }
+      prev = L[i];
+    }
+  }
+  // The sine moves at most 0.01 a frame; two of it crossfading, a little more.
+  assert.ok(maxJump < 0.05, `largest step ${maxJump.toFixed(3)} at frame ${at}`);
+});

@@ -1754,16 +1754,6 @@ export const VISUAL_CONTROLS = [
     formatAt: pos => pos > 0 ? Math.round(pos) + ' ms' : 'Hard turn'
   },
   {
-    // A test of what an underrun sounds like (js/heart/route.js
-    // simulateUnderrun): the drain plays dropouts as if the ring had run
-    // dry, concealment and all, without the cushion learning from them.
-    // Fixed: Dropouts gaps of the Length, with the Length of sound between.
-    // Random: each gap, and each stretch of sound between, its own length
-    // up to the Length.
-    id: 'simUnderrun', section: 'render', label: 'Simulate underrun', kind: 'action', parent: 'renderAudioDrawer',
-    act: S => simulateUnderrun(S.simGapCount ?? 1, S.simGapMs ?? 200, S.simGapRandom === true)
-  },
-  {
     id: 'simGapMs', section: 'render', label: 'Dropout length', kind: 'slider', parent: 'renderAudioDrawer',
     summaryLabel: 'Dropout',
     min: 10, max: 1000, step: 10, def: 200,
@@ -1784,6 +1774,16 @@ export const VISUAL_CONTROLS = [
     get: S => S.simGapCount ?? 1,
     set: (S, v) => { S.simGapCount = Math.max(1, Math.min(100, Math.round(v))); save(); },
     formatAt: pos => Math.round(pos) + (Math.round(pos) === 1 ? ' dropout' : ' dropouts')
+  },
+  {
+    // A test of what an underrun sounds like (js/heart/route.js
+    // simulateUnderrun): the drain plays dropouts as if the ring had run
+    // dry, concealment and all, without the cushion learning from them.
+    // Fixed: Dropouts gaps of the Length, with the Length of sound between.
+    // Random: each gap, and each stretch of sound between, its own length
+    // up to the Length.
+    id: 'simUnderrun', section: 'render', label: 'Simulate underrun', kind: 'action', parent: 'renderAudioDrawer',
+    act: S => simulateUnderrun(S.simGapCount ?? 1, S.simGapMs ?? 200, S.simGapRandom === true)
   },
   {
     // Whether the strobe's audio allows for the output's latency (js/

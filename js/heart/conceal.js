@@ -26,10 +26,17 @@
 // concealment then fades to silence over `decay` frames and stays silent;
 // the audio coming back then fades in from silence.
 //
-// The history is not written while concealing (including the fade out),
-// so the ping-pong reads a frozen picture. A rest (a pause, see the
-// drain) forgets it: what was playing before a pause is not what should
-// cover a stall after it.
+// The history is what was heard, every frame of it: the live sound, the
+// concealment and the fades between them, so it has no seams for a later
+// ping-pong to run across, and a stall that comes while the last one is
+// still fading out simply starts again from the last frame heard. The ring
+// holds twice the history: the ping-pong reads the `size` frames behind
+// the point it froze, while what it plays is written ahead of that point,
+// so the two never meet. A stall that outlasts the room ahead stops
+// writing, and the history then starts over once the sound is back. A rest
+// (a pause, see the drain) or a quantum of deliberate silence forgets it
+// too: what was playing before a pause is not what should cover a stall
+// after it.
 //
 // Everything is preallocated; nothing here allocates once constructed.
 
@@ -43,10 +50,11 @@ const MIN_RETURN = 128;
 export class Conceal {
   constructor({ size, xfade = 0, hold = 48000, decay = 24000 }) {
     this.size = size;
-    this.hL = new Float32Array(size);
-    this.hR = new Float32Array(size);
+    this.cap = 2 * size;
+    this.hL = new Float32Array(this.cap);
+    this.hR = new Float32Array(this.cap);
     this.w = 0;           // the next history slot to write
-    this.filled = 0;      // frames of history held, up to size
+    this.filled = 0;      // frames of seamless history, up to cap
     this.xfade = 0;
     this.setXfade(xfade);
     this.hold = hold;
@@ -56,6 +64,8 @@ export class Conceal {
     this.ret = MIN_RETURN; // the fade out's length, fixed when it starts
     this.base = 0;        // the newest history frame, frozen at the start
     this.span = 0;        // frames of history the ping-pong turns over
+    this.written = 0;     // frames written ahead of base this stall
+    this.overflow = false; // the stall outran the room ahead of base
     // Head a, and head b while a turn is crossfading: frames back from
     // base, and 1 going back in time or -1 coming forward.
     this.pa = 0; this.da = 1;
@@ -75,9 +85,9 @@ export class Conceal {
 
   // Forgets the history (a rest) and any concealment under way.
   reset() {
-    this.w = 0;
     this.filled = 0;
     this.active = false;
+    this.out = 0;
   }
 
   // Frames head a has left before the end of the history it is heading to.
@@ -85,12 +95,32 @@ export class Conceal {
 
   at(h, p) {
     let i = this.base - p;
-    if (i < 0) i += this.size;
+    if (i < 0) i += this.cap;
     return h[i];
+  }
+
+  // A stall starts, from the last frame heard.
+  start() {
+    this.span = Math.min(this.filled, this.size);
+    this.base = this.w - 1 < 0 ? this.cap - 1 : this.w - 1;
+    // The turn's length, fixed for this run: no more than a third of the
+    // history, so a pass always has a stretch of its own.
+    this.turnLen = Math.max(0, Math.min(this.xfade, Math.floor((this.span - 1) / 3)));
+    this.pa = 0;
+    this.da = 1;
+    this.turn = -1;
+    this.age = 0;
+    this.gain = 1;
+    this.written = 0;
+    this.overflow = false;
+    this.active = true;
+    this.out = 0;
+    if (this.span >= 2) this.stepA();
   }
 
   // One frame of concealment into this.l and this.r, then the heads move on.
   frame() {
+    if (this.span < 2) { this.l = this.r = 0; return; }
     const hL = this.hL, hR = this.hR;
     // A turn starts: head b from the end a is heading to, coming back the
     // other way, so the two cross halfway through the fade.
@@ -129,69 +159,71 @@ export class Conceal {
     else if (this.pa <= 0) { this.pa = 0; this.da = 1; }
   }
 
+  // What was heard, frames `from` on, into the history. During a stall it
+  // goes ahead of base, and stops before it would reach what is being read.
+  record(L, R, from) {
+    const cap = this.cap, n = L.length;
+    let w = this.w, i = from;
+    for (; i < n; i++) {
+      if (this.active) {
+        if (this.overflow) break;
+        if (++this.written >= cap - this.span) { this.overflow = true; break; }
+      }
+      this.hL[w] = L[i];
+      this.hR[w] = R[i];
+      if (++w === cap) w = 0;
+    }
+    this.filled = Math.min(cap, this.filled + (i - from));
+    this.w = w;
+  }
+
   // A dry quantum: fills L and R with concealment. With too little history
   // to turn over (the very start), it is silence.
   dry(L, R) {
     const n = L.length;
-    if (!this.active) {
-      this.span = Math.min(this.filled, this.size);
-      this.base = this.w - 1 < 0 ? this.size - 1 : this.w - 1;
-      // The turn's length, fixed for this run: no more than a third of
-      // the history, so a pass always has a stretch of its own.
-      this.turnLen = Math.min(this.xfade, Math.floor((this.span - 1) / 3));
-      this.pa = 0;
-      this.da = 1;
-      this.turn = -1;
-      this.age = 0;
-      this.gain = 1;
-      this.active = true;
-      this.stepA();
-    }
-    // A stall in the middle of a fade out carries on concealing.
+    // A new stall, or one that comes while the last is fading out: from
+    // the last frame heard. Only a stall that outran its room carries on
+    // where it was, as there is no seamless history to start from.
+    if (!this.active || (this.out > 0 && !this.overflow)) this.start();
     this.out = 0;
-    if (this.span < 2) { L.fill(0); R.fill(0); return; }
     for (let i = 0; i < n; i++) {
       this.frame();
       L[i] = this.l;
       R[i] = this.r;
     }
+    this.record(L, R, 0);
   }
 
   // A quantum that had audio, already in L and R: fades the concealment out
-  // under it if one is under way, then keeps it as history once it is done.
+  // under it if one is under way, and keeps what was heard as history.
   wet(L, R) {
     const n = L.length;
     let i = 0;
     if (this.active) {
-      if (this.span < 2) {
-        this.active = false;
-      } else {
-        if (this.out === 0) this.ret = Math.max(MIN_RETURN, this.xfade);
-        const len = this.ret;
-        for (; i < n && this.out < len; i++, this.out++) {
-          this.frame();
-          const k = ((this.out + 0.5) * TABLE / len) | 0;
-          const a = SIN[k], b = SIN[TABLE - k];
-          L[i] = L[i] * a + this.l * b;
-          R[i] = R[i] * a + this.r * b;
-        }
-        if (this.out < len) return;
-        this.active = false;
-        this.out = 0;
+      if (this.out === 0) this.ret = Math.max(MIN_RETURN, this.xfade);
+      const len = this.ret;
+      for (; i < n && this.out < len; i++, this.out++) {
+        this.frame();
+        const k = ((this.out + 0.5) * TABLE / len) | 0;
+        const a = SIN[k], b = SIN[TABLE - k];
+        L[i] = L[i] * a + this.l * b;
+        R[i] = R[i] * a + this.r * b;
       }
+      if (this.out < len) { this.record(L, R, 0); return; }
+      // Done: what was heard up to here goes in, unless the stall outran
+      // its room, and then the history starts over from here.
+      const over = this.overflow;
+      if (!over) this.record(L, R, 0);
+      this.active = false;
+      this.out = 0;
+      this.overflow = false;
+      if (over) { this.filled = 0; this.record(L, R, i); }
+      return;
     }
-    const size = this.size;
-    let w = this.w;
-    for (; i < n; i++) {
-      this.hL[w] = L[i];
-      this.hR[w] = R[i];
-      if (++w === size) w = 0;
-    }
-    this.filled = Math.min(size, this.filled + n);
-    this.w = w;
+    this.record(L, R, 0);
   }
 
   // A quantum played as silence on purpose (rest, refill, a wake's wait):
-  // no concealment, and none to fade out of.
-  quiet() { this.active = false; this.out = 0; }
+  // no concealment, none to fade out of, and the history starts over.
+  quiet() { this.active = false; this.out = 0; this.filled = 0; }
 }
