@@ -36,7 +36,7 @@ import { seedParticles, applyEdgeDir } from '../js/sim.js';
 import { THEMES, WORDS } from '../js/words.js';
 import { rebuildWordPool, retimeWordOpacity } from './words.js';
 import { FX_NAMES } from './word-fx.js';
-import { save, loadUiState, saveUiState } from './store.js';
+import { save } from './store.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
@@ -70,21 +70,16 @@ const glideMs = v => typeof v === 'number' && v === v ? Math.round(Math.max(0, M
 // voices, whose strips carry the voice's switch): each a toggle whose rows
 // nest under it, open while it is on. They are disclosures, not
 // features, so whether one is open is how the interface was arranged, not
-// how the session looks or sounds. It lives beside the drawer's own open
-// sections in the UI record (store.js saveUiState), never in S, so no preset,
-// snapshot or other tab ever sees it, and `uiOnly` keeps these rows out of
+// how the session looks or sounds. It lives here for the visit, never in S,
+// so no preset, snapshot or other tab ever sees it, and `uiOnly` keeps these rows out of
 // the preset replay and the audio mirror. The drawer folds every row under
-// one open and shut the way a section folds (imgui.js beginFold). All start open: the record lists only the ones the
-// viewer shut. It is read the first time the drawer asks, well after main.js
-// has handed the store its storage.
+// one open and shut the way a section folds (imgui.js beginFold). All start
+// shut on a fresh page, like the drawer's sections (drawer.js openGroups);
+// what the viewer opens stays open for the visit and is not saved.
+const allSubs = [];
 let shutSubs = null;
 function shutSubDrawers() {
-  if (shutSubs === null) {
-    shutSubs = new Set();
-    const saved = loadUiState();
-    const list = saved && Array.isArray(saved.shutSubDrawers) ? saved.shutSubDrawers : [];
-    for (const id of list) if (typeof id === 'string') shutSubs.add(id);
-  }
+  if (shutSubs === null) shutSubs = new Set(allSubs);
   return shutSubs;
 }
 // The section defaults to Text, where sub-drawers began; the others name theirs.
@@ -102,13 +97,13 @@ function shutSubDrawers() {
 // control's set() and leaves the drawer as it was, a click anywhere else on
 // the strip opens or shuts it. That control is not drawn as a row of its own.
 export function subDrawer(id, label, section = 'text', summary, switchId) {
+  allSubs.push(id);
   return {
     id, section, label, kind: 'toggle', uiOnly: true, summary, switchId,
     get: () => !shutSubDrawers().has(id),
     set: (S, on) => {
       const shut = shutSubDrawers();
       if (on) shut.delete(id); else shut.add(id);
-      saveUiState({ shutSubDrawers: Array.from(shut) });
     }
   };
 }
@@ -1904,7 +1899,9 @@ export const VISUAL_CONTROLS = [
     // The longer a stall goes on, the more of the loop is heard through a
     // reverb (js/heart/wash.js): from dry at the start of the stall to this
     // much wet over Wash rise. When the sound comes back the room rings out
-    // under it over Wash decay. 0 is no room.
+    // under it over Wash decay. 0 is no room. The low end (below four times
+    // the tone's frequency) stays dry and at full level whatever the wash,
+    // so the room never cancels the tone.
     id: 'heartWash', section: 'render', label: 'Wash', kind: 'slider', parent: 'renderRepairDrawer',
     min: 0, max: 1, step: 0.05, def: 0.6,
     get: S => S.heartWash ?? 0.6,

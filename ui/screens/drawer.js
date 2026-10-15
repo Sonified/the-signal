@@ -20,7 +20,6 @@ import {
 } from '../../core/presets.js';
 import { perform, loadPerform, setRampS, perfRecallPreset, perfRecallLeft, perfShortenRecall, perfSet, perfLayer, perfDestination } from '../../core/perform.js';
 import { ICON } from '../drawlist.js';
-import { loadUiState, saveUiState } from '../../core/store.js';
 import { prof, profToggle, profSave, profCopy } from '../../core/profiler.js';
 import { makeTextState, TEXT_COMMIT, TEXT_CANCEL, touchAware } from '../widgets.js';
 import {
@@ -287,13 +286,10 @@ function gateShows(slot) {
 }
 
 
-// A chevron click: flips the slot and rewrites the saved list of open
-// variance folds (a click's worth of work, never per frame).
+// A chevron click: flips the slot, for this visit only (every fold starts
+// shut on a fresh page, see installGroupMemory).
 function toggleVariance(slot) {
   varOpen[slot] = varOpen[slot] ? 0 : 1;
-  const list = [];
-  for (let s = 0; s < OWNERS.length; s++) if (varOpen[s]) list.push(OWNERS[s].id);
-  saveUiState({ openVariance: list });
 }
 
 // Which open child runs sit inside a sub-drawer fold, by depth, for the
@@ -375,12 +371,11 @@ function switchOn(sw) {
   return !!sw.ctrl.get(S);
 }
 
-// Which sections the viewer left open, restored at the next load. Every
-// section starts shut on a first visit; after that the toolkit asks
-// groupOpenAtStart once per section as it first draws, and each open or close
-// rewrites the saved list (a click's worth of work, never per frame). The set
-// is read from the store the first time the drawer draws, well after main.js
-// has handed the store its storage.
+// Which sections are open. A fresh page opens the drawer with everything
+// folded (sections, sub-drawers, variance folds), so it reads as a short
+// list of headers rather than every control at once; what the viewer opens
+// stays open for the visit and is not carried to the next load. The toolkit
+// asks groupOpenAtStart once per section as it first draws.
 let openGroups = null;
 
 // The one column every strip's summary starts in, measured once from the
@@ -405,22 +400,10 @@ function groupOpenAtStart(id) {
 
 function groupToggled(id, open) {
   if (open) openGroups.add(id); else openGroups.delete(id);
-  saveUiState({ openGroups: Array.from(openGroups) });
 }
 
 function installGroupMemory(ui) {
-  const saved = loadUiState();
-  const list = saved && Array.isArray(saved.openGroups) ? saved.openGroups : [];
   openGroups = new Set();
-  for (const id of list) if (typeof id === 'string') openGroups.add(id);
-  // Open variance folds, by owner id, beside the sub-drawers' shutSubDrawers
-  // in the same UI record: every fold starts shut, the record lists the
-  // ones the viewer opened.
-  const vars = saved && Array.isArray(saved.openVariance) ? saved.openVariance : [];
-  for (const id of vars) {
-    const slot = ownerSlot.get(id);
-    if (slot !== undefined) varOpen[slot] = 1;
-  }
   ui.groupInitialOpen = groupOpenAtStart;
   ui.onGroupToggle = groupToggled;
 }
