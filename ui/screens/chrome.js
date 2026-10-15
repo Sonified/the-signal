@@ -39,8 +39,14 @@ import { strobeLum } from '../../core/strobe.js';
 import { followStrobeOwned, followStrobeSync, broadcastAsking, broadcastAskText, broadcastAnswer } from '../../core/broadcast.js';
 
 const QUICK = [   // right to left after the full-screen button, with v0's min widths
-  ['colorQuick', 118], ['textQuick', 86], ['clickQuick', 112], ['toneQuick', 86],
-  ['visualQuick', 132], ['musicQuick', 94], ['ambQuick', 112]
+  // Colour, Click and Visual are off the bar for now (Robert, 2026-10-15):
+  // put a line back to bring its chip back, and add its index to QUICK_DROP.
+  // ['colorQuick', 118],
+  ['textQuick', 86],
+  // ['clickQuick', 112],
+  ['toneQuick', 86],
+  // ['visualQuick', 132],
+  ['musicQuick', 94], ['ambQuick', 112]
 ];
 const QUICK_CTRL = QUICK.map(q => byId(q[0]));
 // When the bar is wider than the room left of the full-screen button, chips
@@ -48,7 +54,7 @@ const QUICK_CTRL = QUICK.map(q => byId(q[0]));
 // atmosphere chip is not on the list: it is the only way to the mixer from
 // the bar, so it is the last to go. Words and colour go first because T and
 // C still reach them from the keyboard.
-const QUICK_DROP = [1, 0, 2, 3, 4, 5];
+const QUICK_DROP = [0, 1, 2];   // words, tone, music
 // Per-frame scratch for the fit, allocated once: each chip's label, width,
 // and whether it is shown this frame.
 const quickLabel = new Array(QUICK.length).fill('');
