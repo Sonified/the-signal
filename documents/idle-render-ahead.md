@@ -1,9 +1,20 @@
 # Render ahead on idle
 
-Handoff document, 2026-10-15. The feature is **HALF-BUILT and gated off**
-(`IDLE_AHEAD_BUILT = false` in `js/idle-ahead.js`); nothing it adds changes
-what the live site does. Read this whole file, then ARCHITECTURE.md and
-documents/heart-audio-engine.md §7, before writing code.
+Handoff document, 2026-10-15. **BUILT and ON as of the same day**: every
+step in section 4 is done, `IDLE_AHEAD_BUILT` is true, and
+documents/heart-audio-engine.md §7.6 is the living description — read that,
+not this. This file stays as the design record and the audit. The one knob
+is the drawer's Render > Audio engine > Render ahead on idle. The proof is
+tools/heart-tests/idle-ahead.test.mjs (heads stop at the LIMIT; ~94 wakes a
+second a stage at base falling under one with a 2 s cushion; the ordering
+guarantee: a skip + a native-anchored gate in one task land at the fresh
+horizon, base + 2 chunks, never the stale frontier). What was NOT verified:
+a real browser or phone — Robert tests with ?heartdiag=1 (lookahead at 10 s
+while hidden, wakes a second in the beat, the lead after a touch). Known
+container-baseline test failures unrelated to this work: family-music's
+'flag off' case and transport's two 'overload told apart: SAB' cases fail
+identically at the handoff commit f199097; e2e and family-music never exit
+node (judge their logs).
 
 ---
 
