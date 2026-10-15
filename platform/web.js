@@ -28,6 +28,7 @@
 // behaviour, while the engine and this file's createPlatform are not used on
 // the page at all.
 import { createInputQueue } from './input-queue.js';
+import { startPageEnergy, pageEnergyText } from './energy-page.js';
 import { softKeyboardWanted, createSoftKeyboard, createKeyboardLink } from './soft-keyboard.js';
 import { settingsFile, saveJsonFile } from './settings-file.js';
 import { displayListenScreen, displaySampleScreen } from '../js/display-watch.js';
@@ -133,7 +134,50 @@ export function watchCanvasSize(canvas, apply) {
 }
 
 // ---------- clipboard ----------
+// iOS lets a page write the clipboard only inside the user's own gesture,
+// and a copy chip learns of its click a frame after the finger lifts (the
+// frame reads the queued input), so its write would always land outside it.
+// So while a copy chip is held the page is told (armClipboard, from the UI
+// build), and the lift itself starts a clipboard write whose text is still
+// a promise; the chip's click, a frame later, hands that promise its text
+// through clipboardWrite. A lift that never becomes a click (the finger slid
+// off) lets the promise lapse, and that write fails quietly.
+const COPY_LAPSE_MS = 3000;
+let copyArmed = false, copyListening = false, pendingCopy = null;
+function onCopyLift() {
+  if (!copyArmed || pendingCopy) return;
+  copyArmed = false;
+  let give = null, lapse = null;
+  const text = new Promise((res, rej) => { give = res; lapse = rej; });
+  let write;
+  try {
+    write = navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then(t => new Blob([t], { type: 'text/plain' })) })]);
+  } catch (e) { return; }
+  write.catch(() => {});
+  const p = { give, write, timer: 0 };
+  p.timer = setTimeout(() => { if (pendingCopy === p) pendingCopy = null; lapse(new Error('no copy followed the lift')); }, COPY_LAPSE_MS);
+  pendingCopy = p;
+}
+export function armClipboard(on) {
+  if (typeof ClipboardItem !== 'function' || !navigator.clipboard || !navigator.clipboard.write) return;
+  copyArmed = !!on;
+  if (!copyListening) {
+    copyListening = true;
+    window.addEventListener('pointerup', onCopyLift, true);
+    window.addEventListener('touchend', onCopyLift, true);
+  }
+}
+
 export function clipboardWrite(text) {
+  if (pendingCopy) {
+    const p = pendingCopy;
+    pendingCopy = null;
+    clearTimeout(p.timer);
+    p.give(text);
+    // Refused anyway (a browser without promised clipboard items): the plain
+    // write, which works wherever the page has focus.
+    return p.write.catch(() => navigator.clipboard.writeText(text));
+  }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     return navigator.clipboard.writeText(text);
   }
@@ -344,6 +388,7 @@ export function createPlatform(canvas) {
   let rawW = 0, rawH = 0, rawDpr = 1;
   function applySize(pxW, pxH, dpr) {
     rawW = pxW; rawH = pxH; rawDpr = dpr;
+    platform.screenDpr = dpr;
     const cap = platform.dprCap;
     if (cap > 0 && dpr > cap) { const k = cap / dpr; pxW *= k; pxH *= k; dpr = cap; }
     pxW = Math.max(1, Math.round(pxW));
@@ -413,7 +458,7 @@ export function createPlatform(canvas) {
     // opening hint as a tap instead of the space bar.
     coarse: matchMedia('(pointer: coarse)').matches,
     dpr: 1, width: 0, height: 0,
-    dprCap: 0,
+    dprCap: 0, screenDpr: 1,
     setDprCap(cap) {
       if (cap === platform.dprCap) return;
       platform.dprCap = cap;
@@ -429,6 +474,9 @@ export function createPlatform(canvas) {
     storage: { get: storageGet, set: storageSet },
     onStorage(fn) { storageCbs.push(fn); },
     clipboardWrite,
+    armClipboard,
+    // Render > Copy energy profile: the engine's half, then the page's.
+    copyEnergy: text => clipboardWrite(text + '\n\n' + pageEnergyText()),
     settingsFile,
     download: saveJsonFile,
     onVisibility(fn) { visCbs.push(fn); },
@@ -444,6 +492,7 @@ export function createPlatform(canvas) {
   // ResizeObserver callback ever fires.
   const dpr0 = window.devicePixelRatio || 1;
   applySize(cssW * dpr0, cssH * dpr0, dpr0);
+  startPageEnergy(false);
   // Take focus up front too, so the canvas is the focused element from the
   // first frame and keyboard focus rings behave from the start.
   try { canvas.focus({ preventScroll: true }); } catch (e) {}

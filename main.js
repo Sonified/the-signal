@@ -68,7 +68,8 @@ import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
-import { setSettingsFileHandler, overlayKeyCapture, OVERLAY_KEY_DEF } from './core/schema-visual.js';
+import { setSettingsFileHandler, setEnergyCopyHandler, overlayKeyCapture, OVERLAY_KEY_DEF } from './core/schema-visual.js';
+import { energyInit, energyState, energyFrame, energySink, buildEnergy } from './core/energy.js';
 import { byId } from './core/schema.js';
 import { buildDiagnostics } from './core/diagnostics.js';
 import { perf, perfAttachGpu, perfFrameStart, perfRecord } from './core/perf.js';
@@ -159,6 +160,8 @@ async function boot() {
   // A resize clears the canvas, so a resting frame loop must draw again.
   const syncSize = (w, h, dpr) => { S.W = w; S.H = h; S.DPR = dpr; idleWake('resize'); };
   platform.setDprCap(S.dprCap);
+  // The energy profile's engine half counts from here (core/energy.js).
+  energyInit(platform.now, !!(platform.hidden && platform.hidden()));
   // The page's last absence, for Render > Page hidden.
   if (platform.hidden && platform.hidden()) S.hiddenAt = performance.now();
   platform.onVisibility(visible => {
@@ -375,6 +378,9 @@ async function boot() {
   setSeqOpen(() => { sequencer.open = true; });
   setCopyHandler(txt => platform.clipboardWrite(txt));
   setSettingsFileHandler(kind => platform.settingsFile(kind));
+  // Render > Copy energy profile: the engine's half here, the page's after it.
+  engine.energySink = energySink;
+  setEnergyCopyHandler(() => platform.copyEnergy(buildEnergy(platform.env(), engine, platform)));
   setJourneyDownloadHandler((filename, text) => platform.download(filename, text));
   // Going out of sight writes this tab's own pending changes first, then
   // holds back anything later (store.js's setHidden). Coming back arms a
@@ -382,6 +388,7 @@ async function boot() {
   // In worker mode the page's visibility reaches this through the bridge.
   platform.onVisibility(visible => {
     pageVisible = visible;
+    energyState(!visible, false);
     if (!visible) flush();
     else { armResume(); backInView = true; }
     setHidden(!visible);
@@ -504,6 +511,7 @@ async function boot() {
   // as it always did, and its return is the ordinary wake from an absence.
   const IDLE_QUIET_MS = 2000, IDLE_MIN_FRAMES = 2;
   let resting = false, lastInputT = -Infinity, framesAwake = 0;
+  let copyArmed = false;
   // ?idlediag=1: when the rest began, the frames encoded by then, and the
   // Heart reading at the last heartbeat.
   let restSince = 0, restFrames = 0, beatHeads = 0, beatTimer = 0;
@@ -511,6 +519,7 @@ async function boot() {
     framesAwake = 0;
     if (!engine.wake()) return;
     resting = false;
+    energyState(false, false);
     if (IDLE_DIAG) idleLeft(why);
   }
   setIdleWaker(wakeLoop);
@@ -655,6 +664,7 @@ async function boot() {
   // until after the submit, so it never stands between the strobe and the
   // screen. away is -1 on an ordinary frame (see holdBreath).
   function frame(t, dt, away) {
+    const energyT0 = platform.now();
     if (away >= 0) holdBreath(away);
     // Render > Pixel density, from the drawer or another tab: the canvas is
     // re-sized before anything this frame reads its size.
@@ -788,6 +798,7 @@ async function boot() {
       anim.setDt(dt);
     } else {
       // UI, top layer first so it wins the pointer
+      ui.copyHeld = false;
       ui.begin(uiEvents, t, dt * 1000, width, height, topList);
 
       const chromeA = ui.spring('chrome.alpha', chromeAwake ? 1 : 0, MOTION.fade);
@@ -861,6 +872,10 @@ async function boot() {
       const cursor = (chromeAwake || overWin) ? res.cursor : 'none';
       if (cursor !== lastCursor) { lastCursor = cursor; platform.setCursor(cursor); }
     }
+    // A copy chip held arms the page's clipboard, so the lift that clicks it
+    // can start the write iOS allows only in the gesture (platform/web.js).
+    const copyHeld = !idle && ui.copyHeld === true;
+    if (copyHeld !== copyArmed) { copyArmed = copyHeld; platform.armClipboard(copyHeld); }
     // a journey's record waits to be written while a control is held, and
     // is written as it is let go (core/journey.js)
     journeyHoldWrites(ui.activeId !== -1);
@@ -908,6 +923,7 @@ async function boot() {
         !savePending() && !choreBusy() && !idleHeld() && !engine.busy()) {
       engine.sleep();
       resting = true;
+      energyState(false, true);
       if (IDLE_DIAG) idleEntered();
     }
 
@@ -928,6 +944,7 @@ async function boot() {
       }
     }
     if (finishRemoteFrame) finishRemoteFrame();
+    energyFrame(energyT0, platform.now());
   }
 
   console.log('[boot] layers registered, starting frame loop +' + Math.round(performance.now()) + 'ms');

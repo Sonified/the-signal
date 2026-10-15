@@ -7,6 +7,7 @@
 
 import { wakeGap } from '../core/wake.js';
 import { S } from '../js/state.js';
+import { createEnergyProbe } from './energy-probe.js';
 
 let loggedAdapter = false;
 
@@ -161,6 +162,10 @@ export async function createEngine(platform, opts) {
     primitive: { topology: 'triangle-list' }
   });
 
+  // The energy profile's GPU readings (gpu/energy-probe.js): idle until
+  // main.js sets engine.energySink.
+  const energyProbe = createEnergyProbe(device, () => platform.now(), () => engine.energySink);
+
   // ---------- the screen gate ----------
   // The show's master brightness (S.screenGate, 0..1, the iPad's GATE fader,
   // platform/show-remote.js): one fullscreen triangle drawn after everything
@@ -231,6 +236,7 @@ export async function createEngine(platform, opts) {
     });
     sceneTexView = sceneTex.createView();
     scenePassDesc.colorAttachments[0].view = sceneTexView;
+    energyProbe.resize(pw, ph, sceneTexView);
     blitBindGroup = device.createBindGroup({
       layout: blitPipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: sceneTexView }]
@@ -466,6 +472,8 @@ export async function createEngine(platform, opts) {
     // wake() asks again and says whether it was asleep.
     sleep() {}, wake() { return false; }, busy,
     gpu, gpuInfo,
+    // The energy profile's sink (main.js, core/energy.js): { gpuDone, light }.
+    energySink: null,
     start, render, registerScene, registerFlowers, registerSun, registerSlides, registerSunQr, registerStars, registerHeartbeat, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
     onGpuError: fn => { gpuErrorCbs.push(fn); },
     profileBegin, profileEnd
@@ -669,7 +677,10 @@ export async function createEngine(platform, opts) {
     // goes through sceneTex and the blit, so the path never alternates while
     // a panel is open. If an open drawer blinks in direct mode and steadies
     // under this flag, the alternation itself is the artifact.
-    const direct = !doCapture && !(ALWAYS_BLIT && glassVisible);
+    // The energy profile's light sample reads sceneTex, so its frame (one
+    // every two seconds) takes the blit route too.
+    const lightSample = energyProbe.lightDue(frameT);
+    const direct = !doCapture && !(ALWAYS_BLIT && glassVisible) && !lightSample;
 
     const encoder = device.createCommandEncoder();
     const swapView = context.getCurrentTexture().createView();
@@ -731,6 +742,8 @@ export async function createEngine(platform, opts) {
       drawGate(scenePass);
       scenePass.end();
 
+      if (lightSample) energyProbe.encodeLight(encoder, lit);
+
       if (doCapture) {
         blur.capture(encoder, sceneTex);
         captureValid = true;
@@ -781,6 +794,7 @@ export async function createEngine(platform, opts) {
     submitList[0] = encoder.finish();
     device.queue.submit(submitList);
     submitList[0] = null;
+    energyProbe.afterSubmit(frameT);
 
     if (sampled) readTimestamps();
 

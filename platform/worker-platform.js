@@ -109,7 +109,7 @@ export function createWorkerPlatform(init, post) {
       return Object.assign({}, envCache, { nowISO: new Date().toISOString(), frameSource: 'worker' });
     },
     dpr: init.dpr || 1, width: init.width || 0, height: init.height || 0,
-    dprCap: 0,
+    dprCap: 0, screenDpr: init.dpr || 1,
     setDprCap(cap) {
       if (cap === platform.dprCap) return;
       platform.dprCap = cap;
@@ -135,6 +135,9 @@ export function createWorkerPlatform(init, post) {
     storage: { get: storageGet, set: storageSet },
     onStorage(fn) { storageCbs.push(fn); },
     clipboardWrite: text => request({ k: 'clip', text }),
+    // the page appends its half of the energy profile (platform/energy-page.js)
+    copyEnergy: text => request({ k: 'clip', text, energy: true }),
+    armClipboard: on => post({ k: 'armCopy', on: !!on }),
     // Download or load a settings file: the page does it (platform/settings-file.js).
     settingsFile: kind => post({ k: 'settingsFile', kind }),
     // A JSON file saved: the page does it (the bridge's 'download').
@@ -159,6 +162,7 @@ export function createWorkerPlatform(init, post) {
   let lastSize = null;
   function applySize(d) {
     lastSize = d;
+    platform.screenDpr = d.dpr;
     const c = platform.canvas;
     let pw = d.pw, ph = d.ph, dpr = d.dpr;
     const cap = platform.dprCap;

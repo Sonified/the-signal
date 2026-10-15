@@ -46,8 +46,9 @@
 
 import {
   GUARDED_KEYS, canvasOwnsKeys, guardGestures, watchCanvasSize, clipboardWrite,
-  toggleFullscreen, fsElement, showMessage, watchLongTasks, watchVisibility
+  toggleFullscreen, fsElement, showMessage, watchLongTasks, watchVisibility, armClipboard
 } from './web.js';
+import { startPageEnergy, pageEnergyFrame, pageEnergyText } from './energy-page.js';
 import { createProfileHost } from './profile-web.js';
 import { settingsFile } from './settings-file.js';
 import { softKeyboardWanted, createSoftKeyboard } from './soft-keyboard.js';
@@ -315,8 +316,9 @@ function runShell(canvas, worker, shell, size0, env) {
       case 'kbTargets': case 'kbBegin': case 'kbSync': case 'kbEnd': case 'kbRelease':
         if (kb) kb.receive(d);
         break;
+      case 'armCopy': armClipboard(d.on); break;
       case 'clip':
-        clipboardWrite(d.text).then(() => reply(d.id, true), err => reply(d.id, false, err && err.message));
+        clipboardWrite(d.energy ? d.text + '\n\n' + pageEnergyText() : d.text).then(() => reply(d.id, true), err => reply(d.id, false, err && err.message));
         break;
       case 'fullscreen': toggleFullscreen(); break;
       case 'message':
@@ -392,6 +394,7 @@ function runShell(canvas, worker, shell, size0, env) {
   // stops judging by it.
   function loop(t) {
     requestAnimationFrame(loop);
+    const e0 = performance.now();
     if (displaySampleScreen()) {
       // the old screen's intervals describe the old screen
       ivN = 0; ivI = 0; lastClockT = -1;
@@ -401,7 +404,9 @@ function runShell(canvas, worker, shell, size0, env) {
     liveReading(t);
     const m = shell.tick(t);
     if (m) worker.postMessage(m);
+    pageEnergyFrame(e0, performance.now());
   }
+  startPageEnergy(true);
   requestAnimationFrame(loop);
 
   try { canvas.focus({ preventScroll: true }); } catch (e) {}

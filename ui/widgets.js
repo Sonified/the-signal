@@ -1858,6 +1858,8 @@ function control(ctrl, S, shown) {
     }
     case 'action': {
       const clicked = ui.button(ctrl.id, actionLabel(ui, ctrl, S, false), 'chip', !enabled);
+      // a copy chip held arms the page's clipboard (main.js, platform armClipboard)
+      if (ctrl.copies && ui.pressed) ui.copyHeld = true;
       if (clicked) { runAction(ctrl, S); actionLabel(ui, ctrl, S, true); changed = true; }
       break;
     }

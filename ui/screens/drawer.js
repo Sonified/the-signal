@@ -1490,10 +1490,13 @@ export function drawDrawer(ui, app) {
   ui.label(meta.b, TYPE.xs, W.regular, COLOR.inkDim);
   ui.spacer(SPACE.sm);
   ui.row(2);
+  // (a copy chip held arms the page's clipboard, main.js, for iOS)
   if (ui.button('drawer.copyDiag', ui.t < copyFlashUntil ? 'Copied' : 'Copy diagnostics', 'chip', false)) {
     app.copyDiagnostics(); copyFlashUntil = ui.t + 1400;
   }
+  if (ui.pressed) ui.copyHeld = true;
   if (ui.button('drawer.copySettings', 'Copy settings', 'chip', false)) app.copySettings();
+  if (ui.pressed) ui.copyHeld = true;
   ui.endRow();
 
   // Broadcast, the last section of all (see drawBroadcast), on the headers'
