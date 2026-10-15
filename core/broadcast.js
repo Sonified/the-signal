@@ -58,6 +58,7 @@ import { S } from '../js/state.js';
 import { idleWake } from './idle.js';
 import { onSave, wireSettings, readKey, saveKey } from './store.js';
 import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl, recallStreamScene } from './presets.js';
+import { idleTouch } from '../js/idle-ahead.js';
 import { setPerfGlideHooks, perfGlideWriting, perfEachGlide, perfFollowGlide, perfFollowDrop } from './perform.js';
 import { setJourneyGlideHooks, journeyGlideWriting, journeyEachGlide } from './journey.js';
 import { CONTROLS, byId } from './schema.js';
@@ -594,6 +595,8 @@ function takeStrobe() {
 // it takes the preset glide. hold, when given, is more ids to leave where
 // they are, besides a strobe the viewer has taken.
 function applyFollowed(snap, sec, hold) {
+  // an audio touch before the state's commands (js/idle-ahead.js)
+  idleTouch('a followed broadcast');
   followApplying = true;
   try { replayHolding(snap, sec, hold || (strobeOwn ? STROBE_IDS : null)); } finally { followApplying = false; }
 }

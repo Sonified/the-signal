@@ -23,7 +23,7 @@ import { cloudPeak } from '../js/clouds.js';
 import { humPeak } from './sun-hum.js';
 import { heartPeak } from './heartbeat.js';
 import { layerGate, applyMixGates } from '../js/mixgate.js';
-import { save, flush } from './store.js';
+import { save, saveAuto, flush } from './store.js';
 
 // ---------- worker mode ----------
 // With the engine in a worker (core/engine-thread.js), the frame-side half of
@@ -236,9 +236,11 @@ export function noteDrift(moved) {
   // seconds instead of chasing it, and the landing itself is flushed
   // immediately rather than left to the trailing debounce. flush() writes
   // only what save() has marked, so the landing is marked first.
-  if (moved === 'landed') { clearTimeout(driftSaveTimer); driftSaveTimer = null; save(); flush(); }
+  // The drift is the session's own hand, not the viewer's, so its saves
+  // are not audio touches (store.saveAuto, js/idle-ahead.js).
+  if (moved === 'landed') { clearTimeout(driftSaveTimer); driftSaveTimer = null; saveAuto(); flush(); }
   else if (moved === 'moving' && !driftSaveTimer) {
-    driftSaveTimer = setTimeout(() => { driftSaveTimer = null; save(); }, DRIFT_SAVE_DEBOUNCE_MS);
+    driftSaveTimer = setTimeout(() => { driftSaveTimer = null; saveAuto(); }, DRIFT_SAVE_DEBOUNCE_MS);
   }
 }
 

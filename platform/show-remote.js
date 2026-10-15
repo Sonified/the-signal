@@ -145,6 +145,7 @@ import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
 import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyPerformanceControl } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
+import { idleTouch } from '../js/idle-ahead.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
@@ -274,6 +275,8 @@ export function initShowRemote(hooks = {}) {
     if (n <= (lastN.get(id) || 0)) return;   // the other path's copy
     lastN.set(id, n);
     if (m.k === 'ctl' && m.id === 'mwtsVolume') console.log('[show-remote] MWTS fader -> mwtsVolume ' + m.v + '%');
+    // an audio touch before the remote's commands (js/idle-ahead.js)
+    idleTouch('the show remote');
     try { act(m); } catch (err) { console.warn('[show-remote] ' + m.k + ' failed:', err); }
     idleWake('show remote');
     pollStatus();

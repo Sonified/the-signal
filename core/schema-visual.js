@@ -41,6 +41,7 @@ import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engin
 import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
 import { applyHeartLookahead, applyHeartGrow, applyHeartConceal, simulateUnderrun } from '../js/heart/route.js';
+import { idleRefresh, IDLE_AHEAD_BUILT } from '../js/idle-ahead.js';
 import { applyOutputGuards } from './output-guard.js';
 import { GF_GLIDE_MAX } from './global-filter.js';
 
@@ -1761,7 +1762,7 @@ export const VISUAL_CONTROLS = [
     set: (S, on) => { S.energyButton = !!on; save(); },
     format: S => S.energyButton === true ? 'on' : 'off'
   },
-  subDrawer('renderAudioDrawer', 'Audio engine', 'render', ['heartLookaheadS', 'heartGrowX']),
+  subDrawer('renderAudioDrawer', 'Audio engine', 'render', ['heartLookaheadS', 'heartGrowX', 'heartIdleAheadS']),
   {
     // The engine's cushion: how far ahead the sound is rendered
     // (js/heart/route.js, js/heart/engine.js). Bigger rides out stalls (a
@@ -1787,6 +1788,24 @@ export const VISUAL_CONTROLS = [
     get: S => S.heartGrowX ?? 1.5,
     set: (S, v) => { S.heartGrowX = Math.max(1.1, Math.min(2, v)); applyHeartGrow(); save(); },
     formatAt: pos => '×' + pos.toFixed(1)
+  },
+  {
+    // How far ahead the sound is rendered while nobody is about to touch
+    // it (js/idle-ahead.js): straight away while the page is hidden (a
+    // phone's screen off), and visible, a second at a time from five
+    // minutes after the last audio touch, at most five while the pointer
+    // moves. Rendered in gulps of half this, the workers and the planners'
+    // timers sleep for seconds at a time. A touch, or a hand over the
+    // audio controls, skips straight back to the cushion above. Heart on
+    // shared memory only. This machine's own, like the rest of this drawer.
+    id: 'heartIdleAheadS', section: 'render', label: 'Render ahead on idle', kind: 'slider', parent: 'renderAudioDrawer',
+    summaryLabel: 'Idle ahead',
+    // hidden until the engine's half is built (documents/idle-render-ahead.md)
+    visible: () => IDLE_AHEAD_BUILT,
+    min: 0.5, max: 10, step: 0.5, def: 10,
+    get: S => S.heartIdleAheadS ?? 10,
+    set: (S, v) => { S.heartIdleAheadS = Math.max(0.5, Math.min(10, v)); idleRefresh(); save(); },
+    formatAt: pos => (Number.isInteger(pos) ? pos : pos.toFixed(1)) + ' s'
   },
   {
     // Whether the strobe's audio allows for the output's latency (js/

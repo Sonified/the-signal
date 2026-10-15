@@ -42,6 +42,7 @@
 import { S, layers, STORE, SKIP_KEY, seqSeat, CORNER_TYPES } from '../js/state.js';
 import { setColorFromPicker } from '../js/color.js';
 import { idleWake } from './idle.js';
+import { idleTouch } from '../js/idle-ahead.js';
 import { applyOutputGuards } from './output-guard.js';
 import { applyEdgeDir } from '../js/sim.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
@@ -218,7 +219,7 @@ function buildSettings() {
     shimDepth: S.shimDepth, shimRate: S.shimRate, clickReverb: S.clickReverb,
     clickRevTime: S.clickRevTime, clickModDepth: S.clickModDepth, clickModPeriod: S.clickModPeriod,
     biDepth: S.biDepth, biPeriod: S.biPeriod, biHardSwitch: S.biHardSwitch,
-    heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, outputLatComp: S.outputLatComp,
+    heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, heartIdleAheadS: S.heartIdleAheadS, outputLatComp: S.outputLatComp,
     syncDiagLog: S.syncDiagLog, sunRateHz: S.sunRateHz, dprCap: S.dprCap, energyButton: S.energyButton,
     // Render > Audio engine > Limiter and Soft clip (core/output-guard.js)
     outLimiter: S.outLimiter, outSoftClip: S.outSoftClip,
@@ -519,12 +520,27 @@ export function writeDueAfterFrame() {
 export function save() {
   // a change while the frame loop rests must be drawn (core/idle.js)
   idleWake('a setting changed');
+  // A settings write is an audio touch (js/idle-ahead.js): anything Heart
+  // has rendered ahead on idle is skipped and the visible ramp starts over.
+  // Another tab's change and a followed broadcast count too, so this comes
+  // before their early return. The paths that know a change is coming call
+  // idleTouch before their commands; this is the backstop for the rest.
+  if (!autoSave) idleTouch('a setting');
   if (applyingRemote) return;
   dirtyShared = dirtyExtra = true;
   lastSaveCall = Date.now();
   for (let i = 0; i < saveCbs.length; i++) saveCbs[i]();
   if (hidden) { clearTimeout(saveTimer); saveTimer = null; return; }
   if (!saveTimer) saveTimer = setTimeout(saveDue, SAVE_DELAY_MS);
+}
+
+// A save made by the session itself rather than a hand (the atmosphere's
+// drift landing, core/atmosphere.js): written like any other, but not an
+// audio touch, so an unattended drift never holds Heart's idle cushion back.
+let autoSave = false;
+export function saveAuto() {
+  autoSave = true;
+  try { save(); } finally { autoSave = false; }
 }
 
 // Listeners told that this tab's own settings just changed: every save()
@@ -585,6 +601,10 @@ export function setHidden(h) {
 //
 // Returns true when the key was one of these two, whatever came of it, so
 // the caller knows not to offer it to anyone else.
+// Whether a storage key is one of the two settings records, for a caller
+// that must act before the record is applied (core/audio-shell.js).
+export const settingsKey = key => key === STORE || key === EXTRA_KEY;
+
 export function syncFromStorage(key, value, replay) {
   if (key !== STORE && key !== EXTRA_KEY) return false;
   if (typeof value !== 'string') return true;
@@ -714,7 +734,7 @@ export function snapshot() {
 // rather than read off the schema, since this module must not depend on it.
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
-                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'dprCap', 'energyButton',
+                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'heartIdleAheadS', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'dprCap', 'energyButton',
                       'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload', 'presentationMode',
                       'heartLoopMode', 'heartLoopS', 'heartXfadeMs', 'heartQuantize', 'heartReturnS', 'heartWash', 'heartWashRiseS', 'heartWashDecayS', 'simGapMs', 'simGapRandom', 'simGapCount', 'simStallWorkers'];
 
@@ -960,6 +980,8 @@ function applySettings(s, live, scene) {
     // The engine's cushion, and how it grows on underrun (js/heart/route.js)
     if (typeof s.heartLookaheadS === 'number' && isFinite(s.heartLookaheadS)) S.heartLookaheadS = Math.max(0.05, Math.min(0.5, s.heartLookaheadS));
     if (typeof s.heartGrowX === 'number' && isFinite(s.heartGrowX)) S.heartGrowX = Math.max(1.1, Math.min(2, s.heartGrowX));
+    // Render ahead on idle (js/idle-ahead.js), seconds
+    if (typeof s.heartIdleAheadS === 'number' && isFinite(s.heartIdleAheadS)) S.heartIdleAheadS = Math.max(0.5, Math.min(10, s.heartIdleAheadS));
     if (typeof s.outputLatComp === 'boolean') S.outputLatComp = s.outputLatComp;
     if (typeof s.syncDiagLog === 'boolean') S.syncDiagLog = s.syncDiagLog;
     // The Sun video's playbackRate throttle (gpu/sun.js setRate)

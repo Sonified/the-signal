@@ -37,6 +37,7 @@
 // back when a post is due.
 
 import { S } from '../js/state.js';
+import { idleTouch } from '../js/idle-ahead.js';
 import {
   ensureAudioGraph, warmDevice, audioOn, setAmRate, hasNode, beginGlide, endGlide, PRESET_GLIDE_S
 } from '../js/audio.js';
@@ -49,7 +50,7 @@ import {
   ambLayerControls, AMB_LAYER_COUNT, initAtmosphere, stepAtmosphere, setDriftHook,
   packAtmosphere, ATMOSPHERE_SLOTS
 } from './atmosphere.js';
-import { initStore, load, syncFromStorage } from './store.js';
+import { initStore, load, syncFromStorage, settingsKey } from './store.js';
 import { replayLive, applyActivePresetState } from './presets.js';
 import { signal, unpackSignal, publishSignal } from './signal.js';
 import { setCutoffHz, cutoffHz, setReverbMix } from './sun-hum.js';
@@ -89,10 +90,12 @@ export function createAudioShell(storage) {
     // A control's position moved in the worker: run its own set() here.
     set(id, pos) {
       const c = byName.get(id);
-      if (c && c.get(S) !== pos) c.set(S, pos);
+      // an audio touch before the control's commands (js/idle-ahead.js)
+      if (c && c.get(S) !== pos) { idleTouch('the engine thread'); c.set(S, pos); }
     },
     // The audio half of toggleRun (main.js); the visual half ran in the worker.
     run(on) {
+      idleTouch('the transport');
       S.running = !!on;
       audioToggleEffects(S);
     },
@@ -168,6 +171,7 @@ export function createAudioShell(storage) {
   // A settings record: the worker's own write, or another tab's. Returns
   // whether the key was one of the two settings records.
   function storageChanged(key, value) {
+    if (settingsKey(key)) idleTouch('a settings record');
     return syncFromStorage(key, value, replayLive);
   }
 

@@ -105,6 +105,7 @@ import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
 import { byId } from './schema.js';
 import { AUDIO_CONTROLS } from './schema-audio.js';
 import { REPLAY_CONTROLS, beginTransition, recallPresetForStep, machineControl } from './presets.js';
+import { idleTouch } from '../js/idle-ahead.js';
 import { readKey, saveKey, onSave, save, seqStateOf, applySeqState, mixStateOf, SEQ_NUM_RANGE, oldRingSpeed } from './store.js';
 import { onWordAppear, wordSequenceOnce, cancelWordSequenceOnce } from './words.js';
 import { glideSkippingRiskBand } from './strobe.js';
@@ -858,6 +859,9 @@ function applyStepTiming(o, mixOwned) {
 // is left alone, so a voice already playing is not started a second time.
 // Selecting a step to edit it, and a step whose ramp is a cut, land this way.
 function applyStep(st, sec) {
+  // An audio touch, before any of the step's own commands, so they land at
+  // a fresh horizon however far Heart had rendered ahead (js/idle-ahead.js).
+  idleTouch('a journey step');
   performanceControls.clear();
   const o = st.overrides, mixOwned = !!st.mix, walk = walking(o);
   applyStepTiming(o, mixOwned);
