@@ -33,8 +33,13 @@ test('conceal: a ping-pong of the history, continuous going in and at each turn'
   // History holds frames 0..511; the last played is 511.
   const got = [];
   for (let q = 0; q < 10; q++) { c.dry(L, R); for (let i = 0; i < QUANTUM; i++) { got.push(L[i]); assert.equal(R[i], -L[i]); } }
-  assert.deepEqual(got.slice(0, 3), [510, 509, 508]);
-  for (let i = 1; i < got.length; i++) assert.equal(Math.abs(got[i] - got[i - 1]), 1, `step ${i}`);
+  // Going in, it carries on the way the sound was going (511 to 512), and
+  // eases into the reverse over the bridge (128 frames) without a step;
+  // from there on it is the plain mirror, a frame a frame.
+  assert.ok(Math.abs(got[0] - 512) < 1e-3, `first ${got[0]}`);
+  let prev = 511;
+  for (let i = 0; i < 128; i++) { assert.ok(Math.abs(got[i] - prev) < 1.1, `bridge step ${i}`); prev = got[i]; }
+  for (let i = 129; i < got.length; i++) assert.equal(Math.abs(got[i] - got[i - 1]), 1, `step ${i}`);
   assert.ok(got.includes(0) && got.filter(v => v === 511).length > 0, 'turns at both ends');
 });
 
@@ -48,8 +53,8 @@ test('conceal: a crossfaded turn blends the pass going back into the pass coming
   }
   const got = [];
   for (let q = 0; q < 12; q++) { c.dry(L, R); got.push(...L); }
-  // Going in, as without a crossfade: the mirror of what was just played.
-  assert.deepEqual(got.slice(0, 3), [510, 509, 508]);
+  // Going in, it carries on the way the sound was going, then turns.
+  assert.ok(Math.abs(got[0] - 512) < 1e-3, `first ${got[0]}`);
   // The two heads cross halfway: the oldest 64 frames are met at their
   // middle (frame 32), each head at the normal rate. Blending two ramps
   // going opposite ways steepens the sum a little, never to a jump.
@@ -342,3 +347,40 @@ test('return fade: its own length, however short the crossfade', () => {
   while (c.active) { L.fill(0); R.fill(0); c.wet(L, R); q++; }
   assert.equal(q, Math.ceil(36000 / QUANTUM), 'the fade back lasts the Return fade');
 });
+
+// Robert's case: Quantize repair, 14 dropouts of 200 ms with 200 ms between,
+// a forward loop over the 40 Hz tone, the wash on. A dropout landing in
+// the return fade used to start its stall a step away from what was heard
+// (0.05 on a tone that moves 0.003 a frame: a click) and dry again (the
+// raw sound pushing back in).
+for (const mode of [0, FORWARD]) for (const wash of [0, 0.6]) {
+  test(`quantized dropouts landing in the return fade: no click (${mode === FORWARD ? 'forward' : 'ping-pong'}, wash ${wash})`, () => {
+    const ring = new SharedRing(SharedRing.describe(2, 1 << 15));
+    const ahead = 2400;
+    const drain = new Drain({ post: () => {}, lookahead: { base: ahead, max: 24000, hidden: ahead, fullscreen: ahead, steady: 11250, grow: 1.5 },
+      conceal: 120000, concealSet: { loop: 24000, xfade: 2400, mode, quantize: true, wash, washRise: 72000, washDecay: 4, ret: 36000, hold: 144000, rate: 48000 } });
+    drain.conceal.setPeriods(1200, 16000);
+    drain.attach(ring);
+    const src = new Float32Array(CHUNK);
+    let written = 0;
+    const feed = () => { for (let k = 0; k < 2 && written < (drain.played + 1) * QUANTUM + Math.max(ahead, drain.target) && ring.writable() >= CHUNK; k++) {
+      for (let i = 0; i < CHUNK; i++) src[i] = 0.5 * tone(written + i) / 0.8;
+      ring.write(0, src, 0, CHUNK); ring.write(1, src, 0, CHUNK); ring.commit(CHUNK); written += CHUNK; } };
+    const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+    for (let q = 0; q < 1000; q++) { feed(); drain.play(L, R, 0); }
+    const pattern = [];
+    for (let i = 0; i < 14; i++) { if (i) pattern.push(75); pattern.push(75); }
+    drain.simulate(Int32Array.from(pattern));
+    let prev = L[QUANTUM - 1], worst = 0;
+    for (let q = 0; q < 3000; q++) {
+      feed();
+      drain.play(L, R, 0);
+      for (let i = 0; i < QUANTUM; i++) { worst = Math.max(worst, Math.abs(L[i] - prev)); prev = L[i]; }
+    }
+    // The tone alone moves at most 0.0026 a frame. A ping-pong's turns blend
+    // a copy going forward with one going back, which steepens the sum by
+    // a third or so; the room adds a little texture. A click was 0.05.
+    const most = wash ? 0.008 : mode === FORWARD ? 0.0027 : 0.004;
+    assert.ok(worst < most, `largest step ${worst.toFixed(4)}`);
+  });
+}

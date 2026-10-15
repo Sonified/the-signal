@@ -18,10 +18,15 @@
 // tone each pass lands exactly where the last began and nothing at all is
 // heard at the seam; for everything else the seam is a crossfade of
 // `xfade` frames, from the end of the pass into the frames that came just
-// before its start, which lead straight on into it. Going in, the gap
-// between where the sound was heading and the loop's first frame is
-// bridged by an offset that fades away over the same length, so nothing
-// steps.
+// before its start, which lead straight on into it.
+//
+// Going in, either way, the stall's first frame out (the loop, its level in
+// the wash and the room's ring together) is set against where the sound
+// was heading, the last two frames heard carried one on, and the
+// difference fades away over the crossfade (at least MIN_RETURN frames).
+// So nothing steps going in, not even a stall that starts while the last
+// one is still fading out with its room ringing, and a ping-pong goes in
+// carrying on the way the sound was going instead of turning on the spot.
 //
 // Quantize repair: a stall always plays whole loops (a forward pass, or
 // there and back), and the sound only comes back at the end of one. A
@@ -40,9 +45,11 @@
 // Over `washRise` frames from the start of a stall, the mix moves from dry
 // to `wash` wet, equal power; when the sound comes back the loop stops
 // feeding the room as it fades, and the room rings out under the live
-// sound at the level it had reached, until it falls silent and sleeps. A
-// stall that comes while it still rings starts dry again, and the room's
-// level only ever rises until it sleeps, so nothing steps. At Wash 0 the
+// sound at the level it had reached, until it falls silent and sleeps. The
+// rise has a memory: between stalls it runs back down over Wash decay, so
+// a stall that comes soon after another starts about as wet as that one
+// ended, and a burst of short dropouts builds one wash. The room's level
+// only ever rises until it sleeps, so nothing steps. At Wash 0 the
 // room is never fed and costs nothing.
 //
 // A stall longer than `hold` frames is no longer a hiccup to cover, so the
@@ -85,6 +92,10 @@ export class Conceal {
     this.wash = 0;        // the most of the mix the room takes, 0 to 1
     this.washRise = rate; // frames from the start of a stall to that
     this.washG = 0;       // the room's level, which only rises while it rings
+    this.wclock = 0;      // frames into the wash's rise, kept between stalls
+    this.rate = rate;
+    this.bridgePending = false;
+    this.predL = 0; this.predR = 0;
     this.dryG = 1;        // the loop's own level in the mix
     this.size = size;
     this.cap = 2 * size;
@@ -158,6 +169,7 @@ export class Conceal {
   reset() {
     this.room.sleep();
     this.washG = 0;
+    this.wclock = 0;
     this.filled = 0;
     this.active = false;
     this.out = 0;
@@ -202,7 +214,14 @@ export class Conceal {
     this.out = 0;
     this.cyc = 0;
     this.release = false;
+    // Where the sound was heading: the last two frames heard, carried one
+    // on. The stall's first frame out is set against it (bridge).
     this.bridge = 0;
+    this.bridgePending = this.filled >= 2;
+    if (this.bridgePending) {
+      this.predL = 2 * this.at(this.hL, 0) - this.at(this.hL, 1);
+      this.predR = 2 * this.at(this.hR, 0) - this.at(this.hR, 1);
+    }
     if (this.fwd) {
       // The loop and, before it, the seam's lead-in must both be heard.
       const seam = Math.min(this.xfade, have >> 2);
@@ -211,15 +230,6 @@ export class Conceal {
       this.span = this.len + this.seam;
       this.t = 0;
       this.cycle = Math.max(1, this.len);
-      if (this.len >= 2) {
-        // Where the sound was heading (the last two frames heard, carried
-        // one on) against where the loop starts: a steady tone, whole
-        // cycles long, starts where it was heading and needs nothing.
-        const p = this.len - 1, hL = this.hL, hR = this.hR;
-        this.offL = 2 * this.at(hL, 0) - this.at(hL, 1) - this.at(hL, p);
-        this.offR = 2 * this.at(hR, 0) - this.at(hR, 1) - this.at(hR, p);
-        this.bridgeLen = this.bridge = Math.max(MIN_RETURN, this.xfade);
-      }
     } else {
       this.span = Math.min(have, this.loop);
       // No more than a third of the history, so a pass has a stretch of its own.
@@ -254,13 +264,6 @@ export class Conceal {
       const g = SIN[k] * SIN[k];
       l += (this.at(hL, p + len) - l) * g;
       r += (this.at(hR, p + len) - r) * g;
-    }
-    if (this.bridge > 0) {
-      const k = ((this.bridge - 1) * TABLE / this.bridgeLen) | 0;
-      const g = SIN[k] * SIN[k];
-      l += this.offL * g;
-      r += this.offR * g;
-      this.bridge--;
     }
     this.l = l;
     this.r = r;
@@ -316,13 +319,42 @@ export class Conceal {
       this.dryG = 1;
       if (this.room.awake) this.roomOnly(L, R, i, 0, 0, this.l, this.r);
       else { L[i] = this.l; R[i] = this.r; }
-      return;
+    } else {
+      // The wash's clock runs on from wherever the last stall left it.
+      if (this.wclock < this.washRise) this.wclock++;
+      const u = this.wclock / this.washRise, sh = SIN[(u * TABLE) | 0];
+      const k = (this.wash * sh * sh * TABLE) | 0;
+      this.dryG = SIN[TABLE - k];
+      if (SIN[k] > this.washG) this.washG = SIN[k];
+      this.roomOnly(L, R, i, this.l, this.r, this.l * this.dryG, this.r * this.dryG);
     }
-    const u = Math.min(1, this.age / this.washRise), sh = SIN[(u * TABLE) | 0];
-    const k = (this.wash * sh * sh * TABLE) | 0;
-    this.dryG = SIN[TABLE - k];
-    if (SIN[k] > this.washG) this.washG = SIN[k];
-    this.roomOnly(L, R, i, this.l, this.r, this.l * this.dryG, this.r * this.dryG);
+    // The first frame out is set against where the sound was heading, and
+    // the difference fades away over the bridge: the loop, its level in
+    // the mix and the room all go in without a step, whatever they are.
+    if (this.bridgePending) {
+      this.bridgePending = false;
+      this.offL = this.predL - L[i];
+      this.offR = this.predR - R[i];
+      this.bridgeLen = this.bridge = Math.max(MIN_RETURN, this.xfade);
+    }
+    if (this.bridge > 0) {
+      const g = this.bridgeStep();
+      L[i] += this.offL * g;
+      R[i] += this.offR * g;
+    }
+  }
+
+  // The bridge's share this frame, from 1 down to 0.
+  bridgeStep() {
+    const k = ((this.bridge - 1) * TABLE / this.bridgeLen) | 0;
+    this.bridge--;
+    return SIN[k] * SIN[k];
+  }
+
+  // Between stalls the wash's clock runs back down over the room's decay,
+  // so a stall soon after another starts about as wet as that one ended.
+  washRest(n) {
+    if (this.wclock > 0) this.wclock = Math.max(0, this.wclock - n * this.washRise / (this.room.decay * this.rate));
   }
 
   // The room fed (xl, xr), its ring added to (yl, yr), into L[i] and R[i].
@@ -374,6 +406,7 @@ export class Conceal {
     const n = L.length;
     let i = 0;
     this.room.block(n);
+    if (!this.active || this.out > 0 || this.release) this.washRest(n);
     if (this.active) {
       // Quantized, the sound waits for the end of the loop under way.
       if (this.quantize && this.out === 0 && !this.release) {
@@ -394,8 +427,15 @@ export class Conceal {
         if (feed || room.awake) {
           this.roomOnly(L, R, i, feed ? cl : 0, feed ? cr : 0, L[i] * a + cl * this.dryG, R[i] * a + cr * this.dryG);
         } else {
-          L[i] = L[i] * a + cl;
-          R[i] = R[i] * a + cr;
+          L[i] = L[i] * a + cl * this.dryG;
+          R[i] = R[i] * a + cr * this.dryG;
+        }
+        // A bridge still fading when the sound came back fades out with
+        // the loop it belongs to.
+        if (this.bridge > 0) {
+          const g = this.bridgeStep() * b;
+          L[i] += this.offL * g;
+          R[i] += this.offR * g;
         }
       }
       if (this.out < len) { this.record(L, R, 0); return; }
@@ -418,5 +458,5 @@ export class Conceal {
 
   // A quantum played as silence on purpose (rest, refill, a wake's wait):
   // no concealment, none to fade out of, and the history starts over.
-  quiet() { this.active = false; this.out = 0; this.release = false; this.filled = 0; this.room.sleep(); this.washG = 0; }
+  quiet() { this.active = false; this.out = 0; this.release = false; this.filled = 0; this.room.sleep(); this.washG = 0; this.wclock = 0; }
 }
