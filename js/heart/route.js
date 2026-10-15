@@ -148,11 +148,24 @@ export function simulateUnderrun(count, ms, random, stall = false) {
   }
   for (const t of stallTimers) clearTimeout(t);
   stallTimers = [];
-  if (!stall) { engine.simulateUnderrun(pattern); return; }
+  // Said in the console as it goes, and what it came to once it is over.
+  const eng = engine, cushion = Math.round(eng.lookahead() * 1000), before = eng.stats().underruns;
+  const gaps = pattern.filter((_, i) => i % 2 === 0).map(Math.round);
+  const total = Math.round(pattern.reduce((a, b) => a + b, 0));
+  console.log(`[underrun sim] ${stall ? 'stalling the workers' : 'drain only'}: ${count} dropout${count === 1 ? '' : 's'} of ${gaps.join(', ')} ms over ${total} ms; cushion ${cushion} ms` +
+    (stall && Math.max(...gaps) <= cushion ? ' (every stall is within the cushion, so expect to hear nothing)' : ''));
+  stallTimers.push(setTimeout(() => {
+    const now = eng.stats();
+    console.log(`[underrun sim] done: ${now.underruns - before} quanta ran dry (${Math.round((now.underruns - before) * 128 / eng.sampleRate * 1000)} ms), cushion now ${Math.round(now.lookahead * 1000)} ms`);
+  }, total + 1500));
+  if (!stall) { eng.simulateUnderrun(pattern); return; }
   let at = 0;
   for (let i = 0; i < pattern.length; i += 2) {
-    const gap = pattern[i], eng = engine;
-    stallTimers.push(setTimeout(() => eng.stallWorkers(gap), at));
+    const gap = pattern[i], n = i / 2 + 1;
+    stallTimers.push(setTimeout(() => {
+      console.log(`[underrun sim] stall ${n} of ${gaps.length}: ${Math.round(gap)} ms, to ${eng.stages.length} worker${eng.stages.length === 1 ? '' : 's'}`);
+      eng.stallWorkers(gap);
+    }, at));
     at += gap + (pattern[i + 1] || 0);
   }
 }

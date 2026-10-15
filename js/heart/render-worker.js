@@ -127,9 +127,11 @@ function apply(d) {
 const nap = typeof SharedArrayBuffer === 'function' ? new Int32Array(new SharedArrayBuffer(4)) : null;
 function stall(ms) {
   if (!(ms > 0)) return;
-  if (nap) { try { Atomics.wait(nap, 0, 0, ms); return; } catch (e) {} }
-  const end = performance.now() + ms;
-  while (performance.now() < end) {}
+  const t0 = performance.now();
+  let how = 'waited';
+  try { if (nap) Atomics.wait(nap, 0, 0, ms); else how = ''; } catch (e) { how = ''; }
+  if (!how) { how = 'spun'; while (performance.now() - t0 < ms) {} }
+  console.log(`[underrun sim] stage ${stage} stalled ${Math.round(performance.now() - t0)} ms (${how})`);
 }
 
 function fail(err) {
