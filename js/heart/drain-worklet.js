@@ -52,6 +52,27 @@
 // Without SharedArrayBuffer the lookahead rides each chunk going back to
 // the mix, beside the clock, and every change is posted to the page.
 //
+// Render ahead on idle (§7.6, js/idle-ahead.js, SAB mode only). The page
+// lifts the cushion past policy.max, up to policy.idleMax ('idle', frames):
+// the target rises to the lift and the floor includes it, so the steady
+// step-down never shrinks it, and when the lift lowers or ends the target
+// drops at once and the cushion drains, never splices. While the lift
+// stands, an underrun is counted and told but neither learned from nor
+// grown on: the stages were asked to sleep, so a dry ring says nothing
+// about the sizes the session has really proven. A drop is acked ('idled'),
+// because the page must not free the render limit while the stages could
+// still read the lifted lookahead and gulp seconds ahead again.
+//
+// The forward skip ('jump', quanta). A touch while the cushion is grown
+// must be heard at the base latency, so the clock jumps ahead to a frame
+// the base lookahead short of what the stages hold: the continuation that
+// would have played is read into a scratch first, the count moves and is
+// published, the frames jumped over are dropped as late through the labels
+// and the debt, and the first new frames play under an equal-power
+// crossfade from that scratch. The time map never moves; the page adds the
+// same jump to the engine's lead (engine.js, D), so engine frame n still
+// plays at native frame F + n and everything planned keeps its place.
+//
 // The rest. A paused session whose master has shut (js/audio.js) needs
 // nothing from Heart, yet the stages would go on rendering gated silence
 // for as long as the pause lasts. So the page tells the drain to rest, and
@@ -144,6 +165,17 @@ export class Drain {
     this.sim = null;
     this.simAt = 0;
     this.simLeft = 0;
+    // Render ahead on idle: the lift (frames, 0 for none), the jump's
+    // scratch (the old continuation, for the crossfade), how much of it was
+    // held and how much of the crossfade has played, and the two acks,
+    // reused.
+    this.idle = 0;
+    this.xfL = new Float32Array(8 * QUANTUM);
+    this.xfR = new Float32Array(8 * QUANTUM);
+    this.xfLen = 0;
+    this.xfAt = 0;
+    this.jumped = { type: 'jumped', quanta: 0 };
+    this.idled = { type: 'idled', target: 0 };
     if (lookahead && lookahead.startFullscreen) this.setFullscreen(true);
     if (lookahead && lookahead.startHidden) this.setHidden(true);
   }
@@ -196,7 +228,7 @@ export class Drain {
     // The stages render to within a chunk of the lookahead, so a ring that
     // holds that much has been filled to it: that cushion is now held.
     if (ready + CHUNK >= this.target) {
-      this.held = this.target;
+      if (!this.idle) this.held = this.target;
       if (ready >= n) this.refill = false;
     }
     if (this.refill && ready < n) {
@@ -221,6 +253,7 @@ export class Drain {
       ring.read(0, L, 0, n);
       ring.read(1, R, 0, n);
       ring.release(n);
+      if (this.xfAt < this.xfLen) this.crossfade(L, R, n);
       if (this.conceal) this.conceal.wet(L, R);
       if (this.dry && this.diag) this.tellDiag('wet', ready);
       this.dry = false;
@@ -233,12 +266,77 @@ export class Drain {
       this.calm = 0;
       if (!this.dry) {
         this.runFrom = this.underruns;
-        if (this.policy) { this.learn(); this.raise(Math.ceil(this.next * (this.policy.grow || GROW) / QUANTUM) * QUANTUM); }
+        if (this.policy && !this.idle) { this.learn(); this.raise(Math.ceil(this.next * (this.policy.grow || GROW) / QUANTUM) * QUANTUM); }
         if (this.diag) this.tellDiag('dry', ready);
       }
       this.dry = true;
     }
     this.tick();
+  }
+
+  // The jump's crossfade: the old continuation fades out under the new
+  // frames, equal power over however much of it the ring held (at most the
+  // scratch's 8 quanta).
+  crossfade(L, R, n) {
+    const len = this.xfLen;
+    for (let i = 0; i < n && this.xfAt < len; i++, this.xfAt++) {
+      const x = (this.xfAt + 0.5) / len * Math.PI / 2;
+      const a = Math.sin(x), b = Math.cos(x);
+      L[i] = L[i] * a + this.xfL[this.xfAt] * b;
+      R[i] = R[i] * a + this.xfR[this.xfAt] * b;
+    }
+  }
+
+  // The forward skip (the top of the file). The scratch takes the frames
+  // that would have played next, the count moves and is published at once
+  // (with every bell rung, so a sleeping stage hears the new clock), and
+  // the frames jumped over are left to the debt to drop. The lift ends with
+  // it: the touch that asked for the jump wants the base latency now.
+  jump(quanta) {
+    const ring = this.ring;
+    this.jumped.quanta = 0;
+    if (ring && quanta > 0 && !this.resting && this.started) {
+      const have = Math.min(this.xfL.length, ring.readable());
+      ring.read(0, this.xfL, 0, have);
+      ring.read(1, this.xfR, 0, have);
+      this.xfLen = have;
+      this.xfAt = 0;
+      this.played += quanta;
+      this.align();
+      if (this.ctl) {
+        Atomics.store(this.ctl, PLAYED, this.played);
+        for (let s = 0; s < this.stages; s++) ringBell(this.ctl, s);
+      }
+      this.jumped.quanta = quanta;
+    }
+    this.setIdle(0);
+    this.post(this.jumped);
+  }
+
+  // The page's idle lift (frames past the clock, 0 for none). Up is a rise
+  // like any other; down takes effect at once, by draining: nothing is
+  // dropped, the stages simply render less far ahead while what is
+  // buffered plays out. A drop is acked, so the page frees the render
+  // limit only once the lifted lookahead cannot be read any more.
+  setIdle(frames) {
+    frames = Math.ceil(Math.max(0, frames) / QUANTUM) * QUANTUM;
+    const p = this.policy;
+    if (p && p.idleMax) frames = Math.min(frames, p.idleMax);
+    if (frames === this.idle) {
+      if (!frames) { this.idled.target = this.target; this.post(this.idled); }
+      return;
+    }
+    const down = frames < this.idle;
+    this.idle = frames;
+    this.calm = 0;
+    if (p) {
+      if (frames > this.target) this.raise(frames);
+      else if (down) {
+        const want = this.floor();
+        if (this.target > want) { this.next = want; this.rising = 0; this.obey(false); }
+      }
+    }
+    if (down) { this.idled.target = this.target; this.post(this.idled); }
   }
 
   // The label of the next frame waiting, when the ring carries one, is
@@ -350,17 +448,20 @@ export class Drain {
     this.learned = Math.min(this.policy.max, Math.ceil(this.bad * (this.policy.grow || GROW) / QUANTUM) * QUANTUM);
   }
 
-  // The least the lookahead may step down to now.
+  // The least the lookahead may step down to now. The idle lift is part of
+  // it, past policy.max while it stands, so the steady step-down never
+  // shrinks an idle cushion.
   floor() {
     const p = this.policy;
     let f = Math.max(p.base, this.learned);
     if (this.fullscreen && p.fullscreen) f = Math.max(f, p.fullscreen);
-    return Math.min(p.max, f);
+    return Math.max(Math.min(p.max, f), this.idle);
   }
 
-  // Announces a rise, to be obeyed RISE_DELAY quanta on.
+  // Announces a rise, to be obeyed RISE_DELAY quanta on. The idle lift may
+  // stand past policy.max; nothing else does.
   raise(frames) {
-    frames = Math.min(this.policy.max, frames);
+    frames = Math.min(Math.max(this.policy.max, this.idle), frames);
     if (frames <= this.next) return;
     this.next = frames;
     this.rising = RISE_DELAY;
@@ -447,6 +548,8 @@ if (typeof registerProcessor === 'function') {
         else if (d.type === 'grow') this.drain.setGrow(+d.x);
         else if (d.type === 'fullscreen') this.drain.setFullscreen(d.on === true);
         else if (d.type === 'rest') this.drain.setResting(d.on === true);
+        else if (d.type === 'idle') this.drain.setIdle(d.frames | 0);
+        else if (d.type === 'jump') this.drain.jump(d.quanta | 0);
         else if (d.type === 'conceal') { if (this.drain.conceal) this.drain.conceal.configure(d.set); }
         else if (d.type === 'periods') { if (this.drain.conceal) this.drain.conceal.setPeriods(+d.tone, +d.strobe); }
         else if (d.type === 'simulate') this.drain.simulate(Int32Array.from(d.quanta));

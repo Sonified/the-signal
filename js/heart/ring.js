@@ -330,7 +330,13 @@ export const openRing = (desc, side) => desc.kind === 'shared' ? new SharedRing(
 //                   the time they obey it, and a command batch already on
 //                   its way still lands before a stage renders past it.
 //
-// Each stage then has four slots:
+// LIMIT is the one slot the page writes (render ahead on idle, §7.6 and
+// js/idle-ahead.js): the absolute frame, in quanta, past which no stage may
+// render, or -1 for none. The page walks the planners to a frontier, posts
+// their commands, then sets LIMIT just short of it and rings every bell, so
+// planning always leads rendering.
+//
+// Each stage then has five slots:
 //
 //   BELL     a counter the worker sleeps on with Atomics.waitAsync; anyone
 //            who may have unblocked it adds one and notifies.
@@ -340,20 +346,25 @@ export const openRing = (desc, side) => desc.kind === 'shared' ? new SharedRing(
 //            on every quantum.
 //   HEAD     the frames the stage has rendered, in quanta.
 //   RENDER   its smoothed render time per chunk, in microseconds.
+//   WAKES    how many times its sleep has returned, counted by the worker
+//            as it wakes; ?heartdiag=1 and the cadence test read it to see
+//            that an idle stage really sleeps for seconds at a time.
 //
 // The worker writes WAKE and then reads PLAYED; the drain writes PLAYED and
 // then reads WAKE. Atomics are sequentially consistent, so at least one of
 // the two sees the other's write, and a wake-up can never fall between them.
-export const PLAYED = 0, UNDERRUNS = 1, LOOKAHEAD = 2, LOOKAHEAD_NEXT = 3;
-const CONTROL_HEAD = 4, PER_STAGE = 4;
+export const PLAYED = 0, UNDERRUNS = 1, LOOKAHEAD = 2, LOOKAHEAD_NEXT = 3, LIMIT = 4;
+const CONTROL_HEAD = 5, PER_STAGE = 5;
 export const bellOf = s => CONTROL_HEAD + s * PER_STAGE;
 export const wakeOf = s => CONTROL_HEAD + s * PER_STAGE + 1;
 export const headOf = s => CONTROL_HEAD + s * PER_STAGE + 2;
 export const renderOf = s => CONTROL_HEAD + s * PER_STAGE + 3;
+export const wakesOf = s => CONTROL_HEAD + s * PER_STAGE + 4;
 
 export function makeControl(stages, lookahead = 0) {
   const ctl = new Int32Array(new SharedArrayBuffer(4 * (CONTROL_HEAD + stages * PER_STAGE)));
   ctl[LOOKAHEAD] = ctl[LOOKAHEAD_NEXT] = lookahead;
+  ctl[LIMIT] = -1;
   for (let s = 0; s < stages; s++) ctl[wakeOf(s)] = -1;
   return ctl;
 }

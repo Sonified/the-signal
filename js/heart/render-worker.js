@@ -75,13 +75,17 @@
 
 import {
   QUANTUM, MAX_PORTS, ingressKey, openRing,
-  PLAYED, LOOKAHEAD, bellOf, wakeOf, headOf, renderOf, ringBell
+  PLAYED, LOOKAHEAD, LIMIT, bellOf, wakeOf, headOf, renderOf, wakesOf, ringBell
 } from './ring.js';
 
 const ROLE_ISLAND = 1, ROLE_MIX = 2;
 const PORT_EGRESS = 0, PORT_INGRESS = 1, PORT_MASTER = 2;
 // A missed wake-up costs at most this long, in SAB mode.
 const SAFETY_MS = 250;
+// While idle (a LIMIT is set, §7.6) the whole point is to sleep for seconds
+// at a time, so the safety stands much further back; the page's limit and
+// the drain's gulp wake both ring the bell themselves.
+const SAFETY_IDLE_MS = 2000;
 // Message mode's fallback poll.
 const FALLBACK_MS = 50;
 // In message mode islands report their head and render time every this many
@@ -231,9 +235,22 @@ function ahead() {
   return ctl ? Atomics.load(ctl, LOOKAHEAD) : out.ahead || lookahead;
 }
 
+// Render ahead on idle (§7.6): the page walks the planners to a frontier
+// and only then lets the stages render toward it, so planning always leads
+// rendering. LIMIT is that frontier, an absolute frame in quanta past which
+// no stage may render, or -1 for none; an island runs a chunk further, as
+// with the lookahead. SAB mode only: without the control block there is no
+// idle and no limit.
+function limitAt() {
+  if (!ctl) return Infinity;
+  const l = Atomics.load(ctl, LIMIT);
+  return l < 0 ? Infinity : l * QUANTUM + (role === ROLE_ISLAND ? chunk : 0);
+}
+
 function ready() {
   if (out.writable() < chunk) return false;
   if (frame + chunk > played() + ahead()) return false;
+  if (frame + chunk > limitAt()) return false;
   for (const i of ins) {
     dropStale(i);
     if (i.ring.readable() < chunk) return false;
@@ -303,11 +320,21 @@ function pump() {
 }
 
 // The clock count to be woken at, or -1 when what is missing is room in an
-// egress ring or an island's block, which the other stage rings for.
+// egress ring or an island's block, which the other stage rings for, or the
+// page's limit, which the page rings every bell for when it moves. While a
+// limit stands and the clock binds, the stage does not ask to be woken per
+// chunk: it asks for the count at which half its cushion has played, and
+// renders back to full in one gulp, which is what lets the cores sleep for
+// seconds at a time (§7.6).
 function wakeAt() {
   const now = Atomics.load(ctl, PLAYED), reach = ahead();
+  const lim = Atomics.load(ctl, LIMIT);
+  if (lim >= 0 && frame + chunk > lim * QUANTUM + (role === ROLE_ISLAND ? chunk : 0)) return -1;
   let want = -1;
-  if (frame + chunk > now * QUANTUM + reach) want = Math.ceil((frame + chunk - reach) / QUANTUM);
+  if (frame + chunk > now * QUANTUM + reach) {
+    want = lim >= 0 ? Math.ceil((frame - reach / 2) / QUANTUM)
+                    : Math.ceil((frame + chunk - reach) / QUANTUM);
+  }
   // The final ring empties a quantum at a time, as the drain plays it.
   if (role !== ROLE_ISLAND) {
     const room = out.writable();
@@ -318,9 +345,17 @@ function wakeAt() {
 
 function sleep(bell) {
   if (!Atomics.waitAsync) { setTimeout(pump, Math.max(1, chunk / QUANTUM)); return; }
-  const w = Atomics.waitAsync(ctl, bellOf(stage), bell, SAFETY_MS);
-  if (w.async) w.value.then(pump);
-  else queueMicrotask(pump);
+  const safety = Atomics.load(ctl, LIMIT) >= 0 ? SAFETY_IDLE_MS : SAFETY_MS;
+  const w = Atomics.waitAsync(ctl, bellOf(stage), bell, safety);
+  if (w.async) w.value.then(wake);
+  else queueMicrotask(wake);
+}
+
+// A sleep has returned (the bell, or the safety): counted for ?heartdiag=1
+// and the cadence test, which read how often an idle stage really wakes.
+function wake() {
+  if (ctl) Atomics.add(ctl, wakesOf(stage), 1);
+  pump();
 }
 
 function render() {
