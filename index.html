@@ -48,8 +48,9 @@
      before the first [boot] line means an import never finished. -->
 <script>console.log('[boot] html parsed, loading main.js modules');</script>
 <!-- A settings file loaded from the drawer waits across the reload and is
-     written in here, before main.js reads anything (platform/settings-file.js). -->
-<script type="module">import { applyPendingLoad } from './platform/settings-file.js'; applyPendingLoad();</script>
+     written in here, before main.js reads anything; so does localhost's fresh
+     visit (Delete twice), which clears first (platform/settings-file.js). -->
+<script type="module">import { applyFreshVisit, applyPendingLoad } from './platform/settings-file.js'; applyFreshVisit(); applyPendingLoad();</script>
 <script type="module" src="main.js"></script>
 <script type="module" src="platform/midi-in.js"></script>
 </body>

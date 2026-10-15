@@ -507,6 +507,53 @@ export function streamAskHits(ui, app) {
   if (ui.clicked) broadcastAnswer(-1);
 }
 
+// ---------- the fresh visit question (localhost only) ----------
+// Delete (or the Mac's delete, Backspace) on localhost asks, on the guard's
+// card, whether to reload as a first-time visitor; main.js answers it from
+// the keys alone (a second Delete goes ahead, Escape or any other key puts
+// it away), so the card has no buttons and takes no press. Painted last on
+// the top layer, after the stream's question, so no window covers it.
+export const freshAsk = { open: false };
+const FA_TITLE = 'Fresh reload as a new visitor?';
+const FA_BODY = 'This clears this browser\'s saved settings, presets and journeys on localhost, then reloads the page as a first visit would see it. A backup is kept.';
+const FA_NOTE = 'Delete again to confirm, Esc to cancel.';
+const fa = { wrapW: -1, lines: [], kinds: [], h: 0 };
+
+export function drawFreshAsk(ui, app) {
+  const a = ui.spring('fresh.ask', freshAsk.open ? 1 : 0, MOTION.fade);
+  if (a < 0.01) return;
+  const width = app.width, height = app.height;
+  const w = Math.min(GN_MAX_W, width - 32);
+  if (w < 120) return;
+  const maxW = w - GN_PAD_X * 2;
+  if (maxW !== fa.wrapW) {
+    fa.wrapW = maxW; fa.lines.length = 0; fa.kinds.length = 0;
+    wrapGuard(ui.text, FA_TITLE, GN_TITLE, W.semibold, maxW, 0, fa);
+    wrapGuard(ui.text, FA_BODY, GN_BODY, W.regular, maxW, 1, fa);
+    wrapGuard(ui.text, FA_NOTE, GN_BODY, W.regular, maxW, 2, fa);
+    let h = GN_PAD_Y;
+    for (let i = 0; i < fa.kinds.length; i++) {
+      if (i > 0 && fa.kinds[i] !== fa.kinds[i - 1]) h += GN_GAP;
+      h += fa.kinds[i] === 0 ? GN_TITLE_LH : GN_BODY_LH;
+    }
+    fa.h = h + GN_PAD_Y;
+  }
+  const x = (width - w) / 2, y = Math.max(16, (height - fa.h) / 2);
+  const dl = ui.dl;
+  dl.pushAlpha(a);
+  dl.glass(x, y, w, fa.h, RADIUS.lg, COLOR.paneTint, 1, 1, COLOR.line, GLASS.shadow, GLASS.shadowAlpha);
+  let ly = y + GN_PAD_Y;
+  for (let i = 0; i < fa.lines.length; i++) {
+    const k = fa.kinds[i];
+    if (i > 0 && k !== fa.kinds[i - 1]) ly += GN_GAP;
+    const lh = k === 0 ? GN_TITLE_LH : GN_BODY_LH;
+    ui.text.draw(dl, fa.lines[i], x + GN_PAD_X, ly + lh * 0.72, k === 0 ? GN_TITLE : GN_BODY,
+                 k === 0 ? W.semibold : W.regular, k === 0 ? COLOR.ink : (k === 2 ? COLOR.warn : COLOR.inkDim), 0, TRACK.tight, 1);
+    ly += lh;
+  }
+  dl.popAlpha();
+}
+
 // Painted after everything else on the top layer, so no window covers it.
 export function drawStreamAsk(ui) {
   if (!ak.live) return;

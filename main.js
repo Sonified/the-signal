@@ -86,7 +86,7 @@ import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION } from './ui/theme.js';
 import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow } from './ui/screens/overlay.js';
-import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk, drawEnergyChip } from './ui/screens/chrome.js';
+import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk, drawEnergyChip, freshAsk, drawFreshAsk } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
@@ -561,6 +561,14 @@ async function boot() {
   // held and ignores the auto-repeats, as v0's !e.repeat did; otherwise a
   // held key would flap the window open and shut. Its keyup clears it.
   let musicKeyHeld = false, levelsKeyHeld = false, seqKeyHeld = false, journeyKeyHeld = false, perfKeyHeld = false, textKeyHeld = false;
+  // Delete on localhost: a fresh reload as a first-time visitor would see the
+  // page (the page clears and reloads, platform/settings-file.js 'fresh').
+  // The Mac's delete key is Backspace; the forward delete is Delete; either
+  // asks and either confirms. Held, it asks once: the confirm needs a second
+  // press, so a held key's repeats can never go ahead on their own.
+  const ON_LOCALHOST = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  const isFreshKey = k => k === 'Delete' || k === 'Backspace';
+  let freshKeyHeld = false;
 
   // Global keys, as v0 binds them. They are taken out of the toolkit's view
   // so a focused slider never also treats Space or Enter as "activate".
@@ -578,6 +586,21 @@ async function boot() {
         overlayKeyHeld = true; overlayKeyCode = e.code;
         overlaysShown = !overlaysShown;
         if (!overlaysShown) { anim.reset('chrome.overlay', 0); lastOverlayA = 0; }
+      }
+      return true;
+    }
+    // The fresh visit question (localhost): a second Delete goes ahead,
+    // Escape puts it away and is spent there, and any other key puts it away
+    // and then does what it always does. A modifier alone leaves it up.
+    if (freshAsk.open && !isFreshKey(k) && k !== 'Shift' && k !== 'Alt') {
+      freshAsk.open = false;
+      if (k === 'Escape') return true;
+    }
+    if (ON_LOCALHOST && isFreshKey(k)) {
+      if (!freshKeyHeld) {
+        freshKeyHeld = true;
+        if (freshAsk.open) { freshAsk.open = false; platform.settingsFile('fresh'); }
+        else freshAsk.open = true;
       }
       return true;
     }
@@ -712,6 +735,7 @@ async function boot() {
       if (e.type === 'keyup' && (e.key === 'j' || e.key === 'J')) journeyKeyHeld = false;
       if (e.type === 'keyup' && (e.key === 'p' || e.key === 'P')) perfKeyHeld = false;
       if (e.type === 'keyup' && (e.key === 't' || e.key === 'T')) textKeyHeld = false;
+      if (e.type === 'keyup' && isFreshKey(e.key)) freshKeyHeld = false;
       // (matched by its physical key, since a Shift let go first changes the key's name)
       if (e.type === 'keyup' && overlayKeyHeld && e.code === overlayKeyCode) overlayKeyHeld = false;
       // The Overlay key row's capture (Settings): armed, the next key down
@@ -785,13 +809,13 @@ async function boot() {
     // and only keep the build awake, like the drawer. A pointer resting on
     // any of the UI floating over the picture holds the chrome up; one
     // resting on the bare picture lets the chrome alone fade.
-    const chromeAwake = guard.noticeOpen || broadcastAsking() || ui.activeId !== -1 || overUI || t - lastActivity < LAYOUT.idleMs;
+    const chromeAwake = guard.noticeOpen || broadcastAsking() || freshAsk.open || ui.activeId !== -1 || overUI || t - lastActivity < LAYOUT.idleMs;
     // Key mode (see overlaysShown): the floating controls answer to the key
     // alone, though the guard's notice and the stream's question still
     // bring them up, as they hold the chrome up today.
     const keyMode = S.overlayMode === 'key';
     if (!keyMode) overlaysShown = false;
-    const overlayAwake = keyMode ? (overlaysShown || guard.noticeOpen || broadcastAsking()) : chromeAwake;
+    const overlayAwake = keyMode ? (overlaysShown || guard.noticeOpen || broadcastAsking() || freshAsk.open) : chromeAwake;
     // A drawer shut while the build slept (another tab, the show remote) is
     // still out on screen, and S.edgeInset with it, until stepDrawer slides
     // it home; so a pane still showing keeps the build awake too, or the
@@ -847,6 +871,7 @@ async function boot() {
       ui.clearOcclusion();
       drawBurger(ui, app, chromeA, frost);
       drawStreamAsk(ui);
+      drawFreshAsk(ui, app);
 
       ui.dl = uiList;
       drawDrawer(ui, app);

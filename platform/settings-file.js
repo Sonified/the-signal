@@ -81,7 +81,118 @@ export function applyPendingLoad() {
   }
 }
 
+// ---------- a fresh visit (localhost only) ----------
+// Delete twice on localhost (main.js) reloads the page as a first-time
+// visitor would meet it: every key of ours goes, from localStorage and
+// sessionStorage, so factory presets, defaults and every developer switch
+// (signal_worker, signal_heart, signal_perf...) start over. Other pages'
+// keys on this origin (the tools, the mirror password) are not ours and stay.
+// The clearing waits for the next page for the same reason a loaded file
+// does: the page on its way out still flushes its pending save. So a flag
+// crosses the reload in sessionStorage, and applyFreshVisit, first thing in
+// index.html, clears before anything reads the settings.
+//
+// What was cleared is kept first, in an IndexedDB database the app never
+// opens (presence-fresh-backup), so the fresh visit is truly fresh and the
+// old setup can still come back: restoreFreshBackup() in the console puts
+// the latest back, restoreFreshBackup(1) the one before, through the same
+// hand-off a loaded file takes. The last ten are kept.
+const FRESH = 'signal.freshVisit';
+const BACKUP_DB = 'presence-fresh-backup', BACKUP_KEEP = 10;
+const onLocalhost = () => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+
+function backupDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(BACKUP_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('backups', { autoIncrement: true });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = req.onblocked = () => reject(req.error || new Error('blocked'));
+  });
+}
+
+// Every backup, newest first, as { id, at, data }.
+async function backups() {
+  const db = await backupDb();
+  return new Promise((resolve, reject) => {
+    const out = [];
+    const req = db.transaction('backups').objectStore('backups').openCursor(null, 'prev');
+    req.onsuccess = () => {
+      const c = req.result;
+      if (!c) { db.close(); resolve(out); return; }
+      out.push({ id: c.key, at: c.value.at, data: c.value.data });
+      c.continue();
+    };
+    req.onerror = () => { db.close(); reject(req.error); };
+  });
+}
+
+async function keepBackup(data) {
+  const old = await backups();
+  const db = await backupDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('backups', 'readwrite');
+    const store = tx.objectStore('backups');
+    store.add({ at: new Date().toISOString(), data });
+    for (const b of old.slice(BACKUP_KEEP - 1)) store.delete(b.id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function freshReload() {
+  if (!onLocalhost()) return;
+  // every key of ours as the raw string it is stored as, so a restore
+  // writes back exactly what was there
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (OURS.test(k)) data[k] = localStorage.getItem(k);
+  }
+  if (Object.keys(data).length) {
+    try { await keepBackup(data); } catch (e) {
+      if (!confirm('Could not keep a backup of your settings (' + (e && e.message) + '). Reload fresh anyway?')) return;
+    }
+  }
+  try { sessionStorage.setItem(FRESH, '1'); } catch (e) { return; }
+  location.reload();
+}
+
+// Runs before the app starts (index.html), ahead of applyPendingLoad.
+export function applyFreshVisit() {
+  let flagged = false;
+  try { flagged = sessionStorage.getItem(FRESH) === '1'; } catch (e) { return; }
+  if (!flagged || !onLocalhost()) return;
+  let n = 0;
+  for (const area of [localStorage, sessionStorage]) {
+    const keys = [];
+    // (a restore's backup, waiting for applyPendingLoad, stays)
+    for (let i = 0; i < area.length; i++) { const k = area.key(i); if (OURS.test(k) && !(area === sessionStorage && k === PENDING)) keys.push(k); }
+    for (const k of keys) { try { area.removeItem(k); if (area === localStorage) n++; } catch (e) {} }
+  }
+  let restoring = false;
+  try { restoring = sessionStorage.getItem(PENDING) !== null; } catch (e) {}
+  if (restoring) console.log('[fresh] cleared ' + n + ' saved keys, writing the backup back in');
+  else console.log('[fresh] a first visit: cleared ' + n + ' saved keys of ours. Backup in IndexedDB ' + BACKUP_DB + '; restoreFreshBackup() in the console puts the latest back (restoreFreshBackup(1) the one before, if Delete-Delete ran twice).');
+}
+
+// Console only: the nth latest backup (0, the latest) back in, across a
+// reload: the page is cleared as for a fresh visit and the backup then
+// written in as a loaded settings file is (applyPendingLoad), so the
+// storage ends up exactly as it was.
+async function restoreFreshBackup(n = 0) {
+  const all = await backups();
+  const b = all[n];
+  if (!b) { console.log('[fresh] no backup ' + n + ' (' + all.length + ' kept)'); return; }
+  // cleared first (applyFreshVisit), so keys made since the backup go too
+  sessionStorage.setItem(PENDING, JSON.stringify(b.data));
+  sessionStorage.setItem(FRESH, '1');
+  console.log('[fresh] restoring the backup from ' + b.at + ' (' + Object.keys(b.data).length + ' keys), reloading');
+  location.reload();
+}
+if (typeof window !== 'undefined' && typeof location !== 'undefined' && onLocalhost()) window.restoreFreshBackup = restoreFreshBackup;
+
 export function settingsFile(kind) {
   if (kind === 'download') download();
   else if (kind === 'load') load();
+  else if (kind === 'fresh') freshReload();
 }
