@@ -26,9 +26,9 @@
 // Every get/set/format below receives S as a parameter rather than closing
 // over a module-level import: these are pure functions of whatever state
 // object the toolkit hands them, and state.js's S is passed in that way by
-// every caller, so there is no need to import { energyTestCopied } from './energy-test.js';
-import it here at all.
+// every caller, so there is no need to import it here at all.
 import { byId } from './schema.js';
+import { energyTestCopied } from './energy-test.js';
 import { setColorFromPicker } from '../js/color.js';
 import { CORNER_TYPES } from '../js/state.js';
 import { setAmRate } from '../js/audio.js';
