@@ -24,3 +24,6 @@ sun-video/
 
 # headless Chrome profiles and screenshots of tools/gap-explorer-check.mjs
 tools/.headless-profiles/
+
+# per-file logs of tools/heart-tests/run-each.sh
+tools/heart-tests/logs/
