@@ -154,6 +154,9 @@ function setScene(amb, level) {
   for (const l of S.ambLayers) { l.level = 0; l.muted = false; l.solo = false; }
   S.running = true; S.audioEnabled = true;
   S.ambVol = 0.8; S.musAmb = 1; S.ambReverb = 0; S.ambRevTime = 4.5;
+  // No fade in (js/ambience.js fadeAmbIn): these check the bus's level and
+  // the recordings' own fades, not the atmosphere's arrival.
+  S.ambFadeInS = 0;
   const ocean = S.ambLayers.find(l => l.source === 'ocean');
   ocean.level = level;
   return ocean;

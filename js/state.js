@@ -420,6 +420,7 @@ export const S = {
   // ---------- ambience ----------
   // Fixed recording levels for balancing the atmosphere in the browser.
   ambOn: true, ambVol: 0.18,
+  ambFadeInS: 10,             // the atmosphere's own fade in, seconds, every time it comes in (js/ambience.js fadeAmbIn)
   ambLayers: [
     { source: 'ocean', level: 0.55 },
     { source: 'forest', level: 0 },

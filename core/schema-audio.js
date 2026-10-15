@@ -1626,6 +1626,16 @@ const atmosphereControls = [
     set: (s, pos) => { s.ambVol = pos / 100; applyAmbVol(); save(); },
     formatAt: pos => pos + '%',
   },
+  {
+    // How long the atmosphere takes to come in, every time it does: its
+    // switch, a play after a pause, the first start (js/ambience.js
+    // fadeAmbIn).
+    id: 'ambFadeInS', section: 'atmosphere', label: 'Fade in', kind: 'slider',
+    min: 0, max: 30, step: 0.5, def: 10,
+    get: s => s.ambFadeInS ?? 10,
+    set: (s, v) => { s.ambFadeInS = Math.max(0, Math.min(30, v)); save(); },
+    formatAt: pos => pos > 0 ? (pos % 1 ? pos.toFixed(1) : pos) + ' s' : 'Instant'
+  },
   // The Music window's trim for the atmosphere, as musTone's is for the
   // tone: 100% plays exactly the level above. Out of the drawer.
   {

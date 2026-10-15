@@ -182,7 +182,7 @@ function buildSettings() {
     pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
     cloudsOn: S.cloudsOn, cloudVol: S.cloudVol, cloudDensity: S.cloudDensity,
     cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb,
-    ambOn: S.ambOn, ambVol: S.ambVol, ambDrift: S.ambDrift, ambDriftFadeS: S.ambDriftFadeS, ambKidsFreq: S.ambKidsFreq,
+    ambOn: S.ambOn, ambVol: S.ambVol, ambFadeInS: S.ambFadeInS, ambDrift: S.ambDrift, ambDriftFadeS: S.ambDriftFadeS, ambKidsFreq: S.ambKidsFreq,
     ambReverb: S.ambReverb, ambRevTime: S.ambRevTime, ambRevType: S.ambRevType, ambRevDamp: S.ambRevDamp, ambRevMod: S.ambRevMod,
     ambReverbVar: S.ambReverbVar, ambReverbPeriod: S.ambReverbPeriod, ambRevTimeVar: S.ambRevTimeVar, ambRevTimePeriod: S.ambRevTimePeriod,
     ambLayers: S.ambLayers,
@@ -1121,7 +1121,7 @@ function applySettings(s, live, scene) {
   }
   ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','arpVol','arpRate','arpAtk','arpDec','arpOct','arpRev','arpSpread','arpStrobeAm','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
    'arpVolVar','arpVolPeriod','pianoReverbVar','pianoReverbPeriod','pianoRevTimeVar','pianoRevTimePeriod','pianoRevDamp','pianoRevMod','pianoRevHP','pianoRevHPSlope','arpStrobeAmVar','arpStrobeAmPeriod','arpHfCut',
-   'pianoSpread','pianoHold','pianoBass','ambVol','ambReverb','ambRevTime','ambDriftFadeS','ambKidsFreq',
+   'pianoSpread','pianoHold','pianoBass','ambVol','ambFadeInS','ambReverb','ambRevTime','ambDriftFadeS','ambKidsFreq',
    'cloudVol','cloudDensity','cloudPhrase','cloudReverb'].forEach(k => {
     if (typeof s[k] === 'number') S[k] = s[k];
   });

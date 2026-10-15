@@ -162,7 +162,33 @@ function ensureOut() {
 // Both glide: a straight line over a preset's transition, the usual short
 // approach for a fader (see glideParam in audio.js).
 export function applyAmbVol() {
-  if (out) glideParam(out.gain, outLevel(), 0.2);
+  if (!out) return;
+  const now = getContext().currentTime;
+  // During the fade in, the new level is reached at its end.
+  if (now < fadeEnd) {
+    const p = out.gain;
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(p.value, now);
+    p.linearRampToValueAtTime(outLevel(), fadeEnd);
+    return;
+  }
+  glideParam(out.gain, outLevel(), 0.2);
+}
+
+// The atmosphere's own fade in (the drawer's Fade in, S.ambFadeInS, 10 s
+// unless set): every time it comes in (ambienceOn: its switch, a play after
+// a pause, the first start) the bus rises from nothing over that long, the
+// room's send with it, under the recordings' own fades. A level move during
+// it lands at its end (applyAmbVol).
+let fadeEnd = 0;
+const fadeS = () => Number.isFinite(S.ambFadeInS) ? Math.max(0, Math.min(30, S.ambFadeInS)) : 10;
+function fadeAmbIn() {
+  if (!out) return;
+  const p = out.gain, t = getContext().currentTime, dur = fadeS();
+  p.cancelScheduledValues(t);
+  p.setValueAtTime(0, t);
+  p.linearRampToValueAtTime(outLevel(), t + dur);
+  fadeEnd = t + dur;
 }
 export function applyAmbReverb() {
   if (wet) glideParam(wet.gain, ambEffectiveReverb(), 0.12);
@@ -549,6 +575,7 @@ export function ambLayerPeak(layer) {
 export async function ambienceOn() {
   if (!getContext() || running || !ensureOut()) return false;
   running = true;
+  fadeAmbIn();
   syncAmbLayers();
   return true;
 }
