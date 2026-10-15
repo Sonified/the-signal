@@ -1749,22 +1749,18 @@ export const VISUAL_CONTROLS = [
     }
   },
   {
-    // The whole session's energy accounts on the clipboard, to paste back
-    // from a phone: the engine's half (core/energy.js: time awake, still and
-    // hidden, frame JS, GPU, the screen's light) and the page's
-    // (platform/energy-page.js: the sound, the network, a CPU canary).
-    // Always counting, so a tap copies at once. copies: the chip arms the
-    // page's clipboard while held, which is what lets iOS take the write
-    // (platform/web.js armClipboard).
-    id: 'energyCopy', section: 'render', label: 'Copy energy profile', kind: 'action', copies: true,
-    act: () => {
-      energyCopied = 0;
-      energyCopyHook().then(() => { energyCopied = 1; energyCopiedAt = performance.now(); },
-                            () => { energyCopied = -1; energyCopiedAt = performance.now(); });
-    },
-    format: () => performance.now() - energyCopiedAt < 2500 && energyCopied
-      ? (energyCopied > 0 ? 'Energy profile copied' : 'Copy refused, try again')
-      : 'Copy energy profile'
+    // A chip at the bottom right of the screen, over the picture, that puts
+    // the whole session's energy accounts on the clipboard, to paste back
+    // from a phone (ui/screens/chrome.js drawEnergyChip): the engine's half
+    // (core/energy.js: time awake, still and hidden, frame JS, GPU, the
+    // screen's light) and the page's (platform/energy-page.js: the sound, the
+    // network, a CPU canary). On the screen rather than in here, so the
+    // drawer never covers the picture being measured. The counting runs
+    // either way; this only shows the chip. This machine's own.
+    id: 'energyButton', section: 'render', label: 'Energy profile button', kind: 'toggle', def: false,
+    get: S => S.energyButton === true,
+    set: (S, on) => { S.energyButton = !!on; save(); },
+    format: S => S.energyButton === true ? 'on' : 'off'
   },
   subDrawer('renderAudioDrawer', 'Audio engine', 'render', ['heartLookaheadS', 'heartGrowX']),
   {
@@ -2202,10 +2198,21 @@ function overlayKeyName(k) {
 // The page's settings-file handler, set by main.js (platform.settingsFile).
 let settingsFileHook = () => {};
 export function setSettingsFileHandler(fn) { settingsFileHook = fn; }
-// Render > Copy energy profile: main.js hands over the copy, a promise.
+// The energy profile chip (Render > Energy profile button): main.js hands
+// over the copy, a promise; the chip shows how the last one went.
 let energyCopyHook = () => Promise.reject(new Error('no energy profile'));
 let energyCopied = 0, energyCopiedAt = -Infinity;
 export function setEnergyCopyHandler(fn) { energyCopyHook = fn; }
+export function copyEnergyProfile() {
+  energyCopied = 0;
+  energyCopyHook().then(() => { energyCopied = 1; energyCopiedAt = performance.now(); },
+                        () => { energyCopied = -1; energyCopiedAt = performance.now(); });
+}
+export function energyCopyLabel() {
+  return performance.now() - energyCopiedAt < 2500 && energyCopied
+    ? (energyCopied > 0 ? 'Energy profile copied' : 'Copy refused, try again')
+    : 'Copy energy profile';
+}
 
 // Mirrors rebuildPool's filter in v0/js/text.js exactly, but reads the static
 // WORDS table directly rather than lane B's live pool cache: format() is

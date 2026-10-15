@@ -85,7 +85,7 @@ import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION } from './ui/theme.js';
 import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow } from './ui/screens/overlay.js';
-import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk } from './ui/screens/chrome.js';
+import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk, drawEnergyChip } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
 import { drawSequencer, sequencer } from './ui/screens/sequencer.js';
@@ -796,6 +796,8 @@ async function boot() {
       // ui.begin normally hands the springs this frame's dt; the overlay's
       // own springs still run, so they get it here instead.
       anim.setDt(dt);
+      // the energy profile chip stays up, painted only (a touch brings the build back)
+      if (S.energyButton && !S.panelOpen) drawEnergyChip(ui, uiList, text, width, height, false);
     } else {
       // UI, top layer first so it wins the pointer
       ui.copyHeld = false;
@@ -843,6 +845,8 @@ async function boot() {
       ui.dl = uiList;
       drawDrawer(ui, app);
       drawChrome(ui, app, overlayA, frost);
+      // Render > Energy profile button: the copy chip, bottom right, drawer shut
+      if (S.energyButton && !S.panelOpen) drawEnergyChip(ui, uiList, text, width, height, true);
 
       // Everything above the field has run its hit tests, so a hot widget
       // here is UI under the pointer; the window and drawer rects catch the

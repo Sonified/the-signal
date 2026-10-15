@@ -28,6 +28,7 @@
 import { S } from '../../js/state.js';
 import { guard } from '../../js/panel-guard.js';
 import { byId } from '../../core/schema.js';
+import { copyEnergyProfile, energyCopyLabel } from '../../core/schema-visual.js';
 import { drawerEdge } from './drawer.js';
 import { runAction, actionLabel } from '../widgets.js';
 import { ICON } from '../drawlist.js';
@@ -283,6 +284,32 @@ export function drawChrome(ui, app, alpha, frost) {
   }
 
   dl.popAlpha();
+}
+
+// ---------- the energy profile chip, bottom right ----------
+// Render > Energy profile button puts it above the quick bar, so the profile
+// can be copied without the drawer over the picture it measures. A plain
+// tinted rect, not glass: glass on screen asks the engine for blur
+// captures, which the profile would then count. It stays at full strength
+// while the chrome fades; on the idle frames whose UI build main.js skips
+// it is only painted (live false), and any touch brings the build back,
+// which is when it takes the press. Held, it arms the page's clipboard
+// (main.js), which is what lets iOS take the copy.
+let energyLabel = '', energyW = 0;
+export function drawEnergyChip(ui, dl, text, width, height, live) {
+  const label = energyCopyLabel();
+  if (label !== energyLabel) { energyLabel = label; energyW = text.measure(label, TYPE.sm, W.regular) + 26; }
+  const x = width - EDGE - energyW, y = height - EDGE - CHIP_H * 2 - GAP;
+  let hover = false;
+  if (live) {
+    ui.interact(ui.id('chrome.energy'), x, y, energyW, CHIP_H, false);
+    hover = ui.hover || ui.pressed;
+    if (ui.hover) ui.setCursorHint('pointer');
+    if (ui.pressed) ui.copyHeld = true;
+    if (ui.clicked) copyEnergyProfile();
+  }
+  dl.rect(x, y, energyW, CHIP_H, RADIUS.md, COLOR.glassTint, 1, hover ? COLOR.lineStrong : COLOR.line, 0, 0);
+  text.draw(dl, label, x + energyW / 2, y + CHIP_H / 2 + 4, TYPE.sm, W.regular, hover ? COLOR.ink : COLOR.inkDim, 1, TRACK.label, 1);
 }
 
 // ---------- the panel guard's notice ----------
