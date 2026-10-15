@@ -11,6 +11,9 @@
 // scene recentres on the visible field from it, the same as v0's rendered
 // panel edge, so the composition slides aside rather than being covered.
 import { S } from '../../js/state.js';
+import { AUDIO_CONTROLS } from '../../core/schema-audio.js';
+import { idleIntent } from '../../js/idle-ahead.js';
+import { linkIntent } from '../../core/audio-link.js';
 import { ringStats } from '../../gpu/scene-data.js';
 import { CONTROLS, SECTIONS, byId } from '../../core/schema.js';
 import {
@@ -107,6 +110,23 @@ function runParent(it) {
     if (p && p.varianceOf === v) return it.parent;
   }
   return v;
+}
+
+// The sections whose controls write audio params, derived from the audio
+// schema rather than named: a pointer over one of them, header or body, is
+// the declared intent to touch the sound, and the idle cushion comes back
+// to the base before the hand lands (js/idle-ahead.js idleIntent, §7.6).
+// In worker mode the drawer runs in the worker and the sound on the page,
+// so the intent travels the audio link (core/audio-link.js linkIntent ->
+// audio-shell.js 'intent'); in main mode it is the call itself. Throttled:
+// a hover holds for many frames and one intent a quarter second says it all.
+const AUDIO_SECTION_IDS = new Set(AUDIO_CONTROLS.map(c => c.section));
+let intentSaid = -Infinity;
+function audioHover() {
+  const now = performance.now();
+  if (now - intentSaid < 250) return;
+  intentSaid = now;
+  if (!linkIntent()) idleIntent();
 }
 
 // Built once: per section, its controls in schema order with a sub-heading
@@ -1337,6 +1357,7 @@ export function drawDrawer(ui, app) {
     if (rampGlow > 0 && journeyRampingSection(grp.sec)) { ui.headGlow = rampGlow; ui.headGlowColor = JOURNEY_ACCENT; }
     // The live '(drawn / total)' count on the Rings header is retired;
     // ringsTitle above stays for the day it is wanted back.
+    const secTop = ui.cursorY;
     const open = ui.group(grp.gid, grp.title, sw ? switchOn(sw) : undefined);
     if (sw && ui.groupSwitchChanged) setSwitch(ui, sw, ui.groupSwitch);
     // Keep drawing through the whole closing animation, until the toolkit
@@ -1463,6 +1484,9 @@ export function drawDrawer(ui, app) {
       for (let k = grp.closeEnd; k > 0; k--) closeRun(ui);
     }
     ui.endGroup();
+    if (AUDIO_SECTION_IDS.has(grp.sec) &&
+        ui.pointerX >= dx && ui.pointerX < dx + W_DRAWER &&
+        ui.pointerY >= secTop && ui.pointerY < ui.cursorY) audioHover();
   }
 
   // live readouts and the two copy buttons, v0's #meta block

@@ -43,6 +43,7 @@
 // liveGrFromPage, by way of platform/worker-bridge.js and worker-entry.js.
 import { S } from './state.js';
 import { createRoom, swapRoom } from './audio.js';
+import { setLiveCapturing, idleRefresh } from './idle-ahead.js';
 import { setAudioSessionRecording } from './background.js';
 import { createGlobalFilter } from '../core/global-filter.js';
 import { createOutputGuard } from '../core/output-guard.js';
@@ -125,6 +126,10 @@ let graph = null;      // the live context and its chain, built when a capture s
 let cap = null;        // the capture sounding now: { stream, src, g, ctx }
 let token = 0;         // the newest request; an older one landing late is dropped
 let busy = false;      // a request is waiting on the browser
+
+// The idle driver's gate (js/idle-ahead.js): while a capture is open or a
+// request is out, nothing is rendered ahead.
+setLiveCapturing(() => !!cap || busy);
 let rebuildTimer = null;
 let inputs = [];       // [{ id, label }], the audio inputs this browser lists
 let reportedMs = -1;   // worker mode: the latency the page's context got, -1 unknown
@@ -303,6 +308,9 @@ function shut() {
 }
 
 function notify(failed) {
+  // a capture opened, closed or failed: the idle gate reads it now
+  // (js/idle-ahead.js; a microphone cannot be rendered ahead)
+  idleRefresh();
   for (let i = 0; i < listeners.length; i++) {
     try { listeners[i](failed); } catch (e) { console.warn('live sound: a listener failed', e); }
   }
@@ -333,6 +341,7 @@ async function acquire() {
   if (!graph) { failed(new Error('this browser offers no audio context here')); return; }
   const my = ++token;
   busy = true;
+  idleRefresh();   // the request already bars rendering ahead
   const want = S.liveDevice || '';
   let stream = null, error = null;
   try { stream = await md.getUserMedia(constraints(want)); }

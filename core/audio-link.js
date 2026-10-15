@@ -114,9 +114,21 @@ const breathLinked = (amount, drive) => S[amount] > 0 && S[drive] === 'breath';
 const breathHeard = () => breathLinked('bedVolVar', 'bedVolVarDrive') || breathLinked('choirVolVar', 'choirVolVarDrive') ||
   breathLinked('choirStackVar', 'choirStackVarDrive') || breathLinked('choirDensityVar', 'choirDensityVarDrive');
 
+// A hand over an audio section of the drawer (ui/screens/drawer.js): the
+// intent to touch, sent to the page where the sound and the idle cushion
+// live (audio-shell.js 'intent' -> js/idle-ahead.js idleIntent). Counted
+// here and sent by the next flush; true while the link runs, so the drawer
+// knows the page will hear it (in main mode it calls idleIntent itself).
+let intentAsk = 0, linkLive = false;
+export function linkIntent() {
+  if (linkLive) intentAsk++;
+  return linkLive;
+}
+
 export function createAudioLink(post) {
   setAtmosphereRemote(true);
   mirror.on = true;
+  linkLive = true;
 
   // The Audio layer's switches (the section header, the Layers row and the
   // transport's mute) all read S.audioOnBoot through the same function, and
@@ -154,7 +166,7 @@ export function createAudioLink(post) {
   // in the row; both arrays are made once and packed in place every frame.
   const seqNow = new Float32Array(SEQ_PACK), seqSent = new Float32Array(SEQ_PACK);
 
-  let lastRunning = false, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
+  let lastRunning = false, lastIntent = 0, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
   let lastFree = true, lastGesture = 0, lastHumCut = -1, lastHumVerb = -1, lastBreath = -1;
   let lastSignal = -1, lastGateAsk = 0;
   const sigPack = new Float64Array(SIGNAL_PACK);
@@ -170,6 +182,7 @@ export function createAudioLink(post) {
     for (let i = 0; i < n; i++) shadow[i] = watched[i].get(S);
     packSeqs(seqSent);
     lastRunning = false;
+    lastIntent = intentAsk;
     lastEff = S.effFreq || 0; lastAch = S.achievedFreq || 0;
     lastTransition = presetTransitionCount();
     lastFree = S.pianoFreePlay !== false;
@@ -223,6 +236,8 @@ export function createAudioLink(post) {
       lastRunning = S.running;
       call('run', lastRunning, 0, 0, 0);
     }
+
+    if (intentAsk !== lastIntent) { lastIntent = intentAsk; call('intent', 0, 0, 0, 0); }
 
     const free = S.pianoFreePlay !== false;
     if (free !== lastFree) { lastFree = free; call('pianoFree', free ? 1 : 0, 0, 0, 0); }

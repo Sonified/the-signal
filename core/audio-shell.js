@@ -37,7 +37,7 @@
 // back when a post is due.
 
 import { S } from '../js/state.js';
-import { idleTouch } from '../js/idle-ahead.js';
+import { idleTouch, idleIntent } from '../js/idle-ahead.js';
 import {
   ensureAudioGraph, warmDevice, audioOn, setAmRate, hasNode, beginGlide, endGlide, PRESET_GLIDE_S
 } from '../js/audio.js';
@@ -123,6 +123,10 @@ export function createAudioShell(storage) {
       applySeqs();
     },
     watch(bits) { watch = bits; },
+    // A hand over an audio section of the worker's drawer (audio-link.js
+    // linkIntent): the idle cushion comes back to the base before the hand
+    // lands (js/idle-ahead.js).
+    intent() { idleIntent(); },
     // The journey's piano trigger (core/journey.js): whether the piano plays
     // freely or waits for the words, and one gesture as a word appears.
     pianoFree(on) { S.pianoFreePlay = !!on; },

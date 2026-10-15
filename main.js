@@ -58,7 +58,8 @@ import { setIdleWaker, idleWake, idleHeld, IDLE_DIAG } from './core/idle.js';
 import { eye, stepEye } from './core/eye.js';
 import { initChores, choreRegister, choreRun, choreYield, choreBusy } from './core/chores.js';
 import { initWords, stepWords, wordsResume, wordState } from './core/words.js';
-import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame, savePending } from './core/store.js';
+import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame, savePending, settingsKey } from './core/store.js';
+import { idleTouch } from './js/idle-ahead.js';
 import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionRemaining } from './core/presets.js';
 import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer } from './core/broadcast.js';
@@ -405,6 +406,9 @@ async function boot() {
   // can never later save its older copy over it.
   platform.onStorage((key, value) => {
     idleWake('another tab');
+    // another tab's settings are an audio touch, before they are applied
+    // (js/idle-ahead.js; store.save's own call covers the writes it makes)
+    if (settingsKey(key)) idleTouch('another tab');
     if (syncFromStorage(key, value, replayLive)) return;
     if (syncPresetsFromStorage(key)) return;
     syncJourneyFromStorage(key);
@@ -531,7 +535,7 @@ async function boot() {
   platform.onInput(type => {
     wakeLoop(type);
     // in worker mode the page nudges the sound itself (platform/worker-bridge.js)
-    if (!inWorker) heartNudge();
+    if (!inWorker) heartNudge(type);
   });
   function idleEntered() {
     restSince = performance.now();
