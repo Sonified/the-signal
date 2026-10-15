@@ -385,8 +385,8 @@ export function audioToggleEffects(s) {
 
 // ---------- section list ----------
 export const AUDIO_SECTIONS = [
-  { id: 'audio',      title: 'Audio' },
   { id: 'music',      title: 'Music' },
+  { id: 'audio',      title: 'Low Audio Tone' },
   { id: 'atmosphere', title: 'Ambience' },
   { id: 'live',       title: 'Live Sound' },
   { id: 'reverb',     title: 'Reverb' },
