@@ -222,6 +222,12 @@ function buildSettings() {
     syncDiagLog: S.syncDiagLog, sunRateHz: S.sunRateHz, dprCap: S.dprCap, energyButton: S.energyButton,
     // Render > Audio engine > Limiter and Soft clip (core/output-guard.js)
     outLimiter: S.outLimiter, outSoftClip: S.outSoftClip,
+    // Render > Buffer underrun repair (js/heart/conceal.js, js/heart/route.js)
+    // and its simulator, this machine's own
+    heartLoopMode: S.heartLoopMode, heartLoopS: S.heartLoopS, heartXfadeMs: S.heartXfadeMs,
+    heartQuantize: S.heartQuantize, heartReturnS: S.heartReturnS, heartWash: S.heartWash,
+    heartWashRiseS: S.heartWashRiseS, heartWashDecayS: S.heartWashDecayS,
+    simGapMs: S.simGapMs, simGapRandom: S.simGapRandom, simGapCount: S.simGapCount,
     // Settings > Control overlays and its key (main.js), this machine's own
     // overlayModeRev 2: Key became the default, so a save from before it
     // (Auto, never chosen) is let go once on load below.
@@ -709,7 +715,8 @@ export function snapshot() {
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
                       'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'dprCap', 'energyButton',
-                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload', 'presentationMode'];
+                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload', 'presentationMode',
+                      'heartLoopMode', 'heartLoopS', 'heartXfadeMs', 'heartQuantize', 'heartReturnS', 'heartWash', 'heartWashRiseS', 'heartWashDecayS', 'simGapMs', 'simGapRandom', 'simGapCount'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -960,6 +967,15 @@ function applySettings(s, live, scene) {
     // Pixel density: only the caps the Render section offers; anything else is the screen's own.
     if (s.dprCap === 2 || s.dprCap === 1.5 || s.dprCap === 1) S.dprCap = s.dprCap;
     if (typeof s.energyButton === 'boolean') S.energyButton = s.energyButton;
+    // Buffer underrun repair and its simulator, each within the drawer's range
+    if (s.heartLoopMode === 'pingpong' || s.heartLoopMode === 'forward') S.heartLoopMode = s.heartLoopMode;
+    if (typeof s.heartQuantize === 'boolean') S.heartQuantize = s.heartQuantize;
+    if (typeof s.simGapRandom === 'boolean') S.simGapRandom = s.simGapRandom;
+    for (const [k, lo, hi] of [['heartLoopS', 0.1, 1], ['heartXfadeMs', 0, 200], ['heartReturnS', 0.05, 3], ['heartWash', 0, 1],
+      ['heartWashRiseS', 0.25, 5], ['heartWashDecayS', 1, 10], ['simGapMs', 10, 1000], ['simGapCount', 1, 100]]) {
+      const v = s[k];
+      if (typeof v === 'number' && isFinite(v)) S[k] = Math.max(lo, Math.min(hi, v));
+    }
     // The output guard's two stages; every live guard follows at once (a
     // no-op where nothing changed, or before any guard is built).
     if (typeof s.outLimiter === 'boolean') S.outLimiter = s.outLimiter;
