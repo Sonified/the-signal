@@ -312,7 +312,39 @@ Cosmetic, to note in the final report:
   `replayLive`, whose `set()`s call `save()`, so there a drift landing
   counts as a touch. Accepted; main mode is the default.
 
-### 3.2 Test baseline (before any engine change)
+### 3.2 What was and was not verified
+
+Run and seen to pass, on this commit's tree:
+
+- The ESM check (each changed `.js` copied to `.mjs`, `node --check`) on
+  every file in the table above, and `ticker-walk.test.mjs`.
+- `js/idle-ahead.js` loads in node, and its entries are no-ops while gated.
+- `node tools/journey-sim.test.mjs "$PWD"`: all passed (it loads store,
+  journey, schema and so idle-ahead).
+- The ticker worker answers today's ticker.js message format with bare ids,
+  repeating and one-shot, and a clear stops the ticks (simulated in node).
+
+NOT seen to finish on the changed tree (abandoned at handoff; the next agent
+runs them):
+
+- The Heart suite file by file after these changes. The run reached
+  `drain.test.mjs`, all passing up to there; e2e, the family tests, pool,
+  ring, stall-workers, strobe-am, transport and worklets-null were not seen.
+  These changes touch nothing under `js/heart/`.
+- The pause-ordering test and the wake-cadence measurement, which do not
+  exist yet (section 4, step 13).
+
+Code that runs on the live site now:
+
+- The ticker worker rewrite (verified compatible, above).
+- `store.save()`'s `idleTouch` call and the other `idleTouch` hooks: one
+  boolean test while `IDLE_AHEAD_BUILT` is false.
+- `saveAuto()` in the drift.
+- `settingsKey()` in the engine-thread shell.
+
+Everything else is unreachable until the flag is flipped.
+
+### 3.3 Test baseline (before any change)
 
 `tools/heart-tests/run-each.sh 240`: every file passes except two that time
 out, because node does not exit after every subtest has passed (lingering
