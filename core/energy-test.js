@@ -34,9 +34,12 @@ export const energyTestRunning = () => status === 'running';
 
 function buildSteps() {
   const list = [{ name: 'everything as set', base: true }];
+  // Any layer that is on, whatever it is stored as (a saved settings object
+  // can hold 1 for true), put back exactly as it was.
   for (const k of Object.keys(layers)) {
-    if (layers[k] !== true) continue;
-    list.push({ name: k + ' off', apply() { layers[k] = false; }, undo() { layers[k] = true; } });
+    const was = layers[k];
+    if (!was) continue;
+    list.push({ name: k + ' off', apply() { layers[k] = false; }, undo() { layers[k] = was; } });
   }
   if (S.fbResScale !== 0.5) {
     const was = S.fbResScale;
