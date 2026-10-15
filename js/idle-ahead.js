@@ -1,7 +1,8 @@
-// Render ahead on idle: while nobody is about to touch the sound, Heart
+// Render ahead on idle (documents/heart-audio-engine.md §7.6): while
+// nobody is about to touch the sound, Heart
 // renders it seconds ahead in large gulps, so the render workers and the
 // planners' timers sleep for seconds at a time instead of waking every few
-// milliseconds (documents/heart-audio-engine.md, §7.6). One knob, the
+// milliseconds. One knob, the
 // drawer's Render ahead on idle (S.heartIdleAheadS, 0.5 to 10 s), is the
 // most it reaches.
 //
@@ -46,15 +47,16 @@
 
 import { S } from './state.js';
 import { heartEngine } from './heart/route.js';
-// HALF-BUILT (documents/idle-render-ahead.md): the ticker's walk (hold,
-// walk, release, shift) and the engine's half (Engine.setIdle, skipAhead,
-// heardNow, lead) are not written yet. Until they are, BUILT is false and
-// every entry below returns at once, so the hooks already wired into the
-// store, the journey, the follower, the show remote and the engine thread's
-// calls cost one boolean test and change nothing. The ticker is imported
-// whole so the names it does not have yet cannot break this module's load.
+// BUILT: the ticker's walk (js/ticker.js hold, walk, release, shift) and
+// the engine's half (Engine.setIdle, skipAhead, heardNow, lead) are in, and
+// tools/heart-tests/idle-ahead.test.mjs holds the proof. The flag stays as
+// the kill switch: false makes every entry below return at once, so the
+// hooks wired into the store, the journey, the follower, the show remote
+// and the engine thread's calls cost one boolean test and change nothing.
+// The ticker is imported whole, as it was while half-built, so a build
+// without the walk could never break this module's load.
 import * as ticker from './ticker.js';
-export const IDLE_AHEAD_BUILT = false;
+export const IDLE_AHEAD_BUILT = true;
 const { after, clear } = ticker;
 const hold = () => ticker.hold(), walk = to => ticker.walk(to);
 const release = () => ticker.release(), shift = ms => ticker.shift(ms);
