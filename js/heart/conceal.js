@@ -81,9 +81,12 @@
 // wash. The room's level only ever rises until it sleeps, so nothing
 // steps. At Wash 0 the room is never fed and costs nothing.
 //
-// A stall longer than `hold` frames is no longer a hiccup to cover, so the
-// concealment then fades to silence over `decay` frames and stays silent;
-// the audio coming back then fades in from silence.
+// A ring dry for more than `hold` frames in a row is no longer a hiccup to
+// cover, so the concealment then fades to silence over `decay` frames and
+// stays silent; the audio coming back then fades in from silence. Dry in a
+// row: a quantized stall that the sound keeps coming back into, as a burst
+// of short dropouts is, used to count as one long stall, and went silent
+// after `hold` of it.
 //
 // The history is what was heard, every frame of it: the live sound, the
 // concealment and the fades between them, so it has no seams for a later
@@ -195,6 +198,7 @@ export class Conceal {
     this.sxy = 0; this.sxx = 0; this.syy = 0;
     this.law = 0;
     this.age = 0;         // frames concealed this run
+    this.starve = 0;      // frames the ring has been dry in a row
     this.gain = 1;
     this.l = 0;           // the frame just made, left and right
     this.r = 0;
@@ -298,6 +302,7 @@ export class Conceal {
     this.fwd = this.mode === FORWARD;
     this.turn = -1;
     this.age = 0;
+    this.starve = 0;
     this.gain = 1;
     this.written = 0;
     this.overflow = false;
@@ -362,7 +367,8 @@ export class Conceal {
     const g = this.gain;
     this.l *= g;
     this.r *= g;
-    if (++this.age > this.hold) this.gain = Math.max(0, this.gain - 1 / this.decay);
+    ++this.age;
+    if (this.starve > this.hold) this.gain = Math.max(0, this.gain - 1 / this.decay);
   }
 
   frameForward() {
@@ -556,6 +562,7 @@ export class Conceal {
     if (!this.active || (this.out > 0 && !this.overflow)) this.start();
     this.out = 0;
     this.release = false;
+    this.starve += n;
     this.room.block(n);
     for (let i = 0; i < n; i++) this.stallFrame(L, R, i);
     this.record(L, R, 0);
@@ -568,6 +575,7 @@ export class Conceal {
     const n = L.length;
     let i = 0;
     this.room.block(n);
+    this.starve = 0;
     if (!this.active || this.out > 0 || this.release) this.washRest(n);
     if (this.active) {
       // Quantized, the sound waits for the end of the loop under way, and

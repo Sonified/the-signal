@@ -5,6 +5,7 @@
 //
 //   node tools/heart-tests/conceal-lf-profile.mjs            the whole table
 //   node tools/heart-tests/conceal-lf-profile.mjs quick      pure tone only
+//   node tools/heart-tests/conceal-lf-profile.mjs cost       microseconds a quantum
 //
 // The signals: the raw 40 Hz tone (the primary case: Robert hears the dip
 // and the whump with the strobe's AM off); the tone under a full-depth
@@ -36,7 +37,7 @@
 
 import { performance } from 'node:perf_hooks';
 import { Drain } from '../../js/heart/drain-worklet.js';
-import { FORWARD } from '../../js/heart/conceal.js';
+import { Conceal, FORWARD, PINGPONG } from '../../js/heart/conceal.js';
 import { SharedRing, CHUNK, QUANTUM } from '../../js/heart/ring.js';
 
 const TONE_HZ = 40, TONE_AMP = 0.5;
@@ -225,4 +226,39 @@ function main(quick) {
   console.log(`\nfloor: the program's own sub band peaks at ${f1(ref.floorSub)} dB, its largest step is ${ref.refStep.toFixed(4)}`);
 }
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())) main(process.argv.includes('quick'));
+// The cost on the audio thread, in microseconds a quantum: a stall's
+// quantum (the loop, the wash on and off), a heal's, a wet quantum between
+// stalls (the crossover following the sound, the room asleep), and the one
+// search, a stall's start with the tone's phase measured. Each is the mean
+// of many after a warm-up, so the JIT's first runs are not counted.
+function cost(rate = 48000) {
+  const { prog } = makeProgram('music', rate, 6);
+  const make = wash => new Conceal({ size: Math.round(2.5 * rate), loop: Math.round(0.5 * rate), xfade: Math.round(0.05 * rate),
+    mode: PINGPONG, wash, washRise: Math.round(1.5 * rate), washDecay: 4, ret: Math.round(0.75 * rate), hold: 3 * rate, rate });
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  const fill = f => { for (let i = 0; i < QUANTUM; i++) L[i] = R[i] = prog[(f + i) % prog.length]; };
+  const time = (label, c, prep, body, reps = 2000) => {
+    let f = 0;
+    for (let q = 0; q < 2000; q++, f += QUANTUM) { fill(f); c.wet(L, R); }
+    prep(c);
+    for (let q = 0; q < 200; q++, f += QUANTUM) body(c, f);
+    const t0 = performance.now();
+    for (let q = 0; q < reps; q++, f += QUANTUM) body(c, f);
+    console.log(`${label.padEnd(44)} ${(1000 * (performance.now() - t0) / reps).toFixed(1)} us`);
+  };
+  for (const wash of [0, 0.6]) {
+    const c = make(wash);
+    c.setPeriods(rate / TONE_HZ, 0);
+    time(`stall quantum, wash ${wash}`, c, () => {}, (c, f) => c.dry(L, R));
+    time(`heal quantum, wash ${wash}`, c, c => { c.dry(L, R); }, (c, f) => { fill(f); if (!c.active) c.dry(L, R); else c.wet(L, R); });
+    time(`wet quantum between stalls, wash ${wash}`, c, () => {}, (c, f) => { fill(f); c.wet(L, R); });
+  }
+  const c = make(0);
+  c.setPeriods(rate / TONE_HZ, 0);
+  time('a stall starting (the phase measured)', c, () => {}, (c, f) => { fill(f); c.wet(L, R); c.start(); c.active = false; c.out = 0; });
+  time('the phase alone', c, () => {}, (c, f) => { c.phase(); }, 5000);
+}
+
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())) {
+  if (process.argv.includes('cost')) cost(); else main(process.argv.includes('quick'));
+}

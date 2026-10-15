@@ -2,6 +2,8 @@
 // plays the history ping-pong instead of silence, continuous going in and
 // at the turnaround, fades out under the audio when it comes back, decays
 // to silence on a long stall, never moves the clock, and allocates nothing.
+// The low end's guarantees at the end are measured through the profile
+// harness (conceal-lf-profile.mjs).
 //
 //   node tools/heart-tests/conceal.test.mjs
 
@@ -10,6 +12,7 @@ import assert from 'node:assert/strict';
 import { Drain } from '../../js/heart/drain-worklet.js';
 import { Conceal, FORWARD } from '../../js/heart/conceal.js';
 import { SharedRing, makeControl, CHUNK, QUANTUM, PLAYED } from '../../js/heart/ring.js';
+import { profile, PATTERNS } from './conceal-lf-profile.mjs';
 
 const sine = f => Math.sin(f * 0.01);
 
@@ -399,3 +402,41 @@ for (const mode of [0, FORWARD]) for (const wash of [0, 0.6]) {
     assert.ok(worst < most, `largest step ${worst.toFixed(4)}`);
   });
 }
+
+// The low end, measured (conceal-lf-profile.mjs): the raw 40 Hz tone through
+// Robert's burst, both modes, with and without the wash, quantized and not,
+// at both sample rates. The low band's level holds through the entry, the
+// stall and the heal, and nothing thumps below it (the floor, the tone's
+// own leak into the sub band, is -31 dB; what is left above it is the
+// wash's dry step going in, over the 10 ms bridge). Before the ping-pong
+// kept the tone in phase and the wash kept out of the low end, the heal
+// dipped 32 dB (ping-pong) and 17 dB (the wash), and the wash's entry
+// thumped 20 dB above the floor.
+for (const rate of [48000, 44100]) for (const mode of [0, FORWARD]) for (const wash of [0, 0.6]) for (const quantize of [true, false]) {
+  test(`low end holds: 40 Hz tone, ${mode === FORWARD ? 'forward' : 'ping-pong'}, wash ${wash}, quantize ${quantize ? 'on' : 'off'}, ${rate} Hz`, () => {
+    const { worst } = profile({ kind: 'tone', rate, mode, wash, quantize, pattern: PATTERNS['14 x 200 ms'] });
+    for (const k of ['entryDip', 'duringDip', 'healDipShort', 'healDipLong']) assert.ok(worst[k] > -1.5, `${k} ${worst[k].toFixed(1)} dB`);
+    for (const k of ['entryWhump', 'healWhump']) assert.ok(worst[k] < -22, `${k} ${worst[k].toFixed(1)} dB`);
+    assert.ok(worst.step < 0.005, `step ${worst.step.toFixed(4)}`);
+  });
+}
+
+// With the strobe's AM on the tone, and music over it, a forward loop keeps
+// the pulse's level through the burst, the wash on: its low end used to
+// dip 8 dB.
+for (const kind of ['am', 'music']) {
+  test(`low end holds: forward loop, ${kind}, wash 0.6`, () => {
+    const { worst } = profile({ kind, mode: FORWARD, wash: 0.6, quantize: false, pattern: PATTERNS['14 x 200 ms'] });
+    assert.ok(worst.duringDip > -2.5 && worst.healDipLong > -2.5, `during ${worst.duringDip.toFixed(1)} dB, heal ${worst.healDipLong.toFixed(1)} dB`);
+  });
+}
+
+// A quantized burst is not one long stall: the sound keeps coming back
+// into it, so `hold` counts the ring dry in a row and the loop never fades
+// to silence in the middle of the burst (it did at 44.1 kHz, 2.6 s of it).
+test('a quantized burst never goes silent', () => {
+  const { out } = profile({ kind: 'tone', rate: 44100, mode: 0, wash: 0, quantize: true, pattern: PATTERNS['14 x 200 ms'] });
+  let quiet = 0, worst = 0;
+  for (let f = 44100; f < out.length; f++) { if (Math.abs(out[f]) < 1e-4) { if (++quiet > worst) worst = quiet; } else quiet = 0; }
+  assert.ok(worst < 200, `silent for ${worst} frames`);
+});
