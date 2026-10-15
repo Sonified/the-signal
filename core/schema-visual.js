@@ -2154,7 +2154,7 @@ export const VISUAL_CONTROLS = [
     // main.js reads it in the frame. This machine's own, as every Settings
     // row is (presets.js machineControl): never a preset's, a journey's or a
     // broadcast's.
-    id: 'overlayMode', section: 'settings', label: 'Control overlays', kind: 'segment', def: 'key',
+    id: 'overlayMode', section: 'settings', label: 'Control overlays', kind: 'segment', def: 'auto',
     options: [
       { value: 'auto', label: 'Auto', domId: null },
       { value: 'key',  label: 'Key',  domId: null }

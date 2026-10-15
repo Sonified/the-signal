@@ -229,8 +229,8 @@ function buildSettings() {
     heartWashRiseS: S.heartWashRiseS, heartWashDecayS: S.heartWashDecayS,
     simGapMs: S.simGapMs, simGapRandom: S.simGapRandom, simGapCount: S.simGapCount, simStallWorkers: S.simStallWorkers,
     // Settings > Control overlays and its key (main.js), this machine's own
-    // overlayModeRev 2: Key became the default, so a save from before it
-    // (Auto, never chosen) is let go once on load below.
+    // overlayModeRev 2: a save from before it is let go once on load below.
+    // (Key was the default from rev 2 until 2026-10-15; Auto is again.)
     overlayMode: S.overlayMode, overlayModeRev: 2, overlayKey: S.overlayKey,
     // Settings > Journey page reload (core/journey.js), this machine's own
     journeyReload: S.journeyReload,
@@ -984,8 +984,8 @@ function applySettings(s, live, scene) {
     applyOutputGuards();
     // Settings > Control overlays: how this screen's floating controls come
     // up, and the key that toggles them in Key mode (any one event.key).
-    // A save from before Key became the default (no overlayModeRev) keeps
-    // the new default, Key.
+    // A save from before rev 2 keeps the default, Auto (a move of the mouse
+    // brings the controls up); one since keeps what this screen chose.
     if (s.overlayModeRev === 2 && (s.overlayMode === 'auto' || s.overlayMode === 'key')) S.overlayMode = s.overlayMode;
     if (typeof s.overlayKey === 'string' && s.overlayKey.length > 0 && s.overlayKey.length <= 32) S.overlayKey = s.overlayKey;
     // Settings > Journey page reload: back to the last step, or the top.
