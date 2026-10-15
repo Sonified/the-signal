@@ -2156,6 +2156,16 @@ export const VISUAL_CONTROLS = [
     get: S => S.journeyReload === 'restart' ? 'restart' : 'resume',
     set: (S, v) => { S.journeyReload = v === 'restart' ? 'restart' : 'resume'; save(); },
     format: S => S.journeyReload === 'restart' ? 'Restart' : 'Resume'
+  },
+  {
+    // Whether this screen gives a talk. On, the drawer shows the Slides
+    // section and the Slides row in Layers; off, both are hidden (their
+    // visible rules in schema-slides.js), so a screen that never presents
+    // never sees them. Only the drawer: a slide already up keeps playing.
+    // This machine's own, as every Settings row is.
+    id: 'presentationMode', section: 'settings', label: 'Presentation mode', kind: 'toggle', def: false,
+    get: S => S.presentationMode === true,
+    set: (S, on) => { S.presentationMode = !!on; save(); }
   }
 ];
 

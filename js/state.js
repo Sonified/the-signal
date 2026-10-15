@@ -67,6 +67,7 @@ export const S = {
   overlayMode: 'key',         // the floating controls: 'auto' wake on activity, 'key' only overlayKey toggles them (main.js); this machine's own
   overlayKey: '\\',           // the key (event.key) that toggles them in Key mode
   journeyReload: 'resume',    // a reload comes back to the journey step last played ('resume') or the top ('restart'); this machine's own
+  presentationMode: false,    // Settings > Presentation mode: the drawer shows the Slides section and the Layers Slides row; this machine's own
 
   // ---------- strobe ----------
   strobeScale: 1,            // emergency master over every visual/audio strobe depth

@@ -198,7 +198,7 @@ const GROUPS = DRAWER_SECTIONS.filter(id => SECTIONS.some(s => s.id === id)).map
     gateFold[j] = GATES.length;
     GATES.push({ foldId: 'gfold.' + c.id, kids });
   }
-  return { sec: id, gid: 'drawer.' + id, title: sec.title, items, sw: makeSwitch(SECTION_SWITCH[id]),
+  return { sec: id, gid: 'drawer.' + id, title: sec.title, visible: sec.visible || null, items, sw: makeSwitch(SECTION_SWITCH[id]),
            open: runs.open, close: runs.close, closeEnd: runs.closeEnd, foldId, varFold, chev, chevId,
            gateFold, seen: new Uint8Array(items.length), subSum, stripSw };
 });
@@ -1346,6 +1346,10 @@ export function drawDrawer(ui, app) {
   if (rampGlow > 0) rampColors(rampGlow);
   for (let g = 0; g < GROUPS.length; g++) {
     const grp = GROUPS[g];
+    // A section with a visible rule of its own (the Slides, only in
+    // Presentation mode) is skipped whole while the rule says no: no header,
+    // no body, no space, as Broadcast is where none can start.
+    if (grp.visible && !grp.visible(S)) continue;
     const sw = grp.sw;
     if (rampGlow > 0 && journeyRampingSection(grp.sec)) { ui.headGlow = rampGlow; ui.headGlowColor = JOURNEY_ACCENT; }
     // The live '(drawn / total)' count on the Rings header is retired;

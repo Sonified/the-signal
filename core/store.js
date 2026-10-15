@@ -228,6 +228,8 @@ function buildSettings() {
     overlayMode: S.overlayMode, overlayModeRev: 2, overlayKey: S.overlayKey,
     // Settings > Journey page reload (core/journey.js), this machine's own
     journeyReload: S.journeyReload,
+    // Settings > Presentation mode (the drawer's Slides rows), this machine's own
+    presentationMode: S.presentationMode,
     // v0 reads this straight off the <input id=lAudio> checkbox, which v1 has
     // no equivalent of. Lane E2's audio-layer control is the one write path
     // for it here, stashing the boot preference on S.audioOnBoot (see the
@@ -707,7 +709,7 @@ export function snapshot() {
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
                       'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'dprCap',
-                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload'];
+                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload', 'presentationMode'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -970,6 +972,8 @@ function applySettings(s, live, scene) {
     if (typeof s.overlayKey === 'string' && s.overlayKey.length > 0 && s.overlayKey.length <= 32) S.overlayKey = s.overlayKey;
     // Settings > Journey page reload: back to the last step, or the top.
     if (s.journeyReload === 'resume' || s.journeyReload === 'restart') S.journeyReload = s.journeyReload;
+    // Settings > Presentation mode: whether the drawer shows the Slides rows.
+    if (typeof s.presentationMode === 'boolean') S.presentationMode = s.presentationMode;
     // The parallax sim's sway (core/eye.js). Its switch is never saved, so a
     // load always starts with the head still.
     if (typeof s.parallaxAmount === 'number' && isFinite(s.parallaxAmount)) S.parallaxAmount = Math.max(0, Math.min(0.3, s.parallaxAmount));

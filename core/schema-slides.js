@@ -173,12 +173,16 @@ function posToRate(pos) {
 }
 const timeText = seconds => seconds > 0 ? seconds.toFixed(2) + ' s' : 'cut';
 const rateText = rate => rate.toFixed(2) + 'x';
+// Settings > Presentation mode (schema-visual.js): the drawer's Slides rows show only while it is on.
+const presenting = S => S.presentationMode === true;
 export const SLIDES_CONTROLS = [
   // In the drawer's Layers group, straight after the Sun. Off by default.
+  // Shown only in Presentation mode (Settings), as the Slides section is.
   {
     id: 'lSlides', section: 'layers', label: 'Slides', kind: 'toggle', def: false,
     get: S => !!S.layers.slides,
-    set: (S, on) => { S.layers.slides = !!on; save(); }
+    set: (S, on) => { S.layers.slides = !!on; save(); },
+    visible: presenting
   },
   // The same switch heading its own section (the Sun's pattern), so the
   // section has a way in while every other row is dimmed.
@@ -292,6 +296,8 @@ export const SLIDES_CONTROLS = [
   }
 ];
 
+// The drawer shows the section only in Settings > Presentation mode (the
+// drawer reads a section's visible rule each frame and skips it whole).
 export const SLIDES_SECTIONS = [
-  { id: 'slides', title: 'Slides' }
+  { id: 'slides', title: 'Slides', visible: presenting }
 ];
