@@ -19,7 +19,7 @@ export const WORLDS = [
   { id: 'creek',    bed: 'creek',          kids: 'kids-playground' },
   { id: 'night',    bed: 'night-crickets', kids: null },
   { id: 'rain',     bed: 'rain/gentle',    kids: null, dir: 'audio/' },
-  { id: 'downpour', bed: 'rain/steady',    kids: null, dir: 'audio/' },
+  { id: 'downpour', bed: 'rain/steady-seamless', kids: null, dir: 'audio/' },
   { id: 'eaves',    bed: 'rain/night',     kids: null, dir: 'audio/' }
 ];
 
@@ -30,7 +30,13 @@ const names = ['Ocean waves', 'Ocean cliff', 'Ocean surf', 'Forest birds', 'Fore
 // trimmed_originals with an equal-power crossfade across the loop point
 // (6 s for the ocean, 3 s for the rest). The first cuts were butt-spliced,
 // so a loud swell at the end of a file dropped straight into a quiet start
-// and some loops clicked. The rain loops were already smooth and stay put.
+// and some loops clicked. Gentle rain and rain on eaves were already smooth
+// and stay put. Steady rain is rain/steady-seamless: the first cut kept the
+// recordist's fade in at the head of the file, so every time the loop came
+// round the rain dropped out for a tenth of a second (about 25 dB down);
+// it is rebuilt from the lossless take with that fade and the one at the
+// end trimmed off (tools/seamless-loop.py; tools/loop-seam-check.py
+// measures every loop's wrap).
 const AMB_DIR = 'audio/ambience/seamless/';
 export const AMBIENCE_SOURCES = [
   ...WORLDS.map((w, i) => ({ id: w.id, name: names[i], path: (w.dir || AMB_DIR) + w.bed })),
