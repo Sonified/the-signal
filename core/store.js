@@ -209,7 +209,7 @@ function buildSettings() {
     toneStrobeAm: S.toneStrobeAm,
     toneVolVar: S.toneVolVar, toneVolPeriod: S.toneVolPeriod,
     toneStrobeAmVar: S.toneStrobeAmVar, toneStrobeAmPeriod: S.toneStrobeAmPeriod,
-    toneOn: S.toneOn, clickOn: S.clickOn, toneVol: S.toneVol, clickVol: S.clickVol, pipMs: S.pipMs,
+    toneOn: S.toneOn, clickOn: S.clickOn, toneVol: S.toneVol, clickVol: S.clickVol, pipMs: S.pipMs, toneFadeInS: S.toneFadeInS,
     // the Music window's trims over those levels (state.js)
     musTone: S.musTone, musPulse: S.musPulse, musPiano: S.musPiano, musClouds: S.musClouds,
     musDrone: S.musDrone, musArp: S.musArp, musChoir: S.musChoir, musAmb: S.musAmb,
@@ -1233,6 +1233,7 @@ function applySettings(s, live, scene) {
   if (typeof s.harmReverb === 'number')  S.harmReverb = s.harmReverb;
   if (typeof s.pipMs === 'number') S.pipMs = s.pipMs;
   if (typeof s.toneVol  === 'number') S.toneVol  = s.toneVol;
+  if (typeof s.toneFadeInS === 'number' && isFinite(s.toneFadeInS)) S.toneFadeInS = Math.max(0, Math.min(10, s.toneFadeInS));
   if (typeof s.toneOn  === 'boolean') S.toneOn  = s.toneOn;
   if (typeof s.clickOn === 'boolean') S.clickOn = s.clickOn;
   if (typeof s.chirpLowHz === 'number')  S.chirpLowHz = s.chirpLowHz;

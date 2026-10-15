@@ -593,6 +593,7 @@ function rampLevel(name, target, dur = 0.25, lead = 0) {
   const prm = node.parameters.get(name);
   if (!prm) return;
   const now = audioCtx.currentTime;
+  if (name === 'toneLevel' && toneRamp(prm, target, now, lead)) return;
   if (!lead) {
     if (glideDepth > 0) {
       anchorParam(prm, now);
@@ -607,6 +608,44 @@ function rampLevel(name, target, dur = 0.25, lead = 0) {
   prm.cancelScheduledValues(t);
   prm.setValueAtTime(prm.value, t);
   prm.linearRampToValueAtTime(target, t + dur);
+}
+
+// The low tone's own fade in (the Tone drawer's Fade in, S.toneFadeInS,
+// 3 s unless set): every time the tone comes in, its level rises from
+// nothing over that long, whatever the master does around it. That is the
+// first start, a play after a pause (fadeToneIn, from the transport), the
+// Audio switch and the tone's own switch (a level going from nothing to
+// something, below). A move of the level, its breath or a mute while the
+// fade is under way lands at the fade's end instead of cutting it short.
+let toneFadeEnd = 0, toneLast = 0;
+const toneFadeS = () => Number.isFinite(S.toneFadeInS) ? Math.max(0, Math.min(10, S.toneFadeInS)) : 3;
+export function fadeToneIn(lead = 0) {
+  if (!node || !audioCtx) return;
+  const prm = node.parameters.get('toneLevel');
+  if (!prm) return;
+  const t = audioCtx.currentTime + lead, dur = toneFadeS(), target = levelTargets.toneLevel();
+  glideTarget.delete(prm);
+  prm.cancelScheduledValues(t);
+  prm.setValueAtTime(0, t);
+  prm.linearRampToValueAtTime(target, t + dur);
+  toneFadeEnd = t + dur;
+  toneLast = target;
+}
+// The tone's level asked to move: true when this took it. During a fade the
+// new level is reached at the fade's end; from nothing it is a fade in.
+function toneRamp(prm, target, now, lead) {
+  const was = toneLast;
+  toneLast = target;
+  if (lead || glideDepth > 0) return false;
+  if (now < toneFadeEnd) {
+    glideTarget.delete(prm);
+    prm.cancelScheduledValues(now);
+    prm.setValueAtTime(prm.value, now);
+    prm.linearRampToValueAtTime(target, toneFadeEnd);
+    return true;
+  }
+  if (was === 0 && target > 0) { fadeToneIn(0); return true; }
+  return false;
 }
 
 // Each level carries its channel's mix gate (mixgate.js), so mute and solo
@@ -1040,6 +1079,7 @@ async function startAudio() {
     // together over two seconds rather than the sound landing first.
     rampVol(S.running ? S.volume : 0, firstStart ? 2.0 : 0.35,
             firstStart ? audioCtx.currentTime + lead : undefined);
+    if (S.running) fadeToneIn(lead);
   });
 }
 
@@ -1075,13 +1115,14 @@ export function applyAudioGain() {
   // take, and the master stays open while the rooms ring out, then closes.
   // A pause is told apart from a volume move while paused by the gates
   // still being open: only the first starts a new tail.
-  const pausing = !S.running && srcOpen;
+  const pausing = !S.running && srcOpen, resuming = S.running && !srcOpen;
   setSources(S.running);
   if (S.running) {
     closeAt = 0;
     const dur = hasRisen ? 0.12 : 2.0;
     hasRisen = true;
     rampVol(S.volume, dur);
+    if (resuming) fadeToneIn(0);
     followBackground();
     return;
   }

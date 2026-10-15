@@ -564,6 +564,18 @@ const audioControls = [
     effective: toneDippedPos
   }),
   {
+    // How long the tone takes to come in, every time it does: the first
+    // start, a play after a pause, the Audio switch and its own switch
+    // (js/audio.js fadeToneIn), whatever the master does around it. A low
+    // tone landing in a tenth of a second is felt as a thump.
+    id: 'toneFadeInS', section: 'audio', label: 'Fade in', kind: 'slider',
+    parent: 'audioToneDrawer',
+    min: 0, max: 10, step: 0.25, def: 3,
+    get: s => s.toneFadeInS ?? 3,
+    set: (s, v) => { s.toneFadeInS = Math.max(0, Math.min(10, v)); save(); },
+    formatAt: pos => pos > 0 ? (pos % 1 ? pos.toFixed(2).replace(/0$/, '') : pos) + ' s' : 'Instant'
+  },
+  {
     // The tone's Vary with strobe: how deep its pulse goes, times the master
     // strobe, so bringing the strobe to 0 leaves the tone steady. The pulse
     // is the Amplitude modulation envelope above (applyAmOn in js/audio.js),
