@@ -185,7 +185,8 @@ async function assemble(engine, ctx, module, opts) {
   const shared = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer === 'function';
   const sampleRate = ctx.sampleRate;
   const toFrames = seconds => Math.ceil(seconds * sampleRate / QUANTUM) * QUANTUM;
-  const concealFrames = ({ mode, quantize, loop, xfade, wash, washRise, washDecay }) => ({ mode, quantize, wash, washDecay,
+  const concealFrames = ({ mode, quantize, loop, xfade, wash, washRise, washDecay, ret }) => ({ mode, quantize, wash, washDecay,
+    ret: ret > 0 ? Math.round(ret * sampleRate) : undefined,
     loop: loop >= 0 ? Math.round(loop * sampleRate) : undefined,
     xfade: xfade >= 0 ? Math.round(xfade * sampleRate) : undefined,
     washRise: washRise > 0 ? Math.round(washRise * sampleRate) : undefined });
@@ -525,7 +526,7 @@ async function assemble(engine, ctx, module, opts) {
     },
     // The concealment's settings, live (the drawer's Loop mode, Loop
     // length, Crossfade, Quantize repair, Wash, Wash rise and Wash decay):
-    // { mode, quantize, loop, xfade, wash, washRise, washDecay }, the
+    // { mode, quantize, loop, xfade, ret, wash, washRise, washDecay }, the
     // lengths in seconds.
     setConceal(set) {
       if (closed) return;

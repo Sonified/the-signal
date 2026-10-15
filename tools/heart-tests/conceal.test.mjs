@@ -69,7 +69,7 @@ test('conceal: Crossfade 0 is a hard turn, and a new length applies from the nex
 });
 
 test('conceal: fades out under the returning audio, then records again', () => {
-  const c = new Conceal({ size: 512, hold: 1e9 });
+  const c = new Conceal({ size: 512, hold: 1e9, ret: 128 });
   const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
   for (let q = 0; q < 4; q++) { L.fill(0.5); R.fill(0.5); c.wet(L, R); }
   c.dry(L, R);
@@ -86,7 +86,7 @@ test('conceal: fades out under the returning audio, then records again', () => {
 });
 
 test('conceal: a long stall decays to silence, and the audio fades back in', () => {
-  const c = new Conceal({ size: 256, hold: 256, decay: 256 });
+  const c = new Conceal({ size: 256, hold: 256, decay: 256, ret: 128 });
   const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
   for (let q = 0; q < 2; q++) { L.fill(0.5); R.fill(0.5); c.wet(L, R); }
   for (let q = 0; q < 6; q++) c.dry(L, R);
@@ -260,7 +260,7 @@ test('forward loop: music going in and at the seams never jumps', () => {
 });
 
 test('quantize repair: a short dropout plays a whole loop before the sound comes back', () => {
-  const c = new Conceal({ size: 8192, loop: 1024, xfade: 0, mode: FORWARD, quantize: true, hold: 1e9 });
+  const c = new Conceal({ size: 8192, loop: 1024, xfade: 0, mode: FORWARD, quantize: true, hold: 1e9, ret: 128 });
   const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
   for (let q = 0; q < 40; q++) { L.fill(0.5); R.fill(0.5); c.wet(L, R); }
   c.dry(L, R);                      // one quantum dry
@@ -331,4 +331,14 @@ test('wash: many dropouts with the room on never jump', () => {
   }
   assert.ok(maxJump < 0.05, `largest step ${maxJump.toFixed(3)}`);
   assert.ok(peak < 2, `peak ${peak.toFixed(2)}`);
+});
+
+test('return fade: its own length, however short the crossfade', () => {
+  const c = new Conceal({ size: 120000, loop: 24000, xfade: 480, mode: FORWARD, hold: 1e9, ret: 36000 });
+  const L = new Float32Array(QUANTUM), R = new Float32Array(QUANTUM);
+  for (let q = 0; q < 400; q++) { L.fill(0.5); R.fill(0.5); c.wet(L, R); }
+  c.dry(L, R);
+  let q = 0;
+  while (c.active) { L.fill(0); R.fill(0); c.wet(L, R); q++; }
+  assert.equal(q, Math.ceil(36000 / QUANTUM), 'the fade back lasts the Return fade');
 });

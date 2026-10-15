@@ -103,6 +103,7 @@ function concealSetting() {
     quantize: S.heartQuantize === true,
     loop: num(S.heartLoopS, 0.1, 1, 0.5),
     xfade: num(S.heartXfadeMs, 0, 200, 50) / 1000,
+    ret: num(S.heartReturnS, 0.05, 3, 0.75),
     wash: num(S.heartWash, 0, 1, 0.6),
     washRise: num(S.heartWashRiseS, 0.25, 5, 1.5),
     washDecay: num(S.heartWashDecayS, 1, 10, 4)

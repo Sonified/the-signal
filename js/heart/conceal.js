@@ -29,7 +29,7 @@
 //
 // When the ring has audio again (and, quantized, the loop has ended), the
 // drain's own frames play and the concealment fades out under them over
-// the crossfade (at least MIN_RETURN frames): equal power after a
+// `ret` frames (the drawer's Return fade, at least MIN_RETURN): equal power after a
 // ping-pong, which does not line up with the live sound; equal gain after
 // a forward loop, which, a whole number of cycles long, does. The timing
 // is the drain's as before: the late frames are still dropped and the clock
@@ -80,7 +80,7 @@ export const PINGPONG = 0, FORWARD = 1;
 
 export class Conceal {
   constructor({ size, loop = size, xfade = 0, mode = PINGPONG, quantize = false, hold = 48000, decay = 24000,
-    rate = 48000, wash = 0, washRise = rate, washDecay = 4 }) {
+    rate = 48000, wash = 0, washRise = rate, washDecay = 4, ret = undefined }) {
     this.room = new Wash(rate);
     this.wash = 0;        // the most of the mix the room takes, 0 to 1
     this.washRise = rate; // frames from the start of a stall to that
@@ -96,7 +96,8 @@ export class Conceal {
     this.xfade = 0;
     this.mode = PINGPONG;
     this.quantize = false;
-    this.configure({ loop, xfade, mode, quantize, wash, washRise, washDecay });
+    this.returnLen = rate >> 1;
+    this.configure({ loop, xfade, mode, quantize, wash, washRise, washDecay, ret });
     this.tone = 0;        // frames a cycle of the tone, 0 for none
     this.strobe = 0;      // frames a cycle of the strobe, 0 for none
     this.hold = hold;
@@ -135,7 +136,8 @@ export class Conceal {
 
   // The drawer's settings, live: Loop length and Crossfade in frames, the
   // Loop mode, and Quantize repair. A run under way keeps what it began with.
-  configure({ loop, xfade, mode, quantize, wash, washRise, washDecay }) {
+  configure({ loop, xfade, mode, quantize, wash, washRise, washDecay, ret }) {
+    if (ret !== undefined) this.returnLen = Math.max(MIN_RETURN, ret | 0);
     if (wash !== undefined) this.wash = Math.max(0, Math.min(1, +wash || 0));
     if (washRise !== undefined) this.washRise = Math.max(1, washRise | 0);
     if (washDecay !== undefined && washDecay > 0) this.room.tune(washDecay);
@@ -381,7 +383,7 @@ export class Conceal {
         }
         if (!this.release) { this.record(L, R, 0); return; }
       }
-      if (this.out === 0) this.ret = Math.max(MIN_RETURN, this.xfade);
+      if (this.out === 0) this.ret = this.returnLen;
       const len = this.ret, fwd = this.fwd, feed = this.wash > 0, room = this.room;
       for (; i < n && this.out < len; i++, this.out++) {
         this.frame();

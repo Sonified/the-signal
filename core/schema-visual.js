@@ -1765,8 +1765,7 @@ export const VISUAL_CONTROLS = [
   },
   {
     // Each turn of a ping-pong and each seam of a forward loop crossfade
-    // over this long, and so does the way back to the live sound. 0 is a
-    // hard turn.
+    // over this long. 0 is a hard turn.
     id: 'heartXfadeMs', section: 'render', label: 'Crossfade', kind: 'slider', parent: 'renderAudioDrawer',
     min: 0, max: 200, step: 5, def: 50,
     get: S => S.heartXfadeMs ?? 50,
@@ -1781,6 +1780,16 @@ export const VISUAL_CONTROLS = [
     get: S => S.heartQuantize === true,
     set: (S, on) => { S.heartQuantize = !!on; applyHeartConceal(); save(); },
     format: S => S.heartQuantize === true ? 'whole loops' : 'off'
+  },
+  {
+    // How long the way back from the loop (and its wash) to the live sound
+    // takes once the engine has caught up (and, quantized, the loop has
+    // ended). The wash's room rings on under it either way.
+    id: 'heartReturnS', section: 'render', label: 'Return fade', kind: 'slider', parent: 'renderAudioDrawer',
+    min: 0.05, max: 3, step: 0.05, def: 0.75,
+    get: S => S.heartReturnS ?? 0.75,
+    set: (S, v) => { S.heartReturnS = Math.max(0.05, Math.min(3, v)); applyHeartConceal(); save(); },
+    formatAt: pos => pos < 1 ? Math.round(pos * 1000) + ' ms' : pos.toFixed(2).replace(/0$/, '') + ' s'
   },
   {
     // The longer a stall goes on, the more of the loop is heard through a
