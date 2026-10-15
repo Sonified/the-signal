@@ -307,6 +307,15 @@ function restFx(i, n, relX, relY, wordW, size, out) {
   out[4] = 1; out[5] = 0; out[6] = 0; out[7] = 0;
 }
 
+// the pill's measure during the sweep in: only the letters the front has
+// brought more than halfway in count (hintToSmoke's rule), so the pill's
+// dark edge rolls with the readable front instead of reaching ahead to
+// letters barely begun
+function hintMeasureFx(i, n, relX, relY, wordW, size, out) {
+  hintFx(i, n, relX, relY, wordW, size, out);
+  if (out[4] < 0.5) out[4] = 0;
+}
+
 // The hint's lines as its draw calls below lay them: offset under the
 // middle, size, weight, tracking. Only the backing reads these.
 const HINT_DY = [4, 34, 52];
@@ -330,13 +339,20 @@ function drawHintBacking(dl, text, cx, cy, fx, level) {
   // better bare, a dark backing only muddies them. They still bound the
   // main line's pill, so it never spreads down over them.
   const lines = touchHints ? 1 : 3, n = 1;
-  const panelA = HINT_PANEL_O * envHintPanel * level;
+  // During the sweep in the pill is tied to the hint's own appearance: its
+  // strength rises over the very Hint fade in the letters take (the
+  // envelope's own 100 ms would stand it up dark before them), and its box
+  // is measured through hintMeasureFx, so the dark edge arrives with the
+  // front at the hint's speed and roll, never ahead of either.
+  const sweeping = fx === hintFx && hintP < 1;
+  const panelA = HINT_PANEL_O * envHintPanel * level * (sweeping ? smooth01(hintP) : 1);
+  const boxFx = sweeping ? hintMeasureFx : fx;
   if (panelA > 0.002) {
     dl.pushAlpha(panelA);
     for (let k = 0; k < n; k++) {
       shadeMeasure();
       text.drawWord(dl, hintLine(k), cx, cy + HINT_DY[k], HINT_SIZE[k], HINT_WEIGHT[k],
-                    SHADE_INK, HINT_TRACK[k], level, fx, null, shade);
+                    SHADE_INK, HINT_TRACK[k], level, boxFx, null, shade);
       const up = k > 0 ? HINT_DY[k] - HINT_DY[k - 1] : Infinity;
       const down = k < lines - 1 ? HINT_DY[k + 1] - HINT_DY[k] : Infinity;
       panelMetrics(HINT_SIZE[k], HINT_PANEL_SIZE, HINT_PANEL_SOFT);
