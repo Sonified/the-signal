@@ -388,11 +388,15 @@ async function assemble(engine, ctx, module, opts) {
   function skipAhead(why) {
     if (closed || !control || jumpPending || resting) return 0;
     const played = Atomics.load(control, PLAYED) * QUANTUM;
-    const quanta = Math.floor((headFrame(0) - played - policy.base) / QUANTUM);
+    const H = headFrame(0);
+    const quanta = Math.floor((H - played - policy.base) / QUANTUM);
     if (quanta * QUANTUM < toFrames(SKIP_LEAST_S)) return 0;
     jumpPending = true;
     awaitingIdled = false;
-    Atomics.store(control, LIMIT, Math.ceil(maxHead() / QUANTUM));
+    // Frozen at the MIX's head, the frame the final ring is filled to: the
+    // islands hold a chunk past it as ever, and a command in this same task
+    // lands just beyond it, the fresh horizon.
+    Atomics.store(control, LIMIT, Math.ceil(H / QUANTUM));
     leadS += quanta * QUANTUM / sampleRate;
     output.port.postMessage({ type: 'jump', quanta });
     if (DIAG) console.log(`${stamp()} skip ahead ${msOf(quanta * QUANTUM)} ms (${why}); lead now ${(leadS * 1000).toFixed(0)} ms`);
@@ -603,6 +607,9 @@ async function assemble(engine, ctx, module, opts) {
     heardNow,
     setIdle,
     skipAhead,
+    // Each stage's count of sleep returns (SAB mode; null without), for the
+    // diag beat's wakes a second and the cadence test.
+    wakes: () => control ? stages.map(st => Atomics.load(control, wakesOf(st.id))) : null,
     cushion: () => control ? Math.max(0, (headFrame(0) - Atomics.load(control, PLAYED) * QUANTUM) / sampleRate) : 0,
     stageFor: island => placement.stageFor(island),
     weigh: (island, w) => placement.weigh(island, w),
