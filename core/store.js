@@ -157,7 +157,7 @@ function buildSettings() {
     bedLpfQ: S.bedLpfQ, bedLpfWander: S.bedLpfWander, bedLpfSlope: S.bedLpfSlope, bedDetune: S.bedDetune,
     bedRevOn: S.bedRevOn, bedRevLevel: S.bedRevLevel, bedVerbOn: S.bedVerbOn, bedVerbLo: S.bedVerbLo, bedVerbHi: S.bedVerbHi, bedVerbPeriod: S.bedVerbPeriod,
     bedVerbWander: S.bedVerbWander,
-    choirOn: S.choirOn, choirVol: S.choirVol, choirStack: S.choirStack, choirDensity: S.choirDensity,
+    choirOn: S.choirOn, choirVol: S.choirVol, choirStack: S.choirStack, choirDensity: S.choirDensity, choirFadeInS: S.choirFadeInS,
     choirBrightness: S.choirBrightness, choirFocus: S.choirFocus,
     choirStackVar: S.choirStackVar, choirStackPeriod: S.choirStackPeriod,
     choirDensityVar: S.choirDensityVar, choirDensityPeriod: S.choirDensityPeriod,
@@ -1175,7 +1175,7 @@ function applySettings(s, live, scene) {
   // switch to the master volume's variance, so a saved On would sweep unseen.
   // The choir (js/choir.js), each number held to its slider's range.
   if (typeof s.choirOn === 'boolean') S.choirOn = s.choirOn;
-  for (const [k, lo, hi] of [['choirVol', 0, 2], ['choirStack', 0, 100], ['choirDensity', 0, 100],
+  for (const [k, lo, hi] of [['choirVol', 0, 2], ['choirFadeInS', 0, 30], ['choirStack', 0, 100], ['choirDensity', 0, 100],
                              ['choirBrightness', -100, 100], ['choirFocus', 0, 100],
                              ['choirStackVar', 0, 1], ['choirStackPeriod', 0, 120],
                              ['choirDensityVar', 0, 1], ['choirDensityPeriod', 0, 120],

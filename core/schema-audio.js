@@ -1316,6 +1316,17 @@ const musicControls = [
     rows: { mode: { visible: choirLevelTimeDriven }, period: { visible: choirLevelTimeDriven } }
   }),
   {
+    // How long the choir takes to come in, every time it does: its switch,
+    // the music's, a play after a pause, the first start (js/choir.js
+    // fadeChoirIn).
+    id: 'choirFadeInS', section: 'music', label: 'Fade in', kind: 'slider',
+    parent: 'musicChoirDrawer',
+    min: 0, max: 30, step: 0.5, def: 10,
+    get: s => s.choirFadeInS ?? 10,
+    set: (s, v) => { s.choirFadeInS = Math.max(0, Math.min(30, v)); save(); },
+    formatAt: pos => pos > 0 ? (pos % 1 ? pos.toFixed(1) : pos) + ' s' : 'Instant'
+  },
+  {
     // Fills upward through the choir from the low voice.
     id: 'choirStack', section: 'music', label: 'Stack', kind: 'slider',
     parent: 'musicChoirDrawer',

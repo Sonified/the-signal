@@ -184,6 +184,34 @@ export function setChoirBus(dry, roomIn) { dryBus = dry; roomBus = roomIn; }
 const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
 const level = () => Math.max(0, S.choirVol) * (1 - effVolDepth) * perfTrim(S.musChoir ?? 1) * chanGate('choir');
 
+// The choir's own fade in (the Choir drawer's Fade in, S.choirFadeInS, 10 s
+// unless set): every time the choir comes in (choirStart: its switch, the
+// music's, a play after a pause, the first start) its level rises from
+// nothing over that long, under the voices' own opening. A move of the
+// level, its variance or a mute while the fade is under way lands at the
+// fade's end instead of cutting it short (levelTo).
+let fadeEnd = 0;
+const fadeS = () => Number.isFinite(S.choirFadeInS) ? Math.max(0, Math.min(30, S.choirFadeInS)) : 10;
+function fadeChoirIn() {
+  if (!chain) return;
+  const p = chain.gain, t = chain.context.currentTime, dur = fadeS();
+  p.cancelScheduledValues(t);
+  p.setValueAtTime(0, t);
+  p.linearRampToValueAtTime(level(), t + dur);
+  fadeEnd = t + dur;
+}
+function levelTo(tc) {
+  if (!chain) return;
+  const p = chain.gain, now = chain.context.currentTime;
+  if (now < fadeEnd) {
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(p.value, now);
+    p.linearRampToValueAtTime(level(), fadeEnd);
+    return;
+  }
+  glideParam(p, level(), tc);
+}
+
 // Every per-voice gain toward its target, from exactly where it is now, so
 // repeated input stays continuous without restarting a long curve.
 function applyChoirTargets(duration) {
@@ -241,7 +269,7 @@ async function choirStart() {
   resetBreath(volB, ctx.currentTime);
   wanderVol(ctx.currentTime);
   const g = ctx.createGain();
-  g.gain.value = level();
+  g.gain.value = 0;
   // Post-fader and post-gate, before the room, the same point the drone's
   // meter reads; the tap feeds the dry bus and the room alike. The strobe
   // stage sits between, so the meter shows the pulse.
@@ -261,6 +289,7 @@ async function choirStart() {
     return { source, gain };
   });
   chain = g; tap = t; am = a;
+  fadeChoirIn();
   resetBreath(stackB, ctx.currentTime);
   // the density's breath starts from the BOTTOM of its cycle: a fresh start
   // opens sparse and fills over the first half period, so nobody is met by
@@ -351,7 +380,7 @@ function wanderTick() {
   wanderVol(now);
   if (effStack !== s0 || effDensity !== d0) applyChoirTargets(0.4);
   // the same time constant the voices glide on above, so 10 Hz steps blend
-  if (effVolDepth !== v0 && chain) glideParam(chain.gain, level(), 0.1);
+  if (effVolDepth !== v0 && chain) levelTo(0.1);
 }
 
 function stopWanderTimer() {
@@ -379,7 +408,7 @@ export function applyChoir() {
 export function applyChoirVol() {
   if (!chain) return;
   wanderVol(getContext().currentTime);
-  glideParam(chain.gain, level(), 0.2);
+  levelTo(0.2);
   if (am) am.apply();
   syncWanderTimer();
 }
@@ -398,7 +427,7 @@ export function choirVolMul() {
 
 // Mute and solo, a short glide so a gate closing never clicks.
 onChannelGates(() => {
-  if (chain) glideParam(chain.gain, level(), 0.03);
+  if (chain) levelTo(0.03);
 });
 
 // The choir's own switch: parked or woken without touching the rest of the

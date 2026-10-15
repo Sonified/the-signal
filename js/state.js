@@ -367,6 +367,7 @@ export const S = {
   // Brightness -100..100, as the performer's sliders. The three variances are
   // 0..1 of the set value, wandered below it; their periods are seconds a leg.
   choirOn: false, choirVol: 1.0,
+  choirFadeInS: 10,           // the choir's own fade in, seconds, every time it comes in (js/choir.js fadeChoirIn)
   choirStack: 100, choirDensity: 100, choirBrightness: 0, choirFocus: 0,
   choirStackVar: 0, choirStackPeriod: 20, choirDensityVar: 0, choirDensityPeriod: 20,
   // what drives each one's dip: its own clock ('time') or the sun's breath
