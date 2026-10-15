@@ -76,10 +76,13 @@ const glideMs = v => typeof v === 'number' && v === v ? Math.round(Math.max(0, M
 // one open and shut the way a section folds (imgui.js beginFold). All start
 // shut on a fresh page, like the drawer's sections (drawer.js openGroups);
 // what the viewer opens stays open for the visit and is not saved.
-const allSubs = [];
+// A var, not a const: schema-flowers.js and the other section files import
+// subDrawer from here and call it while this module is still being
+// evaluated (the imports run in a circle), before a const would exist.
+var allSubs;
 let shutSubs = null;
 function shutSubDrawers() {
-  if (shutSubs === null) shutSubs = new Set(allSubs);
+  if (shutSubs === null) shutSubs = new Set(allSubs || []);
   return shutSubs;
 }
 // The section defaults to Text, where sub-drawers began; the others name theirs.
@@ -97,7 +100,7 @@ function shutSubDrawers() {
 // control's set() and leaves the drawer as it was, a click anywhere else on
 // the strip opens or shuts it. That control is not drawn as a row of its own.
 export function subDrawer(id, label, section = 'text', summary, switchId) {
-  allSubs.push(id);
+  (allSubs || (allSubs = [])).push(id);
   return {
     id, section, label, kind: 'toggle', uiOnly: true, summary, switchId,
     get: () => !shutSubDrawers().has(id),
