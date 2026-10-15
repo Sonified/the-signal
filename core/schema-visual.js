@@ -1715,6 +1715,39 @@ export const VISUAL_CONTROLS = [
     set: (S, v) => { S.sunRateHz = Math.max(0, Math.min(40, Math.round(v))); save(); },
     formatAt: pos => pos > 0 ? pos + ' per second' : 'Off'
   },
+  {
+    // The most canvas pixels drawn per CSS pixel. A phone's screen is 3x, so
+    // every full-screen pass fills nine pixels for each one of the layout;
+    // capped at 2x it fills four, and the browser stretches the picture back
+    // over the screen (platform applySize, applied by main.js's frame).
+    // Below the cap a screen draws at its own density, as before.
+    id: 'dprCap', section: 'render', label: 'Pixel density', kind: 'segment', def: 0,
+    options: [
+      { value: 0,   label: 'Native', domId: null },
+      { value: 2,   label: '2×',     domId: null },
+      { value: 1.5, label: '1.5×',   domId: null },
+      { value: 1,   label: '1×',     domId: null }
+    ],
+    get: S => S.dprCap === 2 || S.dprCap === 1.5 || S.dprCap === 1 ? S.dprCap : 0,
+    set: (S, v) => { S.dprCap = v === 2 || v === 1.5 || v === 1 ? v : 0; save(); },
+    format: S => (S.dprCap > 0 ? S.dprCap + '× cap' : 'Native') + ', drawing at ' + (+S.DPR.toFixed(2)) + '×'
+  },
+  {
+    // How long the page was last out of sight and how long ago it came back
+    // (main.js keeps the times), to check the drawing really stopped: a
+    // hidden page asks for no frames (gpu/engine.js), and platform/web.js
+    // watchVisibility catches a hide iOS never announced. A readout only;
+    // the chip does nothing when pressed.
+    id: 'pageHidden', section: 'render', label: 'Page hidden', kind: 'action',
+    act: () => {},
+    format: S => {
+      if (S.lastShownAt < 0) return 'Page not hidden yet';
+      const s = S.lastHiddenMs / 1000, ago = (performance.now() - S.lastShownAt) / 1000;
+      const lasted = s < 60 ? Math.round(s) + 's' : Math.floor(s / 60) + 'm';
+      const when = ago < 30 ? 'just now' : ago < 45 ? '30s ago' : ago < 60 ? '45s ago' : Math.floor(ago / 60) + 'm ago';
+      return 'Page hidden for ' + lasted + ', ' + when;
+    }
+  },
   subDrawer('renderAudioDrawer', 'Audio engine', 'render', ['heartLookaheadS', 'heartGrowX']),
   {
     // The engine's cushion: how far ahead the sound is rendered

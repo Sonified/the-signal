@@ -109,6 +109,12 @@ export function createWorkerPlatform(init, post) {
       return Object.assign({}, envCache, { nowISO: new Date().toISOString(), frameSource: 'worker' });
     },
     dpr: init.dpr || 1, width: init.width || 0, height: init.height || 0,
+    dprCap: 0,
+    setDprCap(cap) {
+      if (cap === platform.dprCap) return;
+      platform.dprCap = cap;
+      if (lastSize) applySize(lastSize);
+    },
     // The page's pointer coarseness, from the hello's env snapshot: the
     // overlay words its opening hint as a tap on a touch screen.
     coarse: !!(init.env && init.env.coarse),
@@ -147,13 +153,24 @@ export function createWorkerPlatform(init, post) {
     softKeyboard: kbLink
   };
 
+  // Render > Pixel density, as platform/web.js applies it: above the cap the
+  // canvas is drawn at cap/dpr a side. The page's last measurement is kept so
+  // a cap change re-sizes at once.
+  let lastSize = null;
   function applySize(d) {
+    lastSize = d;
     const c = platform.canvas;
-    if (c && (c.width !== d.pw || c.height !== d.ph)) { c.width = d.pw; c.height = d.ph; }
-    platform.dpr = d.dpr;
+    let pw = d.pw, ph = d.ph, dpr = d.dpr;
+    const cap = platform.dprCap;
+    if (cap > 0 && dpr > cap) {
+      const k = cap / dpr;
+      pw = Math.max(1, Math.round(pw * k)); ph = Math.max(1, Math.round(ph * k)); dpr = cap;
+    }
+    if (c && (c.width !== pw || c.height !== ph)) { c.width = pw; c.height = ph; }
+    platform.dpr = dpr;
     platform.width = d.w;
     platform.height = d.h;
-    for (let i = 0; i < resizeCbs.length; i++) resizeCbs[i](d.w, d.h, d.dpr);
+    for (let i = 0; i < resizeCbs.length; i++) resizeCbs[i](d.w, d.h, dpr);
   }
 
   // ---------- the profiler's host ----------

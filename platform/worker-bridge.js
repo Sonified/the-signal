@@ -46,7 +46,7 @@
 
 import {
   GUARDED_KEYS, canvasOwnsKeys, guardGestures, watchCanvasSize, clipboardWrite,
-  toggleFullscreen, fsElement, showMessage, watchLongTasks
+  toggleFullscreen, fsElement, showMessage, watchLongTasks, watchVisibility
 } from './web.js';
 import { createProfileHost } from './profile-web.js';
 import { settingsFile } from './settings-file.js';
@@ -248,7 +248,7 @@ function runShell(canvas, worker, shell, size0, env) {
   watchCanvasSize(canvas, (pxW, pxH, dpr, w, h) => send({
     k: 'size', w, h, pw: Math.max(1, Math.round(pxW)), ph: Math.max(1, Math.round(pxH)), dpr
   }));
-  document.addEventListener('visibilitychange', () => send({ k: 'vis', visible: !document.hidden }));
+  watchVisibility(visible => send({ k: 'vis', visible }));
   const fsChanged = () => send({ k: 'fs', active: !!fsElement() });
   document.addEventListener('fullscreenchange', fsChanged);
   document.addEventListener('webkitfullscreenchange', fsChanged);

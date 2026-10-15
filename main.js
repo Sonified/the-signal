@@ -158,6 +158,14 @@ async function boot() {
   }
   // A resize clears the canvas, so a resting frame loop must draw again.
   const syncSize = (w, h, dpr) => { S.W = w; S.H = h; S.DPR = dpr; idleWake('resize'); };
+  platform.setDprCap(S.dprCap);
+  // The page's last absence, for Render > Page hidden.
+  if (platform.hidden && platform.hidden()) S.hiddenAt = performance.now();
+  platform.onVisibility(visible => {
+    const t = performance.now();
+    if (!visible) { S.hiddenAt = t; return; }
+    if (S.hiddenAt >= 0) { S.lastHiddenMs = t - S.hiddenAt; S.lastShownAt = t; S.hiddenAt = -1; }
+  });
   syncSize(platform.width, platform.height, platform.dpr);
   platform.onResize(syncSize);
   seedParticles(S.edgeCount);
@@ -648,6 +656,9 @@ async function boot() {
   // screen. away is -1 on an ordinary frame (see holdBreath).
   function frame(t, dt, away) {
     if (away >= 0) holdBreath(away);
+    // Render > Pixel density, from the drawer or another tab: the canvas is
+    // re-sized before anything this frame reads its size.
+    if (S.dprCap !== platform.dprCap) platform.setDprCap(S.dprCap);
     // The phase stamps run for perf mode or while the profiler records;
     // otherwise the frame pays two boolean tests for both.
     const profOn = prof.recording;

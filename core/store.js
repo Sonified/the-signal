@@ -219,7 +219,7 @@ function buildSettings() {
     clickRevTime: S.clickRevTime, clickModDepth: S.clickModDepth, clickModPeriod: S.clickModPeriod,
     biDepth: S.biDepth, biPeriod: S.biPeriod, biHardSwitch: S.biHardSwitch,
     rendererPref: S.rendererPref, heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, outputLatComp: S.outputLatComp,
-    syncDiagLog: S.syncDiagLog, sunRateHz: S.sunRateHz,
+    syncDiagLog: S.syncDiagLog, sunRateHz: S.sunRateHz, dprCap: S.dprCap,
     // Render > Audio engine > Limiter and Soft clip (core/output-guard.js)
     outLimiter: S.outLimiter, outSoftClip: S.outSoftClip,
     // Settings > Control overlays and its key (main.js), this machine's own
@@ -706,7 +706,7 @@ export function snapshot() {
 // rather than read off the schema, since this module must not depend on it.
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
-                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog', 'sunRateHz',
+                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'dprCap',
                       'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
@@ -955,6 +955,8 @@ function applySettings(s, live, scene) {
     if (typeof s.syncDiagLog === 'boolean') S.syncDiagLog = s.syncDiagLog;
     // The Sun video's playbackRate throttle (gpu/sun.js setRate)
     if (typeof s.sunRateHz === 'number' && isFinite(s.sunRateHz)) S.sunRateHz = Math.max(0, Math.min(40, Math.round(s.sunRateHz)));
+    // Pixel density: only the caps the Render section offers; anything else is the screen's own.
+    if (s.dprCap === 2 || s.dprCap === 1.5 || s.dprCap === 1) S.dprCap = s.dprCap;
     // The output guard's two stages; every live guard follows at once (a
     // no-op where nothing changed, or before any guard is built).
     if (typeof s.outLimiter === 'boolean') S.outLimiter = s.outLimiter;

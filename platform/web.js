@@ -76,6 +76,29 @@ export function guardGestures(canvas) {
 // fractional-DPR blur at zoom levels other than 100%. Where a browser
 // doesn't report it (Safari, at the time of writing), contentBoxSize times
 // devicePixelRatio is a frame less exact but never off by more than rounding.
+// ---------- visibility ----------
+// Calls fn(visible) once per change of whether the page can be seen, and
+// returns a read of the current answer. visibilitychange is the usual word,
+// but iOS sometimes never sends it, so pagehide and freeze also count as
+// gone (held until pageshow, resume or a visible visibilitychange says the
+// page is back), and a once-a-second look at document.hidden catches any
+// change no event told of. A hidden page's timers are throttled, which only
+// slows a check that has nothing to catch.
+export function watchVisibility(fn) {
+  let visible = !document.hidden, gone = false;
+  const tell = v => { if (v !== visible) { visible = v; fn(v); } };
+  const check = () => { if (!gone) tell(!document.hidden); };
+  const back = () => { gone = false; check(); };
+  const away = () => { gone = true; tell(false); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) gone = false; check(); });
+  window.addEventListener('pagehide', away);
+  window.addEventListener('pageshow', back);
+  document.addEventListener('freeze', away);
+  document.addEventListener('resume', back);
+  setInterval(check, 1000);
+  return () => visible;
+}
+
 export function watchCanvasSize(canvas, apply) {
   try {
     const ro = new ResizeObserver(entries => {
@@ -314,7 +337,15 @@ export function createPlatform(canvas) {
   let cssW = canvas.clientWidth || window.innerWidth;
   let cssH = canvas.clientHeight || window.innerHeight;
 
+  // Render > Pixel density (main.js setDprCap): above the cap the canvas is
+  // drawn at cap/dpr of the screen's pixels a side and the browser stretches
+  // it back over the same CSS box, so every full-screen pass fills fewer
+  // pixels. The last measurement is kept so a cap change re-sizes at once.
+  let rawW = 0, rawH = 0, rawDpr = 1;
   function applySize(pxW, pxH, dpr) {
+    rawW = pxW; rawH = pxH; rawDpr = dpr;
+    const cap = platform.dprCap;
+    if (cap > 0 && dpr > cap) { const k = cap / dpr; pxW *= k; pxH *= k; dpr = cap; }
     pxW = Math.max(1, Math.round(pxW));
     pxH = Math.max(1, Math.round(pxH));
     if (canvas.width !== pxW || canvas.height !== pxH) {
@@ -332,8 +363,7 @@ export function createPlatform(canvas) {
   watchCanvasSize(canvas, (pxW, pxH, dpr, w, h) => { cssW = w; cssH = h; applySize(pxW, pxH, dpr); });
 
   // ---------- visibility ----------
-  document.addEventListener('visibilitychange', () => {
-    const visible = !document.hidden;
+  const pageVisible = watchVisibility(visible => {
     for (let i = 0; i < visCbs.length; i++) visCbs[i](visible);
   });
 
@@ -383,6 +413,12 @@ export function createPlatform(canvas) {
     // opening hint as a tap instead of the space bar.
     coarse: matchMedia('(pointer: coarse)').matches,
     dpr: 1, width: 0, height: 0,
+    dprCap: 0,
+    setDprCap(cap) {
+      if (cap === platform.dprCap) return;
+      platform.dprCap = cap;
+      applySize(rawW, rawH, rawDpr);
+    },
     onResize(fn) { resizeCbs.push(fn); },
     pollInput,
     // hears every input event as it is queued (input-queue.js says why)
@@ -396,6 +432,7 @@ export function createPlatform(canvas) {
     settingsFile,
     download: saveJsonFile,
     onVisibility(fn) { visCbs.push(fn); },
+    hidden: () => !pageVisible(),
     fullscreen: { toggle: toggleFullscreen, active: fullscreenActive },
     message: showMessage,
     loadImagePixels,

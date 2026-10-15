@@ -50,6 +50,7 @@ export const S = {
                               // hand out one context kind, so asking for '2d' up
                               // front would permanently lock out WebGPU
   W: 0, H: 0, DPR: 1,
+  hiddenAt: -1, lastHiddenMs: -1, lastShownAt: -1, // the page's last absence, for Render > Page hidden (main.js); this thread's performance.now()
   renderer: null,             // set once the chosen backend is ready
   // Canvas2D by default: it is the only backend whose visuals are verified, and
   // the stall this app was chasing turned out to be system load rather than the
@@ -59,6 +60,7 @@ export const S = {
   heartGrowX: 1.5,            // how the cushion grows on underrun; this machine's own too
   outputLatComp: true,        // the strobe audio allows for the output's latency (strobe-am.js)
   syncDiagLog: false,         // print [syncdiag] sync and latency lines to the console (strobe-am.js)
+  dprCap: 0,                  // Render > Pixel density: the most canvas pixels per CSS pixel, 0 the screen's own (platform applySize); this machine's own
   sunRateHz: 0,               // most Sun video playbackRate writes a second, 0 unthrottled (gpu/sun.js setRate); this machine's own
   outLimiter: true,           // the output guard's limiter on every output (core/output-guard.js); this machine's own
   outSoftClip: true,          // the output guard's soft clip after it; this machine's own too
