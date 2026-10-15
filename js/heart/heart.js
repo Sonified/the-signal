@@ -9,9 +9,12 @@
 // answers param reads on the main thread, and OfflineHeartContext, which
 // renders a graph on the page with no workers at all, for the null tests.
 //
-// The clock stays native. currentTime, state, resume and suspend are the
-// native context's own, so every time the app computes from currentTime is
-// a time on the clock the speakers play by, and Engine.frameAt maps it onto
+// The clock is the native context's, plus the engine's lead after a
+// forward skip and the walk's virtual time while a walked planner runs
+// (§7.6; with neither, it is the native clock exactly). state, resume and
+// suspend are the native context's own, so every time the app computes
+// from currentTime is a time on the clock the speakers play by (led by the
+// skips), and Engine.frameAt maps it onto
 // Heart's frames (spec 7.2). AudioBuffers stay native objects too: decoding
 // and createBuffer forward to the native context, and a buffer is uploaded
 // to Heart the first time a node is handed it.
@@ -208,8 +211,11 @@ export class HeartContext {
     return g.master || (g.master = new HeartMaster(this.mix));
   }
 
-  // ---- the native clock ----
-  get currentTime() { return this._native.currentTime; }
+  // ---- the clock ----
+  // Heart time: the native clock, plus the engine's lead after a forward
+  // skip and the walk's virtual time while a walked planner runs (nodes.js
+  // now). With no skip and no walk it is exactly the native currentTime.
+  get currentTime() { return this._graph.now(); }
   // The context time a call made now lands at: currentTime, or Heart's
   // render horizon when that is further on (nodes.js, late gestures). Code
   // that waits on the clock for a gesture to finish reads its end from

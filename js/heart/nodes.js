@@ -15,6 +15,7 @@
 import { Commands, forEachEvent, KINDS, ATTRS, ENUMS, PARAMS, EVENT_OPS, MESSAGES } from './protocol-gen.js';
 import { registerBuffer } from './buffers.js';
 import { HeartParam, finite, notNegative } from './params.js';
+import { walkAhead } from '../ticker.js';
 
 // Each egress ring carries this many stereo ports (spec 7.3).
 const PORTS_PER_STAGE = 16;
@@ -103,8 +104,21 @@ export class HeartGraph {
     return id;
   }
 
+  // The Heart clock: the native now, plus the engine's lead once a forward
+  // skip has moved Heart time ahead of the native clock (engine.js, D),
+  // plus the virtual time while a planner walk runs (js/ticker.js,
+  // walkAhead), so a walked planner books exactly what it would have booked
+  // at that moment. An offline graph's stand-in engine has no lead.
+  now() {
+    return this.clock.currentTime + (this.engine.lead ? this.engine.lead() : 0) + walkAhead();
+  }
+
   // A native time as the engine frame it lands on, moved up to the present
   // the way the spec moves every scheduled time (params.js says why).
+  // Deliberately clamped to the NATIVE clock, not now(): a native-anchored
+  // ramp's start and end clamped to Heart time would collapse onto one
+  // frame and turn into a step; left at their native times, the late-gesture
+  // machinery moves the whole gesture to the horizon with its shape intact.
   frame(t) {
     return this.engine.frameAt(Math.max(t, this.clock.currentTime));
   }
@@ -135,7 +149,7 @@ export class HeartGraph {
   // stay together.
   task() {
     if (!this._task) {
-      this._task = { present: NaN };
+      this._task = { horizon: NaN };
       queueMicrotask(() => { this._task = null; });
     }
     return this._task;
@@ -146,12 +160,13 @@ export class HeartGraph {
   // frame on an engine with nothing rendered ahead. Param values are read
   // here, as Chrome reads the value its renderer computed last, so an
   // anchor taken from `.value` is the value where its gesture lands.
+  // Only the horizon is cached for the task: the clock is read per call,
+  // because inside a planner walk `now` is the virtual time, moving from
+  // tick to tick within one task.
   present() {
     const task = this.task();
-    if (task.present !== task.present) {
-      task.present = Math.max(this.engine.frameAt(this.clock.currentTime), this.engine.horizon());
-    }
-    return task.present;
+    if (task.horizon !== task.horizon) task.horizon = this.engine.horizon();
+    return Math.max(this.engine.frameAt(this.now()), task.horizon);
   }
 
   // Frame f of a call to `owner` (a HeartParam, or a source for its start

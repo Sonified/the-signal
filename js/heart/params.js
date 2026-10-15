@@ -98,9 +98,11 @@ export class HeartParam {
     const g = this._node._graph;
     return g.shadow.value(this._node._id, this._index, g.present());
   }
-  // The spec defines the setter as setValueAtTime(v, currentTime).
+  // The spec defines the setter as setValueAtTime(v, currentTime); here
+  // that now is the Heart clock (nodes.js now), so a value set inside a
+  // planner walk lands at the walk's virtual time.
   set value(v) {
-    this.setValueAtTime(v, this._node._graph.clock.currentTime);
+    this.setValueAtTime(v, this._node._graph.now());
   }
 
   setValueAtTime(value, startTime) {

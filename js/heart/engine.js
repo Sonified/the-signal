@@ -48,8 +48,8 @@
 // resumes.
 
 import {
-  QUANTUM, CHUNK, EGRESS_CHANNELS, PLAYED, UNDERRUNS, LOOKAHEAD_NEXT, headOf, renderOf,
-  makeRing, makeControl, transfer
+  QUANTUM, CHUNK, EGRESS_CHANNELS, PLAYED, UNDERRUNS, LOOKAHEAD_NEXT, LIMIT, headOf, renderOf, wakesOf,
+  makeRing, makeControl, transfer, ringBell
 } from './ring.js';
 import { ROLE, defaultWorkers, planStages, Placement, spawnWorkers } from './pool.js';
 import { createUploader } from './buffers.js';
@@ -109,6 +109,14 @@ const START_TIMEOUT_MS = 10000;
 // resume itself.
 const WAKE_LEAD_CHUNKS = 4;
 const STATS_MS = 250;
+// Render ahead on idle (§7.6, js/idle-ahead.js, SAB mode only). The final
+// ring is sized at start for the slider's top (10 s) plus the drain's slack
+// and a little room, so a change of the setting applies live with no
+// resize: about 4.2 MB at 48 kHz, two channels, SAB pages committed lazily.
+// The drain's lift may reach the setting plus its slack.
+const IDLE_RING_S = 11, IDLE_LIFT_MAX_S = 10.5;
+// A forward skip shorter than this is not worth its splice.
+const SKIP_LEAST_S = 0.25;
 // A stage overloaded this many stats ticks running (a second) is told of,
 // and not again for OVERLOAD_QUIET_MS.
 const OVERLOAD_TICKS = 4, OVERLOAD_QUIET_MS = 30000;
@@ -205,11 +213,19 @@ async function assemble(engine, ctx, module, opts) {
     startHidden: doc?.visibilityState === 'hidden',
     startFullscreen: fullscreenNow()
   };
+  if (shared) policy.idleMax = toFrames(IDLE_LIFT_MAX_S);
   const stages = planStages(opts.workers ?? defaultWorkers(globalThis.navigator?.hardwareConcurrency));
   const placement = new Placement(stages);
   const control = shared ? makeControl(stages.length, lookahead) : null;
   const seed = (opts.seed ?? Math.random() * 2 ** 32) >>> 0;
-  const time = timeMap(sampleRate, () => ctx.currentTime);
+  // The engine's lead D (§7.6): how far Heart time runs ahead of the native
+  // clock, in seconds. Zero until a forward skip; each skip adds its jump
+  // and it never shrinks, so everything planned keeps its place and the
+  // piece is simply that much further on. Heart time = native currentTime
+  // + D, and heardNow() is the one way the native clock is read.
+  let leadS = 0;
+  const heardNow = () => ctx.currentTime + leadS;
+  const time = timeMap(sampleRate, heardNow);
   const listeners = new Map();
   const emit = (type, ...args) => { for (const fn of listeners.get(type) || []) fn(...args); };
   let closed = false, ticker = null, lastUnderruns = 0;
@@ -231,7 +247,7 @@ async function assemble(engine, ctx, module, opts) {
   // island. Past the base an island is held by ring room a little ahead of
   // the mix, which loses nothing: the cushion that covers a stall is the
   // final ring's, whichever stage stalls.
-  const finalRing = makeRing(shared, 2, maxAhead + CHUNK);
+  const finalRing = makeRing(shared, 2, shared ? Math.max(maxAhead, toFrames(IDLE_RING_S)) : maxAhead + CHUNK);
   const egress = stages.map(s => s.role !== ROLE.island ? null
     : makeRing(shared, EGRESS_CHANNELS, shared ? toFrames(LOOKAHEAD_SAB) + 2 * CHUNK : ISLAND_CHUNKS * CHUNK));
 
@@ -250,6 +266,8 @@ async function assemble(engine, ctx, module, opts) {
     if (d.type === 'start') time.set(d.F);
     else if (d.type === 'stats') drainNews.underruns = Math.max(drainNews.underruns, d.underruns);
     else if (d.type === 'lookahead') { drainNews.next = d.next; drainNews.underruns = Math.max(drainNews.underruns, d.underruns); }
+    else if (d.type === 'jumped') jumped();
+    else if (d.type === 'idled') idled();
     else if (d.type === 'diag') diagDrain(d);
   };
   output.onprocessorerror = () => { console.warn('heart: the drain stopped'); emit('error', -1, 'drain'); };
@@ -308,16 +326,85 @@ async function assemble(engine, ctx, module, opts) {
   // rise reaches a chunk before the stages obey it, so a growth cannot carry
   // a stage past a horizon already handed out; after a shrink the stages'
   // own heads keep the horizon beyond what they rendered under the old one.
-  const lead = stages.length === 1 ? 0 : shared ? CHUNK : ISLAND_CHUNKS * CHUNK;
+  const stageLead = stages.length === 1 ? 0 : shared ? CHUNK : ISLAND_CHUNKS * CHUNK;
   const aheadFrames = () => control ? Atomics.load(control, LOOKAHEAD_NEXT) : drainNews.next;
+  const limitFrames = () => {
+    if (!control) return Infinity;
+    const l = Atomics.load(control, LIMIT);
+    return l < 0 ? Infinity : l * QUANTUM;
+  };
   // While the drain rests its count stands still, so the clock is read off
   // the context instead; and no horizon falls short of the last wake's
-  // landing, which the stages may not have published yet.
+  // landing, which the stages may not have published yet. The page's render
+  // limit caps what the stages may render, so it caps the horizon the same
+  // way, before the heads: while a skip holds the limit at the old head,
+  // commands land just past it, the fresh horizon (§7.6).
   function horizon() {
-    const played = control && !resting ? Atomics.load(control, PLAYED) * QUANTUM : Math.max(0, time.frameAt(ctx.currentTime));
-    let h = Math.max(played + aheadFrames() + lead, landed);
+    const played = control && !resting ? Atomics.load(control, PLAYED) * QUANTUM : Math.max(0, time.frameAt(heardNow()));
+    let h = Math.max(Math.min(played + aheadFrames(), limitFrames()) + stageLead, landed);
     for (const st of stages) h = Math.max(h, headFrame(st.id));
     return h + CHUNK;
+  }
+
+  // ---------- render ahead on idle (§7.6, SAB only) ----------
+  // The page (js/idle-ahead.js) walks the planners to a frontier, then sets
+  // the limit just short of it and lifts the drain's cushion; the stages
+  // gulp to the limit and sleep. Leaving is ordered: the limit must not
+  // clear while a stage could still read the lifted lookahead and gulp
+  // seconds ahead again, so a drop freezes the limit at what is already
+  // rendered and clears it only on the drain's ack; a lift asked while a
+  // jump is in flight is stashed and applied on its ack the same way.
+  let jumpPending = false, awaitingIdled = false, idleStash = null;
+  const bellAll = () => { for (const st of stages) ringBell(control, st.id); };
+  const maxHead = () => { let h = 0; for (const st of stages) h = Math.max(h, headFrame(st.id)); return h; };
+  function setIdle(seconds, limitFrame) {
+    if (closed || !control) return;
+    if (seconds > 0) {
+      const at = Math.max(Math.floor(limitFrame / QUANTUM), Math.ceil(maxHead() / QUANTUM));
+      if (jumpPending) { idleStash = { seconds, at }; return; }
+      awaitingIdled = false;
+      Atomics.store(control, LIMIT, at);
+      output.port.postMessage({ type: 'idle', frames: toFrames(seconds) });
+      bellAll();
+    } else {
+      idleStash = null;
+      Atomics.store(control, LIMIT, Math.ceil(maxHead() / QUANTUM));
+      if (!jumpPending) awaitingIdled = true;
+      output.port.postMessage({ type: 'idle', frames: 0 });
+    }
+  }
+  // The drain dropped its lift: the lifted lookahead cannot be read any
+  // more, so the limit may clear (or a stashed lift may land).
+  function idled() {
+    if (jumpPending || !awaitingIdled || closed) return;
+    awaitingIdled = false;
+    Atomics.store(control, LIMIT, -1);
+    bellAll();
+  }
+  // The forward skip: the clock jumps to a frame the base lookahead short
+  // of the mix's head, so a touch's commands land at the base latency. D
+  // grows by the jump synchronously, before the drain has jumped, so a
+  // command anchored at heardNow in this same task is already past it.
+  function skipAhead(why) {
+    if (closed || !control || jumpPending || resting) return 0;
+    const played = Atomics.load(control, PLAYED) * QUANTUM;
+    const quanta = Math.floor((headFrame(0) - played - policy.base) / QUANTUM);
+    if (quanta * QUANTUM < toFrames(SKIP_LEAST_S)) return 0;
+    jumpPending = true;
+    awaitingIdled = false;
+    Atomics.store(control, LIMIT, Math.ceil(maxHead() / QUANTUM));
+    leadS += quanta * QUANTUM / sampleRate;
+    output.port.postMessage({ type: 'jump', quanta });
+    if (DIAG) console.log(`${stamp()} skip ahead ${msOf(quanta * QUANTUM)} ms (${why}); lead now ${(leadS * 1000).toFixed(0)} ms`);
+    return quanta * QUANTUM / sampleRate;
+  }
+  function jumped() {
+    if (!jumpPending || closed) return;
+    jumpPending = false;
+    const stash = idleStash;
+    idleStash = null;
+    if (stash) setIdle(stash.seconds, stash.at * QUANTUM);
+    else { Atomics.store(control, LIMIT, -1); bellAll(); }
   }
 
   // ---------- the rest ----------
@@ -330,7 +417,7 @@ async function assemble(engine, ctx, module, opts) {
   function wake() {
     if (closed || !resting) return;
     resting = false;
-    const clock = Math.max(0, time.frameAt(ctx.currentTime));
+    const clock = Math.max(0, time.frameAt(heardNow()));
     landed = Math.max(landed, Math.ceil((clock + WAKE_LEAD_CHUNKS * CHUNK) / CHUNK) * CHUNK);
     for (const w of workers) w.postMessage({ type: 'skip', to: landed, clock });
     output.port.postMessage({ type: 'rest', on: false });
@@ -362,7 +449,7 @@ async function assemble(engine, ctx, module, opts) {
     const ms = stages.map(s => control ? Atomics.load(control, renderOf(s.id)) / 1000 : renderMs[s.id]);
     return {
       underruns: control ? Atomics.load(control, UNDERRUNS) : drainNews.underruns,
-      fill: Math.max(0, renderedUntil() - ctx.currentTime),
+      fill: Math.max(0, renderedUntil() - heardNow()),
       renderMs: ms,
       lookahead: lookaheadNow(),
       overloaded: ms.some(m => m >= budgetMs)
@@ -467,10 +554,20 @@ async function assemble(engine, ctx, module, opts) {
     else if (d.what === 'wet') console.log(`${head} sound again after ${d.run - 1} silent quanta; ${where}`);
     else console.log(`${head} lookahead ${d.what}; ${where}`);
   }
+  const lastWakes = stages.map(() => 0);
   function diagBeat() {
     const s = stats();
     const load = stages.map(st => `${stageName(st)} ${ms1(s.renderMs[st.id])}`).join(' · ');
-    console.log(`${stamp()} beat: ${engine.mode}, ${hidden ? 'hidden' : 'visible'}${full ? ', fullscreen' : ''}; fill ${Math.round(1000 * s.fill)} ms, lookahead ${Math.round(1000 * s.lookahead)} ms, underruns ${s.underruns}; ms a chunk (budget ${ms1(budgetMs)}): ${load}`);
+    let sleeps = '';
+    if (control) {
+      const rates = stages.map((st, i) => {
+        const w = Atomics.load(control, wakesOf(st.id)), r = (w - lastWakes[i]) / (DIAG_BEAT_MS / 1000);
+        lastWakes[i] = w;
+        return `${stageName(st)} ${r.toFixed(1)}`;
+      });
+      sleeps = `; wakes a second: ${rates.join(' · ')}${leadS > 0 ? `; lead ${(leadS * 1000).toFixed(0)} ms` : ''}`;
+    }
+    console.log(`${stamp()} beat: ${engine.mode}, ${hidden ? 'hidden' : 'visible'}${full ? ', fullscreen' : ''}; fill ${Math.round(1000 * s.fill)} ms, lookahead ${Math.round(1000 * s.lookahead)} ms, underruns ${s.underruns}; ms a chunk (budget ${ms1(budgetMs)}): ${load}${sleeps}`);
   }
 
   function close() {
@@ -499,6 +596,14 @@ async function assemble(engine, ctx, module, opts) {
     timeAt: time.timeAt,
     renderedUntil,
     horizon,
+    // Render ahead on idle (§7.6): Heart time leads the native clock by
+    // lead() seconds after a skip; heardNow() is the Heart time now
+    // sounding; cushion() the seconds rendered and waiting past the clock.
+    lead: () => leadS,
+    heardNow,
+    setIdle,
+    skipAhead,
+    cushion: () => control ? Math.max(0, (headFrame(0) - Atomics.load(control, PLAYED) * QUANTUM) / sampleRate) : 0,
     stageFor: island => placement.stageFor(island),
     weigh: (island, w) => placement.weigh(island, w),
     send,
