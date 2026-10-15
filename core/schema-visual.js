@@ -1776,112 +1776,6 @@ export const VISUAL_CONTROLS = [
     formatAt: pos => '×' + pos.toFixed(1)
   },
   {
-    // The underrun concealment (js/heart/conceal.js): what plays when the
-    // engine falls behind, a loop of the last stretch heard. Ping-pong
-    // plays it back and forth; Forward plays it forwards over and over,
-    // its length snapped to whole cycles of the tone and the strobe, so a
-    // steady low tone carries straight on through the seam.
-    id: 'heartLoopMode', section: 'render', label: 'Loop mode', kind: 'segment', parent: 'renderAudioDrawer',
-    options: [{ value: 'pingpong', label: 'Ping-pong' }, { value: 'forward', label: 'Forward' }],
-    def: 'pingpong',
-    get: S => S.heartLoopMode === 'forward' ? 'forward' : 'pingpong',
-    set: (S, v) => { S.heartLoopMode = v === 'forward' ? 'forward' : 'pingpong'; applyHeartConceal(); save(); }
-  },
-  {
-    // How much of the last sound heard the loop plays. Forward fits it to
-    // whole cycles of the tone and strobe, which can move it.
-    id: 'heartLoopS', section: 'render', label: 'Loop length', kind: 'slider', parent: 'renderAudioDrawer',
-    min: 0.1, max: 1, step: 0.05, def: 0.5,
-    get: S => S.heartLoopS ?? 0.5,
-    set: (S, v) => { S.heartLoopS = Math.max(0.1, Math.min(1, v)); applyHeartConceal(); save(); },
-    formatAt: pos => Math.round(pos * 1000) + ' ms'
-  },
-  {
-    // Each turn of a ping-pong and each seam of a forward loop crossfade
-    // over this long. 0 is a hard turn.
-    id: 'heartXfadeMs', section: 'render', label: 'Crossfade', kind: 'slider', parent: 'renderAudioDrawer',
-    min: 0, max: 200, step: 5, def: 50,
-    get: S => S.heartXfadeMs ?? 50,
-    set: (S, v) => { S.heartXfadeMs = Math.max(0, Math.min(200, Math.round(v))); applyHeartConceal(); save(); },
-    formatAt: pos => pos > 0 ? Math.round(pos) + ' ms' : 'Hard turn'
-  },
-  {
-    // A dropout always plays whole loops, and the sound only comes back at
-    // the end of one; still behind then, it plays the loop again.
-    id: 'heartQuantize', section: 'render', label: 'Quantize repair', kind: 'toggle', parent: 'renderAudioDrawer',
-    def: false,
-    get: S => S.heartQuantize === true,
-    set: (S, on) => { S.heartQuantize = !!on; applyHeartConceal(); save(); },
-    format: S => S.heartQuantize === true ? 'whole loops' : 'off'
-  },
-  {
-    // How long the way back from the loop (and its wash) to the live sound
-    // takes once the engine has caught up (and, quantized, the loop has
-    // ended). The wash's room rings on under it either way.
-    id: 'heartReturnS', section: 'render', label: 'Return fade', kind: 'slider', parent: 'renderAudioDrawer',
-    min: 0.05, max: 3, step: 0.05, def: 0.75,
-    get: S => S.heartReturnS ?? 0.75,
-    set: (S, v) => { S.heartReturnS = Math.max(0.05, Math.min(3, v)); applyHeartConceal(); save(); },
-    formatAt: pos => pos < 1 ? Math.round(pos * 1000) + ' ms' : pos.toFixed(2).replace(/0$/, '') + ' s'
-  },
-  {
-    // The longer a stall goes on, the more of the loop is heard through a
-    // reverb (js/heart/wash.js): from dry at the start of the stall to this
-    // much wet over Wash rise. When the sound comes back the room rings out
-    // under it over Wash decay. 0 is no room.
-    id: 'heartWash', section: 'render', label: 'Wash', kind: 'slider', parent: 'renderAudioDrawer',
-    min: 0, max: 1, step: 0.05, def: 0.6,
-    get: S => S.heartWash ?? 0.6,
-    set: (S, v) => { S.heartWash = Math.max(0, Math.min(1, v)); applyHeartConceal(); save(); },
-    formatAt: pos => pos > 0 ? Math.round(pos * 100) + '% wet' : 'Off'
-  },
-  {
-    id: 'heartWashRiseS', section: 'render', label: 'Wash rise', kind: 'slider', parent: 'renderAudioDrawer',
-    min: 0.25, max: 5, step: 0.25, def: 1.5,
-    get: S => S.heartWashRiseS ?? 1.5,
-    set: (S, v) => { S.heartWashRiseS = Math.max(0.25, Math.min(5, v)); applyHeartConceal(); save(); },
-    formatAt: pos => pos.toFixed(2).replace(/0$/, '') + ' s to full'
-  },
-  {
-    id: 'heartWashDecayS', section: 'render', label: 'Wash decay', kind: 'slider', parent: 'renderAudioDrawer',
-    min: 1, max: 10, step: 0.5, def: 4,
-    get: S => S.heartWashDecayS ?? 4,
-    set: (S, v) => { S.heartWashDecayS = Math.max(1, Math.min(10, v)); applyHeartConceal(); save(); },
-    formatAt: pos => pos.toFixed(1) + ' s'
-  },
-  {
-    id: 'simGapMs', section: 'render', label: 'Dropout length', kind: 'slider', parent: 'renderAudioDrawer',
-    summaryLabel: 'Dropout',
-    min: 10, max: 1000, step: 10, def: 200,
-    get: S => S.simGapMs ?? 200,
-    set: (S, v) => { S.simGapMs = Math.max(10, Math.min(1000, Math.round(v))); save(); },
-    formatAt: (pos, S) => (S && S.simGapRandom === true ? 'up to ' : '') + Math.round(pos) + ' ms'
-  },
-  {
-    id: 'simGapRandom', section: 'render', label: 'Random lengths', kind: 'toggle', parent: 'renderAudioDrawer',
-    def: false,
-    get: S => S.simGapRandom === true,
-    set: (S, on) => { S.simGapRandom = !!on; save(); },
-    format: S => S.simGapRandom === true ? 'random' : 'fixed'
-  },
-  {
-    id: 'simGapCount', section: 'render', label: 'Dropouts', kind: 'slider', parent: 'renderAudioDrawer',
-    min: 1, max: 100, step: 1, def: 1,
-    get: S => S.simGapCount ?? 1,
-    set: (S, v) => { S.simGapCount = Math.max(1, Math.min(100, Math.round(v))); save(); },
-    formatAt: pos => Math.round(pos) + (Math.round(pos) === 1 ? ' dropout' : ' dropouts')
-  },
-  {
-    // A test of what an underrun sounds like (js/heart/route.js
-    // simulateUnderrun): the drain plays dropouts as if the ring had run
-    // dry, concealment and all, without the cushion learning from them.
-    // Fixed: Dropouts gaps of the Length, with the Length of sound between.
-    // Random: each gap, and each stretch of sound between, its own length
-    // up to the Length.
-    id: 'simUnderrun', section: 'render', label: 'Simulate underrun', kind: 'action', parent: 'renderAudioDrawer',
-    act: S => simulateUnderrun(S.simGapCount ?? 1, S.simGapMs ?? 200, S.simGapRandom === true)
-  },
-  {
     // Whether the strobe's audio allows for the output's latency (js/
     // strobe-am.js postSignal): on, a sample carries the signal's value for
     // the moment it is HEARD, so the pulse sits on the flash on Bluetooth's
@@ -1938,6 +1832,115 @@ export const VISUAL_CONTROLS = [
     get: S => glideMs(S.filterGlideMs),
     set: (S, ms) => { S.filterGlideMs = glideMs(+ms); save(); },
     formatAt: pos => pos + ' ms'
+  },
+  // What plays when the audio engine falls behind (js/heart/conceal.js),
+  // and a way to make it fall behind on purpose to hear it.
+  subDrawer('renderRepairDrawer', 'Buffer underrun repair', 'render', ['heartLoopMode', 'heartWash']),
+  {
+    // The underrun concealment (js/heart/conceal.js): what plays when the
+    // engine falls behind, a loop of the last stretch heard. Ping-pong
+    // plays it back and forth; Forward plays it forwards over and over,
+    // its length snapped to whole cycles of the tone and the strobe, so a
+    // steady low tone carries straight on through the seam.
+    id: 'heartLoopMode', section: 'render', label: 'Loop mode', kind: 'segment', parent: 'renderRepairDrawer',
+    options: [{ value: 'pingpong', label: 'Ping-pong' }, { value: 'forward', label: 'Forward' }],
+    def: 'pingpong',
+    get: S => S.heartLoopMode === 'forward' ? 'forward' : 'pingpong',
+    set: (S, v) => { S.heartLoopMode = v === 'forward' ? 'forward' : 'pingpong'; applyHeartConceal(); save(); }
+  },
+  {
+    // How much of the last sound heard the loop plays. Forward fits it to
+    // whole cycles of the tone and strobe, which can move it.
+    id: 'heartLoopS', section: 'render', label: 'Loop length', kind: 'slider', parent: 'renderRepairDrawer',
+    min: 0.1, max: 1, step: 0.05, def: 0.5,
+    get: S => S.heartLoopS ?? 0.5,
+    set: (S, v) => { S.heartLoopS = Math.max(0.1, Math.min(1, v)); applyHeartConceal(); save(); },
+    formatAt: pos => Math.round(pos * 1000) + ' ms'
+  },
+  {
+    // Each turn of a ping-pong and each seam of a forward loop crossfade
+    // over this long. 0 is a hard turn.
+    id: 'heartXfadeMs', section: 'render', label: 'Crossfade', kind: 'slider', parent: 'renderRepairDrawer',
+    min: 0, max: 200, step: 5, def: 50,
+    get: S => S.heartXfadeMs ?? 50,
+    set: (S, v) => { S.heartXfadeMs = Math.max(0, Math.min(200, Math.round(v))); applyHeartConceal(); save(); },
+    formatAt: pos => pos > 0 ? Math.round(pos) + ' ms' : 'Hard turn'
+  },
+  {
+    // A dropout always plays whole loops, and the sound only comes back at
+    // the end of one; still behind then, it plays the loop again.
+    id: 'heartQuantize', section: 'render', label: 'Quantize repair', kind: 'toggle', parent: 'renderRepairDrawer',
+    def: false,
+    get: S => S.heartQuantize === true,
+    set: (S, on) => { S.heartQuantize = !!on; applyHeartConceal(); save(); },
+    format: S => S.heartQuantize === true ? 'whole loops' : 'off'
+  },
+  {
+    // How long the way back from the loop (and its wash) to the live sound
+    // takes once the engine has caught up (and, quantized, the loop has
+    // ended). The wash's room rings on under it either way.
+    id: 'heartReturnS', section: 'render', label: 'Return fade', kind: 'slider', parent: 'renderRepairDrawer',
+    min: 0.05, max: 3, step: 0.05, def: 0.75,
+    get: S => S.heartReturnS ?? 0.75,
+    set: (S, v) => { S.heartReturnS = Math.max(0.05, Math.min(3, v)); applyHeartConceal(); save(); },
+    formatAt: pos => pos < 1 ? Math.round(pos * 1000) + ' ms' : pos.toFixed(2).replace(/0$/, '') + ' s'
+  },
+  {
+    // The longer a stall goes on, the more of the loop is heard through a
+    // reverb (js/heart/wash.js): from dry at the start of the stall to this
+    // much wet over Wash rise. When the sound comes back the room rings out
+    // under it over Wash decay. 0 is no room.
+    id: 'heartWash', section: 'render', label: 'Wash', kind: 'slider', parent: 'renderRepairDrawer',
+    min: 0, max: 1, step: 0.05, def: 0.6,
+    get: S => S.heartWash ?? 0.6,
+    set: (S, v) => { S.heartWash = Math.max(0, Math.min(1, v)); applyHeartConceal(); save(); },
+    formatAt: pos => pos > 0 ? Math.round(pos * 100) + '% wet' : 'Off'
+  },
+  {
+    id: 'heartWashRiseS', section: 'render', label: 'Wash rise', kind: 'slider', parent: 'renderRepairDrawer',
+    min: 0.25, max: 5, step: 0.25, def: 1.5,
+    get: S => S.heartWashRiseS ?? 1.5,
+    set: (S, v) => { S.heartWashRiseS = Math.max(0.25, Math.min(5, v)); applyHeartConceal(); save(); },
+    formatAt: pos => pos.toFixed(2).replace(/0$/, '') + ' s to full'
+  },
+  {
+    id: 'heartWashDecayS', section: 'render', label: 'Wash decay', kind: 'slider', parent: 'renderRepairDrawer',
+    min: 1, max: 10, step: 0.5, def: 4,
+    get: S => S.heartWashDecayS ?? 4,
+    set: (S, v) => { S.heartWashDecayS = Math.max(1, Math.min(10, v)); applyHeartConceal(); save(); },
+    formatAt: pos => pos.toFixed(1) + ' s'
+  },
+  {
+    id: 'simGapMs', section: 'render', label: 'Dropout length', kind: 'slider', parent: 'renderRepairDrawer',
+    summaryLabel: 'Dropout',
+    min: 10, max: 1000, step: 10, def: 200,
+    get: S => S.simGapMs ?? 200,
+    set: (S, v) => { S.simGapMs = Math.max(10, Math.min(1000, Math.round(v))); save(); },
+    formatAt: (pos, S) => (S && S.simGapRandom === true ? 'up to ' : '') + Math.round(pos) + ' ms'
+  },
+  {
+    id: 'simGapRandom', section: 'render', label: 'Random lengths', kind: 'toggle', parent: 'renderRepairDrawer',
+    def: false,
+    get: S => S.simGapRandom === true,
+    set: (S, on) => { S.simGapRandom = !!on; save(); },
+    format: S => S.simGapRandom === true ? 'random' : 'fixed'
+  },
+  {
+    id: 'simGapCount', section: 'render', label: 'Dropouts', kind: 'slider', parent: 'renderRepairDrawer',
+    min: 1, max: 100, step: 1, def: 1,
+    get: S => S.simGapCount ?? 1,
+    set: (S, v) => { S.simGapCount = Math.max(1, Math.min(100, Math.round(v))); save(); },
+    formatAt: pos => Math.round(pos) + (Math.round(pos) === 1 ? ' dropout' : ' dropouts')
+  },
+  {
+    // A test of what an underrun sounds like (js/heart/route.js
+    // simulateUnderrun): the drain plays dropouts as if the ring had run
+    // dry, concealment and all, without the cushion learning from them.
+    // Fixed: Dropouts gaps of the Length, with the Length of sound between.
+    // Random: each gap, and each stretch of sound between, its own length
+    // up to the Length.
+    id: 'simUnderrun', section: 'render', label: 'Simulate underrun', kind: 'action', parent: 'renderRepairDrawer',
+    act: S => simulateUnderrun(S.simGapCount ?? 1, S.simGapMs ?? 200, S.simGapRandom === true)
   },
   subDrawer('renderPauseDrawer', 'Pause', 'render', ['pauseWindDown', 'pauseFlickerStop']),
   {
