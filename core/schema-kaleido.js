@@ -84,7 +84,7 @@ const NUM = [
   // the fade radius's variance: the same percent dip on the room clock
   // (core/strobe.js VARIANCES)
   ['kaleidoFadeVar',     0,   1,   0,    false],
-  ['kaleidoFadePeriod',  1,   60,  10,   true ],
+  ['kaleidoFadePeriod',  1,   120, 10,   true ],
   ['kaleidoFadePeriodOff', 0, 1,   0,    false],
   // Each piece's own fade in, in seconds of motion: eased up from nothing
   // over its first this-many seconds (gpu/kaleido.js bornT), so no birth
@@ -631,10 +631,10 @@ export const KALEIDO_CONTROLS = [
   varianceOf('kaleidoFade', under('kaleidoBrightnessDrawer', {
     // the rate on the room clock, retimed as the tint's is below
     id: 'kaleidoFadePeriod', section: 'kaleido', label: 'Fade radius variance rate', kind: 'slider',
-    min: 1, max: 60, step: 1, def: 10,
+    min: 1, max: 120, step: 1, def: 10,
     get: S => S.kaleidoFadePeriod,
     set: (S, pos) => {
-      const v = fit(pos, 1, 60, true);
+      const v = fit(pos, 1, 120, true);
       retimeRoomPhase(S, 'kaleidoFadePeriodOff', S.kaleidoFadePeriod, v);
       S.kaleidoFadePeriod = v;
       save();
