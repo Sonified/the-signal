@@ -570,8 +570,8 @@ const audioControls = [
     // tone landing in a tenth of a second is felt as a thump.
     id: 'toneFadeInS', section: 'audio', label: 'Fade in', kind: 'slider',
     parent: 'audioToneDrawer',
-    min: 0, max: 10, step: 0.25, def: 3,
-    get: s => s.toneFadeInS ?? 3,
+    min: 0, max: 10, step: 0.25, def: 5,
+    get: s => s.toneFadeInS ?? 5,
     set: (s, v) => { s.toneFadeInS = Math.max(0, Math.min(10, v)); save(); },
     formatAt: pos => pos > 0 ? (pos % 1 ? pos.toFixed(2).replace(/0$/, '') : pos) + ' s' : 'Instant'
   },

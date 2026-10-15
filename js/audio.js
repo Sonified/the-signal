@@ -611,14 +611,14 @@ function rampLevel(name, target, dur = 0.25, lead = 0) {
 }
 
 // The low tone's own fade in (the Tone drawer's Fade in, S.toneFadeInS,
-// 3 s unless set): every time the tone comes in, its level rises from
+// 5 s unless set): every time the tone comes in, its level rises from
 // nothing over that long, whatever the master does around it. That is the
 // first start, a play after a pause (fadeToneIn, from the transport), the
 // Audio switch and the tone's own switch (a level going from nothing to
 // something, below). A move of the level, its breath or a mute while the
 // fade is under way lands at the fade's end instead of cutting it short.
 let toneFadeEnd = 0, toneLast = 0;
-const toneFadeS = () => Number.isFinite(S.toneFadeInS) ? Math.max(0, Math.min(10, S.toneFadeInS)) : 3;
+const toneFadeS = () => Number.isFinite(S.toneFadeInS) ? Math.max(0, Math.min(10, S.toneFadeInS)) : 5;
 export function fadeToneIn(lead = 0) {
   if (!node || !audioCtx) return;
   const prm = node.parameters.get('toneLevel');

@@ -224,7 +224,7 @@ export const S = {
   toneVolVar: 0, toneVolPeriod: 20, toneStrobeAmVar: 0, toneStrobeAmPeriod: 20,
   toneOn: true, clickOn: true,
   toneVol: 0.3, clickVol: 0.33,
-  toneFadeInS: 3,             // the tone's own fade in, seconds, every time it comes in (js/audio.js fadeToneIn)
+  toneFadeInS: 5,             // the tone's own fade in, seconds, every time it comes in (js/audio.js fadeToneIn)
   harmOn: true, harmVol: 0.4, harmCount: 9, harmBright: 0.45,
   harmSpread: 0.7, harmPanRate: 0.45, harmReverb: 0.35,
   shimDepth: 0.57, shimRate: 0.12,
