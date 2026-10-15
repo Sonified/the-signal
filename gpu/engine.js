@@ -474,6 +474,8 @@ export async function createEngine(platform, opts) {
     gpu, gpuInfo,
     // The energy profile's sink (main.js, core/energy.js): { gpuDone, light }.
     energySink: null,
+    // The energy test's faster sampling (core/energy-test.js).
+    energyFast: on => energyProbe.setFast(on),
     start, render, registerScene, registerFlowers, registerSun, registerSlides, registerSunQr, registerStars, registerHeartbeat, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
     onGpuError: fn => { gpuErrorCbs.push(fn); },
     profileBegin, profileEnd

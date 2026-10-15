@@ -28,7 +28,8 @@
 import { S } from '../../js/state.js';
 import { guard } from '../../js/panel-guard.js';
 import { byId } from '../../core/schema.js';
-import { copyEnergyProfile, energyCopyLabel } from '../../core/schema-visual.js';
+import { copyEnergyProfile, copyEnergyTest, energyCopyLabel } from '../../core/schema-visual.js';
+import { energyTestTap, energyTestLabel } from '../../core/energy-test.js';
 import { drawerEdge } from './drawer.js';
 import { runAction, actionLabel } from '../widgets.js';
 import { ICON } from '../drawlist.js';
@@ -295,21 +296,44 @@ export function drawChrome(ui, app, alpha, frost) {
 // it is only painted (live false), and any touch brings the build back,
 // which is when it takes the press. Held, it arms the page's clipboard
 // (main.js), which is what lets iOS take the copy.
-let energyLabel = '', energyW = 0;
-export function drawEnergyChip(ui, dl, text, width, height, live) {
-  const label = energyCopyLabel();
-  if (label !== energyLabel) { energyLabel = label; energyW = text.measure(label, TYPE.sm, W.regular) + 26; }
-  const x = width - EDGE - energyW, y = height - EDGE - CHIP_H * 2 - GAP;
-  let hover = false;
+//
+// Beside it, to its left, Run energy test (core/energy-test.js): a tap
+// starts the test, a tap while it runs stops it, and once it has results
+// it reads Copy test results, the one state in which it copies (and so
+// arms the clipboard).
+const energyChips = [{ label: '', w: 0 }, { label: '', w: 0 }];
+function chipW(text, k, label) {
+  const c = energyChips[k];
+  if (label !== c.label) { c.label = label; c.w = text.measure(label, TYPE.sm, W.regular) + 26; }
+  return c.w;
+}
+function energyChip(ui, dl, text, k, key, label, xRight, y, live, copies) {
+  const c = energyChips[k];
+  chipW(text, k, label);
+  const x = xRight - c.w;
+  let hover = false, clicked = false;
   if (live) {
-    ui.interact(ui.id('chrome.energy'), x, y, energyW, CHIP_H, false);
+    ui.interact(ui.id(key), x, y, c.w, CHIP_H, false);
     hover = ui.hover || ui.pressed;
     if (ui.hover) ui.setCursorHint('pointer');
-    if (ui.pressed) ui.copyHeld = true;
-    if (ui.clicked) copyEnergyProfile();
+    if (copies && ui.pressed) ui.copyHeld = true;
+    clicked = ui.clicked;
   }
-  dl.rect(x, y, energyW, CHIP_H, RADIUS.md, COLOR.glassTint, 1, hover ? COLOR.lineStrong : COLOR.line, 0, 0);
-  text.draw(dl, label, x + energyW / 2, y + CHIP_H / 2 + 4, TYPE.sm, W.regular, hover ? COLOR.ink : COLOR.inkDim, 1, TRACK.label, 1);
+  dl.rect(x, y, c.w, CHIP_H, RADIUS.md, COLOR.glassTint, 1, hover ? COLOR.lineStrong : COLOR.line, 0, 0);
+  text.draw(dl, label, x + c.w / 2, y + CHIP_H / 2 + 4, TYPE.sm, W.regular, hover ? COLOR.ink : COLOR.inkDim, 1, TRACK.label, 1);
+  return { x, clicked };
+}
+export function drawEnergyChip(ui, dl, text, width, height, live) {
+  const y = height - EDGE - CHIP_H * 2 - GAP;
+  const copy = energyChip(ui, dl, text, 0, 'chrome.energy', energyCopyLabel(), width - EDGE, y, live, true);
+  if (copy.clicked) copyEnergyProfile();
+  const now = performance.now();
+  const testLabel = energyTestLabel(now);
+  // beside the copy chip where the row has room for it, else above it
+  const beside = copy.x - GAP - chipW(text, 1, testLabel) >= EDGE;
+  const test = energyChip(ui, dl, text, 1, 'chrome.energyTest', testLabel, beside ? copy.x - GAP : width - EDGE,
+                          beside ? y : y - CHIP_H - GAP, live, testLabel === 'Copy test results');
+  if (test.clicked && energyTestTap(now) === 'copy') copyEnergyTest();
 }
 
 // ---------- the panel guard's notice ----------

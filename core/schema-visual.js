@@ -26,7 +26,8 @@
 // Every get/set/format below receives S as a parameter rather than closing
 // over a module-level import: these are pure functions of whatever state
 // object the toolkit hands them, and state.js's S is passed in that way by
-// every caller, so there is no need to import it here at all.
+// every caller, so there is no need to import { energyTestCopied } from './energy-test.js';
+import it here at all.
 import { byId } from './schema.js';
 import { setColorFromPicker } from '../js/color.js';
 import { CORNER_TYPES } from '../js/state.js';
@@ -2205,8 +2206,12 @@ let energyCopied = 0, energyCopiedAt = -Infinity;
 export function setEnergyCopyHandler(fn) { energyCopyHook = fn; }
 export function copyEnergyProfile() {
   energyCopied = 0;
-  energyCopyHook().then(() => { energyCopied = 1; energyCopiedAt = performance.now(); },
-                        () => { energyCopied = -1; energyCopiedAt = performance.now(); });
+  energyCopyHook(false).then(() => { energyCopied = 1; energyCopiedAt = performance.now(); },
+                             () => { energyCopied = -1; energyCopiedAt = performance.now(); });
+}
+// The energy test's results, with the whole profile after them.
+export function copyEnergyTest() {
+  energyCopyHook(true).then(() => energyTestCopied(true), () => energyTestCopied(false));
 }
 export function energyCopyLabel() {
   return performance.now() - energyCopiedAt < 2500 && energyCopied

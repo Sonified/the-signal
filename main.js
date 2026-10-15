@@ -70,6 +70,7 @@ import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
 import { setSettingsFileHandler, setEnergyCopyHandler, overlayKeyCapture, OVERLAY_KEY_DEF } from './core/schema-visual.js';
 import { energyInit, energyState, energyFrame, energySink, buildEnergy } from './core/energy.js';
+import { energyTestInit, energyTestTick, energyTestStop, energyTestRunning, energyTestText } from './core/energy-test.js';
 import { byId } from './core/schema.js';
 import { buildDiagnostics } from './core/diagnostics.js';
 import { perf, perfAttachGpu, perfFrameStart, perfRecord } from './core/perf.js';
@@ -380,7 +381,9 @@ async function boot() {
   setSettingsFileHandler(kind => platform.settingsFile(kind));
   // Render > Copy energy profile: the engine's half here, the page's after it.
   engine.energySink = energySink;
-  setEnergyCopyHandler(() => platform.copyEnergy(buildEnergy(platform.env(), engine, platform)));
+  setEnergyCopyHandler(withTest => platform.copyEnergy((withTest ? energyTestText() + '\n\n' : '') + buildEnergy(platform.env(), engine, platform)));
+  // The energy test (core/energy-test.js) samples faster while it runs.
+  energyTestInit({ fast: on => engine.energyFast(on), screenDpr: () => platform.screenDpr });
   setJourneyDownloadHandler((filename, text) => platform.download(filename, text));
   // Going out of sight writes this tab's own pending changes first, then
   // holds back anything later (store.js's setHidden). Coming back arms a
@@ -389,6 +392,8 @@ async function boot() {
   platform.onVisibility(visible => {
     pageVisible = visible;
     energyState(!visible, false);
+    // out of sight, the energy test stops and puts back what it changed
+    if (!visible) energyTestStop();
     if (!visible) flush();
     else { armResume(); backInView = true; }
     setHidden(!visible);
@@ -666,6 +671,7 @@ async function boot() {
   function frame(t, dt, away) {
     const energyT0 = platform.now();
     if (away >= 0) holdBreath(away);
+    energyTestTick(energyT0);
     // Render > Pixel density, from the drawer or another tab: the canvas is
     // re-sized before anything this frame reads its size.
     if (S.dprCap !== platform.dprCap) platform.setDprCap(S.dprCap);
@@ -924,7 +930,7 @@ async function boot() {
         framesAwake >= IDLE_MIN_FRAMES && t - lastInputT >= IDLE_QUIET_MS &&
         !uiUnsettled && ui.activeId === -1 && !ui.textEditing && !metersShown && !profOn && !perf.on &&
         !perfBusy() && !journeyBusy() && !mixGatesBusy() && !(transitionRemaining() > 0) && !wordState.visible &&
-        !savePending() && !choreBusy() && !idleHeld() && !engine.busy()) {
+        !savePending() && !choreBusy() && !idleHeld() && !engine.busy() && !energyTestRunning()) {
       engine.sleep();
       resting = true;
       energyState(false, true);

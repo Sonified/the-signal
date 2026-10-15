@@ -112,14 +112,22 @@ function concealSetting() {
 export function applyHeartConceal() {
   if (engine) engine.setConceal(concealSetting());
 }
-// The tone's and the strobe's rates, for a forward loop to fit whole cycles
-// of, told to the drain twice a second: the strobe's rate drifts.
+// The tone's rate and the pulse's, for a forward loop to fit whole cycles
+// of (and a ping-pong to keep the tone in phase), told to the drain twice
+// a second: the strobe's rate drifts. The pulse counts only while
+// something audible repeats at it, the tone's modulation (Amplitude
+// modulation on) or the pips: with neither, a loop snapped to it would
+// only be longer than asked for nothing. Linked, the pulse is the strobe;
+// free, it is the Pulse rate.
 let periodsTimer = null;
 function tellPeriods() {
   if (!engine) return;
-  let strobe = 0;
-  try { strobe = rateAt(signal, signalNow()); } catch (e) {}
-  engine.setPeriods(S.toneOn ? S.carrierHz : 0, strobe);
+  let pulse = 0;
+  if (S.audioEnabled && (S.amModOn !== false || S.clickOn)) {
+    if (S.amLinked) { try { pulse = rateAt(signal, signalNow()); } catch (e) {} }
+    else pulse = +S.amRate || 0;
+  }
+  engine.setPeriods(S.toneOn ? S.carrierHz : 0, pulse);
 }
 
 // The drawer's Simulate underrun: `count` dropouts of `ms` each with `ms`

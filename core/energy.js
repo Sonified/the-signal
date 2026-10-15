@@ -35,6 +35,19 @@ function newRow(i) {
   };
 }
 
+// The energy test's window (core/energy-test.js): while open, every frame
+// and GPU reading lands in it as well, so a step's figures are its own.
+let win = null;
+export function energyWindowStart() { win = newRow(-2); win.t0 = clock(); }
+export function energyWindowStop() { win = null; }
+export function energyWindowTake() {
+  if (!win) return null;
+  win.awake = clock() - win.t0;
+  const f = figures(win);
+  win = null;
+  return f;
+}
+
 function addTime(ms) {
   if (ms <= 0) return;
   cur[state] += ms;
@@ -83,6 +96,7 @@ export function energyFrame(t0, t1) {
   const ms = t1 - t0;
   cur.frames++; totals.frames++;
   cur.js += ms; totals.js += ms;
+  if (win) { win.frames++; win.js += ms; }
   if (ms > cur.jsMax) cur.jsMax = ms;
   if (ms > totals.jsMax) totals.jsMax = ms;
 }
@@ -92,6 +106,7 @@ export const energySink = {
   gpuDone(ms) {
     if (!started) return;
     cur.gpuSum += ms; cur.gpuN++; totals.gpuSum += ms; totals.gpuN++;
+    if (win) { win.gpuSum += ms; win.gpuN++; }
     if (ms > cur.gpuMax) cur.gpuMax = ms;
     if (ms > totals.gpuMax) totals.gpuMax = ms;
   },
@@ -99,6 +114,7 @@ export const energySink = {
     if (!started) return;
     if (lit) { cur.litSum += level; cur.litN++; totals.litSum += level; totals.litN++; }
     else { cur.darkSum += level; cur.darkN++; totals.darkSum += level; totals.darkN++; }
+    if (win) { if (lit) { win.litSum += level; win.litN++; } else { win.darkSum += level; win.darkN++; } }
   }
 };
 
@@ -121,7 +137,7 @@ function figures(r) {
     light: lightN ? (r.litSum + r.darkSum) / lightN : -1,
     lit: r.litN ? r.litSum / r.litN : -1,
     dark: r.darkN ? r.darkSum / r.darkN : -1,
-    lightN
+    lightN, frames: r.frames, gpuN: r.gpuN
   };
 }
 
@@ -152,7 +168,8 @@ export function buildEnergy(env, engine, platform) {
     ``,
     `session, per awake time`,
     `  fps           ${f1(all.fps)}`,
-    `  frame JS      ${all.jsPer.toFixed(2)} ms a frame, ${pct(all.jsBusy)} of the engine thread, worst frame ${f1(totals.jsMax)} ms`,
+    `  frame JS      ${all.jsPer.toFixed(2)} ms a frame, worst frame ${f1(totals.jsMax)} ms`,
+    `  engine thread ${pct(all.jsBusy)} busy with frames (${env.frameSource === 'worker' ? 'its own worker' : 'the page\'s main thread, shared with the page'}); the CPU by thread goes on in the page half`,
     `  gpu done      ${all.gpuPer >= 0 ? all.gpuPer.toFixed(2) + ' ms a frame (' + totals.gpuN + ' samples), worst ' + f1(totals.gpuMax) + ' ms' : 'no samples'}`,
     `  surface fill  ${(px * all.fps / 1e6).toFixed(0)} Mpx/s (canvas x fps, before layers stack)`,
     `  screen light  ${all.light >= 0 ? pct(all.light) + ' of full white (lit frames ' + pct(all.lit < 0 ? 0 : all.lit) + ', dark ' + pct(all.dark < 0 ? 0 : all.dark) + '; ' + all.lightN + ' samples)' : 'no samples'}`,

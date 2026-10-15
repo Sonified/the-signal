@@ -23,6 +23,8 @@ let started = false, workerMode = false, startT = 0, minuteStart = 0;
 const rows = [];
 let cur = null, totals = null;
 let heartSeen = null, underrunsAtStart = -1, underrunsLast = 0;
+// each Heart render stage's share of its own thread, summed per reading
+let stageSum = [], stageN = 0;
 let canary = null, canaryReplies = 0, canaryFirst = -1, canaryBest = Infinity, canaryLast = -1;
 
 function newRow(i) {
@@ -43,7 +45,11 @@ function onHeartStats(s) {
   advance(performance.now());
   const budget = 1000 * CHUNK / eng.sampleRate;
   let worst = 0;
-  for (let k = 0; k < s.renderMs.length; k++) if (s.renderMs[k] > worst) worst = s.renderMs[k];
+  for (let k = 0; k < s.renderMs.length; k++) {
+    if (s.renderMs[k] > worst) worst = s.renderMs[k];
+    stageSum[k] = (stageSum[k] || 0) + s.renderMs[k] / budget;
+  }
+  stageN++;
   const load = worst / budget;
   cur.heartN++; cur.heartSum += load; totals.heartN++; totals.heartSum += load;
   if (load > cur.heartMax) cur.heartMax = load;
@@ -58,6 +64,7 @@ function lookForHeart() {
   if (eng && eng !== heartSeen && eng.on) {
     heartSeen = eng;
     underrunsAtStart = -1; underrunsLast = 0;
+    stageSum = []; stageN = 0;
     eng.on('stats', onHeartStats);
   }
 }
@@ -106,6 +113,35 @@ export function pageEnergyFrame(t0, t1) {
   totals.pageFrames++; totals.pageMs += t1 - t0;
 }
 
+// The CPU by thread, as far as the page can see it: the page's own loop (in
+// worker mode; in main mode it is the engine thread, in the engine half),
+// and each Heart render stage, a worker of its own rendering one chunk in
+// each chunk's time, so its render time over the chunk's length is how busy
+// that thread is. The drain (an audio worklet) and the browser's own audio
+// keep no account the page can read.
+const ROLE_NAME = ['combined', 'island', 'mix'];
+function threadLines(eng) {
+  const out = [];
+  if (workerMode && totals.pageFrames) {
+    const span = performance.now() - startT;
+    out.push(`  page thread   ${Math.round(100 * totals.pageMs / span)}% busy with its frame loop (${(totals.pageMs / totals.pageFrames).toFixed(2)} ms a frame)`);
+  }
+  if (eng && stageN) {
+    let sum = 0;
+    for (let k = 0; k < stageSum.length; k++) {
+      const st = eng.stages && eng.stages[k];
+      const share = stageSum[k] / stageN;
+      sum += share;
+      const name = st ? ROLE_NAME[st.role] || 'stage' : 'stage';
+      const isl = st && st.islands && st.islands.length ? ' (' + st.islands.join(', ') + ')' : '';
+      out.push(`  heart ${k} ${name}${isl}`.padEnd(16) + ` ${Math.round(100 * share)}% busy rendering`);
+    }
+    out.push(`  heart total   ${(sum * 100).toFixed(0)}% of one core across ${stageSum.length} thread${stageSum.length === 1 ? '' : 's'}`);
+  }
+  out.push(`  unmeasured    the audio output worklet, the browser's own audio, the compositor and the GPU process`);
+  return out;
+}
+
 // ---------- the text (on the tap) ----------
 const pct = v => Math.round(v * 100) + '%';
 const pad = (v, n) => { const s = String(v); return s.length >= n ? s : ' '.repeat(n - s.length) + s; };
@@ -144,6 +180,8 @@ export function pageEnergyText() {
     `live sound      ${live && live.length ? live.length + ' input' + (live.length === 1 ? '' : 's') : 'off'}`,
     `page thread     ${workerMode ? (totals.pageFrames ? (totals.pageMs / totals.pageFrames).toFixed(2) + ' ms a frame over ' + totals.pageFrames + ' frames' : 'no frames') : 'the engine thread (main mode), counted above'}`,
     `network         ${networkLine()}`,
+    `cpu by thread (the engine thread is in the engine half above)`,
+    ...threadLines(eng),
     `cpu canary      ${canaryLast > 0 ? 'first ' + canaryFirst.toFixed(1) + ' ms, best ' + canaryBest.toFixed(1) + ', last ' + canaryLast.toFixed(1) + ' (' + Math.round(100 * (canaryLast / canaryBest - 1)) + '% over best; rising = the phone slowing as it heats)' : 'no readings yet'}`,
     ``,
     `per minute (heart = busiest stage's share of the chunk budget; canary = best that minute)`,

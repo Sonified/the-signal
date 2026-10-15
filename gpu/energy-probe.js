@@ -21,6 +21,9 @@
 
 const GPU_EVERY = 30;          // frames between gpu done samples
 const LIGHT_EVERY_MS = 2000;   // between light samples
+// During the energy test (core/energy-test.js) both come three and two times
+// as often, so a step's few measured seconds hold enough of each.
+const GPU_EVERY_FAST = 10, LIGHT_EVERY_FAST_MS = 1000;
 const LIGHT_W = 64;            // thumbnail width; 64 x 4 bytes is one 256-byte row
 const LIGHT_FORMAT = 'rgba8unorm';
 
@@ -95,10 +98,15 @@ export function createEnergyProbe(device, now, sinkOf) {
   }
 
   // ---- light ----
+  let gpuEvery = GPU_EVERY, lightEvery = LIGHT_EVERY_MS;
+  function setFast(on) {
+    gpuEvery = on ? GPU_EVERY_FAST : GPU_EVERY;
+    lightEvery = on ? LIGHT_EVERY_FAST_MS : LIGHT_EVERY_MS;
+  }
   let lastLightT = -Infinity, lightPending = false, lightEncoded = false, lightLit = false;
   let mapBuf = null, mapH = 1;
   function lightDue(t) {
-    return !!sinkOf() && !!bind && !lightPending && t - lastLightT >= LIGHT_EVERY_MS;
+    return !!sinkOf() && !!bind && !lightPending && t - lastLightT >= lightEvery;
   }
   // After the scene pass, while sceneTex holds the picture.
   function encodeLight(encoder, lit) {
@@ -148,12 +156,12 @@ export function createEnergyProbe(device, now, sinkOf) {
       mapBuf = readBuf; mapH = h;
       readBuf.mapAsync(GPUMapMode.READ).then(onLightMapped, onLightFailed);
     }
-    if (!sinkOf() || gpuPending || ++gpuFrames < GPU_EVERY) return;
+    if (!sinkOf() || gpuPending || ++gpuFrames < gpuEvery) return;
     gpuFrames = 0;
     gpuPending = true;
     gpuT0 = now();
     device.queue.onSubmittedWorkDone().then(onGpuDone, onGpuFailed);
   }
 
-  return { resize, lightDue, encodeLight, afterSubmit };
+  return { resize, lightDue, encodeLight, afterSubmit, setFast };
 }
