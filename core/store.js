@@ -218,7 +218,7 @@ function buildSettings() {
     shimDepth: S.shimDepth, shimRate: S.shimRate, clickReverb: S.clickReverb,
     clickRevTime: S.clickRevTime, clickModDepth: S.clickModDepth, clickModPeriod: S.clickModPeriod,
     biDepth: S.biDepth, biPeriod: S.biPeriod, biHardSwitch: S.biHardSwitch,
-    rendererPref: S.rendererPref, heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, outputLatComp: S.outputLatComp,
+    heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, outputLatComp: S.outputLatComp,
     syncDiagLog: S.syncDiagLog, sunRateHz: S.sunRateHz, dprCap: S.dprCap, energyButton: S.energyButton,
     // Render > Audio engine > Limiter and Soft clip (core/output-guard.js)
     outLimiter: S.outLimiter, outSoftClip: S.outSoftClip,
@@ -1055,10 +1055,8 @@ function applySettings(s, live, scene) {
 
   if (s.wave) S.wave = s.wave;
   if (s.fieldShape) S.fieldShape = s.fieldShape;
-  // The GPU backends were an A/B against Canvas2D in v0; v1 has only the one
-  // WebGPU path, so the preference is restored for round-trip fidelity (a
-  // save from v0 must read back unchanged) but nothing in v1 branches on it.
-  if (s.rendererPref) S.rendererPref = s.rendererPref;
+  // rendererPref, v0's A/B of GPU backends against Canvas2D, is no longer
+  // saved or read: v1 has the one WebGPU path and nothing branches on it.
 
   if (s.layers) Object.assign(layers, s.layers);
 
