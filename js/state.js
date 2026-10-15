@@ -61,7 +61,7 @@ export const S = {
   // Render > Buffer underrun repair (js/heart/conceal.js) and its simulator; this machine's own
   heartLoopMode: 'pingpong', heartLoopS: 0.5, heartXfadeMs: 50, heartQuantize: false, heartReturnS: 0.75,
   heartWash: 0.6, heartWashRiseS: 1.5, heartWashDecayS: 4,
-  simGapMs: 200, simGapRandom: false, simGapCount: 1,
+  simGapMs: 200, simGapRandom: false, simGapCount: 1, simStallWorkers: false,
   outputLatComp: true,        // the strobe audio allows for the output's latency (strobe-am.js)
   syncDiagLog: false,         // print [syncdiag] sync and latency lines to the console (strobe-am.js)
   energyButton: false,        // Render > Energy profile button: the copy chip at the bottom right (ui/screens/chrome.js); this machine's own

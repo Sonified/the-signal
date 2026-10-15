@@ -115,7 +115,21 @@ function apply(d) {
     else if (d.type === 'free') wasm.heart_buffer_free(d.id);
     else if (d.type === 'inspect') inspect(d.ask);
     else if (d.type === 'skip') skipTo(d.to, d.clock);
+    else if (d.type === 'stall') stall(d.ms);
   } catch (err) { fail(err); }
+}
+
+// The drawer's Simulate underrun with Stall the workers on: this worker
+// stops dead for `ms`, as one the system has set aside or a busy machine
+// has starved would, and renders nothing until it is over. It blocks, so
+// nothing else in this worker runs meanwhile either; the drain finds the
+// ring running dry for real once the cushion has played out.
+const nap = typeof SharedArrayBuffer === 'function' ? new Int32Array(new SharedArrayBuffer(4)) : null;
+function stall(ms) {
+  if (!(ms > 0)) return;
+  if (nap) { try { Atomics.wait(nap, 0, 0, ms); return; } catch (e) {} }
+  const end = performance.now() + ms;
+  while (performance.now() < end) {}
 }
 
 function fail(err) {

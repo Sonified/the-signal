@@ -227,7 +227,7 @@ function buildSettings() {
     heartLoopMode: S.heartLoopMode, heartLoopS: S.heartLoopS, heartXfadeMs: S.heartXfadeMs,
     heartQuantize: S.heartQuantize, heartReturnS: S.heartReturnS, heartWash: S.heartWash,
     heartWashRiseS: S.heartWashRiseS, heartWashDecayS: S.heartWashDecayS,
-    simGapMs: S.simGapMs, simGapRandom: S.simGapRandom, simGapCount: S.simGapCount,
+    simGapMs: S.simGapMs, simGapRandom: S.simGapRandom, simGapCount: S.simGapCount, simStallWorkers: S.simStallWorkers,
     // Settings > Control overlays and its key (main.js), this machine's own
     // overlayModeRev 2: Key became the default, so a save from before it
     // (Auto, never chosen) is let go once on load below.
@@ -716,7 +716,7 @@ const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
                       'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'dprCap', 'energyButton',
                       'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload', 'presentationMode',
-                      'heartLoopMode', 'heartLoopS', 'heartXfadeMs', 'heartQuantize', 'heartReturnS', 'heartWash', 'heartWashRiseS', 'heartWashDecayS', 'simGapMs', 'simGapRandom', 'simGapCount'];
+                      'heartLoopMode', 'heartLoopS', 'heartXfadeMs', 'heartQuantize', 'heartReturnS', 'heartWash', 'heartWashRiseS', 'heartWashDecayS', 'simGapMs', 'simGapRandom', 'simGapCount', 'simStallWorkers'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies
 // it at once and keeps nothing (the broadcast's state message, a few times a
@@ -971,6 +971,7 @@ function applySettings(s, live, scene) {
     if (s.heartLoopMode === 'pingpong' || s.heartLoopMode === 'forward') S.heartLoopMode = s.heartLoopMode;
     if (typeof s.heartQuantize === 'boolean') S.heartQuantize = s.heartQuantize;
     if (typeof s.simGapRandom === 'boolean') S.simGapRandom = s.simGapRandom;
+    if (typeof s.simStallWorkers === 'boolean') S.simStallWorkers = s.simStallWorkers;
     for (const [k, lo, hi] of [['heartLoopS', 0.1, 1], ['heartXfadeMs', 0, 200], ['heartReturnS', 0.05, 3], ['heartWash', 0, 1],
       ['heartWashRiseS', 0.25, 5], ['heartWashDecayS', 1, 10], ['simGapMs', 10, 1000], ['simGapCount', 1, 100]]) {
       const v = s[k];

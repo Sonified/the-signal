@@ -546,6 +546,14 @@ async function assemble(engine, ctx, module, opts) {
       const quanta = ms.map(v => Math.max(1, Math.round(v / 1000 * sampleRate / QUANTUM)));
       output.port.postMessage({ type: 'simulate', quanta });
     },
+    // The same with Stall the workers on: every render worker stops dead
+    // for `ms` (render-worker.js stall), so the ring really runs dry once
+    // the cushion has played out, and the drain cannot tell it from any
+    // other underrun.
+    stallWorkers(ms) {
+      if (closed || !(ms > 0)) return;
+      for (const w of workers) w.postMessage({ type: 'stall', ms });
+    },
     rest,
     wake,
     isResting: () => resting,

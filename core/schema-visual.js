@@ -1948,14 +1948,29 @@ export const VISUAL_CONTROLS = [
     formatAt: pos => Math.round(pos) + (Math.round(pos) === 1 ? ' dropout' : ' dropouts')
   },
   {
+    // How Simulate underrun makes its dropouts. Off: the drain pretends the
+    // ring is dry for each gap while the workers carry on (the repair, the
+    // timing and the dropped late audio are all the real ones, but nothing
+    // is counted and the cushion does not grow). On: the render workers
+    // themselves stop dead for each gap (js/heart/render-worker.js stall),
+    // the cause and not just the effect, so the ring runs dry for real and
+    // comes back raggedly as the workers catch up, counted and grown from
+    // like any underrun. The cushion absorbs a stall shorter than itself,
+    // so a dropout is only heard for as long as the stall outlasts it.
+    id: 'simStallWorkers', section: 'render', label: 'Stall the workers', kind: 'toggle', parent: 'renderRepairDrawer',
+    def: false,
+    get: S => S.simStallWorkers === true,
+    set: (S, on) => { S.simStallWorkers = !!on; save(); },
+    format: S => S.simStallWorkers === true ? 'real stalls' : 'drain only'
+  },
+  {
     // A test of what an underrun sounds like (js/heart/route.js
-    // simulateUnderrun): the drain plays dropouts as if the ring had run
-    // dry, concealment and all, without the cushion learning from them.
+    // simulateUnderrun): dropouts made as Stall the workers says, above.
     // Fixed: Dropouts gaps of the Length, with the Length of sound between.
     // Random: each gap, and each stretch of sound between, its own length
     // up to the Length.
     id: 'simUnderrun', section: 'render', label: 'Simulate underrun', kind: 'action', parent: 'renderRepairDrawer',
-    act: S => simulateUnderrun(S.simGapCount ?? 1, S.simGapMs ?? 200, S.simGapRandom === true)
+    act: S => simulateUnderrun(S.simGapCount ?? 1, S.simGapMs ?? 200, S.simGapRandom === true, S.simStallWorkers === true)
   },
   subDrawer('renderPauseDrawer', 'Pause', 'render', ['pauseWindDown', 'pauseFlickerStop']),
   {

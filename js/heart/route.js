@@ -132,16 +132,29 @@ function tellPeriods() {
 
 // The drawer's Simulate underrun: `count` dropouts of `ms` each with `ms`
 // of sound between, or, `random`, each gap and each stretch of sound
-// between its own length from a quantum up to `ms`. Handed to the drain as
-// milliseconds, gap, sound, gap, ... ending on a gap.
-export function simulateUnderrun(count, ms, random) {
+// between its own length from a quantum up to `ms`, as milliseconds, gap,
+// sound, gap, ... ending on a gap. Handed to the drain, which plays each
+// gap as if the ring were dry; or, `stall`, played out here on timers as
+// real stalls of the render workers, which the cushion absorbs as it
+// would any stall, so only what outlasts it is heard as a dropout. A new
+// press calls off whatever of the last pattern is still to come.
+let stallTimers = [];
+export function simulateUnderrun(count, ms, random, stall = false) {
   if (!engine) { console.warn('simulate underrun: Heart is not playing'); return; }
   const pattern = [];
   for (let i = 0; i < count; i++) {
     if (i > 0) pattern.push(random ? Math.random() * ms : ms);
     pattern.push(random ? Math.random() * ms : ms);
   }
-  engine.simulateUnderrun(pattern);
+  for (const t of stallTimers) clearTimeout(t);
+  stallTimers = [];
+  if (!stall) { engine.simulateUnderrun(pattern); return; }
+  let at = 0;
+  for (let i = 0; i < pattern.length; i += 2) {
+    const gap = pattern[i], eng = engine;
+    stallTimers.push(setTimeout(() => eng.stallWorkers(gap), at));
+    at += gap + (pattern[i + 1] || 0);
+  }
 }
 
 export function startHeart(ctx, master) {
