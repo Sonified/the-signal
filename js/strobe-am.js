@@ -37,7 +37,7 @@
 // once more whenever the link is switched.
 import { S } from './state.js';
 import { getContext, glideParam, watchEngine } from './audio.js';
-import { makeWorklet } from './heart/route.js';
+import { makeWorklet, heartEngine } from './heart/route.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { breath, breathState } from '../core/variance.js';
 import { every, clear } from './ticker.js';
@@ -155,15 +155,20 @@ function postSignal() {
   // pulse visibly wander off the flash (found 2026-10-08, syncdiag).
   const heardLateS = wantLat(clockCtx);
   latPosted = heardLateS;
+  // The bridge measures the NATIVE clock, so `at` is a native time; a node
+  // on a Heart context reads Heart time, which leads it by the engine's
+  // lead after a forward skip (§7.6), so that node's anchor is moved on by
+  // the same lead. The lead is read from the engine, not the Heart clock,
+  // which inside a planner walk would carry the walk's virtual time too.
   const at = (signal.at - SIGNAL_ORIGIN - est) / 1000 - heardLateS;
+  const leadOf = n => { const e = n.context && n.context.isHeart && heartEngine(); return e && e.lead ? e.lead() : 0; };
   if (sigNodes.size) {
-    sigMsg.at = at;
     sigMsg.p = signal.offset; sigMsg.r0 = signal.r0; sigMsg.r1 = signal.r1; sigMsg.dur = signal.dur;
     sigMsg.wave = signal.wave; sigMsg.duty = signal.duty; sigMsg.on = signal.on;
-    for (const n of sigNodes.values()) n.port.postMessage(sigMsg);
+    for (const n of sigNodes.values()) { sigMsg.at = at + leadOf(n); n.port.postMessage(sigMsg); }
   }
   if (toEng) {
-    engMsg.at = at;
+    engMsg.at = at + leadOf(engNode);
     engMsg.p = signal.offset; engMsg.r0 = signal.r0; engMsg.r1 = signal.r1; engMsg.dur = signal.dur;
     engMsg.wave = signal.wave; engMsg.duty = signal.duty;
     engMsg.linked = engLinked = !!S.amLinked;
@@ -303,7 +308,9 @@ function wanderMul(am, now) {
 }
 
 function applyDepth(am) {
-  const ctx = getContext();
+  // The voice's own clock (its node's context): walked, each tick steps the
+  // wander to its virtual moment; after a skip it leads the native clock.
+  const ctx = am.node && am.node.context || getContext();
   const mul = ctx ? wanderMul(am, ctx.currentTime) : 1;
   const v = scaledStrobeDepth(clamp01(am.depthOf()) * mul);
   if (v === am.depth) return;
@@ -321,7 +328,9 @@ export function refreshStrobeAm() {
 // the same wander the audio walks, so the glow and the gain always agree.
 export function strobeAmEffective(am) {
   if (!am) return undefined;
-  const ctx = getContext();
+  // The same clock the audio walks (applyDepth), so the glow and the gain
+  // always agree, lead and all.
+  const ctx = am.node && am.node.context || getContext();
   if (!ctx) return undefined;
   return clamp01(am.depthOf()) * wanderMul(am, ctx.currentTime);
 }

@@ -233,7 +233,9 @@ function hpSwap(tc) {
   glideParam(hp.level.gain, 1, tc);
   glideParam(hpOld.level.gain, 0, tc);
   const c = ctx, old = hpOld;
-  const wait = Math.max(0, glideEnd() - c.currentTime) + lateBy(c) + 10 * tc;
+  // glideEnd is a native-clock time, measured against the native clock;
+  // after a skip the room's Heart clock leads it and would come up short.
+  const wait = Math.max(0, glideEnd() - getContext().currentTime) + lateBy(c) + 10 * tc;
   hpIdle = setTimeout(() => {
     hpIdle = null;
     if (ctx !== c || hpOld !== old) return;     // the room was rebuilt meanwhile

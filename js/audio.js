@@ -9,6 +9,7 @@ import { scaledStrobeDepth } from './strobe-scale.js';
 import { prepareAudioSession, startBackgroundKeepAlive, setBackgroundPlaying, setMediaWake } from './background.js';
 import { startHeart, ctxFor, masterFor, makeWorklet, heartEngine } from './heart/route.js';
 import { every, after, clear } from './ticker.js';
+import { idleTouch, idleMove, idleRefresh, startIdleAhead } from './idle-ahead.js';
 import { breath, breathState } from '../core/variance.js';
 import { IDLE_DIAG } from '../core/idle.js';
 import { createGlobalFilter } from '../core/global-filter.js';
@@ -259,6 +260,23 @@ export function continueGlide(end, fn) {
   try { fn(); } finally { glideDepth = 0; glideT1 = Math.max(prev, end); }
 }
 
+// Which clock a parameter's gestures anchor at (render ahead on idle,
+// documents/heart-audio-engine.md §7.6): a Heart param reads its own
+// context's clock, the native one plus the engine's lead after a forward
+// skip and, inside a planner walk, the walk's virtual time
+// (js/heart/heart.js currentTime); a native param reads the native clock.
+// Without this a walked tick's gesture would anchor at the real now and the
+// late-gesture machinery would collapse the whole walked plan onto the
+// horizon, losing the breath it was planning.
+const paramNow = prm => {
+  const c = prm && prm._node && prm._node.context;
+  return c && c.isHeart ? c.currentTime : audioCtx.currentTime;
+};
+// The open transition's end on that same clock: glideT1 is kept on the
+// native clock and shifts by the same lead. For a native param (or with no
+// lead and no walk) it is glideT1 exactly.
+const glideT1For = now => glideT1 + (now - audioCtx.currentTime);
+
 // Holds a parameter at the value it has right now and drops everything
 // queued after it, so the next ramp starts from where the sound actually is.
 function anchorParam(prm, t) {
@@ -281,10 +299,10 @@ export function holdParam(prm, t) {
 // ramp's end value when that event comes due.
 export function glideParam(prm, value, tc) {
   if (!audioCtx || !prm) return;
-  const now = audioCtx.currentTime;
+  const now = paramNow(prm), t1 = glideT1For(now);
   if (glideDepth > 0) {
     anchorParam(prm, now);
-    prm.linearRampToValueAtTime(value, glideT1);
+    prm.linearRampToValueAtTime(value, t1);
     glideTarget.set(prm, value);
     return;
   }
@@ -293,7 +311,7 @@ export function glideParam(prm, value, tc) {
   // for the linked pulse rate: the strobe's own glide calls this on every
   // frame of the window, and anchoring each time was three automation calls a
   // frame, and a step back to the last rendered value, instead of one.
-  if (now < glideT1) {
+  if (now < t1) {
     const heading = glideTarget.get(prm);
     if (heading === value) return;
     if (heading !== undefined) {
@@ -592,16 +610,16 @@ function rampLevel(name, target, dur = 0.25, lead = 0) {
   if (!node) return;
   const prm = node.parameters.get(name);
   if (!prm) return;
-  const now = audioCtx.currentTime;
+  const now = paramNow(prm), t1 = glideT1For(now);
   if (name === 'toneLevel' && toneRamp(prm, target, now, lead)) return;
   if (!lead) {
     if (glideDepth > 0) {
       anchorParam(prm, now);
-      prm.linearRampToValueAtTime(target, glideT1);
+      prm.linearRampToValueAtTime(target, t1);
       glideTarget.set(prm, target);
       return;
     }
-    if (now < glideT1 && glideTarget.get(prm) === target) return;
+    if (now < t1 && glideTarget.get(prm) === target) return;
   }
   glideTarget.delete(prm);
   const t = now + lead;
@@ -623,7 +641,7 @@ export function fadeToneIn(lead = 0) {
   if (!node || !audioCtx) return;
   const prm = node.parameters.get('toneLevel');
   if (!prm) return;
-  const t = audioCtx.currentTime + lead, dur = toneFadeS(), target = levelTargets.toneLevel();
+  const t = paramNow(prm) + lead, dur = toneFadeS(), target = levelTargets.toneLevel();
   glideTarget.delete(prm);
   prm.cancelScheduledValues(t);
   prm.setValueAtTime(0, t);
@@ -806,14 +824,17 @@ function breatheTone(now) {
 }
 function toneBreathTick() {
   if (!node || !audioCtx) { syncToneBreath(); return; }
-  const now = audioCtx.currentTime;
+  // The genus clock, not the native one: inside a planner walk it reads the
+  // virtual time, so each walked tick steps the breath to its own moment
+  // and books the level that moment would have had.
+  const now = node.context.currentTime, t1 = glideT1For(now);
   breatheTone(now);
   const lvl = levelTargets.toneLevel(), dep = toneAmDepth();
-  if (lvl !== toneVolSent && !(now < glideT1 && glideTarget.has(node.parameters.get('toneLevel')))) {
+  if (lvl !== toneVolSent && !(now < t1 && glideTarget.has(node.parameters.get('toneLevel')))) {
     toneVolSent = lvl;
     rampLevel('toneLevel', lvl, 0.1);
   }
-  if (dep !== toneAmSent && !(now < glideT1 && glideTarget.has(node.parameters.get('amDepth')))) {
+  if (dep !== toneAmSent && !(now < t1 && glideTarget.has(node.parameters.get('amDepth')))) {
     toneAmSent = dep;
     setParam('amDepth', dep, 0.1);
   }
@@ -827,7 +848,7 @@ function syncToneBreath() {
 // now, so an amount brought to 0 hands the settings straight back, then both
 // params on their usual glides and the timer started or stopped to suit.
 export function applyToneBreath() {
-  if (audioCtx) breatheTone(audioCtx.currentTime);
+  if (audioCtx) breatheTone(node ? node.context.currentTime : audioCtx.currentTime);
   applyLevel('toneLevel');
   applyAmOn();
 }
@@ -887,6 +908,9 @@ export function ensureAudioGraph() {
     // so the volume and the pause gate stay these. With no family flagged
     // it loads nothing and does nothing.
     await startHeart(audioCtx, volGain);
+    // Render ahead on idle (js/idle-ahead.js): watching starts once Heart
+    // has settled, engine or not; without one every entry is a no-op.
+    startIdleAhead();
     // The music's master room (js/room.js), the reverb every music voice
     // and the Sun's hum share: built here, as soon as the music family's
     // context is known, so it exists from the first sound whatever the
@@ -1060,6 +1084,7 @@ export function audioOn() {
 }
 
 async function startAudio() {
+  idleTouch('the transport');
   S.audioEnabled = true;
   followBackground();
   // A preset that switches audio on opens its transition before this awaits
@@ -1087,6 +1112,7 @@ async function startAudio() {
 // them on every toggle reintroduces exactly the device-engagement click this
 // is here to avoid.
 export function audioOff() {
+  idleTouch('the transport');
   S.audioEnabled = false;
   if (!audioCtx) return;
   applyAudioShape();
@@ -1098,6 +1124,9 @@ export function audioOff() {
 // spacebar pauses the whole experience, sound included
 let hasRisen = false;
 export function applyAudioGain() {
+  // Anything rendered seconds ahead is skipped first (§7.6), so the pause
+  // or resume below is heard at the base latency, not the grown cushion's.
+  idleTouch('the transport');
   // If audio has somehow never started, start it here rather than going quiet.
   // This is the only place that knows the session is actually running, so it is
   // the right place to be self-healing about it.
@@ -1175,8 +1204,12 @@ export function sourceGate(prm) {
 function setSources(open) {
   if (open === srcOpen || !audioCtx) return;
   srcOpen = open;
-  const now = audioCtx.currentTime;
+  // Gate by gate on its own clock: the gates are a mix of Heart params (the
+  // family buses) and native ones, and a Heart gate anchored at the native
+  // now would be a late gesture moved whole to the horizon, where a native
+  // one anchored at Heart's led clock would start in its future.
   for (let i = 0; i < srcGates.length; i++) {
+    const now = paramNow(srcGates[i]);
     anchorParam(srcGates[i], now);
     srcGates[i].linearRampToValueAtTime(open ? 1 : 0, now + SRC_GATE_S);
   }
@@ -1241,6 +1274,7 @@ function masterTo(level, at) {
     const eng = heartEngine();
     if (eng && eng.isResting()) {
       eng.wake();
+      idleRefresh();
       if (IDLE_DIAG) console.log('[idlediag] Heart wakes: the master opens');
     }
     return;
@@ -1253,7 +1287,9 @@ function armRest() {
   const eng = heartEngine();
   if (!eng || eng.isResting()) return;
   const wait = Math.max(0, (quietAt - audioCtx.currentTime) * 1000, REST_QUIET_MS - (performance.now() - lastNudge));
-  restTimer = after(Math.ceil(wait) + 50, restCheck);
+  // Real: the rest check watches the real clock and must never be walked
+  // ahead by the idle planner walk (js/ticker.js).
+  restTimer = after(Math.ceil(wait) + 50, restCheck, { real: true });
 }
 function restCheck() {
   restTimer = 0;
@@ -1263,6 +1299,7 @@ function restCheck() {
   if (!eng || eng.isResting() || quietAt === Infinity || !audioCtx || audioCtx.state !== 'running') return;
   if (audioCtx.currentTime >= quietAt && performance.now() - lastNudge >= REST_QUIET_MS) {
     eng.rest();
+    idleRefresh();
     if (IDLE_DIAG) console.log('[idlediag] Heart rests: the master is shut and no hand has moved for ' + (REST_QUIET_MS / 1000) + ' s');
     return;
   }
@@ -1272,11 +1309,16 @@ function restCheck() {
 // mode): a resting Heart wakes, and rests again once the hand has been
 // still for REST_QUIET_MS with the master still shut. A pointer move costs
 // a clock read and a store.
-export function heartNudge() {
+// `type` is the input's kind (main.js, the worker bridge): 'down' and 'key'
+// are touches that skip the idle cushion before their commands; anything
+// else (a move, a wheel) only caps its growth (js/idle-ahead.js).
+export function heartNudge(type) {
   lastNudge = performance.now();
+  if (type === 'down' || type === 'key') idleTouch('a hand'); else idleMove();
   const eng = heartEngine();
   if (eng && eng.isResting()) {
     eng.wake();
+    idleRefresh();
     if (IDLE_DIAG) console.log('[idlediag] Heart wakes: a hand');
   }
   armRest();

@@ -692,7 +692,11 @@ function bedTake(startAt, offset, playLen, xf, fadeIn) {
 }
 
 function bedPump() {
-  const ctx = getContext();
+  // The family's clock, not the native one: bedNextAt is a time on the
+  // family's context, which leads the native clock after a forward skip
+  // (§7.6); and inside a planner walk this reads the virtual time, so the
+  // walk books the bed as far ahead as it walks.
+  const ctx = famCtx();
   if (!bedRunning || !ctx) return;
   const loopLen = bedMeta.loopEnd - bedMeta.loopStart;
   // A crossfade longer than half the loop would overlap its own two ends and
@@ -783,7 +787,7 @@ function bedOn() {
   bedTimer = every(10000, bedPump);
 
   // the level's variance starts from the top of its cycle, the full level
-  const now = getContext().currentTime;
+  const now = ctx.currentTime;
   resetBreath(bedVolB, now);
   bedVolWander(now);
   bedFadeEnd = now + 3 * BED_FADE_TC;
@@ -897,7 +901,10 @@ function chainFeed(c, on) {
     // The chains hang off the strobe stage, so that is what is unplugged, the
     // one alive now: a later drone brings its own.
     const ctx = famCtx(), am = bedAm;
-    const wait = Math.max(0, glideEnd() - ctx.currentTime) + lateBy(ctx) + 10 * BED_XF_TC;
+    // glideEnd is a native-clock time, so the native clock measures what is
+    // left of it; after a skip the family clock leads it by the engine's
+    // lead and the difference would come up short.
+    const wait = Math.max(0, glideEnd() - getContext().currentTime) + lateBy(ctx) + 10 * BED_XF_TC;
     c.idle = setTimeout(() => {
       c.idle = null;
       if (!c.live || bedAm !== am) return;        // the drone was rebuilt meanwhile
@@ -928,7 +935,7 @@ export function applyBedVerb() {
 // The level, its variance's amount, driver, Behavior or speed has moved.
 export function applyBedVol() {
   if (!bedGain) return;
-  bedVolWander(getContext().currentTime);
+  bedVolWander(famCtx().currentTime);
   glideParam(bedGain.gain, bedLevel() * chanGate('drone'), 0.2);
   if (bedAm) bedAm.apply();
   syncBedVolTimer();
@@ -967,7 +974,9 @@ function bedVolWander(now) {
 }
 function bedVolTick() {
   if (!bedGain) { syncBedVolTimer(); return; }
-  const now = getContext().currentTime, was = bedVolDip;
+  // The family's clock: walked, each tick steps the breath to its own
+  // virtual moment (§7.6).
+  const now = famCtx().currentTime, was = bedVolDip;
   bedVolWander(now);
   // a tenth of a second, as the choir's level glides, so 10 Hz steps blend;
   // while the drone is still fading in, its own fade's, so the fade keeps
@@ -1125,14 +1134,19 @@ export function seqHasNotes(q) {
 // Where the playhead is: every scheduled step is noted with its time and
 // the step clock's count, and the window asks which was the last one to
 // sound. The count, not a step, so each line can find its own step in it.
-const MARKS = 32;
+// 512: a ten-second idle walk of a fast arp (su a 16th at high rates) books
+// far more steps ahead than the 32 the window needed when nothing was
+// planned further than a chunk or two (§7.6).
+const MARKS = 512;
 const markT = new Float64Array(MARKS).fill(-1), markC = new Float64Array(MARKS).fill(-1);
 let markN = 0;
 function seqMark(t, c) { markT[markN] = t; markC[markN] = c; markN = (markN + 1) % MARKS; }
 // The count at the step that last sounded, -1 while nothing plays. A line's
 // step under it is the count modulo that line's length.
 export function seqClock() {
-  const ctx = getContext();
+  // The family's clock: the marks are Heart times, and after a skip the
+  // native clock would trail them by the lead and hold the playhead still.
+  const ctx = famCtx();
   if (!arp || !ctx) return -1;
   const now = ctx.currentTime;
   let best = -1, bt = -1;

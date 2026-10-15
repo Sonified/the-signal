@@ -214,10 +214,18 @@ function levelTo(tc) {
 
 // Every per-voice gain toward its target, from exactly where it is now, so
 // repeated input stays continuous without restarting a long curve.
+// The choir's own clock: its nodes' context, Heart's when the music family
+// plays there, which leads the native clock after a forward skip and reads
+// the virtual time inside a planner walk (§7.6).
+function choirNow() {
+  const c = chain ? chain.context : voices && voices[0] ? voices[0].gain.context : null;
+  return (c || getContext()).currentTime;
+}
+
 function applyChoirTargets(duration) {
   if (!voices) return;
   choirTargets(effStack, effDensity, S.choirBrightness, S.choirFocus);
-  const now = getContext().currentTime;
+  const now = choirNow();
   const tc = Math.max(0.008, duration / 4);
   for (let i = 0; i < voices.length; i++) {
     const param = voices[i].gain.gain;
@@ -374,7 +382,7 @@ function wanderVol(now) {
 
 function wanderTick() {
   if (!voices) { stopWanderTimer(); return; }
-  const now = getContext().currentTime;
+  const now = choirNow();
   const s0 = effStack, d0 = effDensity, v0 = effVolDepth;
   wanderLevels(now);
   wanderVol(now);
@@ -398,7 +406,7 @@ function syncWanderTimer() {
 // to the new targets, nothing retriggers.
 export function applyChoir() {
   if (!voices) return;
-  wanderLevels(getContext().currentTime);
+  wanderLevels(choirNow());
   applyChoirTargets(0.075);
   syncWanderTimer();
 }
@@ -407,7 +415,7 @@ export function applyChoir() {
 // the drone's level is applied.
 export function applyChoirVol() {
   if (!chain) return;
-  wanderVol(getContext().currentTime);
+  wanderVol(choirNow());
   levelTo(0.2);
   if (am) am.apply();
   syncWanderTimer();
