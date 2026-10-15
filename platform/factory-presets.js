@@ -1,6 +1,6 @@
 // The official starting row: the presets a first visit opens with
 // (presets/factory.json, Robert's own row as of 2026-10-14, the Aunt Ann
-// presets through AA6 included, with AA6 lit). It is the presets record exactly as core/presets.js keeps it
+// presets and TSC 2026, his AA6 renamed, with TSC 2026 lit). It is the presets record exactly as core/presets.js keeps it
 // under signal.presets.v1, so seeding it is one write: the same chips in the
 // same order, the same hearts and the same built-ins saved over or hidden,
 // all of them the viewer's own from then on, to recall, save over, rename or
@@ -21,7 +21,7 @@
 //
 // A viewer who has been here before but never had a presets record (their
 // settings are already stored) gets the row with nothing lit: their screen
-// is their own settings, not AA6, and a lit chip would say
+// is their own settings, not TSC 2026, and a lit chip would say
 // otherwise.
 //
 // Page-only, like settings-file.js: in worker mode this runs on the page

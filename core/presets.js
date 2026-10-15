@@ -761,7 +761,7 @@ export function presetTargets(i, out) {
 }
 
 // A first visit's starting settings: the lit chip's snapshot (the starting
-// row's AA6, platform/factory-presets.js) written into S at
+// row's TSC 2026, platform/factory-presets.js) written into S at
 // boot, straight after store.js load() finds nothing stored and before
 // anything is drawn or sounds. State only, through store.js applySnapshot,
 // the same write a recall makes, so this machine's own settings (the Render
