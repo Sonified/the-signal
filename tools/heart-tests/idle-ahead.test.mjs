@@ -126,8 +126,11 @@ for (const workers of [1, 3]) {
       const w3 = engine.wakes();
       const idleRate = (sum(w3) - sum(w2)) / w3.length / 1.5;
       t.diagnostic(`wakes a second a stage: ${baseRate.toFixed(1)} at base, ${idleRate.toFixed(1)} with a 2 s cushion`);
-      assert.ok(baseRate > 20, `the base cadence is per chunk (${baseRate.toFixed(1)}/s)`);
-      assert.ok(idleRate < baseRate / 3 && idleRate < 30, `an idle stage sleeps between gulps (${idleRate.toFixed(1)}/s)`);
+      // Base tops up in quarter-cushion bursts (render-worker.js wakeAt):
+      // ~14/s combined, ~40 for a mix and islands with their bells, far
+      // from the ~94-150 the per-chunk top-up cost; idle sleeps below both.
+      assert.ok(baseRate > 5 && baseRate < 70, `the base cadence is batched (${baseRate.toFixed(1)}/s)`);
+      assert.ok(idleRate < baseRate * 0.8 && idleRate < 30, `an idle stage sleeps between gulps (${idleRate.toFixed(1)}/s)`);
       assert.equal(engine.stats().underruns, 0, 'no underrun through the lift');
     } finally { await rig.close(); }
   });

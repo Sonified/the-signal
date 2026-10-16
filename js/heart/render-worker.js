@@ -313,6 +313,14 @@ function pump() {
       if (!ctl) return;
       Atomics.store(ctl, wakeOf(stage), wakeAt());
       if (ready()) continue;        // the clock moved while we decided
+      // An island going to sleep flushes what it holds to the mix: fewer
+      // than four chunks never crossed the batch line (render), and the mix
+      // may be waiting on exactly these. Only when it could be: a mix
+      // sleeping on the clock has a count in its wake slot and wants no
+      // flush; starved of an island it sleeps with none (-1), as its final
+      // ring's room never binds.
+      if (role === ROLE_ISLAND && Atomics.load(ctl, wakeOf(0)) < 0 &&
+          out.readable() > 0 && out.readable() < 4 * chunk) ringBell(ctl, 0);
       sleep(bell);
       return;
     }
@@ -321,19 +329,25 @@ function pump() {
 
 // The clock count to be woken at, or -1 when what is missing is room in an
 // egress ring or an island's block, which the other stage rings for, or the
-// page's limit, which the page rings every bell for when it moves. While a
-// limit stands and the clock binds, the stage does not ask to be woken per
-// chunk: it asks for the count at which half its cushion has played, and
-// renders back to full in one gulp, which is what lets the cores sleep for
-// seconds at a time (§7.6).
+// page's limit, which the page rings every bell for when it moves. The
+// stage never asks to be woken per chunk: it asks for the count at which a
+// batch of its cushion has played, and renders back to full in one burst.
+// At base the batch is a quarter of the lookahead (at least a chunk), which
+// took a phone's five stages from about 150 wakes a second EACH - the
+// per-chunk top-up plus every neighbour's bell - to about 13, rendering the
+// same audio in bursts (Robert, 2026-10-16); the ring rides between three
+// quarters and full, and the ratchet grows the cushion if that dip ever
+// runs dry. While a limit stands (§7.6) the batch is half the idle cushion,
+// which is what lets the cores sleep for seconds at a time. A batch of one
+// chunk is exactly the old per-chunk wake.
 function wakeAt() {
   const now = Atomics.load(ctl, PLAYED), reach = ahead();
   const lim = Atomics.load(ctl, LIMIT);
   if (lim >= 0 && frame + chunk > lim * QUANTUM + (role === ROLE_ISLAND ? chunk : 0)) return -1;
   let want = -1;
   if (frame + chunk > now * QUANTUM + reach) {
-    want = lim >= 0 ? Math.ceil((frame - reach / 2) / QUANTUM)
-                    : Math.ceil((frame + chunk - reach) / QUANTUM);
+    const batch = lim >= 0 ? reach / 2 : Math.max(chunk, Math.floor(reach / 4 / chunk) * chunk);
+    want = Math.ceil((frame - reach + batch) / QUANTUM);
   }
   // The final ring empties a quantum at a time, as the drain plays it.
   if (role !== ROLE_ISLAND) {
@@ -369,13 +383,34 @@ function render() {
   view();
   if (role === ROLE_ISLAND) pushEgress(); else pushMaster();
   out.commit(chunk, at);
-  if (ctl && role === ROLE_ISLAND) ringBell(ctl, 0);
+  // The mix sleeps on an island only when a block it needs is not there
+  // (ready()). Through a gulp the two run in lockstep, the island filling
+  // the small egress ring as fast as the mix drains it, and ringing on
+  // every commit woke the mix chunk by chunk, forty times a second; so a
+  // commit rings only when it carries the ring across four chunks held,
+  // one wake per batch, and an island about to sleep holding less flushes
+  // with a ring of its own (pump). An island far ahead rings nothing.
+  if (ctl && role === ROLE_ISLAND) {
+    const r = out.readable();
+    if (r >= 4 * chunk && r - chunk < 4 * chunk) ringBell(ctl, 0);
+  }
   events();
   report(ms);
 }
 
 // The mix's block k of each island, from its egress ring into the matching
 // ingress ports. A port the mix has no ingress for is left in the ring.
+// The island's bell is rung only once a batch of room is free, not on
+// every release: an island out of room sleeps on its bell, and waking it
+// per chunk had it topping up one chunk at a time however the clock
+// batched. The batch is a third of its egress ring, at most twelve chunks
+// (never more than half the ring, so a small ring still rings): the island
+// then refills in a few bursts per mix gulp instead of dozens. Starvation
+// is impossible below half the ring: an island woken fills ALL the free
+// room, so the mix never sees it holding less than the ring minus the
+// batch, and the mix consuming is the only thing that frees room, so the
+// threshold is always crossed on the way to any larger gap; the sleep's
+// own safety stands behind it all.
 function pullIngress() {
   for (const { stage: s, ring } of ins) {
     for (let p = 0; p < MAX_PORTS; p++) {
@@ -387,8 +422,17 @@ function pullIngress() {
       ring.read(2 * p + 1, f32, at + chunk, chunk);
     }
     ring.release(chunk);
-    if (ctl) ringBell(ctl, s);
+    if (ctl && ring.writable() >= wakeRoom(ring)) ringBell(ctl, s);
   }
+}
+
+// The free egress room at which a sleeping island is woken (above).
+function wakeRoom(ring) {
+  if (!ring.room) {
+    const third = Math.floor(ring.capacity / 3 / chunk) * chunk;
+    ring.room = Math.max(chunk, Math.min(12 * chunk, third));
+  }
+  return ring.room;
 }
 
 // A port's buffer is planar: left at ptr, right a chunk after it.
