@@ -263,8 +263,13 @@ export function idleStatusLine() {
   if (wakesRate >= 0) parts.push(`${wakesRate < 10 ? wakesRate.toFixed(1) : Math.round(wakesRate)} wakes/s × ${eng.stages.length}`);
   const lead = eng.lead();
   if (lead > 0) parts.push(`skipped ${lead.toFixed(1)} s`);
-  const dry = eng.stats().underruns;
-  if (dry > 0) parts.push(`${dry} dry`);
+  const st = eng.stats();
+  // The busiest stage's smoothed render time as a share of a chunk's
+  // real-time budget (engine.js): the number that says whether this device
+  // could carry fewer workers, readable where there is no console.
+  const busiest = Math.max(0, ...st.renderMs);
+  parts.push(`dsp ${Math.min(999, Math.round(100 * busiest * eng.sampleRate / 512000))}%`);
+  if (st.underruns > 0) parts.push(`${st.underruns} dry`);
   if (!active) {
     if (!eligible(eng)) {
       parts.push(eng.isResting() ? 'resting' : capturing() ? 'held: live sound'
