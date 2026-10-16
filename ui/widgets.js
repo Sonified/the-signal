@@ -1887,6 +1887,16 @@ function control(ctrl, S, shown) {
     changed = true;
   }
 
+  // A live line of small print under the row (the schema's statusLine, a
+  // function returning a string, '' for none this frame): the Render
+  // drawer's idle readout wears it (js/idle-ahead.js idleStatusLine), so a
+  // phone with no console can watch the engine. The function throttles and
+  // caches itself; this draws whatever it answers.
+  if (ctrl.statusLine) {
+    const str = ctrl.statusLine(S);
+    if (str) { ui.label(str, TYPE.xs, W.regular, COLOR.inkFaint); ui.spacer(SPACE.xs); }
+  }
+
   // A range has no single get (getLo/getHi instead); the override still
   // marks the id as taken by hand, with no one position to hand over. A
   // write through a door has told the journey already.

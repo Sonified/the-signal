@@ -232,3 +232,48 @@ export function startIdleAhead() {
 export function idleState() {
   return { active, grown, wanted: wanted(heartEngine(), performance.now()), walkedTo };
 }
+
+// The drawer's small print under Render ahead on idle (core/schema-visual.js
+// statusLine, drawn by ui/widgets.js): the engine as it stands, for a phone
+// with no console. Reads: the cushion rendered and waiting (and the target
+// while idle holds one), the stages' wakes a second (averaged between looks,
+// the whole point of the feature), the lead once a touch has skipped, dry
+// quanta, and why nothing is grown when nothing is. Main mode only: in
+// worker mode the drawer lives in the worker and the engine on the page, so
+// the line stays empty there. Recomputed at most four times a second and
+// cached; the drawer draws it every frame.
+let lineAt = 0, line = '', wakesWas = -1, wakesAt = 0, wakesRate = -1;
+const mmss = ms => {
+  const t = Math.max(0, Math.round(ms / 1000));
+  return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+};
+export function idleStatusLine() {
+  if (!IDLE_AHEAD_BUILT) return '';
+  const now = performance.now();
+  if (now - lineAt < 250) return line;
+  lineAt = now;
+  const eng = heartEngine();
+  if (!eng) { line = ''; return line; }
+  if (eng.mode !== 'sab') { line = 'no shared memory here: playing at the base'; return line; }
+  const w = eng.wakes();
+  const total = w ? w.reduce((a, b) => a + b, 0) / w.length : 0;
+  if (wakesWas >= 0 && now > wakesAt) wakesRate = Math.max(0, (total - wakesWas) / ((now - wakesAt) / 1000));
+  wakesWas = total; wakesAt = now;
+  const parts = [`cushion ${eng.cushion().toFixed(1)}${active && said > 0 ? ` of ${said.toFixed(1)}` : ''} s`];
+  if (wakesRate >= 0) parts.push(`${wakesRate < 10 ? wakesRate.toFixed(1) : Math.round(wakesRate)} wakes/s`);
+  const lead = eng.lead();
+  if (lead > 0) parts.push(`skipped ${lead.toFixed(1)} s`);
+  const dry = eng.stats().underruns;
+  if (dry > 0) parts.push(`${dry} dry`);
+  if (!active) {
+    if (!eligible(eng)) {
+      parts.push(eng.isResting() ? 'resting' : capturing() ? 'held: live sound'
+        : !(S.running === true && S.audioEnabled === true) ? 'held: paused' : 'held');
+    } else {
+      const at = grown >= setting() ? Infinity : Math.max(nextStepAt, lastMove + STEP_MS);
+      parts.push(grown > 0 ? `grown to ${grown.toFixed(0)} s` : at < Infinity ? `grows in ${mmss(at - now)}` : 'at the base');
+    }
+  }
+  line = parts.join(' · ');
+  return line;
+}

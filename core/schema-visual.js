@@ -41,7 +41,7 @@ import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engin
 import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
 import { applyHeartLookahead, applyHeartGrow, applyHeartConceal, simulateUnderrun } from '../js/heart/route.js';
-import { idleRefresh, IDLE_AHEAD_BUILT } from '../js/idle-ahead.js';
+import { idleRefresh, idleStatusLine, IDLE_AHEAD_BUILT } from '../js/idle-ahead.js';
 import { applyOutputGuards } from './output-guard.js';
 import { GF_GLIDE_MAX } from './global-filter.js';
 
@@ -1805,7 +1805,10 @@ export const VISUAL_CONTROLS = [
     min: 0.5, max: 10, step: 0.5, def: 10,
     get: S => S.heartIdleAheadS ?? 10,
     set: (S, v) => { S.heartIdleAheadS = Math.max(0.5, Math.min(10, v)); idleRefresh(); save(); },
-    formatAt: pos => (Number.isInteger(pos) ? pos : pos.toFixed(1)) + ' s'
+    formatAt: pos => (Number.isInteger(pos) ? pos : pos.toFixed(1)) + ' s',
+    // the live readout beneath the slider (js/idle-ahead.js): the cushion,
+    // the wakes a second, the lead, and what holds the growth back
+    statusLine: idleStatusLine
   },
   {
     // Whether the strobe's audio allows for the output's latency (js/
