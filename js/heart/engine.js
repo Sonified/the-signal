@@ -136,6 +136,16 @@ const OVERLOAD_TICKS = 4, OVERLOAD_QUIET_MS = 30000;
 const CONCEAL_SECONDS = 2.5, CONCEAL_HOLD = 3;
 const CONCEAL = (() => { try { return !/[?&]heartconceal=0(&|$)/.test(location.search); } catch (e) { return true; } })();
 const DIAG = (() => { try { return /[?&]heartdiag=1(&|$)/.test(location.search); } catch (e) { return false; } })();
+// ?heartworkers=N (1 to 5) overrides the stage count, to hear what this
+// device can carry: 1 is the combined shape (every family on one core, the
+// fewest wakes by far), more splits the families across islands. A 6-core
+// phone otherwise gets five stages, and every wake multiplies by them.
+const URL_WORKERS = (() => {
+  try {
+    const n = +new URLSearchParams(location.search).get('heartworkers');
+    return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
+  } catch (e) { return null; }
+})();
 const DIAG_BEAT_MS = 2000;
 
 // A phone or tablet (js/handheld.js, where the rule now lives so the audio
@@ -214,7 +224,7 @@ async function assemble(engine, ctx, module, opts) {
     startFullscreen: fullscreenNow()
   };
   if (shared) policy.idleMax = toFrames(IDLE_LIFT_MAX_S);
-  const stages = planStages(opts.workers ?? defaultWorkers(globalThis.navigator?.hardwareConcurrency));
+  const stages = planStages(opts.workers ?? URL_WORKERS ?? defaultWorkers(globalThis.navigator?.hardwareConcurrency));
   const placement = new Placement(stages);
   const control = shared ? makeControl(stages.length, lookahead) : null;
   const seed = (opts.seed ?? Math.random() * 2 ** 32) >>> 0;

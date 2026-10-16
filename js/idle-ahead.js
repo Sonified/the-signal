@@ -260,7 +260,7 @@ export function idleStatusLine() {
   if (wakesWas >= 0 && now > wakesAt) wakesRate = Math.max(0, (total - wakesWas) / ((now - wakesAt) / 1000));
   wakesWas = total; wakesAt = now;
   const parts = [`cushion ${eng.cushion().toFixed(1)}${active && said > 0 ? ` of ${said.toFixed(1)}` : ''} s`];
-  if (wakesRate >= 0) parts.push(`${wakesRate < 10 ? wakesRate.toFixed(1) : Math.round(wakesRate)} wakes/s`);
+  if (wakesRate >= 0) parts.push(`${wakesRate < 10 ? wakesRate.toFixed(1) : Math.round(wakesRate)} wakes/s × ${eng.stages.length}`);
   const lead = eng.lead();
   if (lead > 0) parts.push(`skipped ${lead.toFixed(1)} s`);
   const dry = eng.stats().underruns;
