@@ -129,6 +129,15 @@ console.log('[boot] modules evaluated +' + Math.round(performance.now()) + 'ms')
 // worker-entry.js); on the page it surfaces as it always has.
 boot().catch(err => { console.error('[boot] FAILED', err); if (host.bootFailed) host.bootFailed(err); else throw err; });
 
+// Fades the HTML's first-light loader (index.html). Two frames after the
+// loop starts, so the fade begins only once a real frame has been presented
+// beneath it. Page thread only: the worker has no document, and in worker
+// mode the page sends this as its shell takes over.
+function firstLight() {
+  if (typeof document === 'undefined') return;
+  requestAnimationFrame(() => requestAnimationFrame(() => document.dispatchEvent(new Event('first-light'))));
+}
+
 async function boot() {
   const inWorker = host.worker;
   const canvas = inWorker ? null : document.getElementById('v1');
@@ -140,7 +149,7 @@ async function boot() {
   // anything reads storage (the worker's copy of it included); a return
   // visit, which already has a presets record, fetches nothing.
   if (!inWorker) await seedFactoryPresets();
-  if (!inWorker && await startWorkerShell(canvas)) return;
+  if (!inWorker && await startWorkerShell(canvas)) { firstLight(); return; }
   console.log('[boot] engine stays on this thread +' + Math.round(performance.now()) + 'ms');
   const platform = inWorker ? await host.platform : createPlatform(canvas);
   console.log('[boot] platform ready +' + Math.round(performance.now()) + 'ms');
@@ -988,4 +997,5 @@ async function boot() {
 
   console.log('[boot] layers registered, starting frame loop +' + Math.round(performance.now()) + 'ms');
   engine.start(frame);
+  firstLight();
 }

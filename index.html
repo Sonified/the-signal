@@ -10,8 +10,153 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Signal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128302;</text></svg>">
-<!-- The experience is drawn by the GPU. The only temporary DOM overlay is
-     the mobile broadcast receiver's audio-unlock gesture below. -->
+<!-- The whole module graph, so the browser fetches (or revalidates) every
+     file in one wave instead of discovering the imports level by level —
+     five serial round trips otherwise. Regenerate after adding modules. -->
+<!-- MODULEPRELOAD (generated: node tools/modulepreload.mjs) -->
+<link rel="modulepreload" href="assets/kaleidoscope/sets.mjs">
+<link rel="modulepreload" href="core/atmosphere.js">
+<link rel="modulepreload" href="core/audio-mirror.js">
+<link rel="modulepreload" href="core/audio-shell.js">
+<link rel="modulepreload" href="core/broadcast.js">
+<link rel="modulepreload" href="core/chores.js">
+<link rel="modulepreload" href="core/diagnostics.js">
+<link rel="modulepreload" href="core/energy-test.js">
+<link rel="modulepreload" href="core/energy.js">
+<link rel="modulepreload" href="core/engine-thread.js">
+<link rel="modulepreload" href="core/eye.js">
+<link rel="modulepreload" href="core/fade.js">
+<link rel="modulepreload" href="core/global-filter.js">
+<link rel="modulepreload" href="core/heartbeat.js">
+<link rel="modulepreload" href="core/idle.js">
+<link rel="modulepreload" href="core/journey.js">
+<link rel="modulepreload" href="core/live-audio.js">
+<link rel="modulepreload" href="core/motion.js">
+<link rel="modulepreload" href="core/output-guard.js">
+<link rel="modulepreload" href="core/perf.js">
+<link rel="modulepreload" href="core/perform.js">
+<link rel="modulepreload" href="core/presets.js">
+<link rel="modulepreload" href="core/profiler.js">
+<link rel="modulepreload" href="core/room-clock.js">
+<link rel="modulepreload" href="core/schema-audio.js">
+<link rel="modulepreload" href="core/schema-confetti.js">
+<link rel="modulepreload" href="core/schema-fireworks.js">
+<link rel="modulepreload" href="core/schema-flowers.js">
+<link rel="modulepreload" href="core/schema-heartbeat.js">
+<link rel="modulepreload" href="core/schema-kaleido.js">
+<link rel="modulepreload" href="core/schema-particles.js">
+<link rel="modulepreload" href="core/schema-slides.js">
+<link rel="modulepreload" href="core/schema-sun.js">
+<link rel="modulepreload" href="core/schema-variance.js">
+<link rel="modulepreload" href="core/schema-visual.js">
+<link rel="modulepreload" href="core/schema.js">
+<link rel="modulepreload" href="core/signal.js">
+<link rel="modulepreload" href="core/store.js">
+<link rel="modulepreload" href="core/strobe.js">
+<link rel="modulepreload" href="core/sun-hum.js">
+<link rel="modulepreload" href="core/variance-owners.js">
+<link rel="modulepreload" href="core/variance.js">
+<link rel="modulepreload" href="core/wake.js">
+<link rel="modulepreload" href="core/word-fx.js">
+<link rel="modulepreload" href="core/words.js">
+<link rel="modulepreload" href="gpu/blur.js">
+<link rel="modulepreload" href="gpu/confetti.js">
+<link rel="modulepreload" href="gpu/confetti.wgsl.js">
+<link rel="modulepreload" href="gpu/edge-fx.js">
+<link rel="modulepreload" href="gpu/edge-fx.wgsl.js">
+<link rel="modulepreload" href="gpu/energy-probe.js">
+<link rel="modulepreload" href="gpu/engine.js">
+<link rel="modulepreload" href="gpu/feedback.js">
+<link rel="modulepreload" href="gpu/feedback.wgsl.js">
+<link rel="modulepreload" href="gpu/fireworks.js">
+<link rel="modulepreload" href="gpu/fireworks.wgsl.js">
+<link rel="modulepreload" href="gpu/flowers.js">
+<link rel="modulepreload" href="gpu/flowers.wgsl.js">
+<link rel="modulepreload" href="gpu/fold.js">
+<link rel="modulepreload" href="gpu/fold.wgsl.js">
+<link rel="modulepreload" href="gpu/heartbeat.js">
+<link rel="modulepreload" href="gpu/kaleido.js">
+<link rel="modulepreload" href="gpu/kaleido.wgsl.js">
+<link rel="modulepreload" href="gpu/particles.js">
+<link rel="modulepreload" href="gpu/particles.wgsl.js">
+<link rel="modulepreload" href="gpu/scene-data.js">
+<link rel="modulepreload" href="gpu/scene.js">
+<link rel="modulepreload" href="gpu/scene.wgsl.js">
+<link rel="modulepreload" href="gpu/slides.js">
+<link rel="modulepreload" href="gpu/stars.js">
+<link rel="modulepreload" href="gpu/sun-qr.js">
+<link rel="modulepreload" href="gpu/sun.js">
+<link rel="modulepreload" href="gpu/sun.wgsl.js">
+<link rel="modulepreload" href="gpu/text-atlas.js">
+<link rel="modulepreload" href="gpu/ui-renderer.js">
+<link rel="modulepreload" href="gpu/ui.wgsl.js">
+<link rel="modulepreload" href="gpu/word-cloud.js">
+<link rel="modulepreload" href="gpu/word-cloud.wgsl.js">
+<link rel="modulepreload" href="gpu/word-smoke.js">
+<link rel="modulepreload" href="gpu/word-smoke.wgsl.js">
+<link rel="modulepreload" href="js/affirmations.js">
+<link rel="modulepreload" href="js/ambience.js">
+<link rel="modulepreload" href="js/audio.js">
+<link rel="modulepreload" href="js/background.js">
+<link rel="modulepreload" href="js/chirp.js">
+<link rel="modulepreload" href="js/choir.js">
+<link rel="modulepreload" href="js/clouds.js">
+<link rel="modulepreload" href="js/color.js">
+<link rel="modulepreload" href="js/display-watch.js">
+<link rel="modulepreload" href="js/dom.js">
+<link rel="modulepreload" href="js/handheld.js">
+<link rel="modulepreload" href="js/heart/route.js">
+<link rel="modulepreload" href="js/idle-ahead.js">
+<link rel="modulepreload" href="js/layer-defs.js">
+<link rel="modulepreload" href="js/layers.js">
+<link rel="modulepreload" href="js/livesound.js">
+<link rel="modulepreload" href="js/load-order.js">
+<link rel="modulepreload" href="js/mixgate.js">
+<link rel="modulepreload" href="js/panel-guard.js">
+<link rel="modulepreload" href="js/piano.js">
+<link rel="modulepreload" href="js/presets.js">
+<link rel="modulepreload" href="js/room.js">
+<link rel="modulepreload" href="js/settings.js">
+<link rel="modulepreload" href="js/sim.js">
+<link rel="modulepreload" href="js/state.js">
+<link rel="modulepreload" href="js/strobe-am.js">
+<link rel="modulepreload" href="js/strobe-bridge.js">
+<link rel="modulepreload" href="js/strobe-scale.js">
+<link rel="modulepreload" href="js/sweep.js">
+<link rel="modulepreload" href="js/ticker.js">
+<link rel="modulepreload" href="js/util.js">
+<link rel="modulepreload" href="js/words.js">
+<link rel="modulepreload" href="platform/broadcast-socket.js">
+<link rel="modulepreload" href="platform/energy-page.js">
+<link rel="modulepreload" href="platform/factory-presets.js">
+<link rel="modulepreload" href="platform/host.js">
+<link rel="modulepreload" href="platform/input-queue.js">
+<link rel="modulepreload" href="platform/live-media.js">
+<link rel="modulepreload" href="platform/profile-web.js">
+<link rel="modulepreload" href="platform/show-remote.js">
+<link rel="modulepreload" href="platform/soft-keyboard.js">
+<link rel="modulepreload" href="platform/web.js">
+<link rel="modulepreload" href="platform/worker-bridge.js">
+<link rel="modulepreload" href="ui/anim.js">
+<link rel="modulepreload" href="ui/drawlist.js">
+<link rel="modulepreload" href="ui/imgui.js">
+<link rel="modulepreload" href="ui/screens/chrome.js">
+<link rel="modulepreload" href="ui/screens/drawer.js">
+<link rel="modulepreload" href="ui/screens/journey.js">
+<link rel="modulepreload" href="ui/screens/mixer.js">
+<link rel="modulepreload" href="ui/screens/music.js">
+<link rel="modulepreload" href="ui/screens/overlay.js">
+<link rel="modulepreload" href="ui/screens/perf-widgets.js">
+<link rel="modulepreload" href="ui/screens/performer.js">
+<link rel="modulepreload" href="ui/screens/sequencer.js">
+<link rel="modulepreload" href="ui/screens/textbank.js">
+<link rel="modulepreload" href="ui/screens/win-fit.js">
+<link rel="modulepreload" href="ui/theme.js">
+<link rel="modulepreload" href="ui/widgets.js">
+<!-- /MODULEPRELOAD -->
+<!-- The experience is drawn by the GPU. The only temporary DOM overlays are
+     first light below (removed at the first rendered frame) and the mobile
+     broadcast receiver's audio-unlock gesture. -->
 <style>
   html, body { margin:0; height:100%; background:#000; overflow:hidden; }
   canvas { display:block; position:fixed; inset:0; width:100vw; height:100vh;
@@ -28,10 +173,78 @@
   }
   #follow-audio-gate.show { display:flex; }
   #follow-audio-gate.done { opacity:0; pointer-events:none; }
+
+  /* First light: holds the screen while the modules and the GPU device
+     arrive, then fades on main.js's first-light event (sent once the first
+     real frame is on its way). Rings ripple outward from the centre with a
+     few sparks between them — radially even, nothing pulls the eye aside.
+     Compositor-only (transform + opacity on a handful of nodes), so it
+     costs nothing that the boot needs. pointer-events:none keeps it out of
+     the way of the ?follow gate above it and the canvas beneath. */
+  #first-light {
+    --fl: min(64vmin, 560px);
+    position:fixed; inset:0; z-index:900; display:grid; place-items:center;
+    background:#000; pointer-events:none;
+    opacity:1; transition:opacity .9s ease;
+  }
+  #first-light.done { opacity:0; }
+  #first-light > * { grid-area:1/1; }
+  #first-light .ring {
+    width:var(--fl); height:var(--fl); border-radius:50%;
+    border:1px solid rgba(185,198,212,.5);
+    animation:fl-ring 3.6s linear infinite;
+  }
+  #first-light .ring:nth-child(2) { animation-delay:-1.2s; }
+  #first-light .ring:nth-child(3) { animation-delay:-2.4s; }
+  @keyframes fl-ring {
+    0%   { transform:scale(.10); opacity:0; }
+    14%  { opacity:.55; }
+    100% { transform:scale(1);   opacity:0; }
+  }
+  #first-light .dot {
+    width:3px; height:3px; border-radius:50%; background:#cdd8e4;
+    animation:fl-dot 2.8s linear infinite;
+  }
+  @keyframes fl-dot {
+    0%   { transform:rotate(var(--a)) translateY(calc(var(--fl) * -.07)); opacity:0; }
+    16%  { opacity:.85; }
+    100% { transform:rotate(var(--a)) translateY(calc(var(--fl) * -.52)); opacity:0; }
+  }
+  #first-light .word {
+    color:#b9c6d4; font:300 clamp(19px, 3.2vmin, 26px)/1 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    letter-spacing:.34em; margin-right:-.34em; text-shadow:0 1px 12px #000;
+    animation:fl-breathe 3.6s ease-in-out infinite alternate;
+  }
+  @keyframes fl-breathe { from { opacity:.4; } to { opacity:.95; } }
+  @media (prefers-reduced-motion: reduce) {
+    #first-light .ring, #first-light .dot { animation:none; opacity:0; }
+    #first-light .ring:first-child { opacity:.3; transform:scale(.5); }
+    #first-light .word { animation:none; opacity:.8; }
+  }
 </style>
 </head>
 <body>
 <canvas id="v1" tabindex="0"></canvas>
+<div id="first-light" aria-hidden="true">
+  <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+  <div class="dot" style="--a:0deg"></div><div class="dot" style="--a:45deg;animation-delay:-.35s"></div>
+  <div class="dot" style="--a:90deg;animation-delay:-.7s"></div><div class="dot" style="--a:135deg;animation-delay:-1.05s"></div>
+  <div class="dot" style="--a:180deg;animation-delay:-1.4s"></div><div class="dot" style="--a:225deg;animation-delay:-1.75s"></div>
+  <div class="dot" style="--a:270deg;animation-delay:-2.1s"></div><div class="dot" style="--a:315deg;animation-delay:-2.45s"></div>
+  <div class="word">arriving</div>
+</div>
+<script>
+  (() => {
+    // Fades at the first rendered frame (main.js dispatches first-light); the
+    // timer is insurance so a stalled boot never hides its own error behind
+    // the loader. A fatal message (platform/web.js) clears the body, loader
+    // included, so the failure paths need nothing here.
+    const fl = document.getElementById('first-light');
+    const done = () => { fl.classList.add('done'); setTimeout(() => fl.remove(), 950); };
+    document.addEventListener('first-light', done, { once:true });
+    setTimeout(done, 15000);
+  })();
+</script>
 <div id="follow-audio-gate" role="button" aria-label="Tap to join the live stream">Tap to join the live stream</div>
 <script>
   (() => {
