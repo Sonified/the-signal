@@ -382,6 +382,9 @@ export const VISUAL_CONTROLS = [
     summaryLabel: 'Freq',
     parent: 'strobeTimingDrawer',
     min: 0.5, max: 45, step: 0.5, def: 7.5,
+    // Dragging keeps the half-Hz notches; typing into the readout may land
+    // anywhere on a hundredth (11.16 Hz for an exact band).
+    entryStep: 0.01,
     get: S => S.freq,
     effective: S => S.freqDriftOn !== false && S.freqDrift > 0 ? S.effFreq : undefined,
     set: (S, pos) => {
@@ -392,7 +395,12 @@ export const VISUAL_CONTROLS = [
       if (S.amLinked) setAmRate(S.freq);
       save();
     },
-    formatAt: pos => pos.toFixed(1) + ' Hz'
+    // One decimal on the half-Hz grid, two when a typed value sits between
+    // the notches, so 7.5 stays '7.5 Hz' and 11.16 reads back in full.
+    formatAt: pos => {
+      const v = Math.round(pos * 100) / 100;
+      return v.toFixed(Math.round(v * 100) % 10 ? 2 : 1) + ' Hz';
+    }
   },
   {
     // Off holds the strobe on the set frequency; the amount and rate below

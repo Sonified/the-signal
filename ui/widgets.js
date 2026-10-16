@@ -1531,13 +1531,16 @@ function beginReadoutEdit(ui, ctrl, nid, text, pos) {
 // readout rounded for display, and writing it back would quietly move a
 // value the viewer only looked at. Returns the position to write (ui.control
 // writes it), undefined for none; cur is where the control stands or is
-// headed.
+// headed. A control with entryStep snaps typed values to that finer grid
+// instead of step, so typing can land between the slider's notches.
 function commitReadout(ctrl, S, text, cur) {
   const t = text.trim();
   if (!t || t === ro.seed) return undefined;
   const raw = ctrl.parse ? ctrl.parse(S, t) : parseFloat(t);
   if (typeof raw !== 'number' || !isFinite(raw)) return undefined;
-  const pos = snapPos(ctrl, raw);
+  const pos = ctrl.entryStep != null
+    ? snapStep(raw, ctrl.min, ctrl.max, ctrl.entryStep)
+    : snapPos(ctrl, raw);
   return pos === cur ? undefined : pos;
 }
 
