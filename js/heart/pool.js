@@ -16,8 +16,15 @@
 export const ROLE = { combined: 0, island: 1, mix: 2 };
 
 // The default worker count, all workers included: islands plus the mix, or
-// the one combined worker.
-export function defaultWorkers(cores) {
+// the one combined worker. A handheld always takes the combined shape: the
+// whole sound renders at about a tenth of one core (Robert's phone, the
+// drawer's dsp readout, 2026-10-16), while every extra stage multiplies the
+// wakes that drain a battery and adds the island-mix handoff on top; a
+// six-core phone was getting five stages and ~150 wakes a second each.
+// ?heartworkers= (engine.js) still overrides either way, and the engine's
+// overload watch says so in the console if a scene ever outgrows one core.
+export function defaultWorkers(cores, handheld = false) {
+  if (handheld) return 1;
   const n = cores || 2;
   return n <= 2 ? 1 : Math.min(4, Math.max(1, n - 2)) + 1;
 }

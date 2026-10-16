@@ -224,7 +224,7 @@ async function assemble(engine, ctx, module, opts) {
     startFullscreen: fullscreenNow()
   };
   if (shared) policy.idleMax = toFrames(IDLE_LIFT_MAX_S);
-  const stages = planStages(opts.workers ?? URL_WORKERS ?? defaultWorkers(globalThis.navigator?.hardwareConcurrency));
+  const stages = planStages(opts.workers ?? URL_WORKERS ?? defaultWorkers(globalThis.navigator?.hardwareConcurrency, small));
   const placement = new Placement(stages);
   const control = shared ? makeControl(stages.length, lookahead) : null;
   const seed = (opts.seed ?? Math.random() * 2 ** 32) >>> 0;
