@@ -125,7 +125,7 @@ import { MIP_WGSL } from './flowers.wgsl.js';
 import { radialFade, radialFadeIn, RADIAL_FADE_OUT_K } from '../core/fade.js';
 import { motionStep } from '../core/motion.js';
 import { idleHold, idleRelease } from '../core/idle.js';
-import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
+import { KALEIDOSCOPE_SETS, kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './feedback.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
@@ -358,6 +358,30 @@ const CONST_EASE_SECONDS = 0.25;
 // resolution toggle is on (missing means on) and it has one, else its own.
 function atlasUrl(set) {
   return S.kaleidoHiRes !== false && set.imageHi ? set.imageHi : set.image;
+}
+
+// The upgrade's crossfade (seconds) when a big sheet arrives behind its
+// small stand-in (see changeSet): the Set crossfade setting when that is
+// longer, but never instant — the two sheets are the same motifs drawn
+// differently enough that a swap under live shapes reads as a shimmer.
+const SHEET_UPGRADE_XFADE_S = 3;
+
+// Every sheet of every set, warmed into the browser's HTTP cache one at a
+// time at low priority — about 12 MB in all — so a later change of Image
+// set (or the stand-in's upgrade, if it has not run yet) finds its
+// megabytes already local instead of fetching them mid-session. Called from
+// boot well after the frame loop starts, so the modules, the presets and
+// the first frame are long since through; a sheet already fetched costs a
+// revalidation here, not a transfer.
+export async function kaleidoPrefetch() {
+  for (const set of KALEIDOSCOPE_SETS) {
+    if (!set) continue;
+    for (const url of [set.image, set.imageHi]) {
+      if (!url) continue;
+      try { await (await fetch(url, { priority: 'low' })).blob(); }
+      catch { /* offline or torn down: the lazy load on use still runs */ }
+    }
+  }
 }
 // The layout a sheet is packed into (see LAYOUT_HI).
 function layoutFor(set, url) {
@@ -634,6 +658,9 @@ export function createKaleido(device, format, platform) {
   // resolution toggle moves that without moving the set), and a count that
   // makes a load finishing after a newer one was asked for throw itself away.
   let requestedSet = 0, requestedUrl = '', loadToken = 0, ready = false;
+  // A cold start's stand-in (see changeSet): the set it stands in for and
+  // the big sheet that upgrades it once the stand-in is on screen.
+  let upgradeSet = 0, upgradeTo = '';
   let pixelW = 1, pixelH = 1, dpr = 1;
 
   // The domain as this frame's settings shape it, shared by spawning,
@@ -1065,6 +1092,16 @@ export function createKaleido(device, format, platform) {
     sl.url = url; sl.lay = L;
     sl.fill.set(fill);
     makeCurrent(s, !crossfade, T, 0);
+    // The stand-in is on screen (see changeSet): now fetch the sheet truly
+    // wanted, which arrives exactly as the High resolution toggle's swap
+    // would — into the other slot, its births crossfading over the
+    // stand-in's.
+    if (upgradeTo && set === upgradeSet && url !== upgradeTo) {
+      const to = upgradeTo;
+      upgradeSet = 0; upgradeTo = '';
+      pendingXfade = Math.max(SHEET_UPGRADE_XFADE_S, clampNum(S.kaleidoSetXfade, 0, 60, 0));
+      load(set, to);
+    }
   }
 
   // The Image set has just changed to set. The crossfade time is read now,
@@ -1086,6 +1123,10 @@ export function createKaleido(device, format, platform) {
       drainTex.destroy();
       drainSlot = -1; drainTex = null; drainFill = null;
     }
+    // Any change of want ends a stand-in's pending upgrade: every branch
+    // below either resolves the want from a slot or starts a load of its
+    // own (and a load cancels the one in flight through its token).
+    upgradeSet = 0; upgradeTo = '';
     const T = wasOn ? clampNum(S.kaleidoSetXfade, 0, 60, 0) : 0;
     const o = 1 - cur;
     if (slots[cur].tex && slots[cur].set === set && slots[cur].url === url) {
@@ -1100,6 +1141,20 @@ export function createKaleido(device, format, platform) {
       return;
     }
     pendingXfade = T;
+    // From nothing (first on: no slot has an image to keep drawing while a
+    // load runs), the big sheet is not worth its wait. The set's small one
+    // is a tenth of the bytes, so it goes up first as a stand-in, and the
+    // big sheet is fetched behind it, crossfading in on arrival (see
+    // install). With an image already up the ordinary path is itself
+    // seamless — the screen keeps it until the new sheet lands.
+    const def = kaleidoscopeSet(set);
+    if (!slots[cur].tex && def.image && url === def.imageHi) {
+      upgradeSet = set; upgradeTo = url;
+      load(set, def.image);
+      // the sheet truly wanted, so update() asks for nothing new meanwhile
+      requestedUrl = url;
+      return;
+    }
     load(set, url);
   }
 

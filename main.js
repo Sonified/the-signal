@@ -39,7 +39,7 @@ import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide }
 import { createSunQr } from './gpu/sun-qr.js';
 import { createStars } from './gpu/stars.js';
 import { createHeartbeat } from './gpu/heartbeat.js';
-import { createKaleido, setKaleidoYield } from './gpu/kaleido.js';
+import { createKaleido, setKaleidoYield, kaleidoPrefetch } from './gpu/kaleido.js';
 import { createParticles } from './gpu/particles.js';
 import { createFireworks } from './gpu/fireworks.js';
 import { FIREWORKS_ENABLED } from './core/schema-fireworks.js';
@@ -998,4 +998,9 @@ async function boot() {
   console.log('[boot] layers registered, starting frame loop +' + Math.round(performance.now()) + 'ms');
   engine.start(frame);
   firstLight();
+  // The kaleidoscope's other sheets, warmed into the HTTP cache ten seconds
+  // after the loop starts: long enough that the modules, the presets, the
+  // first frames and set one's own stand-in and upgrade (gpu/kaleido.js)
+  // have had the network to themselves.
+  setTimeout(kaleidoPrefetch, 10000);
 }
