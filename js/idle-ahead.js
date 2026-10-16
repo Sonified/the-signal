@@ -114,10 +114,16 @@ function stepRamp(now) {
   }
 }
 
-// The cushion wanted now, seconds; 0 for none.
+// The cushion wanted now, seconds; 0 for none. Hidden goes straight to the
+// setting - but never over a touch still settling: the transport's own
+// start issues its ramps a few awaits after its touch, and a lift taken in
+// that window would late-shift them whole onto a ten-second horizon, heard
+// as silence and then everything at once (Robert's phone, 2026-10-16). The
+// driver re-arms for the settle's end (drive), so a hidden page still
+// grows, just not through a start.
 function wanted(eng, now) {
   if (!eligible(eng)) return 0;
-  if (hiddenNow()) return setting();
+  if (hiddenNow()) return now - lastTouch < SETTLE_MS ? 0 : setting();
   let e = Math.min(setting(), grown);
   if (moving(now)) e = Math.min(e, MOVE_CAP_S);
   return e;
@@ -159,7 +165,10 @@ function drive() {
     arm(Math.min(Math.max(MIN_DRIVE_MS, e * 500), nextStep - now));
   } else {
     if (active) leave(false, 'drain');
-    if (eng && nextStep < Infinity) arm(nextStep - now);
+    // hidden and only waiting out a touch's settle: come back for it
+    const settleAt = hiddenNow() && eligible(eng) ? lastTouch + SETTLE_MS : Infinity;
+    const at = Math.min(nextStep, settleAt);
+    if (eng && at < Infinity) arm(Math.max(MIN_DRIVE_MS, at - now));
   }
 }
 

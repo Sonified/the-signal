@@ -1093,6 +1093,10 @@ async function startAudio() {
   await warmDevice();
   await ensureAudioGraph();          // warmDevice can bail before the graph exists
   if (!S.workletReady) return;
+  // The awaits above are a window where the idle cushion could have grown
+  // (the page hidden for a moment); the ramps below must land at the base
+  // horizon, so the touch is taken again here, right before them.
+  idleTouch('the transport');
   const firstStart = !audioHasPlayed;
   audioHasPlayed = true;
   const lead = firstStart ? 0.9 : 0;
