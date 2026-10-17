@@ -877,7 +877,11 @@ function stepMix(tw, u, e) {
 function startSlider(c, to, sec, fol) {
   if (typeof to !== 'number' || !Number.isFinite(to)) return false;
   if (Number.isFinite(c.min) && Number.isFinite(c.max)) to = Math.max(c.min, Math.min(c.max, to));
-  const step = c.step > 0 ? c.step : 0;
+  // The landing snaps to the control's finest grid: entryStep where the
+  // schema declares one (a typed 11.16 Hz must survive the door), else step.
+  // Drags arrive already snapped to step (widgets.js), so the slider's own
+  // notches are untouched by the finer grid.
+  const step = c.entryStep > 0 ? c.entryStep : c.step > 0 ? c.step : 0;
   const p = stepPow(step);
   if (step) to = Math.round(Math.round(to / step) * step * p) / p;
 
