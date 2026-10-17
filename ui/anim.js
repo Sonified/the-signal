@@ -10,43 +10,56 @@
 // a soft physical surface instead of a slideshow of computed states.
 //
 // State is one small object per spring id, created the first time that id is
-// asked for and reused forever after (the frame loop may not allocate). The
-// id is whatever numeric id the caller already has (imgui.js hands out
-// widget ids as integers for exactly this reason); this module never builds
-// or hashes strings.
+// asked for and reused forever after (the frame loop may not allocate).
 //
-// The integrator is semi-implicit Euler on a damped harmonic oscillator,
-// unit mass: accel = stiffness * (target - x) - damping * v, v += accel * dt,
-// x += v * dt. It is not critically damped in the strict sense for every
-// (stiffness, damping) pair in theme.js, and that is deliberate: the theme's
-// pairs were picked by feel, and a couple of them ring very slightly, which
-// reads as a little life in a hover rather than a dead stop. Nothing here
-// enforces the critical-damping relationship; that tuning lives in theme.js.
+// The damped harmonic oscillator has an exact solution, so nothing here is
+// integrated: each frame evaluates where the continuous spring really is
+// after dt, however long dt turns out to be. A numerical step (the
+// semi-implicit Euler this file used to take) is only an approximation of
+// that solution, and one with a stability limit: past a step of roughly
+// 30 ms the press pair's correction overshoots by more than the whole
+// distance and grows instead of settling — on a phone whose frames stretched
+// under a slider drag, the knob's radius diverged by a factor of three a
+// frame until the circle filled the screen. The exact solution has no step
+// size, so there is nothing to clamp (the old DT_MAX) and nothing to divide
+// into substeps (the old monotone loop): a stalled tab's ten-second dt just
+// lands the spring settled at its target, where a real spring would be. It
+// also makes the motion exactly frame-rate independent: a hover at 30 fps
+// and at 120 Hz trace the same curve through time.
 //
-// The one exception is a cfg marked `monotone`, used for a height the layout
-// flows from (a group folding open or shut). There a ring is not life but a
-// wobble of everything below it, so such a spring must arrive without passing
-// its target. Its pair in theme.js is at or past critical damping, but a
-// damped pair integrated in one big step can still ring (semi-implicit Euler
-// on a 50 ms hitch flips sign every step), so it is integrated in substeps
-// small enough to keep the discrete motion as calm as the continuous one,
-// and any step that would still cross the target lands on it instead.
+// Per cfg — one of theme.js's MOTION pairs, { stiffness, damping }, unit
+// mass — the solution over this frame's dt is a 2x2 transition matrix on
+// (offset from target, velocity). It is cached on the cfg object and
+// recomputed only when dt changes, so the five shared pairs cost a handful
+// of transcendentals a frame while each of the hundreds of spring updates is
+// four multiplies. With z = damping/2 and w² = stiffness, an underdamped
+// pair (z < w, every hover and press in theme.js) decays along
+// e^(-z·t)·(cos, sin) of w_d = sqrt(w² - z²); an overdamped pair (the fold)
+// is two real exponentials e^((-z ± d)·t), d = sqrt(z² - w²), both decaying,
+// kept as the two exponentials rather than e^(-z·t)·cosh(d·t) so neither
+// factor can overflow while their product underflows; the critically damped
+// seam between them is the d → 0 limit of either.
+//
+// A cfg marked `monotone` is used for a height the layout flows from (a
+// group folding open or shut), where a ring is not life but a wobble of
+// everything below it. Its pair is at or past critical damping, so the
+// exact solution never oscillates; the one crossing a carried velocity can
+// still make (physics, not discretization) is landed on the target instead.
 
-const springs = new Map(); // id (number) -> { x, v, target, settled }
+const springs = new Map(); // id -> { x, v, target, settled, primed }
 
 const EPS_X = 0.01;
 const EPS_V = 0.01;
-const DT_MAX = 0.05; // seconds; a stalled tab or a debugger pause must not fling a spring
-const MONO_STEP = 1 / 240; // seconds; the largest substep a monotone spring takes
 
 let currentDt = 0;
 
-// Called once per frame by imgui.js's begin(), before any widget touches a
-// spring. Kept as a module-level scalar rather than a parameter threaded
-// through every spring() call, since every spring in a given frame integrates
-// by the same frame dt.
+// Called once per frame by imgui.js's begin() (and main.js on the idle
+// frames whose UI build is skipped), before any widget touches a spring.
+// Kept as a module-level scalar rather than a parameter threaded through
+// every spring() call, since every spring in a given frame moves over the
+// same dt.
 export function setDt(dtSeconds) {
-  currentDt = dtSeconds < 0 ? 0 : (dtSeconds > DT_MAX ? DT_MAX : dtSeconds);
+  currentDt = dtSeconds < 0 ? 0 : dtSeconds;
 }
 
 function stateFor(id) {
@@ -58,11 +71,45 @@ function stateFor(id) {
   return s;
 }
 
-// Advances the spring toward target and returns its position. cfg is one of
-// theme.js's MOTION entries, { stiffness, damping }. The very first call for
-// an id snaps to target with zero velocity instead of animating in from zero,
-// since a widget's opening frame should not visibly spring from the origin
-// of the coordinate system.
+// The exact transition over dt for this cfg, cached on the cfg itself:
+// offset' = xx·offset + xv·v, v' = vx·offset + vv·v.
+function refreshCoeffs(cfg, dt) {
+  cfg._dt = dt;
+  const w2 = cfg.stiffness, z = cfg.damping / 2;
+  const d2 = z * z - w2;
+  if (d2 < -1e-9) {
+    // underdamped: a decaying spiral at w_d
+    const wd = Math.sqrt(-d2);
+    const E = Math.exp(-z * dt);
+    const C = Math.cos(wd * dt), S = Math.sin(wd * dt) / wd;
+    cfg._xx = E * (C + z * S);
+    cfg._xv = E * S;
+    cfg._vx = -E * w2 * S;
+    cfg._vv = E * (C - z * S);
+  } else if (d2 > 1e-9) {
+    // overdamped: two real exponentials, both in (0, 1], never overflowing
+    const d = Math.sqrt(d2), inv = -0.5 / d;
+    const r1 = -z + d, r2 = -z - d;
+    const z1 = Math.exp(r1 * dt), z2 = Math.exp(r2 * dt);
+    cfg._xx = (r2 * z1 - r1 * z2) * inv;
+    cfg._xv = (z2 - z1) * inv;
+    cfg._vx = w2 * (z1 - z2) * inv;
+    cfg._vv = (r2 * z2 - r1 * z1) * inv;
+  } else {
+    // critically damped: the seam, the d -> 0 limit of both
+    const E = Math.exp(-z * dt);
+    cfg._xx = E * (1 + z * dt);
+    cfg._xv = E * dt;
+    cfg._vx = -E * z * z * dt;
+    cfg._vv = E * (1 - z * dt);
+  }
+}
+
+// Moves the spring to where it stands dt after this frame's start and
+// returns its position. cfg is one of theme.js's MOTION entries. The very
+// first call for an id snaps to target with zero velocity instead of
+// animating in from zero, since a widget's opening frame should not visibly
+// spring from the origin of the coordinate system.
 export function spring(id, target, cfg) {
   const s = stateFor(id);
   if (!s.primed) {
@@ -75,19 +122,13 @@ export function spring(id, target, cfg) {
   s.target = target;
   if (s.settled && s.x === target) return s.x;
   const dt = currentDt;
-  if (dt > 0 && cfg.monotone) {
-    const n = Math.ceil(dt / MONO_STEP);
-    const h = dt / n;
-    for (let i = 0; i < n; i++) {
-      const x0 = s.x;
-      s.v += (cfg.stiffness * (target - x0) - cfg.damping * s.v) * h;
-      s.x = x0 + s.v * h;
-      if ((target - x0) * (target - s.x) < 0) { s.x = target; s.v = 0; break; }
-    }
-  } else if (dt > 0) {
-    const accel = cfg.stiffness * (target - s.x) - cfg.damping * s.v;
-    s.v += accel * dt;
-    s.x += s.v * dt;
+  if (dt > 0) {
+    if (cfg._dt !== dt) refreshCoeffs(cfg, dt);
+    const e = s.x - target, v = s.v;
+    s.x = target + cfg._xx * e + cfg._xv * v;
+    s.v = cfg._vx * e + cfg._vv * v;
+    // the one crossing carried velocity can make lands on the target
+    if (cfg.monotone && e * (s.x - target) < 0) { s.x = target; s.v = 0; }
   }
   if (Math.abs(target - s.x) < EPS_X && Math.abs(s.v) < EPS_V) {
     s.x = target;
