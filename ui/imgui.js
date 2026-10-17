@@ -193,7 +193,9 @@
 //                                      // sideways drag (a slider); 2 keeps an
 //                                      // up and down one (a knob); 0 keeps
 //                                      // neither (a button, a cell), so a
-//                                      // drag either way pans the content
+//                                      // drag either way pans the content,
+//                                      // or ends the press outright where no
+//                                      // scroll takes it: only a tap acts
 //
 //   DEVIATIONS FROM THE ARCHITECTURE.md SKETCH (documented per the brief):
 //   - ui.control(ctrl, S) takes the state object S as a second argument.
@@ -604,6 +606,15 @@ class UI {
     this._focusPrevCount = this._focusCurCount;
     this._focusCurCount = 0;
 
+    // A finger that lifted leaves no pointer behind: with no touch down and
+    // no press held, the pointer parks off screen, so hover — a mouse idea —
+    // never sticks to the last thing tapped. The lift's own frame is not
+    // touched (its up below still lands where the finger was, so the tap
+    // still clicks); the park happens on the frame after.
+    if (this.pointerType === 'touch' && !this._pointerDown && this.activeId === -1) {
+      this.pointerX = -1; this.pointerY = -1;
+    }
+
     const n = events ? events.length : 0;
     for (let i = 0; i < n; i++) {
       const e = events[i];
@@ -881,6 +892,15 @@ class UI {
         const give = Math.abs(sdy) > Math.abs(sdx) ? this._slopHold !== 2
           : this._slopHold !== 1 && this._scrollPansX();
         if (give && this._handToScroll(this._slopY)) {
+          this.hover = false;
+          if (this.hotId === id) this.hotId = -1;
+          return false;
+        }
+        // A widget that keeps no drags (dragHold 0) lets an unclaimed one
+        // end its press outright: past the slop the touch has declared
+        // itself a drag, and on a button only a tap may highlight or click.
+        if (this._slopHold === 0) {
+          this.activeId = -1;
           this.hover = false;
           if (this.hotId === id) this.hotId = -1;
           return false;

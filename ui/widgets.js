@@ -971,6 +971,9 @@ function button(id, label, variant, disabled) {
   ui.nextRect(h);
   const rx = ui.rx, ry = ui.ry, rw = ui.rw;
 
+  // A button keeps no drags: a touch that travels past the slop is a scroll
+  // or nothing, never a press held nor a click on the lift. Only a tap acts.
+  ui.dragHold = 0;
   ui.interact(nid, rx, ry, rw, h, !!disabled);
   if (ui.hover) ui.setCursorHint('pointer');
   const activated = !disabled && (ui.clicked || (focused && ui._keyActivated()));
@@ -1004,6 +1007,8 @@ function iconButton(id, icon, x, y, size, disabled) {
   const hit = touchAware(ui, size);
   const hx = x - (hit - size) / 2, hy = y - (hit - size) / 2;
 
+  // tap-only, as button() is: a drag never holds or clicks it
+  ui.dragHold = 0;
   ui.interact(nid, hx, hy, hit, hit, !!disabled);
   if (ui.hover) ui.setCursorHint('pointer');
   const activated = !disabled && (ui.clicked || (focused && ui._keyActivated()));
