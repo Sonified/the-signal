@@ -233,6 +233,10 @@ export const RO_PLAIN = 0, RO_CLICK = 1, RO_HIDDEN = 2;
 // label line. Below, it stops a pixel short of the track so a drag that
 // starts on the track can never land on the readout instead.
 const RO_PAD_X = 6, RO_PAD_Y = 3;
+// The knob at full swell: knobR below is 5 + 3 on hover + 2 on press. The
+// inline layout insets the track's left end by this reach so a knob at 0
+// clears the label beside it.
+const KNOB_MAX_R = 10;
 
 function slider(id, label, value01, formatted, step01, def01, disabled, readout, effective01, inline, fill01, formatDrag, snapDrag) {
   const ui = this;
@@ -261,7 +265,11 @@ function slider(id, label, value01, formatted, step01, def01, disabled, readout,
   if (inline) {
     labelW = ui.text.measure(label, TYPE.sm, W.regular) + SPACE.sm;
     const roSlot = ui.text.measure(inline, TYPE.sm, W.regular) + SPACE.sm;
-    rx = fx + labelW; rw = Math.max(24, fw - labelW - roSlot);
+    // The knob swells to 10px radius under hover and press (knobR below),
+    // wider than the label gap, so a knob parked at the track's far left
+    // rode over the label text. The track starts a knob's reach past the
+    // gap, keeping the swollen knob off the text.
+    rx = fx + labelW + KNOB_MAX_R; rw = Math.max(24, fw - labelW - roSlot - KNOB_MAX_R);
   }
 
   const trackY0 = inline ? ry : ry + labelH + gap;
