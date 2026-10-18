@@ -45,11 +45,13 @@
 //   pianoFree(on)           the journey let the piano play freely (1) or held
 //                           its clock for the words (0): S.pianoFreePlay,
 //                           which is never saved, so it only travels here.
-//   sunHumCutoff(v)         the Rotational hum's Cutoff as its variance plays
-//                           it this frame (0 to 1, -1 while none plays): the
-//                           breath, the strobe or the time that drive it are
-//                           this thread's, so the page's hum is told.
-//   sunHumVerb(v)           the hum's Reverb mix the same way.
+//   breathState(packed)     the sun's breath (core/breath.js) changed: its
+//                           formula's numbers, packed into a Float64Array
+//                           (packBreath), as the signal's are. Sent only on
+//                           a change (a rate moved, a pause, a resume), so
+//                           the page's hum variances (core/sun-hum-vary.js,
+//                           which run there on the page's own frames and
+//                           timer) read the very breath this thread draws.
 //   sunBreath(v)            the sun's breath (S.effSunBreathPos, 0 to 1, -1
 //                           while none runs), while a music variance is
 //                           linked to it (the drone's level, the choir's
@@ -97,6 +99,7 @@ import { presetTransitionCount } from './presets.js';
 import { mixGateAsk, mixGateAskSec } from '../js/mixgate.js';
 import { save } from './store.js';
 import { signal, SIGNAL_PACK, packSignal } from './signal.js';
+import { sunBreath, BREATH_PACK, packBreath } from './breath.js';
 import {
   mirror, M_FLAGS, M_DRIFT, M_ARP, M_HEAD, M_ATMOS, F_AUDIO, F_WORKLET, F_DRIFT,
   DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP, unpackReadbacks, readbacksWatched
@@ -167,9 +170,9 @@ export function createAudioLink(post) {
   const seqNow = new Float32Array(SEQ_PACK), seqSent = new Float32Array(SEQ_PACK);
 
   let lastRunning = false, lastIntent = 0, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
-  let lastFree = true, lastGesture = 0, lastHumCut = -1, lastHumVerb = -1, lastBreath = -1;
-  let lastSignal = -1, lastGateAsk = 0;
-  const sigPack = new Float64Array(SIGNAL_PACK);
+  let lastFree = true, lastGesture = 0, lastBreath = -1;
+  let lastSignal = -1, lastBreathGen = -1, lastGateAsk = 0;
+  const sigPack = new Float64Array(SIGNAL_PACK), breathPack = new Float64Array(BREATH_PACK);
   let seeded = false;
   const outbox = [];
 
@@ -243,15 +246,13 @@ export function createAudioLink(post) {
     if (free !== lastFree) { lastFree = free; call('pianoFree', free ? 1 : 0, 0, 0, 0); }
     const gn = S.pianoGestureN | 0;
     if (gn !== lastGesture) { lastGesture = gn; call('pianoGesture', gn, 0, 0, 0); }
-    // The Rotational hum's Cutoff as its variance plays it (gpu/sun.js), -1
-    // while none plays, so the page's hum follows the breath, the strobe or
-    // the time the renderer here reads.
-    const hc = typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : -1;
-    if (hc !== lastHumCut) { lastHumCut = hc; call('sunHumCutoff', hc, 0, 0, 0); }
-    // and its Reverb mix, the same way
-    const hv = typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : -1;
-    if (hv !== lastHumVerb) { lastHumVerb = hv; call('sunHumVerb', hv, 0, 0, 0); }
-    // and the breath, only while a music variance follows it
+    // The sun's breath whenever its formula moved (a fresh copy, as the
+    // signal's is), for the hum's variances on the page
+    if (sunBreath.gen !== lastBreathGen) {
+      lastBreathGen = sunBreath.gen;
+      call('breathState', packBreath(sunBreath, breathPack).slice(), 0, 0, 0);
+    }
+    // and its position, only while a music variance follows it
     const bp = breathHeard() && typeof S.effSunBreathPos === 'number'
       ? Math.round(S.effSunBreathPos * 1000) / 1000 : -1;
     if (bp !== lastBreath) { lastBreath = bp; call('sunBreath', bp, 0, 0, 0); }

@@ -30,10 +30,11 @@
 // the saves every set() ends with are no-ops here, and the worker's records
 // are the only ones written.
 //
-// The drift runs here too, on the audio clock, and the meters are read here.
-// tick(t) steps both once a frame (the page's own requestAnimationFrame, in
-// the bridge; the strobe is not on this thread in worker mode) and fills the
-// readings the worker shows (layout in core/audio-mirror.js), handing them
+// The drift runs here too, on the audio clock, and the meters are read here,
+// and so do the Rotational hum's two variances (core/sun-hum-vary.js), on
+// the breath and the signal the worker sends. tick(t) steps them once a
+// frame (the page's own requestAnimationFrame, in the bridge; the strobe is
+// not on this thread in worker mode) and fills the readings the worker shows (layout in core/audio-mirror.js), handing them
 // back when a post is due.
 
 import { S } from '../js/state.js';
@@ -53,7 +54,8 @@ import {
 import { initStore, load, syncFromStorage, settingsKey } from './store.js';
 import { replayLive, applyActivePresetState } from './presets.js';
 import { signal, unpackSignal, publishSignal } from './signal.js';
-import { setCutoffHz, cutoffHz, setReverbMix } from './sun-hum.js';
+import { sunBreath, unpackBreath } from './breath.js';
+import { stepHumVary } from './sun-hum-vary.js';
 import {
   M_FLAGS, M_DRIFT, M_ARP, M_HEAD, M_ATMOS, F_AUDIO, F_WORKLET, F_DRIFT,
   DRIFT_MOVING, DRIFT_LANDED, W_METERS, W_PLAYHEAD, W_ARP, W_READBACKS, CALL_SLOTS, packReadbacks
@@ -131,17 +133,11 @@ export function createAudioShell(storage) {
     // freely or waits for the words, and one gesture as a word appears.
     pianoFree(on) { S.pianoFreePlay = !!on; },
     pianoGesture() { pianoGesture(); },
-    // The hum's Cutoff as the worker's variance plays it, or back to the
-    // setting at -1 (core/audio-link.js).
-    sunHumCutoff(v) {
-      S.effSunHumCutoff = v >= 0 ? v : undefined;
-      setCutoffHz(cutoffHz(v >= 0 ? v : S.sunHumCutoff));
-    },
-    sunHumVerb(v) {
-      S.effSunHumVerb = v >= 0 ? v : undefined;
-      setReverbMix(v >= 0 ? v : S.sunHumVerb);
-    },
-    // The sun's breath, for the music variances linked to it (js/piano.js
+    // The sun's breath, as the engine's frame last steered it: into this
+    // thread's copy, which the hum's variances read here (core/sun-hum-
+    // vary.js, stepped by tick below and by its own timer).
+    breathState(p) { unpackBreath(sunBreath, p); },
+    // The sun's breath's position, for the music variances linked to it (js/piano.js
     // the drone's level, js/choir.js), or none at -1, when they hold.
     sunBreath(v) { S.effSunBreathPos = v >= 0 ? v : undefined; },
     // How long the mutes and solos in this batch glide (a journey step's
@@ -202,6 +198,10 @@ export function createAudioShell(storage) {
   // posts a copy), otherwise null.
   function tick(t) {
     stepAtmosphere(t, !!(watch & W_METERS));
+    // the hum's Cutoff and Reverb mix variances, on the breath and the
+    // signal the worker sent (core/sun-hum-vary.js; its timer runs them
+    // while this frame loop is stopped, a hidden page)
+    stepHumVary(t);
     // a mute or solo gliding (js/mixgate.js): the gates re-applied where
     // their glides have got to; nothing while none is
     stepMixGates();

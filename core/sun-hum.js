@@ -477,18 +477,21 @@ export function setYearsPerSecond(yps) {
 }
 
 // The Cutoff setting's map, the site's: 0 to 1 over 100 Hz to 10 kHz,
-// logarithmic. Here rather than in the schema so the renderer (gpu/sun.js,
-// whose Cutoff variance moves it every frame) and the page's end of the
-// worker link can reach it without importing the schema's ring.
+// logarithmic. Here rather than in the schema so the Cutoff's variance
+// (core/sun-hum-vary.js, which moves it many times a second) can reach it
+// without importing the schema's ring.
 export const CUTOFF_LO = 100, CUTOFF_HI = 10000;
 export const cutoffHz = v => CUTOFF_LO * Math.pow(CUTOFF_HI / CUTOFF_LO, v);
 
-export function setCutoffHz(hz) {
+// The filter's corner, approached with time constant tau: 10 ms for a hand
+// on the slider, and the time since its last push for the variance, so a
+// push every frame or every timer tick glides from one to the next.
+export function setCutoffHz(hz, tau = 0.01) {
   if (hz === cutoffTarget) return;
   cutoffTarget = hz;
   if (filter)
     filter.frequency.setTargetAtTime(
-      Math.min(hz, 0.45 * ctx.sampleRate), now(), 0.01);
+      Math.min(hz, 0.45 * ctx.sampleRate), now(), tau);
 }
 
 /** The hum's own volume, 0..2: above 1 the gain simply boosts past the
@@ -535,12 +538,13 @@ export function humPeak() {
 
 /** Wet/dry into the music room, 0..1, crossfaded equal-power so loudness
     holds steady: at 1 the hum is all room, no dry left. The Reverb mix
-    setting; cheap when unchanged, so its variance can set it every frame.
+    setting; cheap when unchanged, so its variance can set it many times a
+    second, tau then the time since its last push (core/sun-hum-vary.js).
     Until the room exists the hum plays dry and the mix waits (applyVerb). */
-export function setReverbMix(m) {
+export function setReverbMix(m, tau = 0.03) {
   if (m === verbMix) return;
   verbMix = m;
-  applyVerb(0.03);
+  applyVerb(tau);
 }
 
 /** The music room, from js/room.js as it is built (and rebuilt): its context

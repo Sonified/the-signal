@@ -19,6 +19,7 @@ import { save } from './store.js';
 import { retimeRoomPhase } from './room-clock.js';
 import { subDrawer } from './schema-visual.js';
 import * as hum from './sun-hum.js';
+import { syncHumVary } from './sun-hum-vary.js';
 import { chanGate, onChannelGates } from '../js/mixgate.js';
 import { S as appState } from '../js/state.js';
 
@@ -146,7 +147,7 @@ const NUM = [
   ['sunHumCutoff',       0,   1,   0.25, false],
   // The Cutoff's variance, ridden by its Drive as the Feedback's are, on the
   // 0 to 1 setting: at 100% the drive's bottom takes the cutoff down to
-  // 100 Hz (gpu/sun.js moves the filter each frame).
+  // 100 Hz (core/sun-hum-vary.js moves the filter, frames or none).
   ['sunHumCutoffVar',    0,   1,   0,    false],
   ['sunHumCutoffVarPeriod', 0, 120, 20,  true ],
   ['sunHumCutoffVarPeriodOff', 0, 1, 0,  false],
@@ -311,8 +312,9 @@ const rateToPos = r => r === r ? Math.round(Math.min(1, Math.max(0, Math.log(r /
 // going off pauses it, and like every music voice it is heard only while
 // the transport runs (core/sun-hum.js). Every setting is pushed too,
 // each setter a no-op when nothing moved, so one call puts the hum wherever
-// S says, the cutoff where its variance has it (S.effSunHumCutoff, the
-// renderer's) while one plays. Called by every hum and layer set(), and by
+// S says, the cutoff where its variance has it (S.effSunHumCutoff,
+// core/sun-hum-vary.js's) while one plays, and that file's timer runs while
+// the hum may sound. Called by every hum and layer set(), and by
 // applySunState.
 function syncHum(S) {
   hum.setVolume(S.sunHumAmp);
@@ -321,6 +323,7 @@ function syncHum(S) {
   hum.setRate(humRate(S.sunHumRate) * HUM_RETUNE);
   hum.setReverbMix(typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : S.sunHumVerb);
   if (S.sunHumOn && S.layers.sun) hum.play(); else hum.pause();
+  syncHumVary();
 }
 
 // A mute or solo anywhere in the mix re-applies the hum's gate.

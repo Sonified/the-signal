@@ -54,6 +54,9 @@ import { stepStrobe, resetStrobeClock, resetRefreshMeasure, darkSlot, strobeResu
 import { gentleResume, armResume } from './core/wake.js';
 import { roomClockSnap } from './core/room-clock.js';
 import { motionTick, motionHalt, winding, motionScale } from './core/motion.js';
+import { SIGNAL_ORIGIN } from './core/signal.js';
+import { sunBreath, steerBreath, breathHz } from './core/breath.js';
+import { stepHumVary } from './core/sun-hum-vary.js';
 import { setIdleWaker, idleWake, idleHeld, IDLE_DIAG } from './core/idle.js';
 import { eye, stepEye } from './core/eye.js';
 import { initChores, choreRegister, choreRun, choreYield, choreBusy } from './core/chores.js';
@@ -775,11 +778,19 @@ async function boot() {
     // drawMixer reads), so only then are they stepped before the UI.
     // The pause wind-down's scale for this frame, before anything moves.
     motionTick(dt);
+    // The sun's breath, a formula of time (core/breath.js): told this
+    // frame's rate and the pause as the motion's scale now stands, it folds
+    // only on a change, so a steady breath is never touched and a paused one
+    // eases to its halt with no frame's help.
+    steerBreath(sunBreath, SIGNAL_ORIGIN + t, breathHz(S.sunBreathRate), S.running, motionScale(), S.pauseWindDown);
     // The viewer's eye for parallax (core/eye.js), on wall-clock time so a
     // simulated head keeps swaying while the scene is paused. Before any
     // layer's update, which all read it.
     stepEye(dt);
     const r = stepStrobe(t);
+    // The Rotational hum's two variances (core/sun-hum-vary.js) on this
+    // frame's signal and breath; between frames its own timer runs them.
+    stepHumVary(t);
     // Worker mode: hold the engine's measured refresh against the page's.
     // While they disagree the guard judges by the slower one.
     if (inWorker) {

@@ -45,8 +45,10 @@
 // Max quality off and on did by hand.
 //
 // The breath is the layer's master signal: one sine, S.sunBreathRate breaths
-// a minute on the layer's motion clock (a paused scene holds it), with two
-// consumers in step. The Atmosphere: the five channels sit along a
+// a minute, a formula of time (core/breath.js) that main.js steers once a
+// frame and that eases to a halt with the pause wind-down, held where it
+// stops. Each frame reads it at the frame's time, with two consumers in
+// step. The Atmosphere: the five channels sit along a
 // temperature axis at i/4 in the order above, and the sweep position, the
 // setting plus half the Breath amount times the sine, lights the pair it
 // falls between (smoothstep crossfade), so an inhale climbs toward the
@@ -142,7 +144,8 @@ import { motionStep, motionScale } from '../core/motion.js';
 import { idleHold, idleRelease } from '../core/idle.js';
 import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
-import { setCutoffHz, cutoffHz, setReverbMix } from '../core/sun-hum.js';
+import { SIGNAL_ORIGIN } from '../core/signal.js';
+import { sunBreath, breathPhaseAt } from '../core/breath.js';
 
 const CLOUD_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
 // Served from this machine (tools/serve.mjs on localhost), the Sun plays its
@@ -810,9 +813,9 @@ export function createSun(device, format) {
   // ---------- frame state ----------
   let pixelW = 1, pixelH = 1, dpr = 1;
   let wasOn = false;
-  // The layer's motion clock (seconds), the breath's phase (0 to 1) and the
-  // fold's spin (radians), all stepped by the motion step.
-  let clockS = 0, breathPh = 0, spinAng = 0;
+  // The layer's motion clock (seconds) and the fold's spin (radians), both
+  // stepped by the motion step. (The breath is core/breath.js's formula.)
+  let clockS = 0, spinAng = 0;
   // This frame: whether the live picture draws, whether it is folded, and
   // whether the feedback runs.
   let liveDraw = false, folded = false, fbOn = false;
@@ -850,13 +853,12 @@ export function createSun(device, format) {
   let fb = null, fbScale = 1, fbOpacity = 1;
   // The Speed's, Amount's and Opacity's variances (schema-sun.js
   // drivenVariance): Time's phase for each, stepped on the motion clock and
-  // pulled onto the room clock, with its room bookkeeping.
+  // pulled onto the room clock, with its room bookkeeping. The hum's two
+  // run where the hum is (core/sun-hum-vary.js).
   const driven = {
     sunSpeed: { phase: 0, room: roomPhaseState() },
     sunFbAmt: { phase: 0, room: roomPhaseState() },
-    sunFbOpacity: { phase: 0, room: roomPhaseState() },
-    sunHumCutoff: { phase: 0, room: roomPhaseState() },
-    sunHumVerb: { phase: 0, room: roomPhaseState() }
+    sunFbOpacity: { phase: 0, room: roomPhaseState() }
   };
   // A variance's drive this frame, 0 to 1 from its driver: Time's cosine, 1
   // at the cycle's start; the strobe's lum, 1 lit; the breath, 1 at the
@@ -973,8 +975,6 @@ export function createSun(device, format) {
         S.effSunSpeed = undefined;
         S.effSunFbAmt = undefined;
         S.effSunFbOpacity = undefined;
-        S.effSunHumCutoff = undefined;
-        S.effSunHumVerb = undefined;
         if (fb) fb.release();
         releaseFolds();
       }
@@ -1007,10 +1007,9 @@ export function createSun(device, format) {
     // The frame's step, eased to 0 over the pause wind-down (core/motion.js).
     const md = dt > 0 ? motionStep(dt) : 0;
 
-    // The breath, the master signal (see the top of this file).
-    const breathRate = clampNum(S.sunBreathRate, 0.5, 12, 5.5);
-    breathPh += md * breathRate / 60;
-    breathPh -= Math.floor(breathPh);
+    // The breath, the master signal (see the top of this file): its
+    // formula's phase at the frame's time on the shared clock.
+    const breathPh = breathPhaseAt(sunBreath, SIGNAL_ORIGIN + t);
     const breathSin = Math.sin(TAU * breathPh);
     // The Breath drawer's live gauge (schema-sun.js sunBreathGauge): where
     // the breath is, 0 full exhale to 1 full inhale, and whether it is
@@ -1024,19 +1023,6 @@ export function createSun(device, format) {
     watchStall(nowMs / 1000);
     watchStarve(nowMs / 1000);
     syncWrapHold();
-
-    // The Rotational hum's Cutoff, as its variance plays it, on the 0 to 1
-    // setting, straight into the hum's filter (a no-op when it has not
-    // moved, and where there is no AudioContext: in worker mode
-    // core/audio-link.js carries effSunHumCutoff to the page's hum).
-    const cutSet = clampNum(S.sunHumCutoff, 0, 1, 0.25);
-    const cut = varied('sunHumCutoff', cutSet, driveOf('sunHumCutoff', t, md, lum, S.effSunBreathPos));
-    S.effSunHumCutoff = S.sunHumCutoffVar > 0 ? cut : undefined;
-    setCutoffHz(cutoffHz(cut));
-    // and its Reverb mix, the same way
-    const verb = varied('sunHumVerb', clampNum(S.sunHumVerb, 0, 1, 0.3), driveOf('sunHumVerb', t, md, lum, S.effSunBreathPos));
-    S.effSunHumVerb = S.sunHumVerbVar > 0 ? verb : undefined;
-    setReverbMix(verb);
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
     // the pair the live position falls between crossfaded by smoothstep.
