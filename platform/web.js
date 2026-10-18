@@ -330,12 +330,23 @@ export function createPlatform(canvas) {
     kb = createSoftKeyboard(canvas, m => kbLink.receive(m));
   }
 
+  // ---------- the audio wake ----------
+  // main.js fills this with the sound's wake (warmDevice + audioOn). It runs
+  // here, inside the gesture's own event handler, where a browser that wants
+  // user activation for resume() is sure to see it: the queued copy of this
+  // event is only drained on the next animation frame, outside the gesture,
+  // which is too late for the space bar to bring sound. Worker mode has
+  // always woken in the handler (worker-bridge.js shell.wake()); this is the
+  // main thread's twin.
+  let audioWake = null;
+
   // ---------- pointer ----------
   // (the keyboard sees a touch's down and up first: its up is the tap that
   // may focus the input, and a down while it is focused leaves it so)
   canvas.addEventListener('pointerdown', e => {
     if (!(kb && kb.down(e))) canvas.focus();
     try { canvas.setPointerCapture(e.pointerId); } catch {}
+    if (audioWake) audioWake();
     q.pointer('down', e);
   });
   canvas.addEventListener('pointermove', e => q.pointer('move', e));
@@ -357,6 +368,7 @@ export function createPlatform(canvas) {
   window.addEventListener('keydown', e => {
     if (!ownsKeys()) return;
     if (!e.metaKey && !e.ctrlKey && GUARDED_KEYS.has(e.code)) e.preventDefault();
+    if (audioWake) audioWake();
     q.key('key', e);
   });
   window.addEventListener('keyup', e => {
@@ -468,6 +480,8 @@ export function createPlatform(canvas) {
     pollInput,
     // hears every input event as it is queued (input-queue.js says why)
     onInput(fn) { inputCbs.push(fn); },
+    // the audio wake above: called inside pointerdown and keydown themselves
+    setAudioWake(fn) { audioWake = fn; },
     pollDisplay: displaySampleScreen,
     now: () => performance.now(),
     setCursor(kind) { if (canvas.style.cursor !== kind) canvas.style.cursor = kind; },

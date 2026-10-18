@@ -468,6 +468,18 @@ async function boot() {
   const renderArgs = { lum: 0, lit: false, overlayList, uiList, topList, glassVisible: false, sceneChanged: true };
   const uiEvents = [];
   let lastActivity = 0, audioWoken = false, lastCursor = '';
+  // The first gesture wakes the sound inside its own event handler
+  // (platform/web.js), where the browser is sure to honour the activation
+  // for resume(); the frame loop's wake below stays as the backstop. Worker
+  // mode wakes on its page thread the same way (core/audio-shell.js wake).
+  if (!inWorker && platform.setAudioWake) {
+    platform.setAudioWake(() => {
+      if (audioWoken) return;
+      audioWoken = true;
+      warmDevice();
+      if (S.audioOnBoot !== false && !S.audioEnabled) audioOn();
+    });
+  }
   // Whether the pointer rested on the UI (see chromeAwake) at the last build.
   let overUI = false, overWin = false;
   // The floating windows' stacking, back to front: each entry is a window's
@@ -735,7 +747,9 @@ async function boot() {
       }
       if (e.type === 'move' || e.type === 'down' || e.type === 'wheel' || e.type === 'key') lastActivity = t;
       lastInputT = t;
-      // (in worker mode the page wakes the sound inside the gesture itself)
+      // The backstop wake: the real one ran inside the gesture's own event
+      // handler (setAudioWake above; in worker mode the page's shell.wake),
+      // so this only fires on a platform without the handler hook.
       if (!audioWoken && !inWorker && (e.type === 'down' || e.type === 'key')) {
         audioWoken = true;
         warmDevice();
