@@ -63,7 +63,7 @@ const glideMs = v => typeof v === 'number' && v === v ? Math.round(Math.max(0, M
 // and hide while the word leaves the way it came. Each row names the effects
 // it belongs to and steps out of the way for every other choice: a preset
 // only ever shows the controls it has.
-// The sub-drawers (Text's Timing, Styling and Fades; Strobe's Timing,
+// The sub-drawers (Text's Timing, Fades and Styling; Strobe's Timing,
 // Brightness and Color; Tunnel's Motion, Brightness and Style; Edge's Motion
 // and Style; Flowers' Motion, Shape and Brightness; Kaleidoscope's Motion,
 // Shapes, Brightness and Color; Particles' Motion, Shape and Color; Render's
@@ -1161,7 +1161,7 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.textPhraseGap = pos < 0 ? -1 : pos; save(); },
     formatAt: pos => pos >= 0 ? pos + ' s' : 'auto'
   },
-  // ---- three sub-drawers, Timing, Styling and Fades (see subDrawer), each
+  // ---- three sub-drawers, Timing, Fades and Styling (see subDrawer), each
   // with its rows straight after it, then the themes at the section's level ----
   subDrawer('textRateDrawer', 'Timing', 'text', ['textFreq', 'textAppearPerMin', 'textDwell']),
   {
@@ -1280,6 +1280,131 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.textDwellVar = pos / 100; save(); },
     formatAt: pos => pos + '%'
   },
+  subDrawer('textFadesDrawer', 'Fades', 'text', ['textFadeIn', 'textFadeOut']),
+  {
+    // Phrases only (affirmations or custom). When a block's lines arrive or leave one after
+    // another, the rest between one line visibly landing and the next
+    // visibly starting (core/word-fx.js lineStep): 0 back to back, 100% a
+    // rest as long as a line's transition. The fade time stays the whole
+    // block's, so a longer pause gives each line a shorter share of it.
+    // Nothing to do when the lines fade together.
+    id: 'textLinePause', section: 'text', label: 'Line pause', kind: 'slider',
+    summaryLabel: 'Pause',
+    parent: 'textFadesDrawer',
+    min: 0, max: 100, step: 1, def: 0,
+    visible: S => phraseMode(S),
+    get: S => Math.round((S.textLinePause || 0) * 100),
+    set: (S, pos) => { S.textLinePause = pos / 100; save(); },
+    formatAt: pos => pos + '%'
+  },
+  // ---- fade in and fade out, each with its transition (core/word-fx.js) ----
+  // Each side is a switch with everything it governs listed under it: the
+  // time, then the effect the letters play across that time and the effect's
+  // own settings. Off, the word just appears or disappears, as at 0 ms.
+  {
+    id: 'textFadeInOn', section: 'text', label: 'Fade in', kind: 'toggle', def: true,
+    parent: 'textFadesDrawer',
+    get: fadeInOn,
+    set: (S, on) => { S.textFadeInOn = !!on; save(); },
+    format: S => fadeInOn(S) ? 'On' : 'Off'
+  },
+  {
+    id: 'textFadeIn', section: 'text', label: 'Duration', kind: 'slider', parent: 'textFadeInOn',
+    summaryLabel: 'In',
+    min: 0, max: 10000, step: 50, def: 0,
+    visible: fadeInOn,
+    get: S => S.textFadeInMs,
+    set: (S, pos) => { S.textFadeInMs = pos; save(); },
+    formatAt: pos => pos + ' ms'
+  },
+  // Each word rolls its own fade time as it appears: the slider above is the
+  // cap, and the variance is how far below it the roll may land.
+  {
+    id: 'textFadeInVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeInOn',
+    varianceOf: 'textFadeIn',
+    min: 0, max: 100, step: 1, def: 0,
+    visible: fadeInOn,
+    get: S => Math.round(S.textFadeInVar * 100),
+    set: (S, pos) => { S.textFadeInVar = pos / 100; save(); },
+    formatAt: pos => pos + '%'
+  },
+  {
+    // Phrases only (affirmations or custom). On, a multi-line block arrives as one; off, line
+    // by line, the same switch Fade out has for departures.
+    id: 'textLinesTogetherIn', section: 'text', label: 'Lines fade in together', kind: 'toggle', def: false,
+    parent: 'textFadeInOn',
+    visible: S => fadeInOn(S) && phraseMode(S),
+    get: S => !!S.textLinesTogetherIn,
+    set: (S, on) => { S.textLinesTogetherIn = !!on; save(); },
+    format: S => S.textLinesTogetherIn ? 'On' : 'Off'
+  },
+  {
+    id: 'textFxIn', section: 'text', label: 'Arrive', kind: 'segment', def: 'gather', parent: 'textFadeInOn',
+    dropdown: true,
+    options: fxOptions('fxIn'),
+    visible: fadeInOn,
+    get: S => S.textFxIn,
+    set: (S, v) => { S.textFxIn = v; save(); },
+    format: S => FX_NAMES[S.textFxIn] || S.textFxIn
+  },
+  ...fxRows(false),
+  {
+    // On, the word leaves by the same effect and settings it arrived by, on
+    // a fresh path back out, and the Leave rows step out of the way. Its own
+    // line between the two sides, since it ties one to the other.
+    id: 'textFxMirror', section: 'text', label: 'Leave the way it came', kind: 'toggle', def: false,
+    parent: 'textFadesDrawer',
+    visible: fadeOutOn,
+    get: S => !!S.textFxMirror,
+    set: (S, on) => { S.textFxMirror = !!on; save(); },
+    format: S => S.textFxMirror ? 'On' : 'Off'
+  },
+  {
+    id: 'textFadeOutOn', section: 'text', label: 'Fade out', kind: 'toggle', def: true,
+    parent: 'textFadesDrawer',
+    get: fadeOutOn,
+    set: (S, on) => { S.textFadeOutOn = !!on; save(); },
+    format: S => fadeOutOn(S) ? 'On' : 'Off'
+  },
+  {
+    id: 'textFadeOut', section: 'text', label: 'Duration', kind: 'slider', parent: 'textFadeOutOn',
+    summaryLabel: 'Out',
+    min: 0, max: 10000, step: 50, def: 0,
+    visible: fadeOutOn,
+    get: S => S.textFadeOutMs,
+    set: (S, pos) => { S.textFadeOutMs = pos; save(); },
+    formatAt: pos => pos + ' ms'
+  },
+  {
+    id: 'textFadeOutVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeOutOn',
+    varianceOf: 'textFadeOut',
+    min: 0, max: 100, step: 1, def: 0,
+    visible: fadeOutOn,
+    get: S => Math.round(S.textFadeOutVar * 100),
+    set: (S, pos) => { S.textFadeOutVar = pos / 100; save(); },
+    formatAt: pos => pos + '%'
+  },
+  {
+    // Phrases only (a single word is one line). On, a multi-line
+    // phrase dissolves every line at once on its way out, rather than one
+    // line after another.
+    id: 'textLinesTogetherOut', section: 'text', label: 'Lines fade out together', kind: 'toggle', def: false,
+    parent: 'textFadeOutOn',
+    visible: S => fadeOutOn(S) && phraseMode(S),
+    get: S => !!S.textLinesTogetherOut,
+    set: (S, on) => { S.textLinesTogetherOut = !!on; save(); },
+    format: S => S.textLinesTogetherOut ? 'On' : 'Off'
+  },
+  {
+    id: 'textFxOut', section: 'text', label: 'Leave', kind: 'segment', def: 'wind', parent: 'textFadeOutOn',
+    dropdown: true,
+    options: fxOptions('fxOut'),
+    visible: S => fadeOutOn(S) && !S.textFxMirror,
+    get: S => S.textFxOut,
+    set: (S, v) => { S.textFxOut = v; save(); },
+    format: S => FX_NAMES[S.textFxOut] || S.textFxOut
+  },
+  ...fxRows(true),
   subDrawer('textStylingDrawer', 'Styling', 'text', ['textSize', 'textOpacity']),
   {
     // v0's set() also calls recentreWord(), which re-measures the DOM word
@@ -1501,131 +1626,6 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.textPanelFadeOutMs = pos; save(); },
     formatAt: pos => pos + ' ms',
   },
-  subDrawer('textFadesDrawer', 'Fades', 'text', ['textFadeIn', 'textFadeOut']),
-  {
-    // Phrases only (affirmations or custom). When a block's lines arrive or leave one after
-    // another, the rest between one line visibly landing and the next
-    // visibly starting (core/word-fx.js lineStep): 0 back to back, 100% a
-    // rest as long as a line's transition. The fade time stays the whole
-    // block's, so a longer pause gives each line a shorter share of it.
-    // Nothing to do when the lines fade together.
-    id: 'textLinePause', section: 'text', label: 'Line pause', kind: 'slider',
-    summaryLabel: 'Pause',
-    parent: 'textFadesDrawer',
-    min: 0, max: 100, step: 1, def: 0,
-    visible: S => phraseMode(S),
-    get: S => Math.round((S.textLinePause || 0) * 100),
-    set: (S, pos) => { S.textLinePause = pos / 100; save(); },
-    formatAt: pos => pos + '%'
-  },
-  // ---- fade in and fade out, each with its transition (core/word-fx.js) ----
-  // Each side is a switch with everything it governs listed under it: the
-  // time, then the effect the letters play across that time and the effect's
-  // own settings. Off, the word just appears or disappears, as at 0 ms.
-  {
-    id: 'textFadeInOn', section: 'text', label: 'Fade in', kind: 'toggle', def: true,
-    parent: 'textFadesDrawer',
-    get: fadeInOn,
-    set: (S, on) => { S.textFadeInOn = !!on; save(); },
-    format: S => fadeInOn(S) ? 'On' : 'Off'
-  },
-  {
-    id: 'textFadeIn', section: 'text', label: 'Duration', kind: 'slider', parent: 'textFadeInOn',
-    summaryLabel: 'In',
-    min: 0, max: 10000, step: 50, def: 0,
-    visible: fadeInOn,
-    get: S => S.textFadeInMs,
-    set: (S, pos) => { S.textFadeInMs = pos; save(); },
-    formatAt: pos => pos + ' ms'
-  },
-  // Each word rolls its own fade time as it appears: the slider above is the
-  // cap, and the variance is how far below it the roll may land.
-  {
-    id: 'textFadeInVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeInOn',
-    varianceOf: 'textFadeIn',
-    min: 0, max: 100, step: 1, def: 0,
-    visible: fadeInOn,
-    get: S => Math.round(S.textFadeInVar * 100),
-    set: (S, pos) => { S.textFadeInVar = pos / 100; save(); },
-    formatAt: pos => pos + '%'
-  },
-  {
-    // Phrases only (affirmations or custom). On, a multi-line block arrives as one; off, line
-    // by line, the same switch Fade out has for departures.
-    id: 'textLinesTogetherIn', section: 'text', label: 'Lines fade in together', kind: 'toggle', def: false,
-    parent: 'textFadeInOn',
-    visible: S => fadeInOn(S) && phraseMode(S),
-    get: S => !!S.textLinesTogetherIn,
-    set: (S, on) => { S.textLinesTogetherIn = !!on; save(); },
-    format: S => S.textLinesTogetherIn ? 'On' : 'Off'
-  },
-  {
-    id: 'textFxIn', section: 'text', label: 'Arrive', kind: 'segment', def: 'gather', parent: 'textFadeInOn',
-    dropdown: true,
-    options: fxOptions('fxIn'),
-    visible: fadeInOn,
-    get: S => S.textFxIn,
-    set: (S, v) => { S.textFxIn = v; save(); },
-    format: S => FX_NAMES[S.textFxIn] || S.textFxIn
-  },
-  ...fxRows(false),
-  {
-    // On, the word leaves by the same effect and settings it arrived by, on
-    // a fresh path back out, and the Leave rows step out of the way. Its own
-    // line between the two sides, since it ties one to the other.
-    id: 'textFxMirror', section: 'text', label: 'Leave the way it came', kind: 'toggle', def: false,
-    parent: 'textFadesDrawer',
-    visible: fadeOutOn,
-    get: S => !!S.textFxMirror,
-    set: (S, on) => { S.textFxMirror = !!on; save(); },
-    format: S => S.textFxMirror ? 'On' : 'Off'
-  },
-  {
-    id: 'textFadeOutOn', section: 'text', label: 'Fade out', kind: 'toggle', def: true,
-    parent: 'textFadesDrawer',
-    get: fadeOutOn,
-    set: (S, on) => { S.textFadeOutOn = !!on; save(); },
-    format: S => fadeOutOn(S) ? 'On' : 'Off'
-  },
-  {
-    id: 'textFadeOut', section: 'text', label: 'Duration', kind: 'slider', parent: 'textFadeOutOn',
-    summaryLabel: 'Out',
-    min: 0, max: 10000, step: 50, def: 0,
-    visible: fadeOutOn,
-    get: S => S.textFadeOutMs,
-    set: (S, pos) => { S.textFadeOutMs = pos; save(); },
-    formatAt: pos => pos + ' ms'
-  },
-  {
-    id: 'textFadeOutVar', section: 'text', label: 'Duration variance', kind: 'slider', parent: 'textFadeOutOn',
-    varianceOf: 'textFadeOut',
-    min: 0, max: 100, step: 1, def: 0,
-    visible: fadeOutOn,
-    get: S => Math.round(S.textFadeOutVar * 100),
-    set: (S, pos) => { S.textFadeOutVar = pos / 100; save(); },
-    formatAt: pos => pos + '%'
-  },
-  {
-    // Phrases only (a single word is one line). On, a multi-line
-    // phrase dissolves every line at once on its way out, rather than one
-    // line after another.
-    id: 'textLinesTogetherOut', section: 'text', label: 'Lines fade out together', kind: 'toggle', def: false,
-    parent: 'textFadeOutOn',
-    visible: S => fadeOutOn(S) && phraseMode(S),
-    get: S => !!S.textLinesTogetherOut,
-    set: (S, on) => { S.textLinesTogetherOut = !!on; save(); },
-    format: S => S.textLinesTogetherOut ? 'On' : 'Off'
-  },
-  {
-    id: 'textFxOut', section: 'text', label: 'Leave', kind: 'segment', def: 'wind', parent: 'textFadeOutOn',
-    dropdown: true,
-    options: fxOptions('fxOut'),
-    visible: S => fadeOutOn(S) && !S.textFxMirror,
-    get: S => S.textFxOut,
-    set: (S, v) => { S.textFxOut = v; save(); },
-    format: S => FX_NAMES[S.textFxOut] || S.textFxOut
-  },
-  ...fxRows(true),
   // (textThemes below)
     // Multi-select: every theme chip is independently on or off. get()
     // returns the array of theme keys currently active; an empty S.textThemes
