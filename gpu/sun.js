@@ -117,9 +117,12 @@
 // swapped at once. The local copies (localhost) skip all of this.
 //
 // Render > Sun > Sun quality (S.sunTier) is that ladder's Auto, or a tier
-// pinned by name, Min to High (never Max: only Auto reaches it, with Max
-// quality on). A pinned tier is played outright, on the cloud or locally,
-// below a computer's SD floor too: the first load skips the probe, nothing
+// pinned by name. The row offers each device its own five (schema-visual.js
+// SUN_TIERS): a phone Min to High, a computer SD to Max; the pin honours
+// whatever is stored. Max quality (S.sunHiRes) remains Auto's ceiling
+// alone; a pinned Max needs no toggle. A pinned tier is played outright, on
+// the cloud or locally, below a computer's SD floor too: the first load
+// skips the probe, nothing
 // steps it down (a stall still rescues, a dead rescue or a network error
 // reloads the same tier), no return from away measures or rises, and Max
 // quality flipped waits for Auto. A new pick is swapped to at once
@@ -167,11 +170,12 @@ const TIERS = [
 ];
 const MAX_TIER = TIERS.findIndex(t => t.name === 'Max');
 // The tier Sun quality pins (S.sunTier, by key), -1 for Auto or anything
-// else. Max is never pinned (see the top of this file). A loop, read every
-// frame, so no closure is made.
+// else. Any tier may be pinned, Max included (a computer's row offers it;
+// see the top of this file). A loop, read every frame, so no closure is
+// made.
 function pinnedTier() {
   const k = S.sunTier;
-  for (let i = 0; i < MAX_TIER; i++) if (TIERS[i].key === k) return i;
+  for (let i = 0; i < TIERS.length; i++) if (TIERS[i].key === k) return i;
   return -1;
 }
 const urlX264 = stem => VIDEO_BASE + stem + '.mp4';

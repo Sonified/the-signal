@@ -121,8 +121,16 @@ const surfing = S => edgeMode(S) === 'surfing';
 const edgePulse = S => typeof S.edgePulse === 'number' ? S.edgePulse : 1;
 // Render > Sun > Sun quality's values, in the segment's order, each at its
 // option's index (softIndex relies on it); gpu/sun.js reads the same names.
-const SUN_TIERS = ['auto', 'min', 'sd', 'hd', 'hdplus', 'high'];
-const SUN_TIER_LABELS = ['Auto', 'Min', 'SD', 'HD', 'HD+', 'High'];
+// The row offers the five tiers this device's ladder can play (gpu/sun.js,
+// the same phone test): a phone Min to High (its screen shows no more), a
+// computer SD to Max (its auto never drops below SD). In a worker there is
+// no matchMedia and the computer's row stands, but no drawer draws there.
+const SUN_PHONE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches &&
+  typeof screen !== 'undefined' && Math.min(screen.width, screen.height) < 600;
+const SUN_TIERS = SUN_PHONE ? ['auto', 'min', 'sd', 'hd', 'hdplus', 'high']
+                            : ['auto', 'sd', 'hd', 'hdplus', 'high', 'max'];
+const SUN_TIER_LABELS = SUN_PHONE ? ['Auto', 'Min', 'SD', 'HD', 'HD+', 'High']
+                                  : ['Auto', 'SD', 'HD', 'HD+', 'High', 'Max'];
 
 const fadeInOn = S => S.textFadeInOn !== false;
 const fadeOutOn = S => S.textFadeOutOn !== false;
@@ -1718,21 +1726,15 @@ export const VISUAL_CONTROLS = [
   {
     // The Sun video's quality tier (gpu/sun.js TIERS). Auto is the ladder as
     // it always ran: the link measured, down fast, up slow, Max quality
-    // (the Sun section's toggle) its ceiling. A tier named here is played
+    // (the Sun section's toggle) Auto's ceiling. A tier named here is played
     // outright: no probe, no step-down, no rise; a pick or a return to Auto
-    // swaps in place at once. Max is not offered here; only Auto reaches
-    // it, with Max quality on. While Auto is chosen, the tier it is playing
-    // shows softly (softIndex, -1 for none: Max, or no tier yet).
+    // swaps in place at once. The tiers offered are this device's five
+    // (SUN_TIERS above): a phone Min to High, a computer SD to Max. While
+    // Auto is chosen, the tier it is playing shows softly (softIndex, -1
+    // for none: no tier yet, or one this device's row does not offer).
     id: 'sunTier', section: 'render', label: 'Sun quality', kind: 'segment', def: 'auto', parent: 'renderSunDrawer',
     summaryLabel: 'Quality',
-    options: [
-      { value: 'auto',   label: 'Auto', domId: null },
-      { value: 'min',    label: 'Min',  domId: null },
-      { value: 'sd',     label: 'SD',   domId: null },
-      { value: 'hd',     label: 'HD',   domId: null },
-      { value: 'hdplus', label: 'HD+',  domId: null },
-      { value: 'high',   label: 'High', domId: null }
-    ],
+    options: SUN_TIERS.map((v, i) => ({ value: v, label: SUN_TIER_LABELS[i], domId: null })),
     get: S => SUN_TIERS.indexOf(S.sunTier) > 0 ? S.sunTier : 'auto',
     set: (S, v) => { S.sunTier = SUN_TIERS.indexOf(v) > 0 ? v : 'auto'; save(); },
     format: S => SUN_TIER_LABELS[Math.max(0, SUN_TIERS.indexOf(S.sunTier))],

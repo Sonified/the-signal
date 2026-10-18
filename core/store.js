@@ -991,8 +991,9 @@ function applySettings(s, live, scene) {
     // from before rev 2 keeps the default, 10 a second (its 0 was the old
     // default, not a choice); one since keeps what this screen chose, Off too.
     if (s.sunRateRev === 2 && typeof s.sunRateHz === 'number' && isFinite(s.sunRateHz)) S.sunRateHz = Math.max(0, Math.min(40, Math.round(s.sunRateHz)));
-    // The Sun's quality: Auto or one of the five tiers the row offers; anything else stays Auto.
-    if (['auto', 'min', 'sd', 'hd', 'hdplus', 'high'].indexOf(s.sunTier) >= 0) S.sunTier = s.sunTier;
+    // The Sun's quality: Auto or any tier by key (each device's row offers
+    // its own five, schema-visual.js SUN_TIERS); anything else stays Auto.
+    if (['auto', 'min', 'sd', 'hd', 'hdplus', 'high', 'max'].indexOf(s.sunTier) >= 0) S.sunTier = s.sunTier;
     // Pixel density: only the caps the Render section offers; anything else is the screen's own.
     if (s.dprCap === 2 || s.dprCap === 1.5 || s.dprCap === 1) S.dprCap = s.dprCap;
     if (typeof s.energyButton === 'boolean') S.energyButton = s.energyButton;
