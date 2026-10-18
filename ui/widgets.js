@@ -730,10 +730,12 @@ function segment(id, labels, index, disabled, label, softIndex) {
 
     const baseline = centerBaseline(ui, cy, rh, TYPE.sm);
     const isSel = i === newIndex;
+    // The soft mark's fill is the selection pill's own; what sets the two
+    // apart is everything else the selection carries (the accent border,
+    // the semibold accent label). Any fainter and it cannot be seen over
+    // the well at all.
     if (i === softIndex && !isSel) {
-      ui.scratch0[0] = COLOR.accentSoft[0]; ui.scratch0[1] = COLOR.accentSoft[1];
-      ui.scratch0[2] = COLOR.accentSoft[2]; ui.scratch0[3] = COLOR.accentSoft[3] * 0.5;
-      ui.dl.rect(cx, cy, colW, rh, RADIUS.pill, ui.scratch0, 0, null, 0, 0);
+      ui.dl.rect(cx, cy, colW, rh, RADIUS.pill, ui.lockTint ? COLOR.lockSoft : COLOR.accentSoft, 0, null, 0, 0);
     }
     const hoverA = ui.spring(combine2(iid, 2), ui.hover && !isSel ? 1 : 0, MOTION.hover);
     if (hoverA > 0.001) {
