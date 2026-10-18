@@ -67,7 +67,7 @@ const glideMs = v => typeof v === 'number' && v === v ? Math.round(Math.max(0, M
 // Brightness and Color; Tunnel's Motion, Brightness and Style; Edge's Motion
 // and Style; Flowers' Motion, Shape and Brightness; Kaleidoscope's Motion,
 // Shapes, Brightness and Color; Particles' Motion, Shape and Color; Render's
-// Audio engine, Pause, Hint, Trails and Parallax; and the Audio and Music
+// Sun, Audio engine, Pause, Hint, Trails and Parallax; and the Audio and Music
 // voices, whose strips carry the voice's switch): each a toggle whose rows
 // nest under it, open while it is on. They are disclosures, not
 // features, so whether one is open is how the interface was arranged, not
@@ -119,6 +119,10 @@ const edgeMode = S => EDGE_MODES.indexOf(S.edgeMode) >= 0 ? S.edgeMode : 'surfin
 const surfing = S => edgeMode(S) === 'surfing';
 // The edge's Pulse with strobe, 1 (the edge as it always was) when unset.
 const edgePulse = S => typeof S.edgePulse === 'number' ? S.edgePulse : 1;
+// Render > Sun > Sun quality's values, in the segment's order, each at its
+// option's index (softIndex relies on it); gpu/sun.js reads the same names.
+const SUN_TIERS = ['auto', 'min', 'sd', 'hd', 'hdplus', 'high'];
+const SUN_TIER_LABELS = ['Auto', 'Min', 'SD', 'HD', 'HD+', 'High'];
 
 const fadeInOn = S => S.textFadeInOn !== false;
 const fadeOutOn = S => S.textFadeOutOn !== false;
@@ -1710,16 +1714,40 @@ export const VISUAL_CONTROLS = [
     set: (S, v) => setEngineThreadWanted(v),
     format: () => engineThreadStatus()
   },
+  subDrawer('renderSunDrawer', 'Sun', 'render', ['sunTier', 'sunRateHz']),
+  {
+    // The Sun video's quality tier (gpu/sun.js TIERS). Auto is the ladder as
+    // it always ran: the link measured, down fast, up slow, Max quality
+    // (the Sun section's toggle) its ceiling. A tier named here is played
+    // outright: no probe, no step-down, no rise; a pick or a return to Auto
+    // swaps in place at once. Max is not offered here; only Auto reaches
+    // it, with Max quality on. While Auto is chosen, the tier it is playing
+    // shows softly (softIndex, -1 for none: Max, or no tier yet).
+    id: 'sunTier', section: 'render', label: 'Sun quality', kind: 'segment', def: 'auto', parent: 'renderSunDrawer',
+    summaryLabel: 'Quality',
+    options: [
+      { value: 'auto',   label: 'Auto', domId: null },
+      { value: 'min',    label: 'Min',  domId: null },
+      { value: 'sd',     label: 'SD',   domId: null },
+      { value: 'hd',     label: 'HD',   domId: null },
+      { value: 'hdplus', label: 'HD+',  domId: null },
+      { value: 'high',   label: 'High', domId: null }
+    ],
+    get: S => SUN_TIERS.indexOf(S.sunTier) > 0 ? S.sunTier : 'auto',
+    set: (S, v) => { S.sunTier = SUN_TIERS.indexOf(v) > 0 ? v : 'auto'; save(); },
+    format: S => SUN_TIER_LABELS[Math.max(0, SUN_TIERS.indexOf(S.sunTier))],
+    softIndex: S => S.sunTier === 'auto' && SUN_TIERS.indexOf(S.effSunTier) > 0 ? SUN_TIERS.indexOf(S.effSunTier) : -1
+  },
   {
     // The most times a second the Sun's video takes a new playbackRate
     // (gpu/sun.js setRate). Speed's variance sweeps the rate every frame,
     // about 30 writes a second at 1% steps; a frozen HEVC decoder mid-show
-    // made that churn a suspect. 0 is unthrottled, as before; 1 to 40 caps
-    // it, for judging by eye how low it can go and still look smooth.
-    id: 'sunRateHz', section: 'render', label: 'Sun playback rate throttle', kind: 'slider',
+    // made that churn a suspect. 0 is unthrottled; 1 to 40 caps it, 10 by
+    // default, for judging by eye how low it can go and still look smooth.
+    id: 'sunRateHz', section: 'render', label: 'Sun playback rate throttle', kind: 'slider', parent: 'renderSunDrawer',
     summaryLabel: 'Sun throttle',
-    min: 0, max: 40, step: 1, def: 0,
-    get: S => S.sunRateHz ?? 0,
+    min: 0, max: 40, step: 1, def: 10,
+    get: S => S.sunRateHz ?? 10,
     set: (S, v) => { S.sunRateHz = Math.max(0, Math.min(40, Math.round(v))); save(); },
     formatAt: pos => pos > 0 ? pos + ' per second' : 'Off'
   },

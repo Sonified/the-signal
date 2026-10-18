@@ -221,6 +221,9 @@ function buildSettings() {
     biDepth: S.biDepth, biPeriod: S.biPeriod, biHardSwitch: S.biHardSwitch,
     heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, heartIdleAheadS: S.heartIdleAheadS, outputLatComp: S.outputLatComp,
     syncDiagLog: S.syncDiagLog, sunRateHz: S.sunRateHz, dprCap: S.dprCap, energyButton: S.energyButton,
+    // Render > Sun (gpu/sun.js). sunRateRev 2: a throttle saved from before
+    // it (0, the old default, never a choice) is let go once on load below.
+    sunRateRev: 2, sunTier: S.sunTier,
     // Render > Audio engine > Limiter and Soft clip (core/output-guard.js)
     outLimiter: S.outLimiter, outSoftClip: S.outSoftClip,
     // Render > Buffer underrun repair (js/heart/conceal.js, js/heart/route.js)
@@ -734,7 +737,7 @@ export function snapshot() {
 // rather than read off the schema, since this module must not depend on it.
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
-                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'heartIdleAheadS', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'dprCap', 'energyButton',
+                      'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'heartIdleAheadS', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'sunRateRev', 'sunTier', 'dprCap', 'energyButton',
                       'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload', 'presentationMode',
                       'heartLoopMode', 'heartLoopS', 'heartXfadeMs', 'heartQuantize', 'heartReturnS', 'heartWash', 'heartWashRiseS', 'heartWashDecayS', 'simGapMs', 'simGapRandom', 'simGapCount', 'simStallWorkers'];
 
@@ -984,8 +987,12 @@ function applySettings(s, live, scene) {
     if (typeof s.heartIdleAheadS === 'number' && isFinite(s.heartIdleAheadS)) S.heartIdleAheadS = Math.max(0.5, Math.min(10, s.heartIdleAheadS));
     if (typeof s.outputLatComp === 'boolean') S.outputLatComp = s.outputLatComp;
     if (typeof s.syncDiagLog === 'boolean') S.syncDiagLog = s.syncDiagLog;
-    // The Sun video's playbackRate throttle (gpu/sun.js setRate)
-    if (typeof s.sunRateHz === 'number' && isFinite(s.sunRateHz)) S.sunRateHz = Math.max(0, Math.min(40, Math.round(s.sunRateHz)));
+    // The Sun video's playbackRate throttle (gpu/sun.js setRate). A save
+    // from before rev 2 keeps the default, 10 a second (its 0 was the old
+    // default, not a choice); one since keeps what this screen chose, Off too.
+    if (s.sunRateRev === 2 && typeof s.sunRateHz === 'number' && isFinite(s.sunRateHz)) S.sunRateHz = Math.max(0, Math.min(40, Math.round(s.sunRateHz)));
+    // The Sun's quality: Auto or one of the five tiers the row offers; anything else stays Auto.
+    if (['auto', 'min', 'sd', 'hd', 'hdplus', 'high'].indexOf(s.sunTier) >= 0) S.sunTier = s.sunTier;
     // Pixel density: only the caps the Render section offers; anything else is the screen's own.
     if (s.dprCap === 2 || s.dprCap === 1.5 || s.dprCap === 1) S.dprCap = s.dprCap;
     if (typeof s.energyButton === 'boolean') S.energyButton = s.energyButton;

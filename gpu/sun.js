@@ -116,6 +116,18 @@
 // nobody sees it. Max quality flipped is a fresh wish: measured afresh and
 // swapped at once. The local copies (localhost) skip all of this.
 //
+// Render > Sun > Sun quality (S.sunTier) is that ladder's Auto, or a tier
+// pinned by name, Min to High (never Max: only Auto reaches it, with Max
+// quality on). A pinned tier is played outright, on the cloud or locally,
+// below a computer's SD floor too: the first load skips the probe, nothing
+// steps it down (a stall still rescues, a dead rescue or a network error
+// reloads the same tier), no return from away measures or rises, and Max
+// quality flipped waits for Auto. A new pick is swapped to at once
+// (swapSource), and back to Auto is a fresh wish, as Max quality flipped
+// is; a probe's verdict that lands while a tier is pinned is let go.
+// S.effSunTier is the tier playing, by its key ('min' to 'max'), for the
+// row's soft mark; undefined until one is chosen.
+//
 // Allocation per frame: the external textures (one, two while a wrap fades)
 // and their bind group, which WebGPU makes new by design. Nothing else.
 
@@ -144,15 +156,24 @@ let VIDEO_BASE = ON_LOCALHOST ? LOCAL_BASE : CLOUD_BASE;
 const STEM_PROGRAM = 'sun_program_20261013_30745';
 // The ladder, low to high. bar: the link (Mbps) to choose it. The bars are
 // PROVISIONAL until the new files' measured bitrates are in.
+// key: the tier's name in S.sunTier and S.effSunTier (Render > Sun quality).
 const TIERS = [
-  { name: 'Min', stem: STEM_PROGRAM + '_360', bar: 0 },      // 540x360
-  { name: 'SD', stem: STEM_PROGRAM + '_480', bar: 1 },       // 720x480
-  { name: 'HD', stem: STEM_PROGRAM + '_720', bar: 2.5 },     // 1080x720
-  { name: 'HD+', stem: STEM_PROGRAM + '_1080', bar: 5 },     // 1620x1080
-  { name: 'High', stem: STEM_PROGRAM + '_1842', bar: 10 },   // 2764x1842
-  { name: 'Max', stem: STEM_PROGRAM + '_2048', bar: 20 }     // 3072x2048
+  { name: 'Min', key: 'min', stem: STEM_PROGRAM + '_360', bar: 0 },         // 540x360
+  { name: 'SD', key: 'sd', stem: STEM_PROGRAM + '_480', bar: 1 },           // 720x480
+  { name: 'HD', key: 'hd', stem: STEM_PROGRAM + '_720', bar: 2.5 },         // 1080x720
+  { name: 'HD+', key: 'hdplus', stem: STEM_PROGRAM + '_1080', bar: 5 },     // 1620x1080
+  { name: 'High', key: 'high', stem: STEM_PROGRAM + '_1842', bar: 10 },     // 2764x1842
+  { name: 'Max', key: 'max', stem: STEM_PROGRAM + '_2048', bar: 20 }        // 3072x2048
 ];
 const MAX_TIER = TIERS.findIndex(t => t.name === 'Max');
+// The tier Sun quality pins (S.sunTier, by key), -1 for Auto or anything
+// else. Max is never pinned (see the top of this file). A loop, read every
+// frame, so no closure is made.
+function pinnedTier() {
+  const k = S.sunTier;
+  for (let i = 0; i < MAX_TIER; i++) if (TIERS[i].key === k) return i;
+  return -1;
+}
 const urlX264 = stem => VIDEO_BASE + stem + '.mp4';
 const urlHevc = stem => VIDEO_BASE + stem + '_hevc.mp4';
 // The link probe (see the top of this file): the bytes timed, the bar in
@@ -326,9 +347,10 @@ export function createSun(device, format) {
   // the tier a return measured, risen to a loop at a time (-1 none); the
   // tier the ghost is loading for this loop's wrap (-1 the same file); a
   // probe in flight, and a flip owed one after it; Max quality as last seen; the wall clock at the
-  // layer's last frame; and when a network error's reload is due (0 none).
+  // layer's last frame; when a network error's reload is due (0 none); and
+  // Sun quality's pinned tier as last seen (pinnedTier, null before the first frame).
   const starveWatch = { el: null, t: -1, at: 0 };
-  let tier = -1, upTo = -1, wrapUp = -1, probing = false, again = false, hiWas = null, seenAt = 0, netRetryAt = 0;
+  let tier = -1, upTo = -1, wrapUp = -1, probing = false, again = false, hiWas = null, seenAt = 0, netRetryAt = 0, pinWas = null;
   // A phone (a coarse pointer on a small screen) ranges Min to High; a
   // computer's floor is SD (see the top of this file).
   const PHONE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches &&
@@ -368,9 +390,11 @@ export function createSun(device, format) {
     while (i < topTier() && mbps >= TIERS[i + 1].bar) i++;
     return i;
   }
-  // why: 'start' (the first load waits on it), 'flip' (Max quality changed:
-  // the answer is swapped to at once) or 'return' (back from away: lower at
-  // once, higher a loop at a time).
+  // why: 'start' (the first load waits on it), 'flip' (Max quality changed,
+  // or Sun quality back to Auto: the answer is swapped to at once) or
+  // 'return' (back from away: lower at once, higher a loop at a time). A
+  // start whose video was made meanwhile (a tier pinned, then Auto again)
+  // swaps as a flip does, so the tier always names the file playing.
   function probeLink(why) {
     // a flip while another probe runs is measured after it
     if (probing) { if (why === 'flip') again = true; return; }
@@ -380,10 +404,13 @@ export function createSun(device, format) {
     measure().then(mbps => {
       probing = false;
       const to = tierFor(mbps);
-      console.log('sun: the link measured ' + mbps.toFixed(1) + ' Mbps; ' + TIERS[to].name + ' quality' + (why === 'return' ? ' (back from away)' : ''));
-      if (why === 'start' || !video) tier = to;
-      else if (to < tier || why === 'flip') { if (to !== tier) setTier(to); upTo = -1; }
-      else if (to > tier) upTo = to;
+      // a tier pinned meanwhile stands; the verdict was Auto's
+      if (pinnedTier() < 0) {
+        console.log('sun: the link measured ' + mbps.toFixed(1) + ' Mbps; ' + TIERS[to].name + ' quality' + (why === 'return' ? ' (back from away)' : ''));
+        if (!video) tier = to;
+        else if (to < tier || why !== 'return') { if (to !== tier) setTier(to); upTo = -1; }
+        else if (to > tier) upTo = to;
+      }
       idleRelease('the sun link probe');
       if (again) { again = false; probeLink('flip'); }
     });
@@ -394,9 +421,10 @@ export function createSun(device, format) {
     swapSource(TIERS[i].stem);
   }
   // A tier not keeping up: one down, at once, and no rise until the next
-  // return from away.
+  // return from away. A pinned tier never steps down: false, as at the
+  // floor, so each caller falls back to its same-tier remedy.
   function stepDown(why) {
-    if (tier <= floorTier || VIDEO_BASE === LOCAL_BASE) return false;
+    if (tier <= floorTier || VIDEO_BASE === LOCAL_BASE || pinnedTier() >= 0) return false;
     upTo = -1;
     console.warn('sun: ' + why + '; stepping down to ' + TIERS[tier - 1].name + ' quality');
     setTier(tier - 1);
@@ -514,7 +542,8 @@ export function createSun(device, format) {
       return;
     }
     if (tier < 0) {
-      if (VIDEO_BASE === LOCAL_BASE) tier = topTier();
+      if (pinnedTier() >= 0) tier = pinnedTier();   // pinned: no probe
+      else if (VIDEO_BASE === LOCAL_BASE) tier = topTier();
       else { probeLink('start'); if (tier < 0) return; }   // the probe decides first (1.5 s at most)
     }
     video = makeElement('auto');
@@ -919,6 +948,9 @@ export function createSun(device, format) {
     bind = null; liveDraw = false; folded = false; fbOn = false; sliding = false;
     disk[3] = 0;
     nowMs = t;
+    // Sun quality's soft mark: the tier playing, kept while the layer is off
+    // (the file stays loaded for the next switch-on)
+    S.effSunTier = tier >= 0 ? TIERS[tier].key : undefined;
     const on = !!(S.layers && S.layers.sun);
     if (!on) {
       if (wasOn) {
@@ -943,12 +975,23 @@ export function createSun(device, format) {
     }
     wasOn = true;
     // Max quality flipped, or back from AWAY_S away: the link measured
-    // afresh (see the top of this file)
-    const hi = S.sunHiRes === true, wall = Date.now();
+    // afresh (see the top of this file). Sun quality changed: a tier named
+    // swapped to at once (a rise in flight to the same tier goes with the
+    // swap), Auto a fresh wish; while one is pinned, neither of the others
+    // does anything.
+    const hi = S.sunHiRes === true, wall = Date.now(), pin = pinnedTier();
     const flipped = hiWas !== null && hi !== hiWas, back = seenAt > 0 && wall - seenAt >= AWAY_S * 1000;
-    hiWas = hi; seenAt = wall;
-    if (video && tier >= 0 && VIDEO_BASE !== LOCAL_BASE && (flipped || back)) probeLink(flipped ? 'flip' : 'return');
-    else if (video && VIDEO_BASE === LOCAL_BASE && flipped) setTier(topTier());
+    const repinned = pinWas !== null && pin !== pinWas;
+    hiWas = hi; seenAt = wall; pinWas = pin;
+    if (video && tier >= 0 && repinned) {
+      upTo = -1;
+      if (pin >= 0) { if (pin !== tier || wrapUp >= 0) setTier(pin); }
+      else if (VIDEO_BASE !== LOCAL_BASE) probeLink('flip');
+      else if (topTier() !== tier) setTier(topTier());
+    } else if (pin < 0) {
+      if (video && tier >= 0 && VIDEO_BASE !== LOCAL_BASE && (flipped || back)) probeLink(flipped ? 'flip' : 'return');
+      else if (video && VIDEO_BASE === LOCAL_BASE && flipped) setTier(topTier());
+    }
     ensureVideo();
     if (video && netRetryAt && nowMs >= netRetryAt) { netRetryAt = 0; swapSource(stemNow); }
 

@@ -90,7 +90,7 @@
 // pass under the pointer made the list impossible to scroll, so the wheel
 // always belongs to the enclosing ui.scroll. The one exception is the
 // slider's fine nudge, which needs Alt/Option held (see slider()).
-//   ui.segment(id, labels, index, disabled, label?) -> new index
+//   ui.segment(id, labels, index, disabled, label?, softIndex?) -> new index
 //   ui.select(id, label, labels, index, readout, disabled) -> new index
 //     a dropdown whose open menu floats over the rows below it; a screen
 //     with selects calls ui.popupInput() before its rows and ui.popupDraw()
@@ -666,7 +666,11 @@ const segWidest = new WeakMap();   // label array -> width of its widest label
 // above the pill, as a dropdown does. A schema segment always passes its
 // name, as every other row shows its own, unless it sets hideLabel: true
 // because its options already say what they choose between.
-function segment(id, labels, index, disabled, label) {
+// softIndex is optional too: an option to mark softly while another is
+// chosen (a schema row's softIndex, e.g. the tier Sun quality's Auto has
+// picked), a faint pill with no border behind that option's cell, under its
+// label; -1 or left out, none. It follows the value at once, no spring.
+function segment(id, labels, index, disabled, label, softIndex) {
   const ui = this;
   const nid = ui.id(id);
   const focused = disabled ? false : ui.registerFocusable(nid);
@@ -726,6 +730,11 @@ function segment(id, labels, index, disabled, label) {
 
     const baseline = centerBaseline(ui, cy, rh, TYPE.sm);
     const isSel = i === newIndex;
+    if (i === softIndex && !isSel) {
+      ui.scratch0[0] = COLOR.accentSoft[0]; ui.scratch0[1] = COLOR.accentSoft[1];
+      ui.scratch0[2] = COLOR.accentSoft[2]; ui.scratch0[3] = COLOR.accentSoft[3] * 0.5;
+      ui.dl.rect(cx, cy, colW, rh, RADIUS.pill, ui.scratch0, 0, null, 0, 0);
+    }
     const hoverA = ui.spring(combine2(iid, 2), ui.hover && !isSel ? 1 : 0, MOTION.hover);
     if (hoverA > 0.001) {
       ui.scratch0[0] = COLOR.hover[0]; ui.scratch0[1] = COLOR.hover[1];
@@ -1852,7 +1861,8 @@ function control(ctrl, S, shown) {
         if (!cache) { cache = { pos: NaN, text: '', at: -1e9 }; formatCache.set(ctrl.id, cache); }
         if (ctrl.format && ui.t - cache.at > 250) { cache.at = ui.t; cache.text = ctrl.format(S); }
         ni = ui.select(ctrl.id, ctrl.label, labels, idx, cache.text, !enabled);
-      } else ni = ui.segment(ctrl.id, labels, idx, !enabled, ctrl.hideLabel ? undefined : ctrl.label);
+      } else ni = ui.segment(ctrl.id, labels, idx, !enabled, ctrl.hideLabel ? undefined : ctrl.label,
+                             ctrl.softIndex ? ctrl.softIndex(S) : -1);
       if (ni !== idx) {
         if (doorWrite(ctrl, S, door, opts[ni].value, ui.pointerShift)) doored = true;
         else ctrl.set(S, opts[ni].value);

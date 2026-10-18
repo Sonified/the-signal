@@ -67,7 +67,8 @@ export const S = {
   syncDiagLog: false,         // print [syncdiag] sync and latency lines to the console (strobe-am.js)
   energyButton: false,        // Render > Energy profile button: the copy chip at the bottom right (ui/screens/chrome.js); this machine's own
   dprCap: 0,                  // Render > Pixel density: the most canvas pixels per CSS pixel, 0 the screen's own (platform applySize); this machine's own
-  sunRateHz: 0,               // most Sun video playbackRate writes a second, 0 unthrottled (gpu/sun.js setRate); this machine's own
+  sunRateHz: 10,              // most Sun video playbackRate writes a second, 0 unthrottled (gpu/sun.js setRate); this machine's own
+  sunTier: 'auto',            // Render > Sun > Sun quality: 'auto' the link's ladder, or a tier pinned, 'min' to 'high' (gpu/sun.js); this machine's own
   outLimiter: true,           // the output guard's limiter on every output (core/output-guard.js); this machine's own
   outSoftClip: true,          // the output guard's soft clip after it; this machine's own too
   overlayMode: 'auto',         // the floating controls: 'auto' wake on activity, 'key' only overlayKey toggles them (main.js); this machine's own
