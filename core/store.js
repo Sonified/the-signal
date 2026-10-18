@@ -221,9 +221,10 @@ function buildSettings() {
     biDepth: S.biDepth, biPeriod: S.biPeriod, biHardSwitch: S.biHardSwitch,
     heartLookaheadS: S.heartLookaheadS, heartGrowX: S.heartGrowX, heartIdleAheadS: S.heartIdleAheadS, outputLatComp: S.outputLatComp,
     syncDiagLog: S.syncDiagLog, sunRateHz: S.sunRateHz, dprCap: S.dprCap, energyButton: S.energyButton,
-    // Render > Sun (gpu/sun.js). sunRateRev 2: a throttle saved from before
-    // it (0, the old default, never a choice) is let go once on load below.
-    sunRateRev: 2, sunTier: S.sunTier,
+    // Render > Sun (gpu/sun.js). sunRateRev 3: a throttle saved under an
+    // older rev (0 the old default, and the 5s of the first day's decoder
+    // diagnosis) is let go once on load below, landing on 10.
+    sunRateRev: 3, sunTier: S.sunTier,
     // Render > Audio engine > Limiter and Soft clip (core/output-guard.js)
     outLimiter: S.outLimiter, outSoftClip: S.outSoftClip,
     // Render > Buffer underrun repair (js/heart/conceal.js, js/heart/route.js)
@@ -988,9 +989,10 @@ function applySettings(s, live, scene) {
     if (typeof s.outputLatComp === 'boolean') S.outputLatComp = s.outputLatComp;
     if (typeof s.syncDiagLog === 'boolean') S.syncDiagLog = s.syncDiagLog;
     // The Sun video's playbackRate throttle (gpu/sun.js setRate). A save
-    // from before rev 2 keeps the default, 10 a second (its 0 was the old
-    // default, not a choice); one since keeps what this screen chose, Off too.
-    if (s.sunRateRev === 2 && typeof s.sunRateHz === 'number' && isFinite(s.sunRateHz)) S.sunRateHz = Math.max(0, Math.min(40, Math.round(s.sunRateHz)));
+    // from before rev 3 keeps the default, 10 a second (rev 2's values were
+    // the first day's diagnosis, not keepers - Robert's call, 2026-10-17);
+    // one since keeps what this screen chose, Off too.
+    if (s.sunRateRev === 3 && typeof s.sunRateHz === 'number' && isFinite(s.sunRateHz)) S.sunRateHz = Math.max(0, Math.min(40, Math.round(s.sunRateHz)));
     // The Sun's quality: Auto or any tier by key (each device's row offers
     // its own five, schema-visual.js SUN_TIERS); anything else stays Auto.
     if (['auto', 'min', 'sd', 'hd', 'hdplus', 'high', 'max'].indexOf(s.sunTier) >= 0) S.sunTier = s.sunTier;

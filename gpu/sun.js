@@ -100,10 +100,11 @@
 //
 // The quality ladder (TIERS, Robert's names, documents/sun-quality-ladder.md):
 // Min (540x360), SD (720x480), HD (1080x720), HD+ (1620x1080), High
-// (2764x1842) and Max (3072x2048, only with Max quality on, S.sunHiRes). A
-// phone ranges Min to High (its screen shows no more), and a
+// (2764x1842) and Max (3072x2048). Auto ranges up to HD+ on every device
+// (topTier; High and Max play only pinned - see below), and a
 // computer drops no lower than SD (Robert's call: below it the big screen
-// waits for frames rather than shows a soft Sun). From the cloud, the
+// waits for frames rather than shows a soft Sun); a phone's floor is Min.
+// From the cloud, the
 // first load times a real ranged fetch (PROBE_BYTES, cut off at
 // PROBE_WAIT_MS, the bytes that came counted either way) and takes the
 // highest tier whose bar the link clears, each bar 2 to 3 times its file's
@@ -121,8 +122,10 @@
 // Render > Sun > Sun quality (S.sunTier) is that ladder's Auto, or a tier
 // pinned by name. The row offers each device its own five (schema-visual.js
 // SUN_TIERS): a phone Min to High, a computer SD to Max; the pin honours
-// whatever is stored. Max quality (S.sunHiRes) remains Auto's ceiling
-// alone; a pinned Max needs no toggle. A pinned tier is played outright, on
+// whatever is stored. Above HD+ only a pin goes: a link that measures
+// clean says nothing about the decoder, and Max at speed drops frames on
+// machines the probe passed, so Max quality (S.sunHiRes) lifts nothing
+// while topTier stands at HD+. A pinned tier is played outright, on
 // the cloud or locally, below a computer's SD floor too: the first load
 // skips the probe, nothing
 // steps it down (a stall still rescues, a dead rescue or a network error
@@ -364,7 +367,13 @@ export function createSun(device, format) {
     typeof screen !== 'undefined' && Math.min(screen.width, screen.height) < 600;
   const T_HIGH = TIERS.findIndex(t => t.name === 'High');
   const floorTier = PHONE ? 0 : Math.max(0, TIERS.findIndex(t => t.name === 'SD'));
-  const topTier = () => PHONE ? T_HIGH : S.sunHiRes === true ? MAX_TIER : T_HIGH;
+  // Auto's ceiling is HD+ on every device (Robert's call, 2026-10-17): a
+  // link that measures clean for High or Max says nothing about the
+  // decoder, and Max at speed drops frames on machines the probe passed
+  // (the keeping-up line's evidence). High and Max play only pinned, by
+  // Sun quality; Max quality (S.sunHiRes) lifts nothing while this stands.
+  const T_TOP = TIERS.findIndex(t => t.name === 'HD+');
+  const topTier = () => T_TOP;
   const urlFor = stem => triedX264 ? urlX264(stem) : urlHevc(stem);
 
   // The link's speed in Mbps: a ranged fetch of the High file's head, cut
