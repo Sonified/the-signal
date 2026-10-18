@@ -21,11 +21,22 @@
 // at the limb. Its edge is taken away by the site's own circular feather
 // instead: in the quad's uv (0 to 1 across the tile), r is the distance from
 // the middle in half widths (1 at the edges' midpoints, root 2 at the
-// corners), and the picture fades to black across a band FEATHER_HARD wide
-// about FEATHER_SIZE, so the corona reaches out and melts away, the sun
-// floating in the room rather than seen through a window frame. The site's
-// defaults, as constants. The tile, and so the sun, is sized on the CPU
-// (gpu/sun.js) so the photosphere keeps the diameter Size gives it.
+// corners), and the picture fades to black across a band about the feather's
+// radius, so the corona reaches out and melts away, the sun floating in the
+// room rather than seen through a window frame. The radius (feather.x, the
+// site's uSize) and the band's hardness (feather.y, the site's uEdge: 0 the
+// widest band, 0.6 across; 1 a razor) are the Sun drawer's Feather sliders
+// (schema-sun.js), the site's 2026-09-04 preset their defaults. The site's
+// own defaults run the band past the frame (0.90 with hardness 0.40 fades
+// out at r = 1.08, but the square ends at r = 1.0 mid-edge), which on the
+// site leaves a faint hard-cut corona, invisible against its black page;
+// its trails shader windows that away before anything lit meets it. Here
+// the sun floats over a lit scene and feeds its own trails, so that window
+// is taken on every target: a second smoothstep finishes the fade just
+// inside the frame (0.90 to 0.995, the site's own numbers), and no setting
+// of the sliders can leave a straight edge. The tile, and so the sun, is
+// sized on the CPU (gpu/sun.js) so the photosphere keeps the diameter Size
+// gives it.
 //
 // The output is light, premultiplied with alpha 0, as the site composites
 // additively over black: it adds to whatever is under it (the blend is the
@@ -67,16 +78,12 @@ struct SU {
   g0: vec4f,    // channel gains: 1700, 0304, 0171, 0193
   g1: vec4f,    // channel gain 0211, Center fade band half width w (square units), loop crossfade (0 main, 1 ghost), unused
   grade: vec4f, // Color grade: brightness, contrast, saturation, on (0 or 1)
+  feather: vec4f, // the circular feather: radius (half widths), hardness (0 soft, 1 a near cut), unused, unused
 };
 @group(0) @binding(0) var<uniform> u: SU;
 @group(0) @binding(1) var sunTex: texture_external;
 @group(0) @binding(2) var sunSamp: sampler;
 @group(0) @binding(3) var sunTex2: texture_external;
-
-// meditatewiththesun.com's feather: where it sits, in half widths from the
-// middle, and how hard it is (0 soft, a band 0.6 wide; 1 a near cut).
-const FEATHER_SIZE: f32 = 0.90;
-const FEATHER_HARD: f32 = 0.40;
 
 @vertex
 fn vsSun(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
@@ -124,10 +131,12 @@ fn fsSun(@builtin(position) p: vec4f) -> @location(0) vec4f {
     c = mix(vec3f(lum), c, u.grade.z);
     c = clamp(c, vec3f(0.0), vec3f(1.0));
   }
-  // The feather (see the top of this file).
+  // The feather (see the top of this file), and the frame window that
+  // finishes any fade just inside the square, so no setting leaves a cut.
   let r = length(uv - vec2f(0.5)) * 2.0;
-  let w = max(mix(0.6, 0.0, FEATHER_HARD), 0.003);
-  var m = 1.0 - smoothstep(FEATHER_SIZE - w * 0.5, FEATHER_SIZE + w * 0.5, r);
+  let w = max(mix(0.6, 0.0, u.feather.y), 0.003);
+  var m = 1.0 - smoothstep(u.feather.x - w * 0.5, u.feather.x + w * 0.5, r);
+  m = m * (1.0 - smoothstep(0.90, 0.995, r));
   // The Center fade (see the top of this file); a uniform branch.
   if (u.look.z > 0.0) {
     m = m * smoothstep(u.look.z - u.g1.y, u.look.z + u.g1.y, r);

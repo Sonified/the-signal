@@ -62,6 +62,14 @@ const NUM = [
   // through 304, 171 and 193 to 1 the corona (211 A, ~2 MK), crossfading
   // each adjacent channel smoothly.
   ['sunAtmo',            0,   1,   0.25, false],
+  // The circular feather that takes the square frame away (sun.wgsl.js):
+  // where the circle sits, in the square's half widths (1 the edges'
+  // midpoints, 1.42 the corners; the site's 0.6 to 1.45 span), and how hard
+  // its rim is (0 the widest band, 1 a razor). The defaults are the site's
+  // 2026-09-04 preset. Whatever these say, the shader's frame window
+  // finishes the fade just inside the square, so no setting leaves a cut.
+  ['sunFeather',         0.6, 1.45, 0.9, false],
+  ['sunFeatherHard',     0,   1,   0.4,  false],
   // breaths per minute; 5.5 is coherent breathing
   ['sunBreathRate',      0.5, 12,  5.5,  false],
   // how far the breath travels the Atmosphere: the breath modulates which
@@ -473,6 +481,12 @@ export const SUN_CONTROLS = [
   ...drivenVariance('sunSpeed', 'Speed', 'sunSolarDrawer'),
   under('sunSolarDrawer', direct('sunSize', 'sunSize', 'Size', 0.05, times2)),
   under('sunSolarDrawer', percent('sunAtmo', 'sunAtmo', 'Atmosphere', atmoText)),
+  // The circular feather (see the NUM table): where the circle melting the
+  // square's edge away sits, 1.00 the frame's edge midpoints...
+  under('sunSolarDrawer', direct('sunFeather', 'sunFeather', 'Feather', 0.01,
+    pos => pos.toFixed(2))),
+  // ...and how hard its rim is, from the widest band to a razor.
+  under('sunSolarDrawer', percent('sunFeatherHard', 'sunFeatherHard', 'Feather hardness')),
 
   // ---- Breath: the sun swelling and settling at a breathing rate, and the
   // trails it leaves ----

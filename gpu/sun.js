@@ -235,8 +235,8 @@ const LOOP_END_S = Infinity;
 const STALL_S = 1;
 const STALL_AHEAD_S = 0.5;
 // The uniform slots, one per target, 256 bytes apart (dynamic offsets): see
-// sun.wgsl.js's struct SU, 20 floats of each slot used.
-const SLOT_BYTES = 256, SLOT_FLOATS = SLOT_BYTES / 4, SU_FLOATS = 20;
+// sun.wgsl.js's struct SU, 24 floats of each slot used.
+const SLOT_BYTES = 256, SLOT_FLOATS = SLOT_BYTES / 4, SU_FLOATS = 24;
 const SLOT_SCENE = 0, SLOT_CHAMBER = 1, SLOT_FB = 2, SLOTS = 3;
 const TAU = Math.PI * 2;
 
@@ -931,6 +931,7 @@ export function createSun(device, format) {
     uni[b + 8] = g[0]; uni[b + 9] = g[1]; uni[b + 10] = g[2]; uni[b + 11] = g[3];
     uni[b + 12] = g[4]; uni[b + 13] = band; uni[b + 14] = 0; uni[b + 15] = 0;   // [14] the crossfade, set with the picture
     uni[b + 16] = grade[0]; uni[b + 17] = grade[1]; uni[b + 18] = grade[2]; uni[b + 19] = grade[3];
+    uni[b + 20] = feather[0]; uni[b + 21] = feather[1]; uni[b + 22] = 0; uni[b + 23] = 0;
   }
   const gains = new Float32Array(5);
   // Where the sun sits this frame, for the star field's hole (gpu/stars.js):
@@ -940,6 +941,10 @@ export function createSun(device, format) {
   // This frame's Color grade, the same in every slot: brightness, contrast,
   // saturation, on. Off, the identity and 0, kaleido.js's discipline.
   const grade = new Float32Array(4);
+  // This frame's circular feather, the same in every slot: radius and
+  // hardness, the Sun drawer's Feather sliders (schema-sun.js, the site's
+  // uSize and uEdge).
+  const feather = new Float32Array(2);
 
   // t is the rAF timestamp (ms), dt seconds; lum the strobe's raw wave, 1
   // lit to 0 dark, read only by a Feedback variance linked to the strobe
@@ -1039,6 +1044,8 @@ export function createSun(device, format) {
     grade[1] = graded ? clampNum(S.sunContrast ?? 1, 0, 2, 1) : 1;
     grade[2] = graded ? clampNum(S.sunSat ?? 1, 0, 2, 1) : 1;
     grade[3] = graded ? 1 : 0;
+    feather[0] = clampNum(S.sunFeather, 0.6, 1.45, 0.9);
+    feather[1] = clampNum(S.sunFeatherHard, 0, 1, 0.4);
     const x = atmo * 4;
     const i = Math.floor(x);
     if (i >= 4) gains[4] = 1;
