@@ -773,6 +773,41 @@ export function createSun(device, format) {
     stepDown('the ' + TIERS[tier].name + ' quality video waited ' + STARVE_S + ' s for data at ' + t.toFixed(2) + 's');
   }
 
+  // The keeping-up line: while the main plays, one console line every DIAG_S
+  // wall seconds saying whether the video is keeping up, and which side is
+  // losing when it is not. Frames shown and dropped over the window are the
+  // decoder's health - drops climb while the clock runs on, which neither
+  // watchdog above can see (the stall and starve watches both read the
+  // clock against the data, the network's side; a struggling decoder
+  // starves nothing). Seconds buffered past the clock and the ready state
+  // are the network's. getVideoPlaybackQuality allocates its report, so it
+  // is read once per window and at a video's adoption, never per frame.
+  const DIAG_S = 5;
+  const keepUp = { el: null, at: 0, dropped: 0, total: 0 };
+  function watchKeepUp(now) {
+    const v = video;
+    if (!v || v.paused || videoFailed || typeof v.getVideoPlaybackQuality !== 'function') { keepUp.el = null; return; }
+    if (keepUp.el !== v) {
+      const q0 = v.getVideoPlaybackQuality();
+      keepUp.el = v; keepUp.at = now; keepUp.dropped = q0.droppedVideoFrames; keepUp.total = q0.totalVideoFrames;
+      return;
+    }
+    if (now - keepUp.at < DIAG_S) return;
+    const q = v.getVideoPlaybackQuality();
+    const total = q.totalVideoFrames - keepUp.total;
+    const dropped = q.droppedVideoFrames - keepUp.dropped;
+    const winS = now - keepUp.at;
+    keepUp.at = now; keepUp.dropped = q.droppedVideoFrames; keepUp.total = q.totalVideoFrames;
+    const b = v.buffered, t = v.currentTime;
+    let ahead = 0;
+    for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.001 && t <= b.end(i)) { ahead = b.end(i) - t; break; }
+    const shown = total - dropped;
+    console.log('sun: ' + TIERS[tier].name + ' at ' + v.playbackRate.toFixed(2) + 'x: '
+      + shown + ' frames shown in ' + winS.toFixed(1) + ' s (' + (winS > 0 ? (shown / winS).toFixed(1) : '?') + '/s), '
+      + dropped + ' dropped' + (total > 0 ? ' (' + Math.round(100 * dropped / total) + '%)' : '')
+      + ', ' + ahead.toFixed(1) + ' s buffered, ready ' + v.readyState);
+  }
+
   // Plays while the layer is on, awake, the scene moving and the variance
   // not stopped, at Speed times its drive's share (Speed variance) times the
   // motion scale (so the pause coasts it down with everything else);
@@ -1022,6 +1057,7 @@ export function createSun(device, format) {
     syncVideo(true, driveOf('sunSpeed', t, md, lum, S.effSunBreathPos));
     watchStall(nowMs / 1000);
     watchStarve(nowMs / 1000);
+    watchKeepUp(nowMs / 1000);
     syncWrapHold();
 
     // The Atmosphere sweep, breathing: the five channels at i/4 along it,
