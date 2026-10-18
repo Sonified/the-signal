@@ -52,7 +52,7 @@ const DEF_DRIVE = 'breath';
 const DRIVES = ['time', 'strobe', 'breath'];
 const DRIVE_NAMES = { time: 'Time', strobe: 'Link to strobe', breath: 'Link to breath' };
 const driveOf = v => DRIVES.indexOf(v) >= 0 ? v : DEF_DRIVE;
-const DRIVEN = ['sunSpeed', 'sunFbAmt', 'sunFbOpacity', 'sunHumCutoff', 'sunHumVerb'];
+const DRIVEN = ['sunSpeed', 'sunAtmo', 'sunFbAmt', 'sunFbOpacity', 'sunHumCutoff', 'sunHumVerb'];
 const NUM = [
   // key,               min,  max, def,  integer
   // the sun video's playback rate, the site's 1x to 16x
@@ -63,6 +63,15 @@ const NUM = [
   // through 304, 171 and 193 to 1 the corona (211 A, ~2 MK), crossfading
   // each adjacent channel smoothly.
   ['sunAtmo',            0,   1,   0.25, false],
+  // Atmosphere's variance, ridden by its Drive as the Feedback's are: the
+  // live sweep is the setting times 1 - var * (1 - drive), so at 100% the
+  // drive's bottom (a full exhale, with the breath driving) carries it down
+  // to the photosphere and its top plays the set channel. Born as the
+  // Breath drawer's Amount, which swung the sweep around the setting;
+  // applySunState lands that old field here.
+  ['sunAtmoVar',         0,   1,   0.5,  false],
+  ['sunAtmoVarPeriod',   0,   120, 20,   true ],
+  ['sunAtmoVarPeriodOff', 0,  1,   0,    false],
   // The circular feather that takes the square frame away (sun.wgsl.js):
   // where the circle sits, in the square's half widths (1 the edges'
   // midpoints, 1.42 the corners; the site's 0.6 to 1.45 span), and how hard
@@ -73,9 +82,6 @@ const NUM = [
   ['sunFeatherHard',     0,   1,   0.4,  false],
   // breaths per minute; 5.5 is coherent breathing
   ['sunBreathRate',      0.5, 12,  5.5,  false],
-  // how far the breath travels the Atmosphere: the breath modulates which
-  // channel shows, around the Atmosphere slider's position
-  ['sunBreathAmt',       0,   1,   0.5,  false],
   // Speed's variance, ridden by its Drive (above) as the Feedback's are:
   // the rate is Speed times 1 - var * (1 - drive), so at 1 the drive's top
   // runs the set Speed and its bottom comes to a stop (gpu/sun.js). The
@@ -280,6 +286,11 @@ export function applySunState(S, o) {
   // drawer's "Speed link", lands on the variance it became.
   if (typeof o.sunSpeedLink === 'number' && typeof o.sunSpeedVar !== 'number')
     S.sunSpeedVar = fit(o.sunSpeedLink, 0, 1, false);
+  // And the Breath drawer's old Amount, how far the breath travelled the
+  // Atmosphere, lands on Atmosphere's variance, whose drive already
+  // defaults to the breath.
+  if (typeof o.sunBreathAmt === 'number' && typeof o.sunAtmoVar !== 'number')
+    S.sunAtmoVar = fit(o.sunBreathAmt, 0, 1, false);
   // A preset, a journey step, a followed broadcast or another tab's write
   // also moves the controls through their set() (presets.js replayLive, the
   // worker's audio link), which syncs the hum there; this catches the one
@@ -483,7 +494,11 @@ export const SUN_CONTROLS = [
   // dip and Time's speed (see the NUM table).
   ...drivenVariance('sunSpeed', 'Speed', 'sunSolarDrawer'),
   under('sunSolarDrawer', direct('sunSize', 'sunSize', 'Size', 0.05, times2)),
-  under('sunSolarDrawer', percent('sunAtmo', 'sunAtmo', 'Atmosphere', atmoText)),
+  under('sunSolarDrawer', Object.assign(percent('sunAtmo', 'sunAtmo', 'Atmosphere', atmoText),
+    { effective: fbEffective('sunAtmo', 'effSunAtmo') })),
+  // Atmosphere's variance, folded out from under it: its driver, its dip
+  // and Time's speed, the Breath drawer's old Amount grown the full pattern.
+  ...drivenVariance('sunAtmo', 'Atmosphere', 'sunSolarDrawer'),
   // The circular feather (see the NUM table): where the circle melting the
   // square's edge away sits, 1.00 the frame's edge midpoints...
   under('sunSolarDrawer', direct('sunFeather', 'sunFeather', 'Feather', 0.01,
@@ -493,7 +508,7 @@ export const SUN_CONTROLS = [
 
   // ---- Breath: the sun swelling and settling at a breathing rate, and the
   // trails it leaves ----
-  subDrawer('sunBreathDrawer', 'Breath', 'sun', ['sunBreathRate', 'sunBreathAmt']),
+  subDrawer('sunBreathDrawer', 'Breath', 'sun', ['sunBreathRate']),
   {
     // A live gauge, not a setting: the knob rides the breath gpu/sun.js
     // publishes each frame (S.effSunBreathPos), right on the inhale and left
@@ -512,8 +527,6 @@ export const SUN_CONTROLS = [
   },
   under('sunBreathDrawer', direct('sunBreathRate', 'sunBreathRate', 'Rate', 0.1,
     pos => pos.toFixed(1) + ' / min')),
-  under('sunBreathDrawer', percent('sunBreathAmt', 'sunBreathAmt', 'Amount')),
-  // How far the breath carries the video's speed, to a stop at the exhale.
 
   // ---- Feedback: the trails the sun leaves, and a Stream that can ride the
   // breath ----

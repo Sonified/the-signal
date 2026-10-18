@@ -892,6 +892,7 @@ export function createSun(device, format) {
   // run where the hum is (core/sun-hum-vary.js).
   const driven = {
     sunSpeed: { phase: 0, room: roomPhaseState() },
+    sunAtmo: { phase: 0, room: roomPhaseState() },
     sunFbAmt: { phase: 0, room: roomPhaseState() },
     sunFbOpacity: { phase: 0, room: roomPhaseState() }
   };
@@ -1008,6 +1009,7 @@ export function createSun(device, format) {
         S.effSunBreathPos = undefined;
         S.effSunBreathIn = undefined;
         S.effSunSpeed = undefined;
+        S.effSunAtmo = undefined;
         S.effSunFbAmt = undefined;
         S.effSunFbOpacity = undefined;
         if (fb) fb.release();
@@ -1060,10 +1062,11 @@ export function createSun(device, format) {
     watchKeepUp(nowMs / 1000);
     syncWrapHold();
 
-    // The Atmosphere sweep, breathing: the five channels at i/4 along it,
-    // the pair the live position falls between crossfaded by smoothstep.
-    let atmo = clampNum(S.sunAtmo, 0, 1, 0.25) + 0.5 * clampNum(S.sunBreathAmt, 0, 1, 0.5) * breathSin;
-    atmo = atmo < 0 ? 0 : (atmo > 1 ? 1 : atmo);
+    // The Atmosphere sweep, its variance riding its drive as the Feedback's
+    // do: the five channels at i/4 along it, the pair the live position
+    // falls between crossfaded by smoothstep.
+    const atmo = varied('sunAtmo', clampNum(S.sunAtmo, 0, 1, 0.25), driveOf('sunAtmo', t, md, lum, S.effSunBreathPos));
+    S.effSunAtmo = clampNum(S.sunAtmoVar, 0, 1, 0) > 0 ? atmo : undefined;
     gains.fill(0);
     const graded = S.sunGrade === true;
     grade[0] = graded ? clampNum(S.sunBright ?? 1, 0, 2, 1) : 1;

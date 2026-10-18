@@ -433,6 +433,10 @@ function readStep(raw) {
   if (!raw || typeof raw !== 'object') return st;
   const o = raw.overrides;
   if (o && typeof o === 'object' && !Array.isArray(o)) {
+    // The Breath drawer's old Amount became Atmosphere's variance
+    // (schema-sun.js), both whole-percent positions: a step from before the
+    // move carries its value over unless it already holds the new key.
+    if (o.sunAtmoVar === undefined && typeof o.sunBreathAmt === 'number') o.sunAtmoVar = o.sunBreathAmt;
     for (let i = 0; i < R.length; i++) {
       const id = R[i].id;
       if (skip[i] || !Object.prototype.hasOwnProperty.call(o, id)) continue;

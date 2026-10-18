@@ -176,11 +176,11 @@ const FINALE = {
   finaleHum: [{ key: 'sunHumRate', top: 0.4, bottom: 0.2, pos: a => a * 1000 }],
   // SUN, beside SCREEN: the video's baseline Speed 2x to 8x, even in ratio
   // as its own slider moves (core/schema-sun.js: log 1x..16x over 0..1000,
-  // so 4x halfway), with Speed's variance 0 to 78%, the Breath's Amount
-  // 0 to 67%, and the Rotational hum's Cutoff variance 0 to 94% and Reverb
-  // mix variance 0 to 72%
+  // so 4x halfway), with Speed's variance 0 to 78%, Atmosphere's variance
+  // (the Breath drawer's old Amount) 0 to 67%, and the Rotational hum's
+  // Cutoff variance 0 to 94% and Reverb mix variance 0 to 72%
   finaleSun: [{ key: 'sunSpeed', top: 8, bottom: 2, ratio: true, pos: a => Math.log(a) / Math.log(16) * 1000 },
-              { key: 'sunSpeedVar', top: 0.78, pos: pct }, { key: 'sunBreathAmt', top: 0.67, pos: pct },
+              { key: 'sunSpeedVar', top: 0.78, pos: pct }, { key: 'sunAtmoVar', top: 0.67, pos: pct },
               { key: 'sunHumCutoffVar', top: 0.94, pos: pct }, { key: 'sunHumVerbVar', top: 0.72, pos: pct }],
   // WIND, beside SUN: the Sun's Feedback Amount 0 to 83% and Opacity 0 to
   // 36% over the whole fader, the rings' opacity 0 to 29% over its top
