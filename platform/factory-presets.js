@@ -1,6 +1,7 @@
 // The official starting row: the presets a first visit opens with
 // (presets/factory.json, Robert's own row as of 2026-10-14, the Aunt Ann
-// presets and TSC 2026, his AA6 renamed, with TSC 2026 lit). It is the presets record exactly as core/presets.js keeps it
+// presets and TSC 2026, his AA6 renamed, with TSC 2026 lit, plus Sun, his
+// sunset scene saved 2026-10-17). It is the presets record exactly as core/presets.js keeps it
 // under signal.presets.v1, so seeding it is one write: the same chips in the
 // same order, the same hearts and the same built-ins saved over or hidden,
 // all of them the viewer's own from then on, to recall, save over, rename or
