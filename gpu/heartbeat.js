@@ -134,7 +134,10 @@ export function createHeartbeat(device, format) {
     if (!wasOn) { wasOn = true; heartArm(); }
     ensureGpu();
 
-    const master = clamp01(S.heartMaster, 1);
+    // the Master as its variance plays it (core/strobe.js effHeartMaster),
+    // one value for both the sound's gain and the wash below, so the two
+    // dip together
+    const master = clamp01(typeof S.effHeartMaster === 'number' ? S.effHeartMaster : S.heartMaster, 1);
     const audio = clampTo(S.heartAudio, 4, 0.8);
     const visual = clamp01(S.heartVisual, 0.8);
     // the Speed as its variance plays it (core/strobe.js effHeartSpeed),

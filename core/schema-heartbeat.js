@@ -18,7 +18,13 @@ import { driveOf } from './variance.js';
 const NUM = [
   // key,          min, max, def, integer
   ['heartMaster',  0,   1,   1,   false],
-  ['heartAudio',   0,   4,   0.8, false],
+  // Master's variance, Speed's construct below to the letter: the standard
+  // dip under the setting (core/strobe.js VARIANCES steps it, gpu/heartbeat.js
+  // plays effHeartMaster into the sound and the wash alike), led by its
+  // driver, Time (this rate), the strobe's wave or the sun's breath
+  ['heartMasterVar',       0, 1,   0,  false],
+  ['heartMasterVarPeriod', 1, 120, 20, true ],
+  ['heartAudio',  0,   4,   0.8, false],
   ['heartVisual',  0,   1,   0.8, false],
   // the recording's playback speed, a multiplier: varispeed, so its pitch
   // moves with it, and the light (which reads the sound) beats with it
@@ -48,6 +54,7 @@ function spec(key) {
 export function initHeartbeatState(S) {
   if (typeof S.layers.heartbeat !== 'boolean') S.layers.heartbeat = false;
   S.heartSpeedVarDrive = driveOf(S.heartSpeedVarDrive);
+  S.heartMasterVarDrive = driveOf(S.heartMasterVarDrive);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
     if (typeof S[n[0]] !== 'number') S[n[0]] = n[3];
@@ -57,7 +64,11 @@ export function initHeartbeatState(S) {
 // A plain copy of the heartbeat state, the shape store.js writes and a
 // preset snapshot carries; the layer switch under its own flat name.
 export function heartbeatStateOf(S) {
-  const out = { heartbeatOn: !!S.layers.heartbeat, heartSpeedVarDrive: driveOf(S.heartSpeedVarDrive) };
+  const out = {
+    heartbeatOn: !!S.layers.heartbeat,
+    heartSpeedVarDrive: driveOf(S.heartSpeedVarDrive),
+    heartMasterVarDrive: driveOf(S.heartMasterVarDrive)
+  };
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
 }
@@ -68,6 +79,7 @@ export function applyHeartbeatState(S, o) {
   if (!o || typeof o !== 'object') return;
   if (typeof o.heartbeatOn === 'boolean') S.layers.heartbeat = o.heartbeatOn;
   if (typeof o.heartSpeedVarDrive === 'string') S.heartSpeedVarDrive = driveOf(o.heartSpeedVarDrive);
+  if (typeof o.heartMasterVarDrive === 'string') S.heartMasterVarDrive = driveOf(o.heartMasterVarDrive);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
     if (typeof v === 'number' && isFinite(v)) S[n[0]] = fit(v, n[1], n[2], n[4]);
@@ -123,6 +135,16 @@ export const HEARTBEAT_CONTROLS = [
   // Master rides the sound and the light together, at the balance the two
   // rows below it set.
   percent('heartMaster', 'heartMaster', 'Master'),
+  // Master's dip, folded out from under it exactly as Speed's is below: what
+  // leads it, how far, and Time's rate, shown only while Time leads. Since
+  // Master rides both, the sound and the wash breathe down together. The bar
+  // lights from effHeartMaster through the slider's own whole percent
+  // (core/schema-variance.js wireVariances).
+  driveRow('heartMaster', 'heartMasterVarDrive', 'Master variance driver', null, 'heartbeat'),
+  ...varianceRows('heartMaster', {
+    name: 'Master', periodMax: 120,
+    rows: { period: { visible: S => driveOf(S.heartMasterVarDrive) === 'time' } }
+  }),
   percent('heartAudio', 'heartAudio', 'Audio level'),
   percent('heartVisual', 'heartVisual', 'Visual amount'),
   {

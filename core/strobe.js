@@ -121,7 +121,10 @@ const VARIANCES = [
   { amount: 'partFoldSpinVar', period: 'partFoldSpinVarPeriod', fallback: 20, phase: 'partFoldSpinVarPhase', eff: 'effPartFoldSpin', set: 'partFoldSpin' },
   // the heartbeat's Speed (gpu/heartbeat.js plays the track at the
   // effective), its dip led by its driver as the confetti's Opacity's is
-  { amount: 'heartSpeedVar', period: 'heartSpeedVarPeriod', fallback: 20, phase: 'heartSpeedVarPhase', eff: 'effHeartSpeed', set: 'heartSpeed', drive: 'heartSpeedVarDrive' }
+  { amount: 'heartSpeedVar', period: 'heartSpeedVarPeriod', fallback: 20, phase: 'heartSpeedVarPhase', eff: 'effHeartSpeed', set: 'heartSpeed', drive: 'heartSpeedVarDrive' },
+  // and its Master, the same construct (gpu/heartbeat.js rides the sound's
+  // gain and the wash's amount on the effective together)
+  { amount: 'heartMasterVar', period: 'heartMasterVarPeriod', fallback: 20, phase: 'heartMasterVarPhase', eff: 'effHeartMaster', set: 'heartMaster', drive: 'heartMasterVarDrive' }
 ];
 // Each that reads its owner straight off S is registered for the drawer,
 // which lights that owner's bar from the effective (core/variance-owners.js).
