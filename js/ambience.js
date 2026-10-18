@@ -5,8 +5,11 @@ import {
   sourceGate
 } from './audio.js';
 import { layerGate, layerSoloChanged, onLayerGates } from './mixgate.js';
-import { every } from './ticker.js';
-import { breath, breathState } from '../core/variance.js';
+import { every, walkAhead } from './ticker.js';
+import { breath, breathState, resetBreath, variedBy, driveOf } from '../core/variance.js';
+import { breathHeardAt } from '../core/breath.js';
+import { signal, signalNow, valueAt } from '../core/signal.js';
+import { strobeAm } from './strobe-am.js';
 import { ctxFor, masterFor, makeWorklet } from './heart/route.js';
 
 export const WORLDS = [
@@ -83,7 +86,7 @@ const canOpus = (() => {
 const EXT = canOpus ? '.opus' : '.mp3';
 
 const cache = new Map();
-let out = null, room = null, wet = null;
+let out = null, room = null, wet = null, am = null;
 let revIn = null, convFeed = null, algo = null, algoFeed = null, algoDead = false;
 let running = false;
 const mixVoices = new Map();
@@ -114,7 +117,42 @@ async function buf(url) {
 // (S.musAmb, 0 to 1, where 1 plays exactly the level; v0 never sets it, so
 // unset reads as 1). The mixer's own master fader shows the level alone.
 const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
-const outLevel = () => S.ambVol * perfTrim(S.musAmb ?? 1);
+
+// ---------- the level's variance ----------
+// The standard dip on the atmosphere's level, the drone's own law
+// (js/piano.js bedVolWander): level x (1 - dip), stepped on the bus's 100 ms
+// tick (revBreathe below). The driver is the drawer's dropdown: Time runs
+// the app's one wander (core/variance.js breath, sinusoid or walk by its
+// Behavior), the breath follows the sun's (core/breath.js breathHeardAt, at
+// the virtual moment a walked idle tick stands for), and the strobe's dip
+// runs at audio rate on the bus's own stage (ensureOut), so the tick's dip
+// stays 0 there. With no breath running the setting holds.
+const volB = breathState();
+let volDip = 0;
+const volAmount = () => Math.max(0, Math.min(1, +S.ambVolVar || 0));
+const volDrive = () => driveOf(S.ambVolVarDrive);
+// the stage's depth: the amount while the strobe drives, else none
+const volPulseDepth = () => volDrive() === 'strobe' ? volAmount() : 0;
+function volWander(now) {
+  const a = volAmount(), drive = volDrive();
+  if (drive === 'strobe') { volDip = 0; return; }
+  volDip = drive === 'breath'
+    ? 1 - variedBy('breath', 1, a, 0, 1, breathHeardAt(S, signalNow() + walkAhead() * 1000))
+    : breath(volB, a, S.ambVolVarPeriod, now, S.ambVolVarMode, 20);
+}
+// The share of the set level playing now, 1 with no dip: the Ambience level
+// slider's lit bar (core/audio-mirror.js, on either thread). Time and
+// Breath read the tick's dip. The strobe's is the stage's depth at this
+// moment's flash (the signal the screen draws, core/signal.js); 1 while the
+// strobe is not flickering, when the stage holds lit.
+export function ambVolMul() {
+  if (!out) return 1;
+  if (volDrive() !== 'strobe') return 1 - volDip;
+  if (!am || !signal.on) return 1;
+  return 1 - am.depth * (1 - valueAt(signal, signalNow()));
+}
+
+const outLevel = () => S.ambVol * (1 - volDip) * perfTrim(S.musAmb ?? 1);
 
 // The atmosphere is built on the context route.js gives the ambience family:
 // Heart's, rendered ahead in a worker, when ?heart= names it, else the
@@ -134,12 +172,17 @@ function ensureOut() {
   outCtx = ctx;
   out = ctx.createGain();
   out.gain.value = outLevel();
+  // The level's Vary with strobe, the drone's and the choir's stage
+  // (js/strobe-am.js): post-fader and ahead of both sends, so the dry bed
+  // and the room's feed pulse together and the room rings through the dark.
+  am = strobeAm(ctx, volPulseDepth);
+  out.connect(am.node);
   // The pause gate (audio.js) on the dry side, a gain of its own since the
   // bus's is the atmosphere's level, and on the room's input below, so a
   // pause stops the recordings at once and lets the room ring out.
   const gate = ctx.createGain();
   sourceGate(gate.gain);
-  out.connect(gate).connect(master);
+  am.node.connect(gate).connect(master);
   // A parallel send rather than an insert. The field recording stays whole and
   // the room is added behind it, so turning this up moves the place further
   // off rather than washing it out -- the ocean heard from inside a cavern,
@@ -152,7 +195,7 @@ function ensureOut() {
   wet.connect(master);
   revIn = ctx.createGain();
   sourceGate(revIn.gain);
-  out.connect(revIn);
+  am.node.connect(revIn);
   convFeed = ctx.createGain();
   revIn.connect(convFeed);
   applyAmbRevType();
@@ -163,6 +206,8 @@ function ensureOut() {
 // approach for a fader (see glideParam in audio.js).
 export function applyAmbVol() {
   if (!out) return;
+  volWander(outCtx.currentTime);
+  if (am) am.apply();
   const now = getContext().currentTime;
   // During the fade in, the new level is reached at its end.
   if (now < fadeEnd) {
@@ -237,6 +282,10 @@ let breatheTimer = 0;
 function revBreathe() {
   if (!outCtx) return;
   const now = outCtx.currentTime;
+  // the level's own wander on the same tick; the strobe's dip is the stage's
+  const dip0 = volDip;
+  volWander(now);
+  if (out && volDip !== dip0) applyAmbVol();
   const level0 = effRevLevelDepth, time0 = effRevTimeDepth, sec0 = revSec();
   effRevLevelDepth = breath(revLevelB, rev01(S.ambReverbVar), S.ambReverbPeriod, now, 'sine', 20);
   effRevTimeDepth = breath(revTimeB, rev01(S.ambRevTimeVar), S.ambRevTimePeriod, now, 'sine', 20);
@@ -575,6 +624,9 @@ export function ambLayerPeak(layer) {
 export async function ambienceOn() {
   if (!getContext() || running || !ensureOut()) return false;
   running = true;
+  // the level's breath starts from the top of its cycle, full level first
+  resetBreath(volB, outCtx.currentTime);
+  volWander(outCtx.currentTime);
   fadeAmbIn();
   syncAmbLayers();
   return true;

@@ -17,6 +17,7 @@ import { S } from '../js/state.js';
 import { arpPeak, seqPlayhead, seqClock, seqSwingRead, SEQ_COUNT, SEQ_SWINGS, bedVolMul } from '../js/piano.js';
 import { pipDipRead, toneVolMul, toneAmMul } from '../js/audio.js';
 import { choirVolMul } from '../js/choir.js';
+import { ambVolMul } from '../js/ambience.js';
 
 // The layout of the Float32Array the page posts (core/audio-shell.js writes
 // it, core/audio-link.js reads it): a few fixed slots, then the read-backs
@@ -55,7 +56,8 @@ export const CALL_SLOTS = 5;
 //           the slots as they were and clears the live bit)
 // Order is the wire's contract between the two threads of one build, and
 // the bits read W_SWING 8 and W_PIP 16 as they always have, then the tone's
-// level 32 and its pulse depth 64, then the drone's level 128 and the choir's 256.
+// level 32 and its pulse depth 64, then the drone's level 128, the choir's
+// 256 and the atmosphere's 512.
 export const SWING_SLOTS = SEQ_COUNT * SEQ_SWINGS;
 // main mode's own copy of the swings, read straight from js/piano.js
 const swingHere = new Float64Array(SWING_SLOTS);
@@ -90,7 +92,11 @@ const DRONE_VOL = { width: 1, rest: 1,
 const CHOIR_VOL = { width: 1, rest: 1,
   pack: (out, at) => { out[at] = choirVolMul(); return true; },
   here: () => choirVolMul() };
-export const READBACKS = [SWING, PIP, TONE_VOL, TONE_AM, DRONE_VOL, CHOIR_VOL];
+// And the atmosphere's level (ambience.js ambVolMul).
+const AMB_VOL = { width: 1, rest: 1,
+  pack: (out, at) => { out[at] = ambVolMul(); return true; },
+  here: () => ambVolMul() };
+export const READBACKS = [SWING, PIP, TONE_VOL, TONE_AM, DRONE_VOL, CHOIR_VOL, AMB_VOL];
 let slot = M_READBACKS;
 for (let i = 0; i < READBACKS.length; i++) {
   const r = READBACKS[i];
@@ -203,3 +209,4 @@ export const toneAmMulNow = () => readback(TONE_AM);
 // sounding this moment, 1 whenever there is nothing live to read.
 export const bedVolMulNow = () => readback(DRONE_VOL);
 export const choirVolMulNow = () => readback(CHOIR_VOL);
+export const ambVolMulNow = () => readback(AMB_VOL);

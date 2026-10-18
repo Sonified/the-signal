@@ -40,7 +40,7 @@ import {
   applyLiveRevTime, applyLiveComp, liveLatencyNow, liveReductionNow, liveInputs
 } from '../js/livesound.js';
 import { startDrift, stopDrift } from './atmosphere.js';
-import { pipDipNow, toneVolMulNow, toneAmMulNow, bedVolMulNow, choirVolMulNow } from './audio-mirror.js';
+import { pipDipNow, toneVolMulNow, toneAmMulNow, bedVolMulNow, choirVolMulNow, ambVolMulNow } from './audio-mirror.js';
 import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows, driveRow } from './schema-variance.js';
@@ -115,6 +115,16 @@ function droneDrive() {
   return row;
 }
 const droneTimeDriven = s => driveOf(s.bedVolVarDrive) === 'time';
+// The atmosphere level's variance chooses from all three too: its strobe
+// dip runs at audio rate on the bus's own stage (js/ambience.js). A change
+// of driver is applied at once, since it moves the sound between the
+// level's tick and that stage. Behavior and speed are Time's alone.
+function ambLevelDrive() {
+  const row = driveRow('ambVol', 'ambVolVarDrive', 'Ambience level variance driver', null, 'atmosphere');
+  row.set = (s, v) => { s.ambVolVarDrive = driveOf(v); applyAmbVol(); save(); };
+  return row;
+}
+const ambLevelTimeDriven = s => driveOf(s.ambVolVarDrive) === 'time';
 // A Music window trim from its slider's 0..100 position: a share of the
 // voice's level, 0 to 1 (see musTone below).
 const trimOf = pos => Math.max(0, Math.min(1, (Number(pos) || 0) / 100));
@@ -1626,6 +1636,16 @@ const atmosphereControls = [
     set: (s, pos) => { s.ambVol = pos / 100; applyAmbVol(); save(); },
     formatAt: pos => pos + '%',
   },
+  // The level's dip (amount, driver, Behavior, speed), the drone's own law
+  // (js/ambience.js volWander). The bar shows the level as it plays
+  // (ambVolMul, through the mirror on either thread).
+  ambLevelDrive(),
+  ...varianceRows('ambVol', {
+    music: true, name: 'Ambience level', mode: true, apply: applyAmbVol,
+    amount: 'ambVolVar', period: 'ambVolVarPeriod', ids: ['ambVolVar', 'ambVolVarPeriod'],
+    effective: s => Math.max(0, s.ambVol) * ambVolMulNow() * 100,
+    rows: { mode: { visible: ambLevelTimeDriven }, period: { visible: ambLevelTimeDriven } }
+  }),
   {
     // How long the atmosphere takes to come in, every time it does: its
     // switch, a play after a pause, the first start (js/ambience.js
