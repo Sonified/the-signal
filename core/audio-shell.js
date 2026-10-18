@@ -135,11 +135,11 @@ export function createAudioShell(storage) {
     pianoGesture() { pianoGesture(); },
     // The sun's breath, as the engine's frame last steered it: into this
     // thread's copy, which the hum's variances read here (core/sun-hum-
-    // vary.js, stepped by tick below and by its own timer).
+    // vary.js, stepped by tick below and by its own timer), and the music
+    // variances linked to it (js/piano.js the drone's level, js/choir.js
+    // its level, Stack and Density, through breath.js breathHeardAt on their
+    // own ticks), so none of them waits on a frame for where the breath is.
     breathState(p) { unpackBreath(sunBreath, p); },
-    // The sun's breath's position, for the music variances linked to it (js/piano.js
-    // the drone's level, js/choir.js), or none at -1, when they hold.
-    sunBreath(v) { S.effSunBreathPos = v >= 0 ? v : undefined; },
     // How long the mutes and solos in this batch glide (a journey step's
     // ramp, js/mixgate.js): held until the batch ends, so the switches' own
     // set() here glides their gates as the worker asked.

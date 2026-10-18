@@ -31,9 +31,10 @@ import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 import { strobeAm } from './strobe-am.js';
 import { inTurn, TURN } from './load-order.js';
-import { every, clear } from './ticker.js';
+import { every, clear, walkAhead } from './ticker.js';
 import { breath, breathState, resetBreath, resetBreathLow, variedBy, driveOf } from '../core/variance.js';
 import { signal, signalNow, valueAt } from '../core/signal.js';
+import { breathHeardAt } from '../core/breath.js';
 
 // Semitone above the keyboard root -> the degree sung, ascending the mode.
 const LAH = { 24: '1', 26: '2', 28: '3', 31: '5', 35: '7', 36: '8', 38: '9' };
@@ -352,13 +353,18 @@ const clampVar = v => Math.max(0, Math.min(1, +v || 0));
 // breath instead of its own clock: the setting in full at the top of the
 // inhale, down by the amount at the bottom of the exhale (core/variance.js
 // variedBy). With no breath running (the Sun layer off) the setting holds.
+// The breath is its formula at this tick's moment (core/breath.js
+// breathHeardAt), not the screen's last frame, so a hidden tab, whose frames
+// stop, still breathes the choir; a walked tick (the idle render-ahead,
+// js/ticker.js) reads it at the virtual moment it stands for.
 const byBreath = k => driveOf(S[k + 'VarDrive']) === 'breath';
+const breathNow = () => breathHeardAt(S, signalNow() + walkAhead() * 1000);
 function wanderLevels(now) {
   effStack = byBreath('choirStack')
-    ? variedBy('breath', S.choirStack, clampVar(S.choirStackVar), 0, 1, S.effSunBreathPos)
+    ? variedBy('breath', S.choirStack, clampVar(S.choirStackVar), 0, 1, breathNow())
     : S.choirStack * (1 - breath(stackB, clampVar(S.choirStackVar), S.choirStackPeriod, now, S.choirStackVarMode));
   effDensity = byBreath('choirDensity')
-    ? variedBy('breath', S.choirDensity, clampVar(S.choirDensityVar), 0, 1, S.effSunBreathPos)
+    ? variedBy('breath', S.choirDensity, clampVar(S.choirDensityVar), 0, 1, breathNow())
     : S.choirDensity * (1 - breath(densB, clampVar(S.choirDensityVar), S.choirDensityPeriod, now, S.choirDensityVarMode));
 }
 // The level's kept apart from the voices' two, so the level control moves
@@ -376,7 +382,7 @@ function pulseDepth() { return volDrive() === 'strobe' ? clampVar(S.choirVolVar)
 function wanderVol(now) {
   const drive = volDrive(), a = clampVar(S.choirVolVar);
   effVolDepth = drive === 'strobe' ? 0
-    : drive === 'breath' ? 1 - variedBy('breath', 1, a, 0, 1, S.effSunBreathPos)
+    : drive === 'breath' ? 1 - variedBy('breath', 1, a, 0, 1, breathNow())
     : breath(volB, a, S.choirVolPeriod, now, S.choirVolVarMode);
 }
 

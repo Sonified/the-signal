@@ -17,9 +17,10 @@
 //
 // That is all this file is: the law (breathPhaseAt, breathPosAt,
 // breathRising, breathRateAt, breathScaleAt), the one state of this thread
-// (sunBreath), its one writer (steerBreath) and its trip across threads
-// (packBreath, unpackBreath). Like signal.js it imports nothing, so the js/
-// audio modules can share it as they share variance.js.
+// (sunBreath), its one writer (steerBreath), the voices' read of it
+// (breathHeardAt) and its trip across threads (packBreath, unpackBreath).
+// Like signal.js it imports nothing, so the js/ audio modules can share it
+// as they share variance.js.
 //
 // ---------- the rate, and the pause ----------
 // The rate is S.sunBreathRate breaths a minute, clamped 0.5 to 12
@@ -64,11 +65,15 @@
 // in the engine's own loop: in worker mode that is the worker. gpu/sun.js
 // reads the frame's position (the Atmosphere sweep, the trails' Stream, the
 // Breath drawer's live gauge, S.effSunBreathPos and S.effSunBreathIn), and
-// core/sun-hum-vary.js reads it at its own times for the hum. In worker
-// mode the page keeps its own copy of this module and of sunBreath; the
-// worker's audio link (core/audio-link.js) sends the packed state across
-// whenever it changes (a rate moved, a pause, a resume), which is rarely,
-// and between changes the two threads are each evaluating the same law.
+// the sound reads it at its own times: core/sun-hum-vary.js for the hum, and
+// the music variances linked to it (js/choir.js's level, Stack and Density,
+// js/piano.js's drone level) through breathHeardAt, on their 10 Hz ticks.
+// None of the sound reads the frame's gauge, so a hidden tab, whose frames
+// stop, leaves none of it parked. In worker mode the page keeps its own copy
+// of this module and of sunBreath; the worker's audio link
+// (core/audio-link.js) sends the packed state across whenever it changes (a
+// rate moved, a pause, a resume), which is rarely, and between changes the
+// two threads are each evaluating the same law.
 
 // The state the law reads:
 //   at        the anchor, absolute ms on the shared clock
@@ -134,6 +139,20 @@ export function breathScaleAt(s, t) {
   if (!(s.full > 0)) return 0;
   const k = breathRateAt(s, t) / s.full;
   return k > 1 ? 1 : k < 0 ? 0 : k;
+}
+
+// The breath as a music variance linked to it hears it: this thread's breath
+// at t (absolute ms on the shared clock) while the Sun layer is on, and
+// undefined while it is off, which core/variance.js variedBy reads as no
+// breath, the setting held. The breath keeps its time with the layer off
+// (main.js steers it all the same), but the voices never followed a breath
+// the screen was not drawing: the gauge they read before was the frame's,
+// cleared to undefined as the layer went off, and this is that rule as a
+// formula, read at the voice's own moment on the voice's own thread (in
+// worker mode the page's copy, as the link last unpacked it). S is passed
+// in rather than imported, so this file still imports nothing.
+export function breathHeardAt(S, t) {
+  return S.layers && S.layers.sun ? breathPosAt(sunBreath, t) : undefined;
 }
 
 // ---------- changing it ----------

@@ -18,9 +18,10 @@ import { setCloudBus } from './clouds.js';
 import { strobeAm, strobeTap, untapStrobe } from './strobe-am.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { inTurn, TURN } from './load-order.js';
-import { every, after, clear } from './ticker.js';
+import { every, after, clear, walkAhead } from './ticker.js';
 import { breath, breathPhase, breathState, resetBreath, variedBy, driveOf } from '../core/variance.js';
 import { signal, signalNow, valueAt } from '../core/signal.js';
+import { breathHeardAt } from '../core/breath.js';
 
 const SEMIS = [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40];
 const RELEASES = 18;
@@ -950,9 +951,12 @@ export function applyBedVol() {
 //           sinusoid or walk by its Behavior, one cycle a period, run on the
 //           audio clock by a 10 Hz tick that glides bedGain, so the steps
 //           blend (js/choir.js does its level the same way).
-//   Breath  d is the sun's breath (S.effSunBreathPos, 0 full exhale to 1
-//           full inhale), on the same tick. While no breath runs (the Sun
-//           layer off) there is none, and the level holds.
+//   Breath  d is the sun's breath, 0 full exhale to 1 full inhale, its
+//           formula at the tick's own moment (core/breath.js
+//           breathHeardAt; a walked tick's virtual one), on the same tick,
+//           so it follows the breath with the tab hidden and its frames
+//           stopped. While no breath runs (the Sun layer off) there is none,
+//           and the level holds.
 //   Strobe  d is the flash itself: the drone's strobe stage (bedAm,
 //           js/strobe-am.js) takes the amount as its depth, so the dip
 //           lands sample by sample where the screen's flash does. bedGain
@@ -969,7 +973,7 @@ function bedVolWander(now) {
   const a = bedVolAmount(), drive = bedVolDrive();
   if (drive === 'strobe') { bedVolDip = 0; return; }
   bedVolDip = drive === 'breath'
-    ? 1 - variedBy('breath', 1, a, 0, 1, S.effSunBreathPos)
+    ? 1 - variedBy('breath', 1, a, 0, 1, breathHeardAt(S, signalNow() + walkAhead() * 1000))
     : breath(bedVolB, a, S.bedVolVarPeriod, now, S.bedVolVarMode, 20);
 }
 function bedVolTick() {

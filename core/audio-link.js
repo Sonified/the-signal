@@ -51,12 +51,12 @@
 //                           a change (a rate moved, a pause, a resume), so
 //                           the page's hum variances (core/sun-hum-vary.js,
 //                           which run there on the page's own frames and
-//                           timer) read the very breath this thread draws.
-//   sunBreath(v)            the sun's breath (S.effSunBreathPos, 0 to 1, -1
-//                           while none runs), while a music variance is
-//                           linked to it (the drone's level, the choir's
-//                           level, Stack and Density): the breath is this thread's,
-//                           so the page's voices are told, to a thousandth.
+//                           timer) and its music variances linked to the
+//                           breath (the drone's level, the choir's level,
+//                           Stack and Density, through breath.js
+//                           breathHeardAt on their own ticks) read the very
+//                           breath this thread draws. Its position is never
+//                           sent: the page works it out from the formula.
 //   gateGlide(sec)          a mute or solo changed here with a glide of its
 //                           own asked for (a journey step's ramp, js/
 //                           mixgate.js applyMixGates(sec)): sent ahead of the
@@ -112,10 +112,6 @@ const STROBE_EPS = 0.01;
 
 // post(calls) sends the outbox (a plain array the caller may clone and must
 // not keep; it is cleared straight after).
-// Whether any of the page's music variances is linked to the sun's breath.
-const breathLinked = (amount, drive) => S[amount] > 0 && S[drive] === 'breath';
-const breathHeard = () => breathLinked('bedVolVar', 'bedVolVarDrive') || breathLinked('choirVolVar', 'choirVolVarDrive') ||
-  breathLinked('choirStackVar', 'choirStackVarDrive') || breathLinked('choirDensityVar', 'choirDensityVarDrive');
 
 // A hand over an audio section of the drawer (ui/screens/drawer.js): the
 // intent to touch, sent to the page where the sound and the idle cushion
@@ -170,7 +166,7 @@ export function createAudioLink(post) {
   const seqNow = new Float32Array(SEQ_PACK), seqSent = new Float32Array(SEQ_PACK);
 
   let lastRunning = false, lastIntent = 0, lastEff = 0, lastAch = 0, lastWatch = 0, lastTransition = 0;
-  let lastFree = true, lastGesture = 0, lastBreath = -1;
+  let lastFree = true, lastGesture = 0;
   let lastSignal = -1, lastBreathGen = -1, lastGateAsk = 0;
   const sigPack = new Float64Array(SIGNAL_PACK), breathPack = new Float64Array(BREATH_PACK);
   let seeded = false;
@@ -247,15 +243,12 @@ export function createAudioLink(post) {
     const gn = S.pianoGestureN | 0;
     if (gn !== lastGesture) { lastGesture = gn; call('pianoGesture', gn, 0, 0, 0); }
     // The sun's breath whenever its formula moved (a fresh copy, as the
-    // signal's is), for the hum's variances on the page
+    // signal's is), for the hum's variances and the music variances that
+    // follow it on the page
     if (sunBreath.gen !== lastBreathGen) {
       lastBreathGen = sunBreath.gen;
       call('breathState', packBreath(sunBreath, breathPack).slice(), 0, 0, 0);
     }
-    // and its position, only while a music variance follows it
-    const bp = breathHeard() && typeof S.effSunBreathPos === 'number'
-      ? Math.round(S.effSunBreathPos * 1000) / 1000 : -1;
-    if (bp !== lastBreath) { lastBreath = bp; call('sunBreath', bp, 0, 0, 0); }
 
     const eff = S.effFreq || 0, ach = S.achievedFreq || 0;
     if (Math.abs(eff - lastEff) > STROBE_EPS || Math.abs(ach - lastAch) > STROBE_EPS) {

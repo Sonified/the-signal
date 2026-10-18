@@ -23,10 +23,18 @@
 //    running at 60 fps, from the same start.
 // 5. Worker mode: a copy unpacked from the packed state reads the same
 //    breath at every moment.
+// 6. The voices' read (breathHeardAt, which js/choir.js and js/piano.js
+//    call on their own ticks in place of the frame's gauge): on the page's
+//    copy, unpacked from the link, it gives the writer's own position, and
+//    at the call sites' variedBy it plays what the gauge played with the
+//    layer on; with the Sun layer off it is undefined, the gauge's own
+//    value then, so a breath-linked choir and drone hold their settings
+//    exactly as before, though the breath now keeps time with the layer off.
 
 const B = await import('../core/breath.js');
 const { S } = await import('../js/state.js');
 const motion = await import('../core/motion.js');
+const { variedBy } = await import('../core/variance.js');
 
 let fails = 0;
 const ok = (name, cond, detail) => {
@@ -246,6 +254,53 @@ for (const windS of [1, 2.5, 5]) {
       Math.abs(B.breathScaleAt(copy, t) - B.breathScaleAt(s, t)));
   }
   ok('an unpacked copy reads the very breath, and the very pause, the writer does', worst === 0, 'worst ' + worst);
+}
+
+// ---- 6: the voices' read ----
+{
+  // the writer, running then pausing, as in 5; the page's copy is the
+  // module's own sunBreath, which breathHeardAt reads
+  const s = fresh();
+  S.running = true; frame(s, T0, 0, 6.5);
+  for (let i = 1; i <= 120; i++) frame(s, T0 + i * 16.7, 0.0167, 6.5);
+  S.running = false;
+  for (let i = 121; i <= 160; i++) frame(s, T0 + i * 16.7, 0.0167, 6.5);
+  B.unpackBreath(B.sunBreath, B.packBreath(s, new Float64Array(B.BREATH_PACK)));
+  const on = { layers: { sun: true } }, off = { layers: { sun: false } }, bare = {};
+  let worst = 0, siteWorst = 0, offMoved = 0;
+  for (let i = 0; i < 600; i++) {
+    const t = T0 + i * 11.3;
+    const heard = B.breathHeardAt(on, t);
+    // the gauge as gpu/sun.js publishes it, from the writer's own state
+    const gauge = 0.5 + 0.5 * Math.sin(2 * Math.PI * B.breathPhaseAt(s, t));
+    worst = Math.max(worst, Math.abs(heard - B.breathPosAt(s, t)));
+    // the call sites: the choir's Stack (set 0.8, amount 0.6) and the
+    // level dips (1 - variedBy(..., 1, a, ...)), gauge against formula
+    siteWorst = Math.max(siteWorst,
+      Math.abs(variedBy('breath', 0.8, 0.6, 0, 1, heard) - variedBy('breath', 0.8, 0.6, 0, 1, gauge)),
+      Math.abs((1 - variedBy('breath', 1, 0.4, 0, 1, heard)) - (1 - variedBy('breath', 1, 0.4, 0, 1, gauge))));
+    if (B.breathHeardAt(off, t) !== undefined || B.breathHeardAt(bare, t) !== undefined) offMoved++;
+  }
+  ok('the voices\' read on the page\'s copy gives the writer\'s own position', worst === 0, 'worst ' + worst);
+  ok('and at the call sites plays what the gauge played, layer on', siteWorst < NOISE, 'worst ' + siteWorst);
+  ok('with the Sun layer off (or no layers yet) it is undefined, the gauge\'s own value then', offMoved === 0, offMoved + ' readings');
+  // off, with the breath keeping time: every call site holds its setting,
+  // as it did on the gauge's undefined
+  const s2 = fresh();
+  S.running = true; frame(s2, T0, 0, 5.5);
+  B.unpackBreath(B.sunBreath, B.packBreath(s2, new Float64Array(B.BREATH_PACK)));
+  let held = true;
+  for (let i = 0; i < 100; i++) {
+    const t = T0 + i * 437;
+    const x = B.breathHeardAt(off, t), old = undefined;
+    if (variedBy('breath', 0.8, 0.6, 0, 1, x) !== variedBy('breath', 0.8, 0.6, 0, 1, old) ||
+        variedBy('breath', 0.8, 0.6, 0, 1, x) !== 0.8 ||
+        1 - variedBy('breath', 1, 0.4, 0, 1, x) !== 0) held = false;
+  }
+  ok('and a breath-linked Stack, Density or level holds its setting while the breath runs on', held);
+  // the moving breath still reaches them once the layer is on
+  const a = B.breathHeardAt(on, T0 + 1000), b = B.breathHeardAt(on, T0 + 4000);
+  ok('which the layer switched on follows at once', typeof a === 'number' && Math.abs(a - b) > 0.01, a + ' ' + b);
 }
 
 console.log(fails ? fails + ' failed' : 'all passed');
