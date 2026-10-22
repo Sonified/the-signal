@@ -177,7 +177,8 @@ function drawHintBacking(dl, text, cx, cy, fx, level) {
 function beginHintIn(text, cx, cy, t) {
   // The words are chosen as each appearance starts, so they hold steady
   // while the hint is up and the resume wording arrives only after a run.
-  if (touchHints) HINT_1 = everRan ? 'Tap to resume' : 'Tap to begin';
+  HINT_1 = touchHints ? (everRan ? 'Tap to resume' : 'Tap to begin')
+    : (everRan ? 'Press the space bar to resume' : 'Press the space bar to begin');
   const rec = hintLay;
   let ok = text.layoutWord(HINT_1, cx, cy + 4, TYPE.xl, W.light, TRACK.hint, rec, false);
   if (!touchHints) {
