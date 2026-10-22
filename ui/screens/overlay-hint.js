@@ -43,7 +43,10 @@ const HINT_2 = 'press the “~” key for settings  ·  press ENTER for full scr
 const HINT_SHADOW_O = 0.45, HINT_SHADOW_BLUR = 0.79, HINT_SHADOW_SIZE = 0.35;
 const HINT_SHADOW_IN_MS = 800, HINT_SHADOW_OUT_MS = 250;
 const HINT_PANEL_O = 0.9, HINT_PANEL_SIZE = 0.33, HINT_PANEL_SOFT = 1;
-const HINT_PANEL_IN_MS = 100, HINT_PANEL_OUT_MS = 500;
+// The pill is feathered to full softness, so it reads as the hint's shadow:
+// its envelope must rise as gently as the letter shadow's, or the dark
+// snaps in. 100 ms here was the snap behind the hint.
+const HINT_PANEL_IN_MS = 800, HINT_PANEL_OUT_MS = 500;
 let envHintShadow = 0, envHintPanel = 0;
 
 // The hint's appearance (Render > Hint fade in, Hint arrive), at boot and on
