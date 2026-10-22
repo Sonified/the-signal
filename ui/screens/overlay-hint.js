@@ -10,7 +10,9 @@ import * as anim from '../anim.js';
 import { SHADE_INK, shade, shadeMeasure, shadeShadow, panelMetrics, linePill,
          stepEnv, smooth01 } from '../text-backing.js';
 
-export const HINT_MAIN = new Float32Array([185 / 255, 198 / 255, 212 / 255, 1]);   // v0 #hint .hmain
+// White, full strength: v0's pale blue-grey (185,198,212, #hint .hmain) read
+// dimmer than the white keyboard line beneath it, the hierarchy upside down.
+export const HINT_MAIN = new Float32Array([1, 1, 1, 1]);
 // The two small keyboard lines, white: the faint grey ink was unreadable
 // over a bright field.
 const HINT_SUB = new Float32Array([1, 1, 1, 1]);
