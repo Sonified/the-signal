@@ -202,9 +202,18 @@ export function idleTouch(why = 'a touch') {
   arm(SETTLE_MS);
 }
 
-// A hand over an audio section of the drawer: the intent to touch, which
-// readies the controls at once (a small splice, declared worth it).
-export function idleIntent() { idleTouch('a hand over the audio controls'); }
+// A hand over an audio section of the drawer: the intent to touch. The
+// cushion goes back to the base by DRAINING, never a splice: a real touch
+// skips first, in its own task, so the control it lands on answers at the
+// base latency either way, and a pointer merely crossing the drawer must
+// not jump the piece (6.6 s heard, 2026-10-21). The ramp starts over.
+export function idleIntent() {
+  if (!IDLE_AHEAD_BUILT) return;
+  lastMove = performance.now();
+  grown = 0;
+  nextStepAt = lastMove + START_MS;
+  if (active) drive();
+}
 
 // The pointer moved, or a finger went down (js/audio.js heartNudge). A
 // cushion over the cap drains to it.
