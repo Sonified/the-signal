@@ -118,10 +118,13 @@ function hintMeasureFx(i, n, relX, relY, wordW, size, out) {
   if (out[4] < 0.5) out[4] = 0;
 }
 
+// The hint's own sizes: the theme's xl and sm plus two points, so the centre
+// lines read larger without touching any other label in the app.
+const HINT_PT_MAIN = TYPE.xl + 2, HINT_PT_SUB = TYPE.sm + 2;
 // The hint's lines as its draw calls below lay them: offset under the
 // middle, size, weight, tracking. Only the backing reads these.
 const HINT_DY = [4, 34];
-const HINT_SIZE = [TYPE.xl, TYPE.sm];
+const HINT_SIZE = [HINT_PT_MAIN, HINT_PT_SUB];
 const HINT_WEIGHT = [W.light, W.regular];
 const HINT_TRACK = [TRACK.hint, TRACK.label];
 function hintLine(k) { return k === 0 ? HINT_1 : HINT_2; }
@@ -183,9 +186,9 @@ function beginHintIn(text, cx, cy, t) {
   HINT_1 = touchHints ? (everRan ? 'Tap to resume' : 'Tap to begin')
     : (everRan ? 'Press the space bar to resume' : 'Press the space bar to begin');
   const rec = hintLay;
-  let ok = text.layoutWord(HINT_1, cx, cy + 4, TYPE.xl, W.light, TRACK.hint, rec, false);
+  let ok = text.layoutWord(HINT_1, cx, cy + 4, HINT_PT_MAIN, W.light, TRACK.hint, rec, false);
   if (!touchHints) {
-    ok = text.layoutWord(HINT_2, cx, cy + 34, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
+    ok = text.layoutWord(HINT_2, cx, cy + 34, HINT_PT_SUB, W.regular, TRACK.label, rec, true) && ok;
   }
   if (!ok) return;
   let x0 = Infinity, x1 = -Infinity;
@@ -218,10 +221,10 @@ export function hintToSmoke(text, cx, cy, t) {
   const peak = h * (all ? smooth01(hintP) : 1);
   if (peak <= 0.002) return;
   const rec = smokeHint;
-  let ok = text.layoutWord(HINT_1, cx, cy + 4, TYPE.xl, W.light, TRACK.hint, rec, false);
+  let ok = text.layoutWord(HINT_1, cx, cy + 4, HINT_PT_MAIN, W.light, TRACK.hint, rec, false);
   const nMain = rec.count;
   if (!touchHints) {
-    ok = text.layoutWord(HINT_2, cx, cy + 34, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
+    ok = text.layoutWord(HINT_2, cx, cy + 34, HINT_PT_SUB, W.regular, TRACK.label, rec, true) && ok;
   }
   if (!ok) return;
   for (let j = nMain; j < rec.count; j++) rec.data[j * 12 + 9] = 1;
@@ -237,7 +240,7 @@ export function hintToSmoke(text, cx, cy, t) {
     if (!k) return;
   }
   rec.peak = peak;
-  rec.size = TYPE.xl;
+  rec.size = HINT_PT_MAIN;
   rec.cx = cx; rec.cy = cy;
   rec.colA = HINT_MAIN; rec.colB = HINT_SUB;
   rec.req = true;
@@ -299,25 +302,25 @@ export function drawHint(dl, text, cx, cy) {
     if (relOn) {
       relFront = smokeHint.releasing ? smokeHint.frontX - smokeHint.cx : -1e9;
       drawHintBacking(dl, text, cx, cy, relFx, relPeak);
-      text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, relPeak, relFx, null);
+      text.drawWord(dl, HINT_1, cx, cy + 4, HINT_PT_MAIN, W.light, HINT_MAIN, TRACK.hint, relPeak, relFx, null);
       if (!touchHints) {
-        text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, TRACK.label, relPeak, relFx, null);
+        text.drawWord(dl, HINT_2, cx, cy + 34, HINT_PT_SUB, W.regular, HINT_SUB, TRACK.label, relPeak, relFx, null);
       }
     }
   } else if (h > 0.002 && hintInAt >= 0) {
     if (hintIn && S.hintArrive !== 'all') {
       drawHintBacking(dl, text, cx, cy, hintFx, h);
-      text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, h, hintFx, null);
+      text.drawWord(dl, HINT_1, cx, cy + 4, HINT_PT_MAIN, W.light, HINT_MAIN, TRACK.hint, h, hintFx, null);
       if (!touchHints) {
-        text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, TRACK.label, h, hintFx, null);
+        text.drawWord(dl, HINT_2, cx, cy + 34, HINT_PT_SUB, W.regular, HINT_SUB, TRACK.label, h, hintFx, null);
       }
     } else {
       const level = h * (hintIn ? smooth01(hintP) : 1);
       drawHintBacking(dl, text, cx, cy, restFx, level);
       dl.pushAlpha(level);
-      text.draw(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, 1, TRACK.hint, 1);
+      text.draw(dl, HINT_1, cx, cy + 4, HINT_PT_MAIN, W.light, HINT_MAIN, 1, TRACK.hint, 1);
       if (!touchHints) {
-        text.draw(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, 1, TRACK.label, 1);
+        text.draw(dl, HINT_2, cx, cy + 34, HINT_PT_SUB, W.regular, HINT_SUB, 1, TRACK.label, 1);
       }
       dl.popAlpha();
     }
