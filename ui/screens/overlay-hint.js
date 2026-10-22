@@ -5,12 +5,15 @@
 import { S } from '../../js/state.js';
 import { guard } from '../../js/panel-guard.js';
 import { smokeHint, hintSweepShare } from '../../core/word-fx.js';
-import { COLOR, TYPE, TRACK, W, MOTION } from '../theme.js';
+import { TYPE, TRACK, W, MOTION } from '../theme.js';
 import * as anim from '../anim.js';
 import { SHADE_INK, shade, shadeMeasure, shadeShadow, panelMetrics, linePill,
          stepEnv, smooth01 } from '../text-backing.js';
 
 export const HINT_MAIN = new Float32Array([185 / 255, 198 / 255, 212 / 255, 1]);   // v0 #hint .hmain
+// The two small keyboard lines, white: the faint grey ink was unreadable
+// over a bright field.
+const HINT_SUB = new Float32Array([1, 1, 1, 1]);
 
 // On a touch screen the hints are two lines in the whole app and nothing
 // else: 'Tap to begin' before the first start, 'Tap to resume' once a
@@ -36,8 +39,8 @@ const HINT_3 = 'T for words  ·  C for color';
 // opacity, blur, size and soft 0..1 of their travel, fades in ms. Panel is
 // always per line (Vary per line on), and only behind the main line: the
 // two small keyboard lines below it go bare.
-const HINT_SHADOW_O = 0.3, HINT_SHADOW_BLUR = 0.79, HINT_SHADOW_SIZE = 0.35;
-const HINT_SHADOW_IN_MS = 400, HINT_SHADOW_OUT_MS = 250;
+const HINT_SHADOW_O = 0.45, HINT_SHADOW_BLUR = 0.79, HINT_SHADOW_SIZE = 0.35;
+const HINT_SHADOW_IN_MS = 800, HINT_SHADOW_OUT_MS = 250;
 const HINT_PANEL_O = 0.9, HINT_PANEL_SIZE = 0.33, HINT_PANEL_SOFT = 1;
 const HINT_PANEL_IN_MS = 100, HINT_PANEL_OUT_MS = 500;
 let envHintShadow = 0, envHintPanel = 0;
@@ -155,9 +158,11 @@ function drawHintBacking(dl, text, cx, cy, fx, level) {
     }
     dl.popAlpha();
   }
+  // The shadow backs every line, the small keyboard lines included: white
+  // subtext with no dark behind it was unreadable over a bright field.
   const shadowA = HINT_SHADOW_O * envHintShadow;
   if (shadowA > 0.002) {
-    for (let k = 0; k < n; k++) {
+    for (let k = 0; k < lines; k++) {
       shadeShadow(shadowA, HINT_SHADOW_BLUR, HINT_SHADOW_SIZE, HINT_SIZE[k]);
       text.drawWord(dl, hintLine(k), cx, cy + HINT_DY[k], HINT_SIZE[k], HINT_WEIGHT[k],
                     SHADE_INK, HINT_TRACK[k], level, fx, null, shade);
@@ -231,7 +236,7 @@ export function hintToSmoke(text, cx, cy, t) {
   rec.peak = peak;
   rec.size = TYPE.xl;
   rec.cx = cx; rec.cy = cy;
-  rec.colA = HINT_MAIN; rec.colB = COLOR.inkFaint;
+  rec.colA = HINT_MAIN; rec.colB = HINT_SUB;
   rec.req = true;
   relOn = true;
   relWait = 3;
@@ -293,8 +298,8 @@ export function drawHint(dl, text, cx, cy) {
       drawHintBacking(dl, text, cx, cy, relFx, relPeak);
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, relPeak, relFx, null);
       if (!touchHints) {
-        text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
-        text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, relPeak, relFx, null);
+        text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, TRACK.label, relPeak, relFx, null);
+        text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, HINT_SUB, TRACK.label, relPeak, relFx, null);
       }
     }
   } else if (h > 0.002 && hintInAt >= 0) {
@@ -302,8 +307,8 @@ export function drawHint(dl, text, cx, cy) {
       drawHintBacking(dl, text, cx, cy, hintFx, h);
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, h, hintFx, null);
       if (!touchHints) {
-        text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);
-        text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, TRACK.label, h, hintFx, null);
+        text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, TRACK.label, h, hintFx, null);
+        text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, HINT_SUB, TRACK.label, h, hintFx, null);
       }
     } else {
       const level = h * (hintIn ? smooth01(hintP) : 1);
@@ -311,8 +316,8 @@ export function drawHint(dl, text, cx, cy) {
       dl.pushAlpha(level);
       text.draw(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, 1, TRACK.hint, 1);
       if (!touchHints) {
-        text.draw(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, COLOR.inkFaint, 1, TRACK.label, 1);
-        text.draw(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, COLOR.inkFaint, 1, TRACK.label, 1);
+        text.draw(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, 1, TRACK.label, 1);
+        text.draw(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, HINT_SUB, 1, TRACK.label, 1);
       }
       dl.popAlpha();
     }
