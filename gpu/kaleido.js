@@ -456,6 +456,13 @@ function fadeHalfK(f) {
 // nothing handed in they yield to a zero timeout as before.
 let yieldFn = null;
 export function setKaleidoYield(fn) { yieldFn = fn; }
+
+// Once called, the layer builds the atlas of the wanted Image set even while
+// it is off (and follows a change of set the same way), so switching it on,
+// by hand or through a preset, finds the atlas ready and goes straight to
+// the fade in. Called from boot a moment after the frame loop starts.
+let preloadWanted = false;
+export function kaleidoPreload() { preloadWanted = true; }
 function timeoutTick(r) { setTimeout(r, 0); }
 function yieldTile() { return yieldFn ? yieldFn() : new Promise(timeoutTick); }
 
@@ -1103,7 +1110,9 @@ export function createKaleido(device, format, platform) {
   // moves in and its crossfade starts (see update). At Speed 0 with no orbit
   // nothing ever leaves sight, and the new set waits for motion.
   function install(tex, fill, set, url, L) {
-    const T = pendingXfade;
+    // Nothing is on screen while the layer is off (a preloaded atlas), so
+    // there is nothing to cross over from: the swap is instant.
+    const T = wasOn ? pendingXfade : 0;
     const crossfade = !!slots[cur].tex && T > 0;
     const s = crossfade ? 1 - cur : cur;
     const sl = slots[s];
@@ -1882,6 +1891,10 @@ export function createKaleido(device, format, platform) {
       wasOn = false;
       S.effKaleidoFolds = undefined;
       if (fbScreen) fbScreen.release();
+      if (preloadWanted) {
+        const def = kaleidoscopeSet(S.kaleidoSet), url = atlasUrl(def);
+        if (def.id !== requestedSet || url !== requestedUrl) changeSet(def.id, url);
+      }
       return;
     }
     const wantDef = kaleidoscopeSet(S.kaleidoSet);
