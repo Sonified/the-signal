@@ -474,7 +474,10 @@ async function boot() {
   // ---- per-frame state, allocated once ----
   const renderArgs = { lum: 0, lit: false, overlayList, uiList, topList, glassVisible: false, sceneChanged: true };
   const uiEvents = [];
-  let lastActivity = 0, audioWoken = false, lastCursor = '';
+  // lastActivity starts at -Infinity so the chrome is born asleep: at 0 the
+  // boot clock itself (t near 0) read as fresh activity and the chrome woke
+  // for its first idleMs on every load, no hand anywhere near the mouse.
+  let lastActivity = -Infinity, audioWoken = false, lastCursor = '';
   // The browser delivers a pointermove as the page loads, at the cursor's
   // resting spot, which flashed the chrome awake for a moment on every boot.
   // Until the mouse is live a move is not activity: the first move only
