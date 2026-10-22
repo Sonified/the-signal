@@ -1621,7 +1621,8 @@ export const VISUAL_CONTROLS = [
     format: S => S.textPanelPerLine === true ? 'On' : 'Off',
   },
   {
-    // The panel's arrival, the shadow's fade in above but its own time.
+    // Each letter's backing fades from clear to full opacity over this time,
+    // starting when that letter appears. Zero is immediate.
     id: 'textPanelFadeIn', section: 'text', label: 'Fade in', kind: 'slider',
     parent: 'textPanelDrawer',
     min: 0, max: 2000, step: 50, def: 0,

@@ -14,6 +14,7 @@ import { guard } from '../../js/panel-guard.js';
 import { COLOR, TYPE, TRACK, W, MOTION } from '../theme.js';
 import * as anim from '../anim.js';
 import { STRIDE } from '../drawlist.js';
+import { TextPanel } from '../text-panel.js';
 
 const VEIL = new Float32Array([0, 0, 0, 1]);
 const HINT_MAIN = new Float32Array([185 / 255, 198 / 255, 212 / 255, 1]);   // v0 #hint .hmain
@@ -53,7 +54,7 @@ let lmSize = -1;
 const SHADE_INK = new Float32Array([0, 0, 0, 1]);
 const PANEL_FILL = new Float32Array([0, 0, 0, 1]);
 const shade = {
-  alpha: 0, soft: 0, dilate: 0, measure: false,
+  alpha: 0, soft: 0, dilate: 0, measure: false, panel: null,
   ax0: 0, ay0: 0, ax1: 0, ay1: 0,
   dx0: 0, dy0: 0, dx1: 0, dy1: 0
 };
@@ -82,15 +83,8 @@ const PANEL_SOFT_MAX_EM = 1.5;
 
 function unit(v) { return v > 0 ? (v < 1 ? v : 1) : 0; }
 
-// The panel's box: every line's shown letters, where each one comes to rest,
-// widened by the pad. Shown means the letter's own opacity is above nothing,
-// or, while the smoke or the cloud draws the word, that its dissolve has
-// begun to give it back; so the panel spreads with the arrival, draws in
-// with the leaving, and is gone with the last letter. Its strength is the
-// panel's own envelope (Fade in and out, drawOverlay's backing block) and
-// the layer's first rise — never the word's fade, which used to swamp the
-// envelope, and never the Opacity slider, which is the letters' own.
-// One panel box: the hard rect, or the slab once the blur is real.
+// The hint's panel box: a hard rect, or a feathered slab. Word panels use
+// the same padding and softness, with per-letter opacity in TextPanel.
 function panelBox(dl, x0, y0, x1, y1, padX, padY, radius, blur) {
   if (blur >= 1) {
     dl.slab(x0 - padX, y0 - padY, x1 - x0 + 2 * padX, y1 - y0 + 2 * padY, radius, blur, 1);
@@ -115,29 +109,12 @@ function linePill(dl, x0, y0, x1, y1, slotH) {
   const padY = Math.min(pm.pad, Math.max(1, (slotH - (y1 - y0)) * 0.5));
   panelBox(dl, x0, y0, x1, y1, pm.pad, padY, Math.min(pm.radius, (y1 - y0) * 0.5 + padY), pm.blur);
 }
-// Vary per line keeps a box per drawn line rather than the one union
-// (captured in drawOverlay's measure loop): a pill per line, each as wide
-// as its own letters ask.
-const LINE_BOX_MAX = 16;
-const LINE_BOXES = new Float32Array(LINE_BOX_MAX * 4);
-let lineBoxN = 0;
-function drawPanel(dl, size, strength, sizeAmt, soft, perLine, lineH) {
-  const a = strength * wordState.reveal;
-  if (a <= 0.002) return;
-  panelMetrics(size, sizeAmt, soft);
-  dl.pushAlpha(a);
-  if (perLine) {
-    const slotH = lineBoxN > 1 ? lineH : Infinity;
-    for (let i = 0; i < lineBoxN; i++) {
-      const o = i * 4;
-      linePill(dl, LINE_BOXES[o], LINE_BOXES[o + 1], LINE_BOXES[o + 2], LINE_BOXES[o + 3], slotH);
-    }
-  } else {
-    let x0 = shade.ax0, y0 = shade.ay0, x1 = shade.ax1, y1 = shade.ay1;
-    if (!(x1 > x0) && wordFxWhole()) { x0 = shade.dx0; y0 = shade.dy0; x1 = shade.dx1; y1 = shade.dy1; }
-    if (x1 > x0 && y1 > y0) panelBox(dl, x0, y0, x1, y1, pm.pad, pm.pad, pm.radius, pm.blur);
-  }
-  dl.popAlpha();
+// Whole-word effects hide the atlas letters while drawing their own ink.
+// Use their dissolve progress to start each letter's backing fade too.
+const panel = new TextPanel();
+function panelFx(i, n, relX, relY, wordW, size, out) {
+  letterFx(i, n, relX, relY, wordW, size, out);
+  if (wordFxWhole()) out[4] = 1 - out[7];
 }
 
 // shade set up for a measure pass: nothing drawn, both bounds emptied
@@ -158,11 +135,11 @@ function shadeShadow(alpha, blur, sizeAmt, size) {
   shade.dilate = sizeAmt * SHADOW_SIZE_EM * size;
 }
 
-// The backing's fade envelopes (see their block in drawOverlay), and the
-// last frame's clock for their step. leaving is the text's own going (the
+// The shadow and hint fade envelopes, and the last frame's clock for their
+// step. leaving is the text's own going (the
 // word's phase 2, the hint's release or yielding): with a Fade out set the
 // envelope sinks over it from that moment.
-let envShadow = 0, envPanel = 0, envLastT = -1;
+let envShadow = 0, envLastT = -1;
 function stepEnv(env, onStage, leaving, dt, inMs, outMs) {
   if (!onStage) return 0;
   if (leaving && outMs > 0) return Math.max(0, env - dt / outMs);
@@ -469,12 +446,9 @@ export function drawOverlay(dl, text, t, width, height) {
   // cloud layer reads is cleared every frame, so no word means no cloud.
   wordLetters.count = 0;
   wordLetters.seed = wordState.seed;
-  // The backing's own fades, an envelope per effect: it rises over the Fade
-  // in as a word arrives and, with a Fade out set, hands over to its ghost
-  // the moment the word starts leaving (wordState.phase 2), which sinks over
-  // the Fade out whether the word is still there or not. At 0 either simply
-  // follows the word as before. An empty stage resets both, so the next
-  // word's backing fades in from nothing.
+  // The shadow's arrival uses a shared envelope; the panel's arrival is
+  // timed separately at each letter below. A nonzero Fade out keeps the
+  // existing snapshot fading after the word starts leaving.
   const dt = envLastT < 0 ? 0 : Math.min(100, t - envLastT);
   envLastT = t;
   const wordUp = wordState.visible && wordState.peak > 0.002 && !!wordState.text;
@@ -482,11 +456,10 @@ export function drawOverlay(dl, text, t, width, height) {
   const shadowOutMs = S.textShadowFadeOutMs || 0, panelOutMs = S.textPanelFadeOutMs || 0;
   const shadowStage = S.textShadowOn !== false && wordUp;
   const panelStage = S.textPanelOn !== false && wordUp;
+  if (!panelStage) panel.seed = -1;
   // a Fade out hands the leaving to the ghost, so the live envelope drops out
   envShadow = stepEnv(envShadow, shadowStage && !(leaving && shadowOutMs > 0), leaving, dt,
     S.textShadowFadeInMs || 0, shadowOutMs);
-  envPanel = stepEnv(envPanel, panelStage && !(leaving && panelOutMs > 0), leaving, dt,
-    S.textPanelFadeInMs || 0, panelOutMs);
   ghostStep(ghostShadow, !shadowStage || leaving, dt, shadowOutMs);
   ghostStep(ghostPanel, !panelStage || leaving, dt, panelOutMs);
   // under everything, the word's own backing included: older goes behind
@@ -508,30 +481,24 @@ export function drawOverlay(dl, text, t, width, height) {
     // so a block's lines keep their own clocks in all three.
     // Each effect's own switch: off, its pass simply skips, the sliders
     // keeping their settings for the A back.
-    const panelO = S.textPanelOn !== false ? unit(S.textPanelO || 0) * envPanel : 0;
+    const panelO = panelStage && !(leaving && panelOutMs > 0) ? unit(S.textPanelO || 0) : 0;
     const shadowO = S.textShadowOn !== false ? unit(S.textShadowO || 0) * envShadow : 0;
     if (panelO > 0.002) {
-      // Vary per line remeasures per line, a box each; otherwise the one
-      // union across the block. Either way each line takes its dissolve
-      // box when the smoke or the cloud holds all its letters at nothing.
       const from = dl.count;
       shadeMeasure();
       const perLine = S.textPanelPerLine === true;
-      lineBoxN = 0;
+      panel.begin(wordState.seed, wordState.text, wordState.age, S.textPanelFadeInMs || 0, n);
+      shade.panel = panel;
       for (let k = 0; k < n; k++) {
-        if (perLine) shadeBounds();
+        panel.line = k;
         lineCtx.k = k;
         text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
-                      SHADE_INK, TRACK.word, wordState.peak, letterFx, null, shade);
-        if (perLine && lineBoxN < LINE_BOX_MAX) {
-          let bx0 = shade.ax0, by0 = shade.ay0, bx1 = shade.ax1, by1 = shade.ay1;
-          if (!(bx1 > bx0) && wordFxWhole()) { bx0 = shade.dx0; by0 = shade.dy0; bx1 = shade.dx1; by1 = shade.dy1; }
-          const o = lineBoxN * 4;
-          LINE_BOXES[o] = bx0; LINE_BOXES[o + 1] = by0; LINE_BOXES[o + 2] = bx1; LINE_BOXES[o + 3] = by1;
-          lineBoxN++;
-        }
+                      SHADE_INK, TRACK.word, wordState.peak, panelFx, null, shade);
+        panel.offset += ph.lines[k].length;
       }
-      drawPanel(dl, size, panelO, unit(S.textPanelSize ?? 1), unit(S.textPanelSoft || 0), perLine, ph.lineH);
+      shade.panel = null;
+      panelMetrics(size, unit(S.textPanelSize ?? 1), unit(S.textPanelSoft || 0));
+      panel.draw(dl, panelO * wordState.reveal, pm.pad, pm.radius, pm.blur, perLine, ph.lineH);
       if (!leaving) ghostSnap(ghostPanel, dl, from);
     }
     if (shadowO > 0.002) {

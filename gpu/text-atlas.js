@@ -711,7 +711,10 @@ export function createText(device, platform) {
             fx(li, len, gcx - x, gcy - midY, wordW, size, xf);
             const cx = gcx + xf[0], cy = gcy + xf[1], s = xf[2];
             if (shade) {
-              if (shade.measure) {
+              if (shade.panel) {
+                const pad = PAD * scale;
+                shade.panel.letter(li, sgx + pad, sgy + pad, sgx + gw - pad, sgy + gh - pad, xf[4] > 0.002);
+              } else if (shade.measure) {
                 const pad = PAD * scale;
                 const ix0 = sgx + pad, iy0 = sgy + pad, ix1 = sgx + gw - pad, iy1 = sgy + gh - pad;
                 const mcx = (ix0 + ix1) * 0.5, mcy = (iy0 + iy1) * 0.5;

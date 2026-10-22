@@ -85,7 +85,11 @@ fn vsMain(in: VertexIn) -> VOut {
   let halfSizeExp = halfSize + vec2f(expand, expand);
   let center = rectPos + halfSize;
   let unit = QUAD[in.vertexIndex];
-  let local = unit * halfSizeExp;
+  var local = unit * halfSizeExp;
+  if (kind < 0.5 && fieldAB.y > 1.5) {
+    local.x = clamp(local.x, uv01.x, uv01.y);
+    local.y = clamp(local.y, borderColor.r, borderColor.g);
+  }
   // A GLYPH carries a rotation in the radius slot (the centre word's
   // transitions). Only the placed corner turns; local stays unrotated, so
   // the fragment stage still maps it straight onto the atlas cell.
@@ -285,10 +289,15 @@ fn carbonWeave(p: vec2f) -> f32 {
 // the whole box and a panel reads as a feathered black block, soft on every
 // edge, rather than a hollow ring. Every other rect leaves B at 0.
 fn shadeRect(in: VOut, fragXY: vec2f) -> vec4f {
-  if (in.fieldAB.y > 0.5) {
+  var opacity = in.opacity;
+  if (in.fieldAB.y > 1.5) {
+    let u = smoothstep(in.uv01.x, in.uv01.y, in.local.x);
+    opacity *= mix(in.uv01.z, in.uv01.w, u);
+  }
+  if ((in.fieldAB.y > 0.5 && in.fieldAB.y < 1.5) || in.fieldAB.y > 2.5) {
     let corner = min(in.radius, min(in.halfSize.x, in.halfSize.y));
     let amt = roundedBoxShadow(in.halfSize, in.local, in.shadow.x, corner) * in.shadow.y;
-    let slabA = clamp(amt, 0.0, 1.0) * in.opacity;
+    let slabA = clamp(amt, 0.0, 1.0) * opacity;
     return vec4f(0.0, 0.0, 0.0, slabA);
   }
   var fill = in.fill;
@@ -297,7 +306,7 @@ fn shadeRect(in: VOut, fragXY: vec2f) -> vec4f {
   }
   let layer = shapeLayer(in.local, in.halfSize, in.radius, fill,
                           in.borderWidth, in.borderColor, in.shadow.x, in.shadow.y);
-  let outA = layer.a * in.opacity;
+  let outA = layer.a * opacity;
   return vec4f(layer.rgb * outA, outA);
 }
 

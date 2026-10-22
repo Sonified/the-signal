@@ -33,12 +33,12 @@ export const ICON = {
 //   5 radius                        corner radius, css px; GLYPH rotation (radians)
 //   6..9  fill rgba                 RECT fill, GLASS tint (a = tint strength), GLYPH and ICON colour
 //   10 border width                 css px, 0 for none; GLYPH dilation css px (the outline pushed outward)
-//   11..14 border rgba
+//   11..14 border rgba; panel strip top/bottom in 11/12, relative to centre
 //   15 shadow radius                css px, 0 for none; the quad is expanded by this (three times it for a slab)
 //   16 shadow alpha
-//   17..20 u0 v0 u1 v1              GLYPH atlas uvs; ICON unused
+//   17..20 u0 v0 u1 v1              GLYPH atlas uvs; panel strip left/right/alpha0/alpha1
 //   21 A                            GLYPH sdf range in atlas px; ICON icon id; GLASS blur mix 0..1; RECT grain amount (grainRect)
-//   22 B                            ICON stroke width css px; GLYPH edge softness css px; RECT 1 for a slab; ICON rotation lives in 17 (radians)
+//   22 B                            ICON stroke width; GLYPH softness; RECT 1 slab, 2 hard panel strip, 3 soft panel strip; ICON rotation in 17
 //   23 opacity                      the group-alpha stack product at emit time
 export const STRIDE = 24;
 
@@ -166,6 +166,21 @@ export class DrawList {
     if (o < 0) return;
     this._border(o, 0, null, b, alpha);
     this.data[o + 22] = 1;
+  }
+
+  // A non-overlapping piece of a text panel, with opacity interpolated
+  // between two letter centres. B=2 is hard, B=3 is feathered. The shape
+  // stays the full panel; only its quad is cropped to this strip.
+  panelStrip(x, y, w, h, r, fill, blur, left, right, top, bottom, a0, a1) {
+    const b = blur >= 1 ? blur : 0;
+    const o = this._slot(KIND.RECT, x, y, w, h, r, fill, b * 3);
+    if (o < 0) return;
+    const d = this.data, cx = x + w * 0.5, cy = y + h * 0.5;
+    d[o + 11] = top - cy; d[o + 12] = bottom - cy;
+    d[o + 15] = b; d[o + 16] = 1;
+    d[o + 17] = left - cx; d[o + 18] = right - cx;
+    d[o + 19] = a0; d[o + 20] = a1;
+    d[o + 22] = b > 0 ? 3 : 2;
   }
 
   // One glyph quad. The text system computes the quad and uvs; this only
