@@ -32,7 +32,7 @@ import { chanGate, onChannelGates } from './mixgate.js';
 import { strobeAm } from './strobe-am.js';
 import { inTurn, TURN, fetchBytes } from './load-order.js';
 import { every, clear, walkAhead } from './ticker.js';
-import { breath, breathState, resetBreath, resetBreathLow, variedBy, driveOf } from '../core/variance.js';
+import { breath, breathState, resetBreath, resetBreathLow, variedBy, driveOf, levelDriveOf, TIME_STROBE } from '../core/variance.js';
 import { signal, signalNow, valueAt } from '../core/signal.js';
 import { breathHeardAt } from '../core/breath.js';
 
@@ -375,9 +375,13 @@ function wanderLevels(now) {
 //   Strobe  the flash itself, at audio rate: the chain's strobe stage (am,
 //           js/strobe-am.js) takes the amount as its depth, the chain gain
 //           holds the level, and the tick leaves the level alone
-const volDrive = () => driveOf(S.choirVolVarDrive);
-// the strobe stage's depth: the amount while the strobe drives, else none
-function pulseDepth() { return volDrive() === 'strobe' ? clampVar(S.choirVolVar) : 0; }
+//   Time + strobe  both at once: the tick wanders the chain gain on the
+//           level's own clock (sinusoid or walk, as Time) and the strobe
+//           stage cuts it by the same amount on top
+const volDrive = () => levelDriveOf(S.choirVolVarDrive);
+const flashed = drive => drive === 'strobe' || drive === TIME_STROBE;
+// the strobe stage's depth: the amount while the strobe leads, else none
+function pulseDepth() { return flashed(volDrive()) ? clampVar(S.choirVolVar) : 0; }
 function wanderVol(now) {
   const drive = volDrive(), a = clampVar(S.choirVolVar);
   effVolDepth = drive === 'strobe' ? 0
@@ -430,12 +434,15 @@ export function applyChoirVol() {
 // slider's lit bar (core/audio-mirror.js, on either thread), read as the
 // drone's is (js/piano.js bedVolMul). Time and Breath read the tick's dip;
 // the strobe's is the stage's depth at this moment's flash, 1 while the
-// strobe is not flickering, when the stage holds lit.
+// strobe is not flickering, when the stage holds lit; Time + strobe is the
+// two multiplied.
 export function choirVolMul() {
   if (!chain) return 1;
-  if (volDrive() !== 'strobe') return 1 - effVolDepth;
-  if (!am || !signal.on) return 1;
-  return 1 - am.depth * (1 - valueAt(signal, signalNow()));
+  const drive = volDrive();
+  if (!flashed(drive)) return 1 - effVolDepth;
+  const timed = drive === TIME_STROBE ? 1 - effVolDepth : 1;
+  if (!am || !signal.on) return timed;
+  return timed * (1 - am.depth * (1 - valueAt(signal, signalNow())));
 }
 
 // Mute and solo, a short glide so a gate closing never clicks.

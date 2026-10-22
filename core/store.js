@@ -47,7 +47,7 @@ import { applyOutputGuards } from './output-guard.js';
 import { applyEdgeDir } from '../js/sim.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
 import { CHANNELS, applyMixGates } from '../js/mixgate.js';
-import { driveOf } from './variance.js';
+import { driveOf, levelDriveOf } from './variance.js';
 import { MUSIC_LAYERS, layerOnKey, layerVolKey } from '../js/layer-defs.js';
 // A cycle (schema-flowers.js and schema-kaleido.js import save() from here),
 // but a harmless one: neither side calls into the other while it is being
@@ -164,7 +164,7 @@ function buildSettings() {
     choirDensityVar: S.choirDensityVar, choirDensityPeriod: S.choirDensityPeriod,
     choirVolVar: S.choirVolVar, choirVolPeriod: S.choirVolPeriod,
     choirVolVarMode: S.choirVolVarMode, choirStackVarMode: S.choirStackVarMode,
-    choirDensityVarMode: S.choirDensityVarMode, choirVolVarDrive: driveOf(S.choirVolVarDrive),
+    choirDensityVarMode: S.choirDensityVarMode, choirVolVarDrive: levelDriveOf(S.choirVolVarDrive),
     choirStackVarDrive: driveOf(S.choirStackVarDrive), choirDensityVarDrive: driveOf(S.choirDensityVarDrive),
     bedVolVar: S.bedVolVar, bedVolVarDrive: driveOf(S.bedVolVarDrive),
     bedVolVarPeriod: S.bedVolVarPeriod, bedVolVarMode: S.bedVolVarMode,
@@ -1255,7 +1255,7 @@ function applySettings(s, live, scene) {
   // variance linked to the strobe at that amount (any Time wander the old
   // level also ran is dropped, since one variance has one driver), and
   // otherwise the level keeps its Time variance as it was.
-  if (typeof s.choirVolVarDrive === 'string') S.choirVolVarDrive = driveOf(s.choirVolVarDrive);
+  if (typeof s.choirVolVarDrive === 'string') S.choirVolVarDrive = levelDriveOf(s.choirVolVarDrive);
   else if (typeof s.choirStrobeAm === 'number' && Number.isFinite(s.choirStrobeAm)) {
     const old = Math.max(0, Math.min(1, s.choirStrobeAm));
     S.choirVolVarDrive = old > 0 ? 'strobe' : 'time';

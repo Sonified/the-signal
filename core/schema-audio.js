@@ -44,7 +44,7 @@ import { pipDipNow, toneVolMulNow, toneAmMulNow, bedVolMulNow, choirVolMulNow, a
 import { save, saveLive } from './store.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows, driveRow } from './schema-variance.js';
-import { driveOf } from './variance.js';
+import { driveOf, levelDriveOf, TIME_STROBE } from './variance.js';
 import { notifyGlobalFilter, GF_HZ_LO, GF_HZ_HI, GF_RES_MAX } from './global-filter.js';
 
 // The global Lowpass and Highpass (core/global-filter.js): positions 0 to
@@ -101,10 +101,13 @@ const choirTimeDriven = owner => s => driveOf(s[owner + 'VarDrive']) !== 'breath
 // Stack and Density, which move the voices on the tick. Applied at once.
 function choirLevelDrive() {
   const row = driveRow('choirVol', 'choirVolVarDrive', 'Choir level variance driver', 'musicChoirDrawer', 'music');
-  row.set = (s, v) => { s.choirVolVarDrive = driveOf(v); applyChoirVol(); save(); };
+  row.options.push({ value: TIME_STROBE, label: 'Time + strobe', domId: null });
+  row.get = s => levelDriveOf(s.choirVolVarDrive);
+  row.set = (s, v) => { s.choirVolVarDrive = levelDriveOf(v); applyChoirVol(); save(); };
+  row.format = s => row.options.find(o => o.value === levelDriveOf(s.choirVolVarDrive)).label;
   return row;
 }
-const choirLevelTimeDriven = s => driveOf(s.choirVolVarDrive) === 'time';
+const choirLevelTimeDriven = s => { const d = levelDriveOf(s.choirVolVarDrive); return d === 'time' || d === TIME_STROBE; };
 // The drone's level's variance chooses from all three drivers, the strobe too: the
 // strobe's dip runs at audio rate (js/piano.js, the drone's strobe stage).
 // A change of driver is applied at once, since it moves the sound between

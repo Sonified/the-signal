@@ -99,6 +99,13 @@ export function varied(set, amount, phase) {
 export const DRIVES = ['time', 'strobe', 'breath'];
 export const driveOf = v => DRIVES.indexOf(v) >= 0 ? v : 'time';
 
+// A level whose strobe dip runs at audio rate (the choir's) has a fourth
+// choice: Time and the strobe together, the level wandering on its own clock
+// while the flash cuts it by the same amount on top. Any other value is
+// driveOf's.
+export const TIME_STROBE = 'timestrobe';
+export const levelDriveOf = v => v === TIME_STROBE ? v : driveOf(v);
+
 // The setting as the variance plays it when a chosen driver leads. The law is
 // the same for every driver, set * (1 - amount * (1 - d)), d from 0 (the
 // driver at its bottom) to 1 (at its top, the setting in full): Time's d is
