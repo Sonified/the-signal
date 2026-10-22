@@ -134,6 +134,7 @@ const GRID = 8;                     // every atlas is an 8 x 8 tile sheet
 const MOTIFS = GRID * GRID;
 const SOLID = 200;                  // alpha at or above this keeps its own colour
 const ALPHA_CUT = 40;               // alpha below this goes fully transparent
+const BAKE_VERSION = 1;             // up when the atlas pass (repack, colour bleed, cut) changes, so kept bakes are rebuilt
 
 // Live objects, the densest setting's ceiling. They all go to the chamber in
 // one instanced draw, and the fold makes every mirrored copy for free, so
@@ -833,10 +834,23 @@ export function createKaleido(device, format, platform) {
     // A paused frame loop stays awake until the atlas is in, then draws it
     // (core/idle.js).
     idleHold();
-    platform.loadImagePixels(url)
-      .then(img => {
-        console.log('[boot] kaleido atlas decoded in ' + Math.round(performance.now() - t0) + 'ms, repacking');
-        return buildAtlas(img, token, set, url);
+    // The finished atlas is kept in the browser (platform.loadImageBaked), so
+    // a later visit skips the decode, the repack and the colour bleed and
+    // goes straight to the GPU. The record is tied to the file's bytes and to
+    // the numbers the pass depends on; BAKE_VERSION goes up when the pass
+    // itself changes.
+    const L = layoutFor(set, url);
+    const tag = 'kaleido' + BAKE_VERSION + ':' + [L.atlas, L.tile, L.inner, L.pad, SOLID, ALPHA_CUT].join('/');
+    const loading = platform.loadImageBaked
+      ? platform.loadImageBaked(url, tag, img => {
+          console.log('[boot] kaleido atlas decoded in ' + Math.round(performance.now() - t0) + 'ms, repacking');
+          return bakeAtlas(img, token, set, url);
+        })
+      : platform.loadImagePixels(url).then(img => bakeAtlas(img, token, set, url));
+    loading
+      .then(baked => {
+        if (!baked || token !== loadToken) return;      // another set was asked for meanwhile
+        finishAtlas(baked, set, url);
       })
       .catch(err => { console.warn('kaleido: could not load the motif atlas ' + url + ':', err && err.message ? err.message : err); })
       .finally(() => idleRelease('the kaleidoscope atlas'));
@@ -885,17 +899,21 @@ export function createKaleido(device, format, platform) {
     return { width: ATLAS, height: ATLAS, data: out };
   }
 
-  async function buildAtlas(img, token, set, url) {
+  // The slow half of an atlas: the repack, the colour bleed and the cut,
+  // yielding between tiles. Resolves to the finished pixels and each motif's
+  // painted share ({ out, fill }, what loadImageBaked keeps), or null if
+  // another set was asked for meanwhile.
+  async function bakeAtlas(img, token, set, url) {
     // Everything below works in this sheet's own layout.
     const L = layoutFor(set, url);
     const TILE = L.tile, ATLAS = L.atlas;
     if (!L.prepadded || img.width !== ATLAS || img.height !== ATLAS) {
       if (img.width !== img.height || img.width % GRID) {
         console.warn('kaleido: expected a square atlas of 8 x 8 tiles, got ' + img.width + ' x ' + img.height);
-        return;
+        return null;
       }
       img = await repack(img, token, L);
-      if (!img) return;
+      if (!img) return null;
     }
     const src = img.data;
     // Measured into its own list and copied over at the swap, so the atlas
@@ -990,9 +1008,16 @@ export function createKaleido(device, format, platform) {
       // Yield after every tile, not every row: a row of eight dilations is
       // several milliseconds of main thread, a dropped strobe frame each.
       await yieldTile();
-      if (token !== loadToken) return;      // another set was asked for meanwhile
+      if (token !== loadToken) return null;      // another set was asked for meanwhile
     }
+    return { out, fill };
+  }
 
+  // The fast half: the finished pixels onto the GPU, mips built, installed.
+  function finishAtlas(baked, set, url) {
+    const L = layoutFor(set, url);
+    const ATLAS = L.atlas;
+    const { out, fill } = baked;
     const tex = device.createTexture({
       size: { width: ATLAS, height: ATLAS },
       format: 'rgba8unorm',

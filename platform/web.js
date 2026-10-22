@@ -257,7 +257,10 @@ export function showMessage(text) {
 export async function loadImagePixels(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('image fetch failed (' + res.status + '): ' + url);
-  const blob = await res.blob();
+  return decodeBlob(await res.blob());
+}
+
+async function decodeBlob(blob) {
   const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   const w = bmp.width, h = bmp.height;
   let cv;
@@ -273,6 +276,80 @@ export async function loadImagePixels(url) {
   if (bmp.close) bmp.close();
   const img = ctx.getImageData(0, 0, w, h);
   return { width: w, height: h, data: img.data };
+}
+
+// ---------- baked images ----------
+// An image that is only ever used after a long pass over its pixels (the
+// kaleidoscope's atlases: repacked, colour-bled, premultiplied) keeps the
+// finished result in IndexedDB, so a later visit skips the decode and the
+// pass and goes straight to the GPU. loadImageBaked(url, tag, build) fetches
+// the file (the HTTP cache answers it), takes a SHA-256 of its bytes, and
+// looks for a record under tag + url with that same digest. A hit returns
+// the stored value as it is. A miss decodes the file, awaits build(img),
+// which returns the value to keep (any structured-cloneable object) or null
+// for "abandoned", and stores it. One record per tag + url, so a sheet
+// changed in place replaces its old bake rather than piling up beside it.
+// Raise the tag when the pass itself changes. Anything unavailable (no
+// IndexedDB, no crypto.subtle, a full quota) just means no caching: the
+// value is built every time, as it was before.
+const BAKE_DB = 'signal-baked-images', BAKE_STORE = 'baked';
+let bakeDb = null;
+function bakeOpen() {
+  if (!bakeDb) {
+    bakeDb = new Promise(resolve => {
+      try {
+        const rq = indexedDB.open(BAKE_DB, 1);
+        rq.onupgradeneeded = () => rq.result.createObjectStore(BAKE_STORE);
+        rq.onsuccess = () => resolve(rq.result);
+        rq.onerror = rq.onblocked = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+  }
+  return bakeDb;
+}
+async function bakeRead(key) {
+  const db = await bakeOpen();
+  if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const rq = db.transaction(BAKE_STORE).objectStore(BAKE_STORE).get(key);
+      rq.onsuccess = () => resolve(rq.result || null);
+      rq.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+async function bakeWrite(key, rec) {
+  const db = await bakeOpen();
+  if (!db) return;
+  await new Promise(resolve => {
+    try {
+      const tx = db.transaction(BAKE_STORE, 'readwrite');
+      tx.objectStore(BAKE_STORE).put(rec, key);
+      tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
+    } catch (e) { resolve(); }
+  });
+}
+async function digestOf(blob) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+    let s = '';
+    for (const b of new Uint8Array(buf)) s += b.toString(16).padStart(2, '0');
+    return s;
+  } catch (e) { return ''; }
+}
+export async function loadImageBaked(url, tag, build) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('image fetch failed (' + res.status + '): ' + url);
+  const blob = await res.blob();
+  const digest = await digestOf(blob);
+  const key = tag + '|' + url;
+  if (digest) {
+    const rec = await bakeRead(key);
+    if (rec && rec.digest === digest) return rec.value;
+  }
+  const value = await build(await decodeBlob(blob));
+  if (value && digest) await bakeWrite(key, { digest, value });
+  return value;
 }
 
 // Main-thread long tasks over the last five seconds, for diagnostics. The
@@ -498,6 +575,7 @@ export function createPlatform(canvas) {
     fullscreen: { toggle: toggleFullscreen, active: fullscreenActive },
     message: showMessage,
     loadImagePixels,
+    loadImageBaked,
     // the text fields' keyboard on a touch screen, null elsewhere
     softKeyboard: kbLink
   };

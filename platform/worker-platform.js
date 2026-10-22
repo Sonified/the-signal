@@ -41,7 +41,7 @@
 // every message from the page to handle().
 
 import { createInputQueue } from './input-queue.js';
-import { loadImagePixels } from './web.js';
+import { loadImagePixels, loadImageBaked } from './web.js';
 import { createKeyboardLink } from './soft-keyboard.js';
 import { displayUpdate, displayPageClock } from '../js/display-watch.js';
 
@@ -152,6 +152,7 @@ export function createWorkerPlatform(init, post) {
     // so a reload cannot land in the same dead end.
     message: text => post({ k: 'message', text, booted: framesStarted }),
     loadImagePixels: url => loadImagePixels(new URL(url, init.baseURI).href),
+    loadImageBaked: (url, tag, build) => loadImageBaked(new URL(url, init.baseURI).href, tag, build),
     // the text fields' keyboard on a touch screen, null elsewhere
     softKeyboard: kbLink
   };
