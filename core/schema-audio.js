@@ -1764,9 +1764,8 @@ const atmosphereControls = [
 // ---------- Live Sound section (js/livesound.js) ----------
 // A microphone or line input, through a compressor and a room of its own. Every set() here ends in saveLive rather than save(): these settings
 // are this machine's alone and stay out of presets, other tabs and the
-// broadcast (see saveLive in store.js). The switch is not saved at all, so a
-// reload comes up with the input closed, and nothing is opened before
-// someone switches it on.
+// broadcast (see saveLive in store.js). The switch is saved there too, so a
+// page that was live comes back live on reload (restoreLive in livesound.js).
 //
 // The input list is the browser's, and it changes: blank until the first
 // grant (browsers hide the names until then), filled in after it, and again
@@ -1800,7 +1799,7 @@ const liveControls = [
     // Its level partner (op) is the Music window's trim, as a voice's is.
     id: 'liveOn', section: 'live', label: 'On', kind: 'toggle', op: 'musLive',
     get: s => !!s.liveOn,
-    set: (s, on) => { s.liveOn = !!on; applyLiveOn(); }
+    set: (s, on) => { s.liveOn = !!on; applyLiveOn(); saveLive(); }
   },
   {
     // A change while live opens the new input at once and crossfades to it.

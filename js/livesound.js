@@ -16,14 +16,14 @@
 // the hardware offers, by default), and the rest of the sound keeps the
 // cushion it was built around. The two meet only at the speakers.
 //
-// The input is opened only when the layer is switched on, never at boot, and
-// switching it off stops the tracks, so the browser's microphone light goes
-// out with it, and closes the context. The switch itself is never saved
-// (core/store.js keeps the input, the level, the room, the compressor and
-// the latency in a record of their own and leaves the switch out), so a reload always comes
-// up with the input closed and nothing is ever opened before someone asks
-// for it. A refusal fails soft: a warning in the console, the switch back to
-// off, and the next switch on asks again.
+// The input is opened when the layer is switched on, and switching it off
+// stops the tracks, so the browser's microphone light goes out with it, and
+// closes the context. The switch is saved with this machine's other Live
+// Sound settings (core/store.js, never in a preset or a broadcast), so a
+// reload that finds it on opens the input again at boot (restoreLive), asking
+// the browser as before if it has no standing grant. A refusal fails soft: a
+// warning in the console, the switch back to off, and the next switch on
+// asks again.
 //
 // The browser's voice processing is turned off on the way in. Echo
 // cancellation, noise suppression and automatic gain are made for a call:
@@ -498,6 +498,23 @@ if (media()) {
 }
 
 // ---------- the controls (core/schema-audio.js) ----------
+// Boot: a switch the saved record found on opens the input now. There is no
+// click in hand, so a context that comes up suspended is lifted by the first
+// gesture the page gets (in the browsers where the open capture does not do
+// it already). Harmless in the engine's worker, which has no input to open;
+// the page's audio shell calls it there.
+export function restoreLive() {
+  if (!S.liveOn) return;
+  applyLiveOn();
+  if (IN_WORKER || typeof window === 'undefined') return;
+  const lift = () => {
+    window.removeEventListener('pointerdown', lift, true);
+    window.removeEventListener('keydown', lift, true);
+    if (graph) wake(graph.ctx);
+  };
+  window.addEventListener('pointerdown', lift, true);
+  window.addEventListener('keydown', lift, true);
+}
 export function applyLiveOn() {
   if (S.liveOn) { if (!cap && !busy) acquire(); }
   else release();

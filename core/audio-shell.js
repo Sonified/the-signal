@@ -45,6 +45,7 @@ import {
 import { arpPeak, seqClock, unpackSeqs, applySeqs, pianoGesture } from '../js/piano.js';
 import { ambDriftOn } from '../js/ambience.js';
 import { prefetchMusic } from '../js/audio-prefetch.js';
+import { restoreLive } from '../js/livesound.js';
 import { stepMixGates, holdMixGateGlide } from '../js/mixgate.js';
 import { CONTROLS } from './schema.js';
 import { audioToggleEffects } from './schema-audio.js';
@@ -76,6 +77,8 @@ export function createAudioShell(storage) {
   initAtmosphere();
   // the recordings come down now, not at the first gesture (js/audio-prefetch.js)
   prefetchMusic();
+  // a page that was live comes back live (js/livesound.js)
+  restoreLive();
 
   // Every control a call can name: the schema's, and the mixer's
   // per-recording rows, which live outside it.

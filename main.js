@@ -24,6 +24,7 @@ import { seedParticles, seedTunnel } from './js/sim.js';
 import { setColorFromPicker } from './js/color.js';
 import { ensureAudioGraph, warmDevice, audioOn, heartNudge, heartRestInfo } from './js/audio.js';
 import { prefetchMusic } from './js/audio-prefetch.js';
+import { restoreLive } from './js/livesound.js';
 import { setMediaTransport } from './js/background.js';
 import { noteHandheld } from './js/handheld.js';
 import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from './js/panel-guard.js';
@@ -1042,4 +1043,6 @@ async function boot() {
   // a gesture, so they are local before anyone presses a key
   // (js/audio-prefetch.js; a no-op in the engine's worker).
   prefetchMusic();
+  // a page that was live comes back live (js/livesound.js)
+  restoreLive();
 }

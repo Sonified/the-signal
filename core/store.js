@@ -813,11 +813,12 @@ function writeKeysNow() {
 // someone else's machine, and an input's id means nothing on another
 // machine anyway. So the input, the level, the reverb mix and its decay, the
 // compressor, the Music window's trim and the latency live here, this
-// machine's alone, and the switch is not saved at all:
-// every load comes up with the input closed until someone switches it on.
+// machine's alone. The switch lives here too: a reload that finds it on opens
+// the input again (restoreLive in js/livesound.js), so a page that was live
+// comes back live, on this machine only.
 const LIVE_KEY = 'signal.v1.live';
 export function saveLive() {
-  saveKey(LIVE_KEY, { liveDevice: S.liveDevice, liveLevel: S.liveLevel, liveReverb: S.liveReverb, musLive: S.musLive,
+  saveKey(LIVE_KEY, { liveOn: !!S.liveOn, liveDevice: S.liveDevice, liveLevel: S.liveLevel, liveReverb: S.liveReverb, musLive: S.musLive,
                       liveLatency: S.liveLatency, liveRevTime: S.liveRevTime, liveHpf: S.liveHpf, liveHpfSlope: S.liveHpfSlope, liveStrobeAm: S.liveStrobeAm,
                       liveThreshold: S.liveThreshold, liveRatio: S.liveRatio,
                       liveAttack: S.liveAttack, liveRelease: S.liveRelease });
@@ -831,6 +832,7 @@ function loadLive() {
   let x;
   try { x = JSON.parse(readKey(LIVE_KEY) || 'null'); } catch (e) { x = null; }
   if (!x || typeof x !== 'object') return;
+  S.liveOn = x.liveOn === true;
   if (typeof x.liveDevice === 'string') S.liveDevice = x.liveDevice;
   for (const k of ['liveLevel', 'liveReverb', 'musLive', 'liveStrobeAm']) {
     if (typeof x[k] === 'number' && Number.isFinite(x[k])) S[k] = Math.max(0, Math.min(1, x[k]));
