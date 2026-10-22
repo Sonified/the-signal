@@ -121,51 +121,15 @@ export const softClipOn = () => S.outSoftClip !== false;
 
 const guards = new Set();
 
-// ---- the soft start ----
-// A device or route change is the one moment the output's level cannot be
-// trusted. The new route has its own hardware volume and sensitivity
-// (headphones pulled mid-play land everything on the speakers; another
-// app's grab — a call joining, a conferencing app's aggregate device —
-// hands back a different route), and a context the system suspended
-// collapses any fade that was scheduled against its frozen clock, so on
-// resume the sound lands at the fade's full end value on the first block
-// (core/sun-hum.js records the same mechanism as THE CLICK). The limiter
-// above holds the peak, not the loudness: a collapsed fade still arrives
-// as a blast, just an unclipped one.
-//
-// So every guard's output opens softly at those moments: held at exactly
-// zero for SOFT_HOLD_S, then brought back to unity over SOFT_S — silence
-// and a fade in instead of a blast — on the guard's own output gain, which
-// nothing else automates.
-//
-// The page only learns of a route change after the sound has already
-// moved (nothing fires before the OS migrates the stream), so the very
-// first instant cannot be caught; what can be is everything after it, as
-// soon as possible. Three triggers, earliest first:
-//   - the context LEAVING 'running' (statechange): the floor is written
-//     onto the frozen clock at once, so the eventual resume opens on an
-//     already-ducked gain and never leaks a single quantum;
-//   - the reported outputLatency jumping (watched every LAT_POLL_MS): the
-//     active stream's own property, which moves with the route and often
-//     leads the enumeration below by a wide margin;
-//   - the device list changing (mediaDevices devicechange: a plug, an
-//     unplug, a virtual device appearing), which ducks every guard — the
-//     slowest signal, sometimes the better part of a second behind.
-const SOFT_HOLD_S = 0.15;   // hard silence first, covering the route's settling
-const SOFT_S = 0.9;
-const LAT_POLL_MS = 50;
-const LAT_JUMP_S = 0.003;   // a route move shifts the latency by more than jitter
-const softs = new Set();
-let devicesWatched = false;
-function watchDevices() {
-  if (devicesWatched) return;
-  devicesWatched = true;
-  try {
-    navigator.mediaDevices.addEventListener('devicechange', () => {
-      for (const f of softs) { try { f(); } catch (e) {} }
-    });
-  } catch (e) {}
-}
+// NOTE (2026-10-21, known-ussues.md 'Audio: device switch plays at the new
+// device's own volume'): when the OS moves the output to another device
+// (headphones plugged in mid-play), the audio simply continues there at
+// that device's hardware volume. A reactive fade here was tried and
+// reverted: the page only learns of the switch after the sound has already
+// moved, so the fade trailed a full-volume burst and added artifacts of
+// its own. The real fix, if ever wanted, is to pin the context's output
+// (AudioContext.setSinkId) and perform route changes deliberately — duck,
+// switch, fade — at the cost of a one-time media-device permission.
 
 // A guard on ctx, registered: connect the chain into .input and .output on
 // to the destination. apply(tc) brings both stages to S (a no-op when they
@@ -218,49 +182,8 @@ export function createOutputGuard(ctx) {
       clipDry.gain.setTargetAtTime(c ? 0 : 1, t, tc);
     }
   }
-  // The soft start, on this guard's own output gain (see above). The floor
-  // goes down at once whatever the state; the recovery is scheduled only on
-  // a running clock, so a duck while suspended simply holds until the
-  // resume's statechange schedules it. A duck mid-recovery starts the hold
-  // over from zero, never up.
-  let held = false;   // floored on a stopped clock, waiting for the resume
-  function softStart() {
-    if (ctx.state === 'closed') return;
-    const g = output.gain, t = ctx.currentTime;
-    g.cancelScheduledValues(t);
-    g.setValueAtTime(0, t);
-    if (ctx.state !== 'running') { held = true; return; }
-    held = false;
-    g.setValueAtTime(0, t + SOFT_HOLD_S);
-    g.linearRampToValueAtTime(1, t + SOFT_HOLD_S + SOFT_S);
-  }
-  // Every state change goes through softStart: leaving 'running' ducks
-  // (ahead of whatever comes back), and entering it schedules the held
-  // recovery — or, a resume this guard never saw go down (the page's first
-  // gesture), opens softly all the same.
-  const onState = () => softStart();
-  try { ctx.addEventListener('statechange', onState); } catch (e) {}
-  // The route watch: the stream's reported latency, every LAT_POLL_MS. The
-  // first real reading is the baseline, not a jump; a context that reports
-  // none (0 or undefined throughout) never triggers.
-  let latLast = NaN;
-  const latPoll = setInterval(() => {
-    if (ctx.state !== 'running') return;
-    const l = ctx.outputLatency;
-    if (typeof l !== 'number' || !isFinite(l) || l === 0) return;
-    if (latLast === latLast && Math.abs(l - latLast) > LAT_JUMP_S) softStart();
-    latLast = l;
-  }, LAT_POLL_MS);
-  softs.add(softStart);
-  watchDevices();
-
   guards.add(apply);
-  return { input, output, limiter: lim, shaper, apply, dispose() {
-    guards.delete(apply);
-    softs.delete(softStart);
-    clearInterval(latPoll);
-    try { ctx.removeEventListener('statechange', onState); } catch (e) {}
-  } };
+  return { input, output, limiter: lim, shaper, apply, dispose() { guards.delete(apply); } };
 }
 
 // S.outLimiter or S.outSoftClip moved: every guard crossfades to it.

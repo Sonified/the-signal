@@ -59,6 +59,14 @@ Found (2026-09-30): a sequencer line that stopped being heard (muted, solo'd awa
 
 **Tag: gpu-profile.** The visuals already run entirely on WebGPU: WGSL shaders for every layer, and compute shaders for particles, word smoke and the word cloud. The strobe is one formula of time in core/signal.js. Nothing has measured what each effect costs on the GPU. Next time frames feel tight: time each render and compute pass with WebGPU timestamp queries (`timestamp-query` feature, a query set written at each pass boundary and read back), show the per-pass milliseconds in the profiler, and tune the heaviest passes first.
 
+## Audio: device switch plays at the new device's own volume
+
+**Tag: device-switch-burst.** When the OS moves the output to another device mid-play (headphones plugged in, a conferencing app's virtual device, a route change in system settings), the audio continues on the new device at that device's own hardware volume — which can be a sudden blast if the new device is set hot. A reactive soft-start fade in core/output-guard.js was tried and reverted (2026-10-21): the page only learns of the switch *after* the sound has already moved (devicechange and statechange both fire late), so the fade trailed a full-volume burst and turned a clean switch into big-then-small-then-fade.
+
+The real fix, if ever wanted: **pin the output device.** `AudioContext.setSinkId` locks the context to a specific device, so a plug-in changes nothing until the app moves the route itself — duck to zero, setSinkId to the new device, fade in. Zero burst by construction. Costs: a one-time media-device permission (Chrome bundles output-device IDs with mic permission, which Live Sound already requests), and the app must follow the system default itself (watch devicechange, resolve the new default, switch deliberately). Would be a machine setting, never riding presets.
+
+Related, already fixed: levels restored from presets/broadcast/journeys are clamped to their sliders' 0–1 ranges in core/store.js (an unclamped master volume was a potential 65x multiplier on everything).
+
 ## Broadcast: a follower can show different words than the broadcaster
 
 **Tag: word-walk-drift.** Seen 2026-10-01: in a broadcast session with words on, a follower showed different words than the broadcaster.
