@@ -319,7 +319,11 @@ async function boot() {
   const app = {
     width: 0, height: 0,
     toggleRun,
-    toggleDrawer: () => { S.panelOpen = !S.panelOpen; },
+    // The open state is part of the saved settings (core/store.js), so every
+    // toggle saves like any control: without this, a close only reached disk
+    // when some later control change happened to save, and a reload brought
+    // the drawer back open from the last save made while it was up.
+    toggleDrawer: () => { S.panelOpen = !S.panelOpen; save(); },
     windowOpen: i => !!winByButton[i].open,
     toggleWindow: i => { const w = winByButton[i]; w.open = !w.open; },
     toggleFullscreen: () => platform.fullscreen.toggle(),
@@ -462,6 +466,7 @@ async function boot() {
         if (mixer.open) { if (mixClose) mixClose.act(S); else mixer.open = false; }
         for (const w of [sequencer, journey, performer, music, textbank]) w.open = false;
         S.panelOpen = false;
+        save();
       }
     });
   }
@@ -660,7 +665,7 @@ async function boot() {
       for (let j = WIN_N - 1; j >= 0; j--) {
         if (zWin[j].open) { zWin[j].open = false; return true; }
       }
-      S.panelOpen = false;
+      if (S.panelOpen) { S.panelOpen = false; save(); }
       return true;
     }
     // M opens and shuts the Music window, the sound's performance controls.
@@ -937,7 +942,7 @@ async function boot() {
       // except that a wake tap on a running session only woke the chrome.
       ui.interact(ui.id('field'), 0, 0, width, height, false);
       if (ui.clicked) {
-        if (S.panelOpen) S.panelOpen = false;
+        if (S.panelOpen) { S.panelOpen = false; save(); }
         else if (!(wakeTap && S.running)) toggleRun();
       }
 
