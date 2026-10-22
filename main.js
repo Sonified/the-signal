@@ -475,6 +475,12 @@ async function boot() {
   const renderArgs = { lum: 0, lit: false, overlayList, uiList, topList, glassVisible: false, sceneChanged: true };
   const uiEvents = [];
   let lastActivity = 0, audioWoken = false, lastCursor = '';
+  // The browser delivers a pointermove as the page loads, at the cursor's
+  // resting spot, which flashed the chrome awake for a moment on every boot.
+  // Until the mouse is live a move is not activity: the first move only
+  // records where the cursor sits, and the mouse is live once a move comes
+  // from anywhere else - or a press, wheel or key proves a hand directly.
+  let mouseLive = false, firstMoveX = -1e9, firstMoveY = 0;
   // The first gesture wakes the sound inside its own event handler
   // (platform/web.js), where the browser is sure to honour the activation
   // for resume(); the frame loop's wake below stays as the backstop. Worker
@@ -752,7 +758,13 @@ async function boot() {
         wakeTap = e.pointerType === 'touch' && (lastChromeA < 0.5 || backInView);
         backInView = false;
       }
-      if (e.type === 'move' || e.type === 'down' || e.type === 'wheel' || e.type === 'key') lastActivity = t;
+      if (!mouseLive) {
+        if (e.type === 'move') {
+          if (firstMoveX === -1e9) { firstMoveX = e.x; firstMoveY = e.y; }
+          else if (e.x !== firstMoveX || e.y !== firstMoveY) mouseLive = true;
+        } else if (e.type === 'down' || e.type === 'wheel' || e.type === 'key') mouseLive = true;
+      }
+      if ((e.type === 'move' && mouseLive) || e.type === 'down' || e.type === 'wheel' || e.type === 'key') lastActivity = t;
       lastInputT = t;
       // The backstop wake: the real one ran inside the gesture's own event
       // handler (setAudioWake above; in worker mode the page's shell.wake),
