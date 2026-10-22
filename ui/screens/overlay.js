@@ -54,7 +54,7 @@ let lmSize = -1;
 const SHADE_INK = new Float32Array([0, 0, 0, 1]);
 const PANEL_FILL = new Float32Array([0, 0, 0, 1]);
 const shade = {
-  alpha: 0, soft: 0, dilate: 0, measure: false, panel: null,
+  alpha: 0, soft: 0, dilate: 0, measure: false,
   ax0: 0, ay0: 0, ax1: 0, ay1: 0,
   dx0: 0, dy0: 0, dx1: 0, dy1: 0
 };
@@ -115,6 +115,11 @@ const panel = new TextPanel();
 function panelFx(i, n, relX, relY, wordW, size, out) {
   letterFx(i, n, relX, relY, wordW, size, out);
   if (wordFxWhole()) out[4] = 1 - out[7];
+}
+// eachLetter's sink for the panel pass: a letter counts as shown from the
+// frame its transition gives it any opacity at all.
+function panelSink(li, x0, y0, x1, y1, op) {
+  panel.letter(li, x0, y0, x1, y1, op > 0.002);
 }
 
 // shade set up for a measure pass: nothing drawn, both bounds emptied
@@ -485,18 +490,15 @@ export function drawOverlay(dl, text, t, width, height) {
     const shadowO = S.textShadowOn !== false ? unit(S.textShadowO || 0) * envShadow : 0;
     if (panelO > 0.002) {
       const from = dl.count;
-      shadeMeasure();
       const perLine = S.textPanelPerLine === true;
       panel.begin(wordState.seed, wordState.text, wordState.age, S.textPanelFadeInMs || 0, n);
-      shade.panel = panel;
       for (let k = 0; k < n; k++) {
         panel.line = k;
         lineCtx.k = k;
-        text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
-                      SHADE_INK, TRACK.word, wordState.peak, panelFx, null, shade);
+        text.eachLetter(ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
+                        TRACK.word, panelFx, panelSink);
         panel.offset += ph.lines[k].length;
       }
-      shade.panel = null;
       panelMetrics(size, unit(S.textPanelSize ?? 1), unit(S.textPanelSoft || 0));
       panel.draw(dl, panelO * wordState.reveal, pm.pad, pm.radius, pm.blur, perLine, ph.lineH);
       if (!leaving) ghostSnap(ghostPanel, dl, from);

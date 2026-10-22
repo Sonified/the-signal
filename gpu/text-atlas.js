@@ -711,10 +711,7 @@ export function createText(device, platform) {
             fx(li, len, gcx - x, gcy - midY, wordW, size, xf);
             const cx = gcx + xf[0], cy = gcy + xf[1], s = xf[2];
             if (shade) {
-              if (shade.panel) {
-                const pad = PAD * scale;
-                shade.panel.letter(li, sgx + pad, sgy + pad, sgx + gw - pad, sgy + gh - pad, xf[4] > 0.002);
-              } else if (shade.measure) {
+              if (shade.measure) {
                 const pad = PAD * scale;
                 const ix0 = sgx + pad, iy0 = sgy + pad, ix1 = sgx + gw - pad, iy1 = sgy + gh - pad;
                 const mcx = (ix0 + ix1) * 0.5, mcy = (iy0 + iy1) * 0.5;
@@ -790,6 +787,57 @@ export function createText(device, platform) {
         li++;
       }
       dl.popAlpha();
+    },
+
+    // The drawWord walk with the drawing left out, for a backing that needs
+    // each letter's geometry without masquerading as a word draw: fx is
+    // stepped exactly as drawWord steps it, and cb gets the letter's index,
+    // its resting ink box (the quad less the atlas padding, where it lands
+    // once the transition is done) and its fx opacity. A letter whose glyph
+    // is still being rasterised is skipped, as drawWord skips drawing it.
+    eachLetter(str, x, y, size, weight, letterSpacing, fx, cb) {
+      if (!str) return;
+      const wi = weightIndex(weight);
+      const scale = size / BASE_SIZE;
+      const spacingPx = letterSpacing * size;
+      const wordW = computeWidth(wi, scale, str, spacingPx);
+      const dpr = platform.dpr;
+      const sy = Math.round(y * dpr) / dpr;
+      const midY = y - size * 0.35;
+      const xf = WORD_XF;
+      let penX = x - wordW / 2, i = 0, li = 0;
+      const len = str.length;
+      while (i < len) {
+        let code = str.charCodeAt(i);
+        let step = 1;
+        if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
+          const c2 = str.charCodeAt(i + 1);
+          if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
+        }
+        const status = needGlyph(wi, code);
+        const adv = readAdvance(wi, code);
+        if (status === 2) {
+          let ox, oy, qw, qh;
+          if (code < 256) {
+            const arr = boxTab[wi], b = code * 8;
+            ox = arr[b + 4]; oy = arr[b + 5]; qw = arr[b + 6]; qh = arr[b + 7];
+          } else {
+            const rec = mapTab[wi].get(code);
+            ox = rec.ox; oy = rec.oy; qw = rec.qw; qh = rec.qh;
+          }
+          if (qw > 0) {
+            const gw = qw * scale, gh = qh * scale;
+            const sgx = Math.round((penX + ox * scale) * dpr) / dpr;
+            const sgy = Math.round((sy + oy * scale) * dpr) / dpr;
+            fx(li, len, sgx + gw / 2 - x, sgy + gh / 2 - midY, wordW, size, xf);
+            const pad = PAD * scale;
+            cb(li, sgx + pad, sgy + pad, sgx + gw - pad, sgy + gh - pad, xf[4]);
+          }
+        }
+        penX += adv * scale + spacingPx;
+        i += step;
+        li++;
+      }
     },
 
     // The same walk as drawWord with the drawing left out: each letter's

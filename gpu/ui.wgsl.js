@@ -291,8 +291,15 @@ fn carbonWeave(p: vec2f) -> f32 {
 fn shadeRect(in: VOut, fragXY: vec2f) -> vec4f {
   var opacity = in.opacity;
   if (in.fieldAB.y > 1.5) {
+    // A panel strip's alpha is bilinear: between its left and right edges
+    // (two letter centres) and between its top and bottom edges (its own
+    // line's level and the next line's), so the dark crossfades through the
+    // gap between lines instead of jumping at the band seam.
     let u = smoothstep(in.uv01.x, in.uv01.y, in.local.x);
-    opacity *= mix(in.uv01.z, in.uv01.w, u);
+    let v = smoothstep(in.borderColor.r, in.borderColor.g, in.local.y);
+    let aTop = mix(in.uv01.z, in.uv01.w, u);
+    let aBottom = mix(in.borderColor.b, in.borderColor.a, u);
+    opacity *= mix(aTop, aBottom, v);
   }
   if ((in.fieldAB.y > 0.5 && in.fieldAB.y < 1.5) || in.fieldAB.y > 2.5) {
     let corner = min(in.radius, min(in.halfSize.x, in.halfSize.y));
