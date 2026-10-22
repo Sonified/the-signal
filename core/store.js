@@ -1071,7 +1071,12 @@ function applySettings(s, live, scene) {
   for (const [k, lo, hi] of [['toneVolVar', 0, 1], ['toneVolPeriod', 0, 120],
                              ['toneStrobeAmVar', 0, 1], ['toneStrobeAmPeriod', 0, 120]])
     if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = Math.max(lo, Math.min(hi, s[k]));
-  if (typeof s.volume === 'number')       S.volume = s.volume;
+  // The master volume, a share 0 to 1 (the Master volume slider's pos/100),
+  // held to that range however it arrives (a preset, the broadcast, a
+  // hand-edited save): it multiplies the whole output, so an unclamped
+  // number here is a blast waiting to happen — a stray 65 is +36 dB of
+  // everything at once, and NaN is a number to typeof.
+  if (typeof s.volume === 'number' && Number.isFinite(s.volume)) S.volume = clampN(s.volume, 0, 1);
   // the global Lowpass and Highpass corners, Hz (core/global-filter.js)
   if (typeof s.lpfHz === 'number' && isFinite(s.lpfHz)) S.lpfHz = Math.max(20, Math.min(20000, s.lpfHz));
   if (typeof s.hpfHz === 'number' && isFinite(s.hpfHz)) S.hpfHz = Math.max(20, Math.min(20000, s.hpfHz));
@@ -1151,17 +1156,23 @@ function applySettings(s, live, scene) {
     const next = normalizeAmbLayers(s.ambLayers);
     if (!live || JSON.stringify(next) !== JSON.stringify(S.ambLayers)) S.ambLayers = next;
   }
-  ['pianoVol','bedVol','pianoReverb','pianoRevTime','pianoHP','arpVol','arpRate','arpAtk','arpDec','arpOct','arpRev','arpSpread','arpStrobeAm','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
+  // The music's levels and mix shares, each 0 to 1 (their sliders' pos/100),
+  // held to that range as the master volume is above: each multiplies its
+  // voice straight onto the output.
+  ['pianoVol','bedVol','pianoReverb','arpVol','arpRev','ambVol','ambReverb','cloudVol','cloudReverb'].forEach(k => {
+    if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = clampN(s[k], 0, 1);
+  });
+  ['pianoRevTime','pianoHP','arpRate','arpAtk','arpDec','arpOct','arpSpread','arpStrobeAm','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
    'arpVolVar','arpVolPeriod','pianoReverbVar','pianoReverbPeriod','pianoRevTimeVar','pianoRevTimePeriod','pianoRevDamp','pianoRevMod','pianoRevHP','pianoRevHPSlope','arpStrobeAmVar','arpStrobeAmPeriod','arpHfCut',
-   'pianoSpread','pianoHold','pianoBass','ambVol','ambFadeInS','ambReverb','ambRevTime','ambDriftFadeS','ambKidsFreq',
-   'cloudVol','cloudDensity','cloudPhrase','cloudReverb'].forEach(k => {
+   'pianoSpread','pianoHold','pianoBass','ambFadeInS','ambRevTime','ambDriftFadeS','ambKidsFreq',
+   'cloudDensity','cloudPhrase'].forEach(k => {
     if (typeof s[k] === 'number') S[k] = s[k];
   });
 
   // migrate the older exclusive setting if it is still on disk
   if (s.audioShape) { S.toneOn = s.audioShape === 'tone'; S.clickOn = s.audioShape === 'clicks'; }
   if (typeof s.harmOn === 'boolean') S.harmOn = s.harmOn;
-  if (typeof s.harmVol === 'number') S.harmVol = s.harmVol;
+  if (typeof s.harmVol === 'number' && Number.isFinite(s.harmVol)) S.harmVol = clampN(s.harmVol, 0, 1);
   if (typeof s.harmCount === 'number')   S.harmCount = s.harmCount;
   if (typeof s.harmBright === 'number') {
     // stored values above 1 are from the old 0.1-4 rolloff scale, before the
@@ -1176,8 +1187,8 @@ function applySettings(s, live, scene) {
   if (typeof s.clickModDepth === 'number')  S.clickModDepth  = s.clickModDepth;
   if (typeof s.clickModPeriod === 'number') S.clickModPeriod = s.clickModPeriod;
   if (typeof s.clickRevTime === 'number')   S.clickRevTime   = s.clickRevTime;
-  if (typeof s.clickReverb === 'number')    S.clickReverb    = s.clickReverb;
-  if (typeof s.clickVol === 'number')       S.clickVol       = s.clickVol;
+  if (typeof s.clickReverb === 'number' && Number.isFinite(s.clickReverb)) S.clickReverb = clampN(s.clickReverb, 0, 1);
+  if (typeof s.clickVol === 'number' && Number.isFinite(s.clickVol))       S.clickVol    = clampN(s.clickVol, 0, 1);
   if (typeof s.chirpModDepth === 'number')  S.chirpModDepth  = s.chirpModDepth;
   if (typeof s.chirpModPeriod === 'number') S.chirpModPeriod = s.chirpModPeriod;
   if (typeof s.pipLpfOn === 'boolean')     S.pipLpfOn     = s.pipLpfOn;
@@ -1262,7 +1273,7 @@ function applySettings(s, live, scene) {
   if (typeof s.shimRate === 'number')  S.shimRate = s.shimRate;
   if (typeof s.harmReverb === 'number')  S.harmReverb = s.harmReverb;
   if (typeof s.pipMs === 'number') S.pipMs = s.pipMs;
-  if (typeof s.toneVol  === 'number') S.toneVol  = s.toneVol;
+  if (typeof s.toneVol  === 'number' && Number.isFinite(s.toneVol)) S.toneVol = clampN(s.toneVol, 0, 1);
   if (typeof s.toneFadeInS === 'number' && isFinite(s.toneFadeInS)) S.toneFadeInS = Math.max(0, Math.min(10, s.toneFadeInS));
   if (typeof s.toneOn  === 'boolean') S.toneOn  = s.toneOn;
   if (typeof s.clickOn === 'boolean') S.clickOn = s.clickOn;
@@ -1270,8 +1281,8 @@ function applySettings(s, live, scene) {
   if (typeof s.chirpHighHz === 'number') S.chirpHighHz = s.chirpHighHz;
   if (typeof s.chirpComp === 'number')   S.chirpComp = s.chirpComp;
   if (typeof s.chirpTilt === 'number')   S.chirpTilt = s.chirpTilt;
-  if (typeof s.chirpVol === 'number')     S.chirpVol = s.chirpVol;
-  if (typeof s.chirpReverb === 'number')  S.chirpReverb = s.chirpReverb;
+  if (typeof s.chirpVol === 'number' && Number.isFinite(s.chirpVol))       S.chirpVol = clampN(s.chirpVol, 0, 1);
+  if (typeof s.chirpReverb === 'number' && Number.isFinite(s.chirpReverb)) S.chirpReverb = clampN(s.chirpReverb, 0, 1);
   if (typeof s.chirpRevTime === 'number') S.chirpRevTime = s.chirpRevTime;
   if (typeof s.biOn === 'boolean') S.biOn = s.biOn;
   if (s.clickMode === 'click' || s.clickMode === 'chirp') S.clickMode = s.clickMode;

@@ -121,6 +121,38 @@ export const softClipOn = () => S.outSoftClip !== false;
 
 const guards = new Set();
 
+// ---- the soft start ----
+// A device or route change is the one moment the output's level cannot be
+// trusted. The new route has its own hardware volume and sensitivity
+// (headphones pulled mid-play land everything on the speakers; another
+// app's grab — a call joining, a conferencing app's aggregate device —
+// hands back a different route), and a context the system suspended
+// collapses any fade that was scheduled against its frozen clock, so on
+// resume the sound lands at the fade's full end value on the first block
+// (core/sun-hum.js records the same mechanism as THE CLICK). The limiter
+// above holds the peak, not the loudness: a collapsed fade still arrives
+// as a blast, just an unclipped one.
+//
+// So every guard's output opens softly at those moments: dropped to
+// SOFT_LEVEL at once and brought back to unity over SOFT_S — a fade in
+// instead of a blast — on the guard's own output gain, which nothing else
+// automates. Two triggers: the guard's context resuming (statechange to
+// running), and the device list changing (mediaDevices devicechange, a
+// plug, an unplug, a virtual device appearing), which ducks every guard.
+const SOFT_LEVEL = 0.1;   // -20 dB: quiet, but never a dropout
+const SOFT_S = 0.9;
+const softs = new Set();
+let devicesWatched = false;
+function watchDevices() {
+  if (devicesWatched) return;
+  devicesWatched = true;
+  try {
+    navigator.mediaDevices.addEventListener('devicechange', () => {
+      for (const f of softs) { try { f(); } catch (e) {} }
+    });
+  } catch (e) {}
+}
+
 // A guard on ctx, registered: connect the chain into .input and .output on
 // to the destination. apply(tc) brings both stages to S (a no-op when they
 // are already there); dispose() lets it go with its context.
@@ -172,8 +204,26 @@ export function createOutputGuard(ctx) {
       clipDry.gain.setTargetAtTime(c ? 0 : 1, t, tc);
     }
   }
+  // The soft start, on this guard's own output gain (see above). A duck
+  // mid-recovery starts from wherever the last one had reached, never up.
+  function softStart() {
+    if (ctx.state !== 'running') return;
+    const g = output.gain, t = ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(Math.min(g.value, SOFT_LEVEL), t);
+    g.linearRampToValueAtTime(1, t + SOFT_S);
+  }
+  const onState = () => { if (ctx.state === 'running') softStart(); };
+  try { ctx.addEventListener('statechange', onState); } catch (e) {}
+  softs.add(softStart);
+  watchDevices();
+
   guards.add(apply);
-  return { input, output, limiter: lim, shaper, apply, dispose() { guards.delete(apply); } };
+  return { input, output, limiter: lim, shaper, apply, dispose() {
+    guards.delete(apply);
+    softs.delete(softStart);
+    try { ctx.removeEventListener('statechange', onState); } catch (e) {}
+  } };
 }
 
 // S.outLimiter or S.outSoftClip moved: every guard crossfades to it.
