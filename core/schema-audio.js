@@ -1822,7 +1822,7 @@ const liveControls = [
     // The input's own highpass, ahead of the compressor, so it also shapes
     // what the broadcast hears. At 20 Hz it is out of the way.
     id: 'liveHpf', section: 'live', label: 'Highpass', kind: 'slider',
-    min: 20, max: 1000, step: 1, def: 20, taper: 'log',
+    min: 20, max: 2000, step: 1, def: 20, taper: 'log',
     get: s => Math.round(s.liveHpf),
     set: (s, pos) => { s.liveHpf = pos; applyLiveHpf(); saveLive(); },
     formatAt: pos => pos <= 20 ? 'off' : Math.round(pos) + ' Hz',

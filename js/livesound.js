@@ -73,7 +73,7 @@ const COMP_THRESHOLD_DB = -24, COMP_RATIO = 3, COMP_ATTACK_MS = 3, COMP_RELEASE_
 // noise neither pump it nor reach the broadcast. At its floor (20 Hz) it is
 // out of the way. Butterworth (Q 0.707 linear is -3.01 dB, as in
 // core/global-filter.js), gliding to each move.
-const HPF_MIN_HZ = 20, HPF_MAX_HZ = 1000, HPF_Q_DB = -3.01, HPF_TC = 0.05;
+const HPF_MIN_HZ = 20, HPF_MAX_HZ = 2000, HPF_Q_DB = -3.01, HPF_TC = 0.05;
 // Its rolloff is 12 dB an octave (that biquad) or 6 (the signal less its own
 // one-pole lowpass, the 'one-pole' processor, as js/room.js's reverb high-pass
 // has it). Both are tuned at once and the choice crossfades, so a switch never
