@@ -122,6 +122,9 @@ export function applyHeartConceal() {
 let periodsTimer = null;
 function tellPeriods() {
   if (!engine) return;
+  // The engine has been closed under us (the tests do): the timer goes
+  // with it, or a node test process never exits.
+  if (engine.closed) { clearInterval(periodsTimer); periodsTimer = null; return; }
   let pulse = 0;
   if (S.audioEnabled && (S.amModOn !== false || S.clickOn)) {
     if (S.amLinked) { try { pulse = rateAt(signal, signalNow()); } catch (e) {} }

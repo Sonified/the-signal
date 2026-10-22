@@ -587,6 +587,7 @@ async function assemble(engine, ctx, module, opts) {
   function close() {
     if (closed) return;
     closed = true;
+    engine.closed = true;   // read by route.js, whose periods timer ends with the engine
     clearInterval(ticker);
     clearInterval(beat);
     for (const type of PAGE_EVENTS) doc?.removeEventListener?.(type, onVisibility);

@@ -1029,9 +1029,12 @@ async function boot() {
   // have had the network to themselves.
   setTimeout(kaleidoPrefetch, 10000);
   // And its atlas for the wanted Image set, built whether the layer is on or
-  // not, so a preset that uses it finds it ready. Early, after the first
-  // frames are through: the build yields between tiles, and a visit after
+  // not, so a preset that uses it finds it ready. It starts with the loop,
+  // not on a timer: until the first gesture the audio has fetched nothing, so
+  // this is the page's free time, and the first update() takes it up and
+  // holds the loop awake until it is in (gpu/kaleido.js load). The build
+  // yields between tiles through the dark-frame chores, and a visit after
   // the first reads it back from the browser's saved copy (platform
   // loadImageBaked).
-  setTimeout(kaleidoPreload, 1500);
+  kaleidoPreload();
 }
