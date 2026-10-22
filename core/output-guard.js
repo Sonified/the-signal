@@ -133,14 +133,28 @@ const guards = new Set();
 // above holds the peak, not the loudness: a collapsed fade still arrives
 // as a blast, just an unclipped one.
 //
-// So every guard's output opens softly at those moments: dropped to
-// SOFT_LEVEL at once and brought back to unity over SOFT_S — a fade in
-// instead of a blast — on the guard's own output gain, which nothing else
-// automates. Two triggers: the guard's context resuming (statechange to
-// running), and the device list changing (mediaDevices devicechange, a
-// plug, an unplug, a virtual device appearing), which ducks every guard.
-const SOFT_LEVEL = 0.1;   // -20 dB: quiet, but never a dropout
+// So every guard's output opens softly at those moments: held at exactly
+// zero for SOFT_HOLD_S, then brought back to unity over SOFT_S — silence
+// and a fade in instead of a blast — on the guard's own output gain, which
+// nothing else automates.
+//
+// The page only learns of a route change after the sound has already
+// moved (nothing fires before the OS migrates the stream), so the very
+// first instant cannot be caught; what can be is everything after it, as
+// soon as possible. Three triggers, earliest first:
+//   - the context LEAVING 'running' (statechange): the floor is written
+//     onto the frozen clock at once, so the eventual resume opens on an
+//     already-ducked gain and never leaks a single quantum;
+//   - the reported outputLatency jumping (watched every LAT_POLL_MS): the
+//     active stream's own property, which moves with the route and often
+//     leads the enumeration below by a wide margin;
+//   - the device list changing (mediaDevices devicechange: a plug, an
+//     unplug, a virtual device appearing), which ducks every guard — the
+//     slowest signal, sometimes the better part of a second behind.
+const SOFT_HOLD_S = 0.15;   // hard silence first, covering the route's settling
 const SOFT_S = 0.9;
+const LAT_POLL_MS = 50;
+const LAT_JUMP_S = 0.003;   // a route move shifts the latency by more than jitter
 const softs = new Set();
 let devicesWatched = false;
 function watchDevices() {
@@ -204,17 +218,39 @@ export function createOutputGuard(ctx) {
       clipDry.gain.setTargetAtTime(c ? 0 : 1, t, tc);
     }
   }
-  // The soft start, on this guard's own output gain (see above). A duck
-  // mid-recovery starts from wherever the last one had reached, never up.
+  // The soft start, on this guard's own output gain (see above). The floor
+  // goes down at once whatever the state; the recovery is scheduled only on
+  // a running clock, so a duck while suspended simply holds until the
+  // resume's statechange schedules it. A duck mid-recovery starts the hold
+  // over from zero, never up.
+  let held = false;   // floored on a stopped clock, waiting for the resume
   function softStart() {
-    if (ctx.state !== 'running') return;
+    if (ctx.state === 'closed') return;
     const g = output.gain, t = ctx.currentTime;
     g.cancelScheduledValues(t);
-    g.setValueAtTime(Math.min(g.value, SOFT_LEVEL), t);
-    g.linearRampToValueAtTime(1, t + SOFT_S);
+    g.setValueAtTime(0, t);
+    if (ctx.state !== 'running') { held = true; return; }
+    held = false;
+    g.setValueAtTime(0, t + SOFT_HOLD_S);
+    g.linearRampToValueAtTime(1, t + SOFT_HOLD_S + SOFT_S);
   }
-  const onState = () => { if (ctx.state === 'running') softStart(); };
+  // Every state change goes through softStart: leaving 'running' ducks
+  // (ahead of whatever comes back), and entering it schedules the held
+  // recovery — or, a resume this guard never saw go down (the page's first
+  // gesture), opens softly all the same.
+  const onState = () => softStart();
   try { ctx.addEventListener('statechange', onState); } catch (e) {}
+  // The route watch: the stream's reported latency, every LAT_POLL_MS. The
+  // first real reading is the baseline, not a jump; a context that reports
+  // none (0 or undefined throughout) never triggers.
+  let latLast = NaN;
+  const latPoll = setInterval(() => {
+    if (ctx.state !== 'running') return;
+    const l = ctx.outputLatency;
+    if (typeof l !== 'number' || !isFinite(l) || l === 0) return;
+    if (latLast === latLast && Math.abs(l - latLast) > LAT_JUMP_S) softStart();
+    latLast = l;
+  }, LAT_POLL_MS);
   softs.add(softStart);
   watchDevices();
 
@@ -222,6 +258,7 @@ export function createOutputGuard(ctx) {
   return { input, output, limiter: lim, shaper, apply, dispose() {
     guards.delete(apply);
     softs.delete(softStart);
+    clearInterval(latPoll);
     try { ctx.removeEventListener('statechange', onState); } catch (e) {}
   } };
 }
