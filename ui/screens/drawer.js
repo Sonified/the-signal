@@ -458,7 +458,7 @@ let savedIdx = -1, savedUntil = 0;
 // the ramp landed, stands full at the setting again. Not in journey mode,
 // where the ramp is the journey's and not this bar's.
 const rampCtrl = {
-  id: 'presetRampS', label: 'Ramp time', kind: 'slider',
+  id: 'presetRampS', label: 'Preset ramp time', kind: 'slider',
   min: 0, max: 60, step: 0.5, def: 0,
   // one row: the name left of the track, the readout right of it, the
   // readout's slot held at the widest text so the track never jitters
