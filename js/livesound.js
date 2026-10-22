@@ -110,6 +110,15 @@ const QUARTER_TURN = Math.PI / 2;
 // The old one's tracks stop once its fade has landed; a context being let go
 // fades its voice the same way before it is closed.
 const FADE_TC = 0.03, RETIRE_MS = 250;
+// The order of a start and a stop, so neither clicks. In: the context is
+// made with its voice shut, the sound comes up only once the context is
+// running and has had SETTLE_MS to settle (the output device opening is the
+// pop that cannot be faded, so it is let happen on silence), and then rises
+// in a straight line over RISE_S. Out: the voice and the capture fall in a
+// straight line to exact zero over FALL_S, and only after that is anything
+// unplugged, stopped or closed (RETIRE_MS), the phone's recording session
+// last of all.
+const RISE_S = 0.12, SETTLE_MS = 80, FALL_S = 0.08;
 // The level and the mix glide on this time constant, as they always have.
 const MOVE_TC = 0.1;
 
@@ -210,6 +219,7 @@ function makeGraph() {
   comp.connect(room.input);
   room.output.connect(wet);
   const voice = ctx.createGain();
+  voice.gain.value = 0;
   dry.connect(voice);
   wet.connect(voice);
   // The local monitor. The gate sits after the room, so a pause silences the
@@ -240,6 +250,7 @@ function makeGraph() {
   guard.output.connect(ctx.destination);
   g.poll = setInterval(() => followGate(g), GATE_POLL_MS);
   if (hpfSix()) buildHp6(g);
+  rise(g);
   // The latency is only known for certain once the context is running (the
   // output's share especially), so the worker's readout is told again then.
   ctx.addEventListener('statechange', () => { if (graph === g && ctx.state === 'running') notify(false); });
@@ -265,6 +276,26 @@ function buildHp6(g) {
     .finally(() => { g.hp6Pending = false; });
 }
 
+// The voice up, once the context is running and has settled (see RISE_S).
+function rise(g) {
+  const go = () => {
+    if (g.closed) return;
+    const p = g.voice.gain, t = g.ctx.currentTime + 0.02;
+    p.cancelScheduledValues(t);
+    p.setValueAtTime(0, t);
+    p.linearRampToValueAtTime(1, t + RISE_S);
+  };
+  const settle = () => setTimeout(go, SETTLE_MS);
+  if (g.ctx.state === 'running') { settle(); return; }
+  const onState = () => {
+    if (g.closed) { g.ctx.removeEventListener('statechange', onState); return; }
+    if (g.ctx.state !== 'running') return;
+    g.ctx.removeEventListener('statechange', onState);
+    settle();
+  };
+  g.ctx.addEventListener('statechange', onState);
+}
+
 // A context made inside the switch's click starts at once. One made later
 // (a rebuild behind the Latency slider) may come up suspended where the
 // browser wants a gesture; an open capture lifts that in the browsers that
@@ -287,13 +318,15 @@ function followGate(g) {
 function closeGraph(g) {
   clearInterval(g.poll);
   g.closed = true;
-  if (g.gf) g.gf.dispose();
-  if (g.guard) g.guard.dispose();
-  if (g.am) { g.am.stop(); forgetStrobeContext(g.ctx); }
   // a new room length still waiting behind the Decay slider is the next context's to build
   clearTimeout(g.room.timer);
-  try { g.voice.gain.setTargetAtTime(0, g.ctx.currentTime, FADE_TC); } catch (e) {}
+  // the voice down to exact zero first; nothing in the chain is unplugged
+  // until it has landed, or the cut would be the click
+  fallTo0(g.voice.gain, g.ctx);
   setTimeout(() => {
+    if (g.gf) g.gf.dispose();
+    if (g.guard) g.guard.dispose();
+    if (g.am) { g.am.stop(); forgetStrobeContext(g.ctx); }
     try { const p = g.ctx.close(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
   }, RETIRE_MS);
 }
@@ -333,15 +366,21 @@ function attach(stream) {
   return { stream, src, g, ctx };
 }
 
+// A gain from wherever it is to exactly zero in a straight line (a time
+// constant never gets there, and what it leaves is still a step to close on).
+function fallTo0(p, ctx) {
+  try {
+    const now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(p.value, now);
+    p.linearRampToValueAtTime(0, now + FALL_S);
+  } catch (e) {}
+}
+
 // Fades a capture out, then unplugs it, and stops its tracks when asked to
 // (always, except in a rebuild, which carries the stream on).
 function retire(c, stopTracks) {
-  try {
-    const p = c.g.gain, now = c.ctx.currentTime;
-    p.cancelScheduledValues(now);
-    p.setValueAtTime(p.value, now);
-    p.setTargetAtTime(0, now, FADE_TC);
-  } catch (e) {}
+  fallTo0(c.g.gain, c.ctx);
   setTimeout(() => {
     if (stopTracks) stopStream(c.stream);
     try { c.src.disconnect(); c.g.disconnect(); } catch (e) {}
@@ -357,7 +396,9 @@ function shut() {
   rebuildTimer = null;
   if (cap) { retire(cap, true); cap = null; }
   if (graph) { closeGraph(graph); graph = null; }
-  setAudioSessionRecording(false);
+  // the phone's session goes back to playback only once the sound is gone,
+  // and not at all if a new capture has started since
+  setTimeout(() => { if (!cap && !graph && !busy) setAudioSessionRecording(false); }, RETIRE_MS + 50);
 }
 
 function notify(failed) {
