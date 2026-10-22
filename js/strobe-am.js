@@ -156,6 +156,7 @@ function signalNode(ctx) {
   } catch (e) { return null; }
   sigNodes.set(ctx, n);
   if (!other) useClock(clockOf(ctx));
+  watchSkips();
   postSignal();
   return n;
 }
@@ -237,11 +238,25 @@ watchEngine(n => {
   if (n !== engNode) {
     engNode = n; engLinked = null;
     useClock(clockOf(n.context));
+    watchSkips();
     if (!timer) timer = every(200, track);
     if (!signal.driven) steerFromS();
     postSignal();
   } else if (engLinked !== !!S.amLinked) postSignal();
 });
+
+// A forward skip (js/idle-ahead.js) grows the engine's lead, and every
+// anchor already posted to a Heart node is written in the old lead's time:
+// from the jump on, its formula would play lead × rate cycles ahead of the
+// screen's. So the skip re-posts the anchor at once, with the new lead
+// folded in as postSignal always does. Subscribed once per engine.
+let skipsOf = null;
+function watchSkips() {
+  const e = heartEngine();
+  if (!e || e === skipsOf || !e.on) return;
+  skipsOf = e;
+  e.on('skip', postSignal);
+}
 
 // ---------- taps ----------
 // Connects the flash into `into` (an AudioNode on ctx: a stage's depth

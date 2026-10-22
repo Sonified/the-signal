@@ -409,6 +409,10 @@ async function assemble(engine, ctx, module, opts) {
     Atomics.store(control, LIMIT, Math.ceil(H / QUANTUM));
     leadS += quanta * QUANTUM / sampleRate;
     output.port.postMessage({ type: 'jump', quanta });
+    // The lead just grew: anything anchored on the Heart clock from outside
+    // (the strobe signal, js/strobe-am.js) must re-anchor, or its formula
+    // plays `lead × rate` cycles ahead of the screen's from here on.
+    emit('skip', leadS);
     if (DIAG) console.log(`${stamp()} skip ahead ${msOf(quanta * QUANTUM)} ms (${why}); lead now ${(leadS * 1000).toFixed(0)} ms`);
     return quanta * QUANTUM / sampleRate;
   }
