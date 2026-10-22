@@ -64,7 +64,7 @@ export function pipDipRead() {
 // The worklet used to be a template literal turned into a Blob URL. As a real
 // file it can be handed straight to addModule(). The URL is resolved against
 // this module rather than the document so it keeps working from a subpath.
-const WORKLET_URL = new URL('./worklet.js', import.meta.url).href;
+export const WORKLET_URL = new URL('./worklet.js', import.meta.url).href;
 window.__WORKLET_URL = WORKLET_URL;   // exposed so tests can render it offline
 // The master room's algorithmic reverb (fdn-worklet.js, js/room.js).
 const FDN_URL = new URL('./fdn-worklet.js', import.meta.url).href;

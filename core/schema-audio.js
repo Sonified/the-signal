@@ -36,7 +36,7 @@ import { applyMixGates } from '../js/mixgate.js';
 import { MUSIC_LAYERS, applyLayerOn, applyLayerVol } from '../js/layers.js';
 import { layerOnKey, layerVolKey, layerMixId, layerDrawerId } from '../js/layer-defs.js';
 import {
-  applyLiveOn, applyLiveDevice, applyLiveLevel, applyLiveHpf, applyLiveReverb, applyLiveLatency,
+  applyLiveOn, applyLiveDevice, applyLiveLevel, applyLiveHpf, applyLiveStrobe, applyLiveReverb, applyLiveLatency,
   applyLiveRevTime, applyLiveComp, liveLatencyNow, liveReductionNow, liveInputs
 } from '../js/livesound.js';
 import { startDrift, stopDrift } from './atmosphere.js';
@@ -1826,6 +1826,17 @@ const liveControls = [
     get: s => Math.round(s.liveHpf),
     set: (s, pos) => { s.liveHpf = pos; applyLiveHpf(); saveLive(); },
     formatAt: pos => pos <= 20 ? 'off' : Math.round(pos) + ' Hz',
+  },
+  {
+    // A volume pulse at the strobe's own flash rate and in its waveform
+    // (js/strobe-am.js), on the local monitor only: the broadcast hears no
+    // pulse, since its listeners have a flash of their own. 0 is none, 100%
+    // swings the monitor from full to silence on every flash.
+    id: 'liveStrobeAm', section: 'live', label: 'Vary with strobe', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 0,
+    get: s => Math.round((s.liveStrobeAm || 0) * 100),
+    set: (s, pos) => { s.liveStrobeAm = pos / 100; applyLiveStrobe(); saveLive(); },
+    formatAt: pos => pos + '%',
   },
   {
     // The Music window's trim, as musAmb is the ambience's: 100% plays

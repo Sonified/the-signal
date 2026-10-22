@@ -818,7 +818,7 @@ function writeKeysNow() {
 const LIVE_KEY = 'signal.v1.live';
 export function saveLive() {
   saveKey(LIVE_KEY, { liveDevice: S.liveDevice, liveLevel: S.liveLevel, liveReverb: S.liveReverb, musLive: S.musLive,
-                      liveLatency: S.liveLatency, liveRevTime: S.liveRevTime, liveHpf: S.liveHpf,
+                      liveLatency: S.liveLatency, liveRevTime: S.liveRevTime, liveHpf: S.liveHpf, liveStrobeAm: S.liveStrobeAm,
                       liveThreshold: S.liveThreshold, liveRatio: S.liveRatio,
                       liveAttack: S.liveAttack, liveRelease: S.liveRelease });
 }
@@ -832,7 +832,7 @@ function loadLive() {
   try { x = JSON.parse(readKey(LIVE_KEY) || 'null'); } catch (e) { x = null; }
   if (!x || typeof x !== 'object') return;
   if (typeof x.liveDevice === 'string') S.liveDevice = x.liveDevice;
-  for (const k of ['liveLevel', 'liveReverb', 'musLive']) {
+  for (const k of ['liveLevel', 'liveReverb', 'musLive', 'liveStrobeAm']) {
     if (typeof x[k] === 'number' && Number.isFinite(x[k])) S[k] = Math.max(0, Math.min(1, x[k]));
   }
   // the buffer asked of the input's own context, in ms (0 is the least)

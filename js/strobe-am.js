@@ -36,7 +36,7 @@
 // and the engine hears the formula on the same only-on-change rule, plus
 // once more whenever the link is switched.
 import { S } from './state.js';
-import { getContext, glideParam, watchEngine } from './audio.js';
+import { getContext, glideParam, watchEngine, WORKLET_URL } from './audio.js';
 import { makeWorklet, heartEngine } from './heart/route.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { breath, breathState } from '../core/variance.js';
@@ -84,11 +84,12 @@ let clockEst = NaN, clockPosted = NaN, latPosted = NaN, clockCtx = null;
 // latency, or nothing with the drawer's Output latency toggle off
 // (schema-visual.js outputLatComp, this machine's own).
 const wantLat = ctx => S.outputLatComp !== false && ctx ? ctx.outputLatency || 0 : 0;
-function sampleClock(ctx) {
-  if (ctx.state !== 'running') return;
+function nextEst(est, ctx) {
+  if (ctx.state !== 'running') return est;
   const s = performance.now() - ctx.currentTime * 1000;
-  clockEst = clockEst === clockEst && s - clockEst <= CLOCK_JUMP_MS ? Math.min(clockEst + CLOCK_LEAK_MS, s) : s;
+  return est === est && s - est <= CLOCK_JUMP_MS ? Math.min(est + CLOCK_LEAK_MS, s) : s;
 }
+function sampleClock(ctx) { clockEst = nextEst(clockEst, ctx); }
 // The context the estimate is of: the signal nodes' and the engine's, which
 // all run on the one clock of the context js/audio.js makes, since a Heart
 // context keeps the native one's clock (js/heart/heart.js). Taken afresh for
@@ -106,6 +107,28 @@ function useClock(ctx) {
 // ---------- the nodes ----------
 // The signal node of each context that has asked for one.
 const sigNodes = new Map();
+// A context of someone else's, with a clock of its own (Live Sound's input
+// context, js/livesound.js): it loads the worklet module itself, and its
+// anchor is matched against its own clock, kept here as the main one is.
+// { est, posted, lat, ready }, by context.
+const extra = new Map();
+const isExtra = ctx => !!ctx && !ctx.isHeart && ctx !== getContext();
+function extraOf(ctx) {
+  let x = extra.get(ctx);
+  if (x) return x;
+  x = { est: NaN, posted: NaN, lat: NaN, ready: false };
+  extra.set(ctx, x);
+  ctx.addEventListener('statechange', () => { x.est = NaN; });
+  try {
+    ctx.audioWorklet.addModule(WORKLET_URL).then(() => { x.ready = true; }, e => console.warn('strobe: worklet failed to load in a second context', e));
+  } catch (e) { console.warn('strobe: worklet failed to load in a second context', e); }
+  return x;
+}
+// Called when such a context is let go.
+export function forgetStrobeContext(ctx) {
+  sigNodes.delete(ctx);
+  extra.delete(ctx);
+}
 const sigMsg = { at: 0, p: 0, r0: 0, r1: 0, dur: 0, wave: 0, duty: 0.5, on: false };
 
 // ---------- the engine ----------
@@ -125,12 +148,14 @@ function signalNode(ctx) {
   const had = sigNodes.get(ctx);
   if (had) return had;
   if (!ctx || !S.workletReady) return null;
+  const other = isExtra(ctx);
+  if (other && !extraOf(ctx).ready) return null;
   let n;
   try {
     n = makeWorklet(ctx, 'strobe-signal', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
   } catch (e) { return null; }
   sigNodes.set(ctx, n);
-  useClock(clockOf(ctx));
+  if (!other) useClock(clockOf(ctx));
   postSignal();
   return n;
 }
@@ -165,7 +190,10 @@ function postSignal() {
   if (sigNodes.size) {
     sigMsg.p = signal.offset; sigMsg.r0 = signal.r0; sigMsg.r1 = signal.r1; sigMsg.dur = signal.dur;
     sigMsg.wave = signal.wave; sigMsg.duty = signal.duty; sigMsg.on = signal.on;
-    for (const n of sigNodes.values()) { sigMsg.at = at + leadOf(n); n.port.postMessage(sigMsg); }
+    for (const [c, n] of sigNodes) {
+      sigMsg.at = extra.has(c) ? atOwn(c) : at + leadOf(n);
+      n.port.postMessage(sigMsg);
+    }
   }
   if (toEng) {
     engMsg.at = at + leadOf(engNode);
@@ -174,6 +202,16 @@ function postSignal() {
     engMsg.linked = engLinked = !!S.amLinked;
     engNode.port.postMessage(engMsg);
   }
+}
+// The same anchor on a context with a clock of its own.
+function atOwn(ctx) {
+  const x = extra.get(ctx);
+  x.est = nextEst(x.est, ctx);
+  let est = x.est;
+  if (!(est === est)) est = performance.now() - ctx.currentTime * 1000;
+  else x.posted = est;
+  x.lat = wantLat(ctx);
+  return (signal.at - SIGNAL_ORIGIN - est) / 1000 - x.lat;
 }
 onSignal(postSignal);
 
@@ -294,6 +332,11 @@ function track() {
     if (clockEst === clockEst && (!(Math.abs(clockEst - clockPosted) <= CLOCK_REPOST_MS) ||
         !(Math.abs(wantLat(clockCtx) - latPosted) <= LAT_REPOST_S))) postSignal();
   }
+  for (const [c, x] of extra) {
+    x.est = nextEst(x.est, c);
+    if (sigNodes.has(c) && (!(Math.abs(x.est - x.posted) <= CLOCK_REPOST_MS) ||
+        !(Math.abs(wantLat(c) - x.lat) <= LAT_REPOST_S))) postSignal();
+  }
   for (const am of live) applyDepth(am);
 }
 
@@ -315,8 +358,13 @@ function applyDepth(am) {
   const v = scaledStrobeDepth(clamp01(am.depthOf()) * mul);
   if (v === am.depth) return;
   am.depth = v;
-  glideParam(am.node.gain, 1 - v / 2, 0.05);
-  glideParam(am.dg.gain, v / 2, 0.05);
+  // glideParam anchors on the main context's clock, so a context of its own
+  // glides on its own
+  const go = isExtra(ctx)
+    ? (p, to) => p.setTargetAtTime(to, ctx.currentTime, 0.05)
+    : (p, to) => glideParam(p, to, 0.05);
+  go(am.node.gain, 1 - v / 2);
+  go(am.dg.gain, v / 2);
 }
 
 export function refreshStrobeAm() {

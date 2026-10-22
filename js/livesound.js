@@ -43,6 +43,7 @@
 // liveGrFromPage, by way of platform/worker-bridge.js and worker-entry.js.
 import { S } from './state.js';
 import { createRoom, swapRoom } from './audio.js';
+import { strobeAm, forgetStrobeContext } from './strobe-am.js';
 import { setLiveCapturing, idleRefresh } from './idle-ahead.js';
 import { setAudioSessionRecording } from './background.js';
 import { createGlobalFilter } from '../core/global-filter.js';
@@ -211,9 +212,15 @@ function makeGraph() {
   // guard.js), last before the speakers as on every output; the broadcast
   // tap, above it all, is left unlimited
   const guard = createOutputGuard(ctx);
-  const g = { ctx, ms, hpf, comp, dry, wet, room, voice, level, gate, gf, guard, tap: null, gateTo: monitorGate(), poll: null };
+  // Vary with strobe: the monitor's gain swung by the strobe's own flash
+  // (js/strobe-am.js, which keeps this context's clock matched to the flash).
+  // After the broadcast tap, so a follower, who has a flash of their own,
+  // hears no pulse of this one.
+  const am = strobeAm(ctx, () => S.liveStrobeAm);
+  const g = { ctx, ms, hpf, am, comp, dry, wet, room, voice, level, gate, gf, guard, tap: null, gateTo: monitorGate(), poll: null };
   gate.gain.value = g.gateTo;
-  voice.connect(level);
+  voice.connect(am.node);
+  am.node.connect(level);
   level.connect(gate);
   gate.connect(gf.input);
   gf.output.connect(guard.input);
@@ -249,6 +256,7 @@ function closeGraph(g) {
   clearInterval(g.poll);
   if (g.gf) g.gf.dispose();
   if (g.guard) g.guard.dispose();
+  if (g.am) { g.am.stop(); forgetStrobeContext(g.ctx); }
   // a new room length still waiting behind the Decay slider is the next context's to build
   clearTimeout(g.room.timer);
   try { g.voice.gain.setTargetAtTime(0, g.ctx.currentTime, FADE_TC); } catch (e) {}
@@ -470,6 +478,9 @@ export function applyLiveLevel() {
 }
 export function applyLiveHpf() {
   if (graph) graph.hpf.frequency.setTargetAtTime(hpfHz(), graph.ctx.currentTime, HPF_TC);
+}
+export function applyLiveStrobe() {
+  if (graph) graph.am.apply();
 }
 export function applyLiveReverb() {
   if (!graph) return;
