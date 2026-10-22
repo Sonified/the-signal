@@ -457,8 +457,9 @@ export const PARTICLE_CONTROLS = [
     name: 'Opacity', periodMax: 120, parent: 'partColorDrawer',
     effective: S => (S.effPartOpacity ?? S.partOpacity) * 100
   }),
-  under('partColorDrawer', noLabel(choice('partColor', 'partColor', 'Colour', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR))),
-  under('partColorDrawer', percent('partHueVar', 'partHueVar', 'Hue variation')),
+  // Under its own 'Color:' heading, the three choices; Lighten and Hue
+  // variation follow, being what they do to the one chosen.
+  under('partColorDrawer', choice('partColor', 'partColor', 'Color:', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR)),
   // Shifts the colour toward white, Strobe's and Rainbow's alike. White is
   // already all the way there, so with it chosen the slider dims in place
   // rather than coming and going.
@@ -466,6 +467,7 @@ export const PARTICLE_CONTROLS = [
     ...under('partColorDrawer', percent('partLighten', 'partLighten', 'Lighten')),
     enabled: S => S.partColor !== 'white'
   },
+  under('partColorDrawer', percent('partHueVar', 'partHueVar', 'Hue variation')),
   // How far out from the centre the particles take to come up to full
   // brightness, the tunnel rings' own 'Ring fade in' curve (core/fade.js),
   // so the two layers fade alike at the same setting. 0 is no fade at all.
