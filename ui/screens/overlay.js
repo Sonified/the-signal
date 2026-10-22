@@ -55,7 +55,10 @@ const PANEL_FILL = new Float32Array([0, 0, 0, 1]);
 const shade = {
   alpha: 0, soft: 0, dilate: 0, measure: false,
   ax0: 0, ay0: 0, ax1: 0, ay1: 0,
-  dx0: 0, dy0: 0, dx1: 0, dy1: 0
+  dx0: 0, dy0: 0, dx1: 0, dy1: 0,
+  // the word panel's per-letter envelopes (see the backing block in
+  // drawOverlay): set only for the word's panel measure, null everywhere else
+  env: null, envBase: 0, envDt: 0, envInMs: 0, envOutMs: 0
 };
 // Softness the shadow always carries, so even behind an opaque letter it
 // reaches past the glyph's edge. The shadow is drawn from the atlas's far
@@ -86,9 +89,12 @@ function unit(v) { return v > 0 ? (v < 1 ? v : 1) : 0; }
 // widened by the pad. Shown means the letter's own opacity is above nothing,
 // or, while the smoke or the cloud draws the word, that its dissolve has
 // begun to give it back; so the panel spreads with the arrival, draws in
-// with the leaving, and is gone with the last letter. Its strength rides the
-// word's fade and the layer's first rise, never the Opacity slider, which is
-// the letters' own.
+// with the leaving, and is gone with the last letter. The fades are per
+// letter: each letter's chunk of darkness blooms over Panel's Fade in from
+// the frame its letter shows and retreats over its Fade out once it doesn't
+// (panelEnv, stepped inside the measure walk), so the spreading rides the
+// transition's own wave, only smoothed. Strength rides the layer's first
+// rise, never the Opacity slider, which is the letters' own.
 // One panel box: the hard rect, or the slab once the blur is real.
 function panelBox(dl, x0, y0, x1, y1, padX, padY, radius, blur) {
   if (blur >= 1) {
@@ -121,8 +127,7 @@ const LINE_BOX_MAX = 16;
 const LINE_BOXES = new Float32Array(LINE_BOX_MAX * 4);
 let lineBoxN = 0;
 function drawPanel(dl, size, strength, sizeAmt, soft, perLine, lineH) {
-  const f = wordState.peak > 0 ? wordState.opacity / wordState.peak : 0;
-  const a = strength * f * wordState.reveal;
+  const a = strength * wordState.reveal;
   if (a <= 0.002) return;
   panelMetrics(size, sizeAmt, soft);
   dl.pushAlpha(a);
@@ -147,6 +152,7 @@ function shadeBounds() {
 }
 function shadeMeasure() {
   shade.alpha = 0; shade.soft = 0; shade.dilate = 0; shade.measure = true;
+  shade.env = null;
   shadeBounds();
 }
 // shade set up for a shadow pass at one text size (Shadow blur and size, 0..1)
@@ -162,7 +168,15 @@ function shadeShadow(alpha, blur, sizeAmt, size) {
 // last frame's clock for their step. leaving is the text's own going (the
 // word's phase 2, the hint's release or yielding): with a Fade out set the
 // envelope sinks over it from that moment.
-let envShadow = 0, envPanel = 0, envLastT = -1;
+let envShadow = 0, envLastT = -1;
+// The panel's envelopes, one per letter of the word on stage, stepped inside
+// the measure walk (gpu/text-atlas.js drawWord): each rises over Panel's
+// Fade in from the frame its letter shows and sinks over its Fade out once
+// it doesn't, so the panel's fades are per letter, riding the transition's
+// wave rather than lifting or dropping the whole block at once. Cleared for
+// every new word and whenever the stage is empty.
+let panelEnv = new Float32Array(128);
+let envText = null, envSeed = -1;
 function stepEnv(env, onStage, leaving, dt, inMs, outMs) {
   if (!onStage) return 0;
   if (leaving && outMs > 0) return Math.max(0, env - dt / outMs);
@@ -170,18 +184,18 @@ function stepEnv(env, onStage, leaving, dt, inMs, outMs) {
 }
 
 // The word's backing outliving its word. Drawn live, the shadow is each
-// letter again at that letter's own opacity and the panel rides the word's
-// fade and the letters shown, so either can only last as long as the
-// letters do, whatever its Fade out says. So every frame the word is up and
-// not yet leaving, each pass's draw records are copied out (snap); the
-// frame it starts leaving (or vanishes, or its switch goes off) that copy
-// becomes the ghost, frozen at rest, and is replayed under everything at a
-// level sinking from 1 over the effect's own Fade out, the word gone or not.
-// The live pass steps aside meanwhile, its envelope back at 0, so a next
-// word's backing rises from nothing while the last one's fades. Two buffers
-// each, swapped as a ghost starts, so a new word's snaps never overwrite a
-// ghost still on screen. At Fade out 0 nothing is kept and the backing
-// follows the word as before.
+// letter again at that letter's own opacity and the panel follows the
+// letters shown, so either can only last as long as the letters do,
+// whatever its Fade out says. So every frame a pass draws, its draw records
+// are copied out (snap), and when its live run ends that copy becomes the
+// ghost, frozen at rest, replayed under everything at a level sinking from
+// 1 over the effect's own Fade out, the word gone or not. For the shadow
+// that moment is the word's leaving; for the panel, whose fades are per
+// letter and whose live pass draws the leaving itself, it is the word
+// actually going from the stage, the ghost carrying the last part-sunk
+// pills to the end. Two buffers each, swapped as a ghost starts, so a new
+// word's snaps never overwrite a ghost still on screen. At Fade out 0
+// nothing is kept and the backing follows the word as before.
 function makeGhost() {
   return { snap: new Float32Array(64 * STRIDE), snapN: 0, fresh: false,
            ghost: new Float32Array(64 * STRIDE), ghostN: 0, level: 0 };
@@ -469,12 +483,13 @@ export function drawOverlay(dl, text, t, width, height) {
   // cloud layer reads is cleared every frame, so no word means no cloud.
   wordLetters.count = 0;
   wordLetters.seed = wordState.seed;
-  // The backing's own fades, an envelope per effect: it rises over the Fade
-  // in as a word arrives and, with a Fade out set, hands over to its ghost
-  // the moment the word starts leaving (wordState.phase 2), which sinks over
-  // the Fade out whether the word is still there or not. At 0 either simply
-  // follows the word as before. An empty stage resets both, so the next
-  // word's backing fades in from nothing.
+  // The backing's own fades. The shadow keeps one envelope for the whole
+  // word: it rises over its Fade in as a word arrives and, with a Fade out
+  // set, hands over to its ghost the moment the word starts leaving
+  // (wordState.phase 2). The panel's envelopes are per letter (panelEnv),
+  // so its Fade in and out are each letter's bloom and retreat instead. At
+  // 0 either simply follows the word as before. An empty stage resets all,
+  // so the next word's backing fades in from nothing.
   const dt = envLastT < 0 ? 0 : Math.min(100, t - envLastT);
   envLastT = t;
   const wordUp = wordState.visible && wordState.peak > 0.002 && !!wordState.text;
@@ -485,10 +500,16 @@ export function drawOverlay(dl, text, t, width, height) {
   // a Fade out hands the leaving to the ghost, so the live envelope drops out
   envShadow = stepEnv(envShadow, shadowStage && !(leaving && shadowOutMs > 0), leaving, dt,
     S.textShadowFadeInMs || 0, shadowOutMs);
-  envPanel = stepEnv(envPanel, panelStage && !(leaving && panelOutMs > 0), leaving, dt,
-    S.textPanelFadeInMs || 0, panelOutMs);
+  // The panel's fades are per letter (panelEnv, stepped in the measure walk),
+  // so its live pass keeps drawing through the leaving — each chunk retreats
+  // as its own letter goes — and its ghost only takes over once the word
+  // itself is gone, carrying the last frame's part-sunk pills to the end.
+  if (!wordUp) { if (envText !== null) { panelEnv.fill(0); envText = null; } }
+  else if (wordState.text !== envText || wordState.seed !== envSeed) {
+    panelEnv.fill(0); envText = wordState.text; envSeed = wordState.seed;
+  }
   ghostStep(ghostShadow, !shadowStage || leaving, dt, shadowOutMs);
-  ghostStep(ghostPanel, !panelStage || leaving, dt, panelOutMs);
+  ghostStep(ghostPanel, !panelStage, dt, panelOutMs);
   // under everything, the word's own backing included: older goes behind
   ghostDraw(ghostPanel, dl);
   ghostDraw(ghostShadow, dl);
@@ -508,7 +529,7 @@ export function drawOverlay(dl, text, t, width, height) {
     // so a block's lines keep their own clocks in all three.
     // Each effect's own switch: off, its pass simply skips, the sliders
     // keeping their settings for the A back.
-    const panelO = S.textPanelOn !== false ? unit(S.textPanelO || 0) * envPanel : 0;
+    const panelO = S.textPanelOn !== false ? unit(S.textPanelO || 0) : 0;
     const shadowO = S.textShadowOn !== false ? unit(S.textShadowO || 0) * envShadow : 0;
     if (panelO > 0.002) {
       // Vary per line remeasures per line, a box each; otherwise the one
@@ -516,6 +537,19 @@ export function drawOverlay(dl, text, t, width, height) {
       // box when the smoke or the cloud holds all its letters at nothing.
       const from = dl.count;
       shadeMeasure();
+      // The per-letter envelopes ride this measure: capacity for every
+      // letter of the block, a slot base per line so each letter keeps its
+      // own. A whole-word effect (smoke, cloud) holds every letter at
+      // nothing and draws the ink itself, so it keeps the plain bounds and
+      // the dissolve-box fallback instead.
+      if (!wordFxWhole()) {
+        if (wordState.text.length > panelEnv.length) panelEnv = new Float32Array(wordState.text.length * 2);
+        shade.env = panelEnv;
+        shade.envDt = dt;
+        shade.envInMs = S.textPanelFadeInMs || 0;
+        shade.envOutMs = panelOutMs;
+        shade.envBase = 0;
+      }
       const perLine = S.textPanelPerLine === true;
       lineBoxN = 0;
       for (let k = 0; k < n; k++) {
@@ -523,6 +557,7 @@ export function drawOverlay(dl, text, t, width, height) {
         lineCtx.k = k;
         text.drawWord(dl, ph.lines[k], cx, baseY + (k - (n - 1) / 2) * ph.lineH, size, W.light,
                       SHADE_INK, TRACK.word, wordState.peak, letterFx, null, shade);
+        shade.envBase += ph.lines[k].length;
         if (perLine && lineBoxN < LINE_BOX_MAX) {
           let bx0 = shade.ax0, by0 = shade.ay0, bx1 = shade.ax1, by1 = shade.ay1;
           if (!(bx1 > bx0) && wordFxWhole()) { bx0 = shade.dx0; by0 = shade.dy0; bx1 = shade.dx1; by1 = shade.dy1; }
@@ -531,8 +566,9 @@ export function drawOverlay(dl, text, t, width, height) {
           lineBoxN++;
         }
       }
+      shade.env = null;
       drawPanel(dl, size, panelO, unit(S.textPanelSize ?? 1), unit(S.textPanelSoft || 0), perLine, ph.lineH);
-      if (!leaving) ghostSnap(ghostPanel, dl, from);
+      ghostSnap(ghostPanel, dl, from);
     }
     if (shadowO > 0.002) {
       const from = dl.count;
