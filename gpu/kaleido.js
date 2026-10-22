@@ -345,7 +345,7 @@ const SIZE_CAP = 0.8;
 const MIN_HALF_TEXELS = 0.25;
 // Switching the layer on fills the chamber at once, as if it had been
 // running all along, and fades that first population in over this long.
-const FADE_IN_SECONDS = 1.2;
+const FADE_IN_SECONDS = 3;
 // Constant size. An object normally grows with its radius; with the toggle
 // on it keeps the size it would have at this fraction of the way to the rim,
 // from there to the rim. Nearer the centre the wedge is too narrow for that

@@ -18,7 +18,7 @@ files="$*"
 fails=0
 for f in $files; do
   start=$(date +%s)
-  perl -e 'alarm shift; exec @ARGV' "$limit" node --expose-gc --test "$f" > "$logs/$(basename "$f").log" 2>&1
+  perl -e 'alarm shift; exec @ARGV' "$limit" node --expose-gc --test --test-force-exit "$f" > "$logs/$(basename "$f").log" 2>&1
   code=$?
   took=$(( $(date +%s) - start ))
   if [ $code -eq 0 ]; then echo "pass     $f (${took}s)"
