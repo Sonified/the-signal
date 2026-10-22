@@ -518,6 +518,8 @@ function breathTick(t) {
   breathWasIn = inh;
   if (breathDueAt >= 0 && t >= breathDueAt) {
     breathDueAt = -1;
+    // the start's quiet: a turn that falls inside it is passed over
+    if (t < startQuiet) return;
     triggerPhrase(breathWord);
     // the word after this one, for the smoke to record its arrival
     wordState.nextText = breathWord === 'inhaling' ? 'exhaling' : 'inhaling';
@@ -911,12 +913,12 @@ export function wordsResume(away) {
   if (breathDueAt >= 0) breathDueAt += away;
 }
 
-// A session's first moments are quiet: no word for at least this long after
-// the experience starts (play pressed, or the text layer switched on), so
-// the scene opens clean and the first word arrives by the ordinary rolls
-// (or, on the shared walk, with the first step that begins after the quiet)
-// rather than always being there at once.
-const START_QUIET_MS = 1000;
+// A session's first moments are quiet: no word for the First text delay
+// (default 5 s, 0 to 60) after the experience starts (play pressed, or the
+// text layer switched on), so the scene opens clean and the first word
+// arrives by the ordinary rolls (or, on the shared walk, with the first
+// step that begins after the quiet) rather than always being there at once.
+const startQuietMs = () => (Number.isFinite(S.textFirstDelay) ? Math.max(0, S.textFirstDelay) : 5) * 1000;
 let startQuiet = 0;
 let wasLive = false;
 // ?worddiag=1 in the page's address: one console line as the session goes
@@ -945,8 +947,8 @@ export function stepWords(t, dt) {
     // starts the deterministic slot afresh), and the walk holds below
     wasLive = true;
     liveAt = t;
-    if (WDIAG) console.log('[worddiag] session live, quiet until +' + (START_QUIET_MS / 1000) + 's');
-    startQuiet = t + START_QUIET_MS;
+    if (WDIAG) console.log('[worddiag] session live, quiet until +' + (startQuietMs() / 1000) + 's');
+    startQuiet = t + startQuietMs();
     schedPhase = 0;
     if (restUntil < startQuiet) restUntil = startQuiet;
   }

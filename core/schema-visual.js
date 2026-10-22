@@ -1280,6 +1280,18 @@ export const VISUAL_CONTROLS = [
     set: (S, pos) => { S.textDwellVar = pos / 100; save(); },
     formatAt: pos => pos + '%'
   },
+  {
+    // How long after the experience starts (play pressed, or the text layer
+    // switched on) before the first word may appear (core/words.js). Every
+    // source waits it out: the roll, the shared walk and Breath alike.
+    id: 'textFirstDelay', section: 'text', label: 'First text delay', kind: 'slider',
+    summaryLabel: 'First',
+    parent: 'textRateDrawer',
+    min: 0, max: 60, step: 0.5, def: 5,
+    get: S => S.textFirstDelay,
+    set: (S, pos) => { S.textFirstDelay = pos; save(); },
+    formatAt: pos => pos + ' s'
+  },
   subDrawer('textFadesDrawer', 'Fades', 'text', ['textFadeIn', 'textFadeOut']),
   {
     // Phrases only (affirmations or custom). When a block's lines arrive or leave one after

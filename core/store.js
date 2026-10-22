@@ -412,7 +412,8 @@ function wordFxStateOf(s) {
               textGatherSweep: s.textGatherSweep, textGatherSweepOut: s.textGatherSweepOut,
               textFadeInOn: s.textFadeInOn, textFadeOutOn: s.textFadeOutOn,
               textCustomText: typeof s.textCustomText === 'string' ? s.textCustomText : '',
-              textPhraseGap: s.textPhraseGap, textBreathDelay: s.textBreathDelay };
+              textPhraseGap: s.textPhraseGap, textBreathDelay: s.textBreathDelay,
+              textFirstDelay: s.textFirstDelay };
   for (const k of WORD_FX_NUMS) o[k] = s[k];
   return o;
 }
@@ -445,6 +446,8 @@ function applyWordFxState(s, x) {
   if (Number.isFinite(x.textPhraseGap)) s.textPhraseGap = x.textPhraseGap < 0 ? -1 : Math.min(30, x.textPhraseGap);
   // Breath's Appearance delay: seconds, 0 to 10.
   if (Number.isFinite(x.textBreathDelay)) s.textBreathDelay = Math.max(0, Math.min(10, x.textBreathDelay));
+  // First text delay: seconds, 0 to 60.
+  if (Number.isFinite(x.textFirstDelay)) s.textFirstDelay = Math.max(0, Math.min(60, x.textFirstDelay));
   for (const k of WORD_FX_SIDED) if (!Number.isFinite(x[k + 'Out']) && Number.isFinite(x[k])) s[k + 'Out'] = x[k];
   for (const k of WORD_FX_NUMS) if (Number.isFinite(x[k])) s[k] = x[k];
 }
