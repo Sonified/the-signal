@@ -68,6 +68,12 @@ import { createOutputGuard } from '../core/output-guard.js';
 const COMP_KNEE_DB = 30, COMP_TC = 0.05;
 const COMP_THRESHOLD_DB = -24, COMP_RATIO = 3, COMP_ATTACK_MS = 3, COMP_RELEASE_MS = 250;
 
+// The input's own highpass, ahead of the compressor so rumble and handling
+// noise neither pump it nor reach the broadcast. At its floor (20 Hz) it is
+// out of the way. Butterworth (Q 0.707 linear is -3.01 dB, as in
+// core/global-filter.js), gliding to each move.
+const HPF_MIN_HZ = 20, HPF_MAX_HZ = 500, HPF_Q_DB = -3.01, HPF_TC = 0.05;
+
 // The room. The shared music room (js/piano.js) would be the natural home,
 // the way the drone and the sequencer feed it with a share slider each, but
 // it lives in the main context, exists only while the piano's graph is
@@ -147,6 +153,7 @@ const latencyMs = () => Math.max(0, Math.min(LATENCY_MAX_MS, Math.round(S.liveLa
 // range, with the programmed default standing in for anything unreadable.
 const within = (v, lo, hi, def) => Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def;
 const roomSec = () => within(S.liveRevTime, ROOM_MIN_S, ROOM_MAX_S, ROOM_S);
+const hpfHz = () => within(S.liveHpf, HPF_MIN_HZ, HPF_MAX_HZ, HPF_MIN_HZ);
 const compThreshold = () => within(S.liveThreshold, -60, 0, COMP_THRESHOLD_DB);
 const compRatio = () => within(S.liveRatio, 1, 20, COMP_RATIO);
 const compAttack = () => within(S.liveAttack, 0, 100, COMP_ATTACK_MS) / 1000;
@@ -168,12 +175,17 @@ function makeGraph() {
   }
   // A new context starts from whatever the drawer holds now, the compressor
   // and the room's length alike, so a latency rebuild changes nothing else.
+  const hpf = ctx.createBiquadFilter();
+  hpf.type = 'highpass';
+  hpf.Q.value = HPF_Q_DB;
+  hpf.frequency.value = hpfHz();
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = compThreshold();
   comp.knee.value = COMP_KNEE_DB;
   comp.ratio.value = compRatio();
   comp.attack.value = compAttack();
   comp.release.value = compRelease();
+  hpf.connect(comp);
   // the designed sound: the dry side and the room's return, crossed by the mix
   const m = mixOf();
   const dry = ctx.createGain(), wet = ctx.createGain();
@@ -199,7 +211,7 @@ function makeGraph() {
   // guard.js), last before the speakers as on every output; the broadcast
   // tap, above it all, is left unlimited
   const guard = createOutputGuard(ctx);
-  const g = { ctx, ms, comp, dry, wet, room, voice, level, gate, gf, guard, tap: null, gateTo: monitorGate(), poll: null };
+  const g = { ctx, ms, hpf, comp, dry, wet, room, voice, level, gate, gf, guard, tap: null, gateTo: monitorGate(), poll: null };
   gate.gain.value = g.gateTo;
   voice.connect(level);
   level.connect(gate);
@@ -274,7 +286,7 @@ function attach(stream) {
   g.channelInterpretation = 'speakers';
   g.gain.value = 0;
   src.connect(g);
-  g.connect(graph.comp);
+  g.connect(graph.hpf);
   g.gain.setTargetAtTime(1, ctx.currentTime, FADE_TC);
   wake(ctx);
   return { stream, src, g, ctx };
@@ -455,6 +467,9 @@ export function applyLiveDevice() {
 }
 export function applyLiveLevel() {
   if (graph) graph.level.gain.setTargetAtTime(monitorLevel(), graph.ctx.currentTime, MOVE_TC);
+}
+export function applyLiveHpf() {
+  if (graph) graph.hpf.frequency.setTargetAtTime(hpfHz(), graph.ctx.currentTime, HPF_TC);
 }
 export function applyLiveReverb() {
   if (!graph) return;

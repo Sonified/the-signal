@@ -818,13 +818,13 @@ function writeKeysNow() {
 const LIVE_KEY = 'signal.v1.live';
 export function saveLive() {
   saveKey(LIVE_KEY, { liveDevice: S.liveDevice, liveLevel: S.liveLevel, liveReverb: S.liveReverb, musLive: S.musLive,
-                      liveLatency: S.liveLatency, liveRevTime: S.liveRevTime,
+                      liveLatency: S.liveLatency, liveRevTime: S.liveRevTime, liveHpf: S.liveHpf,
                       liveThreshold: S.liveThreshold, liveRatio: S.liveRatio,
                       liveAttack: S.liveAttack, liveRelease: S.liveRelease });
 }
 // Each held to its slider's range (core/schema-audio.js), as read back.
 const LIVE_RANGES = {
-  liveRevTime: [0.5, 8], liveThreshold: [-60, 0], liveRatio: [1, 20],
+  liveRevTime: [0.5, 8], liveHpf: [20, 500], liveThreshold: [-60, 0], liveRatio: [1, 20],
   liveAttack: [0, 100], liveRelease: [10, 1000]
 };
 function loadLive() {

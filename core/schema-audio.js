@@ -36,7 +36,7 @@ import { applyMixGates } from '../js/mixgate.js';
 import { MUSIC_LAYERS, applyLayerOn, applyLayerVol } from '../js/layers.js';
 import { layerOnKey, layerVolKey, layerMixId, layerDrawerId } from '../js/layer-defs.js';
 import {
-  applyLiveOn, applyLiveDevice, applyLiveLevel, applyLiveReverb, applyLiveLatency,
+  applyLiveOn, applyLiveDevice, applyLiveLevel, applyLiveHpf, applyLiveReverb, applyLiveLatency,
   applyLiveRevTime, applyLiveComp, liveLatencyNow, liveReductionNow, liveInputs
 } from '../js/livesound.js';
 import { startDrift, stopDrift } from './atmosphere.js';
@@ -1817,6 +1817,15 @@ const liveControls = [
     get: s => Math.round(s.liveLevel * 100),
     set: (s, pos) => { s.liveLevel = pos / 100; applyLiveLevel(); saveLive(); },
     formatAt: pos => pos + '%',
+  },
+  {
+    // The input's own highpass, ahead of the compressor, so it also shapes
+    // what the broadcast hears. At 20 Hz it is out of the way.
+    id: 'liveHpf', section: 'live', label: 'Highpass', kind: 'slider',
+    min: 20, max: 500, step: 1, def: 20, taper: 'log',
+    get: s => Math.round(s.liveHpf),
+    set: (s, pos) => { s.liveHpf = pos; applyLiveHpf(); saveLive(); },
+    formatAt: pos => pos <= 20 ? 'off' : Math.round(pos) + ' Hz',
   },
   {
     // The Music window's trim, as musAmb is the ambience's: 100% plays
