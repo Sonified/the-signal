@@ -28,7 +28,12 @@ let holds = 0;
 // main.js hands over what a wake does, once the engine exists.
 export function setIdleWaker(fn) { waker = fn; }
 
-export function idleWake(why) { if (waker) waker(why); }
+export function idleWake(why) { if (waker && !muted) waker(why); }
+
+// A held follower's still frame (core/broadcast.js) takes the stream's
+// changes without the loop waking to draw them: while muted, wakes are let go.
+let muted = false;
+export function idleMute(on) { muted = !!on; }
 
 export function idleHold() { holds++; }
 export function idleRelease(why) {

@@ -67,7 +67,7 @@ import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfter
 import { idleTouch } from './js/idle-ahead.js';
 import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionRemaining } from './core/presets.js';
 import { seedFactoryPresets } from './platform/factory-presets.js';
-import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer } from './core/broadcast.js';
+import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
 import { initShowRemote } from './platform/show-remote.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
@@ -110,6 +110,30 @@ import { stepMixGates, mixGatesBusy } from './js/mixgate.js';
 // The tap is also a join into a stream already flashing under the gate, so
 // the strobe's contrast ramps in from nothing as the gate lifts
 // (core/wake.js).
+const JOIN_FADE_MS = 1500;
+
+// A copy of what the canvas shows now, laid over it, or null when the browser
+// will not give one (the join then simply starts, without the fade).
+function copyStillFrame() {
+  try {
+    const cv = document.getElementById('v1');
+    if (!cv || !cv.width || !cv.height) return null;
+    const c = document.createElement('canvas');
+    c.width = cv.width; c.height = cv.height;
+    c.getContext('2d').drawImage(cv, 0, 0);
+    c.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:500;pointer-events:none;' +
+      'opacity:1;transition:opacity ' + JOIN_FADE_MS + 'ms ease';
+    document.body.appendChild(c);
+    return c;
+  } catch (e) { return null; }
+}
+
+function fadeStillFrame(c) {
+  // two frames on, so the live stream's first frame is under it before it thins
+  requestAnimationFrame(() => requestAnimationFrame(() => { c.style.opacity = '0'; }));
+  setTimeout(() => c.remove(), JOIN_FADE_MS + 300);
+}
+
 if (!host.worker && typeof document !== 'undefined') {
   const followAudioGate = document.getElementById('follow-audio-gate');
   if (followAudioGate) {
@@ -117,12 +141,19 @@ if (!host.worker && typeof document !== 'undefined') {
       e.preventDefault();
       e.stopPropagation();
       gentleResume();
+      // The gate lifts off a still frame: the canvas holds the scene the
+      // stream was in when it came up, and a copy of it fades out over the
+      // live stream as that starts, so the join is a crossfade, not a cut.
+      const still = copyStillFrame();
       followAudioGate.classList.add('done');
       warmDevice();
       audioOn();
       // the broadcaster's live sound plays from a media element, which this
       // same gesture lets play (platform/live-media.js)
       unlockLiveAudio();
+      // the stream's own run flag, held until now (core/broadcast.js)
+      followJoin();
+      if (still) fadeStillFrame(still);
       setTimeout(() => followAudioGate.remove(), 650);
     };
     followAudioGate.addEventListener('pointerdown', unlockFollowerAudio, { once: true });
@@ -295,6 +326,7 @@ async function boot() {
   // opens (core/broadcast.js followMayStart); a stop always goes through.
   // The broadcast's own run flag lands through flipRun, which asks nothing.
   function toggleRun() {
+    if (followHeld()) return;   // nothing starts before the join tap
     if (!S.running && !followMayStart()) return;
     flipRun();
   }
@@ -440,7 +472,11 @@ async function boot() {
   let finishRemoteFrame = null;
   if (!inWorker) {
     const bIntent = broadcastUrlIntent();
-    if (bIntent && bIntent.follow) setOverlayFollow();
+    if (bIntent && bIntent.follow) {
+      setOverlayFollow();
+      // the join gate (index.html) holds the stream's start until its tap
+      if (document.getElementById('follow-audio-gate')) holdFollowJoin();
+    }
     initBroadcast(
       { intent: bIntent, open: openBroadcastSocket, followUrl: makeFollowUrl,
         // the live sound's recorder and player (core/live-audio.js)
@@ -490,7 +526,7 @@ async function boot() {
   // mode wakes on its page thread the same way (core/audio-shell.js wake).
   if (!inWorker && platform.setAudioWake) {
     platform.setAudioWake(() => {
-      if (audioWoken) return;
+      if (audioWoken || followHeld()) return;
       audioWoken = true;
       warmDevice();
       if (S.audioOnBoot !== false && !S.audioEnabled) audioOn();
@@ -778,7 +814,7 @@ async function boot() {
       // The backstop wake: the real one ran inside the gesture's own event
       // handler (setAudioWake above; in worker mode the page's shell.wake),
       // so this only fires on a platform without the handler hook.
-      if (!audioWoken && !inWorker && (e.type === 'down' || e.type === 'key')) {
+      if (!audioWoken && !inWorker && !followHeld() && (e.type === 'down' || e.type === 'key')) {
         audioWoken = true;
         warmDevice();
         if (S.audioOnBoot !== false && !S.audioEnabled) audioOn();

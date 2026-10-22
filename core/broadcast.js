@@ -55,7 +55,7 @@
 // the drawer's list survives a reload, and a session left active reconnects
 // at boot: a demo survives the broadcaster's page refresh.
 import { S } from '../js/state.js';
-import { idleWake } from './idle.js';
+import { idleWake, idleMute } from './idle.js';
 import { onSave, wireSettings, readKey, saveKey } from './store.js';
 import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl, recallStreamScene } from './presets.js';
 import { idleTouch } from '../js/idle-ahead.js';
@@ -598,7 +598,8 @@ function applyFollowed(snap, sec, hold) {
   // an audio touch before the state's commands (js/idle-ahead.js)
   idleTouch('a followed broadcast');
   followApplying = true;
-  try { replayHolding(snap, sec, hold || (strobeOwn ? STROBE_IDS : null)); } finally { followApplying = false; }
+  idleMute(followStill());
+  try { replayHolding(snap, sec, hold || (strobeOwn ? STROBE_IDS : null)); } finally { followApplying = false; idleMute(false); }
 }
 
 // The glides a state message named (its `tw`, see sendNow), each set going
@@ -668,6 +669,32 @@ export function followStrobeSync() {
   if (lastTw) takeGlides(lastTw, (hooks.now() - lastTwBase) / 1000);
 }
 
+// ---------- The join ----------
+// A stream link opens on a gate that asks for a tap (index.html, main.js).
+// Until that tap nothing plays: the settings still land, so the scene is the
+// stream's, but the run flag is only remembered, which keeps the strobe and
+// the sound off, and the frame loop rests on the first scene that has landed
+// (followStill), a still frame, without waking for the messages after it.
+// The tap (followJoin) applies the remembered flag as the first message of a
+// join would, and main.js fades the still frame out under the live stream.
+// Never saved. The tap can come before the module that asks for the hold has
+// run; joined remembers it, so a hold asked for afterwards never starts.
+let joinHold = false, joined = false, joinSeen = false;
+
+export function holdFollowJoin() { if (!joined) joinHold = true; }
+export function followHeld() { return joinHold; }
+// The held follower has a scene to show: the loop may rest on it, and a
+// later message must not wake the loop to redraw it.
+export function followStill() { return joinHold && joinSeen; }
+
+export function followJoin() {
+  joined = true;
+  if (!joinHold) return;
+  joinHold = false;
+  if (followRun === 1 && hooks.setRunning) hooks.setRunning(true);
+  idleWake('joining the stream');
+}
+
 // ---------- Open and Event ----------
 // The run flag arrives on every state message, and a state message goes out
 // on every settings change, so applying it each time undid a follower's own
@@ -707,6 +734,8 @@ function eventHolds() {
 
 function takeRun(run) {
   const r = run ? 1 : 0;
+  // Before the join tap the flag is only remembered (see The join below).
+  if (joinHold) { followRun = r; return; }
   if (hooks.setRunning && (followRun < 0 || r !== followRun || (!run && eventHolds()))) hooks.setRunning(run);
   followRun = r;
 }
@@ -1075,7 +1104,7 @@ export function initBroadcast(bits_, hooks_) {
         // A follower paused and at rest still takes the room's state, so a
         // resume shows the current truth; the loop wakes to draw it and
         // rests again once it is still (core/idle.js, main.js).
-        idleWake('broadcast');
+        if (!followStill()) idleWake('broadcast');
         if (msg.t === 'state' && msg.snap && typeof msg.snap === 'object') {
           // Deadline alignment (see sendNow): a message carrying a recall
           // says how long its glide was; this side runs what the network
@@ -1093,6 +1122,7 @@ export function initBroadcast(bits_, hooks_) {
           // it); the rest lands as always. Kept for the sync chip.
           lastSnap = msg.snap;
           applyFollowed(msg.snap, sec);
+          joinSeen = true;
           // Then the glides it names, over what the network left of each
           // (see takeGlides); kept, with when they were counted from, for
           // the sync chip. None named means none in flight.
