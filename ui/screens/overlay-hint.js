@@ -17,7 +17,7 @@ const HINT_SUB = new Float32Array([1, 1, 1, 1]);
 
 // On a touch screen the hints are two lines in the whole app and nothing
 // else: 'Tap to begin' before the first start, 'Tap to resume' once a
-// session has run. The keyboard lines (HINT_2, HINT_3) never draw there.
+// session has run. The keyboard line (HINT_2) never draws there.
 // A follower tab draws no canvas hint at all: the DOM join gate in
 // index.html ('Tap to join the live stream') is the one prompt on a
 // stream link, so nothing stacks behind it.
@@ -29,7 +29,6 @@ export function setOverlayTouch(coarse) { touchHints = coarse; }
 export function setOverlayFollow() { followTab = true; }
 export function noteRun() { everRan = true; }
 const HINT_2 = 'press the “~” key for settings  ·  press ENTER for full screen';
-const HINT_3 = 'T for words  ·  C for color';
 
 // The hint's own backing: the word's shadow and panel, through the same
 // helpers, at fixed values that mirror Robert's tuned Text > Shadow and
@@ -116,11 +115,11 @@ function hintMeasureFx(i, n, relX, relY, wordW, size, out) {
 
 // The hint's lines as its draw calls below lay them: offset under the
 // middle, size, weight, tracking. Only the backing reads these.
-const HINT_DY = [4, 34, 52];
-const HINT_SIZE = [TYPE.xl, TYPE.sm, TYPE.sm];
-const HINT_WEIGHT = [W.light, W.regular, W.regular];
-const HINT_TRACK = [TRACK.hint, TRACK.label, TRACK.label];
-function hintLine(k) { return k === 0 ? HINT_1 : k === 1 ? HINT_2 : HINT_3; }
+const HINT_DY = [4, 34];
+const HINT_SIZE = [TYPE.xl, TYPE.sm];
+const HINT_WEIGHT = [W.light, W.regular];
+const HINT_TRACK = [TRACK.hint, TRACK.label];
+function hintLine(k) { return k === 0 ? HINT_1 : HINT_2; }
 
 // The hint's backing, under its letters: a pill per line, then the shadow,
 // each a drawWord pass through fx at level, the very walk the letters take
@@ -136,7 +135,7 @@ function drawHintBacking(dl, text, cx, cy, fx, level) {
   // Only the main line is backed: the small grey keyboard lines read
   // better bare, a dark backing only muddies them. They still bound the
   // main line's pill, so it never spreads down over them.
-  const lines = touchHints ? 1 : 3, n = 1;
+  const lines = touchHints ? 1 : 2, n = 1;
   // During the sweep in the pill is tied to the hint's own appearance: its
   // strength rises over the very Hint fade in the letters take (the
   // envelope's own 100 ms would stand it up dark before them), and its box
@@ -181,7 +180,6 @@ function beginHintIn(text, cx, cy, t) {
   let ok = text.layoutWord(HINT_1, cx, cy + 4, TYPE.xl, W.light, TRACK.hint, rec, false);
   if (!touchHints) {
     ok = text.layoutWord(HINT_2, cx, cy + 34, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
-    ok = text.layoutWord(HINT_3, cx, cy + 52, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
   }
   if (!ok) return;
   let x0 = Infinity, x1 = -Infinity;
@@ -218,7 +216,6 @@ export function hintToSmoke(text, cx, cy, t) {
   const nMain = rec.count;
   if (!touchHints) {
     ok = text.layoutWord(HINT_2, cx, cy + 34, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
-    ok = text.layoutWord(HINT_3, cx, cy + 52, TYPE.sm, W.regular, TRACK.label, rec, true) && ok;
   }
   if (!ok) return;
   for (let j = nMain; j < rec.count; j++) rec.data[j * 12 + 9] = 1;
@@ -299,7 +296,6 @@ export function drawHint(dl, text, cx, cy) {
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, relPeak, relFx, null);
       if (!touchHints) {
         text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, TRACK.label, relPeak, relFx, null);
-        text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, HINT_SUB, TRACK.label, relPeak, relFx, null);
       }
     }
   } else if (h > 0.002 && hintInAt >= 0) {
@@ -308,7 +304,6 @@ export function drawHint(dl, text, cx, cy) {
       text.drawWord(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, TRACK.hint, h, hintFx, null);
       if (!touchHints) {
         text.drawWord(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, TRACK.label, h, hintFx, null);
-        text.drawWord(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, HINT_SUB, TRACK.label, h, hintFx, null);
       }
     } else {
       const level = h * (hintIn ? smooth01(hintP) : 1);
@@ -317,7 +312,6 @@ export function drawHint(dl, text, cx, cy) {
       text.draw(dl, HINT_1, cx, cy + 4, TYPE.xl, W.light, HINT_MAIN, 1, TRACK.hint, 1);
       if (!touchHints) {
         text.draw(dl, HINT_2, cx, cy + 34, TYPE.sm, W.regular, HINT_SUB, 1, TRACK.label, 1);
-        text.draw(dl, HINT_3, cx, cy + 52, TYPE.sm, W.regular, HINT_SUB, 1, TRACK.label, 1);
       }
       dl.popAlpha();
     }
