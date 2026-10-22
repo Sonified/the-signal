@@ -818,7 +818,7 @@ function writeKeysNow() {
 const LIVE_KEY = 'signal.v1.live';
 export function saveLive() {
   saveKey(LIVE_KEY, { liveDevice: S.liveDevice, liveLevel: S.liveLevel, liveReverb: S.liveReverb, musLive: S.musLive,
-                      liveLatency: S.liveLatency, liveRevTime: S.liveRevTime, liveHpf: S.liveHpf, liveStrobeAm: S.liveStrobeAm,
+                      liveLatency: S.liveLatency, liveRevTime: S.liveRevTime, liveHpf: S.liveHpf, liveHpfSlope: S.liveHpfSlope, liveStrobeAm: S.liveStrobeAm,
                       liveThreshold: S.liveThreshold, liveRatio: S.liveRatio,
                       liveAttack: S.liveAttack, liveRelease: S.liveRelease });
 }
@@ -835,6 +835,7 @@ function loadLive() {
   for (const k of ['liveLevel', 'liveReverb', 'musLive', 'liveStrobeAm']) {
     if (typeof x[k] === 'number' && Number.isFinite(x[k])) S[k] = Math.max(0, Math.min(1, x[k]));
   }
+  if (x.liveHpfSlope === 6 || x.liveHpfSlope === 12) S.liveHpfSlope = x.liveHpfSlope;
   // the buffer asked of the input's own context, in ms (0 is the least)
   if (typeof x.liveLatency === 'number' && Number.isFinite(x.liveLatency)) {
     S.liveLatency = Math.max(0, Math.min(100, Math.round(x.liveLatency)));

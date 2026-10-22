@@ -66,6 +66,14 @@ export function pipDipRead() {
 // this module rather than the document so it keeps working from a subpath.
 export const WORKLET_URL = new URL('./worklet.js', import.meta.url).href;
 window.__WORKLET_URL = WORKLET_URL;   // exposed so tests can render it offline
+// The engine's module in a context of someone else's (Live Sound's, js/strobe-am.js),
+// loaded once for each.
+const workletIn = new WeakMap();
+export function loadWorkletInto(ctx) {
+  let p = workletIn.get(ctx);
+  if (!p) { p = ctx.audioWorklet.addModule(WORKLET_URL); workletIn.set(ctx, p); }
+  return p;
+}
 // The master room's algorithmic reverb (fdn-worklet.js, js/room.js).
 const FDN_URL = new URL('./fdn-worklet.js', import.meta.url).href;
 

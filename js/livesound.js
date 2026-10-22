@@ -42,7 +42,7 @@
 // through liveFromPage, and how hard the compressor is working through
 // liveGrFromPage, by way of platform/worker-bridge.js and worker-entry.js.
 import { S } from './state.js';
-import { createRoom, swapRoom } from './audio.js';
+import { createRoom, swapRoom, loadWorkletInto } from './audio.js';
 import { strobeAm, forgetStrobeContext } from './strobe-am.js';
 import { setLiveCapturing, idleRefresh } from './idle-ahead.js';
 import { setAudioSessionRecording } from './background.js';
@@ -74,6 +74,12 @@ const COMP_THRESHOLD_DB = -24, COMP_RATIO = 3, COMP_ATTACK_MS = 3, COMP_RELEASE_
 // out of the way. Butterworth (Q 0.707 linear is -3.01 dB, as in
 // core/global-filter.js), gliding to each move.
 const HPF_MIN_HZ = 20, HPF_MAX_HZ = 1000, HPF_Q_DB = -3.01, HPF_TC = 0.05;
+// Its rolloff is 12 dB an octave (that biquad) or 6 (the signal less its own
+// one-pole lowpass, the 'one-pole' processor, as js/room.js's reverb high-pass
+// has it). Both are tuned at once and the choice crossfades, so a switch never
+// clicks; the 6 is built once the context has the worklet module, and 12
+// plays until it is there.
+const HPF_XF_TC = 0.03;
 
 // The room. The shared music room (js/piano.js) would be the natural home,
 // the way the drone and the sequencer feed it with a share slider each, but
@@ -154,6 +160,7 @@ const latencyMs = () => Math.max(0, Math.min(LATENCY_MAX_MS, Math.round(S.liveLa
 // range, with the programmed default standing in for anything unreadable.
 const within = (v, lo, hi, def) => Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def;
 const roomSec = () => within(S.liveRevTime, ROOM_MIN_S, ROOM_MAX_S, ROOM_S);
+const hpfSix = () => S.liveHpfSlope === 6;
 const hpfHz = () => within(S.liveHpf, HPF_MIN_HZ, HPF_MAX_HZ, HPF_MIN_HZ);
 const compThreshold = () => within(S.liveThreshold, -60, 0, COMP_THRESHOLD_DB);
 const compRatio = () => within(S.liveRatio, 1, 20, COMP_RATIO);
@@ -176,17 +183,23 @@ function makeGraph() {
   }
   // A new context starts from whatever the drawer holds now, the compressor
   // and the room's length alike, so a latency rebuild changes nothing else.
+  const hpIn = ctx.createGain();
   const hpf = ctx.createBiquadFilter();
   hpf.type = 'highpass';
   hpf.Q.value = HPF_Q_DB;
   hpf.frequency.value = hpfHz();
+  const hp12 = ctx.createGain(), hp6 = ctx.createGain();
+  hp6.gain.value = 0;
+  hpIn.connect(hpf);
+  hpf.connect(hp12);
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = compThreshold();
   comp.knee.value = COMP_KNEE_DB;
   comp.ratio.value = compRatio();
   comp.attack.value = compAttack();
   comp.release.value = compRelease();
-  hpf.connect(comp);
+  hp12.connect(comp);
+  hp6.connect(comp);
   // the designed sound: the dry side and the room's return, crossed by the mix
   const m = mixOf();
   const dry = ctx.createGain(), wet = ctx.createGain();
@@ -217,7 +230,7 @@ function makeGraph() {
   // After the broadcast tap, so a follower, who has a flash of their own,
   // hears no pulse of this one.
   const am = strobeAm(ctx, () => S.liveStrobeAm);
-  const g = { ctx, ms, hpf, am, comp, dry, wet, room, voice, level, gate, gf, guard, tap: null, gateTo: monitorGate(), poll: null };
+  const g = { ctx, ms, hpIn, hpf, hp12, hp6, lp6: null, closed: false, am, comp, dry, wet, room, voice, level, gate, gf, guard, tap: null, gateTo: monitorGate(), poll: null };
   gate.gain.value = g.gateTo;
   voice.connect(am.node);
   am.node.connect(level);
@@ -226,11 +239,30 @@ function makeGraph() {
   gf.output.connect(guard.input);
   guard.output.connect(ctx.destination);
   g.poll = setInterval(() => followGate(g), GATE_POLL_MS);
+  if (hpfSix()) buildHp6(g);
   // The latency is only known for certain once the context is running (the
   // output's share especially), so the worker's readout is told again then.
   ctx.addEventListener('statechange', () => { if (graph === g && ctx.state === 'running') notify(false); });
   wake(ctx);
   return g;
+}
+
+// The 6 dB highpass: the input less its one-pole lowpass at the same corner,
+// into hp6. Built when the module is in; a context closed meanwhile is left.
+function buildHp6(g) {
+  if (g.lp6 || g.hp6Pending) return;
+  g.hp6Pending = true;
+  loadWorkletInto(g.ctx).then(() => {
+    if (g.closed || g.lp6) return;
+    const lp = new AudioWorkletNode(g.ctx, 'one-pole', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    lp.parameters.get('frequency').value = hpfHz();
+    const less = g.ctx.createGain(), sum = g.ctx.createGain();
+    less.gain.value = -1;
+    g.hpIn.connect(sum); g.hpIn.connect(lp); lp.connect(less); less.connect(sum); sum.connect(g.hp6);
+    g.lp6 = lp;
+    if (graph === g) applyLiveHpf();
+  }, e => console.warn('live sound: the 6 dB highpass is unavailable, playing 12 dB', e))
+    .finally(() => { g.hp6Pending = false; });
 }
 
 // A context made inside the switch's click starts at once. One made later
@@ -254,6 +286,7 @@ function followGate(g) {
 // input's tracks are not this function's business.
 function closeGraph(g) {
   clearInterval(g.poll);
+  g.closed = true;
   if (g.gf) g.gf.dispose();
   if (g.guard) g.guard.dispose();
   if (g.am) { g.am.stop(); forgetStrobeContext(g.ctx); }
@@ -294,7 +327,7 @@ function attach(stream) {
   g.channelInterpretation = 'speakers';
   g.gain.value = 0;
   src.connect(g);
-  g.connect(graph.hpf);
+  g.connect(graph.hpIn);
   g.gain.setTargetAtTime(1, ctx.currentTime, FADE_TC);
   wake(ctx);
   return { stream, src, g, ctx };
@@ -477,7 +510,14 @@ export function applyLiveLevel() {
   if (graph) graph.level.gain.setTargetAtTime(monitorLevel(), graph.ctx.currentTime, MOVE_TC);
 }
 export function applyLiveHpf() {
-  if (graph) graph.hpf.frequency.setTargetAtTime(hpfHz(), graph.ctx.currentTime, HPF_TC);
+  if (!graph) return;
+  const g = graph, now = g.ctx.currentTime, six = hpfSix();
+  if (six) buildHp6(g);
+  g.hpf.frequency.setTargetAtTime(hpfHz(), now, HPF_TC);
+  if (g.lp6) g.lp6.parameters.get('frequency').setTargetAtTime(hpfHz(), now, HPF_TC);
+  const use6 = six && !!g.lp6;
+  g.hp12.gain.setTargetAtTime(use6 ? 0 : 1, now, HPF_XF_TC);
+  g.hp6.gain.setTargetAtTime(use6 ? 1 : 0, now, HPF_XF_TC);
 }
 export function applyLiveStrobe() {
   if (graph) graph.am.apply();

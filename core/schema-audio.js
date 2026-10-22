@@ -1828,6 +1828,16 @@ const liveControls = [
     formatAt: pos => pos <= 20 ? 'off' : Math.round(pos) + ' Hz',
   },
   {
+    // The highpass's slope: 12 dB an octave a biquad, 6 the signal less a
+    // one-pole lowpass (the reverb high-pass's, js/room.js). Switches with a
+    // short crossfade.
+    id: 'liveHpfSlope', section: 'live', label: 'Highpass rolloff', kind: 'segment', def: 12,
+    options: [6, 12].map(v => ({ value: v, label: v + ' dB/oct' })),
+    get: s => s.liveHpfSlope === 6 ? 6 : 12,
+    set: (s, v) => { s.liveHpfSlope = +v === 6 ? 6 : 12; applyLiveHpf(); saveLive(); },
+    format: s => (s.liveHpfSlope === 6 ? 6 : 12) + ' dB/oct',
+  },
+  {
     // A volume pulse at the strobe's own flash rate and in its waveform
     // (js/strobe-am.js), on the local monitor only: the broadcast hears no
     // pulse, since its listeners have a flash of their own. 0 is none, 100%

@@ -396,7 +396,7 @@ export const S = {
   // where its programmed values always were: threshold in dB, ratio as N:1,
   // attack and release in ms.
   liveOn: false, liveDevice: '', liveLevel: 0.25, liveReverb: 0.25, musLive: 1, liveLatency: 0,
-  liveRevTime: 3, liveHpf: 20, liveStrobeAm: 0, liveThreshold: -24, liveRatio: 3, liveAttack: 3, liveRelease: 250,
+  liveRevTime: 3, liveHpf: 20, liveHpfSlope: 12, liveStrobeAm: 0, liveThreshold: -24, liveRatio: 3, liveAttack: 3, liveRelease: 250,
   bedDetune: 152,             // which render of the drone plays (audio/music/manifest.json)
   // The drone's two slow sweeps (js/piano.js), the click train's filter sweep
   // again with the drone's own settings. Both off by default, which leaves the

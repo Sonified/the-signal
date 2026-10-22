@@ -36,7 +36,7 @@
 // and the engine hears the formula on the same only-on-change rule, plus
 // once more whenever the link is switched.
 import { S } from './state.js';
-import { getContext, glideParam, watchEngine, WORKLET_URL } from './audio.js';
+import { getContext, glideParam, watchEngine, loadWorkletInto } from './audio.js';
 import { makeWorklet, heartEngine } from './heart/route.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
 import { breath, breathState } from '../core/variance.js';
@@ -120,7 +120,7 @@ function extraOf(ctx) {
   extra.set(ctx, x);
   ctx.addEventListener('statechange', () => { x.est = NaN; });
   try {
-    ctx.audioWorklet.addModule(WORKLET_URL).then(() => { x.ready = true; }, e => console.warn('strobe: worklet failed to load in a second context', e));
+    loadWorkletInto(ctx).then(() => { x.ready = true; }, e => console.warn('strobe: worklet failed to load in a second context', e));
   } catch (e) { console.warn('strobe: worklet failed to load in a second context', e); }
   return x;
 }
