@@ -1313,12 +1313,16 @@ function restCheck() {
 // mode): a resting Heart wakes, and rests again once the hand has been
 // still for REST_QUIET_MS with the master still shut. A pointer move costs
 // a clock read and a store.
-// `type` is the input's kind (main.js, the worker bridge): 'down' and 'key'
-// are touches that skip the idle cushion before their commands; anything
-// else (a move, a wheel) only caps its growth (js/idle-ahead.js).
+// `type` is the input's kind (main.js, the worker bridge). No input skips
+// the idle cushion from here: every path that actually changes sound takes
+// idleTouch itself, before its commands (the transport above, a control's
+// save, the journey, a broadcast, the drawer's audio hover), so a tap or a
+// key that touches nothing audio never splices the cushion — the first tap
+// after the screen comes back used to jump the piece the whole buffer
+// ahead. A bare hand only caps the growth and drains (js/idle-ahead.js).
 export function heartNudge(type) {
   lastNudge = performance.now();
-  if (type === 'down' || type === 'key') idleTouch('a hand'); else idleMove();
+  idleMove();
   const eng = heartEngine();
   if (eng && eng.isResting()) {
     eng.wake();
