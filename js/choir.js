@@ -30,7 +30,7 @@ import { getContext, glideParam } from './audio.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 import { strobeAm } from './strobe-am.js';
-import { inTurn, TURN } from './load-order.js';
+import { inTurn, TURN, fetchBytes } from './load-order.js';
 import { every, clear, walkAhead } from './ticker.js';
 import { breath, breathState, resetBreath, resetBreathLow, variedBy, driveOf } from '../core/variance.js';
 import { signal, signalNow, valueAt } from '../core/signal.js';
@@ -42,6 +42,7 @@ const CHOIR_PARTS = Object.entries(LAH).map(([semi, degree]) => ({
   semi: Number(semi), degree, file: `audio/music/choir/choir-${degree}.opus`
 }));
 const N = CHOIR_PARTS.length;
+export const choirFiles = () => CHOIR_PARTS.map(p => p.file);   // for the fetch ahead (js/audio-prefetch.js)
 const CHOIR_LEVEL = 0.22;
 const CHOIR_DENSITY_RANK = { '1': 0, '8': 1, '5': 2, '3': 3, '2': 4, '7': 5, '9': 6 };
 
@@ -144,9 +145,9 @@ function loopBuffer(ctx, buf) {
   return { buf: out, a: A / sr, b: B / sr };
 }
 
-// Loaded the first time the choir is switched on, not with the piano: a
-// session that never sings never fetches it. Each voice keeps its loop copy.
-// Last in the queue, after the drone, the piano and the clouds
+// Decoded the first time the choir is switched on, not with the piano; the
+// files are fetched at boot (js/audio-prefetch.js). Each voice keeps its loop
+// copy. Last in the queue, after the drone, the piano and the clouds
 // (js/load-order.js).
 const loops = new Map();          // semi -> { buf, a, b }
 let loading = null;
@@ -155,9 +156,7 @@ function loadChoir(ctx) {
   if (loading) return loading;
   loading = inTurn(TURN.choir, () => Promise.all(CHOIR_PARTS.map(async part => {
     if (loops.has(part.semi)) return;
-    const r = await fetch(part.file);
-    if (!r.ok) throw new Error(part.file + ': ' + r.status);
-    loops.set(part.semi, loopBuffer(ctx, await ctx.decodeAudioData(await r.arrayBuffer())));
+    loops.set(part.semi, loopBuffer(ctx, await ctx.decodeAudioData(await fetchBytes(part.file))));
   }))).finally(() => { loading = null; });
   return loading;
 }

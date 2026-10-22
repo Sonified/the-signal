@@ -30,7 +30,7 @@ import { ctxFor, masterFor, parseHeartFlag } from './heart/route.js';
 import { meterTap, tapPeak } from './util.js';
 import { chanGate, onChannelGates } from './mixgate.js';
 import { strobeAm, strobeAmEffective } from './strobe-am.js';
-import { inTurn, TURN } from './load-order.js';
+import { inTurn, TURN, fetchBytes } from './load-order.js';
 import { after, clear } from './ticker.js';
 
 const ROOT = 48;                       // written C3; sounds ~79.5 Hz
@@ -154,9 +154,11 @@ const LOG = (() => {
 // note may be several landing together.
 let voices = 0;
 
-// Loaded on demand rather than at boot, for the same reason the piano is: two
-// megabytes should not be fetched by someone who never turns the music on.
-// In its turn, after the drone and the piano (js/load-order.js).
+// Decoded on demand, as the piano is; the files are fetched at boot
+// (js/audio-prefetch.js). In its turn, after the drone and the piano
+// (js/load-order.js).
+const cloudFile = sm => `audio/music/clouds/clouds-${NAMES[sm]}.opus`;
+export const cloudFiles = () => PADS.map(cloudFile);   // for the fetch ahead (js/audio-prefetch.js)
 export function loadClouds() {
   if (loading) return loading;
   // Decoding is native on either engine (a Heart context forwards it), so
@@ -164,9 +166,8 @@ export function loadClouds() {
   const ctx = familyCtx();
   if (!ctx || !canOpus) return Promise.resolve(false);
   loading = inTurn(TURN.clouds, async () => {
-    const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
-    await Promise.all(PADS.map(async sm =>
-      pads.set(sm, await get(`audio/music/clouds/clouds-${NAMES[sm]}.opus`))));
+    const get = async u => ctx.decodeAudioData(await fetchBytes(u));
+    await Promise.all(PADS.map(async sm => pads.set(sm, await get(cloudFile(sm)))));
     // Under the flag, a graph built before the engine has started would be
     // built natively and stay there (route.js), so it waits for the audio
     // graph, which starts the engine, to be done.

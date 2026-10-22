@@ -17,7 +17,7 @@ import { setLayerBus, layersSession } from './layers.js';
 import { setCloudBus } from './clouds.js';
 import { strobeAm, strobeTap, untapStrobe } from './strobe-am.js';
 import { scaledStrobeDepth } from './strobe-scale.js';
-import { inTurn, TURN } from './load-order.js';
+import { inTurn, TURN, fetchBytes } from './load-order.js';
 import { every, after, clear, walkAhead } from './ticker.js';
 import { breath, breathPhase, breathState, resetBreath, variedBy, driveOf } from '../core/variance.js';
 import { signal, signalNow, valueAt } from '../core/signal.js';
@@ -87,7 +87,7 @@ const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
 const bedLevel = () => S.bedVol * (1 - bedVolDip) * perfTrim(S.musDrone ?? 1);
 const arpLevel = () => S.arpVol * (1 - effArpVolDepth) * perfTrim(S.musArp ?? 1);
 
-const canOpus = (() => {
+export const canOpus = (() => {
   const a = new Audio();
   return a.canPlayType('audio/ogg; codecs=opus') !== ''
       || a.canPlayType('audio/webm; codecs=opus') !== '';
@@ -103,10 +103,24 @@ const canOpus = (() => {
 // known-ussues.md).
 const reachableSamples = () => [...new Set(SCALE.map(n => nearest(n - ROOT)))];
 
-// Loaded on demand rather than at boot: three megabytes should not be fetched
-// by someone who never turns the music on. The drone's file downloads first,
-// then the notes (js/load-order.js); nothing is ready, and nothing plays,
-// until both are in.
+// Decoded on demand: the audio context waits for the first gesture. The
+// files themselves are fetched at boot (js/audio-prefetch.js) and taken from
+// there (js/load-order.js fetchBytes), so the gesture finds them local. The
+// drone's file downloads first, then the notes; nothing is ready, and
+// nothing plays, until both are in.
+const pianoNoteFile = s => `audio/piano/lekko-${String(s).padStart(2,'0')}.opus`;
+const pianoReleaseFile = i => `audio/piano/releases/release-${String(i).padStart(2,'0')}.opus`;
+// Every file loadPiano will fetch, and the drone's, for the fetch ahead
+// (js/audio-prefetch.js).
+export const pianoFiles = () => [
+  ...reachableSamples().map(pianoNoteFile),
+  ...Array.from({ length: RELEASES }, (_, i) => pianoReleaseFile(i))
+];
+export async function droneFile() {
+  const meta = bedMeta || await (await fetch('audio/music/manifest.json')).json();
+  const v = meta.versions.find(x => x.id === S.bedDetune) || meta.versions[0];
+  return `audio/music/${v.file}.opus`;
+}
 export function loadPiano() {
   if (loading) return loading;
   const ctx = getContext();
@@ -114,12 +128,12 @@ export function loadPiano() {
   loading = (async () => {
     const drone = loadDrone();
     await inTurn(TURN.piano, async () => {
-      const get = async u => ctx.decodeAudioData(await (await fetch(u)).arrayBuffer());
+      const get = async u => ctx.decodeAudioData(await fetchBytes(u));
       await Promise.all([
         ...reachableSamples().map(async s =>
-          notes.set(s, await get(`audio/piano/lekko-${String(s).padStart(2,'0')}.opus`))),
+          notes.set(s, await get(pianoNoteFile(s)))),
         ...Array.from({ length: RELEASES }, async (_, i) => {
-          lifts[i] = await get(`audio/piano/releases/release-${String(i).padStart(2,'0')}.opus`);
+          lifts[i] = await get(pianoReleaseFile(i));
         })
       ]);
     });
@@ -1013,8 +1027,7 @@ function bedVersion(id) {
 function bedBuffer(id) {
   const v = bedVersion(id);
   if (!bedBuffers.has(v.id)) {
-    const p = fetch(`audio/music/${v.file}.opus`)
-      .then(r => r.arrayBuffer())
+    const p = fetchBytes(`audio/music/${v.file}.opus`)
       .then(b => getContext().decodeAudioData(b));
     // a failed load is forgotten, so choosing it again tries again
     p.catch(() => bedBuffers.delete(v.id));

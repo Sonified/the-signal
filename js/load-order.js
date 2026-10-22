@@ -26,6 +26,37 @@ async function waitTurn(turn) {
   }
 }
 
+// ---------- bytes fetched ahead ----------
+// The recordings are fetched at boot, before anyone has pressed a key, in the
+// same turns (js/audio-prefetch.js), and held here as raw bytes, not decoded:
+// decoding needs the audio context, which waits for the first gesture. A
+// loader asks fetchBytes(url) instead of fetching: it takes the held bytes
+// (or the fetch still under way for them) once, or fetches afresh when there
+// are none or the prefetch failed. Each entry is taken once, since decoding
+// detaches the buffer, and a url a loader has already taken is not fetched
+// ahead again.
+const held = new Map();
+const taken = new Set();
+async function fetchBuffer(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ': ' + r.status);
+  return r.arrayBuffer();
+}
+export function prefetchBytes(url) {
+  if (taken.has(url) || held.has(url)) return held.get(url) || Promise.resolve();
+  const p = fetchBuffer(url);
+  p.catch(() => {});        // a failure is the loader's to meet, by fetching afresh
+  held.set(url, p);
+  return p;
+}
+export function fetchBytes(url) {
+  taken.add(url);
+  const p = held.get(url);
+  if (!p) return fetchBuffer(url);
+  held.delete(url);
+  return p.catch(() => fetchBuffer(url));
+}
+
 // Runs job (an async function doing the fetches) when its turn comes, and
 // returns its promise. A failed job frees its turn just as a finished one does.
 export function inTurn(turn, job) {

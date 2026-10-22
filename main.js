@@ -23,6 +23,7 @@ import { S, STORE } from './js/state.js';
 import { seedParticles, seedTunnel } from './js/sim.js';
 import { setColorFromPicker } from './js/color.js';
 import { ensureAudioGraph, warmDevice, audioOn, heartNudge, heartRestInfo } from './js/audio.js';
+import { prefetchMusic } from './js/audio-prefetch.js';
 import { setMediaTransport } from './js/background.js';
 import { noteHandheld } from './js/handheld.js';
 import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from './js/panel-guard.js';
@@ -1037,4 +1038,8 @@ async function boot() {
   // the first reads it back from the browser's saved copy (platform
   // loadImageBaked).
   kaleidoPreload();
+  // The music's recordings too, in the audio's own order: nothing here needs
+  // a gesture, so they are local before anyone presses a key
+  // (js/audio-prefetch.js; a no-op in the engine's worker).
+  prefetchMusic();
 }
