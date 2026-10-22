@@ -471,6 +471,167 @@ export function createText(device, platform) {
     return width;
   }
 
+  // ---- the one letter walk ----
+  // Four passes iterate a string's letters: draw (a UI label), drawWord
+  // (the centre word, with its transitions, backings and recordings),
+  // eachLetter (a backing's measure) and layoutWord (a recording's layout).
+  // They all step the same way — code points decoded, surrogate pairs
+  // included, each rasterised glyph's quad snapped to physical pixels, the
+  // pen advanced by the glyph's advance plus tracking — so that walk lives
+  // here once. visit(ctx, li, code, sgx, sgy, gw, gh, u0, v0, u1, v1) is
+  // called for each glyph with ink whose atlas cell is ready; a letter
+  // still waiting on the rasteriser is skipped and turns the return value
+  // false, for the caller (layoutWord) that must try again next frame. ctx
+  // is the caller's own reusable record, filled before the call and cleared
+  // after, so a frame's walks never allocate.
+  function walkLetters(wi, scale, spacingPx, str, startX, sy, dpr, visit, ctx) {
+    let penX = startX, i = 0, li = 0, ready = true;
+    const len = str.length;
+    while (i < len) {
+      let code = str.charCodeAt(i);
+      let step = 1;
+      if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
+        const c2 = str.charCodeAt(i + 1);
+        if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
+      }
+      const status = needGlyph(wi, code);
+      const adv = readAdvance(wi, code);
+      if (status !== 2) { ready = false; }
+      else {
+        let u0, v0, u1, v1, ox, oy, qw, qh;
+        if (code < 256) {
+          const arr = boxTab[wi], b = code * 8;
+          u0 = arr[b]; v0 = arr[b + 1]; u1 = arr[b + 2]; v1 = arr[b + 3];
+          ox = arr[b + 4]; oy = arr[b + 5]; qw = arr[b + 6]; qh = arr[b + 7];
+        } else {
+          const rec = mapTab[wi].get(code);
+          u0 = rec.u0; v0 = rec.v0; u1 = rec.u1; v1 = rec.v1;
+          ox = rec.ox; oy = rec.oy; qw = rec.qw; qh = rec.qh;
+        }
+        if (qw > 0) {
+          const gw = qw * scale, gh = qh * scale;
+          const sgx = Math.round((penX + ox * scale) * dpr) / dpr;
+          const sgy = Math.round((sy + oy * scale) * dpr) / dpr;
+          visit(ctx, li, code, sgx, sgy, gw, gh, u0, v0, u1, v1);
+        }
+      }
+      penX += adv * scale + spacingPx;
+      i += step;
+      li++;
+    }
+    return ready;
+  }
+
+  // draw's visit: the plain label glyph, nothing else.
+  const DRAW_CTX = { dl: null, color: null };
+  function drawVisit(c, li, code, sgx, sgy, gw, gh, u0, v0, u1, v1) {
+    c.dl.glyph(sgx, sgy, gw, gh, u0, v0, u1, v1, c.color, SDF_RANGE);
+  }
+
+  // eachLetter's visit: step the transition, hand on the resting ink box.
+  const EACH_CTX = { x: 0, midY: 0, wordW: 0, size: 0, scale: 0, len: 0, fx: null, cb: null };
+  function eachVisit(c, li, code, sgx, sgy, gw, gh) {
+    const xf = WORD_XF;
+    c.fx(li, c.len, sgx + gw / 2 - c.x, sgy + gh / 2 - c.midY, c.wordW, c.size, xf);
+    const pad = PAD * c.scale;
+    c.cb(li, sgx + pad, sgy + pad, sgx + gw - pad, sgy + gh - pad, xf[4]);
+  }
+
+  // drawWord's visit: the transition stepped, then either the shade work
+  // (the measure bounds and the far-copy shadow) or the recording, halo and
+  // the glyph itself. See drawWord for the full contract.
+  const WORD_CTX = { dl: null, x: 0, midY: 0, wordW: 0, size: 0, scale: 0, len: 0,
+                     wi: 0, color: null, fx: null, rec: null, shade: null };
+  function wordVisit(c, li, code, sgx, sgy, gw, gh, u0, v0, u1, v1) {
+    const xf = WORD_XF, dl = c.dl, scale = c.scale, size = c.size;
+    const color = c.color, rec = c.rec, shade = c.shade;
+    const gcx = sgx + gw / 2, gcy = sgy + gh / 2;
+    c.fx(li, c.len, gcx - c.x, gcy - c.midY, c.wordW, size, xf);
+    const cx = gcx + xf[0], cy = gcy + xf[1], s = xf[2];
+    if (shade) {
+      if (shade.measure) {
+        const pad = PAD * scale;
+        const ix0 = sgx + pad, iy0 = sgy + pad, ix1 = sgx + gw - pad, iy1 = sgy + gh - pad;
+        const mcx = (ix0 + ix1) * 0.5, mcy = (iy0 + iy1) * 0.5;
+        // Each letter's box joins its bounds scaled about its centre
+        // by how far the letter itself has arrived — its fx opacity
+        // for the shown bounds, how much the smoke or cloud has given
+        // back for the dissolve bounds — eased, so a panel grows and
+        // draws in as smoothly as the letters themselves move instead
+        // of jumping a whole glyph the frame one crosses nothing.
+        let w = xf[4];
+        if (w > 0.002) {
+          if (w < 1) w = w * w * (3 - 2 * w);
+          const hx = (ix1 - ix0) * 0.5 * w, hy = (iy1 - iy0) * 0.5 * w;
+          if (mcx - hx < shade.ax0) shade.ax0 = mcx - hx;
+          if (mcy - hy < shade.ay0) shade.ay0 = mcy - hy;
+          if (mcx + hx > shade.ax1) shade.ax1 = mcx + hx;
+          if (mcy + hy > shade.ay1) shade.ay1 = mcy + hy;
+        }
+        let v = 1 - xf[7];
+        if (v > 0.002) {
+          if (v < 1) v = v * v * (3 - 2 * v);
+          const hx = (ix1 - ix0) * 0.5 * v, hy = (iy1 - iy0) * 0.5 * v;
+          if (mcx - hx < shade.dx0) shade.dx0 = mcx - hx;
+          if (mcy - hy < shade.dy0) shade.dy0 = mcy - hy;
+          if (mcx + hx > shade.dx1) shade.dx1 = mcx + hx;
+          if (mcy + hy > shade.dy1) shade.dy1 = mcy + hy;
+        }
+      }
+      if (shade.alpha > 0 && xf[4] > 0.002 && s > 0.01 && needGlyph(c.wi + FAR, code) === 2) {
+        // the far cell shares the letter's centre (both are the ink
+        // box padded evenly), so it sits on the drawn letter's cx, cy
+        const fb = FAR_BOX;
+        readBox(c.wi + FAR, code, fb);
+        if (fb[6] > 0) {
+          const fw = fb[6] * scale * s, fh = fb[7] * scale * s;
+          dl.pushAlpha(xf[4] * shade.alpha);
+          dl.glyph(cx - fw / 2, cy - fh / 2, fw, fh, fb[0], fb[1], fb[2], fb[3],
+                   color, FAR_RANGE, xf[3], xf[5] + shade.soft, shade.dilate * s);
+          dl.popAlpha();
+        }
+      }
+    } else {
+      if (rec && rec.count * 12 < rec.data.length) {
+        const r = rec.data, o = rec.count * 12;
+        r[o] = cx; r[o + 1] = cy; r[o + 2] = gw * s / 2; r[o + 3] = gh * s / 2;
+        r[o + 4] = u0; r[o + 5] = v0; r[o + 6] = u1; r[o + 7] = v1;
+        r[o + 8] = xf[3]; r[o + 9] = xf[7]; r[o + 10] = 0; r[o + 11] = 0;
+        rec.count++;
+      }
+      if (xf[4] > 0.002 && s > 0.01) {
+        // the halo first, so the letter sits on top of its own haze
+        if (xf[6] > 0.01) {
+          const hs = s * (1 + 0.9 * xf[6]);
+          dl.pushAlpha(xf[4] * 0.35 * xf[6]);
+          dl.glyph(cx - gw * hs / 2, cy - gh * hs / 2, gw * hs, gh * hs,
+                   u0, v0, u1, v1, color, SDF_RANGE, xf[3], size);
+          dl.popAlpha();
+        }
+        dl.pushAlpha(xf[4]);
+        if (s === 1 && xf[0] === 0 && xf[1] === 0 && xf[3] === 0 && xf[5] === 0) {
+          dl.glyph(sgx, sgy, gw, gh, u0, v0, u1, v1, color, SDF_RANGE);
+        } else {
+          dl.glyph(cx - gw * s / 2, cy - gh * s / 2, gw * s, gh * s,
+                   u0, v0, u1, v1, color, SDF_RANGE, xf[3], xf[5]);
+        }
+        dl.popAlpha();
+      }
+    }
+  }
+
+  // layoutWord's visit: the resting quad and atlas cell into the record.
+  const LAYOUT_CTX = { rec: null };
+  function layoutVisit(c, li, code, sgx, sgy, gw, gh, u0, v0, u1, v1) {
+    const rec = c.rec;
+    if (rec.count * 12 >= rec.data.length) return;
+    const r = rec.data, o = rec.count * 12;
+    r[o] = sgx + gw / 2; r[o + 1] = sgy + gh / 2; r[o + 2] = gw / 2; r[o + 3] = gh / 2;
+    r[o + 4] = u0; r[o + 5] = v0; r[o + 6] = u1; r[o + 7] = v1;
+    r[o + 8] = 0; r[o + 9] = 0; r[o + 10] = 0; r[o + 11] = 0;
+    rec.count++;
+  }
+
   const phraseCache = { key: '', out: null };
 
   // One run of text into balanced lines appended to `out`: a single line if
@@ -601,41 +762,9 @@ export function createText(device, platform) {
 
       const useAlpha = alpha < 1;
       if (useAlpha) dl.pushAlpha(alpha);
-
-      let penX = startX, i = 0;
-      const len = str.length;
-      while (i < len) {
-        let code = str.charCodeAt(i);
-        let step = 1;
-        if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
-          const c2 = str.charCodeAt(i + 1);
-          if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
-        }
-        const status = needGlyph(wi, code);
-        const adv = readAdvance(wi, code);
-        if (status === 2) {
-          let u0, v0, u1, v1, ox, oy, qw, qh;
-          if (code < 256) {
-            const arr = boxTab[wi], b = code * 8;
-            u0 = arr[b]; v0 = arr[b + 1]; u1 = arr[b + 2]; v1 = arr[b + 3];
-            ox = arr[b + 4]; oy = arr[b + 5]; qw = arr[b + 6]; qh = arr[b + 7];
-          } else {
-            const rec = mapTab[wi].get(code);
-            u0 = rec.u0; v0 = rec.v0; u1 = rec.u1; v1 = rec.v1;
-            ox = rec.ox; oy = rec.oy; qw = rec.qw; qh = rec.qh;
-          }
-          if (qw > 0) {
-            const gx = penX + ox * scale;
-            const gy = sy + oy * scale;
-            const sgx = Math.round(gx * dpr) / dpr;
-            const sgy = Math.round(gy * dpr) / dpr;
-            dl.glyph(sgx, sgy, qw * scale, qh * scale, u0, v0, u1, v1, color, SDF_RANGE);
-          }
-        }
-        penX += adv * scale + spacingPx;
-        i += step;
-      }
-
+      DRAW_CTX.dl = dl; DRAW_CTX.color = color;
+      walkLetters(wi, scale, spacingPx, str, startX, sy, dpr, drawVisit, DRAW_CTX);
+      DRAW_CTX.dl = DRAW_CTX.color = null;
       if (useAlpha) dl.popAlpha();
     },
 
@@ -675,118 +804,17 @@ export function createText(device, platform) {
       const wordW = computeWidth(wi, scale, str, spacingPx);
       const dpr = platform.dpr;
       const sy = Math.round(y * dpr) / dpr;
+      const c = WORD_CTX;
+      c.dl = dl; c.x = x; c.wordW = wordW; c.size = size; c.scale = scale;
       // the word's visual middle: the baseline sits below it by about a third
       // of the size, which is all the vertical order in word-fx needs
-      const midY = y - size * 0.35;
-      const xf = WORD_XF;
-
+      c.midY = y - size * 0.35;
+      c.len = str.length; c.wi = wi; c.color = color;
+      c.fx = fx; c.rec = rec; c.shade = shade;
       dl.pushAlpha(alpha);
-      let penX = x - wordW / 2, i = 0, li = 0;
-      const len = str.length;
-      while (i < len) {
-        let code = str.charCodeAt(i);
-        let step = 1;
-        if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
-          const c2 = str.charCodeAt(i + 1);
-          if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
-        }
-        const status = needGlyph(wi, code);
-        const adv = readAdvance(wi, code);
-        if (status === 2) {
-          let u0, v0, u1, v1, ox, oy, qw, qh;
-          if (code < 256) {
-            const arr = boxTab[wi], b = code * 8;
-            u0 = arr[b]; v0 = arr[b + 1]; u1 = arr[b + 2]; v1 = arr[b + 3];
-            ox = arr[b + 4]; oy = arr[b + 5]; qw = arr[b + 6]; qh = arr[b + 7];
-          } else {
-            const rec = mapTab[wi].get(code);
-            u0 = rec.u0; v0 = rec.v0; u1 = rec.u1; v1 = rec.v1;
-            ox = rec.ox; oy = rec.oy; qw = rec.qw; qh = rec.qh;
-          }
-          if (qw > 0) {
-            const gw = qw * scale, gh = qh * scale;
-            const sgx = Math.round((penX + ox * scale) * dpr) / dpr;
-            const sgy = Math.round((sy + oy * scale) * dpr) / dpr;
-            const gcx = sgx + gw / 2, gcy = sgy + gh / 2;
-            fx(li, len, gcx - x, gcy - midY, wordW, size, xf);
-            const cx = gcx + xf[0], cy = gcy + xf[1], s = xf[2];
-            if (shade) {
-              if (shade.measure) {
-                const pad = PAD * scale;
-                const ix0 = sgx + pad, iy0 = sgy + pad, ix1 = sgx + gw - pad, iy1 = sgy + gh - pad;
-                const mcx = (ix0 + ix1) * 0.5, mcy = (iy0 + iy1) * 0.5;
-                // Each letter's box joins its bounds scaled about its centre
-                // by how far the letter itself has arrived — its fx opacity
-                // for the shown bounds, how much the smoke or cloud has given
-                // back for the dissolve bounds — eased, so a panel grows and
-                // draws in as smoothly as the letters themselves move instead
-                // of jumping a whole glyph the frame one crosses nothing.
-                let w = xf[4];
-                if (w > 0.002) {
-                  if (w < 1) w = w * w * (3 - 2 * w);
-                  const hx = (ix1 - ix0) * 0.5 * w, hy = (iy1 - iy0) * 0.5 * w;
-                  if (mcx - hx < shade.ax0) shade.ax0 = mcx - hx;
-                  if (mcy - hy < shade.ay0) shade.ay0 = mcy - hy;
-                  if (mcx + hx > shade.ax1) shade.ax1 = mcx + hx;
-                  if (mcy + hy > shade.ay1) shade.ay1 = mcy + hy;
-                }
-                let v = 1 - xf[7];
-                if (v > 0.002) {
-                  if (v < 1) v = v * v * (3 - 2 * v);
-                  const hx = (ix1 - ix0) * 0.5 * v, hy = (iy1 - iy0) * 0.5 * v;
-                  if (mcx - hx < shade.dx0) shade.dx0 = mcx - hx;
-                  if (mcy - hy < shade.dy0) shade.dy0 = mcy - hy;
-                  if (mcx + hx > shade.dx1) shade.dx1 = mcx + hx;
-                  if (mcy + hy > shade.dy1) shade.dy1 = mcy + hy;
-                }
-              }
-              if (shade.alpha > 0 && xf[4] > 0.002 && s > 0.01 && needGlyph(wi + FAR, code) === 2) {
-                // the far cell shares the letter's centre (both are the ink
-                // box padded evenly), so it sits on the drawn letter's cx, cy
-                const fb = FAR_BOX;
-                readBox(wi + FAR, code, fb);
-                if (fb[6] > 0) {
-                  const fw = fb[6] * scale * s, fh = fb[7] * scale * s;
-                  dl.pushAlpha(xf[4] * shade.alpha);
-                  dl.glyph(cx - fw / 2, cy - fh / 2, fw, fh, fb[0], fb[1], fb[2], fb[3],
-                           color, FAR_RANGE, xf[3], xf[5] + shade.soft, shade.dilate * s);
-                  dl.popAlpha();
-                }
-              }
-            } else {
-              if (rec && rec.count * 12 < rec.data.length) {
-                const r = rec.data, o = rec.count * 12;
-                r[o] = cx; r[o + 1] = cy; r[o + 2] = gw * s / 2; r[o + 3] = gh * s / 2;
-                r[o + 4] = u0; r[o + 5] = v0; r[o + 6] = u1; r[o + 7] = v1;
-                r[o + 8] = xf[3]; r[o + 9] = xf[7]; r[o + 10] = 0; r[o + 11] = 0;
-                rec.count++;
-              }
-              if (xf[4] > 0.002 && s > 0.01) {
-                // the halo first, so the letter sits on top of its own haze
-                if (xf[6] > 0.01) {
-                  const hs = s * (1 + 0.9 * xf[6]);
-                  dl.pushAlpha(xf[4] * 0.35 * xf[6]);
-                  dl.glyph(cx - gw * hs / 2, cy - gh * hs / 2, gw * hs, gh * hs,
-                           u0, v0, u1, v1, color, SDF_RANGE, xf[3], size);
-                  dl.popAlpha();
-                }
-                dl.pushAlpha(xf[4]);
-                if (s === 1 && xf[0] === 0 && xf[1] === 0 && xf[3] === 0 && xf[5] === 0) {
-                  dl.glyph(sgx, sgy, gw, gh, u0, v0, u1, v1, color, SDF_RANGE);
-                } else {
-                  dl.glyph(cx - gw * s / 2, cy - gh * s / 2, gw * s, gh * s,
-                           u0, v0, u1, v1, color, SDF_RANGE, xf[3], xf[5]);
-                }
-                dl.popAlpha();
-              }
-            }
-          }
-        }
-        penX += adv * scale + spacingPx;
-        i += step;
-        li++;
-      }
+      walkLetters(wi, scale, spacingPx, str, x - wordW / 2, sy, dpr, wordVisit, c);
       dl.popAlpha();
+      c.dl = c.color = c.fx = c.rec = c.shade = null;
     },
 
     // The drawWord walk with the drawing left out, for a backing that needs
@@ -803,41 +831,11 @@ export function createText(device, platform) {
       const wordW = computeWidth(wi, scale, str, spacingPx);
       const dpr = platform.dpr;
       const sy = Math.round(y * dpr) / dpr;
-      const midY = y - size * 0.35;
-      const xf = WORD_XF;
-      let penX = x - wordW / 2, i = 0, li = 0;
-      const len = str.length;
-      while (i < len) {
-        let code = str.charCodeAt(i);
-        let step = 1;
-        if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
-          const c2 = str.charCodeAt(i + 1);
-          if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
-        }
-        const status = needGlyph(wi, code);
-        const adv = readAdvance(wi, code);
-        if (status === 2) {
-          let ox, oy, qw, qh;
-          if (code < 256) {
-            const arr = boxTab[wi], b = code * 8;
-            ox = arr[b + 4]; oy = arr[b + 5]; qw = arr[b + 6]; qh = arr[b + 7];
-          } else {
-            const rec = mapTab[wi].get(code);
-            ox = rec.ox; oy = rec.oy; qw = rec.qw; qh = rec.qh;
-          }
-          if (qw > 0) {
-            const gw = qw * scale, gh = qh * scale;
-            const sgx = Math.round((penX + ox * scale) * dpr) / dpr;
-            const sgy = Math.round((sy + oy * scale) * dpr) / dpr;
-            fx(li, len, sgx + gw / 2 - x, sgy + gh / 2 - midY, wordW, size, xf);
-            const pad = PAD * scale;
-            cb(li, sgx + pad, sgy + pad, sgx + gw - pad, sgy + gh - pad, xf[4]);
-          }
-        }
-        penX += adv * scale + spacingPx;
-        i += step;
-        li++;
-      }
+      const c = EACH_CTX;
+      c.x = x; c.midY = y - size * 0.35; c.wordW = wordW; c.size = size;
+      c.scale = scale; c.len = str.length; c.fx = fx; c.cb = cb;
+      walkLetters(wi, scale, spacingPx, str, x - wordW / 2, sy, dpr, eachVisit, c);
+      c.fx = c.cb = null;
     },
 
     // The same walk as drawWord with the drawing left out: each letter's
@@ -855,43 +853,9 @@ export function createText(device, platform) {
       const wordW = computeWidth(wi, scale, str, spacingPx);
       const dpr = platform.dpr;
       const sy = Math.round(y * dpr) / dpr;
-      let penX = x - wordW / 2, i = 0, ready = true;
-      const len = str.length;
-      while (i < len) {
-        let code = str.charCodeAt(i);
-        let step = 1;
-        if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
-          const c2 = str.charCodeAt(i + 1);
-          if (c2 >= 0xdc00 && c2 <= 0xdfff) { code = ((code - 0xd800) << 10) + (c2 - 0xdc00) + 0x10000; step = 2; }
-        }
-        const status = needGlyph(wi, code);
-        const adv = readAdvance(wi, code);
-        if (status !== 2) { ready = false; }
-        else {
-          let u0, v0, u1, v1, ox, oy, qw, qh;
-          if (code < 256) {
-            const arr = boxTab[wi], b = code * 8;
-            u0 = arr[b]; v0 = arr[b + 1]; u1 = arr[b + 2]; v1 = arr[b + 3];
-            ox = arr[b + 4]; oy = arr[b + 5]; qw = arr[b + 6]; qh = arr[b + 7];
-          } else {
-            const rec2 = mapTab[wi].get(code);
-            u0 = rec2.u0; v0 = rec2.v0; u1 = rec2.u1; v1 = rec2.v1;
-            ox = rec2.ox; oy = rec2.oy; qw = rec2.qw; qh = rec2.qh;
-          }
-          if (qw > 0 && rec.count * 12 < rec.data.length) {
-            const gw = qw * scale, gh = qh * scale;
-            const sgx = Math.round((penX + ox * scale) * dpr) / dpr;
-            const sgy = Math.round((sy + oy * scale) * dpr) / dpr;
-            const r = rec.data, o = rec.count * 12;
-            r[o] = sgx + gw / 2; r[o + 1] = sgy + gh / 2; r[o + 2] = gw / 2; r[o + 3] = gh / 2;
-            r[o + 4] = u0; r[o + 5] = v0; r[o + 6] = u1; r[o + 7] = v1;
-            r[o + 8] = 0; r[o + 9] = 0; r[o + 10] = 0; r[o + 11] = 0;
-            rec.count++;
-          }
-        }
-        penX += adv * scale + spacingPx;
-        i += step;
-      }
+      LAYOUT_CTX.rec = rec;
+      const ready = walkLetters(wi, scale, spacingPx, str, x - wordW / 2, sy, dpr, layoutVisit, LAYOUT_CTX);
+      LAYOUT_CTX.rec = null;
       return ready && rec.count > 0;
     },
 
