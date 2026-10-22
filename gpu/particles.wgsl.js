@@ -54,6 +54,7 @@ struct R {
   misc: vec4f,  // brightness (opacity x pulse), hue variation, time, trail
   z: vec4f,     // Z_FAR, Z_NEAR, live size multiplier, live speed
   fade: vec4f,  // radial fade in amount (0..1), 1 / the rings' rim (device px), eye x, eye y (tunnel units, core/eye.js)
+  tone: vec4f,  // lighten (0..1, the share of the way to white), three unused
 };
 
 // One step of an 8-bit target. Light below it cannot change a pixel.
@@ -80,9 +81,10 @@ fn hsv(h: f32) -> vec3f {
 }
 fn particleColour(hp: f32) -> vec3f {
   let mode = u32(r.col.w + 0.5);
-  if (mode == 1u) { return mix(vec3f(1.0, 1.0, 1.0), hsv(hp + r.misc.z * 0.03), 0.85); }
-  if (mode == 2u) { return vec3f(1.0, 1.0, 1.0); }
-  return max(hueRotate(r.col.rgb, (hp - 0.5) * r.misc.y * 6.2831853), vec3f(0.0, 0.0, 0.0));
+  let white = vec3f(1.0, 1.0, 1.0);
+  if (mode == 2u) { return white; }
+  if (mode == 1u) { return mix(mix(white, hsv(hp + r.misc.z * 0.03), 0.85), white, r.tone.x); }
+  return mix(max(hueRotate(r.col.rgb, (hp - 0.5) * r.misc.y * 6.2831853), vec3f(0.0, 0.0, 0.0)), white, r.tone.x);
 }
 
 // A particle's quad on the target. A point of the style's own uv space lands

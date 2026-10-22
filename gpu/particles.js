@@ -111,7 +111,7 @@ const EXIT_FLOOR = 0.05;
 const CAPACITY = 32768;
 const P_BYTES = 48;                  // three vec4f per particle, see struct P
 const WORKGROUP = 64;
-const SIM_FLOATS = 20, RENDER_FLOATS = 24;   // SIM: five vec4f of Sim; RENDER: five vec4f of R, plus the fade vec4f
+const SIM_FLOATS = 20, RENDER_FLOATS = 28;   // SIM: five vec4f of Sim; RENDER: five vec4f of R, plus the fade and tone vec4fs
 // Where a birth is placed: the point on its path where the radial fade in
 // reaches a quarter of one 8-bit step. Below that no style at full opacity
 // can light a pixel (the spark peaks at three times its brightness, and a
@@ -444,6 +444,7 @@ export function createParticles(device, format, platform) {
     const swirl = clampNum(S.partSwirl, -1, 1, 0);
     const trail = clampNum(S.partTrail, 0, 1, 0.5);
     const hueVar = clampNum(S.partHueVar, 0, 1, 0.15);
+    const lighten = clampNum(S.partLighten, 0, 1, 0);
     const opacity = clampNum(S.effPartOpacity ?? S.partOpacity, 0, 1, 0.9);
     const pulse = scaledStrobeDepth(clampNum(S.partPulse, 0, 1, 0));
     kaleidoNow = !!S.partKaleido;
@@ -726,6 +727,7 @@ export function createParticles(device, format, platform) {
     // never touch it, only the trail image (see the top of this file).
     ren[12] = gain; ren[13] = hueVar; ren[14] = t / 1000; ren[15] = trail;
     ren[16] = Z_FAR; ren[17] = Z_NEAR; ren[18] = sizeMul; ren[19] = speed;
+    ren[24] = lighten;
     // The radial fade: the Fade in amount, and one over the rings' rim in
     // device px, so the shader's k is the rings' k for the same radius. The
     // rim is maxR in both paths, since the chamber keeps the screen's own

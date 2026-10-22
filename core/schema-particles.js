@@ -60,6 +60,7 @@ const NUM = [
   ['partSwirl',      -1,   1,   0,    false],
   ['partTrail',       0,   1,   0.5,  false],
   ['partHueVar',      0,   1,   0.15, false],
+  ['partLighten',     0,   1,   0,    false],   // how far Strobe and Rainbow colour shifts toward white; White ignores it
   ['partOpacity',     0,   1,   0.9,  false],
   ['partOpacityVar',  0,   1,   0,    false],   // how far Opacity dips below its setting over time
   ['partOpacityVarPeriod', 1, 120, 20, true],   // seconds for one swing of it
@@ -458,6 +459,13 @@ export const PARTICLE_CONTROLS = [
   }),
   under('partColorDrawer', noLabel(choice('partColor', 'partColor', 'Colour', COLOURS, ['Strobe', 'Rainbow', 'White'], DEF_COLOUR))),
   under('partColorDrawer', percent('partHueVar', 'partHueVar', 'Hue variation')),
+  // Shifts the colour toward white, Strobe's and Rainbow's alike. White is
+  // already all the way there, so with it chosen the slider dims in place
+  // rather than coming and going.
+  {
+    ...under('partColorDrawer', percent('partLighten', 'partLighten', 'Lighten')),
+    enabled: S => S.partColor !== 'white'
+  },
   // How far out from the centre the particles take to come up to full
   // brightness, the tunnel rings' own 'Ring fade in' curve (core/fade.js),
   // so the two layers fade alike at the same setting. 0 is no fade at all.
