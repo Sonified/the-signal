@@ -714,32 +714,11 @@ export function createText(device, platform) {
               if (shade.measure) {
                 const pad = PAD * scale;
                 const ix0 = sgx + pad, iy0 = sgy + pad, ix1 = sgx + gw - pad, iy1 = sgy + gh - pad;
-                // A letter joins the shown bounds whole the frame its opacity
-                // is above nothing — or, with shade.env set, through its own
-                // envelope: a per-letter level that rises over envInMs from
-                // the frame the letter shows and sinks over envOutMs once it
-                // doesn't, scaling the letter's box about its centre. So a
-                // panel blooms and draws in smoothly letter by letter, each
-                // chunk riding the transition's own wave, instead of snapping
-                // a whole glyph at a step. The envelopes are the caller's
-                // state (slot envBase + the letter's place in this walk),
-                // stepped here by envDt so the measure stays the one pass.
-                let w = xf[4] > 0.002 ? 1 : 0;
-                if (shade.env) {
-                  const j = shade.envBase + li;
-                  let e = shade.env[j];
-                  if (w > 0) e = shade.envInMs > 0 ? Math.min(1, e + shade.envDt / shade.envInMs) : 1;
-                  else e = shade.envOutMs > 0 ? Math.max(0, e - shade.envDt / shade.envOutMs) : 0;
-                  shade.env[j] = e;
-                  w = e <= 0 ? 0 : e >= 1 ? 1 : e * e * (3 - 2 * e);
-                }
-                if (w > 0) {
-                  const mx = (ix0 + ix1) * 0.5, my = (iy0 + iy1) * 0.5;
-                  const hx = (ix1 - ix0) * 0.5 * w, hy = (iy1 - iy0) * 0.5 * w;
-                  if (mx - hx < shade.ax0) shade.ax0 = mx - hx;
-                  if (my - hy < shade.ay0) shade.ay0 = my - hy;
-                  if (mx + hx > shade.ax1) shade.ax1 = mx + hx;
-                  if (my + hy > shade.ay1) shade.ay1 = my + hy;
+                if (xf[4] > 0.002) {
+                  if (ix0 < shade.ax0) shade.ax0 = ix0;
+                  if (iy0 < shade.ay0) shade.ay0 = iy0;
+                  if (ix1 > shade.ax1) shade.ax1 = ix1;
+                  if (iy1 > shade.ay1) shade.ay1 = iy1;
                 }
                 if (xf[7] < 0.999) {
                   if (ix0 < shade.dx0) shade.dx0 = ix0;
