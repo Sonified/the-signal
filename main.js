@@ -662,7 +662,7 @@ async function boot() {
     // (one past the last step does nothing)
     if (journeyKeys && k.length === 1 && k >= '1' && k <= '9' && journeyMode() === 'keys') { journeyJumpTo(k.charCodeAt(0) - 49); return true; }
     if (k === 'Enter' || lk === 'f') { platform.fullscreen.toggle(); return true; }
-    if (k === '`' || k === '~' || lk === 'h') { app.toggleDrawer(); return true; }
+    if (lk === 'h') { app.toggleDrawer(); return true; }
     // Tab toggles the drawer, open and closed, nothing else: it is the key
     // the hint names (~ is hard to read at hint size), and it never turns
     // into widget traversal. Claimed here ahead of the UI, so the imgui's
