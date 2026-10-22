@@ -30,7 +30,7 @@ let HINT_1 = 'Press the space bar to begin';
 export function setOverlayTouch(coarse) { touchHints = coarse; }
 export function setOverlayFollow() { followTab = true; }
 export function noteRun() { everRan = true; }
-const HINT_2 = 'press the “~” key for settings  ·  press ENTER for full screen';
+const HINT_2 = 'press TAB for settings  ·  press ENTER for full screen';
 
 // The hint's own backing: the word's shadow and panel, through the same
 // helpers, at fixed values that mirror Robert's tuned Text > Shadow and
