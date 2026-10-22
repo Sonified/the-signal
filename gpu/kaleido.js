@@ -302,13 +302,14 @@ const FILL_MIN_RATE = 30;
 const FILL_DEADBAND = 0.08;
 // Quadrature steps per axis for inDomainShare.
 const SHARE_STEPS = 16;
-// Speed variance: each object travels faster or slower than the average,
-// by up to the setting's share of it either way, so the motifs drift past
-// one another instead of marching out in lockstep. Its own speed is the
-// sine of a phase drawn at birth, and Variance rate is the seconds one
-// cycle of it takes: each object surges and slows on that period, scaled
-// by its own velW so they never pulse together. SPEED_FLOOR keeps a
-// full-variance object from stalling at the centre for good.
+// Speed variance: the app's one dip law (core/variance.js), never above the
+// setting. Each object eases down from the Speed setting by up to the
+// amount's share of it and back, so the motifs drift past one another
+// instead of marching out in lockstep. Its own place in the cycle is a
+// phase drawn at birth, and Variance rate is the seconds one cycle takes:
+// each object slows and recovers on that period, scaled by its own velW so
+// they never pulse together. SPEED_FLOOR keeps a full-variance object from
+// stalling at the centre for good.
 const SPEED_FLOOR = 0.1;
 // With spin variance at 0 every object turns at this fraction of the maximum
 // rate, all the same way, which reads as one slow shared sway.
@@ -1642,7 +1643,7 @@ export function createKaleido(device, format, platform) {
     for (let n = 0; n < live; n++) {
       const i = order[n];
       velPh[i] = (velPh[i] + dph * velW[i]) % TAU;
-      let v = 1 + speedVar * Math.sin(velPh[i]);
+      let v = 1 - dipDepth(speedVar, velPh[i] / TAU);
       if (v < SPEED_FLOOR) v = SPEED_FLOOR;
       let step = dt * travel * v;
       // Depth: the flight's rate, A k^D rho over the even zoom's (see
@@ -2013,7 +2014,7 @@ export function createKaleido(device, format, platform) {
     // envelope each shape follows with its own phase and weight, floored
     // as theirs are. It holds where it is while the scene is paused.
     {
-      let v = 1 + speedVar * Math.sin(velRefPh);
+      let v = 1 - dipDepth(speedVar, velRefPh / TAU);
       if (v < SPEED_FLOOR) v = SPEED_FLOOR;
       S.effKaleidoSpeed = speed * v;
     }
