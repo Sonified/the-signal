@@ -494,7 +494,7 @@ export function createParticles(device, format, platform) {
     // Births per second at this Rate (shared with the Rate readout in
     // schema-particles.js, so what it says is what happens). A frozen stream
     // has no births at all.
-    let perSec = speed > 0.001 ? particleBirthsPerSec(rate, S.partStyle) : 0;
+    let perSec = speed > 0.0001 ? particleBirthsPerSec(rate, S.partStyle) : 0;
     const fillNow = needFill && perSec > 0;
     // The most travel anything in flight may still have ahead of it: every
     // frame takes this frame's travel off everyone's, and a birth brings at

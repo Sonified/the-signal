@@ -317,7 +317,7 @@ export function particleBirthsPerSec(rate, style) {
   return 20 + Math.pow(rate, 1.5) * PARTICLE_MAX_RATE * (style === 'dust' ? PARTICLE_DUST_RATE : 1);
 }
 export function particleFlightSec(speed) {
-  return speed > 0.001 ? PARTICLE_FLIGHT / (PARTICLE_MEAN_VZ * speed) : Infinity;
+  return speed > 0.0001 ? PARTICLE_FLIGHT / (PARTICLE_MEAN_VZ * speed) : Infinity;
 }
 // The slowest particle's share of the mean speed. Speeds are drawn from 0.6
 // to 1.4 times the mean, and the generator's birth-rate cap bounds each
@@ -330,7 +330,7 @@ const perSecText = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k/s' : Math.round(n
 // Rate reads its percentage and what that means in births per second.
 const rateText = (pos, S) => pos + '% · ' + (pos > 0 ? perSecText(particleBirthsPerSec(pos / 100, S.partStyle)) : 'none');
 // Speed reads its multiplier and how long a particle takes to fly the tunnel.
-const speedText = pos => pos.toFixed(2) + '× · ' + (pos > 0.001 ? particleFlightSec(pos * PART_SPEED_SCALE).toFixed(1) + ' s' : 'frozen');
+const speedText = pos => pos.toFixed(3) + '× · ' + (pos > 0.0001 ? particleFlightSec(pos * PART_SPEED_SCALE).toFixed(1) + ' s' : 'frozen');
 // A signed amount reads 'none' at 0 and carries its sign otherwise, so the
 // direction is plain without a second label.
 const signed = pos => pos === 0 ? 'none' : (pos > 0 ? '+' : '') + pos.toFixed(2);
@@ -415,7 +415,7 @@ export const PARTICLE_CONTROLS = [
   // other, and 0 sends the particles straight out.
   subDrawer('partMotionDrawer', 'Motion', 'particles', ['partRate', 'partSpeed']),
   under('partMotionDrawer', percent('partRate', 'partRate', 'Birth rate', rateText)),
-  under('partMotionDrawer', direct('partSpeed', 'partSpeed', 'Speed', 0.01, speedText)),
+  under('partMotionDrawer', direct('partSpeed', 'partSpeed', 'Speed', 0.001, speedText)),
   ...varianceRows('partSpeed', {
     name: 'Speed', periodMax: 120, parent: 'partMotionDrawer',
     effective: S => S.effPartSpeed ?? S.partSpeed
