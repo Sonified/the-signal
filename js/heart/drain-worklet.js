@@ -187,7 +187,14 @@ export class Drain {
   play(L, R, now) {
     const ring = this.ring, n = L.length;
     if (!this.started) {
-      if (!ring || ring.readable() < n) { L.fill(0); R.fill(0); return; }
+      // The start waits for the ring to be filled to the lookahead once
+      // (within the chunk being written, as the refill below measures it),
+      // not just for the first quantum: started on the first quantum, a
+      // loading page starved the drain straight away, and the stalls played
+      // as clicks with only milliseconds of history to conceal from. The
+      // piece starts a cushion late and plays through its first load whole.
+      const ready = ring ? ring.readable() : 0;
+      if (ready < n || ready + CHUNK < this.target) { L.fill(0); R.fill(0); return; }
       this.started = true;
       this.post({ type: 'start', F: now });
     }

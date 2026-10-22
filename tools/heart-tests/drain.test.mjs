@@ -188,8 +188,10 @@ function steered(policy, stages = 3) {
 test('lookahead: a run of underruns grows it by half again, announced at once and obeyed a chunk later, up to the most', () => {
   const rig = steered({ base: 2048, max: 8192, hidden: 4096, steady: 100000 });
   const { ctl, drain } = rig;
-  writeChunk(rig.ring, 0); rig.written = CHUNK;
-  for (let q = 0; q < 4; q++) assert.ok(rig.play(), 'the first chunk plays');
+  // The drain starts only once the ring holds the lookahead (the first
+  // load plays whole), so the stage fills it before the first quantum.
+  rig.render();
+  for (let q = 0; q < 16; q++) assert.ok(rig.play(), 'the filled lookahead plays');
   assert.equal(Atomics.load(ctl, LOOKAHEAD), 2048);
 
   // The ring is dry: silence, and the rise is announced at once.
