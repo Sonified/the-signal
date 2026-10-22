@@ -54,7 +54,7 @@ const RAW = [
   'This is a journey of wonder and magic.',
   'What lies ahead is beyond your wildest imagination.',
   'How good can it get?',
-  'Your parts are so grateful for your loving presence.',
+  'Your inner child is so grateful for your loving presence.',
   'Noticing the sensations in your body.',
   'Any thoughts that arise are ok to be here.',
   'How would it feel to trust that nothing is wrong?',
