@@ -151,13 +151,17 @@ seconds late.
     entirely when it is small (under about 0.25 s).
   - The page posts `{ type: 'jump', quanta }` to the drain. On its next
     quantum the drain:
-    - reads ~1024 frames of the old continuation from the ring into a
-      preallocated scratch buffer, for the crossfade;
+    - reads up to 0.5 s (`FADE_S`) of the old continuation from the ring
+      into a scratch buffer allocated at construction, for the crossfade,
+      never past the jump's own length or what the ring holds;
     - adds Δ to `played` and publishes PLAYED;
     - drops the old frames as late through the existing labels and debt
       (`align()`);
     - plays the new frames with an equal-power crossfade from the old
-      continuation;
+      continuation over that length, a DJ's wash rather than a cut (Robert,
+      2026-10-21). A second jump restarts it from the raw old continuation;
+      an underrun, a simulated gap, a refill or a rest drops it. Only the
+      sound changes: count, labels, debt and lead move exactly as before;
     - leaves idle (`setIdle(0)`) and acks `{ type: 'jumped' }`.
   - **Heart time = native `currentTime` + D.** D (the engine's "lead") grows
     by Δ at each skip and never shrinks. The page adds Δ to D synchronously,
@@ -393,7 +397,8 @@ s) in this run, so the hang note in memory now points at these two.
      drop to `max(floor(), idle)` at once, by draining.
    - `floor()` includes idle.
    - No learn or grow while idle.
-   - `jump(quanta)` with the crossfade (scratch preallocated, 8 quanta), and
+   - `jump(quanta)` with the crossfade (scratch preallocated, 0.5 s at the
+     context's rate, capped at the jump), and
      the `'jumped'` ack (one reused object).
    - Port messages `'idle'` and `'jump'`.
    - Add drain tests: jump drops exactly Δ, plays the frame after it,

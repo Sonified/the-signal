@@ -73,6 +73,17 @@
 // same jump to the engine's lead (engine.js, D), so engine frame n still
 // plays at native frame F + n and everything planned keeps its place.
 //
+// The crossfade is a DJ's, not a click guard: FADE_S of the old
+// continuation, read without consuming (both rings read linearly past the
+// read index, across chunks and label runs alike), so a skip of seconds
+// sounds as a wash. It never runs past the jump's own length, or its tail
+// would be frames that also play as the new stream, nor past what the ring
+// holds. Only the sound changes: the count, the labels, the debt and the
+// lead move exactly as they would with no fade at all. A second jump
+// restarts it from the raw old continuation, never a blend of two fades;
+// anything that plays other than the ring (an underrun's concealment, a
+// simulated gap, a refill's or a wake's silence, the rest) drops it.
+//
 // The rest. A paused session whose master has shut (js/audio.js) needs
 // nothing from Heart, yet the stages would go on rendering gated silence
 // for as long as the pause lasts. So the page tells the drain to rest, and
@@ -119,6 +130,10 @@ const STATS_EVERY = 96;
 // only the fallback.
 const GROW = 1.5;
 const RISE_DELAY = CHUNK / QUANTUM;
+// The forward skip's crossfade, in seconds (the top of the file). Without a
+// sample rate (the tests' bare drains) the scratch is the old 8-quanta
+// click guard.
+export const FADE_S = 0.5;
 
 export class Drain {
   // `lookahead`, all in frames but `steady` (quanta): { base, max, hidden,
@@ -126,8 +141,9 @@ export class Drain {
   // fixed. `diag` (?heartdiag=1, engine.js) posts each run of underruns and
   // each step of the lookahead to the page. `conceal`, frames of history,
   // or 0: an underrun loops that history instead of silence (conceal.js),
-  // as `concealSet` says (loop, xfade, mode, quantize, hold).
-  constructor({ control = null, stages = 1, post, lookahead = null, diag = false, conceal = 0, concealSet = {} }) {
+  // as `concealSet` says (loop, xfade, mode, quantize, hold). `rate`, the
+  // context's sample rate, sizes the jump's crossfade.
+  constructor({ control = null, stages = 1, post, lookahead = null, diag = false, conceal = 0, concealSet = {}, rate = 0 }) {
     this.conceal = conceal > 0 ? new Conceal({ size: conceal, ...concealSet }) : null;
     this.ctl = control;
     this.stages = stages;
@@ -166,12 +182,14 @@ export class Drain {
     this.simAt = 0;
     this.simLeft = 0;
     // Render ahead on idle: the lift (frames, 0 for none), the jump's
-    // scratch (the old continuation, for the crossfade), how much of it was
-    // held and how much of the crossfade has played, and the two acks,
-    // reused.
+    // scratch (the old continuation, for the crossfade, FADE_S of it,
+    // allocated once here and never on the audio thread's way), how much of
+    // it was held and how much of the crossfade has played, and the two
+    // acks, reused.
     this.idle = 0;
-    this.xfL = new Float32Array(8 * QUANTUM);
-    this.xfR = new Float32Array(8 * QUANTUM);
+    const fade = rate > 0 ? Math.round(FADE_S * rate) : 8 * QUANTUM;
+    this.xfL = new Float32Array(fade);
+    this.xfR = new Float32Array(fade);
     this.xfLen = 0;
     this.xfAt = 0;
     this.jumped = { type: 'jumped', quanta: 0 };
@@ -200,6 +218,7 @@ export class Drain {
     }
     if (this.resting) {
       if (this.conceal) this.conceal.reset();
+      this.xfLen = 0;
       L.fill(0);
       R.fill(0);
       this.debt += n;
@@ -226,6 +245,7 @@ export class Drain {
     // which plays when its engine frame falls due, silence until then.
     if (this.debt < 0) {
       if (this.conceal) this.conceal.quiet();
+      this.xfLen = 0;
       L.fill(0);
       R.fill(0);
       this.debt += n;
@@ -240,6 +260,7 @@ export class Drain {
     }
     if (this.refill && ready < n) {
       if (this.conceal) this.conceal.quiet();
+      this.xfLen = 0;
       L.fill(0);
       R.fill(0);
       this.debt += n;
@@ -250,6 +271,7 @@ export class Drain {
     // its frames are dropped as late, but it is not an underrun: nothing
     // is counted, learned or grown from it.
     if (this.sim && this.simDry()) {
+      this.xfLen = 0;
       if (this.conceal) this.conceal.dry(L, R);
       else { L.fill(0); R.fill(0); }
       this.debt += n;
@@ -265,6 +287,9 @@ export class Drain {
       if (this.dry && this.diag) this.tellDiag('wet', ready);
       this.dry = false;
     } else {
+      // Concealment wins over the jump's fade: the old continuation is
+      // dropped, never resumed out of its time once the ring is back.
+      this.xfLen = 0;
       if (this.conceal) this.conceal.dry(L, R);
       else { L.fill(0); R.fill(0); }
       this.debt += n;
@@ -282,8 +307,7 @@ export class Drain {
   }
 
   // The jump's crossfade: the old continuation fades out under the new
-  // frames, equal power over however much of it the ring held (at most the
-  // scratch's 8 quanta).
+  // frames, equal power over however much of it jump() captured.
   crossfade(L, R, n) {
     const len = this.xfLen;
     for (let i = 0; i < n && this.xfAt < len; i++, this.xfAt++) {
@@ -299,13 +323,22 @@ export class Drain {
   // (with every bell rung, so a sleeping stage hears the new clock), and
   // the frames jumped over are left to the debt to drop. The lift ends with
   // it: the touch that asked for the jump wants the base latency now.
+  //
+  // The old continuation starts `debt` frames past the read index (late
+  // frames not yet dropped come first) and runs for at most the scratch,
+  // the jump's own length and what the ring holds past it. Read in place,
+  // never released: the debt still drops every jumped frame. A next frame
+  // still ahead of its moment (debt below zero, a wake's) has no
+  // continuation to fade from.
   jump(quanta) {
     const ring = this.ring;
     this.jumped.quanta = 0;
     if (ring && quanta > 0 && !this.resting && this.started) {
-      const have = Math.min(this.xfL.length, ring.readable());
-      ring.read(0, this.xfL, 0, have);
-      ring.read(1, this.xfR, 0, have);
+      this.align();
+      const from = this.debt;
+      const have = from < 0 ? 0 : Math.max(0, Math.min(this.xfL.length, quanta * QUANTUM, ring.readable() - from));
+      ring.read(0, this.xfL, 0, have, from);
+      ring.read(1, this.xfR, 0, have, from);
       this.xfLen = have;
       this.xfAt = 0;
       this.played += quanta;
@@ -382,6 +415,7 @@ export class Drain {
   setResting(on) {
     if (on === this.resting) return;
     this.resting = on;
+    this.xfLen = 0;
     if (on) return;
     this.refill = true;
     this.dry = false;
@@ -542,6 +576,7 @@ if (typeof registerProcessor === 'function') {
       this.drain = new Drain({
         control: o.control, stages: o.stages, lookahead: o.lookahead || null, diag: o.diag === true,
         conceal: o.conceal | 0, concealSet: o.concealSet || {},
+        rate: typeof sampleRate === 'number' ? sampleRate : +o.rate || 0,
         post: m => this.port.postMessage(m)
       });
       // A shared ring comes in the options; a message ring's port has to be

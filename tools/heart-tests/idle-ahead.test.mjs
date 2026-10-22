@@ -23,6 +23,7 @@ const WASM_URL = 'data:application/wasm;base64,' + BYTES.toString('base64');
 const { startEngine } = await import('../../js/heart/engine.js');
 const { HeartContext, Shadow } = await import('../../js/heart/heart.js');
 const { CHUNK } = await import('../../js/heart/ring.js');
+const { FADE_S } = await import('../../js/heart/drain-worklet.js');
 
 const SR = 48000;
 const BASE = Math.ceil(0.3 * SR / QUANTUM) * QUANTUM;   // the default SAB base
@@ -78,7 +79,20 @@ async function lift(rig, sec, limitSec, fillSec) {
   await until(() => rec.frames > 0.8 * SR && Math.abs(rec.L[rec.frames - 1] - 0.25) < 1e-3, 8000, 'the source to be heard');
 }
 
-// Past the jump's own 8-quanta crossfade, where the landing is clean.
+// The jump's crossfade (drain-worklet.js): the old continuation fades out
+// under the new stream, equal power over FADE_S (every jump here is past a
+// second, so the whole fade). The old continuation is the source's steady
+// 0.25, rendered before the change under test, so the new stream can be
+// read back out of the blend: new = (heard - cos x * 0.25) / sin x.
+const FADE = Math.round(FADE_S * SR);
+function unfaded(rec, landing, f) {
+  const at = f - landing;
+  if (at < 0 || at >= FADE) return rec.L[f];
+  const x = (at + 0.5) / FADE * Math.PI / 2;
+  return (rec.L[f] - Math.cos(x) * 0.25) / Math.sin(x);
+}
+// Where the read-back is sharp: 8 quanta in, sin x is past 0.06, and the
+// change under test lands a base lookahead later anyway.
 const XF = 8 * QUANTUM;
 
 const sum = a => a.reduce((x, y) => x + y, 0);
@@ -162,16 +176,17 @@ for (const workers of [1, 3]) {
       // Base + two chunks, the spec's window, plus two quanta: the limit
       // and the landing each round to whole quanta.
       const windowEnd = landing + BASE + 2 * CHUNK + 2 * QUANTUM;
-      assert.ok(Math.abs(rec.L[landing + XF] - 0.25) < 1e-3, `sounding at the skip's landing (${rec.L[landing + XF]})`);
+      const at = unfaded(rec, landing, landing + XF);
+      assert.ok(Math.abs(at - 0.25) < 1e-3, `sounding at the skip's landing (${at})`);
       let fallAt = -1;
       for (let f = landing + XF; f < windowEnd + 0.13 * SR; f++) {
-        if (rec.L[f] < 0.2499) { fallAt = f; break; }
+        if (unfaded(rec, landing, f) < 0.2499) { fallAt = f; break; }
       }
       assert.ok(fallAt >= 0, 'the gate was heard');
       assert.ok(fallAt >= landing, 'never before the skip target');
       assert.ok(fallAt <= windowEnd, `at the fresh horizon, not the stale frontier (${fallAt - landing} frames past the skip, window ${windowEnd - landing})`);
       const quiet = fallAt + Math.ceil(0.13 * SR);
-      assert.ok(Math.abs(rec.L[quiet]) < 1e-3, `silent once the ramp is done (${rec.L[quiet]})`);
+      assert.ok(Math.abs(unfaded(rec, landing, quiet)) < 1e-3, `silent once the ramp is done (${unfaded(rec, landing, quiet)})`);
       t.diagnostic(`skipped ${jumped.toFixed(2)} s; the gate fell ${((fallAt - landing) / SR * 1000).toFixed(0)} ms past the skip (base ${(BASE / SR * 1000).toFixed(0)} ms)`);
     } finally { await rig.close(); }
   });
@@ -198,8 +213,8 @@ for (const workers of [1, 3]) {
       const landing = landingAt(rec, skipFrame);
       const windowEnd = landing + BASE + 2 * CHUNK + 2 * QUANTUM;
       let moved = -1;
-      for (let f = landing; f < windowEnd + CHUNK; f++) {
-        if (Math.abs(rec.L[f] - 0.05) < 1e-3) { moved = f; break; }
+      for (let f = landing + XF; f < windowEnd + CHUNK; f++) {
+        if (Math.abs(unfaded(rec, landing, f) - 0.05) < 1e-3) { moved = f; break; }
       }
       assert.ok(moved >= 0, 'the new value was heard');
       assert.ok(moved <= windowEnd, `at the fresh horizon (${moved - landing} frames past the skip, window ${windowEnd - landing})`);

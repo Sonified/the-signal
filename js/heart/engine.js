@@ -266,7 +266,7 @@ async function assemble(engine, ctx, module, opts) {
     numberOfInputs: 0,
     numberOfOutputs: 1,
     outputChannelCount: [2],
-    processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG,
+    processorOptions: { stages: stages.length, control, ring: shared ? finalRing.reader : null, lookahead: policy, diag: DIAG, rate: sampleRate,
       conceal: (opts.conceal ?? CONCEAL) ? toFrames(CONCEAL_SECONDS) : 0,
       concealSet: { ...concealFrames(opts.concealSet || {}), hold: Math.round(CONCEAL_HOLD * sampleRate), rate: sampleRate } }
   });
