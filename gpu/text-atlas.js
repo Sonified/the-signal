@@ -714,17 +714,30 @@ export function createText(device, platform) {
               if (shade.measure) {
                 const pad = PAD * scale;
                 const ix0 = sgx + pad, iy0 = sgy + pad, ix1 = sgx + gw - pad, iy1 = sgy + gh - pad;
-                if (xf[4] > 0.002) {
-                  if (ix0 < shade.ax0) shade.ax0 = ix0;
-                  if (iy0 < shade.ay0) shade.ay0 = iy0;
-                  if (ix1 > shade.ax1) shade.ax1 = ix1;
-                  if (iy1 > shade.ay1) shade.ay1 = iy1;
+                const mcx = (ix0 + ix1) * 0.5, mcy = (iy0 + iy1) * 0.5;
+                // Each letter's box joins its bounds scaled about its centre
+                // by how far the letter itself has arrived — its fx opacity
+                // for the shown bounds, how much the smoke or cloud has given
+                // back for the dissolve bounds — eased, so a panel grows and
+                // draws in as smoothly as the letters themselves move instead
+                // of jumping a whole glyph the frame one crosses nothing.
+                let w = xf[4];
+                if (w > 0.002) {
+                  if (w < 1) w = w * w * (3 - 2 * w);
+                  const hx = (ix1 - ix0) * 0.5 * w, hy = (iy1 - iy0) * 0.5 * w;
+                  if (mcx - hx < shade.ax0) shade.ax0 = mcx - hx;
+                  if (mcy - hy < shade.ay0) shade.ay0 = mcy - hy;
+                  if (mcx + hx > shade.ax1) shade.ax1 = mcx + hx;
+                  if (mcy + hy > shade.ay1) shade.ay1 = mcy + hy;
                 }
-                if (xf[7] < 0.999) {
-                  if (ix0 < shade.dx0) shade.dx0 = ix0;
-                  if (iy0 < shade.dy0) shade.dy0 = iy0;
-                  if (ix1 > shade.dx1) shade.dx1 = ix1;
-                  if (iy1 > shade.dy1) shade.dy1 = iy1;
+                let v = 1 - xf[7];
+                if (v > 0.002) {
+                  if (v < 1) v = v * v * (3 - 2 * v);
+                  const hx = (ix1 - ix0) * 0.5 * v, hy = (iy1 - iy0) * 0.5 * v;
+                  if (mcx - hx < shade.dx0) shade.dx0 = mcx - hx;
+                  if (mcy - hy < shade.dy0) shade.dy0 = mcy - hy;
+                  if (mcx + hx > shade.dx1) shade.dx1 = mcx + hx;
+                  if (mcy + hy > shade.dy1) shade.dy1 = mcy + hy;
                 }
               }
               if (shade.alpha > 0 && xf[4] > 0.002 && s > 0.01 && needGlyph(wi + FAR, code) === 2) {

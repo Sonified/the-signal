@@ -86,9 +86,10 @@ function unit(v) { return v > 0 ? (v < 1 ? v : 1) : 0; }
 // widened by the pad. Shown means the letter's own opacity is above nothing,
 // or, while the smoke or the cloud draws the word, that its dissolve has
 // begun to give it back; so the panel spreads with the arrival, draws in
-// with the leaving, and is gone with the last letter. Its strength rides the
-// word's fade and the layer's first rise, never the Opacity slider, which is
-// the letters' own.
+// with the leaving, and is gone with the last letter. Its strength is the
+// panel's own envelope (Fade in and out, drawOverlay's backing block) and
+// the layer's first rise — never the word's fade, which used to swamp the
+// envelope, and never the Opacity slider, which is the letters' own.
 // One panel box: the hard rect, or the slab once the blur is real.
 function panelBox(dl, x0, y0, x1, y1, padX, padY, radius, blur) {
   if (blur >= 1) {
@@ -121,8 +122,7 @@ const LINE_BOX_MAX = 16;
 const LINE_BOXES = new Float32Array(LINE_BOX_MAX * 4);
 let lineBoxN = 0;
 function drawPanel(dl, size, strength, sizeAmt, soft, perLine, lineH) {
-  const f = wordState.peak > 0 ? wordState.opacity / wordState.peak : 0;
-  const a = strength * f * wordState.reveal;
+  const a = strength * wordState.reveal;
   if (a <= 0.002) return;
   panelMetrics(size, sizeAmt, soft);
   dl.pushAlpha(a);
