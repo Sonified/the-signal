@@ -1872,7 +1872,7 @@ const liveControls = [
     // rested and crossfades it in under the old tail (livesound.js), so a
     // drag never clicks and never cuts the room off.
     id: 'liveRevTime', section: 'live', label: 'Decay', kind: 'slider',
-    min: 0.5, max: 8, step: 0.1, def: 3,
+    min: 0.5, max: 20, step: 0.1, def: 3,
     get: s => s.liveRevTime,
     set: (s, pos) => { s.liveRevTime = pos; applyLiveRevTime(); saveLive(); },
     formatAt: pos => pos.toFixed(1) + 's',

@@ -102,7 +102,7 @@ const HPF_XF_TC = 0.03;
 // all room, with no dry signal left at all. The two sides cross on an
 // equal-power law (dry cos, wet sin of the mix over a quarter turn), so the
 // middle of the travel neither dips nor swells in loudness.
-const ROOM_S = 3.0, ROOM_DECAY = 2.0, ROOM_MIN_S = 0.5, ROOM_MAX_S = 8, ROOM_SWAP_MS = 250;
+const ROOM_S = 3.0, ROOM_DECAY = 2.0, ROOM_MIN_S = 0.5, ROOM_MAX_S = 20, ROOM_SWAP_MS = 250;
 const QUARTER_TURN = Math.PI / 2;
 
 // Each capture comes in on a gain of its own, faded up from nothing and back

@@ -825,7 +825,7 @@ export function saveLive() {
 }
 // Each held to its slider's range (core/schema-audio.js), as read back.
 const LIVE_RANGES = {
-  liveRevTime: [0.5, 8], liveHpf: [20, 2000], liveThreshold: [-60, 0], liveRatio: [1, 20],
+  liveRevTime: [0.5, 20], liveHpf: [20, 2000], liveThreshold: [-60, 0], liveRatio: [1, 20],
   liveAttack: [0, 100], liveRelease: [10, 1000]
 };
 function loadLive() {
