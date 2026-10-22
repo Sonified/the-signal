@@ -607,6 +607,8 @@ let copyFlashUntil = 0;
 // label is a constant or the profiler's own cached status string, so nothing
 // here builds a string per frame.
 const FOOT_H = 44, FOOT_CHIP_H = 24, FOOT_GAP = 6, DOT = 6;
+// the seam bar's ink: quiet but always readable against the field
+const SEAM_BAR = new Float32Array([1, 1, 1, 0.3]);
 const TIP_PROFILE = 'Record 30 s of frame timing to find dropped frames';
 let footClicked = false;
 
@@ -1522,6 +1524,23 @@ export function drawDrawer(ui, app) {
   ui.spacer(SPACE.xl);
 
   ui.endScroll();
+
+  // The seam bar: a very thin, always-on scroll indicator flush at the
+  // pane's right edge, in the gap between the settings and the field. Its
+  // length is the visible share of the content - sections expanding shrink
+  // it, saying there is more below - and its place is how far down you are.
+  // The auto-hiding scrollbar inside the body keeps its own spot 2 px in.
+  {
+    const sc = ui.scrollInfo('drawer.body');
+    const viewH = height - TOP - FOOT_H;
+    if (sc && sc.contentH > viewH + 0.5) {
+      const trackH = viewH - 4;
+      const thumbH = Math.max(16, trackH * (viewH / sc.contentH));
+      const maxOff = sc.contentH - viewH;
+      const p = Math.min(1, Math.max(0, sc.offset / maxOff));
+      ui.dl.rect(dx + W_DRAWER - 2, TOP + 2 + (trackH - thumbH) * p, 2, thumbH, 1, SEAM_BAR, 0, null, 0, 0);
+    }
+  }
 
   // the profiler's footer, pinned below the scroll body
   drawFooter(ui, dx, height);

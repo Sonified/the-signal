@@ -1954,6 +1954,11 @@ class UI {
 
   // ---------------- layout: scroll ----------------
 
+  // A scroll region's live measures (offset, contentH), for a caller that
+  // draws its own indicator - the drawer's seam bar. Null before the
+  // region's first frame.
+  scrollInfo(id) { return this._scrolls.get(this.id(id)) || null; }
+
   scroll(id, h, contentW) {
     const nid = this.id(id);
     const reg = this.region;
