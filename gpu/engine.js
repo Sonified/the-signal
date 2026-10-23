@@ -168,7 +168,7 @@ export async function createEngine(platform, opts) {
 
   // ---------- the screen gate ----------
   // The show's master brightness (S.screenGate, 0..1, the iPad's GATE fader,
-  // platform/show-remote.js): one fullscreen triangle drawn after everything
+  // platform/presentation-receiver.js): one fullscreen triangle drawn after everything
   // the room sees and before the operator's UI, multiplying what is already
   // there by the blend constant, so at 0 the experience is black and the
   // drawer and windows still show. It draws nothing at 1. The fader's words

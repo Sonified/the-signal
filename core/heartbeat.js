@@ -480,7 +480,7 @@ export const heartUnavailable = () => unavailable || loadFailed;
 // Once a frame while the layer is on: loads the track the first time,
 // resumes the context when armed, plays or pauses the source, and sets the
 // heard level. Returns whether a source is playing on a running clock.
-// The show remote's Duck (platform/show-remote.js, the slides' setDuck
+// The controller's Duck (platform/presentation-receiver.js, the slides' setDuck
 // pattern): a multiplier on the heartbeat's level alone. It glides the live
 // gain at once, so it works while the frame loop rests, and heartSync keeps
 // honouring it on every later set. Not saved: a reload is unducked.

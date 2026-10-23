@@ -269,7 +269,7 @@ export const SLIDES_CONTROLS = [
     // How long a change of slide takes, picture and sound together
     // (gpu/slides.js): 0 is a cut, up to 10 s in 0.5 s slider steps. Its position
     // is in hundredths of a second (0 to 1000), whole numbers, so the show
-    // remote (platform/show-remote.js) can send it as it sends the faders.
+    // remote (platform/presentation-receiver.js) can send it as it sends the faders.
     id: 'slideXfade', section: 'slides', label: 'Crossfade', kind: 'slider',
     // The incoming step's transition duration must land before its file.
     journeyImmediate: true,

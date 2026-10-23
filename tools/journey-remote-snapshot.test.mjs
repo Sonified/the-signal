@@ -53,7 +53,7 @@ const ctx = vm.createContext({ URLSearchParams, WebSocket: Socket, document: {},
   fetch: () => Promise.resolve({ status: 200 }), setTimeout() {},
   setInterval: (fn, ms) => timers.push({ fn, ms }), console: { log() {}, warn(...v) { throw Error(v.join(' ')); } }
 });
-const source = fs.readFileSync(root + '/platform/show-remote.js', 'utf8');
+const source = fs.readFileSync(root + '/platform/presentation-receiver.js', 'utf8');
 const imports = new Map([...source.matchAll(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g)].map(m => [m[2], m[1].split(',').map(x => x.trim())]));
 const values = { S, byId, ...J, idleWake: noop, slidesLiveState: () => 0, slidesProgress: () => null,
   ampToPos: (await import(root + '/js/util.js')).ampToPos };
@@ -61,7 +61,7 @@ const remote = new vm.SourceTextModule(source, { context: ctx });
 await remote.link(spec => new vm.SyntheticModule(imports.get(spec), function () {
   for (const name of imports.get(spec)) this.setExport(name, name in values ? values[name] : noop);
 }, { context: ctx }));
-await remote.evaluate(); remote.namespace.initShowRemote();
+await remote.evaluate(); remote.namespace.initPresentationReceiver();
 let n = 0;
 const send = m => {
   const message = JSON.stringify({ t: 'word', src: 'isolated-ipad', n: ++n, ...m });

@@ -214,7 +214,7 @@ export const S = {
   lpfHz: 20000, hpfHz: 20,    // v1: the global Lowpass and Highpass corners, Hz (core/global-filter.js), open
   // v1: the show's screen gate, the room's picture's master brightness, 0
   // black to 1 full (gpu/engine.js drawGate). Live only, set from the iPad's
-  // GATE fader (platform/show-remote.js): never saved, so every load opens
+  // GATE fader (platform/presentation-receiver.js): never saved, so every load opens
   // at full and a reload can never come up black.
   screenGate: 1,
   lpfRes: 0, hpfRes: 0,       // v1: their resonance, the peak at the corner in dB (core/global-filter.js), 0 flat

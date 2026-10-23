@@ -1,7 +1,7 @@
 // The show remote's receiving end: Presence (this app, on the laptop) taking
 // cues from the iPad's show controller (controller.html at the repo root). Off
 // unless the page is opened with ?presentation (room 'show') or ?presentation=<room> (?remote, its first name, still works).
-// Page thread only (main.js calls initShowRemote outside worker mode): the
+// Page thread only (main.js calls initPresentationReceiver outside worker mode): the
 // journey and the Slides layer both live on the page engine.
 //
 // TRANSPORT: the mirror test's (remote.html), lifted. Two paths at once, the
@@ -154,6 +154,7 @@ import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlid
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
 import { brushShowPhase, brushConducting, brushPhase, brushRound } from '../core/brush.js';
+import { PRESENT_PASSWORD } from '../core/presentation.js';
 import { ampToPos } from '../js/util.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
@@ -210,7 +211,7 @@ const finalePos = id => {
   return Math.round(Math.max(0, Math.min(1, from + Math.max(0, Math.min(1, w)) * (1 - from))) * 1000) / 10;
 };
 
-export function initShowRemote(hooks = {}) {
+export function initPresentationReceiver(hooks = {}) {
   if (typeof location === 'undefined' || typeof WebSocket === 'undefined') return;
   const P = new URLSearchParams(location.search);
   // ?presentation makes this tab the controller's receiving end; ?remote,
@@ -234,15 +235,15 @@ export function initShowRemote(hooks = {}) {
     const qs = P.toString().replace(new RegExp('(^|&)' + FLAG + '=(?=&|$)'), '$1' + FLAG);
     try { history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash); } catch (e) {}
   }
-  if (!KEY) {
-    console.warn('[show-remote] no password: open once with ?presentation&pw=<password> (the mirror password)');
-    return;
-  }
+  // No URL password needed: the presentation's own password (the drawer's
+  // gate, core/presentation.js) is the relay's too, so the receiver carries
+  // it itself. ?pw= stays as an override should the relay's ever differ.
+  if (!KEY) KEY = PRESENT_PASSWORD;
   // A one-off check, for a clear console line; the sockets retry regardless.
   fetch('https://' + relay + '/auth', { method: 'POST', body: KEY }).then(r => {
-    if (r.status === 403) console.warn('[show-remote] the relay refused the password; reopen with ?presentation&pw=<password>');
+    if (r.status === 403) console.warn('[presentation-receiver] the relay refused the password; reopen with ?presentation&pw=<password>');
   }, () => {});
-  console.log('[show-remote] following ' + CMD_ROOM + ', status to ' + STATUS_ROOM + ' (cloud + local ' + local + ')');
+  console.log('[presentation-receiver] following ' + CMD_ROOM + ', status to ' + STATUS_ROOM + ' (cloud + local ' + local + ')');
 
   const bases = [{ name: 'cloud', base: 'wss://' + relay }, { name: 'local', base: 'ws://' + local }];
 
@@ -252,7 +253,7 @@ export function initShowRemote(hooks = {}) {
     const openIt = () => {
       try { s.ws = new WebSocket(base + '/room/' + roomName + '?role=' + role + '&key=' + encodeURIComponent(KEY)); }
       catch (e) { setTimeout(openIt, s.retry); return; }
-      s.ws.onopen = () => { s.retry = 2000; console.log('[show-remote] ' + name + ' ' + role + ' ' + roomName + ' open'); if (onOpen) onOpen(s); };
+      s.ws.onopen = () => { s.retry = 2000; console.log('[presentation-receiver] ' + name + ' ' + role + ' ' + roomName + ' open'); if (onOpen) onOpen(s); };
       s.ws.onclose = () => { setTimeout(openIt, s.retry); s.retry = Math.min(s.retry * 2, 15000); };
       s.ws.onmessage = e => {
         if (typeof e.data !== 'string' || e.data === 'pong') return;
@@ -285,10 +286,10 @@ export function initShowRemote(hooks = {}) {
     const id = String(m.src || ''), n = +m.n || 0;
     if (n <= (lastN.get(id) || 0)) return;   // the other path's copy
     lastN.set(id, n);
-    if (m.k === 'ctl' && m.id === 'mwtsVolume') console.log('[show-remote] MWTS fader -> mwtsVolume ' + m.v + '%');
+    if (m.k === 'ctl' && m.id === 'mwtsVolume') console.log('[presentation-receiver] MWTS fader -> mwtsVolume ' + m.v + '%');
     // an audio touch before the remote's commands (js/idle-ahead.js)
     idleTouch('the show remote');
-    try { act(m); } catch (err) { console.warn('[show-remote] ' + m.k + ' failed:', err); }
+    try { act(m); } catch (err) { console.warn('[presentation-receiver] ' + m.k + ' failed:', err); }
     idleWake('show remote');
     pollStatus();
   }

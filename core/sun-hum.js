@@ -513,7 +513,7 @@ export function setGate(g) {
   if (chan) chan.gain.setTargetAtTime(chanLevel(), now(), 0.02);
 }
 
-/** The show remote's Duck (platform/show-remote.js, the slides' setDuck
+/** The controller's Duck (platform/presentation-receiver.js, the slides' setDuck
     and the heartbeat's setHeartDuck pattern): a multiplier, 0..1, on the
     hum's whole contribution, dry and room feed alike, since it rides the
     channel ahead of the split; what is already in the room decays on its

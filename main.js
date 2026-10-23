@@ -75,7 +75,7 @@ import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand
 import { ringBell } from './js/brush-bells.js';
 import { linkBell } from './core/audio-link.js';
 import { drawHand } from './ui/screens/hand.js';
-import { initShowRemote } from './platform/show-remote.js';
+import { initPresentationReceiver } from './platform/presentation-receiver.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
 import { journeyImport } from './core/journey.js';
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
@@ -537,11 +537,11 @@ async function boot() {
       }
     );
     // The show remote (controller.html on the iPad): ?presentation makes this tab take
-    // its cues, faders and duck over the mirror relays (platform/show-remote.js).
+    // its cues, faders and duck over the mirror relays (platform/presentation-receiver.js).
     // Its title clears the screen: the drawer and every floating window
     // shut, leaving only the playback (the Levels window through its own
     // close action, as its close button does).
-    finishRemoteFrame = initShowRemote({
+    finishRemoteFrame = initPresentationReceiver({
       clearScreen: () => {
         const mixClose = byId('ambMixerClose');
         if (mixer.open) { if (mixClose) mixClose.act(S); else mixer.open = false; }

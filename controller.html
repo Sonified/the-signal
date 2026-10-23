@@ -8,7 +8,7 @@
 <!--
   The show controller: the iPad Robert carries round the room, driving
   Presence (the app at /, on the laptop, opened with ?presentation). This page is
-  always the controller; the receiving end is platform/show-remote.js.
+  always the controller; the receiving end is platform/presentation-receiver.js.
 
   Tap a cue and Presence jumps to that journey step. Four faders (the Max
   surface's four): VOLUME the app's Master volume and LP / HP its global
@@ -351,7 +351,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     "Shepard's Rise", 'Earthquake', 'Rotating Sun', 'Spherical Harmonics — hum along!', 'HARP Trailer', 'WISPR CME',
     'Touching the Sun', 'Ed Mitchell VR', 'QR + Sun 🌞', 'Guided Meditation 🎵🌞🎵'];
   // The drawing cues, 17 on: each asks the hall Presence conducts for a
-  // phase outright ({k:'hall', p, r}, platform/show-remote.js), never a
+  // phase outright ({k:'hall', p, r}, platform/presentation-receiver.js), never a
   // journey step. The words are the hall's (broadcast-worker/src/groups.js);
   // the show's arc is the SCRIPT's, Half Room the side door outside it.
   const DRAW = [
@@ -577,7 +577,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       fmt: p => p <= 0 ? 'stop' : posToRate(p).toFixed(2) + '×' },
     // the app's Master volume (vol), the whole interface's level, 50% by
     // default; the laptop keeps the slides' own level (Master slide volume)
-    // squared taper into the Master volume (platform/show-remote.js): 50% is -12 dB,
+    // squared taper into the Master volume (platform/presentation-receiver.js): 50% is -12 dB,
     // 25% is -24 dB. 71 is the app's own default (0.5, -6 dB) on this curve.
     { id: 'vol', key: 'vol', label: 'VOLUME', color: '#5ee8e0', max: 100, def: 71, fmt: p => Math.round(p) + '%' },
     // In the middle, first: the screen gate, the room's picture's master
@@ -605,7 +605,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // The finale row, above those three, left to right: DRONE, PIANO,
     // CHOIR, AMBIENCE, HUM. The four levels each their own 0..100%, which the laptop lays linearly
     // onto its levels, silent at 0 and the finale's own at 100%
-    // (platform/show-remote.js FINALE); each level's variance keeps
+    // (platform/presentation-receiver.js FINALE); each level's variance keeps
     // breathing around wherever it sits.
     // DRONE: the Music drone file, the Audio tone and the Music clouds
     // together (Drone level 55%, the tone's Level -14.4 dB, Clouds level

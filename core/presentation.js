@@ -8,8 +8,8 @@
 // stumbling into the talk's controls. Once given right it is remembered on
 // this device (UNLOCK_KEY, beside the brush's record: this machine's own,
 // never in a preset, a step or a broadcast), so the toggle does not ask
-// again. Switching off never asks. The show remote's relay password
-// (platform/show-remote.js, mirror.pw) is its own thing, untouched.
+// again. Switching off never asks. The relay password
+// (platform/presentation-receiver.js, mirror.pw) is its own thing, untouched.
 //
 // The Journey: the authoritative export (documents/tsc-2026-journey.json)
 // and the slide videos' manifest (documents/tsc-2026-media-manifest.json)

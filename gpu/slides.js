@@ -156,7 +156,7 @@ const outGain = S => slideGain(S) * clampNum(S.volume, 0, 1, 0.5);
 const smooth = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 
 // ---------- the duck ----------
-// The show remote's Duck button (controller.html, through platform/show-remote.js):
+// The controller's Duck button (controller.html, through platform/presentation-receiver.js):
 // a multiplier on the slides' gain, so the room's video sound drops under
 // the speaker's voice; the heartbeat and the Sun's hum take the same
 // multiplier on their own levels (core/heartbeat.js setHeartDuck,
@@ -195,7 +195,7 @@ export function replayEndedSlide() { return liveHook ? liveHook.replay() : false
 // pause held, putting back the override that stood before, so a slide
 // paused some other way first stays paused. Any other move of the slide
 // (a new slide, Restart, Play, the button) forgets the walk's hold.
-// The show remote's cue fill (platform/show-remote.js): where the slide on
+// The controller's cue fill (platform/presentation-receiver.js): where the slide on
 // screen stands, {t, d, r, f, l} (seconds in, its length, the rate it is
 // advancing at, 0 paused or ended), or null with no video of known length.
 export function slidesProgress() { return liveHook ? liveHook.progress() : null; }

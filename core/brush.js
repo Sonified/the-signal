@@ -432,7 +432,7 @@ export function brushSetPhase(p) {
   hallLink.setPhase(q, r);
 }
 export function brushNext() { if (brushConducting()) hallLink.next(); }
-// The show remote's drawing cues (platform/show-remote.js {k:'hall', p, r}):
+// The controller's drawing cues (platform/presentation-receiver.js {k:'hall', p, r}):
 // the phase and its round named outright, no retap walk. A click only asks,
 // as the chips do; the hall's answer lights the chips and the iPad alike.
 export function brushShowPhase(p, r) {
