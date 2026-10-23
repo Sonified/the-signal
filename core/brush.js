@@ -431,14 +431,22 @@ function dealTick() {
 let handSet = 0;
 const LOCAL_SEED = (Math.random() * 4294967296) >>> 0;
 const local = { key: -1, hand: { on: 1, a: 0, tiles: [], pending: 0 } };
+// the hand last told to the console (null: none yet, so a first "no hand"
+// says nothing)
+let handSaid = null;
 export function brushHallHand(h) {
   // the deal stopped or changed: a pick from the old hand goes back to the
   // atlas picker's tile
   if (!h || !h.tiles.includes(S.brushMotif | 0) || h.a !== handSet) handSet = 0;
   // the room told the deal off while the broadcaster has it on: say it again
   if (!h && brushConducting() && S.brushDeal === true) dealSent = -1;
-  if (h && h.tiles.length) console.log('[drawing] dealt a hand of ' + h.tiles.length + ' brush' + (h.tiles.length > 1 ? 'es' : '') + ' (set ' + h.a + ')');
-  else if (!h) console.log('[drawing] the hand is cleared');
+  // said once per change: the room repeats the same hand (or none) often
+  const said = h ? h.a + ':' + h.tiles.join(',') : '';
+  if (said !== handSaid) {
+    if (h && h.tiles.length) console.log('[drawing] dealt a hand of ' + h.tiles.length + ' brush' + (h.tiles.length > 1 ? 'es' : '') + ' (set ' + h.a + ')');
+    else if (!h && handSaid !== null) console.log('[drawing] the hand is cleared');
+    handSaid = said;
+  }
   idleWake('the hand');
 }
 export function brushHand() {
