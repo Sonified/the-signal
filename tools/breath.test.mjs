@@ -303,5 +303,70 @@ for (const windS of [1, 2.5, 5]) {
   ok('which the layer switched on follows at once', typeof a === 'number' && Math.abs(a - b) > 0.01, a + ' ' + b);
 }
 
+// 7. A room: the follower's breath (same rate, another phase) is set onto
+//    the broadcaster's by the beacon. The first beacon lands in one step; a
+//    later disagreement (the follower's glide folded a different integral)
+//    is slewed out, never faster than SYNC_BEND of the rate, never reversing
+//    the breath; a pause, a stale beacon and a rate of the viewer's own pull
+//    nothing.
+{
+  const phaseGap = (a, b) => gap(a.ph, b.ph);
+  const bro = fresh(), fol = fresh();
+  S.running = true;
+  frame(bro, 1000, 0, 5.5);
+  frame(fol, 4300, 0, 5.5);                    // the same rate, anchored elsewhere
+  B.setBreathClockOffset(0);
+  const beaconAt = tr => B.breathBeacon(bro, T0 + tr);
+  const sendBeacon = tr => { const b = beaconAt(tr); B.setBreathSyncTarget(tr, b.ph, b.hz); };
+  const ph = (s, tr) => B.breathPhaseAt(s, T0 + tr);
+  const before = gap(ph(bro, 10000), ph(fol, 10000));
+  ok('before the beacon the two breaths sit apart', before > 0.05, before);
+  sendBeacon(10000);
+  B.syncBreath(fol, T0 + 10000, 10000, 1 / 60);
+  ok('the first beacon sets the follower onto the broadcaster in one step',
+     gap(ph(bro, 10000), ph(fol, 10000)) < NOISE, gap(ph(bro, 10000), ph(fol, 10000)));
+  // knock the follower off by a tenth of a cycle, as a differently glided rate would
+  fol.offset += 0.1; fol.gen++;
+  let tr = 10000, worstStep = 0, lastErr = gap(ph(bro, tr), ph(fol, tr)), monotone = true;
+  const cap = RATE * 0.4 / 60;
+  for (let i = 0; i < 60 * 30; i++) {
+    tr += 1000 / 60;
+    if (i % 120 === 0) sendBeacon(tr);
+    const p0 = ph(fol, tr);
+    B.syncBreath(fol, T0 + tr, tr, 1 / 60);
+    worstStep = Math.max(worstStep, Math.abs(ph(fol, tr) - p0 > 0.5 ? 1 : 0) + gap(ph(fol, tr), p0));
+    const e = gap(ph(bro, tr), ph(fol, tr));
+    if (e > lastErr + NOISE) monotone = false;
+    lastErr = e;
+  }
+  ok('a later disagreement is slewed out within the half minute', lastErr < 1e-3, lastErr);
+  ok('and only ever shrinks, never overshoots', monotone);
+  ok('no frame moves the offset by more than the bend cap', worstStep <= cap + NOISE, worstStep + ' vs ' + cap);
+  // a paused follower holds still
+  S.running = false; S.pauseWindDown = 1;
+  frame(fol, tr + 10, 1, 5.5); for (let i = 0; i < 90; i++) { tr += 16; frame(fol, tr, 0.016, 5.5); }
+  fol.offset += 0.1;
+  const held0 = fol.offset;
+  B.syncBreath(fol, T0 + tr, tr, 1 / 60);
+  ok('a paused follower is not pulled', fol.offset === held0);
+  // a stale beacon, and a rate of the viewer\'s own, pull nothing
+  S.running = true; frame(fol, tr + 50, 0, 5.5); tr += 50;
+  const stale = fol.offset;
+  B.syncBreath(fol, T0 + tr + 20000, tr + 20000, 1 / 60);
+  ok('a stale beacon pulls nothing', fol.offset === stale);
+  frame(fol, tr + 60, 0, 8); tr += 60;
+  sendBeacon(tr);
+  const own = fol.offset;
+  B.syncBreath(fol, T0 + tr, tr, 1 / 60);
+  ok('a rate the viewer took for their own is not bent toward the broadcaster', fol.offset === own);
+  B.clearBreathSync();
+  frame(fol, tr + 60, 0, 5.5);
+  const cl = fol.offset;
+  B.syncBreath(fol, T0 + tr, tr, 1 / 60);
+  ok('after the room ends nothing pulls', fol.offset === cl);
+  const paused = B.breathBeacon((() => { const q = fresh(); return q; })(), T0);
+  ok('a breath that is not running steady sends no phase', paused === null);
+}
+
 console.log(fails ? fails + ' failed' : 'all passed');
 process.exit(fails ? 1 : 0);

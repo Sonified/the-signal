@@ -57,7 +57,7 @@ import { gentleResume, armResume } from './core/wake.js';
 import { roomClockSnap } from './core/room-clock.js';
 import { motionTick, motionHalt, winding, motionScale } from './core/motion.js';
 import { SIGNAL_ORIGIN } from './core/signal.js';
-import { sunBreath, steerBreath, breathHz } from './core/breath.js';
+import { sunBreath, steerBreath, syncBreath, breathHz } from './core/breath.js';
 import { stepHumVary } from './core/sun-hum-vary.js';
 import { setIdleWaker, idleWake, idleHeld, IDLE_DIAG } from './core/idle.js';
 import { eye, stepEye } from './core/eye.js';
@@ -863,6 +863,9 @@ async function boot() {
     // only on a change, so a steady breath is never touched and a paused one
     // eases to its halt with no frame's help.
     steerBreath(sunBreath, SIGNAL_ORIGIN + t, breathHz(S.sunBreathRate), S.running, motionScale(), S.pauseWindDown);
+    // In a broadcast room a follower's breath bends toward the broadcaster's
+    // phase (the beacon's, core/breath.js); a no-op anywhere else.
+    syncBreath(sunBreath, SIGNAL_ORIGIN + t, t, dt);
     // The viewer's eye for parallax (core/eye.js), on wall-clock time so a
     // simulated head keeps swaying while the scene is paused. Before any
     // layer's update, which all read it.

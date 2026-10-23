@@ -191,6 +191,70 @@ export function steerBreath(s, t, want, running, scale, windS) {
   return true;
 }
 
+// ---------- in a broadcast room ----------
+// Two screens at the same rate still breathe at unrelated points of the
+// cycle, because each one's anchor is wherever its own writer last folded.
+// The room fixes that the way it fixes the strobe (core/strobe.js applySync):
+// the broadcaster's beacon carries its breath phase and running rate,
+// stamped with the shared time, and a follower bends its own breath toward
+// where that says the breath is now. Rates are already the same (they ride
+// the settings), so the two formulas only need their offsets to agree, and
+// from then on they keep time with no further messages.
+//
+// The pull is a slew, never a jump (the sun swells with the phase and the
+// hum's filter follows it): the offset moves by the phase error x
+// SYNC_RATE a second, held to SYNC_BEND of the breath's own rate, so the
+// breath is a little quicker or slower for a few breaths and lands on the
+// shared phase. Only the first beacon of a joining screen lands in one
+// step, as it has no breath to disturb yet. Nothing pulls while the scene
+// is paused or winding down (the formula holds still there, as the room's
+// swings do), when the beacon is stale, or when the viewer has taken this
+// screen's rate off the broadcaster's (a pull would bend it for good).
+const SYNC_RATE = 0.8, SYNC_BEND = 0.4, SYNC_STALE_S = 8, SYNC_RATE_TOL = 0.02;
+let syncOn = false, syncFresh = false;
+let syncAt = 0, syncPh = 0, syncHz = 0;   // the beacon: shared ms, phase then, rate then (Hz)
+let syncClockOff = NaN;                   // shared ms minus this tab's rAF ms
+
+export function setBreathClockOffset(off) { syncClockOff = Number.isFinite(off) ? off : NaN; }
+export function setBreathSyncTarget(at, phase, hz) {
+  if (!syncOn) syncFresh = true;
+  syncAt = at; syncPh = phase; syncHz = hz;
+  syncOn = true;
+}
+export function clearBreathSync() { syncOn = false; syncFresh = false; }
+
+// The beacon's side: this thread's breath at tRaf (the page's rAF ms), as the
+// beacon carries it, or null when the breath is not running a steady rate
+// (a pause, or a wind-down, has nothing for a follower to be set against).
+export function breathBeacon(s, tAbs) {
+  if (s.mode !== BREATH_RUN || !(s.full > 0)) return null;
+  return { ph: breathPhaseAt(s, tAbs), hz: s.full };
+}
+
+// The follower's side, once a frame after steerBreath: tAbs is the frame on
+// the signal timeline (as steerBreath gets it), tRaf the same moment as the
+// rAF time the room clock's offset is against, dt the frame's seconds.
+export function syncBreath(s, tAbs, tRaf, dt) {
+  if (!syncOn || syncClockOff !== syncClockOff) return;
+  if (s.mode !== BREATH_RUN || !(syncHz > 0)) return;
+  if (Math.abs(s.full - syncHz) > syncHz * SYNC_RATE_TOL) return;
+  const el = (tRaf + syncClockOff - syncAt) / 1000;
+  if (el < 0 || el > SYNC_STALE_S) return;
+  let err = syncPh + el * syncHz - breathPhaseAt(s, tAbs);
+  err -= Math.round(err);
+  if (syncFresh) {
+    syncFresh = false;
+    s.offset += err; s.gen++;
+    return;
+  }
+  const cap = syncHz * SYNC_BEND;
+  let bend = err * SYNC_RATE;
+  bend = bend > cap ? cap : bend < -cap ? -cap : bend;
+  if (Math.abs(err) < 1e-5) return;
+  s.offset += bend * (dt < 0.1 ? dt : 0.1);
+  s.gen++;
+}
+
 // ---------- across threads ----------
 // The state as six numbers, for the audio link's call (a Float64Array: the
 // anchor is absolute ms and needs every bit of a double).

@@ -63,6 +63,8 @@ import { setPerfGlideHooks, perfGlideWriting, perfEachGlide, perfFollowGlide, pe
 import { setJourneyGlideHooks, journeyGlideWriting, journeyEachGlide } from './journey.js';
 import { CONTROLS, byId } from './schema.js';
 import { setStrobeClockOffset, setStrobeSyncTarget, clearStrobeSync } from './strobe.js';
+import { sunBreath, breathBeacon, setBreathClockOffset, setBreathSyncTarget, clearBreathSync } from './breath.js';
+import { SIGNAL_ORIGIN } from './signal.js';
 import { onWordAppear, wordState, remoteWord, setWordsRemote,
          setWordWalk, setWordWalkClock, wordWalkRunning, wordsRepeating, gateWords } from './words.js';
 import { setRoomClockRoom, setRoomClockOffset } from './room-clock.js';
@@ -486,6 +488,7 @@ function takeTime(c, s) {
     setStrobeClockOffset(clockOff);
     setWordWalkClock(clockOff);
     setRoomClockOffset(clockOff);
+    setBreathClockOffset(clockOff);
     // an Event sent before the clock settled went out with no unlock moment
     // (stateFor); now there is one to give
     if (first && available && unlockPending()) queueSend();
@@ -503,11 +506,15 @@ function sendBeacon() {
   // on a stale `wk` (see sendNow). The beacon's tick notices and sends.
   if (liveCount() && wordsRepeating() !== sentRepeating) queueSend();
   if (isNaN(clockOff) || !hooks.isRunning() || !liveCount()) return;
+  const now = hooks.now();
+  const br = breathBeacon(sunBreath, SIGNAL_ORIGIN + now);
   const msg = JSON.stringify({
-    t: 'phase', at: hooks.now() + clockOff,
+    t: 'phase', at: now + clockOff,
     p: S.phase, f: S.effFreq,
     dp: S.driftPhase, vp: S.varPhase, bp: S.brightVarPhase,
-    rp: S.ringBrightPhase, sp: S.edgeSpeedVarPhase, zp: S.edgeSizeVarPhase
+    rp: S.ringBrightPhase, sp: S.edgeSpeedVarPhase, zp: S.edgeSizeVarPhase,
+    // the breath's phase and rate then; absent while it is not running steady
+    bh: br ? br.ph : undefined, bf: br ? br.hz : undefined
   });
   for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) s.sock.send(msg);
 }
@@ -516,6 +523,9 @@ function takeBeacon(msg) {
   if (!Number.isFinite(msg.at) || !Number.isFinite(msg.p) || !Number.isFinite(msg.f)) return;
   // kept even while the strobe is the viewer's, so a sync can steer by it at once
   lastBeacon = msg;
+  // the breath has no "own" mode: it follows the room whenever a beacon has it
+  if (Number.isFinite(msg.bh) && Number.isFinite(msg.bf)) setBreathSyncTarget(msg.at, msg.bh, msg.bf);
+  else clearBreathSync();
   if (strobeOwn) return;
   const n = v => Number.isFinite(v) ? v : 0;
   setStrobeSyncTarget(msg.at, msg.p, msg.f,
@@ -1172,6 +1182,7 @@ export function initBroadcast(bits_, hooks_) {
         } else if (msg.t === 'end') {
           liveFollowEnd();
           clearStrobeSync();
+          clearBreathSync();
           releaseStrobe();
           releaseEvent();
           setWordsRemote(false);
@@ -1190,7 +1201,7 @@ export function initBroadcast(bits_, hooks_) {
           setWordsRemote(true);
         }
         else if (st === 'lost') hooks.notify('Broadcast link lost, reconnecting…');
-        else if (st === 'dead') { liveFollowEnd(); clearStrobeSync(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
+        else if (st === 'dead') { liveFollowEnd(); clearStrobeSync(); clearBreathSync(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);
