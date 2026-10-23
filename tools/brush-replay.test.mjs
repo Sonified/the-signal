@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planPass, retime, LOOP_MS, LOOP_REST_MS, REPLAY_ID } from '../core/brush-replay.js';
+import { planPass, retime, LOOP_MS, LOOP_REST_MS, REPLAY_ID, ROOM_HANDS, ROOM_WINDOW_MS } from '../core/brush-replay.js';
 import { encodeStroke, decodeStroke, MOTIF } from '../touch/strokes.js';
 
 const motif = (d, q) => encodeStroke(MOTIF, 200, 50, d, [{ u: 0.4, v: 0.4 }, { u: 0.5, v: 0.5 }, { u: 0.6, v: 0.6 }],
@@ -38,6 +38,88 @@ test('entries without a time, a drawer or a stroke are skipped', () => {
   const p = planPass([{ at: 1, s: motif(0) }, { id: 1, s: motif(0) }, { at: 2, id: 1 }, null, entry(10, 4)]);
   assert.equal(p.steps.length, 1);
   assert.equal(p.steps[0].id, 4);
+});
+
+// Where the pass begins: the room arriving (more than three drawers inside
+// ROOM_WINDOW_MS), or the whole marked tape when it never does.
+const ats = p => p.steps.map(s => s.tMs / p.scale);
+
+test('the room arrives at four hands inside a minute and a half', () => {
+  assert.equal(ROOM_HANDS, 4);
+  assert.equal(ROOM_WINDOW_MS, 90000);
+});
+
+test('one drawer alone plays the whole marked tape', () => {
+  const tape = [];
+  for (let i = 0; i < 40; i++) tape.push(entry(i * 5000, 1));
+  const p = planPass(tape);
+  assert.equal(p.steps.length, 40);
+  assert.equal(p.skipped, 0);
+  assert.equal(p.drawers, 0);
+  assert.equal(p.steps[0].tMs, 0);
+});
+
+test('three drawers interleaved (Robert testing) still play the whole tape', () => {
+  const tape = [];
+  for (let i = 0; i < 60; i++) tape.push(entry(i * 1000, 1 + (i % 3)));
+  const p = planPass(tape);
+  assert.equal(p.steps.length, 60);
+  assert.equal(p.skipped, 0);
+  assert.equal(p.drawers, 0);
+});
+
+test('a fourth drawer joining starts the pass at the earliest batch of its window', () => {
+  // Robert's three devices for ten minutes, one batch every 10 s
+  const tape = [];
+  for (let t = 0; t <= 600000; t += 10000) tape.push(entry(t, 1 + ((t / 10000) % 3)));
+  const before = tape.length;
+  // a fourth hand at T, then everyone together
+  const T = 605000;
+  tape.push(entry(T, 9));
+  for (let t = T + 1000; t < T + 30000; t += 1000) tape.push(entry(t, 1 + (t % 5)));
+  const p = planPass(tape);
+  // the window ending at T reaches back to T - 90 s: batches from 520000 on
+  const first = tape.findIndex(e => e.at >= T - ROOM_WINDOW_MS);
+  assert.equal(tape[first].at, 520000);
+  assert.equal(p.skipped, first);
+  assert.equal(p.drawers, 4);
+  assert.equal(p.steps.length, tape.length - first);
+  assert.equal(p.steps[0].tMs, 0);
+  assert.deepEqual(p.steps.map(s => s.id), tape.slice(first).map(e => e.id));
+  assert.ok(first < before && first > 0);
+  // the window is closed: a batch exactly 90 s before the fourth hand counts
+  const edge = planPass([entry(0, 1), entry(1000, 2), entry(2000, 3), entry(90000, 4)]);
+  assert.equal(edge.skipped, 0);
+  assert.equal(edge.drawers, 4);
+  const past = planPass([entry(0, 1), entry(1000, 2), entry(2000, 3), entry(90001, 4)]);
+  assert.equal(past.drawers, 0);
+});
+
+test('four drawers never inside one window play the whole tape', () => {
+  // each drawer's batches sit 100 s apart from the next drawer's
+  const tape = [];
+  for (let d = 0; d < 6; d++) for (let k = 0; k < 5; k++) tape.push(entry(d * 100000 + k * 1000, 1 + (d % 4)));
+  // and pairs that overlap but never reach four
+  tape.push(entry(700000, 1), entry(700500, 2), entry(701000, 3));
+  const p = planPass(tape);
+  assert.equal(p.skipped, 0);
+  assert.equal(p.drawers, 0);
+  assert.equal(p.steps.length, tape.length);
+});
+
+test('a re-plan after more batches arrive finds the same start', () => {
+  const tape = [];
+  for (let t = 0; t < 300000; t += 5000) tape.push(entry(t, 1 + ((t / 5000) % 2)));
+  tape.push(entry(300000, 3), entry(310000, 4), entry(320000, 5));
+  const a = planPass(tape);
+  assert.ok(a.skipped > 0);
+  const start = a.steps[0];
+  for (let t = 330000; t < 900000; t += 2000) tape.push(entry(t, 1 + (t % 7)));
+  const b = planPass(tape);
+  assert.equal(b.skipped, a.skipped);
+  assert.equal(b.steps[0].s, start.s);
+  assert.equal(b.steps.length, tape.length - a.skipped);
+  assert.deepEqual(ats(b).slice(0, a.steps.length).map(Math.round), ats(a).map(Math.round));
 });
 
 test('retime: the batch ends at base, its points closer by the scale, under the replay key', () => {

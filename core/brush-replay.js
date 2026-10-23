@@ -22,6 +22,15 @@
 // key of its own (REPLAY_ID + its id), never sharing a slot or a clock
 // offset with that drawer's live strokes.
 //
+// A pass begins where the room arrives, not at the mark. Robert rehearses
+// on the very tape the show plays from, and alone he never has more than
+// three hands drawing at once (his phones and the laptop), so the first
+// moment more than three drawers have each sent a stroke within a minute
+// and a half is the room drawing together, and the pass starts at the
+// earliest stroke of that stretch, every arriving hand's lead-in with it.
+// A tape that never gets there (Robert testing the playback alone) plays
+// whole from the mark, as it always did.
+//
 // Pure: tape in, plans and messages out (tools/brush-replay.test.mjs).
 
 import { TOGETHER_MS } from '../touch/replay.js';
@@ -29,20 +38,59 @@ import { TOGETHER_MS } from '../touch/replay.js';
 export const LOOP_MS = TOGETHER_MS;
 export const LOOP_REST_MS = 2000;
 export const REPLAY_ID = 100000;
+// The room has arrived when ROOM_HANDS drawers (one more than Robert ever
+// has going alone) have each drawn within ROOM_WINDOW_MS of each other: a
+// fourth live hand inside a minute and a half is the audience, not a test.
+export const ROOM_HANDS = 4;
+export const ROOM_WINDOW_MS = 90000;
 
-// The pass over `entries` (the tape's, oldest first): { steps, scale, ms },
-// steps [{ tMs, id, s }] from the pass's zero, ms the pass's length with its
-// rest. Entries without a time, a drawer or a stroke are skipped.
+// Where the room arrives on `good` (valid entries, oldest first): the index
+// of the earliest batch in the first ROOM_WINDOW_MS stretch, ending at a
+// batch, that holds ROOM_HANDS distinct drawers, or -1 when it never does.
+// One walk with a trailing edge, each batch counted in and out once, on a
+// map kept across passes so a re-plan allocates nothing new. The first
+// such stretch on a tape only ever grown at its end stays the first, so
+// every re-plan finds the same start. The window grows by one drawer at
+// most per batch, so the stretch found holds exactly `hands` of them.
+const inWindow = new Map();
+export function roomArrives(good, hands = ROOM_HANDS, windowMs = ROOM_WINDOW_MS) {
+  inWindow.clear();
+  let lo = 0, at = -1;
+  for (let i = 0; i < good.length; i++) {
+    const id = good[i].id;
+    inWindow.set(id, (inWindow.get(id) || 0) + 1);
+    while (good[i].at - good[lo].at > windowMs) {
+      const o = good[lo++].id, n = inWindow.get(o) - 1;
+      if (n) inWindow.set(o, n); else inWindow.delete(o);
+    }
+    if (inWindow.size >= hands) { at = lo; break; }
+  }
+  inWindow.clear();
+  return at;
+}
+
+// The pass over `entries` (the tape's, oldest first): { steps, scale, ms,
+// skipped, drawers }, steps [{ tMs, id, s }] from the pass's zero, ms the
+// pass's length with its rest, skipped how many batches before the room
+// arrived were left out (0 when it never arrived and the whole tape plays)
+// and drawers how many hands it arrived with (0 then too). Entries without
+// a time, a drawer or a stroke are skipped.
 export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS) {
   const good = [];
   for (const e of entries || []) {
     if (e && typeof e.at === 'number' && typeof e.id === 'number' && e.s && e.s.t === 's') good.push(e);
   }
   if (!good.length) return { steps: [], scale: 1, ms: 0 };
-  const t0 = good[0].at, span = good[good.length - 1].at - t0;
+  const a = roomArrives(good), skipped = a > 0 ? a : 0;
+  const drawers = a >= 0 ? ROOM_HANDS : 0;
+  const t0 = good[skipped].at, span = good[good.length - 1].at - t0;
   const scale = span > 0 ? Math.min(1, loopMs / span) : 1;
-  const steps = good.map(e => ({ tMs: (e.at - t0) * scale, id: e.id, s: e.s }));
-  return { steps, scale, ms: span * scale + restMs };
+  const steps = new Array(good.length - skipped);
+  for (let i = skipped; i < good.length; i++) {
+    const e = good[i];
+    steps[i - skipped] = { tMs: (e.at - t0) * scale, id: e.id, s: e.s };
+  }
+  return { steps, scale, ms: span * scale + restMs, skipped, drawers };
 }
 
 // A step as the message brushTake plays: the stroke under the drawer's

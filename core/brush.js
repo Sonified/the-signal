@@ -44,7 +44,7 @@ import { roomClockMs } from './room-clock.js';
 import { dealHand } from '../broadcast-worker/src/deal.js';
 import { seedOf, notesFor, nextBand } from './brush-notes.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
-import { planPass, retime } from './brush-replay.js';
+import { planPass, retime, ROOM_WINDOW_MS } from './brush-replay.js';
 import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
 import { BRUSH_W, ROTATE_MAX, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
@@ -770,8 +770,10 @@ export function brushPlaying() {
 // here), played on a loop through brushTake like any stroke from the hall
 // (core/brush-replay.js plans each pass and retimes its strokes). A pass
 // runs to its end and the next is planned from the tape as it stands then.
+// Where the room arrived is said once each time it moves (a fresh playback,
+// a tape begun again), not on every lap of the loop.
 const showTape = [];
-let replayOn = false, pass = null, passI = 0, passT0 = 0;
+let replayOn = false, pass = null, passI = 0, passT0 = 0, saidSkip = -1;
 export function brushTapeReset() { showTape.length = 0; }
 export function brushTapeAdd(entries) {
   for (const e of entries) showTape.push(e);
@@ -784,6 +786,7 @@ export function brushReplay(on) {
   if (on === replayOn) return;
   replayOn = on;
   pass = null;
+  saidSkip = -1;
   console.log(on ? '[drawing] playing back the room\'s drawing on a loop (' + showTape.length + ' batches so far)' : '[drawing] the playback stops');
   idleWake('the playback');
 }
@@ -794,6 +797,10 @@ function replayTick(now) {
     pass = planPass(showTape);
     passI = 0; passT0 = now;
     if (!pass.steps.length) { pass = null; return; }
+    if (pass.drawers && pass.skipped !== saidSkip) {
+      saidSkip = pass.skipped;
+      console.log('[drawing] playback begins where the room arrives: ' + pass.drawers + ' drawers within ' + Math.round(ROOM_WINDOW_MS / 1000) + ' s, skipping the first ' + pass.skipped + ' batches');
+    }
   }
   const st = pass.steps, t = now - passT0;
   while (passI < st.length && st[passI].tMs <= t) {
