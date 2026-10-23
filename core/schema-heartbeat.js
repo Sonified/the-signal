@@ -33,7 +33,10 @@ const NUM = [
   // VARIANCES steps it, gpu/heartbeat.js plays effHeartSpeed), led by its
   // driver: Time (the rate below), the strobe's wave or the sun's breath
   ['heartSpeedVar',       0, 1,   0,  false],
-  ['heartSpeedVarPeriod', 1, 120, 20, true ]
+  ['heartSpeedVarPeriod', 1, 120, 20, true ],
+  // the room clock's phase offset for that rate (core/room-clock.js), which
+  // keeps a rate change from jumping the swing in a room
+  ['heartSpeedVarPeriodOff', 0, 1, 0, false]
 ];
 
 // Trims a slider's position to the step's precision and clamps it into
@@ -161,7 +164,7 @@ export const HEARTBEAT_CONTROLS = [
   // the slider's own taper (core/schema-variance.js wireVariances).
   driveRow('heartSpeed', 'heartSpeedVarDrive', 'Speed variance driver', null, 'heartbeat'),
   ...varianceRows('heartSpeed', {
-    name: 'Speed', periodMax: 120,
+    name: 'Speed', periodMax: 120, room: true,
     rows: { period: { visible: S => driveOf(S.heartSpeedVarDrive) === 'time' } }
   })
 ];

@@ -348,6 +348,7 @@ const SWINGS = [
   ['confFbStreamVarRate',   'confFbStreamVarRateOff',   carryRoomPhase],
   ['confFbTwistVarRate',    'confFbTwistVarRateOff',    carryRoomPhase],
   ['confFbPulseRate',       'confFbPulseRateOff',       carryRoomPhase],
+  ['heartSpeedVarPeriod',   'heartSpeedVarPeriodOff',   carryRoomPhase],
   ['flowerOpacityPeriod',   'flowerOpacityPeriodOff',   carryRoomPhase],
   ['flowerTintPeriod',      'flowerTintPeriodOff',      carryRoomPhase],
   ['flowerBloomRatePeriod', 'flowerBloomRatePeriodOff', carryRoomPhase],

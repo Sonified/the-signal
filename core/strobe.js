@@ -120,8 +120,10 @@ const VARIANCES = [
   { amount: 'partOpacityVar', period: 'partOpacityVarPeriod', fallback: 20, phase: 'partOpacityVarPhase', eff: 'effPartOpacity', set: 'partOpacity' },
   { amount: 'partFoldSpinVar', period: 'partFoldSpinVarPeriod', fallback: 20, phase: 'partFoldSpinVarPhase', eff: 'effPartFoldSpin', set: 'partFoldSpin' },
   // the heartbeat's Speed (gpu/heartbeat.js plays the track at the
-  // effective), its dip led by its driver as the confetti's Opacity's is
-  { amount: 'heartSpeedVar', period: 'heartSpeedVarPeriod', fallback: 20, phase: 'heartSpeedVarPhase', eff: 'effHeartSpeed', set: 'heartSpeed', drive: 'heartSpeedVarDrive' },
+  // effective), its dip led by its driver as the confetti's Opacity's is,
+  // and on the room clock, so a room's hearts speed up and ease together
+  // (core/heart-sync.js holds their places together)
+  { amount: 'heartSpeedVar', period: 'heartSpeedVarPeriod', fallback: 20, phase: 'heartSpeedVarPhase', eff: 'effHeartSpeed', set: 'heartSpeed', drive: 'heartSpeedVarDrive', room: roomPhaseState() },
   // and its Master, the same construct (gpu/heartbeat.js rides the sound's
   // gain and the wash's amount on the effective together)
   { amount: 'heartMasterVar', period: 'heartMasterVarPeriod', fallback: 20, phase: 'heartMasterVarPhase', eff: 'effHeartMaster', set: 'heartMaster', drive: 'heartMasterVarDrive' }

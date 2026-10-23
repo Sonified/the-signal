@@ -52,6 +52,12 @@ import { createGlobalFilter } from './global-filter.js';
 import { createOutputGuard } from './output-guard.js';
 import { chanGate, onChannelGates } from '../js/mixgate.js';
 import { tapPeak } from '../js/util.js';
+import { S } from '../js/state.js';
+import { roomClockRunning } from './room-clock.js';
+import {
+  setHeartReporter, heartTarget, heartServo, heartServoReset, heartServoStep,
+  heartLeadState, heartRateAhead, HEART_JUMP
+} from './heart-sync.js';
 
 const TRACK_URL = 'audio/heartbeat.m4a';
 // The RMS window: the generator's frame, 1/30 s of sound, whatever the
@@ -129,6 +135,16 @@ let energy = null, total = 0, frames = 0, win = 0, chL = null, chR = null;
 let src = null, offset = 0, anchorT = 0, anchorPos = 0, rate = 1;
 let prevT = 0, prevPos = 0, prevRate = 1, hasPrev = false, heardFrom = 0;
 let resumeArmed = true, lastLevel = -1;
+// The playing source's own gain, which a jump onto the room's place fades
+// across (jumpTo); the room's servo and the rate's lead (core/heart-sync.js).
+let srcGain = null;
+const servo = heartServo(), leadSt = heartLeadState();
+// The page's performance.now() at context time 0, as js/strobe-am.js keeps it
+// (its header has the why): the lowest reading of now less currentTime, let
+// rise a little every ms so a clock that runs slow is followed. currentTime
+// moves in bursts, so one reading can sit a burst behind; this does not.
+const CLOCK_LEAK = 5e-5, CLOCK_JUMP_MS = 250;
+let clockEst = NaN, clockAt = 0;
 // heartRead's results, read straight off the module (no object per frame).
 let readT = -1;
 export let heartRms = 0, heartDt = 0;
@@ -166,6 +182,7 @@ function ensureGraph() {
     try { ctx = new AC({ latencyHint: 'playback' }); ownCtx = true; }
     catch (e) { unavailable = true; warn('could not make an AudioContext', e); return false; }
   }
+  if (typeof ctx.addEventListener === 'function') ctx.addEventListener('statechange', () => { clockEst = NaN; });
   level = ctx.createGain();
   level.gain.value = 0;
   // The limiter and its makeup trim, after the level so it is the level
@@ -284,18 +301,123 @@ function tryResume() {
   if (p && p.catch) p.catch(e => warn('resume() was refused', e));
 }
 
+// ---------- where the sound is heard ----------
+// The place the listener hears is the sample leaving the speaker, which was
+// handed to the graph outputLatency before (232 ms on Bluetooth, tens of
+// milliseconds wired; the drawer's Output latency toggle, S.outputLatComp,
+// as for the strobe's audio, js/strobe-am.js). The light reads the same
+// place, so flash and sound agree with each other, and with every other
+// screen in a room (core/heart-sync.js) whatever its output.
+const mod = (x, m) => x - Math.floor(x / m) * m;
+
+function latency() {
+  if (S.outputLatComp === false) return 0;
+  const c = (ctx.isHeart && getContext()) || ctx;
+  const l = c.outputLatency;
+  return l > 0 && l < 1 ? l : 0;
+}
+
+function sampleClock() {
+  if (ctx.state !== 'running') return;
+  const p = performance.now(), s = p - ctx.currentTime * 1000;
+  if (clockEst === clockEst && s - clockEst <= CLOCK_JUMP_MS) clockEst = Math.min(clockEst + CLOCK_LEAK * (p - clockAt), s);
+  else clockEst = s;
+  clockAt = p;
+}
+
+// The context time being heard now.
+function heardNow() {
+  const l = latency();
+  return clockEst === clockEst ? (performance.now() - clockEst) / 1000 - l : ctx.currentTime - l;
+}
+
+// Seconds from now until a call made at context time `at` is heard.
+function leadS(at) {
+  const l = latency();
+  return clockEst === clockEst ? (clockEst + at * 1000 - performance.now()) / 1000 + l : at - ctx.currentTime + l;
+}
+
+// The track's place (seconds, any lap) at heard context time c.
+function placeAt(c) {
+  return hasPrev && c < anchorT ? prevPos + (c - prevT) * prevRate : anchorPos + (c - anchorT) * rate;
+}
+
+// A source that starts while the room has a fresh beacon starts at the
+// broadcaster's place as it will be when this start is heard; -1 with
+// nothing to go by.
+function roomStartPos(at) {
+  const tgt = roomClockRunning() ? heartTarget(performance.now()) : null;
+  if (!tgt || ctx.state !== 'running' || !(clockEst === clockEst) || Math.abs(tgt.dur - buffer.duration) > 0.01) return -1;
+  return mod(tgt.pos + rate * (clockEst + at * 1000 + latency() * 1000 - tgt.at) / 1000, buffer.duration);
+}
+
 function startSource() {
   src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = true;
   src.playbackRate.value = rate;
-  src.connect(level);
-  const pos = buffer.duration > 0 ? offset % buffer.duration : 0;
+  srcGain = ctx.createGain();
+  src.connect(srcGain);
+  srcGain.connect(level);
   const at = placeNow();
+  const room = roomStartPos(at);
+  const pos = room >= 0 ? room : buffer.duration > 0 ? offset % buffer.duration : 0;
   src.start(at, pos);
   anchorT = at; anchorPos = pos; heardFrom = at; hasPrev = false;
   readT = -1;
+  heartServoReset(servo);
 }
+
+// Sets the track onto place p, the place that should be heard now, in one
+// step: a second source starts there as the first fades out under it, over
+// XFADE, so the join does not click. The place before the join is still the
+// old anchor's (prev*, as for a rate change), so the light does not read the
+// new place until it is heard.
+const XFADE = 0.03;
+function jumpTo(p) {
+  const at = placeNow();
+  const pos = mod(p + rate * Math.max(0, leadS(at)), buffer.duration);
+  const old = src, oldGain = srcGain;
+  prevT = anchorT; prevPos = anchorPos; prevRate = rate; hasPrev = true;
+  anchorT = at; anchorPos = pos;
+  src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  src.playbackRate.value = rate;
+  srcGain = ctx.createGain();
+  srcGain.gain.setValueAtTime(0, at);
+  srcGain.gain.linearRampToValueAtTime(1, at + XFADE);
+  src.connect(srcGain);
+  srcGain.connect(level);
+  src.start(at, pos);
+  oldGain.gain.setValueAtTime(1, at);
+  oldGain.gain.linearRampToValueAtTime(0, at + XFADE);
+  try { old.stop(at + XFADE + 0.01); } catch (e) {}
+  old.onended = () => { try { old.disconnect(); oldGain.disconnect(); } catch (e) {} };
+}
+
+// In a room, the rate to play at: the Speed carried to where it will be when
+// heard (heartRateAhead), bent a little toward the broadcaster's place
+// (heartServoStep), and the track set onto it if it is far off. Outside a
+// room the Speed as it is.
+function lockSpeed(speed) {
+  const now = performance.now();
+  const inRoom = roomClockRunning();
+  const ahead = inRoom ? heartRateAhead(leadSt, speed, now, leadS(placeNow())) : (leadSt.v = NaN, speed);
+  const act = heartServoStep(servo, inRoom ? heartTarget(now) : null, now, placeAt(heardNow()), speed, buffer.duration);
+  if (act === HEART_JUMP) jumpTo(servo.to);
+  return ahead * (1 + servo.bend);
+}
+
+// The broadcaster's report for its beacon (core/heart-sync.js): the place
+// being heard now and the track's length, or null while nothing is heard.
+function report() {
+  if (!src || !buffer || ctx.state !== 'running' || !(buffer.duration > 0)) return null;
+  const c = heardNow();
+  if (c < heardFrom) return null;
+  return { pos: mod(placeAt(c), buffer.duration), dur: buffer.duration };
+}
+setHeartReporter(report);
 
 // Stops the source where it is, keeping its place for the next start: the
 // place as it stands when the stop is heard.
@@ -305,8 +427,11 @@ export function heartPause() {
   if (buffer && buffer.duration > 0) offset = (anchorPos + (at - anchorT) * rate) % buffer.duration;
   try { src.stop(at); } catch (e) {}
   src.disconnect();
-  src = null;
+  if (srcGain) srcGain.disconnect();
+  src = null; srcGain = null;
   readT = -1;
+  heartServoReset(servo);
+  leadSt.v = NaN;
 }
 
 // Lets the next frame ask the context to resume.
@@ -348,6 +473,8 @@ export function heartSync(play, gain, speed = 1) {
   // Speed: a new rate takes effect where it is heard, the place so far
   // counted at the old one, so a pause still keeps the true place in the
   // track; until then the old rate is still what plays (prev*).
+  sampleClock();
+  if (src && buffer) speed = lockSpeed(speed);
   if (speed !== rate) {
     if (src) {
       const at = placeNow();
@@ -374,8 +501,9 @@ export function heartSync(play, gain, speed = 1) {
 // moved).
 //
 // The 1/30 s is of sound as heard, ending at the place the listener is
-// hearing now: the track's place at currentTime, which on Heart, as on a
-// native context, is the clock the speakers play by. At a Speed other than
+// hearing now: the track's place at the context time being heard (heardNow:
+// currentTime on the page's smooth estimate of it, less the output's
+// latency, as the room's sync reads it, core/heart-sync.js). At a Speed other than
 // 1 that 1/30 s holds rate/30 s of the track, as the analyser's window did.
 // Before the source's start is heard (on Heart, a lookahead after it was
 // asked for) there is nothing to read yet, and the first read after it is
@@ -383,14 +511,13 @@ export function heartSync(play, gain, speed = 1) {
 export function heartRead() {
   heartRms = 0; heartDt = 0;
   if (!src || !energy) return;
-  const now = ctx.currentTime;
+  const now = heardNow();
   if (now < heardFrom) { readT = -1; return; }
   if (readT >= 0) heartDt = now - readT;
   readT = now;
   if (!(heartDt > 0)) { heartDt = 0; return; }
-  const late = hasPrev && now < anchorT;
-  const r = late ? prevRate : rate;
-  const pos = late ? prevPos + (now - prevT) * prevRate : anchorPos + (now - anchorT) * rate;
+  const r = hasPrev && now < anchorT ? prevRate : rate;
+  const pos = placeAt(now);
   const end = pos * buffer.sampleRate, span = win * r;
   const ms = (energyAt(end) - energyAt(end - span)) / span;
   heartRms = ms > 0 ? Math.sqrt(ms) : 0;
