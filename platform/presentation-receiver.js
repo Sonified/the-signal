@@ -27,7 +27,9 @@
 // rides as src, never id: a ctl's id is the control's (the first build put
 // the sender in id too, overwriting it, so every ctl was refused):
 //   {k:'jump', i}       journeyJumpTo(i), i 0-based (the step already playing
-//                       is left alone, as a digit key or MIDI note does)
+//                       is left alone, as a digit key or MIDI note does);
+//                       dr 1 on a drawing cue's own jump, and with none the
+//                       show's drawing ends on meditatewiththesun.com
 //   {k:'next'}/{k:'prev'}  journeyStepBy(+1 / -1)
 //   {k:'seek', f}       the playing cue tapped again: its slide video to
 //                       share f (0..1) of its length (gpu/slides.js seekSlide);
@@ -100,7 +102,8 @@
 //                         finaleAmb,             one or more levels, 100 =
 //                         finaleHum,
 //                         finaleSun,
-//                         finaleWind
+//                         finaleWind,
+//                         finaleSunLayer
 //                                                the finale's own level, 0
 //                                                silent; set through their
 //                                                controls, so their variance
@@ -146,7 +149,7 @@
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
-// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, tx: textOpacity, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, wi: finaleWind, play, on} (play: what is actually happening, the
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, tx: textOpacity, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, wi: finaleWind, so: finaleSunLayer, play, on} (play: what is actually happening, the
 // live hold included), vp the slide video's place {t, d, r, f, l} (seconds in,
 // its length, the rate it advances at, 0 when held; null with no video of
 // known length; the iPad fills the playing cue with it, running on between
@@ -158,7 +161,7 @@ import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
 import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyPerformanceControl } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
-import { broadcastSeek } from '../core/broadcast.js';
+import { broadcastSeek, broadcastDrawing } from '../core/broadcast.js';
 import { idleTouch } from '../js/idle-ahead.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
@@ -207,7 +210,10 @@ const FINALE = {
   // half, the flowers' opacity 0 to 15% over its top quarter
   finaleWind: [{ key: 'sunFbAmt', top: 0.83, pos: pct }, { key: 'sunFbOpacity', top: 0.36, pos: pct },
                { key: 'ringOpacity', top: 0.29, from: 0.5, pos: pct },
-               { key: 'flowerOpacity', top: 0.15, from: 0.75, pos: pct }]
+               { key: 'flowerOpacity', top: 0.15, from: 0.75, pos: pct }],
+  // SUN, beside ROTSPD: the Sun layer's Opacity, 0 to 100%, to fade the Sun
+  // down under the room's brushes
+  finaleSunLayer: [{ key: 'sunOpacity', top: 1, pos: pct }]
 };
 // where a fader at u (0..1) puts one of its settings
 const finaleValue = (e, u) => {
@@ -318,6 +324,9 @@ export function initPresentationReceiver(hooks = {}) {
       // drawing cues (17 on) jump to steps authored as the show grows, and
       // an unwritten one falls back to the last that exists
       const i = m.i | 0;
+      // a journey cue (1 to 16, no dr) ends the show's drawing on
+      // meditatewiththesun.com (core/broadcast.js broadcastDrawing)
+      if (!m.dr) broadcastDrawing(false);
       if (i >= 0 && journeyCount() > 0) journeyJumpTo(Math.min(i, journeyCount() - 1));
     }
     else if (m.k === 'clean') { if (hooks.clearScreen) hooks.clearScreen(); }
@@ -341,10 +350,11 @@ export function initPresentationReceiver(hooks = {}) {
       if (m.p === 'solo' && r === 1) showTape.mark(); else showTape.run();
       brushReplay(false);
       brushShowPhase(m.p, r);
+      broadcastDrawing(true);
     }
     // cue 24: the show's drawing played back on a loop (core/brush.js
     // brushReplay), the room left in its phase
-    else if (m.k === 'replay') { showTape.run(); brushReplay(true); }
+    else if (m.k === 'replay') { showTape.run(); brushReplay(true); broadcastDrawing(true); }
     else if (m.k === 'ctl') {
       if (m.id === 'screenGate') {
         // not a schema control: live only, never saved (js/state.js)
@@ -442,7 +452,7 @@ export function initPresentationReceiver(hooks = {}) {
         f: pr.f || S.slideFile, l: pr.l === true } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'), tx: get('textOpacity'),
             gt: Math.round(Math.max(0, Math.min(1, +S.screenGate)) * 1000) / 10,
-            ch: finalePos('finaleChoir'), dr: finalePos('finaleDrone'), pn: finalePos('finalePiano'), am: finalePos('finaleAmb'), hu: finalePos('finaleHum'), su: finalePos('finaleSun'), wi: finalePos('finaleWind'),
+            ch: finalePos('finaleChoir'), dr: finalePos('finaleDrone'), pn: finalePos('finalePiano'), am: finalePos('finaleAmb'), hu: finalePos('finaleHum'), su: finalePos('finaleSun'), wi: finalePos('finaleWind'), so: finalePos('finaleSunLayer'),
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };
   }

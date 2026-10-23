@@ -363,7 +363,24 @@ function nextSlide() {
   return undefined;
 }
 
+// The show's drawing, told to meditatewiththesun.com: from the first drawing
+// cue (17 on) until a journey cue (1 to 16), the room "live"'s state
+// message names the drawing room as `dr`, and the MWTS page fades in a
+// drawing layer that follows it (its site/event.js; this app's
+// ?follow=<room>&draw, main.js drawOnly). The relay keeps the message, so a
+// phone arriving mid-drawing gets the layer too. Only "live" carries it.
+// platform/presentation-receiver.js moves it with the cues.
+let drawShow = false;
+export function broadcastDrawing(on) {
+  on = !!on;
+  if (on === drawShow) return;
+  drawShow = on;
+  console.log('[broadcast] the live room ' + (on ? 'asks meditatewiththesun.com for the drawing layer (room ' + (drawRoomName || 'none yet') + ')' : 'lets the drawing layer go'));
+  if (available) queueSend();
+}
+
 function stateFor(s, body) {
+  if (drawShow && drawRoomName && s.room === ECHO_ROOM) body += ',"dr":' + JSON.stringify(drawRoomName);
   if (!s.event) return body + ',"ev":0}';
   if (!s.unlock || isNaN(clockOff)) return body + ',"ev":1}';
   return body + ',"ev":1,"un":' + Math.round(s.unlock - Date.now() + hooks.now() + clockOff) + '}';
@@ -440,8 +457,9 @@ function syncWalkRoom() {
 // follows. No address names it and nothing else asks for it: the room a
 // screen broadcasts or follows is the room it draws in. hooks.drawRoom
 // (main.js) opens and closes the link: { room, key }, or null for none.
-let drawRoomWant = '';
+let drawRoomWant = '', drawRoomName = '';
 function syncDrawRoom(room, k) {
+  drawRoomName = room || '';
   const want = room ? room + '\n' + (k || '') : '';
   if (want === drawRoomWant) return;
   drawRoomWant = want;
