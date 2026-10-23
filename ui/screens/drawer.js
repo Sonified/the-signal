@@ -38,6 +38,7 @@ import {
 } from '../../core/journey.js';
 import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
+import { BUILD } from '../../core/version.js';
 
 const DRAWER_SECTIONS = ['layers', 'slides', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'brush', 'sun', 'music', 'audio', 'heartbeat', 'atmosphere', 'live', 'reverb', 'render', 'settings'];
 
@@ -708,6 +709,7 @@ function subHeading(ui, str, divider) {
   ui.text.draw(ui.dl, str, ui.rx, ui.ry + ui._lm.ascent, TYPE.micro, W.semibold, COLOR.inkFaint, 0, TRACK.caps, 1);
 }
 
+let presetsHeadW = 0;
 function measurePresets(ui) {
   const v = presetsVersion(), n = presetCount();
   if (v === widthsVersion && presetW.length >= n) return;
@@ -1330,6 +1332,11 @@ export function drawDrawer(ui, app) {
   // presets, a wrapped row of chips at the head of the drawer
   subHeading(ui, 'PRESETS', false);
   const hx = ui.rx, hy = ui.ry, hw = ui.rw, hh = ui.rh;
+  // The build stamp (core/version.js) just right of the heading, so every
+  // screen, a presentation's and its followers' alike, shows which build it
+  // runs (the lower right's stamp is hidden in Presentation mode).
+  if (!presetsHeadW) presetsHeadW = ui.text.measure('PRESETS', TYPE.micro, W.semibold) + TRACK.caps * TYPE.micro * 7;
+  ui.text.draw(ui.dl, BUILD, hx + presetsHeadW + SPACE.sm, hy + ui._lm.ascent, TYPE.micro, W.regular, COLOR.inkFaint, 0, TRACK.ui, 1);
   // a breath of air around the one-line ramp row, so it reads as its own
   // small block between the heading and the chips
   ui.spacer(SPACE.xs);
