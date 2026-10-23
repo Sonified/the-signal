@@ -197,6 +197,9 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
    above the finale row and the button (both start 48px down); laid over
    the stage, so it never widens it */
 #info { position: absolute; left: 0; right: 0; top: 0; padding-top: 4px; display: grid; gap: 8px; }
+/* Presence's word on the left, the controller's version on the right */
+#infoRow { display: flex; justify-content: space-between; gap: 12px; }
+#infoVersion { font-variant-numeric: tabular-nums; }
 .bar { height: 10px; border-radius: 5px; background: #0f1219; border: 1px solid var(--line); overflow: hidden; }
 .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, #6b5216, var(--gold)); transition: width .3s; }
 /* One play/pause toggle filling the 178px block above the four faders
@@ -300,7 +303,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   </div>
   <div id="stage">
     <div id="info">
-      <div class="status" id="presence">Presence: <b>no word yet</b></div>
+      <div id="infoRow"><div class="status" id="presence">Presence: <b>no word yet</b></div><div class="status" id="infoVersion"></div></div>
       <div class="bar"><div id="showBar"></div></div>
     </div>
     <div id="middle"><div id="midFaders"></div><div id="leftFader"></div><div id="topFaders"></div></div>
@@ -356,9 +359,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // socket, so the laptop's relay is a path only when the laptop served us.
   const LOCAL_HOST = SERVED_LOCAL ? location.host : '';
   $('roomName').textContent = room;
-  // this page's version, shown in the settings: one up with every change
-  const VERSION = 2;
-  $('version').textContent = 'v' + VERSION;
+  // this page's version, shown in the settings and at the right of the
+  // Presence line: one up with every change
+  const VERSION = 3;
+  $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
     "Shepard's Rise", 'Earthquake', 'Rotating Sun', 'Spherical Harmonics — hum along!', 'HARP Trailer', 'WISPR CME',
