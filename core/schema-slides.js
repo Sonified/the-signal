@@ -297,12 +297,13 @@ export const SLIDES_CONTROLS = [
   },
   {
     // Which code the Sun QR shows (gpu/sun-qr.js): meditatewiththesun.com's
-    // or the follower's (presence.now.audio/?follow=win), in one place, a
-    // change crossfading. The field is the sun's (schema-sun.js).
+    // or the one into the shared paint brushes (presence.now.audio
+    // ?follow=win), in one place, a change crossfading. The field is the
+    // sun's (schema-sun.js).
     id: 'sunQrWhich', section: 'slides', label: 'QR code', kind: 'segment', def: DEF_QR_WHICH,
     options: [
       { value: 'mwts',   label: 'Meditate with the Sun', domId: null },
-      { value: 'follow', label: 'Follow',                domId: null }
+      { value: 'follow', label: 'Shared paint brushes', domId: null }
     ],
     get: S => qrWhichOf(S.sunQrWhich),
     set: (S, v) => { S.sunQrWhich = qrWhichOf(v); save(); }
