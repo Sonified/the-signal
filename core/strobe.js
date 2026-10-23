@@ -146,7 +146,7 @@ setHeartSpeedAt(sec => {
   const v = HEART_SPEED, drive = driveOf(S[v.drive]), amount = S[v.amount];
   if (!amount || drive === 'strobe') return S[v.eff];
   const period = S[v.period] || v.fallback;
-  return variedBy(drive, S[v.set], amount, (S[v.phase] || 0) + sec / period, 1,
+  return variedBy(drive, v.set(S), amount, (S[v.phase] || 0) + sec / period, 1,
                   breathHeardAt(S, SIGNAL_ORIGIN + performance.now() + sec * 1000));
 });
 
