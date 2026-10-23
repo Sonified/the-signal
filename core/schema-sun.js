@@ -46,6 +46,12 @@ const DEF_HUM_ON = false;
 const DEF_STARS = true;
 // The show's QR code over everything (gpu/sun-qr.js), off until asked for.
 const DEF_QR_ON = false;
+// Which code it shows (gpu/sun-qr.js): meditatewiththesun.com's, or the one
+// that brings a phone into this show as a follower (presence.now.audio
+// ?follow=win). Both sit in the same place; a change crossfades.
+const QR_WHICH = ['mwts', 'follow'];
+const DEF_QR_WHICH = 'mwts';
+const qrWhichOf = v => QR_WHICH.indexOf(v) >= 0 ? v : DEF_QR_WHICH;
 // What drives the Speed's, Feedback Amount's and Opacity's variances: the
 // room-timed clock, the strobe or the breath. The breath by default.
 const DEF_DRIVE = 'breath';
@@ -247,6 +253,7 @@ export function initSunState(S) {
   if (typeof S.sunHiRes !== 'boolean') S.sunHiRes = DEF_HI_RES;
   if (typeof S.sunStars !== 'boolean') S.sunStars = DEF_STARS;
   if (typeof S.sunQrOn !== 'boolean') S.sunQrOn = DEF_QR_ON;
+  S.sunQrWhich = qrWhichOf(S.sunQrWhich);
   for (const k of DRIVEN) S[k + 'VarDrive'] = driveOf(S[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i];
@@ -259,7 +266,7 @@ export function initSunState(S) {
 // kaleidoOn does, so the record does not look like a partial v0 layers
 // object.
 export function sunStateOf(S) {
-  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade, sunHumOn: !!S.sunHumOn, sunHiRes: !!S.sunHiRes, sunStars: S.sunStars !== false, sunQrOn: !!S.sunQrOn };
+  const out = { sunOn: !!S.layers.sun, sunKaleidoOn: !!S.sunKaleidoOn, sunMirror: !!S.sunMirror, sunFbLink: S.sunFbLink !== false, sunGrade: !!S.sunGrade, sunHumOn: !!S.sunHumOn, sunHiRes: !!S.sunHiRes, sunStars: S.sunStars !== false, sunQrOn: !!S.sunQrOn, sunQrWhich: qrWhichOf(S.sunQrWhich) };
   for (const k of DRIVEN) out[k + 'VarDrive'] = driveOf(S[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) out[NUM[i][0]] = S[NUM[i][0]];
   return out;
@@ -280,6 +287,7 @@ export function applySunState(S, o) {
   if (typeof o.sunHiRes === 'boolean') S.sunHiRes = o.sunHiRes;
   if (typeof o.sunStars === 'boolean') S.sunStars = o.sunStars;
   if (typeof o.sunQrOn === 'boolean') S.sunQrOn = o.sunQrOn;
+  if (typeof o.sunQrWhich === 'string') S.sunQrWhich = qrWhichOf(o.sunQrWhich);
   for (const k of DRIVEN) if (typeof o[k + 'VarDrive'] === 'string') S[k + 'VarDrive'] = driveOf(o[k + 'VarDrive']);
   for (let i = 0; i < NUM.length; i++) {
     const n = NUM[i], v = o[n[0]];
@@ -747,6 +755,15 @@ export const SUN_CONTROLS = [
     id: 'sunQrOn', section: 'sun', label: 'Sun QR', kind: 'toggle', def: DEF_QR_ON,
     get: S => !!S.sunQrOn,
     set: (S, on) => { S.sunQrOn = !!on; save(); }
+  },
+  {
+    id: 'sunQrWhich', section: 'sun', label: 'QR code', kind: 'segment', def: DEF_QR_WHICH,
+    options: [
+      { value: 'mwts',   label: 'Meditate with the Sun', domId: null },
+      { value: 'follow', label: 'Follow',                domId: null }
+    ],
+    get: S => qrWhichOf(S.sunQrWhich),
+    set: (S, v) => { S.sunQrWhich = qrWhichOf(v); save(); }
   },
   {
     // A multiplier on the art's authored size, 25% to 200%. Positions go in

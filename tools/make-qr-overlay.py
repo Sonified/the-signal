@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # The show's QR overlays (gpu/sun-qr.js), made in the style of the original
 # slides/qr_overlay_TSC2026@2x.png: 980 x 1105, a 41-module code (version 6)
-# at 20 px a module inside a 4-module border, the label's letters spread
-# across the code's own width (x 80 to 899) on a baseline at y 1022. Ink is
+# at 20 px a module inside a 4-module border, the label's letters at the
+# original's spacing (its label spans the code's width, x 80 to 899), centred
+# on the code, on a baseline at y 1022. Ink is
 # black at alpha 241; the code's dark modules and the letters are cut out of
 # it (alpha 0), so the sun shows through them and Lighten fills them with
 # white.

@@ -1,5 +1,8 @@
-// The show's QR code (core/schema-sun.js, sunQrOn and sunQrSize): the TSC
-// 2026 QR PNG drawn over the whole frame while the switch is on.
+// The show's QR code (core/schema-sun.js, sunQrOn, sunQrWhich and
+// sunQrSize): one of two QR PNGs drawn over the whole frame while the switch
+// is on, the TSC 2026 code to meditatewiththesun.com or the one that brings a
+// phone into the show as a follower (presence.now.audio/?follow=win), the
+// pair made alike by tools/make-qr-overlay.py so either sits in one place.
 //
 // FADE: the switch never pops. Its drawn opacity eases (smoothstep) from
 // wherever it is toward 0 or 1, the way the Edge layer crossfades its effects
@@ -11,6 +14,9 @@
 // flip by hand, with no transition opened, fades over HAND_FADE_S. A flip
 // mid-fade starts from the opacity it has reached. While it fades the frame
 // loop is kept awake (busy). The saved state at boot lands without a fade.
+// A change of which code crossfades the two by the same rules: the one going
+// drawn at the opacity times (1 - mix), the one coming at the opacity times
+// mix, mix easing as the opacity does.
 //
 // It draws in the scene pass straight after the Slides (engine drawScene,
 // then slides.draw, then this), in either route, so it sits over the sun and
@@ -24,9 +30,9 @@
 // 553 / 1080, its width keeping the PNG's own aspect, whatever the canvas;
 // Size (25% to 200%) scales both about the centre.
 //
-// The PNG is fetched and decoded the first time the switch is on, and
-// never before; a fetch or decode that fails is logged once and the layer
-// draws nothing from then on. The texture is premultiplied on upload
+// Each PNG is fetched and decoded the first time the switch is on with it
+// chosen, and never before; a fetch or decode that fails is logged once and
+// that code draws nothing from then on. The texture is premultiplied on upload
 // (copyExternalImageToTexture premultipliedAlpha) and blended
 // one / one-minus-src-alpha.
 // Sampling is linear, clamped.
@@ -37,7 +43,11 @@ import { S } from '../js/state.js';
 import { idleWake } from '../core/idle.js';
 import { presetTransitionCount, transitionRemaining } from '../core/presets.js';
 
-const QR_URL = new URL('../slides/qr_overlay_TSC2026@2x.png', import.meta.url).href;
+// By sunQrWhich: 0 meditatewiththesun.com, 1 the follower's code.
+const QR_URLS = [
+  new URL('../slides/qr_overlay_TSC2026@2x.png', import.meta.url).href,
+  new URL('../slides/qr_overlay_follow@2x.png', import.meta.url).href
+];
 // The art's authored height against a 1080-high render.
 const QR_HEIGHT_FRAC = 553 / 1080;
 const QR_FLOATS = 8;
@@ -111,54 +121,70 @@ export function createSunQr(device, format) {
     fragment: { module: mod, entryPoint: 'fsQr', targets: [{ format, blend: { color: premul, alpha: premul } }] },
     primitive: { topology: 'triangle-strip' }
   });
-  const uniBuf = device.createBuffer({
-    label: 'sunqr.uniforms', size: QR_FLOATS * 4,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-  });
-  const uni = new Float32Array(QR_FLOATS);
   const sampler = device.createSampler({
     label: 'sunqr.sampler', magFilter: 'linear', minFilter: 'linear',
     addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge'
   });
+  // One per code: its picture, its own uniforms (both can draw in one pass
+  // mid-crossfade), and what was last written to them.
+  const arts = QR_URLS.map((url, k) => ({
+    url, state: 0,          // 0 not asked for, 1 loading, 2 ready, 3 failed
+    texW: 1, texH: 1, bind: null, drawing: false,
+    uniBuf: device.createBuffer({
+      label: 'sunqr.uniforms.' + k, size: QR_FLOATS * 4,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    }),
+    uni: new Float32Array(QR_FLOATS),
+    lastSize: -1, lastW: -1, lastH: -1, lastOp: -1, lastCx: -1, lastLight: -1
+  }));
 
   let pixelW = 1, pixelH = 1;
-  let state = 0;            // 0 not asked for, 1 loading, 2 ready, 3 failed
-  let texW = 1, texH = 1, bind = null;
-  let drawing = false;
-  let lastSize = -1, lastW = -1, lastH = -1, lastOp = -1, lastCx = -1, lastLight = -1;
-  // The fade: the drawn opacity, the switch's target (-1 before the first
-  // frame), and the run from fadeFrom over fadeDur s, fadeT s in.
-  let op = 0, target = -1, fadeFrom = 0, fadeT = 0, fadeDur = 0;
+  // The fades: the drawn value, the target (-1 before the first frame), and
+  // the run from `from` over dur s, t s in. show is the switch's opacity,
+  // mix the share of the follower's code.
+  const show = { v: 0, target: -1, from: 0, t: 0, dur: 0 };
+  const mix = { v: 0, target: -1, from: 0, t: 0, dur: 0 };
   let seenTransitions = -1;
 
-  async function load() {
-    state = 1;
+  function aim(f, want, dur) {
+    if (f.target < 0) { f.target = want; f.v = want; }
+    else if (want !== f.target) { f.dur = dur; f.from = f.v; f.t = 0; f.target = want; }
+  }
+  function step(f, dt) {
+    if (f.v === f.target) return;
+    f.t += dt > 0 ? dt : 0;
+    const u = f.dur > 0 ? Math.min(1, f.t / f.dur) : 1;
+    f.v = u >= 1 ? f.target : f.from + (f.target - f.from) * (u * u * (3 - 2 * u));
+  }
+
+  async function load(a) {
+    a.state = 1;
     try {
-      const res = await fetch(QR_URL);
+      const res = await fetch(a.url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const bmp = await createImageBitmap(await res.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-      texW = bmp.width; texH = bmp.height;
+      a.texW = bmp.width; a.texH = bmp.height;
       const tex = device.createTexture({
-        label: 'sunqr.tex', size: [texW, texH], format: 'rgba8unorm',
+        label: 'sunqr.tex', size: [a.texW, a.texH], format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
       });
-      device.queue.copyExternalImageToTexture({ source: bmp }, { texture: tex, premultipliedAlpha: true }, [texW, texH]);
+      device.queue.copyExternalImageToTexture({ source: bmp }, { texture: tex, premultipliedAlpha: true }, [a.texW, a.texH]);
       if (bmp.close) bmp.close();
-      bind = device.createBindGroup({
+      a.bind = device.createBindGroup({
         label: 'sunqr.bind', layout: bgl,
         entries: [
-          { binding: 0, resource: { buffer: uniBuf } },
+          { binding: 0, resource: { buffer: a.uniBuf } },
           { binding: 1, resource: tex.createView() },
           { binding: 2, resource: sampler }
         ]
       });
-      lastSize = -1;
-      state = 2;
+      a.lastSize = -1;
+      a.state = 2;
       idleWake('qr loaded');
     } catch (e) {
-      state = 3;
-      console.warn('sunqr: could not load ' + QR_URL + ' (' + (e && e.message ? e.message : e) +
-        '). Is it in slides/ and is the page served locally? The QR code draws nothing.');
+      a.state = 3;
+      console.warn('sunqr: could not load ' + a.url + ' (' + (e && e.message ? e.message : e) +
+        '). Is it in slides/ and is the page served locally? That QR code draws nothing.');
     }
   }
 
@@ -169,28 +195,25 @@ export function createSunQr(device, format) {
 
   // dt: the frame's seconds (engine frameDt), zero on a wake.
   function update(dt) {
-    drawing = false;
+    arts[0].drawing = arts[1].drawing = false;
     const want = S.sunQrOn === true ? 1 : 0;
+    const pick = S.sunQrWhich === 'follow' ? 1 : 0;
     const tc = presetTransitionCount();
-    if (target < 0) {
-      target = want; op = want;
-    } else if (want !== target) {
-      // Made inside a transition since last frame: its window's remainder.
-      // Otherwise a hand flip, and the default fade.
-      fadeDur = tc !== seenTransitions ? transitionRemaining() : HAND_FADE_S;
-      fadeFrom = op; fadeT = 0; target = want;
-    }
+    // Made inside a transition since last frame: its window's remainder.
+    // Otherwise a hand flip, and the default fade.
+    const dur = tc !== seenTransitions ? transitionRemaining() : HAND_FADE_S;
+    aim(show, want, dur);
+    aim(mix, pick, dur);
     seenTransitions = tc;
-    if (want && state === 0) load();
-    // The fade's clock waits for the picture, so a first fade in is seen
-    // whole rather than joined part way.
-    if (state !== 2) return;
-    if (op !== target) {
-      fadeT += dt > 0 ? dt : 0;
-      const f = fadeDur > 0 ? Math.min(1, fadeT / fadeDur) : 1;
-      op = f >= 1 ? target : fadeFrom + (target - fadeFrom) * (f * f * (3 - 2 * f));
-    }
-    if (op <= 0) return;
+    const chosen = arts[pick];
+    if (want && chosen.state === 0) load(chosen);
+    // The fades' clock waits for the chosen picture, so a first fade in (or
+    // a crossfade to a code not yet seen) is seen whole rather than joined
+    // part way. Switched off, nothing waits: the fade out runs on.
+    if (want && (chosen.state === 0 || chosen.state === 1)) return;
+    step(show, dt);
+    step(mix, dt);
+    if (show.v <= 0) return;
     const v = S.sunQrSize;
     const size = typeof v === 'number' && v === v ? (v < 0.25 ? 0.25 : v > 2 ? 2 : v) : 1;
     // The centre of the field the drawer leaves visible, as gpu/sun.js
@@ -199,28 +222,38 @@ export function createSunQr(device, format) {
     const cx = (pixelW + inset) * 0.5;
     const lv = S.sunQrLighten;
     const light = typeof lv === 'number' && lv === lv ? (lv < 0 ? 0 : lv > 1 ? 1 : lv) : 0;
-    if (size !== lastSize || pixelW !== lastW || pixelH !== lastH || op !== lastOp || cx !== lastCx || light !== lastLight) {
-      lastSize = size; lastW = pixelW; lastH = pixelH; lastOp = op; lastCx = cx; lastLight = light;
-      const h = pixelH * QR_HEIGHT_FRAC * size;
-      const w = h * texW / texH;
-      uni[0] = cx - w * 0.5; uni[1] = (pixelH - h) * 0.5; uni[2] = w; uni[3] = h;
-      uni[4] = pixelW; uni[5] = pixelH; uni[6] = op; uni[7] = light;
-      device.queue.writeBuffer(uniBuf, 0, uni);
+    for (let k = 0; k < 2; k++) {
+      const a = arts[k];
+      const op = show.v * (k ? mix.v : 1 - mix.v);
+      if (a.state !== 2 || op <= 0) continue;
+      if (size !== a.lastSize || pixelW !== a.lastW || pixelH !== a.lastH || op !== a.lastOp || cx !== a.lastCx || light !== a.lastLight) {
+        a.lastSize = size; a.lastW = pixelW; a.lastH = pixelH; a.lastOp = op; a.lastCx = cx; a.lastLight = light;
+        const h = pixelH * QR_HEIGHT_FRAC * size;
+        const w = h * a.texW / a.texH;
+        const u = a.uni;
+        u[0] = cx - w * 0.5; u[1] = (pixelH - h) * 0.5; u[2] = w; u[3] = h;
+        u[4] = pixelW; u[5] = pixelH; u[6] = op; u[7] = light;
+        device.queue.writeBuffer(a.uniBuf, 0, u);
+      }
+      a.drawing = true;
     }
-    drawing = true;
   }
 
   // In the scene pass, straight after the Slides.
   function draw(pass) {
-    if (!drawing) return;
-    pass.setPipeline(pipe);
-    pass.setBindGroup(0, bind);
-    pass.draw(4);
+    for (let k = 0; k < 2; k++) {
+      const a = arts[k];
+      if (!a.drawing) continue;
+      pass.setPipeline(pipe);
+      pass.setBindGroup(0, a.bind);
+      pass.draw(4);
+    }
   }
 
   // Mid-fade (or waiting on the picture for one) keeps the frame loop awake,
   // as a playing slide does (main.js's still frame asks).
-  const busy = () => target >= 0 && op !== target && state !== 3;
+  // A load always ends ready or failed, so no fade waits for ever.
+  const busy = () => show.target >= 0 && (show.v !== show.target || mix.v !== mix.target);
 
   return { update, draw, resize, busy };
 }
