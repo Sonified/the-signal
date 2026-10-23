@@ -459,6 +459,10 @@ function syncWalkRoom() {
 // (main.js) opens and closes the link: { room, key }, or null for none.
 let drawRoomWant = '', drawRoomName = '';
 function syncDrawRoom(room, k) {
+  // the show's drawing ends with the room: a broadcast switched off and on
+  // again must not bring meditatewiththesun.com's layer back without a
+  // drawing cue asking for it
+  if (!room && drawShow) { drawShow = false; console.log('[broadcast] the room closed, the drawing layer with it'); }
   drawRoomName = room || '';
   const want = room ? room + '\n' + (k || '') : '';
   if (want === drawRoomWant) return;
