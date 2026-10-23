@@ -153,7 +153,7 @@ import { idleTouch } from '../js/idle-ahead.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
-import { brushShowPhase, brushConducting, brushPhase, brushRound } from '../core/brush.js';
+import { brushShowPhase, brushConducting, brushPhase, brushRound, brushDealHold } from '../core/brush.js';
 import { PRESENT_PASSWORD } from '../core/presentation.js';
 import { ampToPos } from '../js/util.js';
 
@@ -219,6 +219,11 @@ export function initPresentationReceiver(hooks = {}) {
   const FLAG = P.has('presentation') ? 'presentation' : P.has('remote') ? 'remote' : '';
   if (!FLAG) return;
   document.title = '🌞 TSC 2026';
+  // The hands wait in the wings: a presentation screen holds the brush deal
+  // (its own hand and the room's) until the first drawing cue lifts it
+  // (core/brush.js brushShowPhase), so nothing of the brushes shows before
+  // cue 17, however Show brushes was left.
+  brushDealHold(true);
   let room = (P.get(FLAG) || 'show').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '') || 'show';
   room = room.slice(0, 40);
   const CMD_ROOM = 'mirror-' + room, STATUS_ROOM = 'mirror-' + room + '-status';
@@ -296,7 +301,13 @@ export function initPresentationReceiver(hooks = {}) {
   // the Speed fader is at 0 and has stopped the slide itself
   let speedStopped = false;
   function act(m) {
-    if (m.k === 'jump') { const i = m.i | 0; if (i >= 0) journeyJumpTo(i); }
+    if (m.k === 'jump') {
+      // a cue past the journey's end plays the newest step there is: the
+      // drawing cues (17 on) jump to steps authored as the show grows, and
+      // an unwritten one falls back to the last that exists
+      const i = m.i | 0;
+      if (i >= 0 && journeyCount() > 0) journeyJumpTo(Math.min(i, journeyCount() - 1));
+    }
     else if (m.k === 'clean') { if (hooks.clearScreen) hooks.clearScreen(); }
     else if (m.k === 'seek') seekSlide(+m.f);
     else if (m.k === 'next') journeyStepBy(1);

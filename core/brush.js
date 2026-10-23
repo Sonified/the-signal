@@ -345,7 +345,7 @@ function dealTick() {
     hallLink.send({ t: 'room', ms, sm });
   }
   const set = kaleidoscopeSet(S.kaleidoSet).id;
-  const on = S.brushDeal === true, n = Math.max(1, Math.min(8, S.brushDealN | 0));
+  const on = S.brushDeal === true && !dealHold, n = Math.max(1, Math.min(8, S.brushDealN | 0));
   const sig = on ? set * 100 + n : 0;
   if (sig === dealSent) return;
   if (!on) { dealSent = sig; hallLink.send({ t: 'brushes', on: 0 }); return; }
@@ -379,8 +379,9 @@ export function brushHallHand(h) {
   idleWake('the hand');
 }
 export function brushHand() {
-  // nothing before the screen is started (setBrushStarted)
-  if (!started) return null;
+  // nothing before the screen is started (setBrushStarted), or while a
+  // presentation holds the deal for its first drawing cue (brushDealHold)
+  if (!started || dealHold) return null;
   if (hallLink && hallState === 'joined') return hallLink.hand && hallLink.hand.tiles.length ? hallLink.hand : null;
   if (S.brushDeal !== true) return null;
   const set = kaleidoscopeSet(S.kaleidoSet).id, n = Math.max(1, Math.min(8, S.brushDealN | 0));
@@ -436,7 +437,22 @@ export function brushNext() { if (brushConducting()) hallLink.next(); }
 // the phase and its round named outright, no retap walk. A click only asks,
 // as the chips do; the hall's answer lights the chips and the iPad alike.
 export function brushShowPhase(p, r) {
+  brushDealHold(false);
   if (brushConducting()) hallLink.setPhase(p, r);
+}
+
+// A presentation screen (platform/presentation-receiver.js) holds the deal
+// until the show's first drawing cue: no hand row on any screen, its own
+// included, and the room told to deal nobody, however Show brushes is set.
+// The first drawing cue lifts it (brushShowPhase above); everywhere else the
+// hold never goes on and nothing changes.
+let dealHold = false;
+export function brushDealHold(on) {
+  on = !!on;
+  if (on === dealHold) return;
+  dealHold = on;
+  dealSent = -1;
+  idleWake('the deal hold');
 }
 
 // ---------- remote strokes, played back ----------

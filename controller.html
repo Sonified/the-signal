@@ -458,6 +458,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     b.querySelector('.cue-label').textContent = d.label;
     b.addEventListener('click', () => {
       b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap');
+      // a journey step first (so cue 17's videos-off and its kin land; a
+      // step not written yet plays the newest one, the receiver clamps),
+      // then the phase beside it
+      send({ k: 'jump', i: CUES.length + j });
       send({ k: 'hall', p: d.p, r: d.r });
     });
     $('cues').appendChild(b);
