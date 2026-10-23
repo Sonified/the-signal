@@ -56,7 +56,7 @@ import { S } from '../js/state.js';
 import { roomClockRunning } from './room-clock.js';
 import {
   setHeartReporter, heartTarget, heartServo, heartServoReset, heartServoStep,
-  heartLeadState, heartRateAhead, HEART_JUMP
+  heartLeadState, heartRateAhead, heartSpeedAtFn, HEART_JUMP
 } from './heart-sync.js';
 
 const TRACK_URL = 'audio/heartbeat.m4a';
@@ -130,15 +130,24 @@ let energy = null, total = 0, frames = 0, win = 0, chL = null, chR = null;
 // seconds), moving at rate (the Speed setting) since. Each is a time the
 // listener hears it (placeNow): on Heart a start or a speed change lands a
 // lookahead after currentTime, so until then the place before it still
-// plays, kept in prev* (hasPrev), and before heardFrom, the moment the
+// plays (the segments below keep every change not yet heard), and before heardFrom, the moment the
 // source's start is heard, nothing of it plays yet.
 let src = null, offset = 0, anchorT = 0, anchorPos = 0, rate = 1;
-let prevT = 0, prevPos = 0, prevRate = 1, hasPrev = false, heardFrom = 0;
+let heardFrom = 0;
+// Every start, rate change and jump as a segment, [context time it is heard
+// from, the place then, the rate from then on], oldest first: the place at
+// any heard moment is its segment's, however many changes the engine's
+// lookahead still holds back (a rate is set every frame, and a cushion of
+// 0.3 s and more is dozens of them; the one anchor and the one before it
+// that stood here read the place wrongly by an amount that grew with the
+// cushion, which differs from screen to screen).
+const segT = [], segP = [], segR = [];
 let resumeArmed = true, lastLevel = -1;
 // The playing source's own gain, which a jump onto the room's place fades
 // across (jumpTo); the room's servo and the rate's lead (core/heart-sync.js).
 let srcGain = null;
 const servo = heartServo(), leadSt = heartLeadState();
+let jumps = 0, diagAt = 0;
 // The page's performance.now() at context time 0, as js/strobe-am.js keeps it
 // (its header has the why): the lowest reading of now less currentTime, let
 // rise a little every ms so a clock that runs slow is followed. currentTime
@@ -338,8 +347,23 @@ function leadS(at) {
 }
 
 // The track's place (seconds, any lap) at heard context time c.
+function segIndex(c) {
+  let i = segT.length - 1;
+  while (i > 0 && segT[i] > c) i--;
+  return i;
+}
 function placeAt(c) {
-  return hasPrev && c < anchorT ? prevPos + (c - prevT) * prevRate : anchorPos + (c - anchorT) * rate;
+  const i = segIndex(c);
+  return segP[i] + (c - segT[i]) * segR[i];
+}
+function rateAtC(c) { return segR[segIndex(c)]; }
+function segPush(t, pos, r) {
+  segT.push(t); segP.push(pos); segR.push(r);
+  // drop what has been heard past: keep the segment the heard moment is in
+  const h = heardNow();
+  let k = 0;
+  while (k + 1 < segT.length - 1 && segT[k + 1] <= h) k++;
+  if (k > 0) { segT.splice(0, k); segP.splice(0, k); segR.splice(0, k); }
 }
 
 // A source that starts while the room has a fresh beacon starts at the
@@ -363,7 +387,9 @@ function startSource() {
   const room = roomStartPos(at);
   const pos = room >= 0 ? room : buffer.duration > 0 ? offset % buffer.duration : 0;
   src.start(at, pos);
-  anchorT = at; anchorPos = pos; heardFrom = at; hasPrev = false;
+  anchorT = at; anchorPos = pos; heardFrom = at;
+  segT.length = segP.length = segR.length = 0;
+  segPush(at, pos, rate);
   readT = -1;
   heartServoReset(servo);
 }
@@ -371,15 +397,14 @@ function startSource() {
 // Sets the track onto place p, the place that should be heard now, in one
 // step: a second source starts there as the first fades out under it, over
 // XFADE, so the join does not click. The place before the join is still the
-// old anchor's (prev*, as for a rate change), so the light does not read the
-// new place until it is heard.
+// old segment's, so the light does not read the new place until it is heard.
 const XFADE = 0.03;
 function jumpTo(p) {
   const at = placeNow();
   const pos = mod(p + rate * Math.max(0, leadS(at)), buffer.duration);
   const old = src, oldGain = srcGain;
-  prevT = anchorT; prevPos = anchorPos; prevRate = rate; hasPrev = true;
   anchorT = at; anchorPos = pos;
+  segPush(at, pos, rate);
   src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = true;
@@ -403,9 +428,21 @@ function jumpTo(p) {
 function lockSpeed(speed) {
   const now = performance.now();
   const inRoom = roomClockRunning();
-  const ahead = inRoom ? heartRateAhead(leadSt, speed, now, leadS(placeNow())) : (leadSt.v = NaN, speed);
+  // the lead: the Speed's own law at the moment this rate is heard, where it
+  // can say (core/strobe.js), else the slope's guess (core/heart-sync.js)
+  const at = heartSpeedAtFn(), lead = inRoom ? leadS(placeNow()) : 0;
+  const ahead = !inRoom ? (leadSt.v = NaN, speed)
+    : at && lead > 0 ? Math.min(2, Math.max(0, at(lead))) : heartRateAhead(leadSt, speed, now, lead);
   const act = heartServoStep(servo, inRoom ? heartTarget(now) : null, now, placeAt(heardNow()), speed, buffer.duration);
-  if (act === HEART_JUMP) jumpTo(servo.to);
+  if (act === HEART_JUMP) { jumps++; jumpTo(servo.to); }
+  if (S.syncDiagLog === true && now - diagAt >= 2000 && inRoom) {
+    diagAt = now;
+    const tg = heartTarget(now);
+    console.log('[heartdiag] error ' + (servo.have ? (servo.err * 1000).toFixed(1) + ' ms (mine ahead +)' : 'none yet') +
+      '; bend ' + (servo.bend * 100).toFixed(2) + '%; jumps ' + jumps +
+      '; beacon age ' + (tg ? ((now - tg.rcv) / 1000).toFixed(1) + ' s' : 'stale') +
+      '; lead ' + (lead * 1000).toFixed(0) + ' ms; outputLatency ' + (latency() * 1000).toFixed(0) + ' ms; rate ' + rate.toFixed(3));
+  }
   return ahead * (1 + servo.bend);
 }
 
@@ -478,8 +515,8 @@ export function heartSync(play, gain, speed = 1) {
   if (speed !== rate) {
     if (src) {
       const at = placeNow();
-      prevT = anchorT; prevPos = anchorPos; prevRate = rate; hasPrev = true;
       anchorPos += (at - anchorT) * rate; anchorT = at;
+      segPush(at, anchorPos, speed);
       src.playbackRate.setValueAtTime(speed, at);
     }
     rate = speed;
@@ -516,7 +553,7 @@ export function heartRead() {
   if (readT >= 0) heartDt = now - readT;
   readT = now;
   if (!(heartDt > 0)) { heartDt = 0; return; }
-  const r = hasPrev && now < anchorT ? prevRate : rate;
+  const r = rateAtC(now);
   const pos = placeAt(now);
   const end = pos * buffer.sampleRate, span = win * r;
   const ms = (energyAt(end) - energyAt(end - span)) / span;

@@ -16,8 +16,9 @@
 // 4. Two screens 200 ms apart in output latency, the breath swinging the
 //    rate: with each setting the rate where it will be heard (the lead)
 //    the heard places stay within 10 ms; without it they swing apart by
-//    tens, which is what the lead is for. A drag's jump is not
-//    extrapolated.
+//    tens, which is what the lead is for. With cushions 0.3 to 1 s apart
+//    (Heart's grows on underruns) the Speed's exact law, not the slope,
+//    holds them. A drag's jump is not extrapolated.
 // 5. A beacon gone stale lets go (no bend); a beacon from another track, or
 //    one claiming a moment in the future, is not believed.
 // 6. The broadcaster's report and the follower's take pass through their
@@ -61,7 +62,9 @@ function screen(lag, leadOn) {
   let heard = rateAt(-1e6);
   return {
     set(t, speed) {
-      q.push([t + lag, leadOn ? heartRateAhead(ls, speed, t, lag / 1000) : speed]);
+      // 'exact': the Speed's own law at the moment it is heard (core/strobe.js
+      // heartSpeedAt); true: the slope's guess; false: the rate as it stands
+      q.push([t + lag, leadOn === 'exact' ? rateAt(t + lag) : leadOn ? heartRateAhead(ls, speed, t, lag / 1000) : speed]);
     },
     hear(t) {
       while (q.length && q[0][0] <= t) heard = q.shift()[1];
@@ -142,6 +145,16 @@ function run({ off, seconds, delay = 150, lag = 0, lagB = 0, leadOn = false }) {
   ok('the lead leaves the bend small', withLead.maxBend < 0.02, 'bend ' + withLead.maxBend);
   const rough = run({ off: 0, seconds: 90, lag: 250, lagB: 30, delay: 400, leadOn: true });
   ok('and a 400 ms network does not spoil it', rough.worst < 0.015, 'worst ' + rough.worst);
+  // Heart's cushion grows 1.5x on every underrun and differs by screen, so
+  // two screens' leads can sit 0.4 s and more apart: the slope's guess gives
+  // out there, the law's own value does not
+  for (const [lag, lagB] of [[450, 675], [700, 300], [1000, 300]]) {
+    const slope = run({ off: 0, seconds: 120, lag, lagB, leadOn: true });
+    const exact = run({ off: 0, seconds: 120, lag, lagB, leadOn: 'exact' });
+    ok('cushions ' + lag + ' and ' + lagB + ' ms: the exact lead holds inside 10 ms',
+       exact.worst < 0.010 && exact.maxBend < 0.02, 'worst ' + exact.worst + ' bend ' + exact.maxBend);
+    ok('  (and the slope alone, ' + (slope.worst * 1000).toFixed(0) + ' ms, is why it is not used)', slope.worst > exact.worst);
+  }
   // a drag: the rate jumps and the lead does not run away with it
   const ls = heartLeadState();
   heartRateAhead(ls, 1, 0, 0.25);

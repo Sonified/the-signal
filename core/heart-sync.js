@@ -143,6 +143,17 @@ export function heartServoStep(sv, tgt, now, place, speed, dur) {
 // the last two frames' (a smooth curve, the breath or a variance, is
 // followed to a hair); a jump (a slider drag, a preset) is not extrapolated,
 // the rate then simply arrives as it always did.
+// Where the Speed's own law can say what it will be (core/strobe.js: the
+// Time clock and the breath are formulas), it does, exactly, for any lead:
+// core/strobe.js registers heartSpeedAt(sec), and heartAheadFn hands it to
+// the heartbeat. The slope below is the fallback, good to a few ms of place
+// up to a 0.3 s lead and no further: its error grows with the lead squared,
+// and Heart's cushion (0.3 s, and 1.5x on every underrun) differs from
+// screen to screen, so two screens' leads can sit 0.4 s apart.
+let aheadFn = null;
+export function setHeartSpeedAt(fn) { aheadFn = typeof fn === 'function' ? fn : null; }
+export function heartSpeedAtFn() { return aheadFn; }
+
 const SLOPE_MIN_S = 0.002, SLOPE_MAX_S = 0.1, LEAD_MAX_S = 0.5, JUMP_FRAC = 0.25;
 export function heartLeadState() { return { v: NaN, at: 0 }; }
 export function heartRateAhead(st, speed, now, lead) {

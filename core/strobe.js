@@ -36,6 +36,8 @@ import { motionStep, motionScale, winding } from './motion.js';
 import { roomPhase, roomPhaseState } from './room-clock.js';
 import { GAP_MS, stepWakeRamp, wakeRamp } from './wake.js';
 import { variedBy, driveOf, stepPhase } from './variance.js';
+import { setHeartSpeedAt } from './heart-sync.js';
+import { breathHeardAt } from './breath.js';
 import { registerVarianceOwner } from './variance-owners.js';
 import {
   signal, SIGNAL_ORIGIN, waveCode, phaseAt, rateAt, retimeSignal, pinSignal, steerSignal,
@@ -131,6 +133,22 @@ const VARIANCES = [
 // Each that reads its owner straight off S is registered for the drawer,
 // which lights that owner's bar from the effective (core/variance-owners.js).
 for (const v of VARIANCES) if (typeof v.set === 'string') { registerVarianceOwner(v); const k = v.set; v.set = S => S[k]; }
+
+// The heartbeat's Speed as it will be `sec` seconds from now, for core/
+// heartbeat.js, which sets the rate where it will be HEARD (the engine's
+// cushion and the output's latency from now), so that screens of different
+// latency play the same rate at the same moment (core/heart-sync.js). The
+// Time clock and the breath are formulas, so their dip is evaluated there
+// exactly; the strobe's wave is not carried forward (it is the effective as
+// it stands).
+const HEART_SPEED = VARIANCES.find(v => v.eff === 'effHeartSpeed');
+setHeartSpeedAt(sec => {
+  const v = HEART_SPEED, drive = driveOf(S[v.drive]), amount = S[v.amount];
+  if (!amount || drive === 'strobe') return S[v.eff];
+  const period = S[v.period] || v.fallback;
+  return variedBy(drive, S[v.set], amount, (S[v.phase] || 0) + sec / period, 1,
+                  breathHeardAt(S, SIGNAL_ORIGIN + performance.now() + sec * 1000));
+});
 
 // One frame of every variance: the phases step while anything moves (flick),
 // and every effective is written, stepped or not. At an amount of 0 the law
