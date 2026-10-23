@@ -16612,6 +16612,7 @@
    "holdS": 60,
    "piano": "free",
    "interaction": "none",
+   "liveAudio": true,
    "seq": {
     "seqSlot": 0,
     "seqs": [

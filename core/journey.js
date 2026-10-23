@@ -15,7 +15,9 @@
 // nothing more) and each control's destination, where it is headed or else
 // where it is, is written into the step, so the step is always the scene on
 // screen. A control the operator has locked (journeyToggleLock) is never
-// written, and never moved.
+// written, and never moved, and neither, on a step that leaves the live
+// audio live (its liveAudio, see LIVE_AUDIO), is a level the show remote
+// rides.
 // iPad controls are performance-only: their changes stay out of automatic
 // recording, including later saves by other controls. A row's Snapshot
 // explicitly takes the live scene into that step, including those changes.
@@ -79,7 +81,7 @@
 // ui/screens/journey.js), and autoPlay its old boolean,
 // still written (true only in 'auto') and read when a record has no mode; a step being
 //   { overrides: { [controlId]: value }, text: '', appear: 'start', textLock: false,
-//     rampS: 3, holdS: 60, piano: 'free', interaction: 'none',
+//     rampS: 3, holdS: 60, piano: 'free', interaction: 'none', liveAudio: false,
 //     seq: { seqSlot, seqs: [line x 8] } | null,
 //     mix: { chanMute, chanSolo, layers: [{ source, level, peak, muted, solo }] } | null },
 // appear being 'start' | 'mid' | 'end' and piano 'free' | 'text' | 'mixed',
@@ -398,7 +400,7 @@ function journeyDiag(event, extra = null) {
 
 function makeStep() {
   return { overrides: {}, text: '', appear: 'start', textLock: false, rampS: RAMP_DEF, holdS: HOLD_DEF, piano: 'free', interaction: 'none',
-           seq: null, mix: null };
+           liveAudio: false, seq: null, mix: null };
 }
 
 const clampN = (v, lo, hi, def) => Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def;
@@ -458,6 +460,7 @@ function readStep(raw) {
   st.holdS = clampN(raw.holdS, HOLD_MIN, HOLD_MAX, HOLD_DEF);
   if (PIANO_OK[raw.piano]) st.piano = raw.piano;
   if (INTERACTION_OK[raw.interaction]) st.interaction = raw.interaction;
+  st.liveAudio = raw.liveAudio === true;
   st.seq = readSeqBlock(raw.seq);
   st.mix = readMixBlock(raw.mix);
   return st;
@@ -705,11 +708,58 @@ export function lockRefuses(id, who) {
   const i = idxOf.get(id);
   return i !== undefined && lockAt[i] === 1;
 }
-// The journey's own question, by place in R, asked in its loops.
-function lockHolds(i) {
+// The journey's own question, by place in R, asked in its loops about step
+// st, the one being entered or written into: a lock holds control i, or st
+// leaves the live audio live and i is one of its levels (LIVE_AUDIO, below).
+function lockHolds(i, st) {
+  if (st && st.liveAudio === true && liveAt[i] === 1) return true;
   if (!LOCK_REFUSES.journey) return false;
   ensureLocks();
   return lockAt[i] === 1;
+}
+
+// ---- the live audio ----
+//
+// A step can leave the live audio live (its liveAudio, the fold's LIVE AUDIO):
+// the levels the show remote's AUDIO faders ride (platform/presentation-receiver.js)
+// are then held for that step as a lock holds a control, through the same
+// question (lockHolds above), so every place a lock is honoured honours it.
+// Entering the step neither sets nor ramps them nor hands them to the door,
+// a ramp of theirs still under way is let go, and editing the step never
+// writes them into it, its stored values for them kept as they were. So the
+// operator can ride those levels by hand and step on through the meditation
+// without a step taking them back. Everything else the step holds lands as
+// always, its switches among them: the step that turns the choir and the
+// ambience on still turns them on, under faders that are where the hand
+// left them. The mix block holds none of these levels (its layers' levels
+// are each recording's own, ambience.js, not the Ambience level beside
+// them), so it lands whole.
+//
+// LIVE_AUDIO names the controller's faders' controls, every twin following
+// (withTwins, so the mixer's own faders are covered with the drawer's): the
+// MASTER, filter and glide faders (vol, lpf, hpf, lpfRes, hpfRes,
+// filterGlide; a step never holds these at all, NEVER_IN_STEP), HEART
+// (heartMaster) and MWTS (mwtsVolume), and the finale row's audio faders:
+// DRONE (bedVol, toneVol, cloudVol), PIANO (pianoVol), CHOIR (choirVol),
+// AMBIENCE (ambVol) and HUM (sunHumRate). A new audio fader on the
+// controller joins this list; its visual faders (BREATH, WIND, SUN, TXT,
+// SCREEN) and the slide's rate are the steps' to move, as they always were.
+export const LIVE_AUDIO = ['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'heartMaster', 'mwtsVolume',
+                           'bedVol', 'toneVol', 'cloudVol', 'pianoVol', 'choirVol', 'ambVol', 'sunHumRate'];
+const liveAt = new Uint8Array(R.length);
+for (const id of LIVE_AUDIO) for (const t of withTwins(id)) { const j = idxOf.get(t); if (j !== undefined) liveAt[j] = 1; }
+// Whether step i leaves the live audio live; turned on for the step the walk
+// is on, a ramp moving those levels lets them go where they stand, as a lock
+// taken mid-ramp does. Nothing else moves, on screen or in the walk: turned
+// off, the next step entered sets them again.
+export function journeySetLiveAudio(i, on) {
+  ensureLoaded();
+  const st = data.steps[i];
+  on = !!on;
+  if (!st || st.liveAudio === on) return;
+  st.liveAudio = on;
+  if (on && i === play.stepIdx) for (const id of LIVE_AUDIO) for (const t of withTwins(id)) releaseJourneyControl(t);
+  persist();
 }
 function ensureLocks() {
   if (locks) return;
@@ -827,9 +877,10 @@ function applyText(text) {
 // Whether a step entering moves control i at all: one a step can hold, held
 // under its own id (a twin's canonical; the others follow through the state
 // they share), not taken by the viewer for this walk (manual), and not one
-// of the mixer's switches when the step's mix block holds them.
-function moves(i, mixOwned) {
-  return !skip[i] && canon[i] === i && !manual.has(R[i].id) && !(mixOwned && inMix[i]) && !lockHolds(i);
+// of the mixer's switches when the step's mix block holds them, nor one a
+// lock holds for step st (lockHolds).
+function moves(i, st) {
+  return !skip[i] && canon[i] === i && !manual.has(R[i].id) && !(st.mix && inMix[i]) && !lockHolds(i, st);
 }
 // While the step's colour walk runs (its own Color walk, else the one running
 // now), the colour is the walk's, moved every frame, and a step never lands
@@ -848,10 +899,11 @@ function takeFromGlide(c) {
 
 // Transition durations configure the change itself. Apply them before the
 // incoming file or layer switches, and never tween them over the step's ramp.
-function applyStepTiming(o, mixOwned) {
+function applyStepTiming(st) {
+  const o = st.overrides;
   for (let i = 0; i < R.length; i++) {
     const c = R[i], v = o[c.id];
-    if (!c.journeyImmediate || v === undefined || !moves(i, mixOwned)) continue;
+    if (!c.journeyImmediate || v === undefined || !moves(i, st)) continue;
     takeFromGlide(c);
     if (!same(c, c.get(S), v)) c.set(S, v);
   }
@@ -867,15 +919,15 @@ function applyStep(st, sec) {
   // a fresh horizon however far Heart had rendered ahead (js/idle-ahead.js).
   idleTouch('a journey step');
   performanceControls.clear();
-  const o = st.overrides, mixOwned = !!st.mix, walk = walking(o);
-  applyStepTiming(o, mixOwned);
-  throughDoor(o, mixOwned, sec, true);
+  const o = st.overrides, walk = walking(o);
+  applyStepTiming(st);
+  throughDoor(st, sec, true);
   beginTransition(Math.max(MIN_GLIDE_S, sec));
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i];
       const v = o[c.id];
-      if (v === undefined || doorHeld[i] || !moves(i, mixOwned) || (walk && i === COLOR_I) || settled(c, v)) continue;
+      if (v === undefined || doorHeld[i] || !moves(i, st) || (walk && i === COLOR_I) || settled(c, v)) continue;
       takeFromGlide(c);
       if (!same(c, c.get(S), v)) c.set(S, v);
     }
@@ -910,16 +962,17 @@ function applyStep(st, sec) {
 // too when the step puts its level somewhere else than the fade will, so the
 // level lands where the step says rather than being let go with the switch
 // left on.
-function throughDoor(o, mixOwned, sec, now) {
+function throughDoor(st, sec, now) {
+  const o = st.overrides;
   doorHeld.fill(0);
   driving = true;
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i], v = o[c.id];
-      if (v === undefined || !moves(i, mixOwned)) continue;
+      if (v === undefined || !moves(i, st)) continue;
       if ((c.kind !== 'toggle' && c.kind !== 'segment') || c.mixKey) continue;
       const is = !!c.get(S), fading = is && perfDestination(c.id) === false;
-      const L = opAt[i], lid = L >= 0 && !manual.has(R[L].id) && !lockHolds(L) ? R[L].id : null;
+      const L = opAt[i], lid = L >= 0 && !manual.has(R[L].id) && !lockHolds(L, st) ? R[L].id : null;
       const lv = lid ? o[lid] : undefined;
       const relevel = fading && !v && typeof lv === 'number' && perfDestination(lid) !== lv;
       if (!(fading && (v || voice[i])) && !(voice[i] && lid && !!v !== is) && !relevel) continue;
@@ -1459,14 +1512,14 @@ function addColor(c, hex) {
 // step's ramp through its level; the passes below leave those to it.
 // Only what is not already settled where the step puts it moves (applyStep).
 function startRamp(st, withText) {
-  const o = st.overrides, mixOwned = !!st.mix;
-  applyStepTiming(o, mixOwned);
-  throughDoor(o, mixOwned, st.rampS, false);
+  const o = st.overrides;
+  applyStepTiming(st);
+  throughDoor(st, st.rampS, false);
   beginTransition(SWITCH_GLIDE_S, st.rampS);
   try {
     for (let i = 0; i < R.length; i++) {
       const c = R[i], v = o[c.id];
-      if (v === undefined || c.kind === 'slider' || c.kind === 'color' || doorHeld[i] || !moves(i, mixOwned) || settled(c, v)) continue;
+      if (v === undefined || c.kind === 'slider' || c.kind === 'color' || doorHeld[i] || !moves(i, st) || settled(c, v)) continue;
       takeFromGlide(c);
       if (!same(c, c.get(S), v)) c.set(S, v);
     }
@@ -1478,7 +1531,7 @@ function startRamp(st, withText) {
   const walk = walking(o);
   for (let i = 0; i < R.length; i++) {
     const c = R[i], v = o[c.id];
-    if (v === undefined || c.journeyImmediate || (c.kind !== 'slider' && c.kind !== 'color') || doorHeld[i] || !moves(i, mixOwned) || settled(c, v)) continue;
+    if (v === undefined || c.journeyImmediate || (c.kind !== 'slider' && c.kind !== 'color') || doorHeld[i] || !moves(i, st) || settled(c, v)) continue;
     if (c.kind === 'color' && walk) continue;
     takeFromGlide(c);
     if (c.kind === 'slider') addSlider(i, c, v);
@@ -1593,7 +1646,7 @@ function runDiff() {
   const o = st.overrides;
   let moved = false, changed = JOURNEY_DIAG ? [] : null;
   for (let i = 0; i < R.length; i++) {
-    if (!held[i] || lockHolds(i) || performanceControls.has(i) || (i === COLOR_I && S.colorWalk > 0)) continue;
+    if (!held[i] || lockHolds(i, st) || performanceControls.has(i) || (i === COLOR_I && S.colorWalk > 0)) continue;
     const c = R[i], dest = destOf(c), raw = dest !== undefined ? dest : c.get(S);
     const v = validValue(c, raw);
     if (v === undefined) continue;
@@ -1722,7 +1775,7 @@ export function journeyRampS() {
 function captureAll(st) {
   const o = st.overrides;
   for (let i = 0; i < R.length; i++) {
-    if (!held[i] || lockHolds(i)) continue;
+    if (!held[i] || lockHolds(i, st)) continue;
     const c = R[i], v = validValue(c, posOf(c));
     if (v !== undefined) o[c.id] = v;
   }
@@ -1760,12 +1813,15 @@ export function journeyAddStep() {
   ensureLoaded();
   if (data.steps.length >= STEPS_MAX) return -1;
   const st = makeStep();
+  // it leaves the live audio live when the step before it does
+  const prev = data.steps.length ? data.steps[data.steps.length - 1] : null;
+  if (prev) st.liveAudio = prev.liveAudio === true;
   captureAll(st);
   // a locked control is not taken; the new step carries on the one before
   // it, as reading the journey back would fill it (fillSteps)
-  const last = data.steps.length ? data.steps[data.steps.length - 1].overrides : null;
+  const last = prev ? prev.overrides : null;
   if (last) for (let i = 0; i < R.length; i++) {
-    if (held[i] && lockHolds(i) && last[R[i].id] !== undefined) st.overrides[R[i].id] = last[R[i].id];
+    if (held[i] && lockHolds(i, st) && last[R[i].id] !== undefined) st.overrides[R[i].id] = last[R[i].id];
   }
   if (data.sizeLock && SIZE) {
     st.overrides.textSize = data.sizeLockValue;
@@ -2402,7 +2458,7 @@ function recordLiveControl(stepIdx, id, requested) {
   const k = canon[j], c = R[k];
   let moved = false;
   const changed = [];
-  if (held[k] && !lockHolds(k)) {
+  if (held[k] && !lockHolds(k, st)) {
     let v = requested === undefined ? posOf(c) : flip[j] ? !(requested === true || requested === 1) : requested;
     v = validValue(c, v);
     if (v !== undefined && !same(c, st.overrides[c.id], v)) {

@@ -572,4 +572,82 @@ const click = (ctl, x, y, mods) => { frame([ptr('down', x, y, mods)], () => UI.c
   click(fake, 2, 3);
   eq('drawer: and its name still resets it straight', fakeV, 0);
 }
+// ---- LIVE AUDIO: a step that leaves the show remote's levels where the hand has them ----
+{
+  quiet(() => J.journeyStop()); quiet(() => J.journeyDeselect()); quiet(() => J.journeySetWindowOpen(false));
+  while (J.journeyCount() < 2) quiet(() => J.journeyAddStep());
+  quiet(() => J.journeyDeselect());
+  const A = 0, B = 1, sa = J.journeyStepAt(A), sb = J.journeyStepAt(B);
+  // each level is held under its twin group's first door
+  const key = (st, a, b) => st.overrides[a] !== undefined ? a : b;
+  const cv = key(sb, 'choirVol', 'mixChoir'), dv = key(sb, 'bedVol', 'mixDrone');
+  eq('live audio: LIVE_AUDIO names the remote\'s choir and drone levels', J.LIVE_AUDIO.includes('choirVol') && J.LIVE_AUDIO.includes('bedVol'), true);
+  eq('live audio: a new step leaves it off', sa.liveAudio === false && sb.liveAudio === false, true);
+  J.journeySetRamp(A, 0); J.journeySetRamp(B, 0);
+  const live = () => { quiet(() => J.journeyPerformanceControl('choirVol', () => byId('choirVol').set(S, 20)));
+                       quiet(() => J.journeyPerformanceControl('mixDrone', () => byId('mixDrone').set(S, 30)));
+                       byId('choirOn').set(S, false); byId('cornerOpacity').set(S, 10); run(0.1); };
+  sb.overrides[cv] = 90; sb.overrides[dv] = 70; sb.overrides.choirOn = true; sb.overrides.cornerOpacity = 77;
+  // off: the step sets them, as ever
+  live();
+  quiet(() => J.journeyPlayFrom(B)); run(0.3);
+  eq('live audio off: the step sets the choir level', g('choirVol'), 90);
+  eq('live audio off: and the drone through its twin', g('mixDrone'), 70);
+  quiet(() => J.journeyStop());
+  // on: they stay where the hand put them, everything else lands
+  J.journeySetLiveAudio(B, true);
+  eq('live audio: the setter turns it on', sb.liveAudio, true);
+  live();
+  quiet(() => J.journeyPlayFrom(B)); run(0.3);
+  eq('live audio on: the choir level stays where the remote put it', g('choirVol'), 20);
+  eq('live audio on: so does the drone, and its mixer twin', g('bedVol') === 30 && g('mixDrone') === 30, true);
+  eq('live audio on: the step still turns the choir on', g('choirOn'), true);
+  eq('live audio on: and still lands a visual', g('cornerOpacity'), 77);
+  eq('live audio on: the step\'s stored levels are untouched', sb.overrides[cv] === 90 && sb.overrides[dv] === 70, true);
+  quiet(() => J.journeyStop());
+  // over a ramp, and a ramp of the step before let go as it is entered
+  J.journeySetRamp(A, 4); J.journeySetRamp(B, 3);
+  sa.overrides[cv] = 150; sa.overrides.cornerOpacity = 10;
+  live();
+  quiet(() => J.journeyPlayFrom(A)); run(2);
+  const midC = g('choirVol');
+  eq('live audio: the step before ramps the choir level', midC > 20 && midC < 150, true);
+  quiet(() => J.journeyJumpTo(B)); run(3.5);
+  eq('live audio on: its ramp leaves the level where the last one had it', g('choirVol'), midC);
+  eq('live audio on: while its visual ramps in', g('cornerOpacity'), 77);
+  quiet(() => J.journeyStop());
+  J.journeySetRamp(A, 0); J.journeySetRamp(B, 0);
+  // capture: editing the step never writes the levels into it
+  live();
+  quiet(() => J.journeyDeselect());
+  quiet(() => J.journeySetWindowOpen(true)); quiet(() => J.journeySelect(B)); await flush();
+  eq('live audio: the step is armed for editing', J.journeyEditing() && J.journeySelected() === B, true);
+  eq('live audio on: selected to edit, the levels are left live', g('choirVol'), 20);
+  byId('choirVol').set(S, 55); byId('mixDrone').set(S, 45); byId('cornerOpacity').set(S, 33); await flush(); run(0.4); await flush();
+  eq('live audio on: an edit of the choir level is not recorded', sb.overrides[cv], 90);
+  eq('live audio on: nor of the drone through its mixer twin', sb.overrides[dv], 70);
+  eq('live audio on: a visual edit still is', sb.overrides.cornerOpacity, 33);
+  J.journeySetLiveAudio(B, false);
+  byId('choirVol').set(S, 56); await flush(); run(0.4); await flush();
+  eq('live audio off: the same edit of the choir level is recorded', sb.overrides[cv], 56);
+  J.journeySetLiveAudio(B, true);
+  quiet(() => J.journeyDeselect()); quiet(() => J.journeySetWindowOpen(false));
+  // a step added after it leaves the live audio live too, carrying on its levels
+  const last = J.journeyCount() - 1, wasLast = J.journeyStepAt(last).liveAudio;
+  J.journeySetLiveAudio(last, true);
+  const lastC = J.journeyStepAt(last).overrides[cv];
+  byId('choirVol').set(S, lastC === 12 ? 13 : 12); run(0.1);
+  quiet(() => J.journeyAddStep()); quiet(() => J.journeyDeselect());
+  const added = J.journeyStepAt(last + 1);
+  eq('live audio: a step added after one inherits it', added.liveAudio, true);
+  eq('live audio: and carries on its levels rather than taking the live one', added.overrides[cv], lastC);
+  J.journeyDeleteStep(last + 1); J.journeySetLiveAudio(last, wasLast);
+  // the record: exported with the flag, read back with it, absent reads off
+  const rec = JSON.parse(J.journeyExport().json);
+  eq('live audio: exported on the step', rec.steps[B].liveAudio, true);
+  delete rec.steps[A].liveAudio;
+  quiet(() => J.journeyImport('Live audio', rec));
+  eq('live audio: read back on', J.journeyStepAt(B).liveAudio, true);
+  eq('live audio: absent reads off', J.journeyStepAt(A).liveAudio, false);
+}
 console.log(fails ? fails + ' FAILED' : 'all passed');

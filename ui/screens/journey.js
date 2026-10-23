@@ -11,7 +11,8 @@
 // whole scene. A second click lets it go. While the walk
 // plays, a click only opens the step's fold, and the walk carries on. The
 // selected step folds open beneath its row with HOLD and RAMP on one line,
-// then TEXT with its lock at the right (locked, a preset loaded into the step
+// SLIDE, then LIVE AUDIO (on, the step leaves the levels the show remote
+// rides where the hand has them: core/journey.js LIVE_AUDIO), then TEXT with its lock at the right (locked, a preset loaded into the step
 // leaves its text and timing exactly as they are), TIME OS (time on screen)
 // and GAP directly beneath it, then FADE IN and FADE OUT on one line (how long the
 // text takes to arrive and leave: the drawer's own two fade times, recorded
@@ -64,7 +65,7 @@ import {
   journeyTogglePlay, journeyStepBy, journeySetMode, journeySetRamp, journeySetHold, journeySetText,
   journeySetPiano, journeySetAppear, journeyLoop, journeySetLoop,
   journeySetOverride, journeyName, journeySetName, NAME_MAX,
-  journeyEditing, journeyLoadPreset, journeySetTextLock,
+  journeyEditing, journeyLoadPreset, journeySetTextLock, journeySetLiveAudio,
   journeySizeLocked, journeySetTextSize, journeySetSizeLock,
   journeyLibCount, journeyLibTitle, journeyLibOpen, journeyOpenAt, journeyNew, journeyDeleteAt,
   journeyRenameAt, journeyMoveAt, journeyDuplicate, journeyExport, TITLE_MAX,
@@ -140,15 +141,15 @@ const LIST_TOP = 8, ROW_H = 30, ROW_GAP = 4;
 const RPLAY = 20, STEP_X = 28, SUM_X = 92, DEL_W = 20;
 // the fold under the selected row: HOLD and RAMP share the first line, hold
 // first since it is the one auto-play lives by (hidden in TRIGGER mode);
-// SLIDE under them; then the text accordion: shut, one plain line (TEXT, its
+// SLIDE and LIVE AUDIO under them (all a video step's fold holds); then the text accordion: shut, one plain line (TEXT, its
 // chevron and a dim preview); open, TEXT's taller line for its field with
 // TIME OS and SIZE, FADE IN / FADE OUT and APPEAR beneath it; then PIANO,
 // PRESET and INTERACTION
 const FOLD_ROW_H = 32, FOLD_PAD = 5;
 const FIELD_H = 34, TEXT_ROW_H = FIELD_H + 8;
 const TX_SHUT_H = FOLD_ROW_H, TX_OPEN_H = TEXT_ROW_H + FOLD_ROW_H * 3;
-const FOLD_FIXED_H = FOLD_ROW_H * 5 + FOLD_PAD * 2;
-const foldHeight = (txa, video) => video ? FOLD_ROW_H * 2 + FOLD_PAD * 2
+const FOLD_FIXED_H = FOLD_ROW_H * 6 + FOLD_PAD * 2;
+const foldHeight = (txa, video) => video ? FOLD_ROW_H * 3 + FOLD_PAD * 2
   : FOLD_FIXED_H + TX_SHUT_H + txa * (TX_OPEN_H - TX_SHUT_H);
 // the controls start clear of INTERACTION, the longest name; VAL_W holds the
 // widest readout ("4m 55s") at 11 pt
@@ -198,6 +199,7 @@ const APPEAR_VALUES = ['start', 'mid', 'end'], APPEAR_LABELS = ['Beginning', 'Mi
 const APPEAR_IDS = ['jr.aStart', 'jr.aMid', 'jr.aEnd'];
 const PIANO_VALUES = ['free', 'text', 'mixed'], PIANO_LABELS = ['Free', 'On text', 'Mixed'];
 const PIANO_IDS = ['jr.pFree', 'jr.pText', 'jr.pMixed'];
+const LIVE_LABELS = ['Off', 'On'], LIVE_IDS = ['jr.liveOff', 'jr.liveOn'];
 
 export const journey = { open: false, placed: false, x: 0, y: 0, dragging: false, grabX: 0, grabY: 0,
   settings: false,   // the gear's strip open
@@ -1050,8 +1052,8 @@ function foldName(ui, x0, t, cy) {
   ui.text.draw(ui.dl, t, x0 + FOLD_NAME_X, baseline(ui, cy, 10), 10, W.semibold, C.sectionInk, 0, 0.1, 1);
 }
 
-// One step's fold on its raised ground, top at fy: HOLD and RAMP, SLIDE, the
-// text accordion, PIANO, PRESET and INTERACTION.
+// One step's fold on its raised ground, top at fy: HOLD and RAMP, SLIDE,
+// LIVE AUDIO, the text accordion, PIANO, PRESET and INTERACTION.
 function drawFold(ui, i, x0, fy) {
   const dl = ui.dl, st = journeyStepAt(i);
   if (!st) return;
@@ -1129,9 +1131,20 @@ function drawFold(ui, i, x0, fy) {
     }
     ui.text.draw(dl, c.formatAt(value, S), right, baseline(ui, cy, 11), 11, W.regular, C.valueInk, 2, 0, 1);
   }
+  ry += FOLD_ROW_H; cy = ry + FOLD_ROW_H / 2;
+
+  // LIVE AUDIO: on, entering the step leaves the levels the show remote's
+  // audio faders ride where they are, and editing it never takes them in
+  // (core/journey.js journeySetLiveAudio); everything else lands as ever
+  foldName(ui, x0, 'LIVE AUDIO', cy);
+  for (let k = 0; k < 2; k++) {
+    const bx = cx + k * (SEG_W + 4), on = k === 1;
+    if (btnAt(ui, ui.idx(LIVE_IDS[k], i), bx, cy - BTN_H / 2, SEG_W, BTN_H)) journeySetLiveAudio(i, on);
+    drawBtn(ui, bx, cy, SEG_W, BTN_H, (st.liveAudio === true) === on, LIVE_LABELS[k], 11);
+  }
   ry += FOLD_ROW_H;
 
-  // Video steps show only their timing, volume and slide controls.
+  // Video steps show only their timing, volume, slide and live audio controls.
   if (video) return;
 
   // ---- the text accordion, clipped to however far it is open ----

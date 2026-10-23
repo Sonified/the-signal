@@ -139,7 +139,10 @@
 // glide, and protects them from a later unrelated drawer save. Snapshot in
 // the Journey window explicitly captures those live changes into a step.
 // From the iPad a Speed move lasts until the next cue; vol, lpf and hpf are
-// never held by a cue (core/journey.js), so they last until moved.
+// never held by a cue (core/journey.js), so they last until moved. On a
+// step with LIVE AUDIO on (the Guided Meditation's), every audio fader's
+// level lasts until moved too: the step leaves core/journey.js LIVE_AUDIO
+// where the hand has it.
 // The slides' own level (Master slide volume, slideVolume) is the laptop's
 // and is never sent from here.
 //
@@ -172,13 +175,16 @@ import { PRESENT_PASSWORD } from '../core/presentation.js';
 import { ampToPos } from '../js/util.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
+// An audio fader added here or to FINALE below joins core/journey.js
+// LIVE_AUDIO, so a step with LIVE AUDIO on leaves it where the hand has it.
 const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume', 'textOpacity']);
 // the hall's phases (broadcast-worker/src/groups.js PHASES, which the app
 // never imports), the drawing cues' words
 const HALL_PHASES = new Set(['solo', 'master', 'pairs', 'quads', 'halves', 'all']);
 const STATUS_MS = 250;
 const setLive = (c, value) => journeyPerformanceControl(c.id, () => c.set(S, value));
-// The finale row's faders (and SUN and WIND beside SCREEN): per fader, the
+// The finale row's faders (and SUN and WIND beside SCREEN; the audio ones'
+// keys are in core/journey.js LIVE_AUDIO, see CTL_IDS): per fader, the
 // settings it moves together, each { key: the S key, which is also its
 // control's id; top: its value at the fader's 100% (the finale's own);
 // pos: the control's position for a value; bottom: its value where it
