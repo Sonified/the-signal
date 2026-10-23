@@ -240,6 +240,10 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 5; padding: 16px; }
 #modal.open { display: grid; }
 #modal .card { width: min(460px, 100%); position: relative; }
+/* the controller's version, in the screen's lower left while the settings
+   are open (bump VERSION with every change to this page) */
+#version { position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
+  color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
 #close { position: absolute; top: -56px; right: 0; width: 44px; height: 44px; padding: 0; font-size: 20px; }
 .slider { position: relative; height: 36px; border-radius: 8px; background: #0f1219; border: 1px solid var(--line);
   margin-bottom: 6px; overflow: hidden; touch-action: none; }
@@ -319,6 +323,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
 </main>
 
 <div id="modal">
+  <div id="version"></div>
   <div class="card">
     <button class="big" id="close" aria-label="Close">✕</button>
     <h2>Duck</h2>
@@ -351,6 +356,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // socket, so the laptop's relay is a path only when the laptop served us.
   const LOCAL_HOST = SERVED_LOCAL ? location.host : '';
   $('roomName').textContent = room;
+  // this page's version, shown in the settings: one up with every change
+  const VERSION = 2;
+  $('version').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
     "Shepard's Rise", 'Earthquake', 'Rotating Sun', 'Spherical Harmonics — hum along!', 'HARP Trailer', 'WISPR CME',
