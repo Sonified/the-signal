@@ -21,16 +21,25 @@
 // core/brush.js brushAtlas.
 //
 // Remote strokes are played out first (core/brush.js brushPlay): their
-// stamps reach the queue as each one's playback cursor passes them, so the
-// ribbon glides; local ones are in the queue the frame the hand made them.
-//
-// Stamps are taken from the queue in order, at most MAX_INST a frame, and
-// only while the atlas each names is on the GPU, so the painting order is
-// the order they were made in (but that within a frame the senders take
-// turns at the top, core/brush-order.js); one waiting on its atlas holds the rest
-// back until it lands (a set that fails to load lets its stamps go). They
-// leave the queue only once encoded into the image, so a frame that holds
-// the image (one with no step, a wake) draws them on the next.
+// stamps reach the ring as each one's playback cursor passes them, carrying
+// their time on the sender's timeline mapped onto this clock; the hand's
+// own carry the moment it made them. Every stamp, local or remote, goes
+// into the trail on that one timeline, a delay after its time (the same
+// delay remote play runs at), all senders' together in time order
+// (core/brush-order.js bakeOrder: time, then the senders' turn this second,
+// sender, seq), so where two hands overlap the one who drew later is on
+// top, by the drawing and not by the network, and every screen bakes the
+// same layering. Until its bake a stamp is drawn live over the trail each
+// frame, in that same order, so the hand sees its mark at once and nothing
+// on top changes when a stamp moves into the trail. A stamp bakes fresh,
+// so it fades from its bake, a delay after it was drawn: under 100 ms of
+// skew against fades of a second or more. At a Trail res under Full the
+// trail is drawn smaller and stretched, so a stamp's live sprite is a
+// little sharper than the same stamp in the trail a moment later. At most
+// MAX_INST stamps are drawn a frame; a due stamp whose atlas is not in yet
+// holds back later bakes (they draw live meanwhile), and a set that failed
+// to load lets its stamps go. A held image (a frame with no step) bakes
+// nothing and keeps them for the next.
 //
 // The image exists only while there is something in it: made for the first
 // stamp, let go once it has faded to nothing (feedback.js says when, to the
@@ -42,11 +51,15 @@ import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './fe
 import { MOTIFS, LAYOUT_STD, bakeTag, bakeAtlasPixels, buildAtlasMips } from './atlas-bake.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
-import { brushQueue, brushQueueDrop, brushAtlas, STAMP_FLOATS, brushPlay, brushPlaying } from '../core/brush.js';
+import { brushQueue, brushQueueRemove, brushAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
-import { frameOrder, noteSender, forgetIdle, activeSenders, MAX_SENDERS } from '../core/brush-order.js';
+import { noteSender, forgetIdle, activeSenders, bakeOrder, turnPlace } from '../core/brush-order.js';
 
-const MAX_INST = 4096;
+// Stamps drawn a frame, baked and live together.
+const MAX_INST = 8192;
+// Stamps looked at a frame: the whole pending ring is sorted (it holds
+// about a delay's worth), past this the youngest wait.
+const MAX_PEND = 16384;
 const INST_FLOATS = 8;             // x y half angle | u0 v0 - -
 const MAX_ATLASES = 3;
 // A tile painting less than this share of its inner square is empty: the
@@ -60,18 +73,24 @@ export function createBrush(device, format, platform, opts) {
   const L = LAYOUT_STD;
 
   let pixelW = 1, pixelH = 1, dpr = 1;
-  let made = false, pipe = null, bgl = null, sampler = null, uniBuf = null, instBuf = null, fb = null;
+  let made = false, pipe = null, livePipe = null, bgl = null, sampler = null, uniBuf = null, instBuf = null, fb = null;
   const uni = new Float32Array(8);
   const inst = new Float32Array(MAX_INST * INST_FLOATS);
   // This frame's draws: runs of instances sharing one atlas.
   const runBind = new Array(MAX_INST).fill(null);
   const runFirst = new Int32Array(MAX_INST), runCount = new Int32Array(MAX_INST);
   let nRuns = 0, nInst = 0, fbOn = false;
-  // The frame's chosen stamps before they are ordered: each one's place in
-  // the queue, its atlas and its sender, and the order's scratch.
-  const selO = new Int32Array(MAX_INST), selAtlas = new Array(MAX_INST).fill(null);
-  const selWho = new Float64Array(MAX_INST), selOrder = new Int32Array(MAX_INST);
-  const selRank = new Int32Array(MAX_INST), selTally = new Int32Array(MAX_SENDERS + 2);
+  // Instances [0, nBake) go into the trail this frame (runs [0, bakeRuns)),
+  // [nBake, nInst) are drawn live over it (the rest of the runs).
+  let nBake = 0, bakeRuns = 0;
+  // The pending ring as this frame sorts it: per stamp (its number from the
+  // ring's head) its time, its turn place, its sender, its seq and its
+  // atlas; the order; and which were baked (or let go, a failed set's), to
+  // leave the ring once the trail has them.
+  const pIdx = new Int32Array(MAX_PEND), pKey = new Float64Array(MAX_PEND), pPlace = new Float64Array(MAX_PEND);
+  const pWho = new Float64Array(MAX_PEND), pSeq = new Float64Array(MAX_PEND), pAtlas = new Array(MAX_PEND).fill(null);
+  const baked = new Uint8Array(65536);
+  let bakedAny = false;
   const params = { keepHalfLife: 1, zoomRate: 0, twistRate: 0, cx: 0, cy: 0, unit: 1, dt: 0 };
   const sq = { cx: 0, cy: 0, side: 1 };
   let frame = 0;
@@ -126,6 +145,27 @@ export function createBrush(device, format, platform, opts) {
     });
     uniBuf = device.createBuffer({ label: 'brush.uniforms', size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     instBuf = device.createBuffer({ label: 'brush.instances', size: MAX_INST * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    // The live pass: the same stamps straight into the scene, over the
+    // trail's composite, for the ones not yet baked (premultiplied over
+    // here too, so a stamp looks the same live as baked).
+    livePipe = device.createRenderPipeline({
+      label: 'brush.stamp.live',
+      layout: device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
+      vertex: {
+        module: mod, entryPoint: 'vsStamp',
+        buffers: [{
+          arrayStride: INST_FLOATS * 4, stepMode: 'instance',
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x4' },
+            { shaderLocation: 1, offset: 16, format: 'float32x4' }
+          ]
+        }]
+      },
+      fragment: { module: mod, entryPoint: 'fsStamp', targets: [{ format, blend: {
+        color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } }] },
+      primitive: { topology: 'triangle-list' }
+    });
     fb = createFeedback(device, format, { label: 'brush.feedback' });
     uni[4] = L.innerUV; uni[5] = L.halfTexel;
   }
@@ -251,60 +291,75 @@ export function createBrush(device, format, platform, opts) {
     fieldSquare(S.W || pixelW / dpr, S.H || pixelH / dpr, S.edgeInset || 0, sq);
     const cx = sq.cx * dpr, cy = sq.cy * dpr, side = sq.side * dpr;
 
-    // Take the queue's head, in order, while its atlases are in; then lay
-    // the frame's stamps in sender by sender, the one in front this second
-    // last (core/brush-order.js), each sender's in the order they came.
-    nInst = 0; nRuns = 0;
+    // The pending stamps, every sender's, in baking order (core/brush-
+    // order.js): by time, then the senders' turn this second, sender, seq.
+    // Those a delay old go into the trail, in that order; the younger are
+    // drawn live over it, in that order too, so nothing on top changes as
+    // a stamp moves from one to the other. A due stamp whose atlas is not in
+    // yet holds back every later one's bake (they draw live meanwhile when
+    // they can), and a set that failed to load lets its stamps go.
+    nInst = 0; nRuns = 0; nBake = 0; bakeRuns = 0; bakedAny = false;
     const q = brushQueue, buf = q.buf;
-    let take = 0, nSel = 0;
-    while (take < q.count && nSel < MAX_INST) {
-      const o = ((q.head + take) % q.cap) * STAMP_FLOATS;
+    const n = q.count < MAX_PEND ? q.count : MAX_PEND;
+    const sec = Math.floor(Date.now() / 1000);
+    if (n > 0) forgetIdle(sec);
+    for (let j = 0; j < n; j++) {
+      const at = (q.head + j) % q.cap, o = at * STAMP_FLOATS;
       const set = setOf(buf[o + 5]);
       let a = atlases.get(set);
       if (!a) { load(set); a = atlases.get(set); }
-      if (!a) break;
-      if (a.failed) { take++; continue; }    // a set that will never draw lets its stamps go
-      if (!a.ready) break;
-      a.used = frame;
-      selO[nSel] = o; selAtlas[nSel] = a; selWho[nSel] = buf[o + 6];
-      nSel++; take++;
+      pIdx[j] = j; pKey[j] = q.key[at]; pWho[j] = buf[o + 6]; pSeq[j] = q.seq[at]; pAtlas[j] = a || null;
+      noteSender(pWho[j], sec);
     }
-    if (nSel > 0) {
-      const sec = Math.floor(Date.now() / 1000);
-      forgetIdle(sec);
-      for (let j = 0; j < nSel; j++) noteSender(selWho[j], sec);
-      frameOrder(selWho, nSel, activeSenders.ids, activeSenders.n, sec, selOrder, selRank, selTally);
-    }
-    let runAtlas = null;
-    for (let jj = 0; jj < nSel; jj++) {
-      const j = selOrder[jj], o = selO[j], a = selAtlas[j];
-      if (a !== runAtlas) {
-        runAtlas = a;
-        runBind[nRuns] = a.bind; runFirst[nRuns] = nInst; runCount[nRuns] = 0; nRuns++;
+    for (let j = 0; j < n; j++) pPlace[j] = turnPlace(pWho[j], activeSenders.ids, activeSenders.n, sec);
+    if (n > 1) bakeOrder(pIdx, n, pKey, pPlace, pWho, pSeq);
+    const due = brushNow() - brushPlayDelay();
+    let blocked = false, runAtlas = null;
+    // two walks over the one order: what bakes, then what draws live
+    for (let pass = 0; pass < 2; pass++) {
+      runAtlas = null;
+      for (let jj = 0; jj < n && nInst < MAX_INST; jj++) {
+        const j = pIdx[jj], a = pAtlas[j];
+        if (pass === 0) {
+          if (blocked || pKey[j] > due) continue;
+          if (a && a.failed) { baked[j] = 1; bakedAny = true; continue; }
+          if (!a || !a.ready) { blocked = true; continue; }
+        } else {
+          if (baked[j] || !a || !a.ready || a.failed) continue;
+        }
+        a.used = frame;
+        if (pass === 0) { baked[j] = 1; bakedAny = true; }
+        if (a !== runAtlas) {
+          runAtlas = a;
+          runBind[nRuns] = a.bind; runFirst[nRuns] = nInst; runCount[nRuns] = 0; nRuns++;
+        }
+        const o = ((q.head + j) % q.cap) * STAMP_FLOATS;
+        // An empty tile draws the set's first painted one, as the picker
+        // shows it (a pick made before the atlas was known, or another set's).
+        let m = buf[o + 4] | 0;
+        if (m < 0 || m >= MOTIFS || !(a.fill[m] > EMPTY_FILL)) m = a.first;
+        const i = nInst * INST_FLOATS;
+        inst[i] = cx + (buf[o] - 0.5) * side;
+        inst[i + 1] = cy + (buf[o + 1] - 0.5) * side;
+        inst[i + 2] = buf[o + 3] * side * 0.5;
+        inst[i + 3] = buf[o + 2];
+        inst[i + 4] = (m % 8) / 8 + L.padUV;
+        inst[i + 5] = ((m / 8) | 0) / 8 + L.padUV;
+        inst[i + 6] = 0; inst[i + 7] = 0;
+        runCount[nRuns - 1]++;
+        nInst++;
       }
-      // An empty tile draws the set's first painted one, as the picker
-      // shows it (a pick made before the atlas was known, or another set's).
-      let m = buf[o + 4] | 0;
-      if (m < 0 || m >= MOTIFS || !(a.fill[m] > EMPTY_FILL)) m = a.first;
-      const i = nInst * INST_FLOATS;
-      inst[i] = cx + (buf[o] - 0.5) * side;
-      inst[i + 1] = cy + (buf[o + 1] - 0.5) * side;
-      inst[i + 2] = buf[o + 3] * side * 0.5;
-      inst[i + 3] = buf[o + 2];
-      inst[i + 4] = (m % 8) / 8 + L.padUV;
-      inst[i + 5] = ((m / 8) | 0) / 8 + L.padUV;
-      inst[i + 6] = 0; inst[i + 7] = 0;
-      runCount[nRuns - 1]++;
-      nInst++;
+      if (pass === 0) { nBake = nInst; bakeRuns = nRuns; }
     }
-    takeN = take;
+    const take = n;
+    lookedN = n;
 
     // The image: made for the first stamp, let go once faded to nothing.
     if (nInst > 0 && !made) make();
     if (!made) { fbOn = false; return; }
     if (nInst === 0 && fbOn && fb.view === null && fb.live) { fb.release(); fbOn = false; }
     if (nInst > 0) fbOn = true;
-    if (!fbOn) { if (take > 0) brushQueueDrop(take); takeN = 0; return; }
+    if (!fbOn) { dropBaked(take); return; }
     fb.ensure(pixelW, pixelH, feedbackRes(S.fbResScale), feedbackKeep(S.fbResSwitch));
     params.keepHalfLife = fadeHalfLife(S.brushFade);
     params.cx = cx; params.cy = cy; params.unit = side;
@@ -315,35 +370,52 @@ export function createBrush(device, format, platform, opts) {
       device.queue.writeBuffer(instBuf, 0, inst, 0, nInst * INST_FLOATS);
     }
   }
-  // The stamps this frame took from the queue (failed sets' included),
-  // dropped once encoded.
-  let takeN = 0;
+  // The stamps this frame baked (and a failed set's) leave the ring, once
+  // the trail has them; n is how many were looked at.
+  let lookedN = 0;
+  function dropBaked(n) {
+    if (bakedAny) brushQueueRemove(baked);
+    for (let j = 0; j < n; j++) baked[j] = 0;
+    bakedAny = false; lookedN = 0;
+  }
 
   // Before the scene pass: the image faded and this frame's stamps drawn
   // into it. A held image (no step this frame) draws nothing and keeps the
   // stamps for the next.
   function encode(encoder) {
     if (!fbOn) return;
-    const pass = fb.begin(encoder, params, nInst > 0);
+    const pass = fb.begin(encoder, params, nBake > 0);
     if (!pass) {
-      // nothing drawn this frame; stamps of a failed set alone can go
-      if (nInst === 0 && takeN > 0) { brushQueueDrop(takeN); takeN = 0; }
+      // a held image takes nothing this frame: the due stamps stay in the
+      // ring (but a failed set's, which go as nothing was drawn of them)
+      if (nBake === 0) dropBaked(lookedN);
+      else { for (let j = 0; j < lookedN; j++) baked[j] = 0; bakedAny = false; nBake = 0; bakeRuns = 0; }
       return;
     }
-    if (nInst > 0) {
+    if (nBake > 0) {
       pass.setPipeline(pipe);
       pass.setVertexBuffer(0, instBuf);
-      for (let r = 0; r < nRuns; r++) {
+      for (let r = 0; r < bakeRuns; r++) {
         pass.setBindGroup(0, runBind[r]);
         pass.draw(6, runCount[r], 0, runFirst[r]);
       }
     }
     fb.end(pass);
-    if (takeN > 0) { brushQueueDrop(takeN); takeN = 0; }
+    dropBaked(lookedN);
   }
 
+  // Inside the scene pass: the trail, then the stamps not yet baked, live.
   function draw(pass) {
-    if (fbOn) fb.composite(pass, 1, 1);
+    if (!fbOn) return;
+    fb.composite(pass, 1, 1);
+    if (nInst > nBake) {
+      pass.setPipeline(livePipe);
+      pass.setVertexBuffer(0, instBuf);
+      for (let r = bakeRuns; r < nRuns; r++) {
+        pass.setBindGroup(0, runBind[r]);
+        pass.draw(6, runCount[r], 0, runFirst[r]);
+      }
+    }
   }
 
   // Still moving by itself: marks fading, or stamps waiting for a frame.

@@ -1,23 +1,24 @@
-// Who is in front where two hands draw over the same spot at once. Stamps
-// from different senders reach this screen interleaved as their batches
-// arrive, so drawn in that order the overlap's top shape would flicker
-// from frame to frame. Instead each frame's new stamps are laid into the
-// trail image sender by sender, in an order that turns once a second
-// (Robert's: "I'm in front for one second, then you are"): the senders
-// active now (seen this second or the one before), ascending by id, take
-// turns at the front, front = ids[second % count], the rest behind it in
-// rotation (ids[front + 1] next, and so on round), and the front sender's
-// stamps go in last, on top. One sender's own stamps keep their order.
-// Only what is new is ordered: the trail image keeps what was laid in
-// already (gpu/brush.js stamps each stamp once, into the feedback image,
-// and never draws it again), so old trails keep the order they were laid
-// in.
+// The order stamps go into the trail, and who is in front where two hands
+// draw over the same spot at once. Every stamp carries its time on this
+// screen's clock (core/brush.js: a local one when the hand made it, a
+// remote one its sender's time mapped here), and gpu/brush.js bakes them
+// into the trail image in that time order once each is a delay old, every
+// sender's together, drawing the younger ones live over the trail until
+// then, sorted the same way: so the trail's layering is who drew later,
+// the same on every screen whatever the network did, and a stamp moving
+// from the live pass to the trail never changes what is on top.
 //
-// The second is the wall clock's (Date.now), which every screen roughly
-// shares, so two screens showing the same two senders put the same one in
-// front at about the same moment. Ids: a hall member's id, the hand's own
-// (its hall id, or SOLO_ID with no hall), BROADCAST_ID for the
-// broadcaster's strokes on a follower.
+// Stamps of the very same moment (the same frame on this screen) are
+// ordered by the senders' turn (Robert's: "I'm in front for one second,
+// then you are"): the senders active now (seen this second or the one
+// before), ascending by id, take turns at the front, front = ids[second %
+// count], the rest behind it in rotation (ids[front + 1] next, and so on
+// round), the front sender's stamps last, on top; then by sender and by
+// the order they came, so one sender's own stamps keep theirs. The second
+// is the wall clock's (Date.now), which every screen roughly shares.
+//
+// Ids: a room member's id, the hand's own (its room id, or SOLO_ID alone),
+// BROADCAST_ID for the broadcaster's strokes on a follower.
 
 export const SOLO_ID = 0, BROADCAST_ID = -1;
 export const MAX_SENDERS = 64;
@@ -62,4 +63,25 @@ export function frameOrder(who, n, ids, count, sec, out, rank, tally) {
   for (let p = 1; p <= count + 1; p++) tally[p] += tally[p - 1];
   for (let i = 0; i < n; i++) out[tally[rank[i]]++] = i;
   return out;
+}
+
+// Sorts idx[0..n) (stamp numbers) into baking order: by time (key), then by
+// the senders' turn this second (place, from frameOrder's rule: the front
+// sender's highest, so on top), then sender, then the order they came (seq).
+let sk = null, sp = null, sw = null, sq = null;
+const byOrder = (a, b) => (sk[a] - sk[b]) || (sp[a] - sp[b]) || (sw[a] - sw[b]) || (sq[a] - sq[b]);
+export function bakeOrder(idx, n, key, place, who, seq) {
+  sk = key; sp = place; sw = who; sq = seq;
+  idx.subarray(0, n).sort(byOrder);
+  sk = sp = sw = sq = null;
+  return idx;
+}
+
+// A sender's place in this second's turn: 0 for one not active (behind
+// everyone), else count minus its distance behind the front, so the front
+// sender's place is count, the highest.
+export function turnPlace(who, ids, count, sec) {
+  const f = count > 0 ? Math.floor(sec) % count : 0;
+  for (let j = 0; j < count; j++) if (ids[j] === who) return count - ((j - f + count) % count);
+  return 0;
 }

@@ -63,17 +63,44 @@ export const STAMP_FLOATS = 7;
 // Room for a few frames of the densest drawing (a fast flick at the
 // continuous spacing with 24 copies is some 4000 stamps a frame).
 const QCAP = 65536;
-export const brushQueue = { buf: new Float32Array(QCAP * STAMP_FLOATS), cap: QCAP, head: 0, count: 0 };
+// Beside each stamp: its time (key, ms on this screen's clock: when the
+// hand made it, or a remote stamp's time on its sender's timeline mapped
+// here) and its place in the order stamps came (seq). gpu/brush.js bakes
+// each into the trail when its time is a delay old, all senders' together
+// in time order, and draws the younger ones live over the trail till then
+// (core/brush-order.js bakeOrder): so who is on top where two hands overlap
+// is who drew later, never whose stamps happened to arrive later.
+export const brushQueue = { buf: new Float32Array(QCAP * STAMP_FLOATS), key: new Float64Array(QCAP), seq: new Float64Array(QCAP),
+                            cap: QCAP, head: 0, count: 0 };
 
 // What the walk's stamps are made of right now (set before each walk).
-let qSide = 0, qMotif = 0, qSet = 1, qWho = SOLO_ID;
+let qSide = 0, qMotif = 0, qSet = 1, qWho = SOLO_ID, qKey = 0, qSeqN = 0;
 function push(u, v, angle) {
   const q = brushQueue;
   if (q.count === q.cap) { q.head = (q.head + 1) % q.cap; q.count--; }
-  const o = ((q.head + q.count) % q.cap) * STAMP_FLOATS, b = q.buf;
+  const at = (q.head + q.count) % q.cap, o = at * STAMP_FLOATS, b = q.buf;
   b[o] = u; b[o + 1] = v; b[o + 2] = angle; b[o + 3] = qSide; b[o + 4] = qMotif; b[o + 5] = qSet;
   b[o + 6] = qWho;
+  q.key[at] = qKey; q.seq[at] = qSeqN++;
   q.count++;
+}
+
+// Takes the stamps marked (marks[i] for the i-th from the head) out of the
+// ring, keeping the rest in their order: the ones the GPU side baked this
+// frame, wherever they sat among younger ones.
+export function brushQueueRemove(marks) {
+  const q = brushQueue, b = q.buf, F = STAMP_FLOATS;
+  let w = 0;
+  for (let i = 0; i < q.count; i++) {
+    if (marks[i]) continue;
+    if (w !== i) {
+      const from = (q.head + i) % q.cap, to = (q.head + w) % q.cap;
+      b.copyWithin(to * F, from * F, from * F + F);
+      q.key[to] = q.key[from]; q.seq[to] = q.seq[from];
+    }
+    w++;
+  }
+  q.count = w;
 }
 // The walk's emit, made once.
 const emit = (u, v, angle) => push(u, v, angle);
@@ -175,7 +202,7 @@ function begin(x, y, width, height, inset, t) {
   lastPrintT = t;
   toUnit(x, y, width, height, inset);
   lastQu = lastU; lastQv = lastV;
-  qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId();
+  qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
   stampCopies(lastQu / QUANT, lastQv / QUANT, sCopies, emit);
   carry = 0;
   pend[0] = lastQu; pend[1] = lastQv; pendT[0] = t; pendN = 1; pendD = 0; lastFlushT = t;
@@ -190,7 +217,7 @@ function extend(x, y, width, height, inset, t) {
     // moved off the last one: stamped here, and one point on the wire.
     if ((lastU !== lastQu || lastV !== lastQv) && t - lastPrintT >= printMs) {
       lastPrintT = t;
-      qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId();
+      qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
       stampCopies(lastU / QUANT, lastV / QUANT, sCopies, emit);
       lastQu = lastU; lastQv = lastV;
       if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
@@ -199,7 +226,7 @@ function extend(x, y, width, height, inset, t) {
     return;
   }
   if (lastU !== lastQu || lastV !== lastQv) {
-    qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId();
+    qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
     carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, brushSpacing(BRUSH_W), sCopies, emit);
     lastQu = lastU; lastQv = lastV;
     if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
@@ -381,6 +408,9 @@ const at = { i: 0 };
 let clock = () => performance.now();
 export function setBrushClock(fn) { clock = fn || (() => performance.now()); }
 export function brushPlayDelay() { return playDelayNow(); }
+export function brushNow() { return clock(); }
+// The time a stamp let out of a slot carries (see brushPlay).
+let releaseKey = 0;
 // A fresh session's playback (the tests' between cases): the starting delay
 // and no senders' offsets known.
 export function brushPlayReset() { playLate = 0; offsets.clear(); }
@@ -388,7 +418,7 @@ export function brushPlayReset() { playLate = 0; offsets.clear(); }
 // Stamps leave a slot for the ring the GPU side drains.
 function letOut(i) {
   const b = slotBuf[i], o = slotHead[i] * PF;
-  qSide = b[o + 3]; qMotif = b[o + 4]; qSet = b[o + 5]; qWho = slotWho[i];
+  qSide = b[o + 3]; qMotif = b[o + 4]; qSet = b[o + 5]; qWho = slotWho[i]; qKey = releaseKey;
   push(b[o], b[o + 1], b[o + 2]);
   slotHead[i] = (slotHead[i] + 1) % SLOT_CAP;
   slotCount[i]--;
@@ -404,7 +434,7 @@ function openSlot(key, now) {
     if (!slotOn[j]) { i = j; break; }
     if (oldest < 0 || slotFed[j] < slotFed[oldest]) oldest = j;
   }
-  if (i < 0) { i = oldest; while (slotCount[i] > 0) letOut(i); }
+  if (i < 0) { i = oldest; releaseKey = clock() - playDelayNow(); while (slotCount[i] > 0) letOut(i); }
   if (!slotBuf[i]) {
     slotBuf[i] = new Float32Array(SLOT_CAP * PF);
     slotTlT[i] = new Float64Array(TL_CAP); slotTlP[i] = new Float64Array(TL_CAP);
@@ -501,6 +531,8 @@ export function brushTake(msg, from) {
 export function brushPlay(dt) {
   const now = clock();
   const delayNow = playDelayNow();
+  // a stamp let out now was drawn a delay ago on its sender's timeline
+  releaseKey = now - delayNow;
   dealTick();
   for (let i = 0; i < SLOTS; i++) {
     if (!slotOn[i]) continue;
