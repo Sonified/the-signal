@@ -73,7 +73,8 @@
           finaleWind 0..100 (the Sun's Feedback Amount 0..83% and Opacity
             0..36%, the rings' opacity 0..29% over the top half, the
             flowers' 0..15% over the top quarter: WIND)
-          finaleSunLayer 0..100 (the Sun layer's Opacity, %: SUN)
+          finaleSunLayer 0..100 (the Sun layer's Opacity and its hum's
+            Amplitude together: SUN)
     {k:'duck', on, amt, dn, up}  amt 0..1, dn and up in seconds; DUCK is
         hold-and-release: on at pointerdown, off at pointerup, pointercancel
         or the finger sliding off the button
@@ -89,12 +90,12 @@
   four: SCREEN (the picture's master brightness, down to black), BREATH beside
   it (the Sun's speed, its variance and its breath together), WIND beside
   that (the Sun's feedback, the rings and the flowers), HEART (the
-  Heartbeat's Master), then HUM (meditatewiththesun.com's volume), one
-  row 10px apart. Above them, column for column, the finale row: six of
-  the same faders, DRONE (the drone file, the tone and the
-  clouds together), PIANO, CHOIR, AMBIENCE, ROTSPD (the Sun hum's
-  speed, 1x to 2x), and SUN (the Sun layer's opacity, to fade it down
-  under the room's brushes).
+  Heartbeat's Master), then SUN (the Sun layer's opacity and its hum's
+  amplitude, fading the Sun and its sound away together), one
+  row 10px apart: the visual row. Above them, column for column, the
+  audio row: six of the same faders, DRONE (the drone file, the tone and
+  the clouds together), PIANO, CHOIR, AMBIENCE, ROTSPD (the Sun hum's
+  speed, 1x to 2x), and HUM (meditatewiththesun.com's volume).
 
   The surface is drawn for DESIGN_W (1180px, the iPad landscape it was
   laid out on); a window any skinnier scales the whole page down evenly
@@ -173,7 +174,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-/* HEART, HUM and TXT carry on the SCREEN, BREATH, WIND row. Every fader in
+/* HEART, SUN and TXT carry on the SCREEN, BREATH, WIND row. Every fader in
    the middle is 58px, 10px apart, so this row of six (6 x 58 + 5 x 10 =
    398px) and the finale row's six above it are the same width, column under
    column. A fader added to either row widens it by 68px: check it still
@@ -399,7 +400,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.06';
+  const VERSION = '3.07';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
@@ -717,10 +718,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // riding together at the balance the laptop's Audio level and Visual
     // amount set (core/schema-heartbeat.js), linear 0..100%.
     { id: 'heartMaster', key: 'hm', label: 'HEART', color: '#ff5a7a', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' },
-    // meditatewiththesun.com's Master volume: the phones in the room
-    // following the broadcast fade their sound to it (core/schema-sun.js
-    // mwtsVolume), linear 0..100%.
-    { id: 'mwtsVolume', key: 'mw', label: 'HUM', color: '#ff9f43', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' },
+    // SUN, in the visual row: the Sun layer's Opacity and its rotational
+    // hum's Amplitude together (finaleSunLayer), linear 0..100%, so one
+    // finger fades the Sun and its sound away under the room's brushes.
+    { id: 'finaleSunLayer', key: 'so', label: 'SUN', color: '#ffd23b', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' },
     // The Text layer's Opacity: the journey's words over the sun (breathe
     // in, breathe out), linear 0..100%, the app's own 95% to start.
     { id: 'textOpacity', key: 'tx', label: 'TXT', color: '#c9d4ff', max: 100, def: 95, box: 'midFaders', fmt: p => Math.round(p) + '%' },
@@ -743,9 +744,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // in pitch (1.41x halfway), as its own Speed slider moves
     { id: 'finaleHum', key: 'hu', label: 'ROTSPD', color: '#ff7e47', max: 100, def: 0, box: 'topFaders',
       fmt: p => Math.pow(2, p / 100).toFixed(2) + '×' },
-    // SUN, beside ROTSPD: the Sun layer's Opacity, linear 0..100%, so the
-    // Sun can fade down under the room's brushes
-    { id: 'finaleSunLayer', key: 'so', label: 'SUN', color: '#ffd23b', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' }
+    // HUM, beside ROTSPD in the audio row: meditatewiththesun.com's Master
+    // volume, the phones in the room following the broadcast fade their
+    // sound to it (core/schema-sun.js mwtsVolume), linear 0..100%.
+    { id: 'mwtsVolume', key: 'mw', label: 'HUM', color: '#ff9f43', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
   let rafOn = false;

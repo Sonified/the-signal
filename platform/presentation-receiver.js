@@ -217,9 +217,11 @@ const FINALE = {
   finaleWind: [{ key: 'sunFbAmt', top: 0.83, pos: pct }, { key: 'sunFbOpacity', top: 0.36, pos: pct },
                { key: 'ringOpacity', top: 0.29, from: 0.5, pos: pct },
                { key: 'flowerOpacity', top: 0.15, from: 0.75, pos: pct }],
-  // SUN, beside ROTSPD: the Sun layer's Opacity, 0 to 100%, to fade the Sun
-  // down under the room's brushes
-  finaleSunLayer: [{ key: 'sunOpacity', top: 1, pos: pct }]
+  // SUN, in the visual row: the Sun layer's Opacity 0 to 100% and its
+  // rotational hum's Amplitude 0 to 1 together, so one finger fades the Sun
+  // and its sound away under the room's brushes. Both ride with the operator
+  // on a LIVE AUDIO step (core/journey.js LIVE_AUDIO).
+  finaleSunLayer: [{ key: 'sunOpacity', top: 1, pos: pct }, { key: 'sunHumAmp', top: 1, pos: pct }]
 };
 // where a fader at u (0..1) puts one of its settings
 const finaleValue = (e, u) => {
