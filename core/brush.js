@@ -16,6 +16,13 @@
 // is the hall's business (the phases live on the server); this side only
 // sends its own strokes and draws what comes in.
 //
+// The demo broadcast carries the same strokes one way (core/broadcast.js):
+// on the broadcasting tab each batch, encoded once, goes to the hall and to
+// every watched session; a follower hands each one to brushTake exactly as
+// a hall stroke, so its figure is the broadcaster's, drawn from the
+// stroke's own fields (its copies, rate, set, tile and width), whatever the
+// follower's own Brush settings say. A follower never sends one back.
+//
 // The stamps wait in a ring (STAMP_FLOATS each: u, v in the wire's unit
 // square, the angle, the motif's side in unit-square units, the tile, the
 // atlas set) until gpu/brush.js takes them, in order, which it does as soon
@@ -145,6 +152,8 @@ function toUnit(x, y, width, height, inset) {
 }
 
 function begin(x, y, width, height, inset, t) {
+  // a broadcast resting for want of activity wakes for a stroke
+  if (bcSink) bcSink.touch();
   sCopies = Math.max(1, Math.min(24, S.brushCopies | 0));
   sMotif = brushMotifNow();
   sSet = kaleidoscopeSet(S.kaleidoSet).id;
@@ -201,11 +210,14 @@ function finish(t) {
 // point is a print of its own.
 function flush(done, t) {
   lastFlushT = t;
-  if (hallLink && pendN > 0) {
+  const toBc = !!bcSink && bcSink.wanted();
+  if ((hallLink || toBc) && pendN > 0) {
     const pts = new Array(pendN);
     for (let i = 0; i < pendN; i++) pts[i] = { u: pend[i * 2] / QUANT, v: pend[i * 2 + 1] / QUANT };
-    hallLink.send(encodeStroke(MOTIF, HUE, BRUSH_W, done ? 2 : pendD, pts,
-      { a: sSet, m: sMotif, c: sCopies, f: Math.round(sFade * 1000) / 1000, r: sRate }));
+    const msg = encodeStroke(MOTIF, HUE, BRUSH_W, done ? 2 : pendD, pts,
+      { a: sSet, m: sMotif, c: sCopies, f: Math.round(sFade * 1000) / 1000, r: sRate });
+    if (hallLink) hallLink.send(msg);
+    if (toBc) bcSink.send(msg);
   }
   pendD = 1;
   if (sPrints) { pendN = 0; return; }
@@ -218,6 +230,11 @@ function flush(done, t) {
 // drawer's status line.
 let hallLink = null, hallName = '', hallState = '';
 export function setBrushHall(link, name) { hallLink = link; hallName = name || ''; }
+// The broadcast's end (core/broadcast.js, on the broadcasting tab only):
+// { wanted() whether anyone watches, send(msg) to every watched session,
+// touch() wake a dozing one }, or null.
+let bcSink = null;
+export function setBrushBroadcast(sink) { bcSink = sink || null; }
 export function brushHallState(s) { hallState = s; statusAt = -1e9; idleWake('the hall'); }
 export function brushHallGroup() { statusAt = -1e9; }
 
@@ -232,11 +249,13 @@ export function brushSetPhase(p) { if (brushConducting()) hallLink.setPhase(p); 
 
 // Each sender's stroke in flight: the carry its last batch left, by the id
 // the hall stamps. A first batch starts afresh, a last one lets go.
+// from is who sent it, when the message itself does not say (the
+// broadcast's strokes have one sender, the broadcaster).
 const carries = new Map();
-export function brushTake(msg) {
+export function brushTake(msg, from) {
   const s = decodeStroke(msg);
   if (!s || s.k !== MOTIF) return;
-  const key = msg.id;
+  const key = from !== undefined ? from : msg.id;
   qSide = brushSide(s.w); qMotif = s.m; qSet = s.a;
   // prints: each point as it stands, no carry kept (core/brush-stamps.js)
   if (!rateContinuous(s.r)) {

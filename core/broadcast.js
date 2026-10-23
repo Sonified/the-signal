@@ -55,6 +55,7 @@
 // the drawer's list survives a reload, and a session left active reconnects
 // at boot: a demo survives the broadcaster's page refresh.
 import { S } from '../js/state.js';
+import { setBrushBroadcast, brushTake } from './brush.js';
 import { idleWake, idleMute } from './idle.js';
 import { onSave, wireSettings, readKey, saveKey } from './store.js';
 import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl, recallStreamScene } from './presets.js';
@@ -345,13 +346,14 @@ export function broadcastPoke() { if (available) queueSend(); }
 // watching stays on what it last received and one arriving late is handed
 // that snapshot, which is still current because nothing has changed.
 //
-// Ten minutes without a state send or a piece of live sound (every piece
-// core/live-audio.js sends counts) hangs up every live session. The session
-// stays active (still on in the drawer, still saved as active); it is simply
-// not connected, and its status reads 'doze'. No {t:'end'} goes out, since
-// that would clear the room's snapshot, which is exactly what should
-// survive. The next touch (any save, or run/stop) passes through queueSend,
-// which reconnects the dozing sessions, and the reconnect's own open sends
+// Ten minutes without a state send, a piece of live sound (every piece
+// core/live-audio.js sends counts) or a brush stroke hangs up every live
+// session. The session stays active (still on in the drawer, still saved
+// as active); it is simply not connected, and its status reads 'doze'. No
+// {t:'end'} goes out, since that would clear the room's snapshot, which is
+// exactly what should survive. The next touch (any save, or run/stop)
+// passes through queueSend (a brush stroke's start calls wakeDozing
+// itself), which reconnects the dozing sessions, and the reconnect's own open sends
 // the fresh state, all in under a second. Beacons, words and probes do not
 // count as activity: they need a live socket, so they fall silent on their
 // own while a session dozes, and the watcher count is unknown until the
@@ -1188,6 +1190,12 @@ export function initBroadcast(bits_, hooks_) {
             const k = Number.isFinite(msg.k) ? msg.k : -1;
             if (k < 0 || !wordWalkRunning()) remoteWord(msg.w, msg.seed, msg.fi, msg.fo, k);
           }
+        } else if (msg.t === 's') {
+          // The broadcaster's brush stroke, the wire's own (touch/strokes.js):
+          // drawn here through the very path this tab's own strokes take
+          // (core/brush.js), from the stroke's own fields, so the figure is
+          // the broadcaster's. One sender, so one carry.
+          brushTake(msg, 'broadcast');
         } else if (msg.t === 'time' && Number.isFinite(msg.c) && Number.isFinite(msg.s)) {
           takeTime(msg.c, msg.s);
         } else if (msg.t === 'live') {
@@ -1268,6 +1276,24 @@ export function initBroadcast(bits_, hooks_) {
     const msg = JSON.stringify({ t: 'word', w, seed: wordState.seed, fi: wordState.fadeInMul, fo: wordState.fadeOutMul,
                                  k: wordState.step >= 0 ? wordState.step : undefined });
     for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) s.sock.send(msg);
+  });
+
+  // The brush's strokes go out as they are drawn (core/brush.js), each
+  // batch the wire's own stroke, to every session someone is watching, as
+  // the words do. A stroke counts as activity, and its start wakes a
+  // dozing session, so a broadcaster drawing for ten minutes without
+  // touching a setting is not hung up mid-drawing.
+  setBrushBroadcast({
+    wanted: () => {
+      for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) return true;
+      return false;
+    },
+    send: msg => {
+      const str = JSON.stringify(msg);
+      for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) s.sock.send(str);
+      lastActivityMs = Date.now();
+    },
+    touch: wakeDozing
   });
 
   // Sessions left active last time come back up on their own.

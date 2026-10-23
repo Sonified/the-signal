@@ -13,7 +13,7 @@ import {
 } from '../core/brush-stamps.js';
 import { encodeStroke, decodeStroke, MOTIF, QUANT } from '../touch/strokes.js';
 import { S } from '../js/state.js';
-import { brushField, brushTake, setBrushHall, brushQueue, brushQueueDrop, STAMP_FLOATS } from '../core/brush.js';
+import { brushField, brushTake, setBrushHall, setBrushBroadcast, brushQueue, brushQueueDrop, STAMP_FLOATS } from '../core/brush.js';
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
@@ -282,4 +282,37 @@ test('Rate slowed: separate prints at the rate, every point a print, the same on
   const good = sent[0];
   for (const bad of [-0.1, 1.5, '0.5', null, NaN]) assert.equal(decodeStroke({ ...good, r: bad }), null, String(bad));
   assert.equal(decodeStroke({ ...good, r: 0 }).r, 0);
+});
+
+test('broadcast: one encode reaches hall and followers alike; a follower draws the stroke, not its own settings', () => {
+  S.brushCopies = 7; S.brushMotif = 11; S.kaleidoSet = 4; S.brushFade = 0.8; S.brushRate = 1;
+  const hall = [], bc = [];
+  let watching = true, touched = 0;
+  setBrushHall({ send: m => hall.push(m), peers: new Set(), phase: 'solo', conduct: false }, 'test');
+  setBrushBroadcast({ wanted: () => watching, send: m => bc.push(m), touch: () => touched++ });
+  drain();
+  let t = 0;
+  brushField(true, false, false, 300, 300, 1280, 720, 0, t);
+  for (let f = 1; f <= 40; f++) { t += 16.7; brushField(true, false, false, 300 + f * 6, 300 + f * 3, 1280, 720, 0, t); }
+  brushField(true, true, false, 540, 420, 1280, 720, 0, t + 16.7);
+  const local = drain();
+  assert.equal(touched, 1, 'the stroke woke a resting broadcast once');
+  assert.ok(bc.length >= 3);
+  // the very same message objects, built once, went both ways
+  assert.equal(bc.length, hall.length);
+  bc.forEach((m, i) => assert.equal(m, hall[i]));
+  // a follower with other Brush settings entirely
+  S.brushCopies = 1; S.brushMotif = 0; S.kaleidoSet = 9; S.brushRate = 0.1; S.brushFade = 0;
+  for (const m of bc) brushTake(JSON.parse(JSON.stringify(m)), 'broadcast');
+  assert.deepEqual(drain(), local);
+  // nobody watching: nothing goes to the broadcast, the hall still hears it
+  watching = false; hall.length = 0; bc.length = 0;
+  S.brushCopies = 7; S.brushRate = 1;
+  brushField(true, false, false, 300, 300, 1280, 720, 0, 2000);
+  brushField(true, false, false, 380, 300, 1280, 720, 0, 2100);
+  brushField(true, true, false, 400, 300, 1280, 720, 0, 2200);
+  drain();
+  assert.equal(bc.length, 0);
+  assert.ok(hall.length > 0);
+  setBrushHall(null); setBrushBroadcast(null);
 });
