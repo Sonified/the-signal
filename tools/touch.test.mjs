@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pairGroups, phaseGroups, routes, PHASES, CONDUCTOR_HEARS_GROUPS, Hall, REPLACED, SCRIPT, nextStep, planStep, liveGroups, roundOf } from '../broadcast-worker/src/index.js';
+import { pairGroups, phaseGroups, routes, PHASES, CONDUCTOR_HEARS_GROUPS, Hall, REPLACED, SCRIPT, nextStep, planStep, liveGroups, roundOf, dealHand, deck, readBrushes, HAND_MAX } from '../broadcast-worker/src/index.js';
 import { tapStep, chipLabel } from '../touch/hall.js';
 import { encodeStroke, decodeStroke, BRUSHES, QUANT, MOTIF } from '../touch/strokes.js';
 import { planReplay } from '../touch/replay.js';
@@ -573,4 +573,93 @@ test('hall: Next walks the script, the groups carry the round, a late joiner mov
   // the wipe forgets the rounds
   await hall.webSocketMessage(c, JSON.stringify({ t: 'wipe' }));
   assert.equal(await hall.ctx.storage.get('hist'), undefined);
+});
+
+// ---------- the dealt brushes ----------
+
+test('deal: unique across the room, never twice, short hands once the deck is dry', () => {
+  const tiles = range(64).map(i => i - 1);   // 0..63
+  const seed = 12345;
+  let pos = 0;
+  const hands = [];
+  for (let p = 0; p < 18; p++) { const r = dealHand(tiles, seed, pos, 4); hands.push(r.hand); pos = r.pos; }
+  // fifteen people take sixty, the sixteenth the last four, then nothing
+  assert.deepEqual(hands.slice(0, 16).map(h => h.length), Array(16).fill(4));
+  assert.deepEqual(hands.slice(16).map(h => h.length), [0, 0]);
+  const all = hands.flat();
+  assert.equal(new Set(all).size, all.length, 'no tile dealt twice');
+  assert.deepEqual([...all].sort((a, b) => a - b), tiles, 'every tile out once');
+  // a deck that does not divide: the last hand is what remains
+  const few = [3, 9, 12, 40, 41];
+  const a = dealHand(few, 7, 0, 4), b = dealHand(few, 7, a.pos, 4), c = dealHand(few, 7, b.pos, 4);
+  assert.deepEqual([a.hand.length, b.hand.length, c.hand.length], [4, 1, 0]);
+  // deterministic per seed, and a different seed is another shuffle
+  assert.deepEqual(deck(tiles, seed), deck(tiles, seed));
+  assert.notDeepEqual(deck(tiles, seed), deck(tiles, seed + 1));
+  assert.deepEqual([...deck(tiles, 99)].sort((x, y) => x - y), tiles, 'a shuffle, not a draw');
+  assert.equal(dealHand(tiles, 1, 0, 50).hand.length, HAND_MAX);
+});
+
+test('deal: the conductor\'s message, checked', () => {
+  assert.deepEqual(readBrushes({ t: 'brushes', on: 0 }), { on: 0, n: 0, a: 0, tiles: [] });
+  assert.deepEqual(readBrushes({ t: 'brushes', on: 1, n: 4, a: 3, tiles: [0, 5, 9] }), { on: 1, n: 4, a: 3, tiles: [0, 5, 9] });
+  for (const bad of [
+    { t: 'brushes', on: 2 }, { t: 'brushes', on: 1, n: 0, a: 3, tiles: [1] }, { t: 'brushes', on: 1, n: 9, a: 3, tiles: [1] },
+    { t: 'brushes', on: 1, n: 4, a: 0, tiles: [1] }, { t: 'brushes', on: 1, n: 4, a: 3, tiles: [] },
+    { t: 'brushes', on: 1, n: 4, a: 3, tiles: [1, 1] }, { t: 'brushes', on: 1, n: 4, a: 3, tiles: [64] },
+    { t: 'brushes', on: 1, n: 4, a: 3, tiles: 'x' }, { t: 'phase', on: 1 }, null
+  ]) assert.equal(readBrushes(bad), null, JSON.stringify(bad));
+});
+
+test('hall: the conductor deals, a joiner and a returning device are handed theirs, wipe lets go', async () => {
+  const { hall } = fakeHall();
+  const c = await hall.join(T(90), '&conduct=1&key=k');
+  const ws = [];
+  for (let i = 1; i <= 3; i++) ws.push(await hall.join(T(i)));
+  const handOf = w => { const m = w.sent.filter(x => x.t === 'hand').pop(); return m && m.on ? m.tiles : null; };
+  const tiles = range(13).map(i => i + 20);
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'brushes', on: 1, n: 3, a: 5, tiles }));
+  const hands = [c, ...ws].map(handOf);
+  assert.ok(hands.every(h => h && h.length === 3), 'everyone here, the conductor too, holds three');
+  assert.equal(new Set(hands.flat()).size, 12, 'none twice');
+  assert.equal(c.sent.filter(x => x.t === 'hand').pop().a, 5);
+  // a joiner: the last of the deck (thirteen tiles, twelve out), a short hand
+  const late = await hall.join(T(4));
+  assert.deepEqual(handOf(late).length, 1);
+  assert.equal(new Set([...hands.flat(), ...handOf(late)]).size, 13, 'still none twice');
+  const dry = await hall.join(T(5));
+  assert.deepEqual(handOf(dry), [], 'the deck dry: an empty hand, never a repeat');
+  // a device that blips comes back to the same hand
+  await hall.leave(ws[1]);
+  const back = await hall.join(T(2));
+  assert.deepEqual(handOf(back), hands[2]);
+  // the same deal again keeps every hand; another count deals afresh
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'brushes', on: 1, n: 3, a: 5, tiles }));
+  assert.deepEqual(handOf(ws[0]), hands[1]);
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'brushes', on: 1, n: 2, a: 5, tiles }));
+  assert.equal(handOf(ws[0]).length, 2);
+  // a member cannot deal; off tells everyone; the wipe lets every hand go
+  await hall.webSocketMessage(ws[0], JSON.stringify({ t: 'brushes', on: 0 }));
+  assert.ok(handOf(ws[0]));
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'brushes', on: 0 }));
+  assert.equal(handOf(ws[0]), null);
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'brushes', on: 1, n: 3, a: 5, tiles }));
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'wipe' }));
+  assert.equal(handOf(ws[0]), null);
+});
+
+test('hall: the room\'s Stream and Smoothing, the conductor\'s, told to all', async () => {
+  const { hall } = fakeHall();
+  const c = await hall.join(T(90), '&conduct=1&key=k');
+  const m = await hall.join(T(1));
+  const hello = m.sent.find(x => x.t === 'hello');
+  assert.deepEqual([hello.ms, hello.sm], [20, 30], 'the defaults');
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'room', ms: 35, sm: 80 }));
+  const g = m.sent.filter(x => x.t === 'group').pop();
+  assert.deepEqual([g.ms, g.sm], [35, 80]);
+  await hall.webSocketMessage(m, JSON.stringify({ t: 'room', ms: 10, sm: 0 }));
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'room', ms: 5, sm: 0 }));
+  const late = await hall.join(T(2));
+  const h2 = late.sent.find(x => x.t === 'hello');
+  assert.deepEqual([h2.ms, h2.sm], [35, 80], 'a member or a value out of range changes nothing');
 });

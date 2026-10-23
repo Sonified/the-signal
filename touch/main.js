@@ -16,10 +16,12 @@ import { runReplay } from './replay.js';
 
 const RELAY_HOST = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const HUES = [8, 42, 95, 168, 212, 285, 330];
-// A batch every 30 ms at least while a finger moves, each point stamped
-// with this page's clock (the wire's q), so a receiver can play the stroke
-// on its own timeline (core/brush.js).
-const FLUSH_MS = 30, FLUSH_POINTS = 16;
+// A batch at least every FLUSH_MS while a finger moves (the room's Stream
+// once the hall has told one), each point stamped with this page's clock
+// (the wire's q), so a receiver can play the stroke on its own timeline
+// (core/brush.js).
+const FLUSH_MS = 20, FLUSH_POINTS = 16;
+const flushMs = () => (hall && hall.stream > 0 ? hall.stream : FLUSH_MS);
 const SLICE_STEPS = [1, 4, 6, 8, 12];
 
 const Q = new URLSearchParams(location.search);
@@ -105,7 +107,7 @@ function flush(f, done) {
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture(e.pointerId);
   const p = unit(e);
-  const f = { pts: [p], ts: [performance.now()], d: 0, timer: setInterval(() => flush(f, false), FLUSH_MS) };
+  const f = { pts: [p], ts: [performance.now()], d: 0, timer: setInterval(() => flush(f, false), flushMs()) };
   fingers.set(e.pointerId, f);
   stampLocal([p]);
   e.preventDefault();

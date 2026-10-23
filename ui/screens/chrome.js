@@ -259,7 +259,9 @@ export function drawChrome(ui, app, alpha, frost) {
     if (crowded) ui.popInert();
   }
 
-  // quick bar, bottom right, read right to left
+  // quick bar, bottom right, read right to left; none on a follower's
+  // screen while the Brush section hides it (main.js app.quickHidden)
+  if (app.quickHidden && app.quickHidden()) { dl.popAlpha(); return; }
   const y = height - EDGE - CHIP_H;
   let x = width - EDGE - CHIP_H;
   if (glassIcon(ui, 'chrome.fs', app.fullscreenActive() ? ICON.CONTRACT : ICON.EXPAND, x, y, CHIP_H, false, frost)) app.toggleFullscreen();

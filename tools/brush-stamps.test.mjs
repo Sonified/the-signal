@@ -337,3 +337,47 @@ test('broadcast: one encode reaches hall and followers alike; a follower draws t
   assert.ok(hall.length > 0);
   setBrushHall(null); setBrushBroadcast(null);
 });
+
+test('the conductor sends the room\'s settings and the deal; a hand\'s tile draws from the hand\'s own set', async () => {
+  const B = await import('../core/brush.js');
+  const sent = [];
+  const link = { send: m => sent.push(m), peers: new Set(), phase: 'solo', round: 1, conduct: true, you: 1, stream: 20, smooth: 30, hand: null, setPhase() {}, next() {} };
+  setBrushHall(link, 'show');
+  B.brushHallState('joined');
+  S.brushStream = 25; S.brushSmooth = 40; S.brushDeal = true; S.brushDealN = 4; S.kaleidoSet = 3;
+  // the atlas not in yet: the room goes, the deal waits and asks for the atlas
+  B.brushAtlas.ready = false;
+  B.brushPlay(0);
+  assert.deepEqual(sent.map(m => m.t), ['room']);
+  assert.deepEqual([sent[0].ms, sent[0].sm], [25, 40]);
+  assert.equal(B.brushAtlas.want, 3);
+  // in: the deal goes, the set's painted tiles in sheet order
+  Object.assign(B.brushAtlas, { ready: true, set: 3, count: 3 });
+  B.brushAtlas.tiles.set([2, 5, 9]);
+  B.brushPlay(0);
+  assert.deepEqual(sent[1], { t: 'brushes', on: 1, n: 4, a: 3, tiles: [2, 5, 9] });
+  B.brushPlay(0);
+  assert.equal(sent.length, 2, 'nothing again while nothing changed');
+  // the hall's wipe tells the deal off: said again
+  B.brushHallHand(null);
+  B.brushPlay(0);
+  assert.equal(sent[2].t, 'brushes');
+  // a hand dealt from set 7: a tap on its second button, then a stroke
+  link.hand = { on: 1, a: 7, tiles: [11, 30] };
+  B.brushHallHand(link.hand);
+  B.brushPickHand(1);
+  assert.equal(S.brushMotif, 30);
+  assert.ok(B.brushHandPicked(1) && !B.brushHandPicked(0));
+  sent.length = 0;
+  brushField(true, false, false, 300, 300, 1280, 720, 0, 5000);
+  brushField(true, false, false, 360, 300, 1280, 720, 0, 5050);
+  brushField(true, true, false, 380, 300, 1280, 720, 0, 5100);
+  const strokes = sent.filter(m => m.t === 's');
+  assert.ok(strokes.length && strokes.every(m => m.a === 7 && m.m === 30), 'drawn from the hand');
+  drain();
+  // the atlas picker's own pick lets the hand's go
+  B.brushPickAtlas();
+  assert.ok(!B.brushHandPicked(1));
+  S.brushDeal = false;
+  setBrushHall(null);
+});

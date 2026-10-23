@@ -140,9 +140,10 @@ test('timed: played on the sender\'s timeline, delay steady, the figure exact', 
   const lead = [];
   for (let k = 0; k * c < stamps.length; k++) lead.push(outAt[k * c] - skew - timeOf(k * spacing));
   const min = Math.min(...lead), max = Math.max(...lead);
-  // (two frames: each stamp's frame, and the min offset settling by up to
-  // a frame as faster deliveries turn up)
-  assert.ok(max - min <= 2 * 1000 / 240 + 1, `steady behind the hand: ${min.toFixed(1)}..${max.toFixed(1)} ms`);
+  // (within three frames at 240 Hz: each stamp's own frame, and the min
+  // offset settling as deliveries that land nearer a frame's start turn
+  // up, each measured only to the frame it is taken in)
+  assert.ok(max - min <= 3 * 1000 / 240 + 1, `steady behind the hand: ${min.toFixed(1)}..${max.toFixed(1)} ms`);
   assert.ok(min >= 40 + d0 - 5 && max <= 40 + d0 + BATCH_MS + 5, `about one trip + ${d0} ms behind (${min.toFixed(0)} ms)`);
 });
 
@@ -227,5 +228,6 @@ test('the wire: q round-trips, refuses junk, and is optional', () => {
   for (const bad of [[1000, 9, 8], [1000, -1, 8, 2], [1000, 9.5, 8, 2], ['1000', 1, 1, 1], [1000, 70000, 1, 1], 'x'])
     assert.equal(decodeStroke({ ...encodeStroke(0, 10, 10, 0, pts), q: bad }), null, JSON.stringify(bad));
   assert.equal(decodeStroke(encodeStroke(0, 10, 10, 0, pts)).times, undefined);
-  assert.equal(DELAY0_MS, 60);
+  // the default room: a 20 ms stream and 30 ms of smoothing
+  assert.equal(DELAY0_MS, 50);
 });

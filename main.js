@@ -71,7 +71,8 @@ import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
 import { brushHallIntent, openBrushHall } from './platform/brush-hall.js';
-import { brushField, setBrushHall, brushHallState, brushHallGroup, brushTake } from './core/brush.js';
+import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember } from './core/brush.js';
+import { drawHand } from './ui/screens/hand.js';
 import { initShowRemote } from './platform/show-remote.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
@@ -302,7 +303,7 @@ async function boot() {
   {
     const hallIntent = brushHallIntent(platform.pageSearch);
     if (hallIntent) {
-      setBrushHall(openBrushHall(hallIntent, { state: brushHallState, group: brushHallGroup, message: brushTake }, platform.storage), hallIntent.hall);
+      setBrushHall(openBrushHall(hallIntent, { state: brushHallState, group: brushHallGroup, hand: brushHallHand, message: brushTake }, platform.storage), hallIntent.hall);
     }
   }
 
@@ -370,6 +371,10 @@ async function boot() {
   const app = {
     width: 0, height: 0,
     toggleRun,
+    // The quick bar is left off a follower's screen (a tab following a
+    // broadcast, or a hall member who is not its conductor) while the
+    // Brush section's Hide bottom buttons for followers is on.
+    quickHidden: () => S.brushHideFollow !== false && (followTab || brushMember()),
     // The open state is part of the saved settings (core/store.js), so every
     // toggle saves like any control: without this, a close only reached disk
     // when some later control change happened to save, and a reload brought
@@ -489,8 +494,11 @@ async function boot() {
   // Page thread only: in worker mode the store lives in the worker, which
   // never sees the page's URL, so a normal load is what a demo runs on.
   let finishRemoteFrame = null;
+  // whether this tab follows a broadcast (the follower buttons' rule below)
+  let followTab = false;
   if (!inWorker) {
     const bIntent = broadcastUrlIntent();
+    followTab = !!(bIntent && bIntent.follow);
     if (bIntent && bIntent.follow) {
       setOverlayFollow();
       // the join gate (index.html) holds the stream's start until its tap
@@ -954,6 +962,8 @@ async function boot() {
       anim.setDt(dt);
       // the energy profile chip stays up, painted only (a touch brings the build back)
       if (S.energyButton && !S.panelOpen) drawEnergyChip(ui, uiList, text, width, height, false);
+      // the dealt hand stays up, painted only (a touch brings the build back)
+      drawHand(ui, uiList, width, height, false);
     } else {
       // UI, top layer first so it wins the pointer
       ui.copyHeld = false;
@@ -1004,6 +1014,9 @@ async function boot() {
       drawChrome(ui, app, overlayA, frost);
       // Render > Energy profile button: the copy chip, bottom right, drawer shut
       if (S.energyButton && !S.panelOpen) drawEnergyChip(ui, uiList, text, width, height, true);
+      // the dealt hand (ui/screens/hand.js), ahead of the field, which a tap
+      // on one of its buttons never reaches
+      drawHand(ui, uiList, width, height, true);
 
       // Everything above the field has run its hit tests, so a hot widget
       // here is UI under the pointer; the window and drawer rects catch the

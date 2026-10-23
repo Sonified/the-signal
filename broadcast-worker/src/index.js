@@ -231,6 +231,8 @@ export class Room {
 // node tests the very code the hall runs: solo, master (the conductor to
 // everyone), pairs, quads, halves, all (the conductor hearing everything).
 import { PHASES, routes, roundOf, nextStep, planStep, stepGroups } from './groups.js';
+import { dealHand, readBrushes } from './deal.js';
+export { dealHand, deck, readBrushes, HAND_MAX } from './deal.js';
 export { PHASES, CONDUCTOR_HEARS_GROUPS, pairGroups, phaseGroups, routes, SCRIPT, roundOf, nextStep, planStep, stepGroups, liveGroups, regroup } from './groups.js';
 
 const TAPE_MAX = 1000000;  // entries; ~50 min of 15 hands drawing nonstop, ~250 MB at worst, well under any storage worry
@@ -245,6 +247,10 @@ const MOTIF_FIELDS = ['a', 'm', 'c', 'f', 'r', 'q'];   // the motif brush's extr
 // wipe clears it, keeping the devices still connected. TOKENS_MAX caps it
 // against junk; past it a new device simply gets a fresh id each join.
 const TOKENS_MAX = 10000;
+// The room's own settings, the conductor's (Stream and Smoothing): how
+// often every member sends a stroke batch, ms, and the playback's margin
+// past it, ms. Re-told in hello and group.
+const ROOM_DEFAULT = { ms: 20, sm: 30 };
 const TOKEN_RE = /^[\w-]{8,64}$/;
 // The close code a socket is sent when a newer one of the same device has
 // taken its id: the client must not reconnect on it (touch/hall.js).
@@ -277,11 +283,66 @@ export class Hall {
   // Where the show stands: the phase, its round, and the rounds' history
   // (groups.js planStep), all in storage beside each other.
   async step() {
+    const room = (await this.ctx.storage.get('room')) || ROOM_DEFAULT;
     return {
       phase: (await this.ctx.storage.get('phase')) || 'solo',
       round: (await this.ctx.storage.get('round')) || 1,
-      hist: (await this.ctx.storage.get('hist')) || {}
+      hist: (await this.ctx.storage.get('hist')) || {},
+      ms: room.ms, sm: room.sm
     };
+  }
+
+  // ---------- the dealt brushes (deal.js) ----------
+  // The deal ('deal': { on, n, a, tiles, seed, pos }) and each device's
+  // hand under 'hand:<token>' (or the id, for a device with no token), so a
+  // returning device is handed the same tiles again. A member is told its
+  // hand as {t:'hand', on, a, tiles} on joining and whenever the deal starts
+  // or stops.
+  handKey(a) { return 'hand:' + (a.token || 'id' + a.id); }
+  async handFor(a, deal) {
+    const k = this.handKey(a);
+    let hand = await this.ctx.storage.get(k);
+    if (!Array.isArray(hand)) {
+      const r = dealHand(deal.tiles, deal.seed, deal.pos, deal.n);
+      hand = r.hand; deal.pos = r.pos;
+      await this.ctx.storage.put(k, hand);
+      await this.ctx.storage.put('deal', deal);
+    }
+    return hand;
+  }
+  async tellHand(w, deal) {
+    const a = w.deserializeAttachment();
+    if (!a) return;
+    const msg = deal && deal.on
+      ? { t: 'hand', on: 1, a: deal.a, tiles: await this.handFor(a, deal) }
+      : { t: 'hand', on: 0 };
+    try { w.send(JSON.stringify(msg)); } catch (e) {}
+  }
+  async clearHands() {
+    for (;;) {
+      const page = await this.ctx.storage.list({ prefix: 'hand:', limit: 128 });
+      if (!page.size) break;
+      await this.ctx.storage.delete([...page.keys()]);
+    }
+  }
+  // The conductor's {t:'brushes'}: on with a new count, set or deck starts
+  // a fresh deal (a new seed, every hand let go); the same again only deals
+  // to whoever has none yet. Members are dealt in joining order.
+  async setBrushes(b) {
+    const old = await this.ctx.storage.get('deal');
+    let deal = old;
+    const same = old && old.on && b.on && old.n === b.n && old.a === b.a &&
+      old.tiles.length === b.tiles.length && old.tiles.every((t, i) => t === b.tiles[i]);
+    if (!b.on) {
+      deal = { on: 0 };
+      await this.clearHands();
+    } else if (!same) {
+      await this.clearHands();
+      deal = { on: 1, n: b.n, a: b.a, tiles: b.tiles, seed: (Math.random() * 4294967296) >>> 0, pos: 0 };
+    }
+    await this.ctx.storage.put('deal', deal);
+    const ws = this.members().sort((x, y) => this.idOf(x) - this.idOf(y));
+    for (const w of ws) await this.tellHand(w, deal);
   }
 
   // Who hears whom at step st, from the sockets present (groups.js): id ->
@@ -371,8 +432,12 @@ export class Hall {
       }
     }
     await this.ctx.storage.delete('epoch');
-    // and the rounds' history: a new show plans its rounds afresh
+    // and the rounds' history: a new show plans its rounds afresh; and the
+    // deal, every hand let go (the conductor deals again)
     await this.ctx.storage.delete('hist');
+    await this.clearHands();
+    await this.ctx.storage.delete('deal');
+    for (const w of this.members()) await this.tellHand(w, null);
     this.tapeN = 0;
     let n = 0;
     for (const w of this.members()) {
@@ -411,7 +476,7 @@ export class Hall {
       const id = this.idOf(w);
       const r = plan.get(id);
       try {
-        w.send(JSON.stringify({ t: 'group', phase, round, you: id, ids: r ? r.with : [id] }));
+        w.send(JSON.stringify({ t: 'group', phase, round, ms: st.ms, sm: st.sm, you: id, ids: r ? r.with : [id] }));
       } catch (e) {}
     }
   }
@@ -451,7 +516,7 @@ export class Hall {
     pair[1].serializeAttachment({ id, conduct, token });
     const ids = this.members().map(w => this.idOf(w));
     try {
-      pair[1].send(JSON.stringify({ t: 'hello', you: id, phase: st.phase, round: st.round, ids, conduct: conduct ? 1 : 0 }));
+      pair[1].send(JSON.stringify({ t: 'hello', you: id, phase: st.phase, round: st.round, ms: st.ms, sm: st.sm, ids, conduct: conduct ? 1 : 0 }));
     } catch (e) {}
     const arrived = JSON.stringify({ t: 'peer', id, on: 1 });
     for (const w of this.members()) {
@@ -459,6 +524,10 @@ export class Hall {
     }
     // a join re-draws the groups; solo only learns the roster
     this.tellGroups(st);
+    // and, with the brushes dealt, the joiner its hand (the same one again
+    // for a device it has seen)
+    const deal = await this.ctx.storage.get('deal');
+    if (deal && deal.on) await this.tellHand(pair[1], deal);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
@@ -486,6 +555,23 @@ export class Hall {
       const st = await this.step();
       const [p, r] = nextStep(st.phase, st.round);
       await this.setStep(p, r);
+      return;
+    }
+    // the conductor's room settings: how often everyone sends a batch (ms)
+    // and the playback's jitter margin (sm), re-told to all
+    if (msg.t === 'room') {
+      if (!me.conduct) return;
+      const ms = Number.isInteger(msg.ms) && msg.ms >= 10 && msg.ms <= 60 ? msg.ms : null;
+      const sm = Number.isInteger(msg.sm) && msg.sm >= 0 && msg.sm <= 200 ? msg.sm : null;
+      if (ms === null || sm === null) return;
+      await this.ctx.storage.put('room', { ms, sm });
+      this.tellGroups(await this.step());
+      return;
+    }
+    if (msg.t === 'brushes') {
+      if (!me.conduct) return;
+      const b = readBrushes(msg);
+      if (b) await this.setBrushes(b);
       return;
     }
     if (msg.t === 'wipe') {

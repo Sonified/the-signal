@@ -12,11 +12,13 @@
 // batch's last point's time) over every batch from that sender
 // (minOffset), so it rides the fastest delivery there has ever been, and
 // the rest of the delay is the allowance for everything slower. delay
-// starts at DELAY0_MS: a batch's span (its first point waited that long
-// for the flush) plus JITTER_MS for the network's moods, so a stroke is
-// drawn about the one-way trip plus 60 ms behind the hand, at the hand's
-// own pace, point to point, the cursor interpolated along the sender's
-// timeline between them (timelineAt).
+// starts at a batch's span (its first point waited that long for the
+// flush) plus a margin for the network's moods: the room's Stream and
+// Smoothing when the conductor has set them (the hall re-tells them), else
+// BATCH_MS and JITTER_MS, so a stroke is drawn about the one-way trip plus
+// 50 ms behind the hand, at the hand's own pace, point to point, the
+// cursor interpolated along the sender's timeline between them
+// (timelineAt).
 //
 // Late means ratchet. A batch whose first new point's play time has
 // already gone by when it arrives came later than the delay allowed: the
@@ -33,7 +35,7 @@
 // every batch. LEAD, half a stamp past the end, lets its last stamp out in
 // bounded time.
 
-export const BATCH_MS = 30, JITTER_MS = 30;
+export const BATCH_MS = 20, JITTER_MS = 30;
 export const DELAY0_MS = BATCH_MS + JITTER_MS;
 export const DELAY_MAX_MS = 2000;
 

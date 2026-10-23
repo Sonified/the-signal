@@ -96,6 +96,24 @@ Three layers, each usable without the ones above it:
    Fours tapped again its round 2, the chip naming the round the hall says
    ('Pairs 2'); Next walks the script.
 
+   **The dealt brushes** (2026-10-23, broadcast-worker/src/deal.js): the
+   conductor's Show brushes sends `{t:'brushes', on, n, a, tiles}`, the
+   tiles being the current set's painted ones as its own client knows them
+   (the hall cannot see the sheets), and the hall deals every member, the
+   conductor included, in joining order, n tiles from one shuffle of them
+   (a seed it picks per deal), dealt once: no tile ever goes to two people.
+   A joiner is dealt on arrival; once the deck is dry a late joiner gets
+   what is left, a shorter hand, down to none. Each hand is kept under the
+   device's token, so a returning device holds the same tiles; the same
+   deal sent again keeps every hand, a new count, set or deck deals afresh,
+   off and the wipe let every hand go. The hall is one Durable Object, so
+   the deal is atomic: no two members can draw the same card and no client
+   ever claims or resolves a collision. Hands never ride strokes or the
+   tape: each stroke carries its own a and m. The room's Stream and
+   Smoothing (`{t:'room', ms, sm}`) sit beside the phase and are re-told
+   in hello and group; every member flushes at the Stream and plays remote
+   strokes at Stream + Smoothing past the sender's time.
+
    The groups nest strictly: every pair inside one quad, every quad inside
    one half, every half inside all, so each step up the phases only merges
    groups and nobody is torn from the people they were drawing with (ten
@@ -150,11 +168,12 @@ Three layers, each usable without the ones above it:
    timed remote stroke on the sender's own timeline (core/brush.js,
    core/brush-playback.js): each point shown at its sender time plus the
    least offset ever seen from that sender (arrival less the batch's last
-   point time, no clock protocol) plus a delay of one batch and 30 ms (60
-   ms to start), interpolated between points; a batch arriving after its
-   first new point's play time raises the delay by the lateness, and the
-   delay never comes down in a session. An untimed stroke glides as it did.
-   Batches go every 30 ms now (both senders). The tape keeps q with the
+   point time, no clock protocol) plus a delay of one batch and a margin
+   (the room's Stream and Smoothing, 20 ms and 30 ms unless the conductor
+   sets them), interpolated between points; a batch arriving after its
+   first new point's play time raises the delay by the lateness, and what
+   lateness added never comes off in a session. An untimed stroke glides
+   as it did. Both senders flush every Stream ms (20 by default). The tape keeps q with the
    other fields, so a replay can use it; planReplay still schedules whole
    batches by their arrival `at` (a follow-up could play their points by q). The real motif rendering lives in the main
    app's WebGPU lane; /touch/ draws a small ring at each point as its
@@ -195,9 +214,12 @@ performance.now() is the thin part.
 ## 2. The protocol
 
     join  ws  wss://<relay>/touch/<hall>?d=<device token>[&conduct=1&key=...]
-    s->c  {t:'hello', you, phase, round, ids, conduct} on joining
+    s->c  {t:'hello', you, phase, round, ms, sm, ids, conduct} on joining
           {t:'peer', id, on:1|0}                    arrivals and leaves
-          {t:'group', phase, round, you, ids}       you plus whoever reaches
+          {t:'hand', on, a, tiles}                  this device's dealt brushes
+                                                    (on joining, and when the
+                                                    deal starts or stops)
+          {t:'group', phase, round, ms, sm, you, ids} you plus whoever reaches
                                                     you, re-told on
                                                     join/leave/phase
           {t:'time', c, s}                          the probe's echo
@@ -218,6 +240,13 @@ performance.now() is the thin part.
           {t:'next'}                                conductor only; the next
                                                     step of the script (the
                                                     last stays)
+          {t:'room', ms, sm}                        conductor only; Stream
+                                                    10-60 ms, Smoothing 0-200
+                                                    ms, re-told in group
+          {t:'brushes', on, n, a, tiles}            conductor only; deal n
+                                                    (1-8) of set a's paintable
+                                                    tiles to everyone, or
+                                                    stop (on 0)
           {t:'wipe'}                                conductor only; clears the
                                                     tape and its epoch
           'ping'                                    answered at the edge

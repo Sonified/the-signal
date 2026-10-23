@@ -45,11 +45,13 @@ import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, ti
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
 import { BRUSH_W, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
 
-// The wire's pace: a batch at least this often while the hand moves, and
-// never more than this many points in one (touch/main.js's numbers). Each
-// point goes with the frame's clock when it was made (the wire's q), so a
+// The wire's pace: a batch at least every flushMs() while the hand moves
+// (the room's Stream when the hall has told one, else FLUSH_MS), and never
+// more than FLUSH_POINTS points in one (touch/main.js's numbers). Each point
+// goes with the frame's clock when it was made (the wire's q), so a
 // receiver plays the stroke on this hand's own timeline.
-const FLUSH_MS = 30, FLUSH_POINTS = 16;
+const FLUSH_MS = 20, FLUSH_POINTS = 16;
+function flushMs() { return hallLink && hallLink.stream > 0 ? hallLink.stream : FLUSH_MS; }
 // The hue the stroke carries on the wire (its h): this screen's identity,
 // one of /touch/'s, for the stand-in it draws there. The motif itself keeps
 // its own colours.
@@ -163,8 +165,9 @@ function begin(x, y, width, height, inset, t) {
   // a broadcast resting for want of activity wakes for a stroke
   if (bcSink) bcSink.touch();
   sCopies = Math.max(1, Math.min(24, S.brushCopies | 0));
-  sMotif = brushMotifNow();
-  sSet = kaleidoscopeSet(S.kaleidoSet).id;
+  // a tile picked from the dealt hand draws from the hand's own set
+  sMotif = handSet ? Math.max(0, Math.min(63, S.brushMotif | 0)) : brushMotifNow();
+  sSet = handSet || kaleidoscopeSet(S.kaleidoSet).id;
   sFade = S.brushFade >= 0 && S.brushFade <= 1 ? S.brushFade : 0.5;
   sRate = S.brushRate >= 0 && S.brushRate <= 1 ? S.brushRate : 1;
   sPrints = !rateContinuous(sRate);
@@ -192,7 +195,7 @@ function extend(x, y, width, height, inset, t) {
       lastQu = lastU; lastQv = lastV;
       if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
     }
-    if (pendN > 0 && (pendN >= FLUSH_POINTS || t - lastFlushT >= FLUSH_MS)) flush(false, t);
+    if (pendN > 0 && (pendN >= FLUSH_POINTS || t - lastFlushT >= flushMs())) flush(false, t);
     return;
   }
   if (lastU !== lastQu || lastV !== lastQv) {
@@ -201,7 +204,7 @@ function extend(x, y, width, height, inset, t) {
     lastQu = lastU; lastQv = lastV;
     if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
   }
-  if (pendN >= FLUSH_POINTS || (t - lastFlushT >= FLUSH_MS && (pendN > 1 || pendD === 0))) flush(false, t);
+  if (pendN >= FLUSH_POINTS || (t - lastFlushT >= flushMs() && (pendN > 1 || pendD === 0))) flush(false, t);
 }
 
 function finish(t) {
@@ -246,8 +249,73 @@ function handId() { return hallLink && hallLink.you ? hallLink.you : SOLO_ID; }
 // touch() wake a dozing one }, or null.
 let bcSink = null;
 export function setBrushBroadcast(sink) { bcSink = sink || null; }
-export function brushHallState(s) { hallState = s; statusAt = -1e9; idleWake('the hall'); }
-export function brushHallGroup() { statusAt = -1e9; }
+export function brushHallState(s) {
+  hallState = s; statusAt = -1e9;
+  // a fresh join: the conductor says its room settings and deal again
+  if (s === 'joined') { roomSent = -1; dealSent = -1; }
+  idleWake('the hall');
+}
+export function brushHallGroup() { statusAt = -1e9; idleWake('the hall'); }
+
+// ---------- the room's settings and the dealt brushes ----------
+// The conductor's Brush rows (core/schema-brush.js) are the room's: Stream
+// and Smoothing go to the hall as {t:'room', ms, sm}, and the dealt brushes
+// as {t:'brushes', on, n, a, tiles}, the tiles the current Image set's
+// painted ones in sheet order (brushAtlas, so the hall deals only shapes
+// that draw; broadcast-worker/src/deal.js). dealTick, every frame, sends
+// either one again whenever the conductor's own settings and what was last
+// sent part (a slider moved, a reconnect, the hall's wipe telling the deal
+// off), waiting for the set's atlas when it must.
+let roomSent = -1, dealSent = -1;
+function dealTick() {
+  if (!brushConducting()) return;
+  const ms = S.brushStream | 0, sm = S.brushSmooth | 0;
+  const room = ms * 1000 + sm;
+  if (room !== roomSent && ms >= 10 && ms <= 60 && sm >= 0 && sm <= 200) {
+    roomSent = room;
+    hallLink.send({ t: 'room', ms, sm });
+  }
+  const set = kaleidoscopeSet(S.kaleidoSet).id;
+  const on = S.brushDeal === true, n = Math.max(1, Math.min(8, S.brushDealN | 0));
+  const sig = on ? set * 100 + n : 0;
+  if (sig === dealSent) return;
+  if (!on) { dealSent = sig; hallLink.send({ t: 'brushes', on: 0 }); return; }
+  const a = brushAtlas;
+  if (!(a.ready && a.set === set)) { a.want = set; return; }   // the deck waits for the atlas
+  if (!a.count) return;
+  dealSent = sig;
+  hallLink.send({ t: 'brushes', on: 1, n, a: set, tiles: Array.from(a.tiles.subarray(0, a.count)) });
+}
+
+// This device's hand as the hall dealt it (touch/hall.js on.hand), and the
+// set of the tile picked from it, 0 while the pick is the atlas picker's.
+// A hand is a quick palette, not a lock: the conductor's atlas picker (and
+// a member's, should it open the drawer) still picks any tile.
+let handSet = 0;
+export function brushHallHand(h) {
+  // the deal stopped or changed: a pick from the old hand goes back to the
+  // atlas picker's tile
+  if (!h || !h.tiles.includes(S.brushMotif | 0) || h.a !== handSet) handSet = 0;
+  // the hall told the deal off while the conductor has it on: say it again
+  if (!h && brushConducting() && S.brushDeal === true) dealSent = -1;
+  idleWake('the hand');
+}
+export function brushHand() { return hallLink && hallLink.hand && hallLink.hand.tiles.length ? hallLink.hand : null; }
+export function brushPickHand(i) {
+  const h = brushHand();
+  if (!h || i < 0 || i >= h.tiles.length) return;
+  S.brushMotif = h.tiles[i];
+  handSet = h.a;
+}
+export function brushHandPicked(i) {
+  const h = brushHand();
+  return !!h && handSet === h.a && (S.brushMotif | 0) === h.tiles[i];
+}
+// the atlas picker's own pick lets the hand's go
+export function brushPickAtlas() { handSet = 0; }
+// A member of the hall who is not its conductor (the follower buttons'
+// rule, main.js).
+export function brushMember() { return !!hallLink && hallState === 'joined' && hallLink.conduct !== true; }
 
 // The conductor's phase row (core/schema-brush.js): shown only while this
 // page is joined as the hall's conductor, lit from the phase the hall last
@@ -298,18 +366,24 @@ const slotFed = new Float64Array(SLOTS), slotCursor = new Float64Array(SLOTS);
 // who drew it (core/brush-order.js): the hall's id, or the broadcaster's
 const slotWho = new Float64Array(SLOTS);
 const slotStage = new Float64Array(SLOTS * PLAY_STAGES);
-// Each sender's clock offset (minOffset), by key, and this screen's delay,
-// which only ever rises (ratchetDelay).
+// Each sender's clock offset (minOffset), by key, and what late batches
+// have added to this screen's delay (ratchetDelay), which only ever rises,
+// on top of the base: the room's Stream plus its Smoothing as the hall told
+// them, else BATCH_MS and JITTER_MS.
 const offsets = new Map();
-let playDelay = DELAY0_MS;
+let playLate = 0;
+function playBase() {
+  return hallLink && hallLink.stream > 0 && hallLink.smooth >= 0 ? hallLink.stream + hallLink.smooth : DELAY0_MS;
+}
+function playDelayNow() { return playBase() + playLate; }
 const at = { i: 0 };
 // This screen's clock, ms; a test hands in its own.
 let clock = () => performance.now();
 export function setBrushClock(fn) { clock = fn || (() => performance.now()); }
-export function brushPlayDelay() { return playDelay; }
+export function brushPlayDelay() { return playDelayNow(); }
 // A fresh session's playback (the tests' between cases): the starting delay
 // and no senders' offsets known.
-export function brushPlayReset() { playDelay = DELAY0_MS; offsets.clear(); }
+export function brushPlayReset() { playLate = 0; offsets.clear(); }
 
 // Stamps leave a slot for the ring the GPU side drains.
 function letOut(i) {
@@ -393,7 +467,10 @@ export function brushTake(msg, from) {
     // (with the offset as it was): the delay rises by the lateness.
     const first = fresh || prints ? 0 : 1;
     const off0 = offsets.get(key);
-    if (off0 !== undefined && first < T.length) playDelay = ratchetDelay(playDelay, playTime(now, off0, playDelay), T[first]);
+    if (off0 !== undefined && first < T.length) {
+      const d = playDelayNow();
+      playLate += ratchetDelay(d, playTime(now, off0, d), T[first]) - d;
+    }
     offsets.set(key, minOffset(off0 === undefined ? NaN : off0, now, T[T.length - 1]));
   }
   qSide = brushSide(s.w); qMotif = s.m; qSet = s.a;
@@ -423,6 +500,8 @@ export function brushTake(msg, from) {
 // timeline reads the clock.
 export function brushPlay(dt) {
   const now = clock();
+  const delayNow = playDelayNow();
+  dealTick();
   for (let i = 0; i < SLOTS; i++) {
     if (!slotOn[i]) continue;
     if (!slotDone[i] && now - slotFed[i] > ABANDON_MS) slotDone[i] = 1;
@@ -430,7 +509,7 @@ export function brushPlay(dt) {
     if (slotTimed[i]) {
       const n = slotTlN[i];
       const off = offsets.get(slotKey[i]);
-      const P = playTime(now, off === undefined ? now : off, playDelay);
+      const P = playTime(now, off === undefined ? now : off, delayNow);
       // done and played to its last point, or abandoned: all of it
       if (slotDone[i] && (n === 0 || P >= slotTlT[i][n - 1] || now - slotFed[i] > ABANDON_MS)) cursor = Infinity;
       else {

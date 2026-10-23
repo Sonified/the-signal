@@ -11,11 +11,15 @@
 // object or the extra record, which are what a snapshot carries. Every
 // control saves on change and comes back on reload.
 import { saveBrush } from './store.js';
-import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushRound, brushSetPhase, brushNext } from './brush.js';
+import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushRound, brushSetPhase, brushNext, brushPickAtlas } from './brush.js';
 import { fadeLabel, fadeFromText, rateLabel } from './brush-stamps.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 
 const DEF_MOTIF = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
+// The dealt brushes: off, four each (fifteen people take sixty of a set's
+// sixty-four tiles, none twice), and the follower screens' bottom buttons
+// hidden. The room's Stream and Smoothing, ms (the conductor's).
+const DEF_DEAL = false, DEF_DEAL_N = 4, DEF_HIDE_FOLLOW = true, DEF_STREAM = 20, DEF_SMOOTH = 30;
 
 // Seeds every brush field not already on S. Called first thing in
 // store.load(), beside the layers' own.
@@ -24,11 +28,18 @@ export function initBrushState(S) {
   if (typeof S.brushCopies !== 'number') S.brushCopies = DEF_COPIES;
   if (typeof S.brushFade !== 'number') S.brushFade = DEF_FADE;
   if (typeof S.brushRate !== 'number') S.brushRate = DEF_RATE;
+  if (typeof S.brushDeal !== 'boolean') S.brushDeal = DEF_DEAL;
+  if (typeof S.brushDealN !== 'number') S.brushDealN = DEF_DEAL_N;
+  if (typeof S.brushHideFollow !== 'boolean') S.brushHideFollow = DEF_HIDE_FOLLOW;
+  if (typeof S.brushStream !== 'number') S.brushStream = DEF_STREAM;
+  if (typeof S.brushSmooth !== 'number') S.brushSmooth = DEF_SMOOTH;
 }
 
 // What the record holds.
 export function brushStateOf(S) {
-  return { brushMotif: S.brushMotif, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade };
+  return { brushMotif: S.brushMotif, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
+           brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
+           brushStream: S.brushStream, brushSmooth: S.brushSmooth };
 }
 
 // The record read back, field by field, each held to its range: the tile
@@ -41,6 +52,11 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushCopies)) S.brushCopies = n(o.brushCopies, 1, 24);
   if (Number.isFinite(o.brushFade)) S.brushFade = Math.max(0, Math.min(1, o.brushFade));
   if (Number.isFinite(o.brushRate)) S.brushRate = Math.max(0, Math.min(1, o.brushRate));
+  if (typeof o.brushDeal === 'boolean') S.brushDeal = o.brushDeal;
+  if (Number.isFinite(o.brushDealN)) S.brushDealN = n(o.brushDealN, 1, 8);
+  if (typeof o.brushHideFollow === 'boolean') S.brushHideFollow = o.brushHideFollow;
+  if (Number.isFinite(o.brushStream)) S.brushStream = n(o.brushStream, 10, 60);
+  if (Number.isFinite(o.brushSmooth)) S.brushSmooth = n(o.brushSmooth, 0, 200);
 }
 
 const phaseOpts = (pairs, quads) => [
@@ -63,7 +79,7 @@ export const BRUSH_CONTROLS = [
   {
     id: 'brushMotif', section: 'brush', label: 'Shape', kind: 'tiles', def: DEF_MOTIF,
     get: S => S.brushMotif,
-    set: (S, v) => { S.brushMotif = Math.max(0, Math.min(63, Math.round(Number(v) || 0))); saveBrush(); },
+    set: (S, v) => { S.brushMotif = Math.max(0, Math.min(63, Math.round(Number(v) || 0))); brushPickAtlas(); saveBrush(); },
     tiles: S => { brushAtlas.want = kaleidoscopeSet(S.kaleidoSet).id; return brushAtlas; }
   },
   {
@@ -129,6 +145,53 @@ export const BRUSH_CONTROLS = [
     id: 'brushNext', section: 'brush', label: 'Next', kind: 'action',
     act: () => brushNext(),
     visible: () => brushConducting()
+  },
+  // The room's own settings, the conductor's alone (the hall re-tells them
+  // to everyone; core/brush.js dealTick sends them): Stream, how often every
+  // hand sends a batch of its stroke, and Smoothing, how far past that every
+  // screen holds a remote stroke back to play it smoothly (its jitter
+  // margin; a late batch still raises it there).
+  {
+    id: 'brushStream', section: 'brush', label: 'Stream', kind: 'slider',
+    min: 10, max: 60, step: 1, def: DEF_STREAM,
+    get: S => S.brushStream,
+    set: (S, pos) => { S.brushStream = Math.max(10, Math.min(60, Math.round(pos))); saveBrush(); },
+    formatAt: pos => pos + ' ms',
+    visible: () => brushConducting()
+  },
+  {
+    id: 'brushSmooth', section: 'brush', label: 'Smoothing', kind: 'slider',
+    min: 0, max: 200, step: 1, def: DEF_SMOOTH,
+    get: S => S.brushSmooth,
+    set: (S, pos) => { S.brushSmooth = Math.max(0, Math.min(200, Math.round(pos))); saveBrush(); },
+    formatAt: pos => pos + ' ms',
+    visible: () => brushConducting()
+  },
+  // The dealt brushes: on, the hall deals every member (the conductor too)
+  // its own tiles of the current Image set, none twice in the room
+  // (broadcast-worker/src/deal.js), shown as a strip of buttons on their
+  // screens (ui/screens/hand.js). It goes to the hall while this screen
+  // conducts one.
+  {
+    id: 'brushDeal', section: 'brush', label: 'Show brushes', kind: 'toggle', def: DEF_DEAL,
+    get: S => S.brushDeal === true,
+    set: (S, on) => { S.brushDeal = !!on; saveBrush(); }
+  },
+  {
+    id: 'brushDealN', section: 'brush', label: 'Brushes each', kind: 'slider',
+    min: 1, max: 8, step: 1, def: DEF_DEAL_N,
+    get: S => S.brushDealN,
+    set: (S, pos) => { S.brushDealN = Math.max(1, Math.min(8, Math.round(pos))); saveBrush(); },
+    formatAt: pos => String(pos),
+    visible: S => S.brushDeal === true
+  },
+  // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
+  // and the full screen button) left off a follower's screen: a tab
+  // following a broadcast, or a hall member who is not its conductor.
+  {
+    id: 'brushHideFollow', section: 'brush', label: 'Hide bottom buttons for followers', kind: 'toggle', def: DEF_HIDE_FOLLOW,
+    get: S => S.brushHideFollow !== false,
+    set: (S, on) => { S.brushHideFollow = !!on; saveBrush(); }
   }
 ];
 

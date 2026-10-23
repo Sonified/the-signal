@@ -25,6 +25,11 @@
 //   createHall({ host, hall, key, token, on }) ->
 //     { send(msg), you, phase, round, group, peers, conduct, setPhase(p, r), next(), close() }
 //
+// stream and smooth are the room's own settings as the hall last told them
+// (the conductor's Stream and Smoothing: how often to send a batch, ms, and
+// the playback's margin past it, ms); hand is this device's dealt brushes,
+// { on, a, tiles }, as the hall last said ({t:'hand'}, on.hand).
+//
 // phase and round are what the hall last told (hello, group): the show's
 // step (broadcast-worker/src/groups.js SCRIPT). A conductor asks for a step
 // with setPhase(p, r) (r 1 when left out) or the next one along the script
@@ -81,6 +86,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
   const tok = token || deviceToken();
   const link = {
     you: 0, phase: 'solo', round: 1, conduct: false,
+    stream: 0, smooth: -1, hand: null,
     group: new Set(), peers: new Set(),
     send, setPhase, next, close
   };
@@ -116,6 +122,8 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         link.phase = msg.phase;
         link.round = msg.round || 1;
         link.conduct = msg.conduct === 1;
+        if (Number.isFinite(msg.ms)) link.stream = msg.ms;
+        if (Number.isFinite(msg.sm)) link.smooth = msg.sm;
         link.peers = new Set(msg.ids);
         tell('joined');
       } else if (msg.t === 'peer') {
@@ -124,8 +132,13 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
       } else if (msg.t === 'group') {
         link.phase = msg.phase;
         link.round = msg.round || 1;
+        if (Number.isFinite(msg.ms)) link.stream = msg.ms;
+        if (Number.isFinite(msg.sm)) link.smooth = msg.sm;
         link.group = new Set(msg.ids);
         on.group && on.group(msg);
+      } else if (msg.t === 'hand') {
+        link.hand = msg.on === 1 && Array.isArray(msg.tiles) ? { on: 1, a: msg.a, tiles: msg.tiles } : null;
+        on.hand && on.hand(link.hand);
       } else if (msg.t !== 'time') {
         on.message && on.message(msg);
       }

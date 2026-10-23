@@ -214,10 +214,12 @@ export function createBrush(device, format, platform, opts) {
     atlases.delete(worst.set);
   }
 
-  // The current set's atlas as the picker's, once it is in: its painted
-  // tiles in sheet order and the picture the thumbnails sample.
-  function publish() {
-    const cur = setOf(S.kaleidoSet);
+  // The atlas asked for this frame (the drawer's picker wants the current
+  // set, the dealt hand's strip its own set), else the current set's, as
+  // the picker's, once it is in: its painted tiles in sheet order and the
+  // picture the thumbnails sample.
+  function publish(want) {
+    const cur = want > 0 ? setOf(want) : setOf(S.kaleidoSet);
     const a = atlases.get(cur);
     if (!a || !a.ready || a === shown) return;
     shown = a;
@@ -243,7 +245,7 @@ export function createBrush(device, format, platform, opts) {
     const want = brushAtlas.want;
     brushAtlas.want = 0;
     if (want > 0) { const s = setOf(want); load(s); const a = atlases.get(s); if (a) a.used = frame; }
-    publish();
+    publish(want);
 
     // The field's square in device px: where a unit point lands.
     fieldSquare(S.W || pixelW / dpr, S.H || pixelH / dpr, S.edgeInset || 0, sq);
