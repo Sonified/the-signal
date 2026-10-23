@@ -203,6 +203,22 @@ export class Room {
 // answers as the Room's does, one clock for the hall. Hibernation-safe the
 // same way: per-socket state rides the socket's attachment, the phase and
 // the id counter live in storage, and pings are answered at the edge.
+//
+// The tape. Everything the hall relays is a moment, but an installation
+// wants its memory: every stroke a member sends is also appended to the
+// hall's storage as one entry { at, id, s } - `at` ms since the hall's
+// epoch (set by the first entry), `id` the drawer, `s` the stroke as the
+// member said it, the id stored once beside it rather than stamped in
+// twice. Keys are 'tape:' plus a zero-padded counter so storage.list walks
+// them in order; the counter rides `this` only as a cache, seeded lazily
+// (the constructor cannot await) from a list of the last tape key, so an
+// eviction re-finds the true tail instead of forking it. The tape caps at
+// TAPE_MAX entries and past the cap records nothing, silently. It survives
+// the hall emptying - the drawings outlive the drawers - and only a
+// conductor's {t:'wipe'} clears it, key by key by prefix (deleteAll would
+// also take a live phase and id counter), and the epoch with it. A plain
+// GET to /touch/<name>/tape (no websocket upgrade) answers
+// { epoch, n, entries } with open CORS, which is all the replay page needs.
 
 // The pairing: ids ascending, adjacent twos, and an odd count folds the
 // last one into the final pair as a trio. Deterministic from the ids alone.
@@ -218,11 +234,16 @@ export function pairGroups(ids) {
 }
 
 const PHASES = ['solo', 'pairs', 'all'];
+const TAPE_MAX = 100000;   // entries; a long evening, well under any storage worry
+const TAPE_PAD = 8;        // key digits; room past the cap if it ever grows
 
 export class Hall {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
+    // the tape counter, only a cache of the last stored key: null until the
+    // first write after construction seeds it from storage (see The tape)
+    this.tapeN = null;
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
@@ -241,6 +262,54 @@ export class Hall {
     return [id];
   }
 
+  // One stroke onto the tape. Seeds the counter on first use - and after
+  // any eviction - from the last stored key, so hibernation cannot fork
+  // the sequence; the first entry pins the hall's epoch.
+  async record(id, s) {
+    if (this.tapeN === null) {
+      const last = await this.ctx.storage.list({ prefix: 'tape:', reverse: true, limit: 1 });
+      this.tapeN = last.size ? parseInt([...last.keys()][0].slice(5), 10) + 1 : 0;
+    }
+    if (this.tapeN >= TAPE_MAX) return;   // a full tape just stops listening
+    let epoch = await this.ctx.storage.get('epoch');
+    if (epoch === undefined) {
+      epoch = Date.now();
+      await this.ctx.storage.put('epoch', epoch);
+    }
+    await this.ctx.storage.put('tape:' + String(this.tapeN++).padStart(TAPE_PAD, '0'),
+      { at: Date.now() - epoch, id, s });
+  }
+
+  // The whole tape as JSON, oldest first: the zero-padded keys make it a
+  // plain prefix walk, read in pages and concatenated.
+  async readTape() {
+    const entries = [];
+    let startAfter;
+    for (;;) {
+      const opts = { prefix: 'tape:', limit: 1000 };
+      if (startAfter !== undefined) opts.startAfter = startAfter;
+      const page = await this.ctx.storage.list(opts);
+      for (const [k, v] of page) { entries.push(v); startAfter = k; }
+      if (page.size < 1000 || entries.length >= TAPE_MAX) break;
+    }
+    const epoch = (await this.ctx.storage.get('epoch')) || 0;
+    return new Response(JSON.stringify({ epoch, n: entries.length, entries }), {
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
+  // The conductor's eraser: every tape key, by prefix (deleteAll would also
+  // take a live phase and id counter), then the epoch.
+  async wipe() {
+    for (;;) {
+      const page = await this.ctx.storage.list({ prefix: 'tape:', limit: 128 });
+      if (!page.size) break;
+      await this.ctx.storage.delete([...page.keys()]);
+    }
+    await this.ctx.storage.delete('epoch');
+    this.tapeN = 0;
+  }
+
   // Tells every member its group and the phase, after anything that moves
   // either: a join, a leave, a phase change.
   tellGroups(phase) {
@@ -256,6 +325,10 @@ export class Hall {
 
   async fetch(request) {
     if (request.headers.get('Upgrade') !== 'websocket') {
+      // the tape is plain HTTP: the replay page fetches it, no socket needed
+      if (request.method === 'GET' && /\/tape$/.test(new URL(request.url).pathname)) {
+        return this.readTape();
+      }
       return new Response('expected a websocket', { status: 426 });
     }
     const url = new URL(request.url);
@@ -301,10 +374,17 @@ export class Hall {
       this.tellGroups(msg.p);
       return;
     }
+    if (msg.t === 'wipe') {
+      // the conductor clears the tape; from anyone else it says nothing
+      if (me.conduct) await this.wipe();
+      return;
+    }
     // Everything else is the member speaking to its group: a stroke
     // ({t:'s'}), or whatever a later experience adds. Stamped with the
-    // sender and relayed to the group, never stored: a stroke says what is
-    // happening now.
+    // sender and relayed to the group; a stroke also lands on the tape,
+    // after the relay so the recording never delays the room, in its
+    // canonical shape (the fields the wire defines, nothing a client
+    // smuggled alongside them).
     const phase = (await this.ctx.storage.get('phase')) || 'solo';
     const members = this.members();
     const ids = members.map(w => this.idOf(w));
@@ -316,6 +396,9 @@ export class Hall {
       if (other !== me.id && group.includes(other)) {
         try { w.send(out); } catch (e) {}
       }
+    }
+    if (msg.t === 's') {
+      await this.record(me.id, { t: 's', k: msg.k, h: msg.h, w: msg.w, d: msg.d, p: msg.p });
     }
   }
 
@@ -336,7 +419,8 @@ export class Hall {
     }
     const phase = (await this.ctx.storage.get('phase')) || 'solo';
     this.tellGroups(phase);
-    // an empty hall starts its next gathering fresh
+    // an empty hall starts its next gathering fresh - but the tape and its
+    // epoch stay: the drawings outlive the drawers, until a {t:'wipe'}
     if (!this.members().length) {
       await this.ctx.storage.delete('phase');
       await this.ctx.storage.delete('nextId');
@@ -364,6 +448,12 @@ export default {
       const pw = (await request.text()).slice(0, 256);
       const ok = !!env.MIRROR_KEY && pw === env.MIRROR_KEY;
       return new Response(ok ? 'ok' : 'no', { status: ok ? 200 : 403, headers: CORS });
+    }
+    // the tape: a hall's recording, read over plain HTTP by the replay
+    // page; the same DO as the hall itself, found by the same name
+    const tape = url.pathname.match(/^\/touch\/([\w-]{1,64})\/tape$/);
+    if (tape) {
+      return env.HALL.get(env.HALL.idFromName(tape[1])).fetch(request);
     }
     const hall = url.pathname.match(/^\/touch\/([\w-]{1,64})$/);
     if (hall) {

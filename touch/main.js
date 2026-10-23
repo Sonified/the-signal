@@ -6,10 +6,12 @@
 //   ?hall=name    which hall to join (default 'lobby': one address, one room)
 //   ?conduct=key  join as the conductor, who moves the phases
 //   ?relay=host   another relay than the site's own worker
+//   ?replay=1     play the hall's tape instead of joining it (replay.js)
 
 import { createScene } from './scene.js';
 import { createHall } from './hall.js';
 import { BRUSHES, encodeStroke, decodeStroke, drawStroke } from './strokes.js';
+import { runReplay } from './replay.js';
 
 const RELAY_HOST = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const HUES = [8, 42, 95, 168, 212, 285, 330];
@@ -29,9 +31,14 @@ let width = 22;
 let slicesAt = 2;   // SLICE_STEPS[2] = 6
 
 // ---------- the hall ----------
-const hall = createHall({
-  host: Q.get('relay') || RELAY_HOST,
-  hall: (Q.get('hall') || 'lobby').replace(/[^\w-]/g, '').slice(0, 64) || 'lobby',
+// A replay page is an audience, not a member: it never joins, so the tape
+// plays undisturbed by live strokes and the hall never counts it present.
+const REPLAY = Q.get('replay') === '1';
+const HOST = Q.get('relay') || RELAY_HOST;
+const HALL_NAME = (Q.get('hall') || 'lobby').replace(/[^\w-]/g, '').slice(0, 64) || 'lobby';
+const hall = REPLAY ? null : createHall({
+  host: HOST,
+  hall: HALL_NAME,
   key: Q.get('conduct') || '',
   on: {
     state: say,
@@ -75,7 +82,7 @@ function stampLocal(points) {
 
 function flush(f, done) {
   if (f.pts.length) {
-    hall.send(encodeStroke(brush, hue, width, done ? 2 : f.d, f.pts));
+    if (hall) hall.send(encodeStroke(brush, hue, width, done ? 2 : f.d, f.pts));
     f.d = 1;
     f.pts = [f.pts[f.pts.length - 1]];   // the joint the next batch grows from
   }
@@ -116,6 +123,11 @@ for (const type of ['pointerup', 'pointercancel']) {
 
 // ---------- the little UI ----------
 function say() {
+  if (!hall) {
+    $('status').textContent = 'playing the tape';
+    $('dot').style.background = `hsl(${hue} 90% 60%)`;
+    return;
+  }
   const here = hall.peers.size;
   const net = hall.you ? `${here} here` : 'offline, drawing alone';
   $('status').textContent = `${net}${hall.you ? ' · ' + groupWords({ phase: hall.phase, you: hall.you, ids: [...hall.group] }) : ''}`;
@@ -123,9 +135,10 @@ function say() {
 }
 
 let flashTimer = 0;
-function flash(words) {
+function flash(words, h) {
   const el = $('flash');
   el.textContent = words;
+  el.style.color = h === undefined ? '#fff' : `hsl(${h} 90% 70%)`;
   el.style.opacity = 1;
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => { el.style.opacity = 0; }, 2400);
@@ -149,7 +162,7 @@ function buildPicker() {
     dot.onclick = () => { hue = h; [...hues.children].forEach(c => c.classList.toggle('on', c === dot)); say(); };
     hues.appendChild(dot);
   });
-  $('begin').onclick = () => { $('picker').style.display = 'none'; flash(groupWords({ phase: hall.phase, you: hall.you, ids: [...hall.group] })); };
+  $('begin').onclick = () => { $('picker').style.display = 'none'; if (hall) flash(groupWords({ phase: hall.phase, you: hall.you, ids: [...hall.group] })); };
   $('brushChip').onclick = () => { $('picker').style.display = ''; };
   $('slices').onclick = () => {
     slicesAt = (slicesAt + 1) % SLICE_STEPS.length;
@@ -160,6 +173,14 @@ function buildPicker() {
 }
 buildPicker();
 say();
+
+// ---------- the replay ----------
+// The tape plays itself: no picker, no hall - the scene is the audience's,
+// though a finger can still draw over the playback, which is only fair.
+if (REPLAY) {
+  $('picker').style.display = 'none';
+  runReplay({ host: HOST, hall: HALL_NAME, scene, flash });
+}
 
 // the conductor's three words, only on a key that worked
 const PHASE_WORDS = [['solo', 'Alone'], ['pairs', 'Pairs'], ['all', 'Together']];
@@ -174,8 +195,27 @@ function buildConductor() {
     b.onclick = () => hall.setPhase(p);
     bar.appendChild(b);
   }
+  // Replay sails this page into playback: same hall, the conduct key kept,
+  // so the chips come back when the tape ends and the page is reloaded
+  const r = document.createElement('button');
+  r.className = 'chip';
+  r.textContent = 'Replay';
+  r.onclick = () => {
+    const q = new URLSearchParams(location.search);
+    q.set('replay', '1');
+    location.search = q.toString();
+  };
+  bar.appendChild(r);
+  // Wipe clears the hall's tape ({t:'wipe'}) so the next gathering records fresh
+  const wipe = document.createElement('button');
+  wipe.className = 'chip';
+  wipe.textContent = 'Wipe';
+  wipe.onclick = () => { hall.send({ t: 'wipe' }); flash('tape wiped'); };
+  bar.appendChild(wipe);
 }
-// conduct is only known once the hello lands
-const conductWait = setInterval(() => {
-  if (hall.you) { clearInterval(conductWait); buildConductor(); }
-}, 300);
+// conduct is only known once the hello lands; a replay page joined nothing
+if (hall) {
+  const conductWait = setInterval(() => {
+    if (hall.you) { clearInterval(conductWait); buildConductor(); }
+  }, 300);
+}
