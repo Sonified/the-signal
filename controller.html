@@ -165,24 +165,24 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-/* HEART, HUM and TXT carry on the SCREEN, SUN, WIND row: HEART under
-   AMBIENCE, HUM under ROTSPD, the finale row's fourth and fifth columns, and
-   TXT one column past the finale row's end, in the edge's empty left half
-   as the finale row's own spill is. Their
+/* HEART, HUM and TXT carry on the SCREEN, SUN, WIND row. The six share the
+   width the finale row's five take (5 x 72 + 4 x 10 = 400px), so each is
+   58px (6 x 58 + 5 x 10 = 398px): the row ends where the finale row does,
+   though its columns no longer sit under the finale's. Their
    box starts where SCREEN's does and is shifted right by three faders and
-   their gaps (3 x (72 + 10) = 246px); a relative shift, so it never widens
+   their gaps (3 x (58 + 10) = 204px); a relative shift, so it never widens
    the page's columns, and the box itself is 0 wide for the same reason (see
    #topFaders). All the middle's faders but the finale row sit 122px lower
    than the edge's four (DUCK's 110px row and its 12px gap), the same
    height, their bottoms level with DUCK's. */
 #midFaders { grid-row: 2 / 4; min-height: 282px; padding-top: 122px; display: flex; gap: 10px;
-  justify-self: start; width: 0; position: relative; left: 246px; }
-#midFaders .fader { width: 72px; flex: none; }
+  justify-self: start; width: 0; position: relative; left: 204px; }
+#midFaders .fader { width: 58px; flex: none; }
 /* SCREEN at the middle's left edge, next to the cues, SUN and WIND
    beside it 10px apart. The box itself is 0 wide, so the three spill out visibly instead
    of widening the page's columns (see #topFaders) */
 #leftFader { grid-row: 2 / 4; grid-column: 1; min-height: 282px; padding-top: 122px; display: flex; gap: 10px; justify-self: start; width: 0; }
-#leftFader .fader { width: 72px; flex: none; }
+#leftFader .fader { width: 58px; flex: none; }
 #midFaders { grid-column: 1; }
 /* The finale row: five more of the same 72px faders in the band above
    SCREEN, HEART and HUM, starting over SCREEN and running right. Its box
@@ -366,7 +366,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.02';
+  const VERSION = '3.03';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
