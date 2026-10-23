@@ -29,6 +29,15 @@
 //   f   fade, a number 0-1: the sender's fade slider, so a receiver can
 //       fade remote marks the way the sender's own fade
 //
+// and one optional field:
+//
+//   r   rate, a number 0-1: the sender's Rate slider (core/brush-stamps.js).
+//       1, or absent (every stroke from before it), is continuous: the
+//       receiver fills the path with stamps along its length. Under 1 the
+//       sender has already chosen its prints by time, so every point of
+//       such a stroke IS a print and the receiver stamps each point, no
+//       fill, no joint repeated between batches.
+//
 // The real motif rendering lives in the main app (WebGPU); drawStroke here
 // paints a simple stand-in so /touch/ draws something sensible when one
 // arrives.
@@ -51,8 +60,9 @@ export const MOTIF = 4;
 
 // ---------- the wire ----------
 
-// extras: the motif brush's { a, m, c, f }; copied onto the message as
-// given (only those four), so decodeStroke is the one judge of them.
+// extras: the motif brush's { a, m, c, f } and its optional r; copied onto
+// the message as given (only those five), so decodeStroke is the one judge
+// of them.
 export function encodeStroke(k, h, w, d, points, extras) {
   const p = new Array(points.length * 2);
   for (let i = 0; i < points.length; i++) {
@@ -61,7 +71,7 @@ export function encodeStroke(k, h, w, d, points, extras) {
   }
   const msg = { t: 's', k, h, w, d, p };
   if (extras) {
-    for (const f of ['a', 'm', 'c', 'f']) if (extras[f] !== undefined) msg[f] = extras[f];
+    for (const f of ['a', 'm', 'c', 'f', 'r']) if (extras[f] !== undefined) msg[f] = extras[f];
   }
   return msg;
 }
@@ -69,8 +79,8 @@ export function encodeStroke(k, h, w, d, points, extras) {
 const intIn = (x, lo, hi) => Number.isInteger(x) && x >= lo && x <= hi;
 
 // null for anything malformed: a hall relays whatever a member said. A
-// motif stroke must carry a, m, c and f in range; any other brush decodes
-// exactly as before, ignoring them.
+// motif stroke must carry a, m, c and f in range, and r, when it carries
+// one, in 0-1; any other brush decodes exactly as before, ignoring them.
 export function decodeStroke(msg) {
   if (!msg || msg.t !== 's' || !Array.isArray(msg.p) || msg.p.length < 2 || msg.p.length % 2) return null;
   const k = msg.k | 0, h = msg.h | 0, w = msg.w | 0, d = msg.d | 0;
@@ -82,10 +92,12 @@ export function decodeStroke(msg) {
     points[i] = { u, v };
   }
   if (k !== MOTIF) return { k, h, w, d, points };
-  const { a, m, c, f } = msg;
+  const { a, m, c, f, r } = msg;
   if (!intIn(a, 1, 99) || !intIn(m, 0, 63) || !intIn(c, 1, 24) ||
       typeof f !== 'number' || !(f >= 0 && f <= 1)) return null;
-  return { k, h, w, d, points, a, m, c, f };
+  if (r === undefined) return { k, h, w, d, points, a, m, c, f };
+  if (typeof r !== 'number' || !(r >= 0 && r <= 1)) return null;
+  return { k, h, w, d, points, a, m, c, f, r };
 }
 
 // ---------- the brushes ----------

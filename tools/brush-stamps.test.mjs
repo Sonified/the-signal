@@ -8,7 +8,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   stampCopies, walkBatch, walkSegment, stampsFor, fieldSquare, brushSpacing, brushSide, BRUSH_W,
-  fadeSeconds, fadeHalfLife, fadeLabel, fadeFromText, FADE_HALVINGS
+  fadeSeconds, fadeHalfLife, fadeLabel, fadeFromText, FADE_HALVINGS,
+  SPACING_SHARE, rateContinuous, printsPerSecond, rateLabel
 } from '../core/brush-stamps.js';
 import { encodeStroke, decodeStroke, MOTIF, QUANT } from '../touch/strokes.js';
 import { S } from '../js/state.js';
@@ -52,7 +53,9 @@ test('the centre follows the drawer: the square sits in the visible field', () =
 
 test('stamps land every spacing of path, however the path is cut', () => {
   const sp = brushSpacing(BRUSH_W);
-  assert.ok(close(sp, brushSide(BRUSH_W) * 0.25));
+  assert.ok(close(sp, brushSide(BRUSH_W) * SPACING_SHARE));
+  // continuous means dense: neighbours overlap by at least nine tenths
+  assert.ok(SPACING_SHARE <= 0.1);
   const line = [];
   for (let i = 0; i <= 40; i++) line.push({ u: 0.2 + i * 0.01, v: 0.3 + i * 0.004 });
   const whole = stampsFor({ points: line, d: 0, w: BRUSH_W, c: 1 }, 0).stamps;
@@ -216,4 +219,67 @@ test('the conductor\'s phase row: shown only to a joined conductor, lit by the h
   assert.equal(row.get(S), 'quads');
   assert.ok(!('brushPhase' in brushStateOf(S)), 'not in the saved record');
   setBrushHall(null);
+});
+
+// A drag of `frames` frames at `dt` ms, wobbling right and down, sent to a
+// fake hall; returns the local queue and the messages.
+function drag(frames, dt, rate) {
+  S.brushCopies = 3; S.brushMotif = 4; S.kaleidoSet = 2; S.brushFade = 0.6; S.brushRate = rate;
+  const sent = [];
+  setBrushHall({ send: m => sent.push(JSON.parse(JSON.stringify(m))), peers: new Set(), phase: 'solo', conduct: false }, 'test');
+  drain();
+  const W = 1280, H = 720;
+  let t = 0, x = 400, y = 200;
+  brushField(true, false, false, x, y, W, H, 0, t);
+  for (let f = 1; f <= frames; f++) {
+    t += dt;
+    x = 400 + f * 3 + Math.sin(f * 0.2) * 6; y = 200 + f * 2;
+    brushField(true, false, false, x, y, W, H, 0, t);
+  }
+  brushField(true, true, false, x, y, W, H, 0, t + dt);
+  setBrushHall(null);
+  return { local: drain(), sent };
+}
+
+test('Rate at the top is Frame rate: continuous and dense; r 1 or absent draws the same', () => {
+  assert.equal(rateLabel(1), 'Frame rate');
+  assert.ok(rateContinuous(1) && rateContinuous(undefined) && !rateContinuous(0.99));
+  const { local, sent } = drag(120, 16.7, 1);
+  // about one stamp (of three copies) every SPACING_SHARE of the motif's side
+  // (a chord across a corner of the path is a hair shorter than the arc)
+  const sp = brushSide(BRUSH_W) * SPACING_SHARE;
+  assert.ok(local.length / 3 > 100, 'many stamps');
+  for (let i = 3; i < local.length; i += 3) {
+    const d = Math.hypot(local[i][0] - local[i - 3][0], local[i][1] - local[i - 3][1]);
+    assert.ok(d <= sp + 1e-6 && d >= sp * 0.9, 'gap ' + i / 3 + ' ' + d / sp);
+  }
+  for (const m of sent) assert.equal(m.r, 1);
+  for (const m of sent) brushTake({ ...m, id: 4 });
+  assert.deepEqual(drain(), local, 'remote with r 1');
+  for (const m of sent) { const o = { ...m, id: 5 }; delete o.r; brushTake(o); }
+  assert.deepEqual(drain(), local, 'remote with no r (an old stroke)');
+});
+
+test('Rate slowed: separate prints at the rate, every point a print, the same on both sides', () => {
+  assert.equal(rateLabel(0), '1 /s');
+  assert.equal(rateLabel(0.99), '8 /s');
+  assert.ok(close(printsPerSecond(0), 1) && close(printsPerSecond(0.99), 8));
+  // three seconds of drag at 2 prints a second-ish
+  const r = 0.33, pps = printsPerSecond(r);
+  const { local, sent } = drag(180, 16.7, r);
+  const prints = local.length / 3;
+  // the first at the down point, then one each 1/pps of a second
+  assert.ok(prints >= Math.floor(3 * pps) - 1 && prints <= Math.ceil(3 * pps) + 2, prints + ' prints at ' + pps.toFixed(2) + '/s');
+  // far sparser than continuous
+  assert.ok(prints < 12);
+  // the wire's points are exactly the prints
+  let pts = 0;
+  for (const m of sent) { assert.equal(m.r, r); assert.ok(decodeStroke(m)); pts += m.p.length / 2; }
+  assert.equal(pts, prints);
+  for (const m of sent) brushTake({ ...m, id: 9 });
+  assert.deepEqual(drain(), local);
+  // decode judges r like the others
+  const good = sent[0];
+  for (const bad of [-0.1, 1.5, '0.5', null, NaN]) assert.equal(decodeStroke({ ...good, r: bad }), null, String(bad));
+  assert.equal(decodeStroke({ ...good, r: 0 }).r, 0);
 });

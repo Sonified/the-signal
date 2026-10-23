@@ -78,11 +78,19 @@ Three layers, each usable without the ones above it:
    as S.kaleidoSet numbers it), `m` the tile (integer 0-63, a cell of the
    8x8 atlas), `c` copies (integer 1-24, evenly spaced around the centre),
    `f` fade (number 0-1, the sender's fade slider, so a receiver fades
-   remote marks the way the sender's own fade). decodeStroke refuses a
-   motif stroke with any of them missing, non-integer where an integer is
-   due, or out of range, and decodes every other brush exactly as before
-   (ignoring stray extras); encodeStroke takes them as an optional sixth
-   argument `{a, m, c, f}`. The real motif rendering lives in the main
+   remote marks the way the sender's own fade). One more is optional: `r`
+   rate (number 0-1, the sender's Rate slider; 2026-10-22). At 1, or absent
+   (every stroke from before it), the stroke is continuous: a receiver
+   fills the path with stamps along its length (core/brush-stamps.js,
+   arc-length spacing carried across batches). Under 1 the sender has
+   already chosen its prints by time (8 a second just under the top, down
+   to 1 at 0), so every point of the stroke IS a print: a receiver stamps
+   each point as it stands, with no fill and no carry, and the sender
+   repeats no joint between batches. decodeStroke refuses a motif stroke
+   with any of the four missing, non-integer where an integer is due, or
+   out of range, or with an `r` that is not a number in 0-1, and decodes
+   every other brush exactly as before (ignoring stray extras);
+   encodeStroke takes them as an optional sixth argument `{a, m, c, f, r}`. The real motif rendering lives in the main
    app's WebGPU lane; /touch/ draws a small ring at each point as its
    stand-in and does not offer the brush in its picker. The tape records
    the four fields whenever a stroke carried them.
@@ -131,9 +139,11 @@ performance.now() is the thin part.
                                                     the phase's routes stamped
                                                     {id}, and appended to the
                                                     tape
-          {t:'s', k:4, h, w, d, p, a, m, c, f}      a motif batch (a 1-99,
+          {t:'s', k:4, h, w, d, p, a, m, c, f[, r]} a motif batch (a 1-99,
                                                     m 0-63, c 1-24 integers,
-                                                    f 0-1)
+                                                    f 0-1; r 0-1 optional,
+                                                    under 1 each point a
+                                                    print)
           {t:'phase', p}                            conductor only; p one of
                                                     solo master pairs quads
                                                     halves all

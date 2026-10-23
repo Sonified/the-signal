@@ -32,7 +32,7 @@ import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleWake } from './idle.js';
 import { MOTIF, QUANT, encodeStroke, decodeStroke } from '../touch/strokes.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
-import { BRUSH_W, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare } from './brush-stamps.js';
+import { BRUSH_W, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
 
 // The wire's pace: a batch at least this often while the hand moves, and
 // never more than this many points in one (touch/main.js's numbers).
@@ -45,7 +45,9 @@ const HUE = HUES[Math.floor(Math.random() * HUES.length)];
 
 // ---------- the ring ----------
 export const STAMP_FLOATS = 6;
-const QCAP = 32768;
+// Room for a few frames of the densest drawing (a fast flick at the
+// continuous spacing with 24 copies is some 4000 stamps a frame).
+const QCAP = 65536;
 export const brushQueue = { buf: new Float32Array(QCAP * STAMP_FLOATS), cap: QCAP, head: 0, count: 0 };
 
 // What the walk's stamps are made of right now (set before each walk).
@@ -99,6 +101,9 @@ let pressing = false;
 // carry; its settings, held for the whole stroke.
 let lastQu = 0, lastQv = 0, carry = 0;
 let sCopies = 1, sMotif = 0, sSet = 1, sFade = 0.5;
+// The Rate, held for the stroke: continuous, or prints every printMs (the
+// last at lastPrintT), each print one point on the wire (core/brush-stamps.js).
+let sRate = 1, sPrints = false, printMs = 1000, lastPrintT = 0;
 // The batch waiting to go out: quantized points, the first the joint.
 const PEND_MAX = 64;
 const pend = new Int32Array(PEND_MAX * 2);
@@ -144,6 +149,10 @@ function begin(x, y, width, height, inset, t) {
   sMotif = brushMotifNow();
   sSet = kaleidoscopeSet(S.kaleidoSet).id;
   sFade = S.brushFade >= 0 && S.brushFade <= 1 ? S.brushFade : 0.5;
+  sRate = S.brushRate >= 0 && S.brushRate <= 1 ? S.brushRate : 1;
+  sPrints = !rateContinuous(sRate);
+  printMs = 1000 / printsPerSecond(sRate);
+  lastPrintT = t;
   toUnit(x, y, width, height, inset);
   lastQu = lastU; lastQv = lastV;
   qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet;
@@ -156,6 +165,19 @@ function begin(x, y, width, height, inset, t) {
 
 function extend(x, y, width, height, inset, t) {
   toUnit(x, y, width, height, inset);
+  if (sPrints) {
+    // A print where the hand is, once its time has come and the hand has
+    // moved off the last one: stamped here, and one point on the wire.
+    if ((lastU !== lastQu || lastV !== lastQv) && t - lastPrintT >= printMs) {
+      lastPrintT = t;
+      qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet;
+      stampCopies(lastU / QUANT, lastV / QUANT, sCopies, emit);
+      lastQu = lastU; lastQv = lastV;
+      if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendN++; }
+    }
+    if (pendN > 0 && (pendN >= FLUSH_POINTS || t - lastFlushT >= FLUSH_MS)) flush(false, t);
+    return;
+  }
   if (lastU !== lastQu || lastV !== lastQv) {
     qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet;
     carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, brushSpacing(BRUSH_W), sCopies, emit);
@@ -168,21 +190,25 @@ function extend(x, y, width, height, inset, t) {
 function finish(t) {
   if (!strokeOpen) return;
   strokeOpen = false;
-  flush(true, t);
+  // prints keep no carry anywhere, so with none waiting nothing need go
+  if (!sPrints || pendN > 0) flush(true, t);
 }
 
 // The batch out on the hall, then only the joint kept, for the next to grow
 // from (touch/main.js's flush). A first batch goes out even with its one
 // point, so a receiver stamps the stroke's start; the last always goes, so
-// a receiver lets go of the stroke's carry.
+// a receiver lets go of the stroke's carry. Prints repeat no joint: every
+// point is a print of its own.
 function flush(done, t) {
   lastFlushT = t;
   if (hallLink && pendN > 0) {
     const pts = new Array(pendN);
     for (let i = 0; i < pendN; i++) pts[i] = { u: pend[i * 2] / QUANT, v: pend[i * 2 + 1] / QUANT };
-    hallLink.send(encodeStroke(MOTIF, HUE, BRUSH_W, done ? 2 : pendD, pts, { a: sSet, m: sMotif, c: sCopies, f: Math.round(sFade * 1000) / 1000 }));
+    hallLink.send(encodeStroke(MOTIF, HUE, BRUSH_W, done ? 2 : pendD, pts,
+      { a: sSet, m: sMotif, c: sCopies, f: Math.round(sFade * 1000) / 1000, r: sRate }));
   }
   pendD = 1;
+  if (sPrints) { pendN = 0; return; }
   pend[0] = lastQu; pend[1] = lastQv; pendN = 1;
 }
 
@@ -211,8 +237,14 @@ export function brushTake(msg) {
   const s = decodeStroke(msg);
   if (!s || s.k !== MOTIF) return;
   const key = msg.id;
-  const c0 = s.d === 0 ? 0 : (carries.get(key) || 0);
   qSide = brushSide(s.w); qMotif = s.m; qSet = s.a;
+  // prints: each point as it stands, no carry kept (core/brush-stamps.js)
+  if (!rateContinuous(s.r)) {
+    walkBatch(s.points, s.d, 0, 0, s.c, emit, true);
+    idleWake('a stroke');
+    return;
+  }
+  const c0 = s.d === 0 ? 0 : (carries.get(key) || 0);
   const c1 = walkBatch(s.points, s.d, c0, brushSpacing(s.w), s.c, emit);
   if (s.d === 2) carries.delete(key);
   else {

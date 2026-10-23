@@ -19,6 +19,16 @@
 // from the carry the last piece left, its first point being that piece's
 // last (the joint the sender repeats), which adds no length.
 //
+// That is the brush at its Rate's top, Frame rate: continuous, a stamp
+// every SPACING_SHARE of the motif's side, so close that a drag reads as
+// one gapless ribbon of the motif carried along the hand, however far the
+// pointer jumped between two samples. Below the top the brush prints: the
+// sender drops a print where the hand is, at most printsPerSecond(r) times
+// a second, and those prints are the stroke's points on the wire (its r
+// under 1 says so, touch/strokes.js), so a receiver stamps each point as it
+// stands, with no fill and no carry. Time picks the prints, on the sender
+// alone; the points themselves are the figure, the same on every screen.
+//
 // Each stamp is repeated copies times around the centre, copy i turned by
 // 2 pi i / copies, the sprite turned with it, so the figure has exactly that
 // rotational symmetry and nothing pulls the eye to one side (the open focus
@@ -32,10 +42,30 @@ const TAU = Math.PI * 2;
 // field across, and a receiver draws whatever w a stroke carries.
 export const SIDE_MAX = 0.24;
 export const BRUSH_W = 50;
-// Stamps every this share of the motif's side: close enough that a drag
-// reads as the motif carried along the path, a continuous trail, rather
-// than a row of separate prints.
-export const SPACING_SHARE = 0.25;
+// Stamps every this share of the motif's side, continuous: a twentieth, so
+// neighbours overlap by 95% and no edge between them can be told apart
+// (5 px apart for a 110 px motif on a laptop's field), a smooth ribbon. A
+// fast flick across the whole field is then about 170 stamps a copy, which
+// the layer takes at up to 4096 a frame (gpu/brush.js MAX_INST), carrying
+// the rest to the next.
+export const SPACING_SHARE = 0.05;
+
+// The Rate slider (0 to 1, the wire's r): 1 is Frame rate, continuous;
+// below it prints per second, PRINTS_MAX just under the top down to
+// PRINTS_MIN at the bottom, evenly in the logarithm. Absent is continuous,
+// so every stroke from before r draws as it always did.
+export const PRINTS_MIN = 1, PRINTS_MAX = 8;
+export function rateContinuous(r) { return !(r < 1); }
+export function printsPerSecond(r) {
+  const x = r > 0 ? (r < 0.99 ? r / 0.99 : 1) : 0;
+  return PRINTS_MIN * Math.pow(PRINTS_MAX / PRINTS_MIN, x);
+}
+// The readout: 'Frame rate' at the top, else '8 /s' ... '1 /s'.
+export function rateLabel(r) {
+  if (rateContinuous(r)) return 'Frame rate';
+  const p = printsPerSecond(r);
+  return (p < 9.95 ? Math.round(p * 10) / 10 : Math.round(p)) + ' /s';
+}
 
 // The motif's side in unit-square units for a stroke's w (1 to 100).
 export function brushSide(w) {
@@ -120,7 +150,13 @@ export function walkSegment(u0, v0, u1, v1, carry, spacing, copies, emit) {
 // A decoded batch's points ({u, v} each, as touch/strokes.js decodeStroke
 // gives them), d its place in the stroke, carry what the stroke's last
 // piece left (anything for a first batch). Returns the carry for the next.
-export function walkBatch(points, d, carry, spacing, copies, emit) {
+// prints (a stroke with r under 1): every point is a print, stamped as it
+// stands, and there is no carry.
+export function walkBatch(points, d, carry, spacing, copies, emit, prints) {
+  if (prints) {
+    if (points) for (let i = 0; i < points.length; i++) stampCopies(points[i].u, points[i].v, copies, emit);
+    return 0;
+  }
   let c = carry > 0 ? carry : 0;
   if (!points || !points.length) return c;
   if (d === 0) {
@@ -138,6 +174,6 @@ export function walkBatch(points, d, carry, spacing, copies, emit) {
 export function stampsFor(stroke, carry) {
   const stamps = [];
   const out = walkBatch(stroke.points, stroke.d, carry, brushSpacing(stroke.w), stroke.c,
-    (u, v, angle, copy) => { stamps.push({ u, v, angle, copy }); });
+    (u, v, angle, copy) => { stamps.push({ u, v, angle, copy }); }, !rateContinuous(stroke.r));
   return { stamps, carry: out };
 }
