@@ -64,7 +64,7 @@ import { setJourneyGlideHooks, journeyGlideWriting, journeyEachGlide } from './j
 import { CONTROLS, byId } from './schema.js';
 import { setStrobeClockOffset, setStrobeSyncTarget, clearStrobeSync } from './strobe.js';
 import { onWordAppear, wordState, remoteWord, setWordsRemote,
-         setWordWalk, setWordWalkClock, wordWalkRunning, wordsRepeating } from './words.js';
+         setWordWalk, setWordWalkClock, wordWalkRunning, wordsRepeating, gateWords } from './words.js';
 import { setRoomClockRoom, setRoomClockOffset } from './room-clock.js';
 import { initLiveAudio, liveAudioCheck, liveFollowNotice, liveFollowChunk, liveFollowEnd } from './live-audio.js';
 
@@ -681,7 +681,7 @@ export function followStrobeSync() {
 // run; joined remembers it, so a hold asked for afterwards never starts.
 let joinHold = false, joined = false, joinSeen = false;
 
-export function holdFollowJoin() { if (!joined) joinHold = true; }
+export function holdFollowJoin() { if (!joined) { joinHold = true; gateWords(true); } }
 export function followHeld() { return joinHold; }
 // The held follower has a scene to show: the loop may rest on it, and a
 // later message must not wake the loop to redraw it.
@@ -691,6 +691,7 @@ export function followJoin() {
   joined = true;
   if (!joinHold) return;
   joinHold = false;
+  gateWords(false);
   if (followRun === 1 && hooks.setRunning) hooks.setRunning(true);
   idleWake('joining the stream');
 }

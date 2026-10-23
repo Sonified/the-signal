@@ -19,6 +19,10 @@ export { setOverlayTouch, setOverlayFollow } from './overlay-hint.js';
 const VEIL = new Float32Array([0, 0, 0, 1]);
 const REVEAL_MS = 2000;
 let revealAt = -1;
+// A stream link's still frame (core/broadcast.js followStill) shows the
+// stream's scene before the join tap, so the first-start veil is let go.
+let veilLifted = false;
+export function liftVeil() { veilLifted = true; }
 let wasRunning = false;
 // the last frame's clock, for the word's and hint's envelope steps
 let envLastT = -1;
@@ -50,7 +54,7 @@ export function drawOverlay(dl, text, t, width, height) {
   // dissolves from the level it had reached.
   if (S.running && !wasRunning) hintToSmoke(text, cx, cy, t);
   wasRunning = S.running;
-  const veil = revealAt < 0 ? 1 : Math.max(0, 1 - (t - revealAt) / REVEAL_MS);
+  const veil = veilLifted ? 0 : revealAt < 0 ? 1 : Math.max(0, 1 - (t - revealAt) / REVEAL_MS);
   if (veil > 0.001) {
     VEIL[3] = veil;
     dl.rect(0, 0, width, height, 0, VEIL, 0, null, 0, 0);

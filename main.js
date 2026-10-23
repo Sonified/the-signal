@@ -91,7 +91,7 @@ import { createUI } from './ui/imgui.js';
 import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION } from './ui/theme.js';
-import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow } from './ui/screens/overlay.js';
+import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow, liftVeil } from './ui/screens/overlay.js';
 import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk, drawEnergyChip, freshAsk, drawFreshAsk } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
 import { drawMixer, mixer } from './ui/screens/mixer.js';
@@ -483,7 +483,8 @@ async function boot() {
         media: { record: recordLiveAudio, canRecord: canRecordLiveAudio, player: livePlayer } },
       {
         // a notice shows on the overlay, which a resting loop must draw
-        notify: msg => { flashNotice(msg); idleWake('a notice'); },
+        // (no text before the join tap, notices included)
+        notify: msg => { if (followHeld()) return; flashNotice(msg); idleWake('a notice'); },
         isRunning: () => S.running,
         setRunning: on => { if (on !== !!S.running) flipRun(); },
         copy: txt => platform.clipboardWrite(txt),
@@ -1017,6 +1018,7 @@ async function boot() {
     // is written as it is let go (core/journey.js)
     journeyHoldWrites(ui.activeId !== -1);
 
+    if (followStill()) liftVeil();   // the stream's scene shows, still, before the tap
     drawOverlay(overlayList, text, t, width, height);
     // While recording with the drawer shut, a small steady badge in the
     // lower left counts the drops (the drawer's own footer shows it when open).

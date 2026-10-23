@@ -932,9 +932,20 @@ function wdiag(path, text) {
   if (WDIAG) console.log('[worddiag] ' + path + ' at ' + ((lastT - liveAt) / 1000).toFixed(2) + 's: "' + String(text).slice(0, 40) + '"');
 }
 
+// A guard on all text: while gated nothing is dealt or shown, and anything
+// asked for meanwhile (a relayed word, a performer's or Journey's phrase, a
+// forced next) is dropped rather than held for later. A stream link's gate
+// uses it until the join tap (core/broadcast.js).
+let gated = false;
+export function gateWords(on) { gated = !!on; }
+
 export function stepWords(t, dt) {
   lastT = t;
-  if (!S.layers.text || !S.running) {
+  if (gated) {
+    pendingRemote.has = false; pendingLocal.has = false; forceNext = false;
+    breathDueAt = -1;
+  }
+  if (gated || !S.layers.text || !S.running) {
     if (showing || wordState.opacity > 0) hide();
     rateAcc = 0;
     goneAt = -1;   // a restart's first phrase comes on the next tick, not a gap after the last
