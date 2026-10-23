@@ -536,7 +536,7 @@ async function boot() {
         drawRoom: brushJoinRoom
       }
     );
-    // The show remote (controller.html on the iPad): ?remote makes this tab take
+    // The show remote (controller.html on the iPad): ?presentation makes this tab take
     // its cues, faders and duck over the mirror relays (platform/show-remote.js).
     // Its title clears the screen: the drawer and every floating window
     // shut, leaving only the playback (the Levels window through its own

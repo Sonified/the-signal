@@ -1,6 +1,6 @@
 // The show remote's receiving end: Presence (this app, on the laptop) taking
 // cues from the iPad's show controller (controller.html at the repo root). Off
-// unless the page is opened with ?remote (room 'show') or ?remote=<room>.
+// unless the page is opened with ?presentation (room 'show') or ?presentation=<room> (?remote, its first name, still works).
 // Page thread only (main.js calls initShowRemote outside worker mode): the
 // journey and the Slides layer both live on the page engine.
 //
@@ -12,7 +12,7 @@
 // by its sender (src, n), so whichever path delivers a copy first acts and
 // the other copy is dropped. Mirror rooms need the password for both roles:
 // it is read from localStorage 'mirror.pw' (the same key remote.html and
-// controller.html keep), seeded once by opening the page with ?remote&pw=<password>
+// controller.html keep), seeded once by opening the page with ?presentation&pw=<password>
 // (pw, not key: a bare ?key= is the demo broadcast's own passphrase seed,
 // platform/broadcast-socket.js, and would overwrite it). The pw parameter is
 // wiped from the address bar once stored.
@@ -213,9 +213,12 @@ const finalePos = id => {
 export function initShowRemote(hooks = {}) {
   if (typeof location === 'undefined' || typeof WebSocket === 'undefined') return;
   const P = new URLSearchParams(location.search);
-  if (!P.has('remote')) return;
+  // ?presentation makes this tab the controller's receiving end; ?remote,
+  // the flag's first name, still opens the door for old links and docs.
+  const FLAG = P.has('presentation') ? 'presentation' : P.has('remote') ? 'remote' : '';
+  if (!FLAG) return;
   document.title = '🌞 TSC 2026';
-  let room = (P.get('remote') || 'show').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '') || 'show';
+  let room = (P.get(FLAG) || 'show').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '') || 'show';
   room = room.slice(0, 40);
   const CMD_ROOM = 'mirror-' + room, STATUS_ROOM = 'mirror-' + room + '-status';
   const relay = P.get('relay') || CLOUD;
@@ -228,16 +231,16 @@ export function initShowRemote(hooks = {}) {
     KEY = pw;
     try { localStorage.setItem('mirror.pw', pw); } catch (e) {}
     P.delete('pw');
-    const qs = P.toString().replace(/(^|&)remote=(?=&|$)/, '$1remote');
+    const qs = P.toString().replace(new RegExp('(^|&)' + FLAG + '=(?=&|$)'), '$1' + FLAG);
     try { history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash); } catch (e) {}
   }
   if (!KEY) {
-    console.warn('[show-remote] no password: open once with ?remote&pw=<password> (the mirror password)');
+    console.warn('[show-remote] no password: open once with ?presentation&pw=<password> (the mirror password)');
     return;
   }
   // A one-off check, for a clear console line; the sockets retry regardless.
   fetch('https://' + relay + '/auth', { method: 'POST', body: KEY }).then(r => {
-    if (r.status === 403) console.warn('[show-remote] the relay refused the password; reopen with ?remote&pw=<password>');
+    if (r.status === 403) console.warn('[show-remote] the relay refused the password; reopen with ?presentation&pw=<password>');
   }, () => {});
   console.log('[show-remote] following ' + CMD_ROOM + ', status to ' + STATUS_ROOM + ' (cloud + local ' + local + ')');
 

@@ -29,7 +29,7 @@ form.onsubmit=async event=>{
   const response=await fetch(relay+'/auth',{method:'POST',body:input.value});
   if(response.status===403){message.textContent='That password did not match.';return;}
   if(!response.ok)throw Error('relay');
-  localStorage.setItem('mirror.pw',input.value);location.href='./?remote'+(room?'='+encodeURIComponent(room):'');
+  localStorage.setItem('mirror.pw',input.value);location.href='./?presentation'+(room?'='+encodeURIComponent(room):'');
  }catch{message.textContent='Could not connect. Check this computer’s internet connection.';}
  finally{button.disabled=false;}
 };
