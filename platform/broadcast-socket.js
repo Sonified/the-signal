@@ -37,7 +37,7 @@ const CONNECT_TRIES = 5;
 
 const LOCAL_RE = /^(localhost|127\.0\.0\.1|\[::1\])/;
 
-function relayHost() {
+export function relayHost() {
   const q = new URLSearchParams(location.search);
   return q.get('relay') || RELAY_HOST;
 }

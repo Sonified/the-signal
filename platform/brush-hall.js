@@ -1,39 +1,23 @@
-// The brush's hall, the transport half: which hall the page's address asks
-// for, and the link to it (touch/hall.js createHall, the same link /touch/
-// uses, over a WebSocket to the relay). core/brush.js is the logic half and
-// never sees a socket; main.js hands the one to the other.
+// The brush's link to its broadcast room, the transport half: the relay's
+// touch hall under the broadcast room's own name (touch/hall.js createHall,
+// over a WebSocket; the Hall in broadcast-worker/). core/broadcast.js says
+// which room (the one this screen broadcasts or follows), main.js opens and
+// closes the link as that comes and goes, and core/brush.js is the logic
+// half, which never sees a socket. The broadcasting screen joins with its
+// broadcast key, which makes it the room's conductor; a follower joins
+// without one, as a drawer. Nothing in an address names it.
 //
-//   ?hall=<name>               join this hall as a member
-//   &conduct=<key>             join as its conductor, /touch/'s form
-//   &conduct=1&key=<key>       the same, the wire's own form
-//   &relay=<host>              another relay than the deployed one
-//
-// No hall in the address, no link: the brush is a solo instrument, and it is
-// one anyway whenever the link is offline (touch/hall.js retries, then says
-// 'offline' and waits for the network). Read from the platform's pageSearch,
-// so a worker reads the page's address and not its own script's.
+// No room, no link: the brush is a solo instrument, and it is one anyway
+// whenever the link is offline (touch/hall.js retries, then says 'offline'
+// and waits for the network).
 
 import { createHall, deviceToken } from '../touch/hall.js';
-import { RELAY_HOST } from './broadcast-socket.js';
 
-// { hall, key, host } from the query string, or null for none.
-export function brushHallIntent(search) {
-  let q;
-  try { q = new URLSearchParams(search || ''); } catch (e) { return null; }
-  const raw = q.get('hall');
-  if (!raw) return null;
-  const hall = raw.replace(/[^\w-]/g, '').slice(0, 64);
-  if (!hall) return null;
-  const c = q.get('conduct') || '';
-  const key = c === '1' ? (q.get('key') || '') : c;
-  return { hall, key, host: q.get('relay') || RELAY_HOST };
-}
-
-// The link for an intent. on: { state(s), group(g), message(msg) }, as
-// touch/hall.js takes them. storage is the platform's ({ get, set }), which
-// reaches the page's localStorage from a worker too: this device's token is
-// kept there, under a name of the main app's own, so a /touch/ tab on the
-// same machine is a member of its own rather than taking this one's id.
+// The link for { hall, key, host }. on: { state(s), group(g), hand(h),
+// message(msg) }, as touch/hall.js takes them. storage is the platform's
+// ({ get, set }): this device's token is kept there, under a name of the
+// main app's own, so a /touch/ tab on the same machine is a member of its
+// own rather than taking this one's id.
 export function openBrushHall(intent, on, storage) {
   const token = deviceToken('signal.hall.device.main', storage);
   return createHall({ host: intent.host, hall: intent.hall, key: intent.key, token, on });

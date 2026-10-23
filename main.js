@@ -69,8 +69,8 @@ import { idleTouch } from './js/idle-ahead.js';
 import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionRemaining } from './core/presets.js';
 import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin } from './core/broadcast.js';
-import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
-import { brushHallIntent, openBrushHall } from './platform/brush-hall.js';
+import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent, relayHost } from './platform/broadcast-socket.js';
+import { openBrushHall } from './platform/brush-hall.js';
 import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember } from './core/brush.js';
 import { drawHand } from './ui/screens/hand.js';
 import { initShowRemote } from './platform/show-remote.js';
@@ -302,14 +302,19 @@ async function boot() {
   // Presentation mode's Journey install fetches the tracked export and the
   // slide manifest from the site itself (core/presentation.js).
   setPresentFetch(url => fetch(url, { cache: 'no-cache' }).then(r => r.ok ? r.text() : Promise.reject(new Error(r.status + ' ' + url))), journeyImport);
-  // ?hall=<name> joins the brush to a group touch hall (platform/brush-hall.js):
-  // its strokes go out there and the strokes that reach it are drawn here.
-  // Without one, or offline, the brush plays alone; it never waits on it.
-  {
-    const hallIntent = brushHallIntent(platform.pageSearch);
-    if (hallIntent) {
-      setBrushHall(openBrushHall(hallIntent, { state: brushHallState, group: brushHallGroup, hand: brushHallHand, message: brushTake }, platform.storage), hallIntent.hall);
-    }
+  // The broadcast room is where the brush draws with everyone
+  // (core/broadcast.js syncDrawRoom): broadcasting a session joins its room
+  // as the one who moves the phases and deals, following one joins it as a
+  // drawer. The link is opened and closed here, as the session comes and
+  // goes (platform/brush-hall.js); with none, or offline, the brush plays
+  // alone, and it never waits on the network.
+  let drawLink = null;
+  function brushJoinRoom(want) {
+    if (drawLink) { drawLink.close(); drawLink = null; setBrushHall(null); brushHallState(''); }
+    if (!want) return;
+    drawLink = openBrushHall({ hall: want.room, key: want.key, host: relayHost() },
+      { state: brushHallState, group: brushHallGroup, hand: brushHallHand, message: brushTake }, platform.storage);
+    setBrushHall(drawLink, want.room);
   }
 
   // The frame profiler (the drawer's Profile chip, or signalProfile in the
@@ -521,7 +526,9 @@ async function boot() {
         setRunning: on => { if (on !== !!S.running) flipRun(); },
         copy: txt => platform.clipboardWrite(txt),
         // the strobe clock's timebase: the same clock the frame loop's t is on
-        now: platform.now
+        now: platform.now,
+        // the brush's room, the broadcast's own (see brushJoinRoom above)
+        drawRoom: brushJoinRoom
       }
     );
     // The show remote (show.html on the iPad): ?remote makes this tab take

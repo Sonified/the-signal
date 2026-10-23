@@ -115,7 +115,8 @@ export const BRUSH_CONTROLS = [
     set: (S, pos) => { S.brushFade = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
     formatAt: pos => fadeLabel(pos / 100),
     parse: (S, text) => { const f = fadeFromText(text); return f === f ? Math.round(f * 100) : NaN; },
-    // the hall the brush is joined to, when the page was opened with one
+    // the broadcast room the brush draws in, while this screen broadcasts
+    // or follows one
     statusLine: () => brushStatusLine()
   },
   // The conductor's phases, in the hall's order (broadcast-worker/src/groups.js
@@ -167,7 +168,10 @@ export const BRUSH_CONTROLS = [
     formatAt: pos => pos + ' ms',
     visible: () => brushConducting()
   },
-  // The dealt brushes: on, the hall deals every member (the conductor too)
+  // The dealt brushes: on, in a broadcast room the broadcasting screen's
+  // switch deals every screen in it (itself too), and on a screen in no
+  // room it deals this screen its own hand at once; in a room the room deals
+  // every member (the conductor too)
   // its own tiles of the current Image set, none twice in the room
   // (broadcast-worker/src/deal.js), shown as a strip of buttons on their
   // screens (ui/screens/hand.js). It goes to the hall while this screen
@@ -187,7 +191,7 @@ export const BRUSH_CONTROLS = [
   },
   // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
   // and the full screen button) left off a follower's screen: a tab
-  // following a broadcast, or a hall member who is not its conductor.
+  // following a broadcast (a drawer in its room).
   {
     id: 'brushHideFollow', section: 'brush', label: 'Hide bottom buttons for followers', kind: 'toggle', def: DEF_HIDE_FOLLOW,
     get: S => S.brushHideFollow !== false,

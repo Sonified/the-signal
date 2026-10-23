@@ -663,3 +663,16 @@ test('hall: the room\'s Stream and Smoothing, the conductor\'s, told to all', as
   const h2 = late.sent.find(x => x.t === 'hello');
   assert.deepEqual([h2.ms, h2.sm], [35, 80], 'a member or a value out of range changes nothing');
 });
+
+test('hall: a conductor\'s stroke reaches the room marked cd, a member\'s unmarked', async () => {
+  const { hall } = fakeHall();
+  const c = await hall.join(T(90), '&conduct=1&key=k');
+  const m = await hall.join(T(1));
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'phase', p: 'all' }));
+  const stroke = { t: 's', k: 0, h: 10, w: 10, d: 0, p: [10, 10] };
+  await hall.webSocketMessage(c, JSON.stringify(stroke));
+  await hall.webSocketMessage(m, JSON.stringify(stroke));
+  const atM = m.sent.filter(x => x.t === 's').pop(), atC = c.sent.filter(x => x.t === 's').pop();
+  assert.equal(atM.cd, 1);
+  assert.equal(atC.cd, undefined);
+});

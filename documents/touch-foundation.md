@@ -96,6 +96,18 @@ Three layers, each usable without the ones above it:
    Fours tapped again its round 2, the chip naming the round the hall says
    ('Pairs 2'); Next walks the script.
 
+   **In the main app the hall is the broadcast room** (2026-10-23): nothing
+   names a hall there. A screen broadcasting a session joins the hall of the
+   same name with its broadcast key, so it is the conductor (the Brush
+   section's Phase row, Next, Stream, Smoothing and Show brushes are its);
+   a screen following that session (?follow=<room>) joins it as a drawer
+   the moment it follows: placed in the phase's groups, dealt a hand, its
+   strokes relayed by the phase like any member's. The broadcaster's own
+   strokes still reach every follower by the broadcast itself (gated on
+   watchers), whatever the phase; the hall's copy of a conductor's stroke
+   is marked `cd: 1` and a follower lets it go, so none is drawn twice.
+   /touch/ keeps its own ?hall= join, the prototype's.
+
    **The dealt brushes** (2026-10-23, broadcast-worker/src/deal.js): the
    conductor's Show brushes sends `{t:'brushes', on, n, a, tiles}`, the
    tiles being the current set's painted ones as its own client knows them

@@ -381,3 +381,31 @@ test('the conductor sends the room\'s settings and the deal; a hand\'s tile draw
   S.brushDeal = false;
   setBrushHall(null);
 });
+
+test('no room: Show brushes deals this screen its own hand at once, placeholders till the atlas is in', async () => {
+  const B = await import('../core/brush.js');
+  setBrushHall(null);
+  S.brushDeal = true; S.brushDealN = 4; S.kaleidoSet = 6;
+  B.brushAtlas.ready = false;
+  const waiting = B.brushHand();
+  assert.ok(waiting && waiting.tiles.length === 0 && waiting.pending === 4, 'four places while the atlas comes');
+  assert.equal(B.brushAtlas.want, 6, 'and the atlas is asked for');
+  Object.assign(B.brushAtlas, { ready: true, set: 6, count: 10 });
+  B.brushAtlas.tiles.set([1, 3, 5, 7, 9, 11, 13, 15, 17, 19]);
+  const h = B.brushHand();
+  assert.equal(h.tiles.length, 4);
+  assert.equal(new Set(h.tiles).size, 4);
+  assert.ok(h.tiles.every(t => [1, 3, 5, 7, 9, 11, 13, 15, 17, 19].includes(t)), 'painted tiles of the set');
+  assert.equal(B.brushHand(), h, 'the same hand while nothing changed');
+  S.brushDeal = false;
+  assert.equal(B.brushHand(), null);
+});
+
+test('a follower lets the room\'s copy of the broadcaster\'s stroke go (the broadcast carries it)', () => {
+  drain();
+  const m = encodeStroke(MOTIF, 10, BRUSH_W, 0, [{ u: 0.5, v: 0.5 }], { a: 1, m: 0, c: 1, f: 0.5 });
+  brushTake({ ...m, id: 3, cd: 1 });
+  assert.equal(drain().length, 0, 'the room copy, marked, is not drawn');
+  brushTake({ ...m, cd: 1 }, 'broadcast');
+  assert.equal(drain().length, 1, 'the broadcast copy is');
+});

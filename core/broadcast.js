@@ -380,6 +380,24 @@ function syncWalkRoom() {
   for (const s of sessions) if (s.active) { room = s.room; break; }
   setWordWalk(room);
   setRoomClockRoom(room !== '');
+  // the brush's room is the same one, this screen its broadcaster
+  syncDrawRoom(room, key);
+}
+
+// The broadcast room is also where everyone draws together (core/brush.js,
+// the relay's touch hall under the same name, the Hall in
+// broadcast-worker/): the broadcasting screen joins it with its broadcast
+// key, so it moves the phases, deals the brushes and sets the room's
+// Stream and Smoothing, and a follower joins it as a drawer the moment it
+// follows. No address names it and nothing else asks for it: the room a
+// screen broadcasts or follows is the room it draws in. hooks.drawRoom
+// (main.js) opens and closes the link: { room, key }, or null for none.
+let drawRoomWant = '';
+function syncDrawRoom(room, k) {
+  const want = room ? room + '\n' + (k || '') : '';
+  if (want === drawRoomWant) return;
+  drawRoomWant = want;
+  if (hooks && hooks.drawRoom) hooks.drawRoom(room ? { room, key: k || '' } : null);
 }
 
 // A room nobody is watching is sent nothing (see the beacons below), so a
@@ -1228,6 +1246,8 @@ export function initBroadcast(bits_, hooks_) {
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);
+    // the follower draws in the room it follows, as one of the drawers
+    syncDrawRoom(room, '');
     return;
   }
 

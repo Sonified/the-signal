@@ -589,6 +589,9 @@ export class Hall {
     const r = this.routesNow(await this.step(), members).get(me.id);
     const to = new Set(r ? r.to : []);
     msg.id = me.id;
+    // a conductor's stroke is marked: in the broadcast room its followers
+    // see it by the broadcast already, and let the room's copy go
+    if (me.conduct) msg.cd = 1;
     const out = JSON.stringify(msg);
     for (const w of members) {
       if (to.has(this.idOf(w))) {
