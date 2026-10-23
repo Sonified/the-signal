@@ -4,4 +4,4 @@
 // drawer's PRESETS line (ui/screens/drawer.js). Up by .01 with each change
 // that ships: v1.00, v1.01, v1.02, ... always two places, never a date or a
 // letter.
-export const BUILD = 'v1.21';
+export const BUILD = 'v1.22';

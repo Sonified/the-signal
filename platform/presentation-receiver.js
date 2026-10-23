@@ -162,7 +162,7 @@
 
 import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
-import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyPerformanceControl } from '../core/journey.js';
+import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyPerformanceControl, journeySetLiveAudio } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
 import { broadcastSeek, broadcastDrawing } from '../core/broadcast.js';
 import { idleTouch } from '../js/idle-ahead.js';
@@ -338,7 +338,15 @@ export function initPresentationReceiver(hooks = {}) {
       // a journey cue (1 to 16, no dr) ends the show's drawing on
       // meditatewiththesun.com (core/broadcast.js broadcastDrawing)
       if (!m.dr) broadcastDrawing(false);
-      if (i >= 0 && journeyCount() > 0) journeyJumpTo(Math.min(i, journeyCount() - 1));
+      if (i >= 0 && journeyCount() > 0) {
+        const k = Math.min(i, journeyCount() - 1);
+        // a drawing cue's step is the operator's (Robert: from the guided
+        // meditation on, only the controller controls the screens): it is
+        // marked LIVE AUDIO before it lands, whoever authored it, so the
+        // held levels and the Sun's presence stay with the faders
+        if (m.dr) journeySetLiveAudio(k, true);
+        journeyJumpTo(k);
+      }
     }
     else if (m.k === 'clean') { if (hooks.clearScreen) hooks.clearScreen(); }
     else if (m.k === 'seek') {

@@ -742,15 +742,17 @@ function lockHolds(i, st) {
 // (heartMaster) and MWTS (mwtsVolume), and the finale row's audio faders:
 // DRONE (bedVol, toneVol, cloudVol), PIANO (pianoVol), CHOIR (choirVol),
 // AMBIENCE (ambVol), ROTSPD (sunHumRate) and NOTES (brushVol, everyone's
-// bells and notes); and SUN's pair, the Sun
-// layer's Opacity (sunOpacity) and its hum's Amplitude (sunHumAmp), the
-// Sun's fade being the operator's to ride at the drawing too. A new fader
+// bells and notes); and SUN's holdings, the Sun
+// layer's Opacity (sunOpacity), its hum's Amplitude (sunHumAmp) and the
+// layer's own switch (lSun, its twin sunOn with it): the Sun's fade is the
+// operator's to ride at the drawing, and a step must never take the sun
+// off the room's screens under the operator's raised fader. A new fader
 // the operator rides on the controller joins this list; its other visual
 // faders (BREATH, WIND, TXT, SCREEN) and the slide's rate are the steps'
 // to move, as they always were.
 export const LIVE_AUDIO = ['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'heartMaster', 'mwtsVolume',
                            'bedVol', 'toneVol', 'cloudVol', 'pianoVol', 'choirVol', 'ambVol', 'sunHumRate',
-                           'sunOpacity', 'sunHumAmp', 'brushVol'];
+                           'sunOpacity', 'sunHumAmp', 'brushVol', 'lSun'];
 const liveAt = new Uint8Array(R.length);
 for (const id of LIVE_AUDIO) for (const t of withTwins(id)) { const j = idxOf.get(t); if (j !== undefined) liveAt[j] = 1; }
 // Whether step i leaves the live audio live; turned on for the step the walk
