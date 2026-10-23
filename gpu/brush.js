@@ -12,8 +12,11 @@
 // Atlases. Each stroke names its Image set (the wire's a), so a mark from a
 // screen on another set is still drawn with its own motifs: the layer keeps
 // up to MAX_ATLASES sets' atlases on the GPU, each built from the set's
-// ordinary sheet by the kaleidoscope's own pass (gpu/atlas-bake.js, the
-// same bake the browser keeps for both), loaded the first time a stamp or
+// sheet by the kaleidoscope's own pass (gpu/atlas-bake.js, the same bake
+// the browser keeps for both): a set with a high resolution sheet (sets.mjs
+// imageHi) is drawn from it while the kaleidoscope's High resolution toggle
+// is on, as the kaleidoscope does, packed in its own layout, else the
+// ordinary one. Loaded the first time a stamp or
 // the drawer's picker asks for it. The picker's set (the current Image set)
 // is never the one let go; the least recently used other one is. The
 // current set's atlas is also the UI renderer's picture, which the picker's
@@ -48,7 +51,7 @@
 import { S } from '../js/state.js';
 import { BRUSH_WGSL } from './brush.wgsl.js';
 import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './feedback.js';
-import { MOTIFS, LAYOUT_STD, bakeTag, bakeAtlasPixels, buildAtlasMips } from './atlas-bake.js';
+import { MOTIFS, LAYOUT_STD, LAYOUT_HI, bakeTag, bakeAtlasPixels, buildAtlasMips } from './atlas-bake.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
 import { brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
@@ -70,10 +73,9 @@ export function createBrush(device, format, platform, opts) {
   const picture = (opts && opts.picture) || null;
   const yieldFn = (opts && opts.yieldTile) || null;
   const yieldTile = () => (yieldFn ? yieldFn() : new Promise(r => setTimeout(r, 0)));
-  const L = LAYOUT_STD;
 
   let pixelW = 1, pixelH = 1, dpr = 1;
-  let made = false, pipe = null, livePipe = null, bgl = null, sampler = null, uniBuf = null, instBuf = null, fb = null;
+  let made = false, pipe = null, livePipe = null, bgl = null, sampler = null, instBuf = null, fb = null;
   const uni = new Float32Array(8);
   const inst = new Float32Array(MAX_INST * INST_FLOATS);
   // This frame's draws: runs of instances sharing one atlas.
@@ -141,9 +143,8 @@ export function createBrush(device, format, platform, opts) {
       label: 'brush.sampler',
       magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear',
       addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge',
-      lodMaxClamp: L.mips - 1
+      lodMaxClamp: LAYOUT_HI.mips - 1
     });
-    uniBuf = device.createBuffer({ label: 'brush.uniforms', size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     instBuf = device.createBuffer({ label: 'brush.instances', size: MAX_INST * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     // The live pass: the same stamps straight into the scene, over the
     // trail's composite, for the ones not yet baked (premultiplied over
@@ -167,7 +168,6 @@ export function createBrush(device, format, platform, opts) {
       primitive: { topology: 'triangle-list' }
     });
     fb = createFeedback(device, format, { label: 'brush.feedback' });
-    uni[4] = L.innerUV; uni[5] = L.halfTexel;
   }
 
   function resize(pw, ph, d) {
@@ -176,18 +176,40 @@ export function createBrush(device, format, platform, opts) {
 
   // ---------- the atlases ----------
   // set (the kaleidoscope's own numbering, as kaleidoscopeSet resolves it)
-  // -> { set, tex, view, bind, fill, first, ready, failed, used }
+  // -> { set, url, lay, uniBuf, tex, view, bind, fill, first, ready, failed, used }
+  // (lay: the layout its sheet is packed in; uniBuf: the stamp shader's
+  // uniforms, whose atlas numbers are this layout's)
   const atlases = new Map();
   let shown = null;            // the atlas published as the picker's
 
   function setOf(n) { return kaleidoscopeSet(n).id; }
 
-  function load(set) {
-    if (atlases.has(set)) return;
+  // The sheet a set is drawn from, as the kaleidoscope picks it.
+  function sheetOf(def) {
+    return S.kaleidoHiRes !== false && def.imageHi ? def.imageHi : def.image;
+  }
+
+  function release(a) {
+    if (a === shown) { shown = null; if (picture) picture(null, 0); }
+    if (a === shownHand) { shownHand = null; if (picture) picture(null, 1); }
+    if (a.tex) a.tex.destroy();
+    if (a.uniBuf) a.uniBuf.destroy();
+    atlases.delete(a.set);
+  }
+
+  function load(set, plain) {
+    const have = atlases.get(set);
+    if (have) {
+      // the High resolution toggle moved: this set is read again from the
+      // other sheet (a hi sheet that failed has fallen back and stays)
+      if (plain || have.url === sheetOf(kaleidoscopeSet(set)) || have.fellBack) return;
+      release(have);
+    }
     if (!platform || !platform.loadImagePixels) return;
     if (atlases.size >= MAX_ATLASES) evict(set);
-    const def = kaleidoscopeSet(set), url = def.image;
-    const a = { set, tex: null, view: null, bind: null, fill: null, first: 0, ready: false, failed: false, used: frame };
+    const def = kaleidoscopeSet(set), url = plain ? def.image : sheetOf(def);
+    const L = def.imageHi && url === def.imageHi ? LAYOUT_HI : LAYOUT_STD;
+    const a = { set, url, lay: L, uniBuf: null, tex: null, view: null, bind: null, fill: null, first: 0, ready: false, failed: false, fellBack: !!plain, used: frame };
     atlases.set(set, a);
     const stale = () => atlases.get(set) !== a;
     // a resting frame loop stays awake until it is in (core/idle.js)
@@ -202,14 +224,18 @@ export function createBrush(device, format, platform, opts) {
         install(a, baked);
       })
       .catch(err => {
-        if (!stale()) a.failed = true;
         console.warn('brush: could not load the motif atlas ' + url + ':', err && err.message ? err.message : err);
+        if (stale()) return;
+        // a high resolution sheet that will not load gives way to the ordinary one
+        if (url !== def.image) { release(a); load(set, true); } else a.failed = true;
       })
       .finally(() => idleRelease('the brush atlas'));
   }
 
   function install(a, baked) {
     if (!made) make();
+    const L = a.lay;
+    a.uniBuf = device.createBuffer({ label: 'brush.uniforms' + a.set, size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     const tex = device.createTexture({
       label: 'brush.atlas' + a.set,
       size: { width: L.atlas, height: L.atlas },
@@ -227,7 +253,7 @@ export function createBrush(device, format, platform, opts) {
     a.bind = device.createBindGroup({
       label: 'brush.bind' + a.set, layout: bgl,
       entries: [
-        { binding: 0, resource: { buffer: uniBuf } },
+        { binding: 0, resource: { buffer: a.uniBuf } },
         { binding: 1, resource: a.view },
         { binding: 2, resource: sampler }
       ]
@@ -249,9 +275,7 @@ export function createBrush(device, format, platform, opts) {
       if (!worst || a.used < worst.used) worst = a;
     }
     if (!worst) return;
-    if (worst === shown) { shown = null; if (picture) picture(null, 0); }
-    if (worst.tex) worst.tex.destroy();
-    atlases.delete(worst.set);
+    release(worst);
   }
 
   // The dealt hand's row has a picture of its own (the UI renderer's slot
@@ -262,7 +286,7 @@ export function createBrush(device, format, platform, opts) {
     if (!a || !a.ready || a === shownHand) return;
     shownHand = a;
     const h = brushHandAtlas;
-    h.set = a.set; h.padUV = L.padUV; h.innerUV = L.innerUV; h.ready = true;
+    h.set = a.set; h.padUV = a.lay.padUV; h.innerUV = a.lay.innerUV; h.ready = true;
     if (picture) picture(a.view, 1);
   }
 
@@ -281,7 +305,7 @@ export function createBrush(device, format, platform, opts) {
       b.empty[t] = empty ? 1 : 0;
       if (!empty) b.tiles[n++] = t;
     }
-    b.count = n; b.set = cur; b.padUV = L.padUV; b.innerUV = L.innerUV; b.ready = true;
+    b.count = n; b.set = cur; b.padUV = a.lay.padUV; b.innerUV = a.lay.innerUV; b.ready = true;
     if (picture) picture(a.view, 0);
   }
 
@@ -357,8 +381,8 @@ export function createBrush(device, format, platform, opts) {
         inst[i + 1] = cy + (buf[o + 1] - 0.5) * side;
         inst[i + 2] = buf[o + 3] * side * 0.5;
         inst[i + 3] = buf[o + 2];
-        inst[i + 4] = (m % 8) / 8 + L.padUV;
-        inst[i + 5] = ((m / 8) | 0) / 8 + L.padUV;
+        inst[i + 4] = (m % 8) / 8 + a.lay.padUV;
+        inst[i + 5] = ((m / 8) | 0) / 8 + a.lay.padUV;
         inst[i + 6] = 0; inst[i + 7] = 0;
         runCount[nRuns - 1]++;
         nInst++;
@@ -380,7 +404,11 @@ export function createBrush(device, format, platform, opts) {
     params.dt = dt > 0 ? dt : 0;
     if (nInst > 0) {
       uni[0] = 2 / pixelW; uni[1] = 2 / pixelH;
-      device.queue.writeBuffer(uniBuf, 0, uni);
+      for (const a of atlases.values()) {
+        if (!a.uniBuf) continue;
+        uni[4] = a.lay.innerUV; uni[5] = a.lay.halfTexel;
+        device.queue.writeBuffer(a.uniBuf, 0, uni);
+      }
       device.queue.writeBuffer(instBuf, 0, inst, 0, nInst * INST_FLOATS);
     }
   }
