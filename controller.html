@@ -230,6 +230,10 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 #duck { height: 110px; font-size: 28px; letter-spacing: .1em; background: #1f4a44; border-color: #3fa596; color: #bff3ea; touch-action: none; }
 #duck.on { background: var(--bad); color: #000; border-color: #fff; box-shadow: 0 0 34px rgba(255, 122, 122, .7); }
 .big:active, .cue:active { filter: brightness(1.35); }
+/* the drawing room's people, one colored dot each, in a 2-row x 10-column
+   grid between the room's name and Defaults; lines join groupmates who sit
+   next to each other (see drawDots) */
+#roomDots { display: block; height: 40px; width: 200px; flex: none; }
 #gear { width: 36px; height: 36px; padding: 0; font-size: 18px; border-radius: 50%; display: grid; place-items: center; }
 
 /* settings */
@@ -277,6 +281,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   <h1 id="title">Show Remote</h1>
   <span class="status" id="paths"></span>
   <span class="status">room <span class="dot" id="appHealth" role="img" aria-label="App status: waiting for laptop" title="App status: waiting for laptop"></span><b id="roomName"></b></span>
+  <svg id="roomDots" viewBox="0 0 200 40" aria-label="Drawing room"></svg>
   <div class="header-actions spacer">
     <button class="big small" id="defaults">Defaults</button>
     <button class="big small" id="switch"></button>
@@ -475,6 +480,62 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     });
   }
   drawHall();
+
+  // ---------- the drawing room's dots ----------
+  // One dot per drawer (the laptop, conducting, has none), in a grid of 2
+  // rows and 10 columns. Each group fills its own columns top then bottom,
+  // and a line joins two groupmates sitting side by side or one above the
+  // other: pairs stand as one column, fours as a square, halves and the
+  // whole room as ladders. Solo and master pack everyone with no lines.
+  // A drawer keeps one color for the show: the first free of the 20 when
+  // first seen, remembered across reloads.
+  const DOT_COLORS = ['#ff5a5f', '#3cd26e', '#ffe119', '#4f8cff', '#ff9a3c', '#b45cff', '#42d4f4', '#f032e6',
+    '#bfef45', '#ffb3c8', '#2fb8a8', '#d4b8ff', '#c98a3f', '#fff6b0', '#d8434b', '#aaffc3', '#a8a83a', '#ffd8b1',
+    '#7f8cff', '#e8ecf4'];
+  let dotColor = new Map();
+  try { dotColor = new Map(JSON.parse(localStorage.getItem('controller.dotColors') || '[]')); } catch (e) {}
+  let dotsSig = '';
+  function colorOf(id, here) {
+    if (!dotColor.has(id)) {
+      const taken = new Set(here.filter(x => dotColor.has(x)).map(x => dotColor.get(x)));
+      let c = 0;
+      while (c < DOT_COLORS.length && taken.has(c)) c++;
+      dotColor.set(id, c % DOT_COLORS.length);
+      try { localStorage.setItem('controller.dotColors', JSON.stringify([...dotColor])); } catch (e) {}
+    }
+    return DOT_COLORS[dotColor.get(id)];
+  }
+  function drawDots() {
+    const g = hallNow && Array.isArray(hallNow.g) ? hallNow.g.filter(a => Array.isArray(a) && a.length) : [];
+    const sig = (hallNow ? hallNow.p : '') + JSON.stringify(g);
+    if (sig === dotsSig) return;
+    dotsSig = sig;
+    const packed = !hallNow || hallNow.p === 'solo' || hallNow.p === 'master';
+    const groups = packed ? (g.length ? [g.flat()] : []) : g;
+    // each drawer's cell: groups side by side, each filling its columns top
+    // then bottom
+    const cells = [];
+    let col = 0;
+    for (const grp of groups) {
+      grp.forEach((id, k) => cells.push({ id, col: col + (k >> 1), row: k & 1, grp }));
+      col += Math.ceil(grp.length / 2);
+    }
+    const here = cells.map(c => c.id);
+    // 10 columns fit the box; more (a roster over 20, or odd groups) squeeze
+    const W = 200, H = 40, cols = Math.max(10, col), pitch = W / cols;
+    const x = c => (c.col + 0.5) * pitch, y = c => c.row ? 29 : 11;
+    const r = Math.min(5.5, pitch * 0.3);
+    let lines = '', dots = '';
+    for (const a of cells) {
+      for (const b of cells) {
+        if (packed || a.grp !== b.grp) continue;
+        const beside = a.row === b.row && b.col === a.col + 1, under = a.col === b.col && a.row === 0 && b.row === 1;
+        if (beside || under) lines += '<line x1="' + x(a) + '" y1="' + y(a) + '" x2="' + x(b) + '" y2="' + y(b) + '"/>';
+      }
+      dots += '<circle cx="' + x(a) + '" cy="' + y(a) + '" r="' + r + '" fill="' + colorOf(a.id, here) + '"/>';
+    }
+    $('roomDots').innerHTML = '<g stroke="#e8ecf4" stroke-opacity=".7" stroke-width="1.5">' + lines + '</g>' + dots;
+  }
 
   let shownNow = -2;
   function drawCues() {
@@ -956,8 +1017,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     $('showBar').style.width = (m.n > 0 && statusStep >= 0 ? (statusStep + 1) / m.n * 100 : 0) + '%';
     drawCues();
     setProg(m.vp);
-    hallNow = m.hall && typeof m.hall.p === 'string' ? { p: m.hall.p, r: +m.hall.r || 1 } : null;
+    hallNow = m.hall && typeof m.hall.p === 'string' ? { p: m.hall.p, r: +m.hall.r || 1, g: m.hall.g } : null;
     drawHall();
+    drawDots();
     const sl = m.sl || {};
     const now = performance.now();
     for (const f of FADERS) {

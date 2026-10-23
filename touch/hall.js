@@ -88,7 +88,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
   const link = {
     you: 0, phase: 'solo', round: 1, conduct: false,
     stream: 0, smooth: -1, size: 0, hand: null,
-    group: new Set(), peers: new Set(),
+    group: new Set(), peers: new Set(), groups: null,
     send, setPhase, next, close
   };
   let ws = null, closed = false, tries = 0, pinger = 0, state = '';
@@ -138,6 +138,8 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         if (Number.isFinite(msg.sm)) link.smooth = msg.sm;
         if (Number.isFinite(msg.sz)) link.size = msg.sz;
         link.group = new Set(msg.ids);
+        // every drawer's group, told to a conductor only
+        link.groups = Array.isArray(msg.gs) ? msg.gs : null;
         on.group && on.group(msg);
       } else if (msg.t === 'hand') {
         link.hand = msg.on === 1 && Array.isArray(msg.tiles) ? { on: 1, a: msg.a, tiles: msg.tiles } : null;

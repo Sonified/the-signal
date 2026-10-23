@@ -230,7 +230,7 @@ export class Room {
 // The phases, the groups and who hears whom live in groups.js, pure, so
 // node tests the very code the hall runs: solo, master (the conductor to
 // everyone), pairs, quads, halves, all (the conductor hearing everything).
-import { PHASES, routes, roundOf, nextStep, planStep, stepGroups } from './groups.js';
+import { PHASES, routes, roundOf, nextStep, planStep, stepGroups, phaseGroups } from './groups.js';
 import { dealHand, readBrushes } from './deal.js';
 export { dealHand, deck, readBrushes, HAND_MAX } from './deal.js';
 export { PHASES, CONDUCTOR_HEARS_GROUPS, pairGroups, phaseGroups, routes, SCRIPT, roundOf, nextStep, planStep, stepGroups, liveGroups, regroup } from './groups.js';
@@ -351,6 +351,11 @@ export class Hall {
   // drawers' groups are the step's live ones (stepGroups: the planned
   // groups as they stand, joiners folded in).
   routesNow(st, members) {
+    return this.planNow(st, members).routes;
+  }
+  // The routes and the drawers' groups at step st (the groups: every drawer
+  // in exactly one, the conductor in none, as the show controller draws them).
+  planNow(st, members) {
     const ids = [], conductors = [];
     for (const w of members) {
       const a = w.deserializeAttachment();
@@ -362,7 +367,7 @@ export class Hall {
     const drawers = ids.filter(id => !cond.has(id)).sort((x, y) => x - y);
     const groups = st.phase === 'pairs' || st.phase === 'quads' || st.phase === 'halves'
       ? stepGroups(st.phase, st.round, drawers, st.hist) : null;
-    return routes(st.phase, ids, conductors, { groups });
+    return { routes: routes(st.phase, ids, conductors, { groups }), groups: groups || phaseGroups(st.phase, drawers) };
   }
 
   // The conductor moves the show to (phase, round): a step of pairs or
@@ -471,13 +476,17 @@ export class Hall {
   // either: a join, a leave, a phase change.
   tellGroups(st) {
     const members = this.members();
-    const plan = this.routesNow(st, members);
+    const { routes: plan, groups } = this.planNow(st, members);
     const phase = st.phase, round = st.round;
     for (const w of members) {
       const id = this.idOf(w);
       const r = plan.get(id);
+      // a conductor is also told every drawer's group (gs), for the show
+      // controller's dots
+      const a = w.deserializeAttachment();
+      const gs = a && a.conduct ? { gs: groups } : null;
       try {
-        w.send(JSON.stringify({ t: 'group', phase, round, ms: st.ms, sm: st.sm, sz: st.sz, you: id, ids: r ? r.with : [id] }));
+        w.send(JSON.stringify(Object.assign({ t: 'group', phase, round, ms: st.ms, sm: st.sm, sz: st.sz, you: id, ids: r ? r.with : [id] }, gs)));
       } catch (e) {}
     }
   }

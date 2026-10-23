@@ -456,6 +456,8 @@ export function brushMember() { return !!hallLink && hallState === 'joined' && h
 export function brushConducting() { return !!hallLink && hallState === 'joined' && hallLink.conduct === true; }
 export function brushPhase() { return hallLink ? hallLink.phase : 'solo'; }
 export function brushRound() { return hallLink ? hallLink.round || 1 : 1; }
+// Every drawer's group as the hall last told this conductor (id arrays), or null.
+export function brushGroups() { return hallLink && hallLink.groups ? hallLink.groups : null; }
 // a chip asks for its phase, or the hall's own phase again for its next round
 export function brushSetPhase(p) {
   if (!brushConducting()) return;

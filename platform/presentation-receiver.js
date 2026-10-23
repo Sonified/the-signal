@@ -156,7 +156,7 @@ import { idleTouch } from '../js/idle-ahead.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
-import { brushShowPhase, brushConducting, brushPhase, brushRound, brushDealHold } from '../core/brush.js';
+import { brushShowPhase, brushConducting, brushPhase, brushRound, brushGroups, brushDealHold } from '../core/brush.js';
 import { PRESENT_PASSWORD } from '../core/presentation.js';
 import { ampToPos } from '../js/util.js';
 
@@ -413,8 +413,9 @@ export function initPresentationReceiver(hooks = {}) {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
       // the hall this screen conducts: its phase and round, lighting the
-      // iPad's drawing cues; null (the cues dim) while it conducts none
-      hall: brushConducting() ? { p: brushPhase(), r: brushRound() } : null,
+      // iPad's drawing cues; null (the cues dim) while it conducts none.
+      // g is every drawer's group (id arrays), the iPad's dots
+      hall: brushConducting() ? { p: brushPhase(), r: brushRound(), g: brushGroups() } : null,
       vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000,
         f: pr.f || S.slideFile, l: pr.l === true } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'),
