@@ -36,7 +36,9 @@
 // The network pass waits its turn behind the music's own fetch ahead
 // (js/load-order.js TURN.slides). The pass over the disk does not: it runs
 // at once, so the Sun can wait for it (showMediaPending) and start on its
-// copy rather than the network. Only a screen in Presentation mode starts
+// copy rather than the network. FIRST jumps every queue: the heartbeat's
+// track, among the first things a show plays, is checked or downloaded
+// straight after the look at the disk, before the music and the slides. Only a screen in Presentation mode starts
 // any of this (gpu/slides.js and gpu/sun.js), so a follower's phone never
 // downloads the show; a file that fails is logged and skipped.
 //
@@ -47,6 +49,8 @@ import { SLIDE_DIR, SLIDE_FILES } from '../core/schema-slides.js';
 import { TURN, inTurn } from './load-order.js';
 import { mediaCache, mediaFetch, absUrl } from './media-cache.js';
 
+// Fetched before anything else, outside the turns (see above).
+const FIRST = ['audio/heartbeat.m4a'];
 const urls = new Map();   // absolute URL -> blob URL of the copy this page plays
 let sunFile = null;       // { url, name } from gpu/sun.js
 let started = false, diskDone = false;
@@ -192,16 +196,28 @@ async function run() {
   diskDone = true;
   log(`${onDisk.size} of ${playable.length} videos on disk and ready` + (sunFile && onDisk.has(sunFile.url) ? ' (the Sun among them)' : ''));
 
+  // The first files, at once, ahead of every turn.
+  const first = new Set(FIRST.map(absUrl));
+  for (const u of FIRST) {
+    const url = absUrl(u), tag = 'first: ' + u;
+    let hit = null;
+    if (cache) { try { hit = (await cache.match(url)) || null; } catch (e) { /* fetched afresh */ } }
+    try {
+      const got = await syncOne(cache, { url, name: u, kind: 'audio', type: '' }, tag, hit);
+      if (!got) log(`${tag}: ${hit ? 'on disk' : 'not kept'}`);
+    } catch (e) { console.warn('[show-media] ' + tag + ' failed (' + (e && e.message ? e.message : e) + '); it streams as before'); }
+  }
+
   // Then the network, in its turn.
   await inTurn(TURN.slides, async () => {
-    const items = await showItems();
+    const items = (await showItems()).filter(it => !first.has(it.url));
     const n = items.length;
     if (cache) {
       for (const it of items) {
         if (it.kind !== 'audio' || onDisk.has(it.url)) continue;
         try { const hit = await cache.match(it.url); if (hit) onDisk.set(it.url, hit); } catch (e) { /* fetched afresh */ }
       }
-      const want = new Set(items.map(it => it.url));
+      const want = new Set(items.map(it => it.url).concat([...first]));
       try {
         for (const req of await cache.keys()) {
           if (want.has(req.url)) continue;
