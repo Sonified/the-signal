@@ -75,6 +75,7 @@ import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand
 import { drawHand } from './ui/screens/hand.js';
 import { initShowRemote } from './platform/show-remote.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
+import { journeyImport } from './core/journey.js';
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
@@ -96,6 +97,7 @@ import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION, COLOR, TYPE, W, TRACK } from './ui/theme.js';
 import { BUILD } from './core/version.js';
+import { setPresentFetch } from './core/presentation.js';
 import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow, liftVeil } from './ui/screens/overlay.js';
 import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk, drawEnergyChip, freshAsk, drawFreshAsk } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
@@ -297,6 +299,9 @@ async function boot() {
   const uiRenderer = createUIRenderer(device, format, text);
   engine.registerBrush(createBrush(device, format, platform, { picture: v => uiRenderer.setPicture(v), yieldTile: choreYield }));
   engine.registerUI(uiRenderer, createBlur(device, format));
+  // Presentation mode's Journey install fetches the tracked export and the
+  // slide manifest from the site itself (core/presentation.js).
+  setPresentFetch(url => fetch(url, { cache: 'no-cache' }).then(r => r.ok ? r.text() : Promise.reject(new Error(r.status + ' ' + url))), journeyImport);
   // ?hall=<name> joins the brush to a group touch hall (platform/brush-hall.js):
   // its strokes go out there and the strokes that reach it are drawn here.
   // Without one, or offline, the brush plays alone; it never waits on it.

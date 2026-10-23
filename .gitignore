@@ -16,8 +16,13 @@ audio/source/Ocean_Cavern.wav
 # the mirror test's local relay password (tools/mirror-local.mjs)
 .mirror-key
 
-# the TSC 2026 show's slide videos (core/schema-slides.js), copied locally, never committed
-slides/
+# the TSC 2026 show's slide videos (core/schema-slides.js), copied locally,
+# never committed: on the site they stream from R2 through
+# functions/slides/[[path]].js. Only the root's slides/ (so that Function's
+# own folder is not caught); the QR image and the controller's 144p cue
+# previews are small, immutable and committed by name (git add -f), as the
+# standalone presentation site carries them.
+/slides/
 
 # the Sun's videos (gpu/sun.js), copied locally for localhost shows, never committed
 sun-video/

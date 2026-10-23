@@ -2154,6 +2154,28 @@ export function journeyNew(title) {
   return lib.items.length - 1;
 }
 
+// An exported journey (a v2 record, as journeyExport writes one) added at
+// the end of the row under title (made distinct as any title is) and
+// opened, through the same read a reload takes. Returns its index, or -1
+// when the library is full. The Presentation mode's TSC 2026 install
+// (core/presentation.js) is its caller.
+export function journeyImport(title, raw) {
+  ensureLoaded();
+  const t = cleanTitle(title);
+  if (!t || lib.items.length >= LIB_MAX) return -1;
+  leaveOpen();
+  let n = 0;
+  for (const it of lib.items) n = Math.max(n, parseInt(it.id.slice(1), 10) || 0);
+  const id = 'j' + (n + 1);
+  const rec = readJourney(JSON.parse(JSON.stringify(raw)));
+  lib.items.push({ id, title: uniqueTitle(t, -1) });
+  cache.set(id, rec);
+  saveKey(keyOf(id), rec);
+  openId(id);
+  version++;
+  return lib.items.length - 1;
+}
+
 // A copy of the open journey, exact settings and steps, placed on the chip
 // just right of it and opened. The copy is named with the next free letter:
 // "Dawn" begets "Dawn A", then "Dawn B", and a title already lettered counts

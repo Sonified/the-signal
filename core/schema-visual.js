@@ -37,6 +37,7 @@ import { THEMES, WORDS } from '../js/words.js';
 import { rebuildWordPool, retimeWordOpacity } from './words.js';
 import { FX_NAMES } from './word-fx.js';
 import { save } from './store.js';
+import { presentAsk, presentUnlocked, presentUnlock, presentPasswordOk, presentInstall } from './presentation.js';
 import { engineThread, setEngineThreadWanted, engineThreadStatus } from './engine-thread.js';
 import { varianceRows, driveRow } from './schema-variance.js';
 import { varied, driveOf } from './variance.js';
@@ -2268,10 +2269,39 @@ export const VISUAL_CONTROLS = [
     // section and the Slides row in Layers; off, both are hidden (their
     // visible rules in schema-slides.js), so a screen that never presents
     // never sees them. Only the drawer: a slide already up keeps playing.
-    // This machine's own, as every Settings row is.
+    // This machine's own, as every Settings row is. Switching it on asks for
+    // the password the first time on a device (core/presentation.js; the
+    // row below opens for it and the switch stays off), and each time it
+    // goes on the TSC 2026 Journey is installed if this export is not in
+    // yet. Switching off never asks.
     id: 'presentationMode', section: 'settings', label: 'Presentation mode', kind: 'toggle', def: false,
     get: S => S.presentationMode === true,
-    set: (S, on) => { S.presentationMode = !!on; save(); }
+    set: (S, on) => {
+      if (on && !presentUnlocked()) { presentAsk.open = true; presentAsk.wrongUntil = 0; return; }
+      presentAsk.open = false;
+      S.presentationMode = !!on;
+      save();
+      if (on) presentInstall();
+    }
+  },
+  {
+    // The gate's password, typed in place of a browser prompt (which would
+    // stop the frame loop): Enter tries it. Right, Presentation mode goes on
+    // and stays unlocked on this device; wrong, the switch stays off and the
+    // line under the field says so for a moment.
+    id: 'presentationPassword', section: 'settings', label: 'Password for Presentation mode', kind: 'text',
+    placeholder: 'Type it, then Enter', maxLen: 64,
+    visible: () => presentAsk.open,
+    get: () => '',
+    set: (S, v) => {
+      if (!presentPasswordOk(v)) { presentAsk.wrongUntil = Date.now() + 2500; return; }
+      presentUnlock();
+      presentAsk.open = false;
+      S.presentationMode = true;
+      save();
+      presentInstall();
+    },
+    statusLine: () => Date.now() < presentAsk.wrongUntil ? 'Wrong password' : ''
   }
 ];
 
