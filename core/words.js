@@ -440,6 +440,9 @@ export function setWordsRemote(on) {
 export function remoteWord(w, seed, fi, fo, k) {
   if (typeof w !== 'string' || !w) return;
   remote = true;
+  // The breath's own words are dealt here, off this screen's own breath
+  // (stepWords); a performer's or Journey's phrase still comes over.
+  if (S.textMode === 'breath' && (w === 'inhaling' || w === 'exhaling')) return;
   pendingRemote.w = w.slice(0, STEP_MAX_REMOTE);
   pendingRemote.seed = Number.isFinite(seed) ? seed : Math.random() * 1000;
   pendingRemote.fi = Number.isFinite(fi) && fi > 0 && fi <= 1 ? fi : 1;
@@ -973,15 +976,18 @@ export function stepWords(t, dt) {
   // down (maybeRest) checks it whichever way the word was chosen.
   const gap = phraseGapMs();
   // The Breath source deals here, ahead of the performer's phrase it rides
-  // on; following a broadcast, the broadcaster's breath words arrive relayed.
+  // on. A follower deals it too, off its own breath: that breath is set onto
+  // the broadcaster's by the beacon (core/breath.js syncBreath), so both
+  // screens turn together, where a word relayed over the network arrived
+  // late and waited for the screen to clear.
   const breathing = S.textMode === 'breath';
-  if (breathing && !remote) breathTick(t);
+  if (breathing) breathTick(t);
   else { breathWasIn = null; breathDueAt = -1; }
   // The performer's phrase, ahead of the pool pick and outside the remote
   // switch: it shows the moment the screen is clear, no rest in between,
   // whichever way this scheduler is running.
   if (pendingLocal.has && !showing) { restUntil = 0; showLocal(t); }
-  if (remote) {
+  if (remote && !breathing) {
     // Following a broadcast: the choosing is the broadcaster's. The word it
     // sent goes up the moment the screen is clear; no roll, no rests. A
     // relayed word always wins: it is the broadcaster choosing live (a
