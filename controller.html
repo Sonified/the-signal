@@ -244,7 +244,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 #modal.open { display: grid; }
 #modal .card { width: min(460px, 100%); position: relative; }
 /* the controller's version, in the screen's lower left while the settings
-   are open (bump VERSION with every change to this page) */
+   are open (bump VERSION by .01 with every change to this page) */
 #version { position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
   color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
 #close { position: absolute; top: -56px; right: 0; width: 44px; height: 44px; padding: 0; font-size: 20px; }
@@ -360,8 +360,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const LOCAL_HOST = SERVED_LOCAL ? location.host : '';
   $('roomName').textContent = room;
   // this page's version, shown in the settings and at the right of the
-  // Presence line: one up with every change
-  const VERSION = 3;
+  // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
+  // so it always shows two places)
+  const VERSION = '3.01';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
