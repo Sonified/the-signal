@@ -80,6 +80,9 @@ let clockOff = NaN;      // shared ms minus this tab's rAF ms
 export function setRoomClockRoom(on) { inRoom = !!on; }
 export function setRoomClockOffset(off) { clockOff = Number.isFinite(off) ? off : NaN; }
 export function roomClockRunning() { return inRoom && clockOff === clockOff; }
+// The room's shared ms now (this tab's performance.now plus the offset), or
+// NaN outside a room or until the offset settles.
+export function roomClockMs() { return inRoom && clockOff === clockOff ? performance.now() + clockOff : NaN; }
 
 // The pull's rate, per second of motion: the strobe's SYNC_RATE, so the
 // swings settle the way its own variability phases do (a time constant of

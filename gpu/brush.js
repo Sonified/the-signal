@@ -55,7 +55,7 @@ import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './fe
 import { MOTIFS, LAYOUT_STD, LAYOUT_HI, bakeTag, bakeAtlasPixels, buildAtlasMips } from './atlas-bake.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
-import { brushRotateNow, brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
+import { brushRotateNow, brushSpinNow, brushSharedOffset, brushSpinAt, brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
 import { noteSender, forgetIdle, activeSenders, bakeOrder, turnPlace } from '../core/brush-order.js';
 
@@ -341,6 +341,8 @@ export function createBrush(device, format, platform, opts) {
     const q = brushQueue, buf = q.buf;
     const n = q.count < MAX_PEND ? q.count : MAX_PEND;
     const sec = Math.floor(Date.now() / 1000);
+    // the shape's turn: a speed, and the shared clock's lead over this one
+    const spinRate = brushSpinNow(), spinOff = spinRate > 0 ? brushSharedOffset() : 0;
     if (n > 0) forgetIdle(sec);
     for (let j = 0; j < n; j++) {
       const at = (q.head + j) % q.cap, o = at * STAMP_FLOATS;
@@ -381,7 +383,7 @@ export function createBrush(device, format, platform, opts) {
         inst[i] = cx + (buf[o] - 0.5) * side;
         inst[i + 1] = cy + (buf[o + 1] - 0.5) * side;
         inst[i + 2] = buf[o + 3] * side * 0.5;
-        inst[i + 3] = buf[o + 2];
+        inst[i + 3] = spinRate > 0 ? buf[o + 2] + brushSpinAt(spinRate, pKey[j], spinOff) : buf[o + 2];
         inst[i + 4] = (m % 8) / 8 + a.lay.padUV;
         inst[i + 5] = ((m / 8) | 0) / 8 + a.lay.padUV;
         inst[i + 6] = 0; inst[i + 7] = 0;

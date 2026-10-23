@@ -250,9 +250,9 @@ const TOKENS_MAX = 10000;
 // The room's own settings, the conductor's (Stream and Smoothing): how
 // often every member sends a stroke batch, ms, the playback's margin past
 // it, ms, the Size every member's strokes are drawn at (a stroke's w) and
-// the Rotation the marks turn at, turns a second.
+// the two Rotations (the trail's rt and the shape's sr), turns a second.
 // Re-told in hello and group.
-const ROOM_DEFAULT = { ms: 20, sm: 30, sz: 50, rt: 0 };
+const ROOM_DEFAULT = { ms: 20, sm: 30, sz: 50, rt: 0, sr: 0 };
 const TOKEN_RE = /^[\w-]{8,64}$/;
 // The close code a socket is sent when a newer one of the same device has
 // taken its id: the client must not reconnect on it (touch/hall.js).
@@ -290,7 +290,7 @@ export class Hall {
       phase: (await this.ctx.storage.get('phase')) || 'solo',
       round: (await this.ctx.storage.get('round')) || 1,
       hist: (await this.ctx.storage.get('hist')) || {},
-      ms: room.ms, sm: room.sm, sz: room.sz || ROOM_DEFAULT.sz, rt: room.rt >= 0 ? room.rt : ROOM_DEFAULT.rt
+      ms: room.ms, sm: room.sm, sz: room.sz || ROOM_DEFAULT.sz, rt: room.rt >= 0 ? room.rt : ROOM_DEFAULT.rt, sr: room.sr >= 0 ? room.sr : ROOM_DEFAULT.sr
     };
   }
 
@@ -487,7 +487,7 @@ export class Hall {
       const a = w.deserializeAttachment();
       const gs = a && a.conduct ? { gs: groups } : null;
       try {
-        w.send(JSON.stringify(Object.assign({ t: 'group', phase, round, ms: st.ms, sm: st.sm, sz: st.sz, rt: st.rt, you: id, ids: r ? r.with : [id] }, gs)));
+        w.send(JSON.stringify(Object.assign({ t: 'group', phase, round, ms: st.ms, sm: st.sm, sz: st.sz, rt: st.rt, sr: st.sr, you: id, ids: r ? r.with : [id] }, gs)));
       } catch (e) {}
     }
   }
@@ -527,7 +527,7 @@ export class Hall {
     pair[1].serializeAttachment({ id, conduct, token });
     const ids = this.members().map(w => this.idOf(w));
     try {
-      pair[1].send(JSON.stringify({ t: 'hello', you: id, phase: st.phase, round: st.round, ms: st.ms, sm: st.sm, sz: st.sz, rt: st.rt, ids, conduct: conduct ? 1 : 0 }));
+      pair[1].send(JSON.stringify({ t: 'hello', you: id, phase: st.phase, round: st.round, ms: st.ms, sm: st.sm, sz: st.sz, rt: st.rt, sr: st.sr, ids, conduct: conduct ? 1 : 0 }));
     } catch (e) {}
     const arrived = JSON.stringify({ t: 'peer', id, on: 1 });
     for (const w of this.members()) {
@@ -569,16 +569,17 @@ export class Hall {
       return;
     }
     // the conductor's room settings: how often everyone sends a batch (ms)
-    // the playback's jitter margin (sm), the Size (sz) and the Rotation (rt), re-told to all
+    // the playback's jitter margin (sm), the Size (sz) and the Rotations (rt, sr), re-told to all
     if (msg.t === 'room') {
       if (!me.conduct) return;
       const ms = Number.isInteger(msg.ms) && msg.ms >= 10 && msg.ms <= 60 ? msg.ms : null;
       const sm = Number.isInteger(msg.sm) && msg.sm >= 0 && msg.sm <= 200 ? msg.sm : null;
       if (ms === null || sm === null) return;
-      // the Size and Rotation are optional: a conductor that sends none leaves the room's
+      // the Size and Rotations are optional: a conductor that sends none leaves the room's
       const sz = Number.isInteger(msg.sz) && msg.sz >= 1 && msg.sz <= 100 ? msg.sz : (await this.step()).sz;
       const rt = Number.isFinite(msg.rt) && msg.rt >= 0 && msg.rt <= 4 ? msg.rt : (await this.step()).rt;
-      await this.ctx.storage.put('room', { ms, sm, sz, rt });
+      const sr = Number.isFinite(msg.sr) && msg.sr >= 0 && msg.sr <= 4 ? msg.sr : (await this.step()).sr;
+      await this.ctx.storage.put('room', { ms, sm, sz, rt, sr });
       this.tellGroups(await this.step());
       return;
     }

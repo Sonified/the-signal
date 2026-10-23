@@ -28,8 +28,8 @@
 // stream and smooth are the room's own settings as the hall last told them
 // (the conductor's Stream and Smoothing: how often to send a batch, ms, and
 // the playback's margin past it, ms) and size, the conductor's Size (a
-// stroke's w, 0 until the hall has told one) and rotate (the conductor's Rotation, turns
-// a second, -1 until told); hand is this device's dealt brushes,
+// stroke's w, 0 until the hall has told one) and rotate and spin (the conductor's Feedback
+// rotation and Shape rotation, turns a second, -1 until told); hand is this device's dealt brushes,
 // { on, a, tiles }, as the hall last said ({t:'hand'}, on.hand).
 //
 // phase and round are what the hall last told (hello, group): the show's
@@ -88,7 +88,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
   const tok = token || deviceToken();
   const link = {
     you: 0, phase: 'solo', round: 1, conduct: false,
-    stream: 0, smooth: -1, size: 0, rotate: -1, hand: null,
+    stream: 0, smooth: -1, size: 0, rotate: -1, spin: -1, hand: null,
     group: new Set(), peers: new Set(), groups: null,
     send, setPhase, next, close
   };
@@ -128,6 +128,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         if (Number.isFinite(msg.sm)) link.smooth = msg.sm;
         if (Number.isFinite(msg.sz)) link.size = msg.sz;
         if (Number.isFinite(msg.rt)) link.rotate = msg.rt;
+        if (Number.isFinite(msg.sr)) link.spin = msg.sr;
         link.peers = new Set(msg.ids);
         tell('joined');
       } else if (msg.t === 'peer') {
@@ -140,6 +141,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         if (Number.isFinite(msg.sm)) link.smooth = msg.sm;
         if (Number.isFinite(msg.sz)) link.size = msg.sz;
         if (Number.isFinite(msg.rt)) link.rotate = msg.rt;
+        if (Number.isFinite(msg.sr)) link.spin = msg.sr;
         link.group = new Set(msg.ids);
         // every drawer's group, told to a conductor only
         link.groups = Array.isArray(msg.gs) ? msg.gs : null;

@@ -40,6 +40,7 @@ import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleWake } from './idle.js';
 import { MOTIF, QUANT, encodeStroke, decodeStroke, timesToQ } from '../touch/strokes.js';
 import { tapStep } from '../touch/hall.js';
+import { roomClockMs } from './room-clock.js';
 import { dealHand } from '../broadcast-worker/src/deal.js';
 import { seedOf, notesFor, nextBand } from './brush-notes.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
@@ -61,6 +62,25 @@ function brushSizeNow() {
 }
 // The turn of the marks, turns a second: the room's when the hall has told
 // one to a member, else this screen's own Rotation.
+// The turn of the shape itself, turns a second: the room's when the hall
+// has told one to a member, else this screen's own Shape rotation.
+export function brushSpinNow() {
+  const r = brushMember() && hallLink.spin >= 0 ? hallLink.spin : S.brushSpin;
+  return r > 0 ? (r < ROTATE_MAX ? r : ROTATE_MAX) : 0;
+}
+// A stamp's turn (radians) from the shared clock: its moment on this
+// screen's clock (key, ms, as brushNow reads) laid on the room's clock, or
+// on the wall clock outside a broadcast room, times the speed. Nothing but
+// the speed crosses the wire; every screen derives the same angle for the
+// same moment. off is sharedOffset(), taken once a frame.
+export function brushSpinAt(rate, key, off) {
+  const turns = ((key + off) / 1000 * rate) % 1;
+  return turns * Math.PI * 2;
+}
+export function brushSharedOffset() {
+  const ms = roomClockMs();
+  return (ms === ms ? ms : Date.now()) - clock();
+}
 export function brushRotateNow() {
   const r = brushMember() && hallLink.rotate >= 0 ? hallLink.rotate : S.brushRotate;
   return r > 0 ? (r < ROTATE_MAX ? r : ROTATE_MAX) : 0;
@@ -288,19 +308,22 @@ let started = false;
 export function setBrushStarted() { started = true; }
 
 // ---------- brush notes ----------
-// Each hand rings its bell when its stroke enters a band of the field
-// (core/brush-notes.js): the hand's own the moment it draws, a remote one as
-// its stroke plays out here, so every screen rings what it draws. The
-// bell itself is js/brush-bells.js, handed in (main.js) as bellHook(seed,
-// degree), on the page or across the audio link. Each identity's seed and
-// notes are worked out once.
+// Each hand rings a note when its stroke crosses a line between the field's
+// bands (core/brush-notes.js): the hand's own the moment it draws, a remote
+// one as its stroke plays out here, so every screen rings what it draws.
+// The start of a stroke only finds its band. A jump past several lines at
+// once rings each, in the path's order. The sound itself is
+// js/brush-bells.js (a bell with Brush bells on, a note with Brush notes,
+// both with both), handed in (main.js) as bellHook(seed, degree), on the
+// page or across the audio link. Each identity's seed and notes are worked
+// out once.
 let bellHook = null, handBand = -1;
 export function setBrushBell(fn) { bellHook = fn || null; }
 const voices = new Map();   // identity -> { seed, notes }
 function ringBand(cur, v, who) {
-  if (!bellHook || S.brushNotes !== true || !started) return cur < 0 ? -1 : cur;
+  if (!bellHook || (S.brushNotes !== true && S.brushTones !== true) || !started) return cur < 0 ? -1 : cur;
   const nb = nextBand(cur, v);
-  if (nb !== cur) {
+  if (cur >= 0 && nb !== cur) {
     let vc = voices.get(who);
     if (!vc) {
       if (voices.size > 256) voices.clear();
@@ -308,7 +331,9 @@ function ringBand(cur, v, who) {
       vc = { seed, notes: notesFor(seed) };
       voices.set(who, vc);
     }
-    bellHook(vc.seed, vc.notes[nb]);
+    // line k lies between bands k and k + 1
+    if (nb > cur) for (let k = cur; k < nb; k++) bellHook(vc.seed, vc.notes[k]);
+    else for (let k = cur - 1; k >= nb; k--) bellHook(vc.seed, vc.notes[k]);
   }
   return nb;
 }
@@ -361,7 +386,7 @@ export function brushHallGroup() {
 
 // ---------- the room's settings and the dealt brushes ----------
 // The conductor's Brush rows (core/schema-brush.js) are the room's: Stream,
-// Smoothing, Size and Rotation go to the hall as {t:'room', ms, sm, sz, rt}, and the dealt brushes
+// Smoothing, Size and the two rotations go to the hall as {t:'room', ms, sm, sz, rt, sr}, and the dealt brushes
 // as {t:'brushes', on, n, a, tiles}, the tiles the current Image set's
 // painted ones in sheet order (brushAtlas, so the hall deals only shapes
 // that draw; broadcast-worker/src/deal.js). dealTick, every frame, sends
@@ -374,10 +399,11 @@ function dealTick() {
   const ms = S.brushStream | 0, sm = S.brushSmooth | 0;
   const sz = brushSizeNow();
   const rt = brushRotateNow();
-  const room = ms + '/' + sm + '/' + sz + '/' + rt;
+  const sr = brushSpinNow();
+  const room = ms + '/' + sm + '/' + sz + '/' + rt + '/' + sr;
   if (room !== roomSent && ms >= 10 && ms <= 60 && sm >= 0 && sm <= 200) {
     roomSent = room;
-    hallLink.send({ t: 'room', ms, sm, sz, rt });
+    hallLink.send({ t: 'room', ms, sm, sz, rt, sr });
   }
   const set = kaleidoscopeSet(S.kaleidoSet).id;
   const on = S.brushDeal === true && !dealHold, n = Math.max(1, Math.min(8, S.brushDealN | 0));

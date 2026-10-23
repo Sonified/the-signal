@@ -1,28 +1,33 @@
 // Brush notes, the pure half: every drawing hand is a small bell, and the
-// field is four horizontal bands, each a note of that hand's own. When a
-// stroke's path enters a band the hand's bell rings at its note there
-// (js/brush-bells.js sounds it; core/brush.js watches the strokes).
+// field is five horizontal bands with a note of that hand's own on each of
+// the four lines between them. When a stroke's path crosses a line the
+// hand rings that line's note, as a bell, a note or both (js/brush-bells.js
+// sounds it; core/brush.js watches the strokes). Starting a stroke rings
+// nothing: a sweep from the bottom to the top crosses all four lines and
+// plays the hand's four notes.
 //
 // The scale: major scale degrees 1 2 3 5 7 8 9 10 12 14 15, one shape
 // (1, 2, 3, 5, 7) over two octaves and the double octave's root, eleven
 // pitches from C4 (ROOT_HZ, constant for now). Each hand is dealt four of
-// the eleven, ascending, one for each band from the bottom up, and a bell
-// of its own (the FM ratio, index and decay jittered about one bell patch),
+// the eleven, ascending, one for each line from the bottom up, and a bell
+// of its own (a whole number FM ratio, so it rings in tune, and its index
+// and decay jittered about one bell patch),
 // both seeded from the hand's room identity (its sticky id, the
 // broadcaster's own for the broadcasting screen), so every screen rings the
 // same bell at the same notes for the same person, through a reconnect.
 // Hands may share notes; some will.
 //
 // The bands are read off the wire's unit square (v down, 0 to 1, over the
-// field's centred square), so every screen agrees: band 0 the bottom
-// quarter (the lowest note), band 3 the top. A band is entered once: a path
-// must go HYST past a boundary before it counts as across, so a hand
-// resting on a line does not ring it over and over.
+// field's centred square), so every screen agrees: band 0 the bottom fifth,
+// band 4 the top, line k between bands k and k + 1 (line 0 the lowest
+// note). A line is crossed once: a path must go HYST past it before it
+// counts as across, so a hand resting on a line does not ring it over and
+// over.
 
 export const ROOT_HZ = 261.6256;     // C4
 export const DEGREES = [1, 2, 3, 5, 7, 8, 9, 10, 12, 14, 15];
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
-export const BANDS = 4, HYST = 0.02;
+export const BANDS = 5, LINES = BANDS - 1, HYST = 0.02;
 
 // A major scale degree (1 the root, 8 its octave, 15 the double octave)
 // in semitones above the root, and in Hz.
@@ -50,29 +55,48 @@ function rng(seed) {
   };
 }
 
-// The hand's four degrees, ascending: four of the eleven, by its seed.
+// The hand's four degrees, ascending, one per line: four of the eleven, by
+// its seed.
 export function notesFor(seed) {
   const r = rng(seed ^ 0x5bd1e995);
   const pool = DEGREES.slice();
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
-  return pool.slice(0, BANDS).sort((a, b) => a - b);
+  return pool.slice(0, LINES).sort((a, b) => a - b);
 }
 
-// The hand's bell: an FM pair about a bell patch (an inharmonic ratio near
-// 3.5, a bright index that falls away fast, a decay near two seconds), each
-// a little its own.
+// The hand's bell: an FM pair about a bell patch, each a little its own. The
+// ratio is a whole number (2, 3 or 4), so every partial is a harmonic of the
+// note and the bell rings in tune, as a glockenspiel's bar does rather than
+// a church bell's; a bright index that falls away fast, a decay near two
+// seconds, no detune.
+const RATIOS = [2, 3, 4];
 export function bellFor(seed) {
   const r = rng(seed ^ 0x27d4eb2f);
   return {
-    ratio: 3.5 * (0.94 + 0.12 * r()),
-    index: 2.2 + 1.6 * r(),
+    ratio: RATIOS[Math.floor(r() * RATIOS.length)],
+    index: 1.2 + 1.2 * r(),
     decay: 1.4 + 1.0 * r(),
-    modDecay: 0.18 + 0.2 * r(),
-    detune: (r() - 0.5) * 8          // cents
+    modDecay: 0.15 + 0.2 * r()
   };
 }
 
-// The band a point lies in (0 bottom .. 3 top), by v (0 top .. 1 bottom).
+// A note's shape, new for every strike (rand is Math.random on the page):
+// its whole length drawn between lo and hi seconds, in either order, and an
+// ADSR cut to fit it. A quick attack (1 to 4 % of the length, 3 to 30 ms),
+// a decay over 15 to 35 % to a sustain of 35 to 70 % of the peak, held,
+// then a release over the last 25 to 45 %; attack, decay and release
+// together never pass the length.
+export function noteShape(lo, hi, rand) {
+  const a = Math.min(lo, hi), b = Math.max(lo, hi);
+  const len = a + (b - a) * rand();
+  const attack = Math.max(0.003, Math.min(0.03, len * (0.01 + 0.03 * rand())));
+  const decay = len * (0.15 + 0.2 * rand());
+  const sustain = 0.35 + 0.35 * rand();
+  const release = len * (0.25 + 0.2 * rand());
+  return { len, attack, decay, sustain, release };
+}
+
+// The band a point lies in (0 bottom .. 4 top), by v (0 top .. 1 bottom).
 export function bandAt(v) {
   const b = BANDS - 1 - Math.floor((v < 0 ? 0 : v >= 1 ? 0.999999 : v) * BANDS);
   return b;
