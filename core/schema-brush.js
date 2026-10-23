@@ -12,10 +12,10 @@
 // control saves on change and comes back on reload.
 import { saveBrush } from './store.js';
 import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushRound, brushSetPhase, brushNext, brushPickAtlas, brushMember } from './brush.js';
-import { fadeLabel, fadeFromText, rateLabel, BRUSH_W } from './brush-stamps.js';
+import { fadeLabel, fadeFromText, rateLabel, BRUSH_W, ROTATE_MAX } from './brush-stamps.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 
-const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
+const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
 // The dealt brushes: off, four each (fifteen people take sixty of a set's
 // sixty-four tiles, none twice), and the follower screens' bottom buttons
 // hidden. The room's Stream and Smoothing, ms (the conductor's).
@@ -28,6 +28,7 @@ const DEF_NOTES = false;
 export function initBrushState(S) {
   if (typeof S.brushMotif !== 'number') S.brushMotif = DEF_MOTIF;
   if (typeof S.brushSize !== 'number') S.brushSize = DEF_SIZE;
+  if (typeof S.brushRotate !== 'number') S.brushRotate = DEF_ROTATE;
   if (typeof S.brushCopies !== 'number') S.brushCopies = DEF_COPIES;
   if (typeof S.brushFade !== 'number') S.brushFade = DEF_FADE;
   if (typeof S.brushRate !== 'number') S.brushRate = DEF_RATE;
@@ -41,7 +42,7 @@ export function initBrushState(S) {
 
 // What the record holds.
 export function brushStateOf(S) {
-  return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
+  return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushRotate: S.brushRotate, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes };
 }
@@ -54,6 +55,7 @@ export function applyBrushState(S, o) {
   const n = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(v)));
   if (Number.isFinite(o.brushMotif)) S.brushMotif = n(o.brushMotif, 0, 63);
   if (Number.isFinite(o.brushSize)) S.brushSize = n(o.brushSize, 1, 100);
+  if (Number.isFinite(o.brushRotate)) S.brushRotate = Math.max(0, Math.min(ROTATE_MAX, o.brushRotate));
   if (Number.isFinite(o.brushCopies)) S.brushCopies = n(o.brushCopies, 1, 24);
   if (Number.isFinite(o.brushFade)) S.brushFade = Math.max(0, Math.min(1, o.brushFade));
   if (Number.isFinite(o.brushRate)) S.brushRate = Math.max(0, Math.min(1, o.brushRate));
@@ -98,6 +100,17 @@ export const BRUSH_CONTROLS = [
     get: S => S.brushSize,
     set: (S, pos) => { S.brushSize = Math.max(1, Math.min(100, Math.round(pos))); saveBrush(); },
     formatAt: pos => String(pos),
+    visible: () => !brushMember()
+  },
+  // How fast the marks turn about the field's centre, in turns a second,
+  // 0 (still) to ROTATE_MAX (core/brush-stamps.js), a tenth of a turn a
+  // step. The room's, like Size: the conductor's goes to every member.
+  {
+    id: 'brushRotate', section: 'brush', label: 'Rotation', kind: 'slider',
+    min: 0, max: Math.round(ROTATE_MAX * 10), step: 1, def: Math.round(DEF_ROTATE * 10),
+    get: S => Math.round(S.brushRotate * 10),
+    set: (S, pos) => { S.brushRotate = Math.max(0, Math.min(Math.round(ROTATE_MAX * 10), Math.round(pos))) / 10; saveBrush(); },
+    formatAt: pos => pos === 0 ? 'Off' : (pos / 10).toFixed(1) + ' /s',
     visible: () => !brushMember()
   },
   {

@@ -45,7 +45,7 @@ import { seedOf, notesFor, nextBand } from './brush-notes.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
 import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
-import { BRUSH_W, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
+import { BRUSH_W, ROTATE_MAX, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
 
 // The wire's pace: a batch at least every flushMs() while the hand moves
 // (the room's Stream when the hall has told one, else FLUSH_MS), and never
@@ -58,6 +58,12 @@ const FLUSH_MS = 20, FLUSH_POINTS = 16;
 function brushSizeNow() {
   const z = brushMember() && hallLink.size > 0 ? hallLink.size : S.brushSize;
   return z >= 1 && z <= 100 ? z : BRUSH_W;
+}
+// The turn of the marks, turns a second: the room's when the hall has told
+// one to a member, else this screen's own Rotation.
+export function brushRotateNow() {
+  const r = brushMember() && hallLink.rotate >= 0 ? hallLink.rotate : S.brushRotate;
+  return r > 0 ? (r < ROTATE_MAX ? r : ROTATE_MAX) : 0;
 }
 function flushMs() { return hallLink && hallLink.stream > 0 ? hallLink.stream : FLUSH_MS; }
 // The hue the stroke carries on the wire (its h): this screen's identity,
@@ -355,7 +361,7 @@ export function brushHallGroup() {
 
 // ---------- the room's settings and the dealt brushes ----------
 // The conductor's Brush rows (core/schema-brush.js) are the room's: Stream,
-// Smoothing and Size go to the hall as {t:'room', ms, sm, sz}, and the dealt brushes
+// Smoothing, Size and Rotation go to the hall as {t:'room', ms, sm, sz, rt}, and the dealt brushes
 // as {t:'brushes', on, n, a, tiles}, the tiles the current Image set's
 // painted ones in sheet order (brushAtlas, so the hall deals only shapes
 // that draw; broadcast-worker/src/deal.js). dealTick, every frame, sends
@@ -367,10 +373,11 @@ function dealTick() {
   if (!brushConducting()) return;
   const ms = S.brushStream | 0, sm = S.brushSmooth | 0;
   const sz = brushSizeNow();
-  const room = ms + '/' + sm + '/' + sz;
+  const rt = brushRotateNow();
+  const room = ms + '/' + sm + '/' + sz + '/' + rt;
   if (room !== roomSent && ms >= 10 && ms <= 60 && sm >= 0 && sm <= 200) {
     roomSent = room;
-    hallLink.send({ t: 'room', ms, sm, sz });
+    hallLink.send({ t: 'room', ms, sm, sz, rt });
   }
   const set = kaleidoscopeSet(S.kaleidoSet).id;
   const on = S.brushDeal === true && !dealHold, n = Math.max(1, Math.min(8, S.brushDealN | 0));

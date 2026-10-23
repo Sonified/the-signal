@@ -42,6 +42,9 @@ const TAU = Math.PI * 2;
 // across; a stroke carries its w and a receiver draws whatever it says.
 export const SIDE_MAX = 0.24;
 export const BRUSH_W = 50;
+// The Rotation slider's top, turns a second: the whole trail turns about
+// the field's centre at up to this (gpu/brush.js), 0 is still.
+export const ROTATE_MAX = 4;
 // Stamps every this share of the motif's side, continuous: a twentieth, so
 // neighbours overlap by 95% and no edge between them can be told apart
 // (5 px apart for a 110 px motif on a laptop's field), a smooth ribbon. A

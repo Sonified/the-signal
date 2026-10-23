@@ -2,9 +2,10 @@
 // the hall's) drawn as motif tiles into a video feedback image of the
 // layer's own (feedback.js), which fades each frame by the Fade slider's
 // half-life (core/brush-stamps.js fadeHalfLife), and laid over the scene,
-// over the confetti and under the edge. The marks never stream or twist:
-// they fade where they were made, and only follow the field when the drawer
-// slides it aside (the image's centre and unit are the field's square, so
+// over the confetti and under the edge. The marks never stream. They fade
+// where they were made, turn about the field's centre at the Rotation
+// slider's speed (the feedback's twist; 0 leaves them still), and follow the
+// field when the drawer slides it aside (the image's centre and unit are the field's square, so
 // the trails ride the field as every feedback image does). The fade runs on
 // the frame's own clock, not the scene's motion, so marks die away and a
 // hand can draw whether the strobe runs or not.
@@ -54,7 +55,7 @@ import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './fe
 import { MOTIFS, LAYOUT_STD, LAYOUT_HI, bakeTag, bakeAtlasPixels, buildAtlasMips } from './atlas-bake.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
-import { brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
+import { brushRotateNow, brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
 import { noteSender, forgetIdle, activeSenders, bakeOrder, turnPlace } from '../core/brush-order.js';
 
@@ -400,6 +401,7 @@ export function createBrush(device, format, platform, opts) {
     if (!fbOn) { dropBaked(take); return; }
     fb.ensure(pixelW, pixelH, feedbackRes(S.fbResScale), feedbackKeep(S.fbResSwitch));
     params.keepHalfLife = fadeHalfLife(S.brushFade);
+    params.twistRate = brushRotateNow() * Math.PI * 2;
     params.cx = cx; params.cy = cy; params.unit = side;
     params.dt = dt > 0 ? dt : 0;
     if (nInst > 0) {
