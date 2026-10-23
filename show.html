@@ -31,6 +31,10 @@
   COMMANDS, each {t:'word', src, n, k, ...} (src the sender's id, n its
   count; NOT 'id', which is the control's id in a ctl):
     {k:'jump', i}  i 0-based          {k:'next'} / {k:'prev'}
+    {k:'hall', p, r}  a drawing cue (17 on): the hall's phase and round,
+        named outright; Presence must conduct a hall (?hall=<name>&conduct=
+        <key>) or nothing moves. Its reports carry the hall's answer back
+        (hall {p, r}, null while conducting none), which lights the cue.
     {k:'seek', f}  the playing cue tapped again: its video to share f (0..1)
     {k:'ctl', id, v}  v in the control's OWN position units (what
         byId(id).set takes in core/schema-audio.js / schema-slides.js):
@@ -346,6 +350,19 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
     "Shepard's Rise", 'Earthquake', 'Rotating Sun', 'Spherical Harmonics — hum along!', 'HARP Trailer', 'WISPR CME',
     'Touching the Sun', 'Ed Mitchell VR', 'QR + Sun 🌞', 'Guided Meditation 🎵🌞🎵'];
+  // The drawing cues, 17 on: each asks the hall Presence conducts for a
+  // phase outright ({k:'hall', p, r}, platform/show-remote.js), never a
+  // journey step. The words are the hall's (broadcast-worker/src/groups.js);
+  // the show's arc is the SCRIPT's, Half Room the side door outside it.
+  const DRAW = [
+    { label: 'Drawing — Solo ✏️', p: 'solo', r: 1 },
+    { label: 'Drawing — Pairs', p: 'pairs', r: 1 },
+    { label: 'Drawing — Pairs 2', p: 'pairs', r: 2 },
+    { label: 'Drawing — Fours', p: 'quads', r: 1 },
+    { label: 'Drawing — Fours 2', p: 'quads', r: 2 },
+    { label: 'Drawing — Half Room', p: 'halves', r: 1 },
+    { label: 'Drawing — Whole Room 🌊', p: 'all', r: 1 }
+  ];
 
   // ---------- the password (remote.html's, as is) ----------
   let KEY = '';
@@ -428,6 +445,33 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     $('cues').appendChild(b);
     return b;
   });
+  // The drawing cues, under the journey's. A tap only asks; Presence's
+  // status reports ride the hall's answer back (m.hall {p, r}), which is
+  // what lights the matching cue gold — beside the slide cue's own gold,
+  // since the slides play on under the drawing. No hall in the report (the
+  // laptop was not opened conducting one) and the whole block dims.
+  let hallNow = null;
+  const drawEls = DRAW.map((d, j) => {
+    const b = document.createElement('button');
+    b.className = 'cue';
+    b.innerHTML = '<div class="prog"></div><span class="num">' + (CUES.length + j + 1) + '</span><span class="cue-label"></span>';
+    b.querySelector('.cue-label').textContent = d.label;
+    b.addEventListener('click', () => {
+      b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap');
+      send({ k: 'hall', p: d.p, r: d.r });
+    });
+    $('cues').appendChild(b);
+    return b;
+  });
+  function drawHall() {
+    drawEls.forEach((b, j) => {
+      const d = DRAW[j];
+      b.classList.toggle('now', !!hallNow && hallNow.p === d.p && hallNow.r === d.r);
+      b.classList.toggle('past', !hallNow);
+    });
+  }
+  drawHall();
+
   let shownNow = -2;
   function drawCues() {
     const now = statusStep !== null ? statusStep : tapped;
@@ -908,6 +952,8 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     $('showBar').style.width = (m.n > 0 && statusStep >= 0 ? (statusStep + 1) / m.n * 100 : 0) + '%';
     drawCues();
     setProg(m.vp);
+    hallNow = m.hall && typeof m.hall.p === 'string' ? { p: m.hall.p, r: +m.hall.r || 1 } : null;
+    drawHall();
     const sl = m.sl || {};
     const now = performance.now();
     for (const f of FADERS) {

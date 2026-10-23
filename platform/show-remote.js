@@ -33,6 +33,10 @@
 //                       share f (0..1) of its length (gpu/slides.js seekSlide)
 //   {k:'clean'}         the title tapped: the drawer and every window shut
 //                       (main.js's clearScreen hook), only the playback left
+//   {k:'hall', p, r}    a drawing cue: the hall's phase (solo, master, pairs,
+//                       quads, halves, all) and round (1 or 2) named outright
+//                       (core/brush.js brushShowPhase); only a screen opened
+//                       conducting a hall (?hall=<name>&conduct=<key>) moves
 //   {k:'ctl', id, v}    a control, by schema id, v in the CONTROL'S OWN
 //                       position units, exactly what byId(id).set takes:
 //                         vol          0..100   the FADER's position, on a
@@ -149,10 +153,14 @@ import { idleTouch } from '../js/idle-ahead.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
+import { brushShowPhase, brushConducting, brushPhase, brushRound } from '../core/brush.js';
 import { ampToPos } from '../js/util.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume']);
+// the hall's phases (broadcast-worker/src/groups.js PHASES, which the app
+// never imports), the drawing cues' words
+const HALL_PHASES = new Set(['solo', 'master', 'pairs', 'quads', 'halves', 'all']);
 const STATUS_MS = 250;
 const setLive = (c, value) => journeyPerformanceControl(c.id, () => c.set(S, value));
 // The finale row's faders (and SUN and WIND beside SCREEN): per fader, the
@@ -289,6 +297,10 @@ export function initShowRemote(hooks = {}) {
     else if (m.k === 'seek') seekSlide(+m.f);
     else if (m.k === 'next') journeyStepBy(1);
     else if (m.k === 'prev') journeyStepBy(-1);
+    // a drawing cue: the hall's phase and round, named outright (core/brush.js
+    // brushShowPhase; nothing moves unless this screen conducts a hall, and
+    // the hall's answer is what lights the chips and the iPad's cue)
+    else if (m.k === 'hall') { if (HALL_PHASES.has(m.p)) brushShowPhase(m.p, m.r === 2 ? 2 : 1); }
     else if (m.k === 'ctl') {
       if (m.id === 'screenGate') {
         // not a schema control: live only, never saved (js/state.js)
@@ -377,6 +389,9 @@ export function initShowRemote(hooks = {}) {
     return {
       t: 'state', k: 'step',
       i: journeyPlayIdx(), n: journeyCount(), p: journeyPlaying(),
+      // the hall this screen conducts: its phase and round, lighting the
+      // iPad's drawing cues; null (the cues dim) while it conducts none
+      hall: brushConducting() ? { p: brushPhase(), r: brushRound() } : null,
       vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000,
         f: pr.f || S.slideFile, l: pr.l === true } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'),

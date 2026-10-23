@@ -40,6 +40,7 @@ import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleWake } from './idle.js';
 import { MOTIF, QUANT, encodeStroke, decodeStroke, timesToQ } from '../touch/strokes.js';
 import { tapStep } from '../touch/hall.js';
+import { dealHand } from '../broadcast-worker/src/deal.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
 import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
@@ -314,20 +315,45 @@ function dealTick() {
   hallLink.send({ t: 'brushes', on: 1, n, a: set, tiles: Array.from(a.tiles.subarray(0, a.count)) });
 }
 
-// This device's hand as the hall dealt it (touch/hall.js on.hand), and the
-// set of the tile picked from it, 0 while the pick is the atlas picker's.
-// A hand is a quick palette, not a lock: the conductor's atlas picker (and
-// a member's, should it open the drawer) still picks any tile.
+// This screen's hand: in a broadcast room the room's deal (touch/hall.js
+// on.hand; the broadcasting screen's Show brushes deals the whole room,
+// every hand unique), and on a screen in no room its own deal of the same
+// shape: the moment Show brushes is on, Brushes each tiles of the current
+// set's painted ones, from one shuffle with this page's own seed
+// (broadcast-worker/src/deal.js, the hall's own law). Until the set's atlas
+// is in, the hand has no tiles yet but says how many buttons it will have
+// (pending), so the row shows its places at once. handSet is the set of
+// the tile picked from it, 0 while the pick is the atlas picker's. A hand is
+// a quick palette, not a lock: the drawer's atlas picker still picks any
+// tile.
 let handSet = 0;
+const LOCAL_SEED = (Math.random() * 4294967296) >>> 0;
+const local = { key: -1, hand: { on: 1, a: 0, tiles: [], pending: 0 } };
 export function brushHallHand(h) {
   // the deal stopped or changed: a pick from the old hand goes back to the
   // atlas picker's tile
   if (!h || !h.tiles.includes(S.brushMotif | 0) || h.a !== handSet) handSet = 0;
-  // the hall told the deal off while the conductor has it on: say it again
+  // the room told the deal off while the broadcaster has it on: say it again
   if (!h && brushConducting() && S.brushDeal === true) dealSent = -1;
   idleWake('the hand');
 }
-export function brushHand() { return hallLink && hallLink.hand && hallLink.hand.tiles.length ? hallLink.hand : null; }
+export function brushHand() {
+  if (hallLink && hallState === 'joined') return hallLink.hand && hallLink.hand.tiles.length ? hallLink.hand : null;
+  if (S.brushDeal !== true) return null;
+  const set = kaleidoscopeSet(S.kaleidoSet).id, n = Math.max(1, Math.min(8, S.brushDealN | 0));
+  const a = brushAtlas, ready = a.ready && a.set === set;
+  const key = ready ? set * 100 + n : -(set * 100 + n);
+  if (key !== local.key) {
+    local.key = key;
+    local.hand = ready
+      ? { on: 1, a: set, tiles: dealHand(Array.from(a.tiles.subarray(0, a.count)), LOCAL_SEED, 0, n).hand, pending: 0 }
+      : { on: 1, a: set, tiles: [], pending: n };
+    if (ready && handSet && !local.hand.tiles.includes(S.brushMotif | 0)) handSet = 0;
+  }
+  // the current set's atlas, to deal from, while it is not in yet
+  if (!ready) a.want = set;
+  return local.hand;
+}
 export function brushPickHand(i) {
   const h = brushHand();
   if (!h || i < 0 || i >= h.tiles.length) return;
@@ -340,8 +366,12 @@ export function brushHandPicked(i) {
 }
 // the atlas picker's own pick lets the hand's go
 export function brushPickAtlas() { handSet = 0; }
-// A member of the hall who is not its conductor (the follower buttons'
-// rule, main.js).
+// The hand's row's own atlas (the UI renderer's second picture,
+// gpu/brush.js publishHand): which set it shows, once in. want is the set
+// the row asked for this frame.
+export const brushHandAtlas = { set: 0, ready: false, padUV: 0, innerUV: 0, want: 0 };
+// A follower in the broadcast room (joined, not its broadcaster: the
+// follower buttons' rule, main.js).
 export function brushMember() { return !!hallLink && hallState === 'joined' && hallLink.conduct !== true; }
 
 // The conductor's phase row (core/schema-brush.js): shown only while this
@@ -359,6 +389,12 @@ export function brushSetPhase(p) {
   hallLink.setPhase(q, r);
 }
 export function brushNext() { if (brushConducting()) hallLink.next(); }
+// The show remote's drawing cues (platform/show-remote.js {k:'hall', p, r}):
+// the phase and its round named outright, no retap walk. A click only asks,
+// as the chips do; the hall's answer lights the chips and the iPad alike.
+export function brushShowPhase(p, r) {
+  if (brushConducting()) hallLink.setPhase(p, r);
+}
 
 // ---------- remote strokes, played back ----------
 // A stroke from the hall or the broadcast is walked the moment a batch
@@ -477,6 +513,10 @@ const emitRemote = (u, v, angle, copy) => {
 export function brushTake(msg, from) {
   const s = decodeStroke(msg);
   if (!s || s.k !== MOTIF) return;
+  // the broadcaster's own strokes reach a follower by the broadcast
+  // (core/broadcast.js, its watcher gating), every phase: the room's copy,
+  // marked cd, is let go here so none is drawn twice
+  if (from === undefined && msg.cd === 1) return;
   const key = from !== undefined ? from : msg.id;
   const now = clock();
   let i = -1;
@@ -573,8 +613,8 @@ export function brushStatusLine() {
   const now = Date.now();
   if (now - statusAt < 500) return statusStr;
   statusAt = now;
-  const st = hallState === 'joined' ? hallLink.peers.size + ' here, ' + hallLink.phase + (hallLink.conduct ? ', conducting' : '')
+  const st = hallState === 'joined' ? hallLink.peers.size + ' here, ' + hallLink.phase + (hallLink.conduct ? ', broadcasting' : '')
     : hallState === 'offline' ? 'offline, drawing alone' : 'joining';
-  statusStr = 'Hall ' + hallName + ': ' + st;
+  statusStr = 'Room ' + hallName + ': ' + st;
   return statusStr;
 }
