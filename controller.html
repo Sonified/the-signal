@@ -171,10 +171,11 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-/* HEART, HUM and TXT carry on the SCREEN, BREATH, WIND row. The six share the
-   width the finale row's five take (5 x 72 + 4 x 10 = 400px), so each is
-   58px (6 x 58 + 5 x 10 = 398px): the row ends where the finale row does,
-   though its columns no longer sit under the finale's. Their
+/* HEART, HUM and TXT carry on the SCREEN, BREATH, WIND row. Every fader in
+   the middle is 58px, 10px apart, so this row of six (6 x 58 + 5 x 10 =
+   398px) and the finale row's six above it are the same width, column under
+   column. A fader added to either row widens it by 68px: check it still
+   clears the edge's play/pause block and faders on the iPad. Their
    box starts where SCREEN's does and is shifted right by three faders and
    their gaps (3 x (58 + 10) = 204px); a relative shift, so it never widens
    the page's columns, and the box itself is 0 wide for the same reason (see
@@ -190,17 +191,17 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 #leftFader { grid-row: 2 / 4; grid-column: 1; min-height: 282px; padding-top: 122px; display: flex; gap: 10px; justify-self: start; width: 0; }
 #leftFader .fader { width: 58px; flex: none; }
 #midFaders { grid-column: 1; }
-/* The finale row: six more of the same 72px faders in the band above
+/* The finale row: six more of the same 58px faders in the band above
    SCREEN, HEART and HUM, starting over SCREEN and running right. Its box
    ends 12px above their labels (the middle's 178px top row, its 12px gap and
    their 122px drop, less 12), and starts 48px down, clear of Presence's
    status line; it runs on past #middle into the edge's empty left half, as
-   #midFaders does. Its own box is 0 wide, so its 482px of faders spill
+   #midFaders does. Its own box is 0 wide, so its 398px of faders spill
    out visibly instead of widening the page's columns (the cues and the
    edge both size from the stage's content). */
 #topFaders { grid-row: 1 / 3; grid-column: 1; align-self: start; width: 0; height: 300px; padding-top: 48px;
   display: flex; gap: 10px; }
-#topFaders .fader { width: 72px; flex: none; }
+#topFaders .fader { width: 58px; flex: none; }
 #edge { width: min(100%, 460px); min-height: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
 /* Presence's status and the show's bar across the whole stage, from the
    finale row's left edge (DRONE's) to the play button's right, in the strip
@@ -228,7 +229,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 #playpause.paused .ic-play { display: block; }
 #faders { min-height: 160px; width: 50%; margin-left: auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .fader { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; }
-.fader .lab { text-align: center; font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+.fader .lab { text-align: center; font-size: 13px; font-weight: 700; letter-spacing: .08em; white-space: nowrap; overflow: hidden; }
 .fader .track { position: relative; flex: 1; min-height: 120px; border-radius: 12px; background: #0f1219;
   border: 2px solid var(--line); overflow: hidden; touch-action: none; }
 .fader .fill { position: absolute; left: 0; right: 0; bottom: 0; opacity: .85; }
@@ -372,7 +373,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.04';
+  const VERSION = '3.05';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
@@ -764,6 +765,20 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     track.addEventListener('pointercancel', up);
     f.draw();
   }
+  // A label wider than its fader (AMBIENCE in 58px) steps down in size until
+  // it fits, so a fader added or renamed never spills into its neighbour.
+  const fitLabels = () => {
+    for (const lab of document.querySelectorAll('.fader .lab')) {
+      lab.style.fontSize = ''; lab.style.letterSpacing = '';
+      if (lab.scrollWidth <= lab.clientWidth) continue;
+      lab.style.letterSpacing = '0';
+      let px = 13;
+      while (lab.scrollWidth > lab.clientWidth && px > 8) { px -= 0.5; lab.style.fontSize = px + 'px'; }
+    }
+  };
+  requestAnimationFrame(fitLabels);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitLabels);
+  addEventListener('resize', fitLabels);
 
   // Explicit performance reset; startup and authored cue values stay as
   // they are. Send every value even if its local readout already matches.
