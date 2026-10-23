@@ -17,6 +17,7 @@
 import { save } from './store.js';
 import { idleWake } from './idle.js';
 import { subDrawer } from './schema-visual.js';
+import { DEF_QR_WHICH, qrWhichOf } from './schema-sun.js';
 
 // The show's videos, in running order: the file name (stored on S as the
 // dropdown's value, so it reads plainly in a saved journey) and its label.
@@ -293,6 +294,18 @@ export const SLIDES_CONTROLS = [
     set: (S, pos) => { S.slideRate = fit(posToRate(pos), 0, 2); save(); },
     formatAt: pos => rateText(posToRate(pos)),
     parse: (S, text) => rateToPos(parseFloat(text)),
+  },
+  {
+    // Which code the Sun QR shows (gpu/sun-qr.js): meditatewiththesun.com's
+    // or the follower's (presence.now.audio/?follow=win), in one place, a
+    // change crossfading. The field is the sun's (schema-sun.js).
+    id: 'sunQrWhich', section: 'slides', label: 'QR code', kind: 'segment', def: DEF_QR_WHICH,
+    options: [
+      { value: 'mwts',   label: 'Meditate with the Sun', domId: null },
+      { value: 'follow', label: 'Follow',                domId: null }
+    ],
+    get: S => qrWhichOf(S.sunQrWhich),
+    set: (S, v) => { S.sunQrWhich = qrWhichOf(v); save(); }
   }
 ];
 

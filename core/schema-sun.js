@@ -48,10 +48,12 @@ const DEF_STARS = true;
 const DEF_QR_ON = false;
 // Which code it shows (gpu/sun-qr.js): meditatewiththesun.com's, or the one
 // that brings a phone into this show as a follower (presence.now.audio
-// ?follow=win). Both sit in the same place; a change crossfades.
+// ?follow=win). Both sit in the same place; a change crossfades. The field
+// is the sun's (it rides with the sun state); its row is the Slides
+// section's (schema-slides.js), beside the show's other picks.
 const QR_WHICH = ['mwts', 'follow'];
-const DEF_QR_WHICH = 'mwts';
-const qrWhichOf = v => QR_WHICH.indexOf(v) >= 0 ? v : DEF_QR_WHICH;
+export const DEF_QR_WHICH = 'mwts';
+export const qrWhichOf = v => QR_WHICH.indexOf(v) >= 0 ? v : DEF_QR_WHICH;
 // What drives the Speed's, Feedback Amount's and Opacity's variances: the
 // room-timed clock, the strobe or the breath. The breath by default.
 const DEF_DRIVE = 'breath';
@@ -755,15 +757,6 @@ export const SUN_CONTROLS = [
     id: 'sunQrOn', section: 'sun', label: 'Sun QR', kind: 'toggle', def: DEF_QR_ON,
     get: S => !!S.sunQrOn,
     set: (S, on) => { S.sunQrOn = !!on; save(); }
-  },
-  {
-    id: 'sunQrWhich', section: 'sun', label: 'QR code', kind: 'segment', def: DEF_QR_WHICH,
-    options: [
-      { value: 'mwts',   label: 'Meditate with the Sun', domId: null },
-      { value: 'follow', label: 'Follow',                domId: null }
-    ],
-    get: S => qrWhichOf(S.sunQrWhich),
-    set: (S, v) => { S.sunQrWhich = qrWhichOf(v); save(); }
   },
   {
     // A multiplier on the art's authored size, 25% to 200%. Positions go in
