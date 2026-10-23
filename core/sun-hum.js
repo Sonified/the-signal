@@ -67,6 +67,7 @@ let anchorPos = 0, anchorTime = 0, pausedPos = 0;
 let volume = 0.9;                 // the hum's own gain, 0..2
 let gate = 1;                     // the mix gate's mute and solo, 0 or 1 (setGate)
 let duckMul = 1;                  // the show remote's Duck, 0..1 (setHumDuck)
+let mwtsMul = 1;                  // the MWTS master, 0..1 (setMwts)
 let verbMix = 0.3;                // wet/dry into the music room (setReverbMix)
 
 // The music room (js/room.js), handed over by setHumBus: its context and
@@ -235,8 +236,8 @@ function teardown() {
   roomPlugged = false;
 }
 
-// The channel's level: the hum's volume, its mix gate and the Duck.
-const chanLevel = () => volume * gate * duckMul;
+// The channel's level: the hum's volume, its mix gate, the Duck and MWTS.
+const chanLevel = () => volume * gate * duckMul * mwtsMul;
 
 function hold(param, t) {
   if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
@@ -501,6 +502,17 @@ export function setCutoffHz(hz, tau = 0.01) {
 export function setVolume(v) {
   if (v === volume) return;
   volume = v;
+  if (chan) chan.gain.setTargetAtTime(chanLevel(), now(), 0.02);
+}
+
+/** The MWTS master (the controller's MWTS fader, S.mwtsVolume): a
+    multiplier, 0..1, on the hum's whole contribution, the same ride as the
+    Duck's. It is a shared sun field, so the broadcast carries it and every
+    follower's hum fades with the room's phones. */
+export function setMwts(v) {
+  v = typeof v === 'number' && v === v ? (v < 0 ? 0 : v > 1 ? 1 : v) : 1;
+  if (v === mwtsMul) return;
+  mwtsMul = v;
   if (chan) chan.gain.setTargetAtTime(chanLevel(), now(), 0.02);
 }
 

@@ -167,8 +167,11 @@ const NUM = [
   ['sunHumVerbVarPeriodOff', 0, 1, 0,    false],
   // meditatewiththesun.com's master volume: every page opened with
   // ?event=<this broadcast session's name> fades its sound to it (that
-  // site's event.js reads it off the broadcast snapshot). Nothing here
-  // plays it; it only rides presets and the broadcast.
+  // site's event.js reads it off the broadcast snapshot). Here it also
+  // scales the Sun hum (core/sun-hum.js setMwts, via syncHum) on this
+  // screen and every broadcast follower's, so the fader rides the room's
+  // phones and the rotational hum as one; it rides presets and the
+  // broadcast as any sun field.
   ['mwtsVolume',         0,   1,   1,    false],
   // The show's QR code's size (gpu/sun-qr.js), a multiplier on the art's
   // authored size (canvas height * 553 / 1080 at 1). It is the scene, so it
@@ -330,6 +333,7 @@ const rateToPos = r => r === r ? Math.round(Math.min(1, Math.max(0, Math.log(r /
 function syncHum(S) {
   hum.setVolume(S.sunHumAmp);
   hum.setGate(chanGate('hum'));
+  hum.setMwts(S.mwtsVolume);
   hum.setCutoffHz(humHz(typeof S.effSunHumCutoff === 'number' ? S.effSunHumCutoff : S.sunHumCutoff));
   hum.setRate(humRate(S.sunHumRate) * HUM_RETUNE);
   hum.setReverbMix(typeof S.effSunHumVerb === 'number' ? S.effSunHumVerb : S.sunHumVerb);
@@ -732,7 +736,7 @@ export const SUN_CONTROLS = [
     parent: 'sunMwtsDrawer',
     min: 0, max: 100, step: 1, def: 100,
     get: S => Math.round(S.mwtsVolume * 100),
-    set: (S, pos) => { S.mwtsVolume = fit(pos / 100, 0, 1, false); save(); },
+    set: (S, pos) => { S.mwtsVolume = fit(pos / 100, 0, 1, false); save(); syncHum(S); },
     formatAt: pos => pos + '%'
   },
 
