@@ -1,14 +1,19 @@
 // A fixed dark backing whose opacity arrives separately behind each letter.
-// Each letter holds its own level across its whole box and runs out past it
-// over a lead of one line height, so a letter is never half-backed as it
-// arrives and the front of the dark is a soft run, not a wall at the
-// letter's centre. Neighbouring letters' levels meet by taking the higher,
-// so the dark never doubles where two overlap, and the box's size never
-// changes as the letters fade. The outermost letters hold their level on
-// out to the panel's edge, and between lines the dark crossfades through
-// the gap.
+// Each letter holds its own level across its whole box, and the level runs
+// straight from one letter to the next across the gap (so two lit letters
+// never dip between them, a word space included). Past a lit letter the
+// dark also runs out smoothly over a lead sized from the line height and the
+// panel's own feather, so the front of an arrival is as soft as the panel's
+// edges, never a wall at the letter. Where the two rules overlap the higher
+// level wins, so dark never doubles and the box's size never changes as the
+// letters fade. The outermost letters hold their level on out to the
+// panel's edge, and between lines the dark crossfades through the gap.
 const MAX_LETTERS = 4096, MAX_LINES = 16;
 const BLACK = new Float32Array([0, 0, 0, 1]);
+// knots along a run-out, as shares of its lead; the ease between them is
+// laid in by evaluating the smooth curve at each
+const RUN = [0.25, 0.5, 0.75, 1];
+const smooth01 = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
 
 export class TextPanel {
   constructor() {
@@ -17,7 +22,7 @@ export class TextPanel {
     this.lines = new Float32Array(MAX_LINES * 6); // first, count, x0, y0, x1, y1
     this.used = new Int32Array(MAX_LINES);
     // each line's breakpoints, sorted: where its level stops being straight
-    this.cuts = new Float64Array(MAX_LETTERS * 4);
+    this.cuts = new Float64Array(MAX_LETTERS * (2 + 2 * RUN.length));
     this.cutAt = new Int32Array(MAX_LINES);
     this.cutN = new Int32Array(MAX_LINES);
     this.lead = new Float64Array(MAX_LINES);
@@ -60,22 +65,24 @@ export class TextPanel {
     this.count++;
   }
 
-  // Line k's breakpoints into this.cuts, sorted: for each letter that has
-  // any level, the foot and shoulder of its run-out on either side (the
-  // outermost letters have none outward, they hold on to the edge). Between
-  // two breakpoints every letter's level is straight, so the strips cut here
+  // Line k's breakpoints into this.cuts, sorted: every letter's box edges,
+  // and for each letter that has any level the knots of its run-out on either
+  // side (the outermost letters have none outward, they hold on to the edge).
+  // Between two breakpoints the level is straight, so the strips cut here
   // follow the envelope.
-  _prepare(k, at) {
+  _prepare(k, at, blur) {
     const l = this.lines, p = this.letters, o = k * 6, c = this.cuts;
     const first = l[o], n = l[o + 1];
-    const lead = this.lead[k] = Math.max(1, l[o + 5] - l[o + 3]);
+    const lead = this.lead[k] = Math.max(1, l[o + 5] - l[o + 3]) + 2 * blur;
     let m = at;
     for (let j = 0; j < n; j++) {
-      if (p[(first + j) * 3 + 2] <= 0.001) continue;
       const x0 = p[(first + j) * 3], x1 = p[(first + j) * 3 + 1];
-      if (j > 0) c[m++] = x0 - lead;
       c[m++] = x0; c[m++] = x1;
-      if (j < n - 1) c[m++] = x1 + lead;
+      if (p[(first + j) * 3 + 2] <= 0.001) continue;
+      for (let r = 0; r < RUN.length; r++) {
+        if (j > 0) c[m++] = x0 - lead * RUN[r];
+        if (j < n - 1) c[m++] = x1 + lead * RUN[r];
+      }
     }
     for (let i = at + 1; i < m; i++) {   // nearly sorted already
       const v = c[i];
@@ -87,21 +94,32 @@ export class TextPanel {
     return m;
   }
 
-  // Line k's level at x: the highest of its letters' levels, each full over
-  // its own box and running out linearly over the lead past either side.
+  // Line k's level at x: straight through each letter's level across its box
+  // and on to its neighbour's across the gap, or a lit letter's smooth
+  // run-out past its box, whichever is higher.
   _env(k, x) {
     const p = this.letters, o = k * 6;
     const first = this.lines[o], n = this.lines[o + 1], lead = this.lead[k];
     let best = 0;
     for (let j = 0; j < n; j++) {
       const a = p[(first + j) * 3 + 2];
-      if (a <= best) continue;
       const x0 = p[(first + j) * 3], x1 = p[(first + j) * 3 + 1];
-      let d = 0;
-      if (x < x0) d = j === 0 ? 0 : x0 - x;
-      else if (x > x1) d = j === n - 1 ? 0 : x - x1;
-      const t = a * (1 - d / lead);
-      if (t > best) best = t;
+      if (x < x0) {
+        if (j === 0) { if (a > best) best = a; }          // held out to the edge
+        else if (a > 0) { const t = a * (1 - smooth01((x0 - x) / lead)); if (t > best) best = t; }
+      } else if (x <= x1) {
+        if (a > best) best = a;
+      } else {
+        if (j === n - 1) { if (a > best) best = a; }
+        else {
+          const nx0 = p[(first + j + 1) * 3], na = p[(first + j + 1) * 3 + 2];
+          if (x < nx0) {                                   // across the gap
+            const g = a + (na - a) * (x - x1) / (nx0 - x1);
+            if (g > best) best = g;
+          }
+          if (a > 0) { const t = a * (1 - smooth01((x - x1) / lead)); if (t > best) best = t; }
+        }
+      }
     }
     return best;
   }
@@ -185,7 +203,7 @@ export class TextPanel {
       bx1 = Math.max(bx1, l[o + 4]); by1 = Math.max(by1, l[o + 5]);
     }
     if (!m) return;
-    for (let j = 0, at = 0; j < m; j++) at = this._prepare(used[j], at);
+    for (let j = 0, at = 0; j < m; j++) at = this._prepare(used[j], at, blur);
     const reach = blur >= 1 ? 3 * blur + 1 : 1;
     dl.pushAlpha(strength);
     if (perLine) {

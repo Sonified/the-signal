@@ -295,7 +295,9 @@ fn shadeRect(in: VOut, fragXY: vec2f) -> vec4f {
     // (two letter centres) and between its top and bottom edges (its own
     // line's level and the next line's), so the dark crossfades through the
     // gap between lines instead of jumping at the band seam.
-    let u = smoothstep(in.uv01.x, in.uv01.y, in.local.x);
+    // linear along the strip: the panel cuts strips at every knot of its level
+    // curve, so an eased strip would only add flat steps along a ramp
+    let u = clamp((in.local.x - in.uv01.x) / max(in.uv01.y - in.uv01.x, 0.0001), 0.0, 1.0);
     let v = smoothstep(in.borderColor.r, in.borderColor.g, in.local.y);
     let aTop = mix(in.uv01.z, in.uv01.w, u);
     let aBottom = mix(in.borderColor.b, in.borderColor.a, u);
