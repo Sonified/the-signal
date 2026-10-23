@@ -53,7 +53,7 @@
           heartMaster 0..100 (the Heartbeat's Master, %, its sound and its
             flash together: HEART)
           mwtsVolume 0..100 (meditatewiththesun.com's Master volume, %, the
-            phones following the broadcast: HUMVOL)
+            phones following the broadcast: HUM)
           screenGate 0..100 (the room's picture's master brightness, %, 0
             black, live only: SCREEN)
           finaleDrone, finalePiano, finaleChoir, finaleAmb 0..100 (the
@@ -82,7 +82,7 @@
   four: SCREEN (the picture's master brightness, down to black), SUN beside
   it (the Sun's speed, its variance and its breath together), WIND beside
   that (the Sun's feedback, the rings and the flowers), HEART (the
-  Heartbeat's Master), then HUMVOL (meditatewiththesun.com's volume), one
+  Heartbeat's Master), then HUM (meditatewiththesun.com's volume), one
   row 10px apart. Above them, column for column, the finale row: five of
   the same faders, DRONE (the drone file, the tone and the
   clouds together), PIANO, CHOIR, AMBIENCE, and ROTSPD (the Sun hum's
@@ -163,8 +163,8 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-/* HEART and HUMVOL carry on the SCREEN, SUN, WIND row: HEART under
-   AMBIENCE, HUMVOL under ROTSPD, the finale row's fourth and fifth columns. Their
+/* HEART and HUM carry on the SCREEN, SUN, WIND row: HEART under
+   AMBIENCE, HUM under ROTSPD, the finale row's fourth and fifth columns. Their
    box starts where SCREEN's does and is shifted right by three faders and
    their gaps (3 x (72 + 10) = 246px); a relative shift, so it never widens
    the page's columns, and the box itself is 0 wide for the same reason (see
@@ -181,7 +181,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 #leftFader .fader { width: 72px; flex: none; }
 #midFaders { grid-column: 1; }
 /* The finale row: five more of the same 72px faders in the band above
-   SCREEN, HEART and HUMVOL, starting over SCREEN and running right. Its box
+   SCREEN, HEART and HUM, starting over SCREEN and running right. Its box
    ends 12px above their labels (the middle's 178px top row, its 12px gap and
    their 122px drop, less 12), and starts 48px down, clear of Presence's
    status line; it runs on past #middle into the edge's empty left half, as
@@ -605,7 +605,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // meditatewiththesun.com's Master volume: the phones in the room
     // following the broadcast fade their sound to it (core/schema-sun.js
     // mwtsVolume), linear 0..100%.
-    { id: 'mwtsVolume', key: 'mw', label: 'HUMVOL', color: '#ff9f43', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' },
+    { id: 'mwtsVolume', key: 'mw', label: 'HUM', color: '#ff9f43', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' },
     // The finale row, above those three, left to right: DRONE, PIANO,
     // CHOIR, AMBIENCE, ROTSPD. The four levels each their own 0..100%, which the laptop lays linearly
     // onto its levels, silent at 0 and the finale's own at 100%
@@ -621,7 +621,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     { id: 'finaleChoir', key: 'ch', label: 'CHOIR', color: '#b48cff', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' },
     // AMBIENCE: Ambience level, 18% at the top
     { id: 'finaleAmb', key: 'am', label: 'AMBIENCE', color: '#7ddc8a', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' },
-    // HUM: the Sun hum's Speed, 1x at the bottom and 2x at the top, even
+    // ROTSPD: the Sun hum's Speed, 1x at the bottom and 2x at the top, even
     // in pitch (1.41x halfway), as its own Speed slider moves
     { id: 'finaleHum', key: 'hu', label: 'ROTSPD', color: '#ff7e47', max: 100, def: 0, box: 'topFaders',
       fmt: p => Math.pow(2, p / 100).toFixed(2) + '×' }
@@ -677,7 +677,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     lpf: 1000, hpf: 0, slideRate: 500, vol: 100,
     finaleDrone: 0, finalePiano: 0, finaleChoir: 0, finaleAmb: 0,
     finaleHum: 0, finaleSun: 0, finaleWind: 0, heartMaster: 0,
-    screenGate: 100, mwtsVolume: 100
+    screenGate: 100, mwtsVolume: 0
   };
   $('defaults').onclick = () => {
     const now = performance.now();
