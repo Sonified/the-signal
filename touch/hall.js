@@ -2,10 +2,11 @@
 // (broadcast-worker/src/index.js, Hall; documents/touch-foundation.md).
 // Joining is one WebSocket to /touch/<name> on the relay. The server
 // assigns an id, names everyone present, and keeps the page told of its
-// GROUP - who it is drawing with under the hall's phase: itself in 'solo',
-// its partner or trio in 'pairs', everyone in 'all'. Anything the page
-// send()s reaches exactly that group; anything a groupmate says arrives in
-// `on.message`, stamped with the sender's id.
+// GROUP - itself plus whoever reaches it under the hall's phase
+// (broadcast-worker/src/groups.js): solo, master (the conductor's strokes
+// reach everyone, a member's nobody), pairs, quads, halves, all. Anything
+// the page send()s is relayed by the phase's routes; anything that reaches
+// it arrives in `on.message`, stamped with the sender's id.
 //
 // The link survives the world: it reconnects with a growing backoff (a new
 // id each time - a rejoin is an arrival, which the foundation keeps simple),

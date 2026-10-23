@@ -1,7 +1,8 @@
 // The first group touch experience, wired on the foundation
 // (documents/touch-foundation.md): pick a brush, draw - the mark duplicates
-// into a kaleidoscope and rides the video feedback - then the hall pairs
-// you, and in the end everyone draws together.
+// into a kaleidoscope and rides the video feedback - then the conductor
+// moves the hall through its phases (master, pairs, fours, halves), and in
+// the end everyone draws together.
 //
 //   ?hall=name    which hall to join (default 'lobby': one address, one room)
 //   ?conduct=key  join as the conductor, who moves the phases
@@ -10,7 +11,7 @@
 
 import { createScene } from './scene.js';
 import { createHall } from './hall.js';
-import { BRUSHES, encodeStroke, decodeStroke, drawStroke } from './strokes.js';
+import { BRUSHES, MOTIF, encodeStroke, decodeStroke, drawStroke } from './strokes.js';
 import { runReplay } from './replay.js';
 
 const RELAY_HOST = 'the-signal-broadcast.robertalexander-music.workers.dev';
@@ -51,13 +52,22 @@ const hall = REPLAY ? null : createHall({
   }
 });
 
+// The conductor is not a drawer in the groups (broadcast-worker/src/groups.js),
+// so its words are its own.
+const GROUP_NAMES = { pairs: 'pairs', quads: 'fours', halves: 'halves' };
 function groupWords(g) {
+  const conductor = hall && hall.conduct;
   if (g.phase === 'solo') return 'drawing alone';
+  if (g.phase === 'master') return conductor ? 'everyone sees your drawing' : 'following the conductor';
+  if (g.phase === 'all') return 'everyone together';
+  if (conductor && GROUP_NAMES[g.phase]) return `the room draws in ${GROUP_NAMES[g.phase]}`;
+  const others = g.ids.filter(id => id !== g.you).length;
   if (g.phase === 'pairs') {
-    const others = g.ids.filter(id => id !== g.you).length;
     return others === 0 ? 'waiting for a partner' : others === 1 ? 'drawing with a partner' : 'drawing in a trio';
   }
-  return 'everyone together';
+  if (g.phase === 'halves') return others === 0 ? 'drawing alone for now' : 'drawing with half the room';
+  if (g.phase === 'quads') return others === 0 ? 'waiting for your group' : `drawing in a group of ${others + 1}`;
+  return 'drawing alone';
 }
 
 // ---------- drawing ----------
@@ -148,6 +158,10 @@ function flash(words, h) {
 function buildPicker() {
   const row = $('brushes');
   BRUSHES.forEach((b, i) => {
+    // the motif brush stamps atlas tiles, the main app's to draw: /touch/
+    // only shows its stand-in when one arrives, never offers it (it is
+    // last, so the chips' order still matches the brush indices)
+    if (i === MOTIF) return;
     const chip = document.createElement('button');
     chip.className = 'chip' + (i === brush ? ' on' : '');
     chip.textContent = b.label;
@@ -182,8 +196,9 @@ if (REPLAY) {
   runReplay({ host: HOST, hall: HALL_NAME, scene, flash });
 }
 
-// the conductor's three words, only on a key that worked
-const PHASE_WORDS = [['solo', 'Alone'], ['pairs', 'Pairs'], ['all', 'Together']];
+// the conductor's phases in show order, only on a key that worked
+const PHASE_WORDS = [['solo', 'Alone'], ['master', 'Master'], ['pairs', 'Pairs'],
+  ['quads', 'Fours'], ['halves', 'Halves'], ['all', 'Together']];
 function buildConductor() {
   if (!hall.conduct) return;
   const bar = $('conduct');

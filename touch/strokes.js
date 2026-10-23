@@ -19,31 +19,58 @@
 //   d   0 a stroke's first batch, 1 a continuation, 2 the last
 //   p   the points, interleaved, quantized to QUANT
 //
+// The motif brush (k = MOTIF, the fifth) stamps a kaleidoscope image tile
+// rather than painting a line, and carries four more fields, all required:
+//
+//   a   the atlas set, an integer 1-99 (the kaleidoscope image set, as
+//       S.kaleidoSet numbers it)
+//   m   the motif tile, an integer 0-63 (a cell of the set's 8x8 atlas)
+//   c   copies, an integer 1-24, spaced evenly around the centre
+//   f   fade, a number 0-1: the sender's fade slider, so a receiver can
+//       fade remote marks the way the sender's own fade
+//
+// The real motif rendering lives in the main app (WebGPU); drawStroke here
+// paints a simple stand-in so /touch/ draws something sensible when one
+// arrives.
+//
 // The hall stamps `id` on relayed copies; the drawing never needs it, the
 // page may (a cursor, a credit).
 
 export const QUANT = 4096;
 export const WIDTH_MAX = 0.06;   // w:100 is this share of the square's side
 
+// Appended only, never reordered: k is an index on the wire and the tape.
 export const BRUSHES = [
   { id: 'ink',    label: 'Ink' },      // a plain round line
   { id: 'ribbon', label: 'Ribbon' },   // width breathes with speed
   { id: 'orbs',   label: 'Orbs' },     // beads along the path
-  { id: 'spark',  label: 'Spark' }     // short rays off each point
+  { id: 'spark',  label: 'Spark' },    // short rays off each point
+  { id: 'motif',  label: 'Motif' }     // an atlas tile, in radial copies (a, m, c, f)
 ];
+export const MOTIF = 4;
 
 // ---------- the wire ----------
 
-export function encodeStroke(k, h, w, d, points) {
+// extras: the motif brush's { a, m, c, f }; copied onto the message as
+// given (only those four), so decodeStroke is the one judge of them.
+export function encodeStroke(k, h, w, d, points, extras) {
   const p = new Array(points.length * 2);
   for (let i = 0; i < points.length; i++) {
     p[2 * i] = Math.max(0, Math.min(QUANT, Math.round(points[i].u * QUANT)));
     p[2 * i + 1] = Math.max(0, Math.min(QUANT, Math.round(points[i].v * QUANT)));
   }
-  return { t: 's', k, h, w, d, p };
+  const msg = { t: 's', k, h, w, d, p };
+  if (extras) {
+    for (const f of ['a', 'm', 'c', 'f']) if (extras[f] !== undefined) msg[f] = extras[f];
+  }
+  return msg;
 }
 
-// null for anything malformed: a hall relays whatever a member said.
+const intIn = (x, lo, hi) => Number.isInteger(x) && x >= lo && x <= hi;
+
+// null for anything malformed: a hall relays whatever a member said. A
+// motif stroke must carry a, m, c and f in range; any other brush decodes
+// exactly as before, ignoring them.
 export function decodeStroke(msg) {
   if (!msg || msg.t !== 's' || !Array.isArray(msg.p) || msg.p.length < 2 || msg.p.length % 2) return null;
   const k = msg.k | 0, h = msg.h | 0, w = msg.w | 0, d = msg.d | 0;
@@ -54,7 +81,11 @@ export function decodeStroke(msg) {
     if (!(u >= 0 && u <= 1 && v >= 0 && v <= 1)) return null;
     points[i] = { u, v };
   }
-  return { k, h, w, d, points };
+  if (k !== MOTIF) return { k, h, w, d, points };
+  const { a, m, c, f } = msg;
+  if (!intIn(a, 1, 99) || !intIn(m, 0, 63) || !intIn(c, 1, 24) ||
+      typeof f !== 'number' || !(f >= 0 && f <= 1)) return null;
+  return { k, h, w, d, points, a, m, c, f };
 }
 
 // ---------- the brushes ----------
@@ -114,7 +145,20 @@ function spark(ctx, pts, color, width) {
   }
 }
 
-const PAINTERS = [ink, ribbon, orbs, spark];
+// The motif's Canvas2D stand-in: a small ring at each point. The tile and
+// its radial copies are the main app's to draw; the scene's own
+// kaleidoscope already repeats the ring around the centre here.
+function motif(ctx, pts, color, width) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1, width * 0.2);
+  for (let i = 0; i < pts.length; i++) {
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, width * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+const PAINTERS = [ink, ribbon, orbs, spark, motif];
 
 // Paints one decoded batch into a 2d context whose space is canvas pixels.
 // `map` turns a unit point into canvas px (scene.mapper); alpha is the

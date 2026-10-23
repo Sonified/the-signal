@@ -192,14 +192,19 @@ export class Room {
 // is open (an installation's audience holds nothing but the link). Each
 // member gets an id in joining order and a hello naming everyone present;
 // the others hear the arrival and every leave. The hall moves through
-// phases - 'solo' (you alone), 'pairs' (joined in twos, an odd joiner makes
-// one trio) and 'all' (everyone together) - set by a conductor, a socket
-// that joined with the broadcast key. Strokes ({t:'s'}) and any other
-// member message are relayed to the sender's GROUP for the phase: nobody in
-// solo, the partner(s) in pairs, everyone in all. The groups are computed
-// here, from the ids present, so every member agrees without an election;
-// each member is told its group ({t:'group'}) on joining, on every phase
-// change, and whenever arrivals or leaves re-draw the pairs. The time probe
+// phases - 'solo' (you alone), 'master' (the conductor's strokes reach
+// everyone, a member's nobody), 'pairs' (twos, an odd joiner makes one
+// trio), 'quads' (fours, leftovers folding into the last), 'halves' (the
+// first half of the joiners and the second) and 'all' (everyone, the
+// conductor too) - set by a conductor, a socket that joined with the
+// broadcast key. The conductor is not a drawer in the groups: in pairs,
+// quads and halves it hears no one and reaches no one (CONDUCTOR_HEARS_GROUPS
+// in groups.js flips the hearing half). Strokes ({t:'s'}) and any other
+// member message are relayed by those routes, computed here (groups.js)
+// from the ids present, so every member agrees without an election; each
+// member is told its group ({t:'group'}: itself plus whoever reaches it) on
+// joining, on every phase change, and whenever arrivals or leaves re-draw
+// the groups. The time probe
 // answers as the Room's does, one clock for the hall. Hibernation-safe the
 // same way: per-socket state rides the socket's attachment, the phase and
 // the id counter live in storage, and pings are answered at the edge.
@@ -220,22 +225,15 @@ export class Room {
 // GET to /touch/<name>/tape (no websocket upgrade) answers
 // { epoch, n, entries } with open CORS, which is all the replay page needs.
 
-// The pairing: ids ascending, adjacent twos, and an odd count folds the
-// last one into the final pair as a trio. Deterministic from the ids alone.
-export function pairGroups(ids) {
-  const a = [...ids].sort((x, y) => x - y);
-  const groups = [];
-  for (let i = 0; i + 1 < a.length; i += 2) groups.push([a[i], a[i + 1]]);
-  if (a.length % 2 === 1) {
-    if (groups.length) groups[groups.length - 1].push(a[a.length - 1]);
-    else groups.push([a[0]]);
-  }
-  return groups;
-}
+// The phases, the groups and who hears whom live in groups.js, pure, so
+// node tests the very code the hall runs: solo, master (the conductor to
+// everyone), pairs, quads, halves, all (the conductor hearing everything).
+import { PHASES, routes } from './groups.js';
+export { PHASES, CONDUCTOR_HEARS_GROUPS, pairGroups, phaseGroups, routes } from './groups.js';
 
-const PHASES = ['solo', 'pairs', 'all'];
 const TAPE_MAX = 100000;   // entries; a long evening, well under any storage worry
 const TAPE_PAD = 8;        // key digits; room past the cap if it ever grows
+const MOTIF_FIELDS = ['a', 'm', 'c', 'f'];   // the motif brush's extras (touch/strokes.js)
 
 export class Hall {
   constructor(ctx, env) {
@@ -255,11 +253,17 @@ export class Hall {
     return a ? a.id : -1;
   }
 
-  // The group of ids `id` plays with under `phase`; [id] alone in solo.
-  groupOf(id, phase, ids) {
-    if (phase === 'all') return ids;
-    if (phase === 'pairs') return pairGroups(ids).find(g => g.includes(id)) || [id];
-    return [id];
+  // Who hears whom under `phase`, from the sockets present (groups.js):
+  // id -> { to, with }. The conductor flag rides each socket's attachment.
+  routesNow(phase, members) {
+    const ids = [], conductors = [];
+    for (const w of members) {
+      const a = w.deserializeAttachment();
+      if (!a) continue;
+      ids.push(a.id);
+      if (a.conduct) conductors.push(a.id);
+    }
+    return routes(phase, ids, conductors);
   }
 
   // One stroke onto the tape. Seeds the counter on first use - and after
@@ -314,11 +318,12 @@ export class Hall {
   // either: a join, a leave, a phase change.
   tellGroups(phase) {
     const members = this.members();
-    const ids = members.map(w => this.idOf(w));
+    const plan = this.routesNow(phase, members);
     for (const w of members) {
       const id = this.idOf(w);
+      const r = plan.get(id);
       try {
-        w.send(JSON.stringify({ t: 'group', phase, you: id, ids: this.groupOf(id, phase, ids) }));
+        w.send(JSON.stringify({ t: 'group', phase, you: id, ids: r ? r.with : [id] }));
       } catch (e) {}
     }
   }
@@ -351,7 +356,7 @@ export class Hall {
     for (const w of this.members()) {
       if (this.idOf(w) !== id) { try { w.send(arrived); } catch (e) {} }
     }
-    // a join re-draws the pairs; solo and all only learn the roster
+    // a join re-draws the groups; solo only learns the roster
     this.tellGroups(phase);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
@@ -387,18 +392,21 @@ export class Hall {
     // smuggled alongside them).
     const phase = (await this.ctx.storage.get('phase')) || 'solo';
     const members = this.members();
-    const ids = members.map(w => this.idOf(w));
-    const group = this.groupOf(me.id, phase, ids);
+    const r = this.routesNow(phase, members).get(me.id);
+    const to = new Set(r ? r.to : []);
     msg.id = me.id;
     const out = JSON.stringify(msg);
     for (const w of members) {
-      const other = this.idOf(w);
-      if (other !== me.id && group.includes(other)) {
+      if (to.has(this.idOf(w))) {
         try { w.send(out); } catch (e) {}
       }
     }
     if (msg.t === 's') {
-      await this.record(me.id, { t: 's', k: msg.k, h: msg.h, w: msg.w, d: msg.d, p: msg.p });
+      // the motif brush's fields (atlas set, tile, copies, fade) ride along
+      // whenever the stroke carried them; strokes.js decides what is valid
+      const s = { t: 's', k: msg.k, h: msg.h, w: msg.w, d: msg.d, p: msg.p };
+      for (const f of MOTIF_FIELDS) if (msg[f] !== undefined) s[f] = msg[f];
+      await this.record(me.id, s);
     }
   }
 

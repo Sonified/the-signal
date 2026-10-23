@@ -16,12 +16,11 @@ Three layers, each usable without the ones above it:
    `wss://<relay>/touch/<name>`, the Room's sibling. Everyone may speak, so
    it is not a broadcast: the server assigns each member an id in joining
    order, tells everyone of arrivals and leaves, and moves the room through
-   **phases** - `solo`, `pairs`, `all`. The server computes each member's
-   **group** for the phase (itself; its pair, an odd joiner folding into the
-   last pair as a trio; everyone) and re-tells the groups on every join,
+   **phases** (see The phases below). The server computes who hears whom
+   for the phase and re-tells each member its **group** on every join,
    leave and phase change, so every screen agrees without an election.
-   Anything a member sends is stamped with its id and relayed to exactly its
-   group: a stroke says what is happening now. The conductor -
+   Anything a member sends is stamped with its id and relayed by those
+   routes: a stroke says what is happening now. The conductor -
    a join carrying the existing BROADCAST_KEY (`?conduct=1&key=...`) - may
    set the phase; a bad key joins as an ordinary member rather than failing.
    The time probe ({t:'time'}) answers as the Room's does, one clock per
@@ -43,6 +42,28 @@ Three layers, each usable without the ones above it:
    plain GET of `/touch/<name>/tape` returns the whole recording as JSON
    with open CORS.
 
+   **The phases** (2026-10-22, for the show; broadcast-worker/src/groups.js,
+   pure, so node tests the code the hall runs). In the conductor's order:
+
+   | phase    | the drawers                                   | the conductor |
+   |----------|-----------------------------------------------|---------------|
+   | `solo`   | each alone                                    | alone |
+   | `master` | each alone; their strokes reach nobody        | its strokes reach everyone |
+   | `pairs`  | adjacent twos, an odd joiner makes the last pair a trio | hears nothing, reaches nobody |
+   | `quads`  | adjacent fours (two pairs merged); the leftover 1-3 fold into the last, so 5-7 only when the roster is not a multiple of 4, never under 4 unless the whole roster is | hears nothing, reaches nobody |
+   | `halves` | the first floor(n/2) joiners, then the rest (the odd one goes to the second) | hears nothing, reaches nobody |
+   | `all`    | everyone in one group                         | in it: hears everything, so the master screen shows the final drawing |
+
+   The conductor is not a drawer in the groups: `phaseGroups(phase, ids)`
+   groups the members' ids only (ascending, every id in exactly one group,
+   no empty group), and `routes(phase, ids, conductors)` places the
+   conductors by the table, returning per id `to` (who its strokes are
+   relayed to) and `with` (itself plus everyone who reaches it, which is
+   what `{t:'group'}` tells it). `CONDUCTOR_HEARS_GROUPS` (false) is the
+   one switch: true and the conductor receives every member's stroke in
+   pairs, quads and halves too. Whatever reaches nobody still lands on the
+   tape - the conductor's strokes in every phase included.
+
 2. **The stroke** (touch/strokes.js): the one message of a touch
    experience. A finger's path travels in small batches ({t:'s', k brush,
    h hue, w width, d start/middle/end, p points quantized to 1/4096 of a
@@ -51,7 +72,20 @@ Three layers, each usable without the ones above it:
    said - and **the same draw() paints local and remote batches**, so a mark
    is deterministic from its messages and every screen shows the same
    figure whatever its size. Four brushes to start: ink, ribbon (width
-   breathes with speed), orbs, spark.
+   breathes with speed), orbs, spark; a fifth, **motif** (k 4, appended so
+   the first four keep their indices), stamps a kaleidoscope atlas tile and
+   carries four more fields, all required: `a` the atlas set (integer 1-99,
+   as S.kaleidoSet numbers it), `m` the tile (integer 0-63, a cell of the
+   8x8 atlas), `c` copies (integer 1-24, evenly spaced around the centre),
+   `f` fade (number 0-1, the sender's fade slider, so a receiver fades
+   remote marks the way the sender's own fade). decodeStroke refuses a
+   motif stroke with any of them missing, non-integer where an integer is
+   due, or out of range, and decodes every other brush exactly as before
+   (ignoring stray extras); encodeStroke takes them as an optional sixth
+   argument `{a, m, c, f}`. The real motif rendering lives in the main
+   app's WebGPU lane; /touch/ draws a small ring at each point as its
+   stand-in and does not offer the brush in its picker. The tape records
+   the four fields whenever a stroke carried them.
 
 3. **The scene** (touch/scene.js): Canvas2D, no build, phone-first. Video
    feedback as two buffers taking turns - each frame repaints the last
@@ -67,8 +101,8 @@ multi-touch drawing (a batch per finger, flushed every 45 ms or 16 points,
 stamped locally the moment it lands so the hand never waits on the wire),
 the hall link with reconnect and a clean offline life as a solo instrument
 (touch/hall.js), a one-line status, a flash when the group changes, and the
-conductor's chips (Alone / Pairs / Together, plus Replay and Wipe) when the
-key worked.
+conductor's chips (Alone / Master / Pairs / Fours / Halves / Together, plus
+Replay and Wipe) when the key worked.
 
 **The replay** (touch/replay.js): the page opened with `?replay=1` (the
 conductor's Replay chip navigates there, hall and key kept) skips the
@@ -89,13 +123,20 @@ performance.now() is the thin part.
     join  ws  wss://<relay>/touch/<hall>[?conduct=1&key=...]
     s->c  {t:'hello', you, phase, ids, conduct}     on joining
           {t:'peer', id, on:1|0}                    arrivals and leaves
-          {t:'group', phase, you, ids}              who you draw with, re-told
-                                                    on join/leave/phase
+          {t:'group', phase, you, ids}              you plus whoever reaches
+                                                    you, re-told on
+                                                    join/leave/phase
           {t:'time', c, s}                          the probe's echo
-    c->s  {t:'s', k, h, w, d, p:[...]}              a stroke batch; relayed to
-                                                    the group stamped {id}, and
-                                                    appended to the tape
-          {t:'phase', p}                            conductor only
+    c->s  {t:'s', k, h, w, d, p:[...]}              a stroke batch; relayed by
+                                                    the phase's routes stamped
+                                                    {id}, and appended to the
+                                                    tape
+          {t:'s', k:4, h, w, d, p, a, m, c, f}      a motif batch (a 1-99,
+                                                    m 0-63, c 1-24 integers,
+                                                    f 0-1)
+          {t:'phase', p}                            conductor only; p one of
+                                                    solo master pairs quads
+                                                    halves all
           {t:'wipe'}                                conductor only; clears the
                                                     tape and its epoch
           'ping'                                    answered at the edge
@@ -109,7 +150,15 @@ performance.now() is the thin part.
 
 - tools/touch.test.mjs: the pairing (empty, one, odd trios, determinism
   from ids alone) and the stroke wire (round-trip to the quantum, the id
-  stamp surviving relay, thirteen malformed shapes refused). ESM checks on
+  stamp surviving relay, thirteen malformed shapes refused). Since
+  2026-10-22 also: every phase over rosters 1..13 (each id placed exactly
+  once, the sizes as specified, joining order kept, the same groups from
+  any arrival order), the routes (master one way, the conductor apart in
+  pairs/quads/halves and inside in all, the switch flipped, `with` always
+  exactly the ids whose `to` names you), and the motif brush (accepted at
+  both ends of every range, refused on each field missing, fractional,
+  a string or out of range, other brushes unchanged, a motif tape entry
+  replaying). ESM checks on
   every new file. NOT verified: a browser or a real hall - the worker was
   not deployed from this session.
 - tools/touch-replay.test.mjs: the replay scheduler (an empty tape, the
