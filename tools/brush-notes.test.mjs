@@ -13,10 +13,13 @@ import { BRUSH_W } from '../core/brush-stamps.js';
 
 const close = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 
-test('the eleven pitches: 1 2 3 5 7 over two octaves and the double octave, from C4', () => {
+test('the eleven pitches: 1 2 3 5 7 over two octaves and the double octave, from the music\'s root', () => {
   assert.deepEqual(DEGREES, [1, 2, 3, 5, 7, 8, 9, 10, 12, 14, 15]);
   assert.deepEqual(DEGREES.map(degreeSemis), [0, 2, 4, 7, 11, 12, 14, 16, 19, 23, 24]);
-  assert.ok(close(degreeHz(1), ROOT_HZ) && close(ROOT_HZ, 261.6256, 1e-3), 'C4');
+  // the root is the music's own: two octaves above the piano's sounding
+  // root (js/piano.js ARP_ROOT_HZ, 79.5 Hz), so every degree lands on the
+  // show's scale
+  assert.ok(close(degreeHz(1), ROOT_HZ) && close(ROOT_HZ, 79.5 * 4, 1e-9), "the music's root");
   // degree d + 7 is d's octave, 15 the double octave
   for (const d of [1, 2, 3, 5, 7]) assert.ok(close(degreeHz(d + 7), 2 * degreeHz(d)), `${d} and ${d + 7}`);
   assert.ok(close(degreeHz(15), 4 * ROOT_HZ));
