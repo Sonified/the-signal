@@ -20,8 +20,10 @@ const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_SPIN = 0, DEF_COPIE
 // sixty-four tiles, none twice), and the follower screens' bottom buttons
 // hidden. The room's Stream and Smoothing, ms (the conductor's).
 const DEF_DEAL = false, DEF_DEAL_N = 4, DEF_HIDE_FOLLOW = true, DEF_STREAM = 20, DEF_SMOOTH = 30;
-// Brush notes: off (core/brush-notes.js, js/brush-bells.js).
-const DEF_NOTES = false;
+// Brush bells and Brush notes: off (core/brush-notes.js, js/brush-bells.js);
+// a note's length drawn between half a second and two, in seconds.
+const DEF_NOTES = false, DEF_TONES = false, DEF_TONE_MIN = 0.5, DEF_TONE_MAX = 2;
+const TONE_LO = 0.1, TONE_HI = 3;
 
 // Seeds every brush field not already on S. Called first thing in
 // store.load(), beside the layers' own.
@@ -39,13 +41,17 @@ export function initBrushState(S) {
   if (typeof S.brushStream !== 'number') S.brushStream = DEF_STREAM;
   if (typeof S.brushSmooth !== 'number') S.brushSmooth = DEF_SMOOTH;
   if (typeof S.brushNotes !== 'boolean') S.brushNotes = DEF_NOTES;
+  if (typeof S.brushTones !== 'boolean') S.brushTones = DEF_TONES;
+  if (typeof S.brushToneMin !== 'number') S.brushToneMin = DEF_TONE_MIN;
+  if (typeof S.brushToneMax !== 'number') S.brushToneMax = DEF_TONE_MAX;
 }
 
 // What the record holds.
 export function brushStateOf(S) {
   return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
-           brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes };
+           brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
+           brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax };
 }
 
 // The record read back, field by field, each held to its range: the tile
@@ -65,6 +71,9 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushDealN)) S.brushDealN = n(o.brushDealN, 1, 8);
   if (typeof o.brushHideFollow === 'boolean') S.brushHideFollow = o.brushHideFollow;
   if (typeof o.brushNotes === 'boolean') S.brushNotes = o.brushNotes;
+  if (typeof o.brushTones === 'boolean') S.brushTones = o.brushTones;
+  if (Number.isFinite(o.brushToneMin)) S.brushToneMin = Math.max(TONE_LO, Math.min(TONE_HI, o.brushToneMin));
+  if (Number.isFinite(o.brushToneMax)) S.brushToneMax = Math.max(TONE_LO, Math.min(TONE_HI, o.brushToneMax));
   if (Number.isFinite(o.brushStream)) S.brushStream = n(o.brushStream, 10, 60);
   if (Number.isFinite(o.brushSmooth)) S.brushSmooth = n(o.brushSmooth, 0, 200);
 }
@@ -234,13 +243,39 @@ export const BRUSH_CONTROLS = [
     formatAt: pos => String(pos),
     visible: S => S.brushDeal === true
   },
-  // Brush notes: every hand a bell, the field four bands of its own notes,
-  // a strike as a stroke enters each band (core/brush-notes.js). This
-  // screen's own: a follower can silence the bells it hears.
+  // Brush bells and Brush notes: every hand has four notes of its own, on
+  // the four lines between the field's five bands, one struck as a stroke
+  // crosses each line (core/brush-notes.js), as a bell, a note, or both.
+  // This screen's own: a follower can silence what it hears. (The bells'
+  // id is still brushNotes, the name it was saved under.)
   {
-    id: 'brushNotes', section: 'brush', label: 'Brush notes', kind: 'toggle', def: DEF_NOTES,
+    id: 'brushNotes', section: 'brush', label: 'Brush bells', kind: 'toggle', def: DEF_NOTES,
     get: S => S.brushNotes === true,
     set: (S, on) => { S.brushNotes = !!on; saveBrush(); }
+  },
+  {
+    id: 'brushTones', section: 'brush', label: 'Brush notes', kind: 'toggle', def: DEF_TONES,
+    get: S => S.brushTones === true,
+    set: (S, on) => { S.brushTones = !!on; saveBrush(); }
+  },
+  // Each note's length is drawn anew between these two, 0.1 to 3 s in
+  // tenths, its ADSR cut to fit (core/brush-notes.js noteShape); either may
+  // pass the other, the draw takes them in whichever order.
+  {
+    id: 'brushToneMin', section: 'brush', label: 'Min note length', kind: 'slider',
+    min: TONE_LO * 10, max: TONE_HI * 10, step: 1, def: DEF_TONE_MIN * 10,
+    get: S => Math.round(S.brushToneMin * 10),
+    set: (S, pos) => { S.brushToneMin = Math.max(TONE_LO * 10, Math.min(TONE_HI * 10, Math.round(pos))) / 10; saveBrush(); },
+    formatAt: pos => (pos / 10).toFixed(1) + ' s',
+    visible: S => S.brushTones === true
+  },
+  {
+    id: 'brushToneMax', section: 'brush', label: 'Max note length', kind: 'slider',
+    min: TONE_LO * 10, max: TONE_HI * 10, step: 1, def: DEF_TONE_MAX * 10,
+    get: S => Math.round(S.brushToneMax * 10),
+    set: (S, pos) => { S.brushToneMax = Math.max(TONE_LO * 10, Math.min(TONE_HI * 10, Math.round(pos))) / 10; saveBrush(); },
+    formatAt: pos => (pos / 10).toFixed(1) + ' s',
+    visible: S => S.brushTones === true
   },
   // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
   // and the full screen button) left off a follower's screen: a tab

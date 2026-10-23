@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEGREES, degreeHz, degreeSemis, ROOT_HZ, seedOf, notesFor, bellFor, bandAt, nextBand, HYST } from '../core/brush-notes.js';
+import { DEGREES, degreeHz, degreeSemis, ROOT_HZ, seedOf, notesFor, bellFor, noteShape, bandAt, nextBand, HYST } from '../core/brush-notes.js';
 import { S } from '../js/state.js';
 import { brushField, setBrushBell, setBrushStarted, setBrushHall, brushTake, brushPlay, brushPlaying, brushQueueDrop, brushQueue, setBrushClock } from '../core/brush.js';
 import { encodeStroke, timesToQ, MOTIF } from '../touch/strokes.js';
@@ -34,29 +34,46 @@ test('each hand: four of the eleven, ascending, the same for the same identity, 
     assert.deepEqual(bellFor(seedOf(id)), bellFor(seedOf(id)));
   }
   assert.notDeepEqual(bellFor(seedOf(1)), bellFor(seedOf(2)), 'a bell of its own');
-  const b = bellFor(seedOf(5));
-  assert.ok(b.ratio > 3.2 && b.ratio < 3.8 && b.decay > 1.3 && b.decay < 2.5 && b.index > 2 && b.index < 4);
+  for (let id = 0; id < 40; id++) {
+    const b = bellFor(seedOf(id));
+    assert.ok([2, 3, 4].includes(b.ratio), 'a whole number ratio: in tune');
+    assert.ok(b.decay > 1.3 && b.decay < 2.5 && b.index >= 1.2 && b.index <= 2.4);
+  }
   assert.equal(seedOf(7), seedOf('7'), 'a number and its string name the same hand');
 });
 
-test('the bands: bottom quarter lowest, each entered once, a boundary held by its margin', () => {
-  assert.deepEqual([0.95, 0.6, 0.4, 0.1].map(bandAt), [0, 1, 2, 3]);
+test('the bands: five, bottom fifth lowest, each entered once, a boundary held by its margin', () => {
+  assert.deepEqual([0.95, 0.7, 0.5, 0.3, 0.1].map(bandAt), [0, 1, 2, 3, 4]);
   // a path from the bottom to the top and back, rung at each entry
   const rung = [];
   let b = -1;
   const walk = v => { const nb = nextBand(b, v); if (nb !== b) rung.push(nb); b = nb; };
   for (let v = 0.99; v >= 0.01; v -= 0.005) walk(v);
   for (let v = 0.01; v <= 0.99; v += 0.005) walk(v);
-  assert.deepEqual(rung, [0, 1, 2, 3, 2, 1, 0]);
-  // jitter on the 0.75 boundary, within the margin: one entry, no more
-  b = nextBand(-1, 0.80);
+  assert.deepEqual(rung, [0, 1, 2, 3, 4, 3, 2, 1, 0]);
+  // jitter on the 0.8 boundary, within the margin: one entry, no more
+  b = nextBand(-1, 0.85);
   const seen = [b];
-  for (let i = 0; i < 50; i++) { const nb = nextBand(b, 0.75 + (i % 2 ? 1 : -1) * HYST * 0.6); if (nb !== b) seen.push(nb); b = nb; }
+  for (let i = 0; i < 50; i++) { const nb = nextBand(b, 0.8 + (i % 2 ? 1 : -1) * HYST * 0.6); if (nb !== b) seen.push(nb); b = nb; }
   assert.deepEqual(seen, [0], 'held');
   // past the margin it goes
-  assert.equal(nextBand(0, 0.75 - HYST - 0.001), 1);
+  assert.equal(nextBand(0, 0.8 - HYST - 0.001), 1);
   // a jump of two bands goes at once
-  assert.equal(nextBand(0, 0.30), 2);
+  assert.equal(nextBand(0, 0.5), 2);
+});
+
+test('a note\'s shape: its length between the two, in either order, its ADSR inside it', () => {
+  let x = 0.123;
+  const rand = () => (x = (x * 9301 + 0.49297) % 1);
+  for (const [lo, hi] of [[0.5, 2], [2, 0.5], [0.1, 0.1], [0.1, 3], [3, 3]]) {
+    for (let i = 0; i < 200; i++) {
+      const n = noteShape(lo, hi, rand);
+      assert.ok(n.len >= Math.min(lo, hi) - 1e-9 && n.len <= Math.max(lo, hi) + 1e-9, 'length in range');
+      assert.ok(n.attack >= 0.003 && n.attack <= 0.03, 'a quick attack');
+      assert.ok(n.attack + n.decay + n.release < n.len, 'the envelope fits');
+      assert.ok(n.sustain >= 0.35 && n.sustain <= 0.7);
+    }
+  }
 });
 
 test('no hand row before the screen is started', async () => {
@@ -67,7 +84,7 @@ test('no hand row before the screen is started', async () => {
   S.brushDeal = false;
 });
 
-test('strokes strike bells: the hand at once, a remote one as it plays, nothing before the start or with notes off', () => {
+test('strokes strike at each line: the hand at once, a remote one as it plays, nothing before the start or with both off', () => {
   let now = 1e6;
   setBrushClock(() => now);
   const struck = [];
@@ -97,9 +114,19 @@ test('strokes strike bells: the hand at once, a remote one as it plays, nothing 
   for (let i = 0; i < 400 && brushPlaying(); i++) { now += 16; brushPlay(0.016); }
   assert.deepEqual(struck.map(s => s[1]), notesFor(seedOf(7)));
   assert.ok(struck.every(s => s[0] === seedOf(7)), 'member 7s own bell');
-  // notes off: silence
+  // the start rings nothing: a stroke within one band is silent
   struck.length = 0;
-  S.brushNotes = false;
+  brushField(true, false, false, 500, 500, 1000, 1000, 0, 7000);
+  for (let i = 1; i <= 10; i++) brushField(true, false, false, 500 + i * 10, 500, 1000, 1000, 0, 7000 + i * 16);
+  brushField(true, true, false, 600, 500, 1000, 1000, 0, 7000 + 11 * 16);
+  assert.equal(struck.length, 0, 'no line crossed');
+  // Brush notes alone strikes too
+  S.brushNotes = false; S.brushTones = true;
+  drag(8000);
+  assert.deepEqual(struck.map(s => s[1]), mine);
+  // both off: silence
+  struck.length = 0;
+  S.brushTones = false;
   drag(9000);
   assert.equal(struck.length, 0);
   brushQueueDrop(brushQueue.count);
