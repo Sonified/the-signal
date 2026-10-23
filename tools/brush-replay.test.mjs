@@ -149,3 +149,18 @@ test('retime: a stroke with no times plays on the glide', () => {
   assert.equal(m.q, undefined);
   assert.ok(decodeStroke(m));
 });
+
+test('real time (the standing playback): a tape longer than the loop keeps scale 1 and its whole length', () => {
+  const span = LOOP_MS * 10;
+  const p = planPass([entry(0, 1), entry(span / 2, 2), entry(span, 3)], Infinity);
+  assert.equal(p.scale, 1);
+  assert.deepEqual(p.steps.map(s => s.tMs), [0, span / 2, span]);
+  assert.equal(p.ms, span + LOOP_REST_MS);
+  // the show's own pass of the same tape is still squeezed
+  assert.equal(planPass([entry(0, 1), entry(span / 2, 2), entry(span, 3)]).scale, 0.1);
+});
+
+test('real time: retime at scale 1 keeps every point gap as drawn', () => {
+  const m = retime({ id: 3, s: motif(1, [10000, 40, 60]) }, 70000, 1);
+  assert.deepEqual(m.q, [69900, 40, 60]);
+});

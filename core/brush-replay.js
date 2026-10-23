@@ -74,7 +74,10 @@ export function roomArrives(good, hands = ROOM_HANDS, windowMs = ROOM_WINDOW_MS)
 // pass's length with its rest, skipped how many batches before the room
 // arrived were left out (0 when it never arrived and the whole tape plays)
 // and drawers how many hands it arrived with (0 then too). Entries without
-// a time, a drawer or a stroke are skipped.
+// a time, a drawer or a stroke are skipped. loopMs is the window a long
+// tape is squeezed into: LOOP_MS for the show's cue 24, Infinity for the
+// standing playback between shows (platform/tape-replay.js), whose passes
+// keep scale 1 and play the drawing in real time.
 export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS) {
   const good = [];
   for (const e of entries || []) {

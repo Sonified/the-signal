@@ -77,6 +77,7 @@ import { ringBell } from './js/brush-bells.js';
 import { linkBell } from './core/audio-link.js';
 import { drawHand } from './ui/screens/hand.js';
 import { initPresentationReceiver } from './platform/presentation-receiver.js';
+import { tapePath, startTapeReplay } from './platform/tape-replay.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
 import { journeyImport } from './core/journey.js';
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
@@ -150,8 +151,15 @@ function fadeStillFrame(c) {
 // for nothing: no join gate (index.html), no sound of its own, the hand
 // dealt at once, and a word to the page around it when the first frame is
 // up, so the layer fades in on a picture.
-const drawOnly = !host.worker && typeof location !== 'undefined' &&
-  (q => q.has('draw') && !!q.get('follow'))(new URLSearchParams(location.search));
+//
+// ?replay=<tape>&draw is the same layer between shows: no room at all, a
+// drawing the room once made (a file under tapes/) played on a loop
+// (platform/tape-replay.js), and the visitor drawing over it on this
+// screen alone. It follows no broadcast and joins no hall, so nothing
+// drawn here leaves the phone. ?follow wins when both are given.
+const pageQuery = !host.worker && typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+const replayTape = pageQuery && pageQuery.has('draw') && !pageQuery.get('follow') ? tapePath(pageQuery.get('replay')) : '';
+const drawOnly = !!pageQuery && pageQuery.has('draw') && (!!pageQuery.get('follow') || !!replayTape);
 
 if (!host.worker && typeof document !== 'undefined') {
   const followAudioGate = document.getElementById('follow-audio-gate');
@@ -402,7 +410,7 @@ async function boot() {
     // The quick bar is left off a follower's screen (a tab following a
     // broadcast, or a hall member who is not its conductor) while the
     // Brush section's Hide bottom buttons for followers is on.
-    quickHidden: () => S.brushHideFollow !== false && (followTab || brushMember()),
+    quickHidden: () => S.brushHideFollow !== false && (followTab || drawOnly || brushMember()),
     // The open state is part of the saved settings (core/store.js), so every
     // toggle saves like any control: without this, a close only reached disk
     // when some later control change happened to save, and a reload brought
@@ -524,7 +532,15 @@ async function boot() {
   let finishRemoteFrame = null;
   // whether this tab follows a broadcast (the follower buttons' rule below)
   let followTab = false;
-  if (!inWorker) {
+  if (!inWorker && replayTape) {
+    // The standing playback (drawOnly above): no broadcast, no hall, so no
+    // socket to the relay ever opens; the brush is started at once, the
+    // tape loops as soon as it is fetched, and the scene runs (a stopped
+    // page sits under its black veil, which would hide the drawing).
+    setBrushStarted();
+    startTapeReplay(replayTape);
+    if (!S.running) flipRun();
+  } else if (!inWorker) {
     const bIntent = broadcastUrlIntent();
     followTab = !!(bIntent && bIntent.follow);
     if (bIntent && bIntent.follow) {

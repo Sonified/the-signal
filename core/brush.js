@@ -44,7 +44,7 @@ import { roomClockMs } from './room-clock.js';
 import { dealHand } from '../broadcast-worker/src/deal.js';
 import { seedOf, notesFor, nextBand } from './brush-notes.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
-import { planPass, retime, ROOM_WINDOW_MS } from './brush-replay.js';
+import { planPass, retime, ROOM_WINDOW_MS, LOOP_MS } from './brush-replay.js';
 import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
 import { BRUSH_W, ROTATE_MAX, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
@@ -785,17 +785,24 @@ export function brushPlaying() {
 // runs to its end and the next is planned from the tape as it stands then.
 // Where the room arrived is said once each time it moves (a fresh playback,
 // a tape begun again), not on every lap of the loop.
+//
+// The window a pass is squeezed to is the playback's own: the show's cue
+// 24 fits the whole show into LOOP_MS, while the standing playback between
+// shows (platform/tape-replay.js) passes Infinity, so its passes run in
+// real time, the drawing exactly as it happened, with the same short rest
+// between laps.
 const showTape = [];
-let replayOn = false, pass = null, passI = 0, passT0 = 0, saidSkip = -1;
+let replayOn = false, pass = null, passI = 0, passT0 = 0, saidSkip = -1, replayLoopMs = LOOP_MS;
 export function brushTapeReset() { showTape.length = 0; }
 export function brushTapeAdd(entries) {
   for (const e of entries) showTape.push(e);
   if (entries.length && replayOn) idleWake('the tape');
 }
 export function brushTapeCount() { return showTape.length; }
-export function brushReplay(on) {
+export function brushReplay(on, loopMs = LOOP_MS) {
   on = !!on;
   if (on) brushDealHold(false);
+  if (on && loopMs !== replayLoopMs) { replayLoopMs = loopMs; pass = null; }
   if (on === replayOn) return;
   replayOn = on;
   pass = null;
@@ -807,7 +814,7 @@ export function brushReplaying() { return replayOn; }
 function replayTick(now) {
   if (!replayOn) return;
   if (!pass || (passI >= pass.steps.length && now - passT0 >= pass.ms)) {
-    pass = planPass(showTape);
+    pass = planPass(showTape, replayLoopMs);
     passI = 0; passT0 = now;
     if (!pass.steps.length) { pass = null; return; }
     if (pass.drawers && pass.skipped !== saidSkip) {
