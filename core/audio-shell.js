@@ -43,6 +43,7 @@ import {
   ensureAudioGraph, warmDevice, audioOn, setAmRate, hasNode, beginGlide, endGlide, PRESET_GLIDE_S
 } from '../js/audio.js';
 import { arpPeak, seqClock, unpackSeqs, applySeqs, pianoGesture } from '../js/piano.js';
+import { ringBell } from '../js/brush-bells.js';
 import { ambDriftOn } from '../js/ambience.js';
 import { prefetchMusic } from '../js/audio-prefetch.js';
 import { restoreLive } from '../js/livesound.js';
@@ -139,6 +140,8 @@ export function createAudioShell(storage) {
     // freely or waits for the words, and one gesture as a word appears.
     pianoFree(on) { S.pianoFreePlay = !!on; },
     pianoGesture() { pianoGesture(); },
+    // a brush bell the worker struck (audio-link.js linkBell)
+    bell(seed, degree) { ringBell(seed, degree); },
     // The sun's breath, as the engine's frame last steered it: into this
     // thread's copy, which the hum's variances read here (core/sun-hum-
     // vary.js, stepped by tick below and by its own timer), and the music

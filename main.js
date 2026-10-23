@@ -71,7 +71,9 @@ import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent, relayHost } from './platform/broadcast-socket.js';
 import { openBrushHall } from './platform/brush-hall.js';
-import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember } from './core/brush.js';
+import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember, setBrushBell, setBrushStarted } from './core/brush.js';
+import { ringBell } from './js/brush-bells.js';
+import { linkBell } from './core/audio-link.js';
 import { drawHand } from './ui/screens/hand.js';
 import { initShowRemote } from './platform/show-remote.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
@@ -308,6 +310,9 @@ async function boot() {
   // drawer. The link is opened and closed here, as the session comes and
   // goes (platform/brush-hall.js); with none, or offline, the brush plays
   // alone, and it never waits on the network.
+  // Brush notes' bells sound where the sound is: here, or on the page
+  // across the audio link in worker mode (core/audio-link.js linkBell).
+  setBrushBell(inWorker ? linkBell : ringBell);
   let drawLink = null;
   function brushJoinRoom(want) {
     if (drawLink) { drawLink.close(); drawLink = null; setBrushHall(null); brushHallState(''); }
@@ -844,6 +849,10 @@ async function boot() {
         wakeTap = e.pointerType === 'touch' && (lastChromeA < 0.5 || backInView);
         backInView = false;
       }
+      // The first press or key into the experience starts the screen for
+      // the brush (its hand row and its bells, core/brush.js), the same
+      // gesture that wakes the sound; never past a follower's join gate.
+      if ((e.type === 'down' || e.type === 'key') && !followHeld()) setBrushStarted();
       if (!mouseLive) {
         if (e.type === 'move') {
           if (firstMoveX === -1e9) { firstMoveX = e.x; firstMoveY = e.y; }

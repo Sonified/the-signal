@@ -20,6 +20,8 @@ const DEF_MOTIF = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
 // sixty-four tiles, none twice), and the follower screens' bottom buttons
 // hidden. The room's Stream and Smoothing, ms (the conductor's).
 const DEF_DEAL = false, DEF_DEAL_N = 4, DEF_HIDE_FOLLOW = true, DEF_STREAM = 20, DEF_SMOOTH = 30;
+// Brush notes: off (core/brush-notes.js, js/brush-bells.js).
+const DEF_NOTES = false;
 
 // Seeds every brush field not already on S. Called first thing in
 // store.load(), beside the layers' own.
@@ -33,13 +35,14 @@ export function initBrushState(S) {
   if (typeof S.brushHideFollow !== 'boolean') S.brushHideFollow = DEF_HIDE_FOLLOW;
   if (typeof S.brushStream !== 'number') S.brushStream = DEF_STREAM;
   if (typeof S.brushSmooth !== 'number') S.brushSmooth = DEF_SMOOTH;
+  if (typeof S.brushNotes !== 'boolean') S.brushNotes = DEF_NOTES;
 }
 
 // What the record holds.
 export function brushStateOf(S) {
   return { brushMotif: S.brushMotif, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
-           brushStream: S.brushStream, brushSmooth: S.brushSmooth };
+           brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes };
 }
 
 // The record read back, field by field, each held to its range: the tile
@@ -55,6 +58,7 @@ export function applyBrushState(S, o) {
   if (typeof o.brushDeal === 'boolean') S.brushDeal = o.brushDeal;
   if (Number.isFinite(o.brushDealN)) S.brushDealN = n(o.brushDealN, 1, 8);
   if (typeof o.brushHideFollow === 'boolean') S.brushHideFollow = o.brushHideFollow;
+  if (typeof o.brushNotes === 'boolean') S.brushNotes = o.brushNotes;
   if (Number.isFinite(o.brushStream)) S.brushStream = n(o.brushStream, 10, 60);
   if (Number.isFinite(o.brushSmooth)) S.brushSmooth = n(o.brushSmooth, 0, 200);
 }
@@ -188,6 +192,14 @@ export const BRUSH_CONTROLS = [
     set: (S, pos) => { S.brushDealN = Math.max(1, Math.min(8, Math.round(pos))); saveBrush(); },
     formatAt: pos => String(pos),
     visible: S => S.brushDeal === true
+  },
+  // Brush notes: every hand a bell, the field four bands of its own notes,
+  // a strike as a stroke enters each band (core/brush-notes.js). This
+  // screen's own: a follower can silence the bells it hears.
+  {
+    id: 'brushNotes', section: 'brush', label: 'Brush notes', kind: 'toggle', def: DEF_NOTES,
+    get: S => S.brushNotes === true,
+    set: (S, on) => { S.brushNotes = !!on; saveBrush(); }
   },
   // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
   // and the full screen button) left off a follower's screen: a tab

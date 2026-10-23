@@ -41,6 +41,7 @@ import { idleWake } from './idle.js';
 import { MOTIF, QUANT, encodeStroke, decodeStroke, timesToQ } from '../touch/strokes.js';
 import { tapStep } from '../touch/hall.js';
 import { dealHand } from '../broadcast-worker/src/deal.js';
+import { seedOf, notesFor, nextBand } from './brush-notes.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
 import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
@@ -205,6 +206,7 @@ function begin(x, y, width, height, inset, t) {
   lastQu = lastU; lastQv = lastV;
   qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
   stampCopies(lastQu / QUANT, lastQv / QUANT, sCopies, emit);
+  handBand = ringBand(-1, lastQv / QUANT, bellId());
   carry = 0;
   pend[0] = lastQu; pend[1] = lastQv; pendT[0] = t; pendN = 1; pendD = 0; lastFlushT = t;
   strokeOpen = true;
@@ -221,6 +223,7 @@ function extend(x, y, width, height, inset, t) {
       qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
       stampCopies(lastU / QUANT, lastV / QUANT, sCopies, emit);
       lastQu = lastU; lastQv = lastV;
+      handBand = ringBand(handBand, lastQv / QUANT, bellId());
       if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
     }
     if (pendN > 0 && (pendN >= FLUSH_POINTS || t - lastFlushT >= flushMs())) flush(false, t);
@@ -230,6 +233,7 @@ function extend(x, y, width, height, inset, t) {
     qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
     carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, brushSpacing(BRUSH_W), sCopies, emit);
     lastQu = lastU; lastQv = lastV;
+    handBand = ringBand(handBand, lastQv / QUANT, bellId());
     if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
   }
   if (pendN >= FLUSH_POINTS || (t - lastFlushT >= flushMs() && (pendN > 1 || pendD === 0))) flush(false, t);
@@ -262,6 +266,43 @@ function flush(done, t) {
   if (sPrints) { pendN = 0; return; }
   pend[0] = lastQu; pend[1] = lastQv; pendT[0] = pendT[pendN - 1]; pendN = 1;
 }
+
+// ---------- started ----------
+// The screen is started by the viewer's first press or key into it (the
+// gesture that also wakes the sound, main.js): before that no hand row
+// shows and no bell rings, whatever Show brushes and Brush notes say.
+let started = false;
+export function setBrushStarted() { started = true; }
+
+// ---------- brush notes ----------
+// Each hand rings its bell when its stroke enters a band of the field
+// (core/brush-notes.js): the hand's own the moment it draws, a remote one as
+// its stroke plays out here, so every screen rings what it draws. The
+// bell itself is js/brush-bells.js, handed in (main.js) as bellHook(seed,
+// degree), on the page or across the audio link. Each identity's seed and
+// notes are worked out once.
+let bellHook = null, handBand = -1;
+export function setBrushBell(fn) { bellHook = fn || null; }
+const voices = new Map();   // identity -> { seed, notes }
+function ringBand(cur, v, who) {
+  if (!bellHook || S.brushNotes !== true || !started) return cur < 0 ? -1 : cur;
+  const nb = nextBand(cur, v);
+  if (nb !== cur) {
+    let vc = voices.get(who);
+    if (!vc) {
+      if (voices.size > 256) voices.clear();
+      const seed = seedOf(who);
+      vc = { seed, notes: notesFor(seed) };
+      voices.set(who, vc);
+    }
+    bellHook(vc.seed, vc.notes[nb]);
+  }
+  return nb;
+}
+// The hand's own identity for its bell: the broadcaster's on the
+// broadcasting screen (its followers hear its strokes by the broadcast, as
+// BROADCAST_ID), else its room id, or the solo one.
+function bellId() { return brushConducting() ? BROADCAST_ID : handId(); }
 
 // ---------- the hall ----------
 // The link (touch/hall.js createHall, opened by platform/brush-hall.js) or
@@ -338,6 +379,8 @@ export function brushHallHand(h) {
   idleWake('the hand');
 }
 export function brushHand() {
+  // nothing before the screen is started (setBrushStarted)
+  if (!started) return null;
   if (hallLink && hallState === 'joined') return hallLink.hand && hallLink.hand.tiles.length ? hallLink.hand : null;
   if (S.brushDeal !== true) return null;
   const set = kaleidoscopeSet(S.kaleidoSet).id, n = Math.max(1, Math.min(8, S.brushDealN | 0));
@@ -428,6 +471,8 @@ const slotEnd = new Float64Array(SLOTS), slotArc = new Float64Array(SLOTS), slot
 const slotFed = new Float64Array(SLOTS), slotCursor = new Float64Array(SLOTS);
 // who drew it (core/brush-order.js): the hall's id, or the broadcaster's
 const slotWho = new Float64Array(SLOTS);
+// the band its stroke is in, for the sender's bell (-1 before its first)
+const slotBand = new Int8Array(SLOTS);
 const slotStage = new Float64Array(SLOTS * PLAY_STAGES);
 // Each sender's clock offset (minOffset), by key, and what late batches
 // have added to this screen's delay (ratchetDelay), which only ever rises,
@@ -454,6 +499,9 @@ export function brushPlayReset() { playLate = 0; offsets.clear(); }
 // Stamps leave a slot for the ring the GPU side drains.
 function letOut(i) {
   const b = slotBuf[i], o = slotHead[i] * PF;
+  // a stamp's own copy (angle 0) is where the hand was: its band, for the
+  // sender's bell, as the stroke plays out here
+  if (b[o + 2] === 0 && bellHook) slotBand[i] = ringBand(slotBand[i], b[o + 1], slotWho[i]);
   qSide = b[o + 3]; qMotif = b[o + 4]; qSet = b[o + 5]; qWho = slotWho[i]; qKey = releaseKey;
   push(b[o], b[o + 1], b[o + 2]);
   slotHead[i] = (slotHead[i] + 1) % SLOT_CAP;
@@ -475,7 +523,7 @@ function openSlot(key, now) {
     slotBuf[i] = new Float32Array(SLOT_CAP * PF);
     slotTlT[i] = new Float64Array(TL_CAP); slotTlP[i] = new Float64Array(TL_CAP);
   }
-  slotOn[i] = 1; slotDone[i] = 0; slotKey[i] = key;
+  slotOn[i] = 1; slotDone[i] = 0; slotKey[i] = key; slotBand[i] = -1;
   slotWho[i] = typeof key === 'number' ? key : BROADCAST_ID;
   slotHead[i] = 0; slotCount[i] = 0; slotNextK[i] = 0; slotTlN[i] = 0; slotTlI[i] = 0;
   slotEnd[i] = 0; slotArc[i] = 0; slotCarry[i] = 0; slotFed[i] = now; slotCursor[i] = -1;

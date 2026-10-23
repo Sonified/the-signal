@@ -363,6 +363,8 @@ test('the conductor sends the room\'s settings and the deal; a hand\'s tile draw
   B.brushPlay(0);
   assert.equal(sent[2].t, 'brushes');
   // a hand dealt from set 7: a tap on its second button, then a stroke
+  // (the screen started: no hand shows before)
+  B.setBrushStarted();
   link.hand = { on: 1, a: 7, tiles: [11, 30] };
   B.brushHallHand(link.hand);
   B.brushPickHand(1);
@@ -387,6 +389,7 @@ test('no room: Show brushes deals this screen its own hand at once, placeholders
   setBrushHall(null);
   S.brushDeal = true; S.brushDealN = 4; S.kaleidoSet = 6;
   B.brushAtlas.ready = false;
+  B.setBrushStarted();   // (the gate before the start: tools/brush-notes.test.mjs's fresh module)
   const waiting = B.brushHand();
   assert.ok(waiting && waiting.tiles.length === 0 && waiting.pending === 4, 'four places while the atlas comes');
   assert.equal(B.brushAtlas.want, 6, 'and the atlas is asked for');

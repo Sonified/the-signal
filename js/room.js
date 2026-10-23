@@ -66,6 +66,9 @@ export function roomInput(c, master) {
 // The wet return, where the sequencer's per-line rooms join the master
 // room's output so they share its level and switch (js/piano.js lineRoom).
 export const roomReturn = () => wet;
+// The room's context, for a voice that sends into it only when it already
+// shares it (js/brush-bells.js), never moving the room.
+export const roomContext = () => ctx;
 
 function buildRoom(c, master) {
   if (!c || !master) return null;

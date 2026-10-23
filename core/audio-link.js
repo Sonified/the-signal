@@ -119,6 +119,12 @@ const STROBE_EPS = 0.01;
 // here and sent by the next flush; true while the link runs, so the drawer
 // knows the page will hear it (in main mode it calls idleIntent itself).
 let intentAsk = 0, linkLive = false;
+
+// A brush bell struck in the worker (core/brush.js, Brush notes): sent to
+// the page, where the sound lives (audio-shell.js 'bell' ->
+// js/brush-bells.js), by the next flush. Kept as seed and degree pairs.
+const bells = [];
+export function linkBell(seed, degree) { if (linkLive && bells.length < 64) bells.push(seed, degree); }
 export function linkIntent() {
   if (linkLive) intentAsk++;
   return linkLive;
@@ -268,6 +274,8 @@ export function createAudioLink(post) {
     w |= readbacksWatched(WATCH_FRAMES);
     if (w !== lastWatch) { lastWatch = w; call('watch', w, 0, 0, 0); }
 
+    for (let i = 0; i < bells.length; i += 2) call('bell', bells[i], bells[i + 1], 0, 0);
+    bells.length = 0;
     if (outbox.length) { post(outbox); outbox.length = 0; }
   }
 
