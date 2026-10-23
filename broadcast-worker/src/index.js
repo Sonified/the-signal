@@ -186,6 +186,164 @@ export class Room {
   }
 }
 
+// ---------- the hall: group touch (touch/, documents/touch-foundation.md) ----------
+// A Hall is the Room's sibling for experiences everyone makes together: a
+// WebSocket room where every member may speak, not one broadcaster. Joining
+// is open (an installation's audience holds nothing but the link). Each
+// member gets an id in joining order and a hello naming everyone present;
+// the others hear the arrival and every leave. The hall moves through
+// phases - 'solo' (you alone), 'pairs' (joined in twos, an odd joiner makes
+// one trio) and 'all' (everyone together) - set by a conductor, a socket
+// that joined with the broadcast key. Strokes ({t:'s'}) and any other
+// member message are relayed to the sender's GROUP for the phase: nobody in
+// solo, the partner(s) in pairs, everyone in all. The groups are computed
+// here, from the ids present, so every member agrees without an election;
+// each member is told its group ({t:'group'}) on joining, on every phase
+// change, and whenever arrivals or leaves re-draw the pairs. The time probe
+// answers as the Room's does, one clock for the hall. Hibernation-safe the
+// same way: per-socket state rides the socket's attachment, the phase and
+// the id counter live in storage, and pings are answered at the edge.
+
+// The pairing: ids ascending, adjacent twos, and an odd count folds the
+// last one into the final pair as a trio. Deterministic from the ids alone.
+export function pairGroups(ids) {
+  const a = [...ids].sort((x, y) => x - y);
+  const groups = [];
+  for (let i = 0; i + 1 < a.length; i += 2) groups.push([a[i], a[i + 1]]);
+  if (a.length % 2 === 1) {
+    if (groups.length) groups[groups.length - 1].push(a[a.length - 1]);
+    else groups.push([a[0]]);
+  }
+  return groups;
+}
+
+const PHASES = ['solo', 'pairs', 'all'];
+
+export class Hall {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+  }
+
+  members() {
+    return this.ctx.getWebSockets('member').filter(w => w.readyState === 1);
+  }
+  idOf(ws) {
+    const a = ws.deserializeAttachment();
+    return a ? a.id : -1;
+  }
+
+  // The group of ids `id` plays with under `phase`; [id] alone in solo.
+  groupOf(id, phase, ids) {
+    if (phase === 'all') return ids;
+    if (phase === 'pairs') return pairGroups(ids).find(g => g.includes(id)) || [id];
+    return [id];
+  }
+
+  // Tells every member its group and the phase, after anything that moves
+  // either: a join, a leave, a phase change.
+  tellGroups(phase) {
+    const members = this.members();
+    const ids = members.map(w => this.idOf(w));
+    for (const w of members) {
+      const id = this.idOf(w);
+      try {
+        w.send(JSON.stringify({ t: 'group', phase, you: id, ids: this.groupOf(id, phase, ids) }));
+      } catch (e) {}
+    }
+  }
+
+  async fetch(request) {
+    if (request.headers.get('Upgrade') !== 'websocket') {
+      return new Response('expected a websocket', { status: 426 });
+    }
+    const url = new URL(request.url);
+    // The conductor: may set the phase. The broadcast key keeps the hall
+    // zero-setup (the worker already holds it); a bad key joins as a member
+    // rather than failing, so a stale link still gets to draw.
+    const conduct = url.searchParams.get('conduct') === '1' &&
+      !!this.env.BROADCAST_KEY && url.searchParams.get('key') === this.env.BROADCAST_KEY;
+    const id = (await this.ctx.storage.get('nextId')) || 1;
+    await this.ctx.storage.put('nextId', id + 1);
+    const phase = (await this.ctx.storage.get('phase')) || 'solo';
+    const pair = new WebSocketPair();
+    this.ctx.acceptWebSocket(pair[1], ['member']);
+    pair[1].serializeAttachment({ id, conduct });
+    const ids = this.members().map(w => this.idOf(w));
+    try {
+      pair[1].send(JSON.stringify({ t: 'hello', you: id, phase, ids, conduct: conduct ? 1 : 0 }));
+    } catch (e) {}
+    const arrived = JSON.stringify({ t: 'peer', id, on: 1 });
+    for (const w of this.members()) {
+      if (this.idOf(w) !== id) { try { w.send(arrived); } catch (e) {} }
+    }
+    // a join re-draws the pairs; solo and all only learn the roster
+    this.tellGroups(phase);
+    return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+
+  async webSocketMessage(ws, message) {
+    if (typeof message !== 'string') return;   // the hall carries no audio
+    if (message === 'ping') return;
+    let msg;
+    try { msg = JSON.parse(message); } catch (e) { return; }
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.t === 'time') {
+      try { ws.send(JSON.stringify({ t: 'time', c: msg.c, s: Date.now() })); } catch (e) {}
+      return;
+    }
+    const me = ws.deserializeAttachment();
+    if (!me) return;
+    if (msg.t === 'phase') {
+      if (!me.conduct || !PHASES.includes(msg.p)) return;
+      await this.ctx.storage.put('phase', msg.p);
+      this.tellGroups(msg.p);
+      return;
+    }
+    // Everything else is the member speaking to its group: a stroke
+    // ({t:'s'}), or whatever a later experience adds. Stamped with the
+    // sender and relayed to the group, never stored: a stroke says what is
+    // happening now.
+    const phase = (await this.ctx.storage.get('phase')) || 'solo';
+    const members = this.members();
+    const ids = members.map(w => this.idOf(w));
+    const group = this.groupOf(me.id, phase, ids);
+    msg.id = me.id;
+    const out = JSON.stringify(msg);
+    for (const w of members) {
+      const other = this.idOf(w);
+      if (other !== me.id && group.includes(other)) {
+        try { w.send(out); } catch (e) {}
+      }
+    }
+  }
+
+  async webSocketClose(ws) {
+    try { ws.close(); } catch (e) {}
+    await this.left(ws);
+  }
+  async webSocketError(ws) {
+    try { ws.close(); } catch (e) {}
+    await this.left(ws);
+  }
+  async left(ws) {
+    const me = ws.deserializeAttachment();
+    if (!me) return;
+    const gone = JSON.stringify({ t: 'peer', id: me.id, on: 0 });
+    for (const w of this.members()) {
+      try { w.send(gone); } catch (e) {}
+    }
+    const phase = (await this.ctx.storage.get('phase')) || 'solo';
+    this.tellGroups(phase);
+    // an empty hall starts its next gathering fresh
+    if (!this.members().length) {
+      await this.ctx.storage.delete('phase');
+      await this.ctx.storage.delete('nextId');
+    }
+  }
+}
+
 // A mirror room, by its name in the path (see Mirror rooms above).
 function isMirror(url) {
   return /^\/room\/mirror-/.test(url.pathname);
@@ -207,8 +365,13 @@ export default {
       const ok = !!env.MIRROR_KEY && pw === env.MIRROR_KEY;
       return new Response(ok ? 'ok' : 'no', { status: ok ? 200 : 403, headers: CORS });
     }
+    const hall = url.pathname.match(/^\/touch\/([\w-]{1,64})$/);
+    if (hall) {
+      const id = env.HALL.idFromName(hall[1]);
+      return env.HALL.get(id).fetch(request);
+    }
     const m = url.pathname.match(/^\/room\/([\w-]{1,64})$/);
-    if (!m) return new Response('The Signal broadcast relay. Connect a websocket to /room/<name>.');
+    if (!m) return new Response('The Signal broadcast relay. Connect a websocket to /room/<name>, or a hall to /touch/<name>.');
     const id = env.ROOM.idFromName(m[1]);
     return env.ROOM.get(id).fetch(request);
   }

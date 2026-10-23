@@ -1,0 +1,56 @@
+<!doctype html>
+<!-- Group touch (documents/touch-foundation.md): pick a brush, draw a
+     kaleidoscope into video feedback, get paired, end up drawing with
+     everyone. ?hall=name picks the room; ?conduct=key conducts it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Together</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd;
+    font: 15px/1.4 system-ui, -apple-system, sans-serif; overflow: hidden;
+    -webkit-user-select: none; user-select: none; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  .bar { position: fixed; left: 0; right: 0; display: flex; gap: 8px; align-items: center;
+    justify-content: center; pointer-events: none; }
+  .bar > * { pointer-events: auto; }
+  #foot { bottom: calc(10px + env(safe-area-inset-bottom)); }
+  #conduct { top: calc(10px + env(safe-area-inset-top)); display: none; }
+  #flash { top: 18%; font-size: 21px; color: #fff; text-shadow: 0 1px 12px #000;
+    opacity: 0; transition: opacity 0.8s; pointer-events: none; }
+  #status { color: #aaa; font-size: 13px; }
+  .chip { background: #ffffff1c; color: #eee; border: 0; border-radius: 999px;
+    padding: 7px 14px; font-size: 14px; }
+  .chip.on { background: #fff; color: #000; }
+  .dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
+  .dot.on { border-color: #fff; }
+  #dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  #picker { position: fixed; inset: 0; background: #000c; display: flex; flex-direction: column;
+    gap: 22px; align-items: center; justify-content: center; text-align: center; }
+  #picker h1 { font-size: 22px; font-weight: 600; margin: 0; }
+  #picker p { color: #9a9a9a; margin: 0; max-width: 34ch; }
+  #brushes, #hues { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #begin { background: #fff; color: #000; font-weight: 600; padding: 10px 26px; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="flash" class="bar"></div>
+<div id="conduct" class="bar"></div>
+<div id="foot" class="bar">
+  <button id="brushChip" class="chip">Brush</button>
+  <button id="slices" class="chip">× 6</button>
+  <span id="dot"></span>
+  <span id="status"></span>
+</div>
+<div id="picker">
+  <h1>Pick your brush</h1>
+  <p>Draw with a finger. Your mark becomes a kaleidoscope, and you will not be alone for long.</p>
+  <div id="brushes"></div>
+  <div id="hues"></div>
+  <button id="begin" class="chip">Begin</button>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
