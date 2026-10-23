@@ -588,6 +588,8 @@ const slotKey = new Array(SLOTS).fill(null);
 const slotOn = new Uint8Array(SLOTS), slotDone = new Uint8Array(SLOTS), slotTimed = new Uint8Array(SLOTS);
 const slotHead = new Int32Array(SLOTS), slotCount = new Int32Array(SLOTS), slotNextK = new Int32Array(SLOTS);
 const slotTlN = new Int32Array(SLOTS), slotTlI = new Int32Array(SLOTS);
+// where on the timeline the next stamp to go out stands (letOutTimed)
+const slotRelI = new Int32Array(SLOTS);
 const slotEnd = new Float64Array(SLOTS), slotArc = new Float64Array(SLOTS), slotCarry = new Float64Array(SLOTS);
 const slotSpacing = new Float64Array(SLOTS);
 const slotFed = new Float64Array(SLOTS), slotCursor = new Float64Array(SLOTS);
@@ -612,8 +614,10 @@ let clock = () => performance.now();
 export function setBrushClock(fn) { clock = fn || (() => performance.now()); }
 export function brushPlayDelay() { return playDelayNow(); }
 export function brushNow() { return clock(); }
-// The time a stamp let out of a slot carries (see brushPlay).
-let releaseKey = 0;
+// The time a stamp let out of a slot carries (see brushPlay), and the last
+// frame's: a timed slot's stamps are spread between the two by where each
+// falls in the stretch its cursor crossed this frame (letOutTimed).
+let releaseKey = 0, lastReleaseKey = NaN;
 // A fresh session's playback (the tests' between cases): the starting delay
 // and no senders' offsets known.
 export function brushPlayReset() { playLate = 0; offsets.clear(); }
@@ -633,6 +637,44 @@ function letOutTo(i, cursor) {
   const b = slotBuf[i];
   while (slotCount[i] > 0 && b[slotHead[i] * PF + 6] <= cursor + 1e-9) letOut(i);
 }
+// A timed slot's frame: each stamp its cursor passed carries its own
+// moment, the sender time its number stands at on the slot's timeline (the
+// timeline read backward, from count to time) mapped onto this clock as
+// play maps it (P, the sender time being played, is releaseKey here), and
+// not the frame's one time. Without this every stamp let out in a frame
+// shared one time, so two hands over one spot always tied, and the tie's
+// rule (core/brush-order.js, the senders' one-second turn) put first one
+// and then the other on top, swapping as the second turned and whenever a
+// hand came or went: the flicker where shapes overlap. With their own
+// times the later drawing is on top, as the bake means it to be, and the
+// turn is left for stamps of the very same moment. Held between the last
+// frame's time and this one's, so a stamp is never older than what was
+// already let out nor younger than now's play.
+function letOutTimed(i, P, c1) {
+  const to = releaseKey;
+  const from = lastReleaseKey < to ? lastReleaseKey : to;   // none yet, or a ratchet moved play back
+  const T = slotTlT[i], Q = slotTlP[i], n = slotTlN[i], b = slotBuf[i];
+  let j = slotRelI[i] < n ? slotRelI[i] : 0;
+  while (slotCount[i] > 0) {
+    const k = b[slotHead[i] * PF + 6];
+    if (k > c1 + 1e-9) break;
+    while (j + 1 < n && Q[j + 1] < k) j++;
+    let t = P;
+    if (n > 0) {
+      if (k <= Q[j]) t = T[j];
+      else if (j + 1 >= n) t = T[n - 1];
+      else {
+        const span = Q[j + 1] - Q[j];
+        t = span > 0 ? T[j] + (T[j + 1] - T[j]) * ((k - Q[j]) / span) : T[j + 1];
+      }
+    }
+    const key = to - (P - t);
+    releaseKey = key < from ? from : key > to ? to : key;
+    letOut(i);
+  }
+  slotRelI[i] = j;
+  releaseKey = to;
+}
 
 function openSlot(key, now) {
   let i = -1, oldest = -1;
@@ -647,7 +689,7 @@ function openSlot(key, now) {
   }
   slotOn[i] = 1; slotDone[i] = 0; slotKey[i] = key; slotBand[i] = -1;
   slotWho[i] = typeof key === 'number' ? key : BROADCAST_ID;
-  slotHead[i] = 0; slotCount[i] = 0; slotNextK[i] = 0; slotTlN[i] = 0; slotTlI[i] = 0;
+  slotHead[i] = 0; slotCount[i] = 0; slotNextK[i] = 0; slotTlN[i] = 0; slotTlI[i] = 0; slotRelI[i] = 0;
   slotEnd[i] = 0; slotArc[i] = 0; slotCarry[i] = 0; slotFed[i] = now; slotCursor[i] = -1;
   for (let j = 0; j < PLAY_STAGES; j++) slotStage[i * PLAY_STAGES + j] = 0;
   return i;
@@ -661,6 +703,7 @@ function addPoint(i, t, p) {
     if (from === 1 && slotTlI[i] === 0) letOutTo(i, slotTlP[i][0]);   // nothing played yet: the oldest point's stamps go now
     slotTlT[i].copyWithin(0, from, TL_CAP); slotTlP[i].copyWithin(0, from, TL_CAP);
     slotTlN[i] -= from; slotTlI[i] = slotTlI[i] > from ? slotTlI[i] - from : 0;
+    slotRelI[i] = slotRelI[i] > from ? slotRelI[i] - from : 0;
   }
   const n = slotTlN[i]++;
   slotTlT[i][n] = t; slotTlP[i][n] = p;
@@ -753,6 +796,7 @@ export function brushPlay(dt) {
   const now = clock();
   const delayNow = playDelayNow();
   // a stamp let out now was drawn a delay ago on its sender's timeline
+  lastReleaseKey = releaseKey;
   releaseKey = now - delayNow;
   dealTick();
   replayTick(now);
@@ -773,10 +817,11 @@ export function brushPlay(dt) {
       // never back, even when a ratchet moves play time back for every slot
       if (cursor < slotCursor[i]) cursor = slotCursor[i];
       slotCursor[i] = cursor;
+      letOutTimed(i, P, cursor);
     } else {
       cursor = playStep(slotStage, i * PLAY_STAGES, slotEnd[i], dt);
+      letOutTo(i, cursor);
     }
-    letOutTo(i, cursor);
     if (slotDone[i] && slotCount[i] === 0) { slotOn[i] = 0; slotKey[i] = null; }
   }
 }

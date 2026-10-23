@@ -247,3 +247,50 @@ test('a hand still past the abandon time mid-stroke does not raise the delay whe
   assert.equal(brushPlayDelay(), d0, 'the joint carries no stamp, so it is never late');
   for (let i = 0; i < 300; i++) { now += 1000 / 60; brushPlay(1 / 60); take(); }
 });
+
+test('two hands over one spot: each stamp carries its own moment, so the later drawing is on top and a frame\'s stamps never tie', () => {
+  // A and B draw the very same line, B 4 ms behind A, both 40 ms away; a
+  // frame lets out stamps of both, and they must not share the frame's one
+  // time (a tie the one-second turn would settle, first one then the other
+  // on top: the flicker where shapes overlap), but each be at its own
+  // moment, B's a steady 4 ms after A's, on every frame
+  take();
+  brushPlayReset();
+  const a = sender(240, 1000, { a: 3, m: 7, c: 1, f: 0.5 }), b = sender(240, 1004, { a: 3, m: 7, c: 1, f: 0.5 });
+  const skew = 123456;
+  const arrivals = [];
+  for (const m of a.msgs) arrivals.push({ m: { ...m.msg, id: 1 }, at: m.sentAt + skew + 40 });
+  for (const m of b.msgs) arrivals.push({ m: { ...m.msg, id: 2 }, at: m.sentAt + skew + 40 });
+  arrivals.sort((x, y) => x.at - y.at);
+  now = arrivals[0].at - 5;
+  const keys = { 1: [], 2: [] }, frameOf = { 1: [], 2: [] };
+  let n = 0;
+  for (let f = 0, k = 0; f < 600 && (k < arrivals.length || brushPlaying()); f++) {
+    const frameAt = now + 1000 / 60;
+    // each batch taken the moment it arrives, as a socket's handler does
+    while (k < arrivals.length && arrivals[k].at <= frameAt) { now = arrivals[k].at; brushTake(arrivals[k++].m); }
+    now = frameAt;
+    brushPlay(1 / 60);
+    const q = brushQueue;
+    for (let i = 0; i < q.count; i++) {
+      const at = (q.head + i) % q.cap, who = q.buf[at * STAMP_FLOATS + 6];
+      keys[who].push(q.key[at]); frameOf[who].push(f);
+    }
+    brushQueueDrop(q.count);
+    n = f;
+  }
+  assert.ok(n > 0);
+  assert.equal(keys[1].length, keys[2].length, 'the same line, the same stamps');
+  assert.ok(keys[1].length > 20);
+  let sameFrame = 0;
+  for (let i = 0; i < keys[1].length; i++) {
+    // a frame's end stamps are let out whole at the stroke's last point:
+    // only the ones played on the timeline are timed
+    if (i >= keys[1].length - 2) break;
+    const d = keys[2][i] - keys[1][i];
+    assert.ok(Math.abs(d - 4) < 1.5, `stamp ${i}: B's ${d.toFixed(2)} ms after A's`);
+    if (frameOf[1][i] === frameOf[2][i]) sameFrame++;
+  }
+  assert.ok(sameFrame > 0, 'some stamps of both came out in one frame, and still kept their order');
+  for (const w of [1, 2]) for (let i = 1; i < keys[w].length; i++) assert.ok(keys[w][i] >= keys[w][i - 1], 'one hand\'s stamps keep their order');
+});
