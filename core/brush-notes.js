@@ -8,7 +8,11 @@
 //
 // The scale: major scale degrees 1 2 3 5 7 8 9 10 12 14 15, one shape
 // (1, 2, 3, 5, 7) over two octaves and the double octave's root, eleven
-// pitches from C4 (ROOT_HZ, constant for now). Each hand is dealt four of
+// pitches from ROOT_HZ. The root is the music's own, two octaves above the
+// piano's sounding root (js/piano.js ARP_ROOT_HZ, 79.5 Hz, the 40 Hz
+// carrier's family), and the degree set is the music's (semitones 0 2 4 7
+// 11 in every octave), so every brush note lands on the show's scale
+// rather than beside it. Each hand is dealt four of
 // the eleven, ascending, one for each line from the bottom up, and a bell
 // of its own (a whole number FM ratio, so it rings in tune, and its index
 // and decay jittered about one bell patch),
@@ -24,7 +28,7 @@
 // counts as across, so a hand resting on a line does not ring it over and
 // over.
 
-export const ROOT_HZ = 261.6256;     // C4
+export const ROOT_HZ = 318;          // 79.5 Hz x 4: the music's root, in the old C4 register
 export const DEGREES = [1, 2, 3, 5, 7, 8, 9, 10, 12, 14, 15];
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 export const BANDS = 5, LINES = BANDS - 1, HYST = 0.02;
