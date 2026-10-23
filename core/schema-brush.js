@@ -12,10 +12,20 @@
 // control saves on change and comes back on reload.
 import { saveBrush, save } from './store.js';
 import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushRound, brushSetPhase, brushNext, brushPickAtlas, brushMember } from './brush.js';
-import { fadeLabel, fadeFromText, rateLabel, BRUSH_W, ROTATE_MAX } from './brush-stamps.js';
+import { fadeLabel, fadeFromText, rateLabel, BRUSH_W, ROTATE_MAX, CONTINUITY_MAX } from './brush-stamps.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 
 const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_SPIN = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
+// Continuity (stamps per spacing of the law, core/brush-stamps.js), and
+// the playback's Replay speed and Replay size (core/brush.js): all three
+// 1, the brush exactly as it was before them. Each is a multiple on a
+// grid of its own: Continuity in tenths up to CONTINUITY_MAX, the two
+// replay knobs in twentieths (0.05x).
+const DEF_CONTINUITY = 1, DEF_REPLAY_SPEED = 1, DEF_REPLAY_SIZE = 1;
+const SPEED_LO = 0.05, SPEED_HI = 2, RSIZE_LO = 0.25, RSIZE_HI = 4;
+// a multiple as its readout: '0.05x', '0.75x', '1x', '1.5x'
+const timesLabel = v => (Math.round(v * 100) / 100) + 'x';
+const timesFromText = (text, per) => { const n = parseFloat(text); return n > 0 ? Math.round(n * per) : NaN; };
 // The dealt brushes: off, four each (fifteen people take sixty of a set's
 // sixty-four tiles, none twice), and the follower screens' bottom buttons
 // hidden. The room's Stream and Smoothing, ms (the conductor's).
@@ -35,6 +45,9 @@ export function initBrushState(S) {
   if (typeof S.brushCopies !== 'number') S.brushCopies = DEF_COPIES;
   if (typeof S.brushFade !== 'number') S.brushFade = DEF_FADE;
   if (typeof S.brushRate !== 'number') S.brushRate = DEF_RATE;
+  if (typeof S.brushContinuity !== 'number') S.brushContinuity = DEF_CONTINUITY;
+  if (typeof S.brushReplaySpeed !== 'number') S.brushReplaySpeed = DEF_REPLAY_SPEED;
+  if (typeof S.brushReplaySize !== 'number') S.brushReplaySize = DEF_REPLAY_SIZE;
   if (typeof S.brushDeal !== 'boolean') S.brushDeal = DEF_DEAL;
   if (typeof S.brushDealN !== 'number') S.brushDealN = DEF_DEAL_N;
   if (typeof S.brushHideFollow !== 'boolean') S.brushHideFollow = DEF_HIDE_FOLLOW;
@@ -64,6 +77,7 @@ export function applyBrushWire(S, o) {
 // What the record holds.
 export function brushStateOf(S) {
   return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
+           brushContinuity: S.brushContinuity, brushReplaySpeed: S.brushReplaySpeed, brushReplaySize: S.brushReplaySize,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
            brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax };
@@ -82,6 +96,9 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushCopies)) S.brushCopies = n(o.brushCopies, 1, 24);
   if (Number.isFinite(o.brushFade)) S.brushFade = Math.max(0, Math.min(1, o.brushFade));
   if (Number.isFinite(o.brushRate)) S.brushRate = Math.max(0, Math.min(1, o.brushRate));
+  if (Number.isFinite(o.brushContinuity)) S.brushContinuity = Math.max(1, Math.min(CONTINUITY_MAX, o.brushContinuity));
+  if (Number.isFinite(o.brushReplaySpeed)) S.brushReplaySpeed = Math.max(SPEED_LO, Math.min(SPEED_HI, o.brushReplaySpeed));
+  if (Number.isFinite(o.brushReplaySize)) S.brushReplaySize = Math.max(RSIZE_LO, Math.min(RSIZE_HI, o.brushReplaySize));
   if (typeof o.brushDeal === 'boolean') S.brushDeal = o.brushDeal;
   if (Number.isFinite(o.brushDealN)) S.brushDealN = n(o.brushDealN, 1, 8);
   if (typeof o.brushHideFollow === 'boolean') S.brushHideFollow = o.brushHideFollow;
@@ -174,6 +191,44 @@ export const BRUSH_CONTROLS = [
       if (n > 60) return 100;
       return Math.round(99 * Math.log(Math.max(1, n)) / Math.log(60));
     }
+  },
+  // How densely a continuous stroke is filled (core/brush-stamps.js
+  // brushSpacing): 1x is the law, a stamp every twentieth of the motif's
+  // side; up to 10x, ten stamps where it laid one, for a smoother ribbon
+  // on a fast drag. Each screen's own, on every stroke it draws (the
+  // hand's, the hall's, the playback's), never sent and never the room's:
+  // the room deals Size, not this. Held for each stroke from its start.
+  {
+    id: 'brushContinuity', section: 'brush', label: 'Continuity', kind: 'slider',
+    min: 10, max: CONTINUITY_MAX * 10, step: 1, def: DEF_CONTINUITY * 10,
+    get: S => Math.round(S.brushContinuity * 10),
+    set: (S, pos) => { S.brushContinuity = Math.max(10, Math.min(CONTINUITY_MAX * 10, Math.round(pos))) / 10; saveBrush(); },
+    formatAt: pos => timesLabel(pos / 10),
+    parse: (S, text) => timesFromText(text, 10)
+  },
+  // The tape's playback, at the pace of the playback between shows
+  // (?replay=, platform/tape-replay.js): 1x is real time, the drawing as
+  // it happened, 0.05x to 2x, live, from where the pass stands. The show's
+  // cue 24 keeps its own squeeze and is never moved by this.
+  {
+    id: 'brushReplaySpeed', section: 'brush', label: 'Replay speed', kind: 'slider',
+    min: Math.round(SPEED_LO * 20), max: SPEED_HI * 20, step: 1, def: DEF_REPLAY_SPEED * 20,
+    get: S => Math.round(S.brushReplaySpeed * 20),
+    set: (S, pos) => { S.brushReplaySpeed = Math.max(SPEED_LO * 20, Math.min(SPEED_HI * 20, Math.round(pos))) / 20; saveBrush(); },
+    formatAt: pos => timesLabel(pos / 20),
+    parse: (S, text) => timesFromText(text, 20)
+  },
+  // The size every replayed stroke is drawn at, over the width it was drawn
+  // with (both playbacks, the standing one and cue 24's), held to the
+  // wire's 1 to 100, so a stroke drawn at the default 50 grows at most 2x.
+  // A live hand's strokes are never touched. From the next batch on.
+  {
+    id: 'brushReplaySize', section: 'brush', label: 'Replay size', kind: 'slider',
+    min: RSIZE_LO * 20, max: RSIZE_HI * 20, step: 1, def: DEF_REPLAY_SIZE * 20,
+    get: S => Math.round(S.brushReplaySize * 20),
+    set: (S, pos) => { S.brushReplaySize = Math.max(RSIZE_LO * 20, Math.min(RSIZE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
+    formatAt: pos => timesLabel(pos / 20),
+    parse: (S, text) => timesFromText(text, 20)
   },
   // How long a mark takes to fade away, 1 s to a minute (core/brush-stamps.js
   // fadeSeconds): the trail image's half-life is a fifth of it.

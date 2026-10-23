@@ -84,8 +84,16 @@ export function brushSide(w) {
   const k = w > 1 ? (w < 100 ? w : 100) : 1;
   return k / 100 * SIDE_MAX;
 }
-export function brushSpacing(w) {
-  return brushSide(w) * SPACING_SHARE;
+// The spacing of a stroke of width w: SPACING_SHARE of its side, over the
+// screen's Continuity (density, 1 to CONTINUITY_MAX; the Brush section's
+// slider): 1 is the law as it stood, 10 ten stamps where it laid one. It
+// is each screen's own, never on the wire and never the room's, so one
+// stroke is the same line everywhere, more or less densely filled; the
+// hand's own walk, the hall's strokes and the playback's all take it.
+export const CONTINUITY_MAX = 10;
+export function brushSpacing(w, density = 1) {
+  const k = density > 1 ? (density < CONTINUITY_MAX ? density : CONTINUITY_MAX) : 1;
+  return brushSide(w) * SPACING_SHARE / k;
 }
 
 // The Fade slider (0 to 1, the wire's f) as how long a mark takes to fade

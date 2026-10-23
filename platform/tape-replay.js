@@ -9,7 +9,8 @@
 // whole show's tape is the creation itself. Unlike the show's playback,
 // which squeezes the whole show into 45 s, this one plays in real time
 // (REAL_TIME, the pass never squeezed): the drawing exactly as it happened,
-// the short rest between laps, round forever.
+// the short rest between laps, round forever, at the Brush section's Replay
+// speed (1x, real time, unless a screen's own record says otherwise).
 //
 // Nothing here talks to the relay. The page joins no hall and follows no
 // broadcast (main.js), so a visitor's own strokes draw on their screen

@@ -231,3 +231,19 @@ test('the wire: q round-trips, refuses junk, and is optional', () => {
   // the default room: a 20 ms stream and 30 ms of smoothing
   assert.equal(DELAY0_MS, 50);
 });
+
+test('a hand still past the abandon time mid-stroke does not raise the delay when it moves on', () => {
+  brushPlayReset();
+  take();
+  const d0 = brushPlayDelay();
+  const T = 900000, key = 777;
+  const pts = [{ u: 0.3, v: 0.3 }, { u: 0.32, v: 0.31 }];
+  brushTake(Object.assign(encodeStroke(MOTIF, 200, 50, 0, pts, { a: 1, m: 3, c: 1, f: 0.5, q: timesToQ([T, T + 16]) }), { id: key }));
+  // five seconds still (the slot is let go after its abandon time)
+  for (let i = 0; i < 300; i++) { now += 1000 / 60; brushPlay(1 / 60); take(); }
+  // then on: the joint is the stillness's start, the new point now
+  const on = [{ u: 0.32, v: 0.31 }, { u: 0.36, v: 0.33 }];
+  brushTake(Object.assign(encodeStroke(MOTIF, 200, 50, 1, on, { a: 1, m: 3, c: 1, f: 0.5, q: timesToQ([T + 16, T + 5016]) }), { id: key }));
+  assert.equal(brushPlayDelay(), d0, 'the joint carries no stamp, so it is never late');
+  for (let i = 0; i < 300; i++) { now += 1000 / 60; brushPlay(1 / 60); take(); }
+});

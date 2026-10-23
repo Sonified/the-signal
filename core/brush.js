@@ -186,7 +186,7 @@ let pressing = false;
 // The stroke's last point, quantized as the wire carries it, and the walk's
 // carry; its settings, held for the whole stroke.
 let lastQu = 0, lastQv = 0, carry = 0;
-let sCopies = 1, sMotif = 0, sSet = 1, sFade = 0.5, sSize = BRUSH_W;
+let sCopies = 1, sMotif = 0, sSet = 1, sFade = 0.5, sSize = BRUSH_W, sSpacing = 0;
 // The Rate, held for the stroke: continuous, or prints every printMs (the
 // last at lastPrintT), each print one point on the wire (core/brush-stamps.js).
 let sRate = 1, sPrints = false, printMs = 1000, lastPrintT = 0;
@@ -240,6 +240,7 @@ function begin(x, y, width, height, inset, t) {
   sSet = handSet || kaleidoscopeSet(S.kaleidoSet).id;
   sFade = S.brushFade >= 0 && S.brushFade <= 1 ? S.brushFade : 0.5;
   sSize = brushSizeNow();
+  sSpacing = brushSpacing(sSize, S.brushContinuity);
   sRate = S.brushRate >= 0 && S.brushRate <= 1 ? S.brushRate : 1;
   sPrints = !rateContinuous(sRate);
   printMs = 1000 / printsPerSecond(sRate);
@@ -273,7 +274,7 @@ function extend(x, y, width, height, inset, t) {
   }
   if (lastU !== lastQu || lastV !== lastQv) {
     qSide = brushSide(sSize); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
-    carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, brushSpacing(sSize), sCopies, emit);
+    carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, sSpacing, sCopies, emit);
     lastQu = lastU; lastQv = lastV;
     handBand = ringBand(handBand, lastQv / QUANT, bellId());
     if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
@@ -588,6 +589,7 @@ const slotOn = new Uint8Array(SLOTS), slotDone = new Uint8Array(SLOTS), slotTime
 const slotHead = new Int32Array(SLOTS), slotCount = new Int32Array(SLOTS), slotNextK = new Int32Array(SLOTS);
 const slotTlN = new Int32Array(SLOTS), slotTlI = new Int32Array(SLOTS);
 const slotEnd = new Float64Array(SLOTS), slotArc = new Float64Array(SLOTS), slotCarry = new Float64Array(SLOTS);
+const slotSpacing = new Float64Array(SLOTS);
 const slotFed = new Float64Array(SLOTS), slotCursor = new Float64Array(SLOTS);
 // who drew it (core/brush-order.js): the hall's id, or the broadcaster's
 const slotWho = new Float64Array(SLOTS);
@@ -693,7 +695,12 @@ export function brushTake(msg, from) {
   const fresh = i < 0;
   if (fresh) i = openSlot(key, now);
   const prints = !rateContinuous(s.r);
-  const spacing = brushSpacing(s.w);
+  // the stroke's spacing, held from its first batch here: this screen's
+  // Continuity and the stroke's width as they were then, so a slider moved
+  // mid-stroke (or a replayed batch drawn at another size) never shifts
+  // the stamp count its timeline is laid in
+  if (fresh) slotSpacing[i] = brushSpacing(s.w, S.brushContinuity);
+  const spacing = slotSpacing[i];
   const p = s.points, T = s.times;
   slotFed[i] = now;
   slotTimed[i] = T ? 1 : 0;
@@ -702,8 +709,14 @@ export function brushTake(msg, from) {
   if (fresh && !prints && s.d !== 0) slotNextK[i] = 1;
   if (T) {
     // Late? The first point this batch adds, against where play stands
-    // (with the offset as it was): the delay rises by the lateness.
-    const first = fresh || prints ? 0 : 1;
+    // (with the offset as it was): the delay rises by the lateness. A
+    // continuous stroke's joint is never that point, its stamps being the
+    // last piece's, a fresh slot's included: a hand that held still past
+    // ABANDON_MS mid-stroke comes back in a new slot whose joint is as old
+    // as the stillness, and counting it raised the delay by all of it,
+    // for every stroke after (the archived tape's drawer 12, still 9.8 s,
+    // took the replay's delay to its 2 s cap).
+    const first = prints || (fresh && s.d === 0) ? 0 : 1;
     const off0 = offsets.get(key);
     if (off0 !== undefined && first < T.length) {
       const d = playDelayNow();
@@ -771,7 +784,7 @@ export function brushPlay(dt) {
 // Whether any remote stroke is still playing out, or the show's playback
 // runs (the still frame waits).
 export function brushPlaying() {
-  if (replayOn) return true;
+  if (replayOn && !held) return true;
   for (let i = 0; i < SLOTS; i++) if (slotOn[i]) return true;
   return false;
 }
@@ -791,8 +804,42 @@ export function brushPlaying() {
 // shows (platform/tape-replay.js) passes Infinity, so its passes run in
 // real time, the drawing exactly as it happened, with the same short rest
 // between laps.
+//
+// The pass runs on a clock of its own (passClock, ms into the pass),
+// moved on each frame by the frame's time times the playback's speed: 1
+// for the show's cue 24, whose squeeze is its own law, and the Brush
+// section's Replay speed (S.brushReplaySpeed, 0.05x to 2x) for the
+// standing playback, read every frame, so a move of the slider changes
+// the pace from where the pass stands, never jumping or starting it over.
+// Each step taken is laid on this screen's clock at the moment the pass
+// clock passed it, its point gaps at the pass's scale over the speed.
+//
+// Replay size (S.brushReplaySize, 0.25x to 4x) scales the width every
+// replayed batch is drawn at, cue 24's and the standing playback's alike
+// (the one seam both go through, core/brush-replay.js retime), held to
+// the wire's 1 to 100; a live hand's strokes and the hall's are never
+// touched. It takes effect from the next batch, mid-stroke included: the
+// marks grow or shrink along the line, which keeps the stroke's own
+// spacing (brushTake holds each slot's spacing from its first batch).
+//
+// A playback can be held (brushReplayHold: the standing page's pause, its
+// Space or a tap on the field) and let go again: held, the pass clock
+// stands, so on letting go the pass carries on from the very step it
+// stopped at, never planned afresh. Batches already taken when the hold
+// comes play out their last few moments.
 const showTape = [];
-let replayOn = false, pass = null, passI = 0, passT0 = 0, saidSkip = -1, replayLoopMs = LOOP_MS;
+let replayOn = false, pass = null, passI = 0, passClock = 0, lastTick = -1, saidSkip = -1, replayLoopMs = LOOP_MS;
+let held = false;
+export const REPLAY_SPEED_MIN = 0.05, REPLAY_SPEED_MAX = 2, REPLAY_SIZE_MIN = 0.25, REPLAY_SIZE_MAX = 4;
+function replaySpeedNow() {
+  if (replayLoopMs !== Infinity) return 1;
+  const v = S.brushReplaySpeed;
+  return v >= REPLAY_SPEED_MIN ? (v <= REPLAY_SPEED_MAX ? v : REPLAY_SPEED_MAX) : (v > 0 ? REPLAY_SPEED_MIN : 1);
+}
+function replaySizeNow() {
+  const v = S.brushReplaySize;
+  return v >= REPLAY_SIZE_MIN ? (v <= REPLAY_SIZE_MAX ? v : REPLAY_SIZE_MAX) : (v > 0 ? REPLAY_SIZE_MIN : 1);
+}
 export function brushTapeReset() { showTape.length = 0; }
 export function brushTapeAdd(entries) {
   for (const e of entries) showTape.push(e);
@@ -806,26 +853,39 @@ export function brushReplay(on, loopMs = LOOP_MS) {
   if (on === replayOn) return;
   replayOn = on;
   pass = null;
+  lastTick = -1;
   saidSkip = -1;
   console.log(on ? '[drawing] playing back the room\'s drawing on a loop (' + showTape.length + ' batches so far)' : '[drawing] the playback stops');
   idleWake('the playback');
 }
 export function brushReplaying() { return replayOn; }
+export function brushReplayHold(on) {
+  on = !!on;
+  if (on === held) return;
+  held = on;
+  // the frames while held never move the pass: it goes on from now
+  lastTick = -1;
+  idleWake('the playback');
+}
+export function brushReplayHeld() { return held; }
 function replayTick(now) {
-  if (!replayOn) return;
-  if (!pass || (passI >= pass.steps.length && now - passT0 >= pass.ms)) {
+  if (!replayOn || held) return;
+  const speed = replaySpeedNow();
+  passClock += lastTick < 0 ? 0 : (now - lastTick) * speed;
+  lastTick = now;
+  if (!pass || (passI >= pass.steps.length && passClock >= pass.ms)) {
     pass = planPass(showTape, replayLoopMs);
-    passI = 0; passT0 = now;
+    passI = 0; passClock = 0;
     if (!pass.steps.length) { pass = null; return; }
     if (pass.drawers && pass.skipped !== saidSkip) {
       saidSkip = pass.skipped;
       console.log('[drawing] playback begins where the room arrives: ' + pass.drawers + ' drawers within ' + Math.round(ROOM_WINDOW_MS / 1000) + ' s, skipping the first ' + pass.skipped + ' batches');
     }
   }
-  const st = pass.steps, t = now - passT0;
-  while (passI < st.length && st[passI].tMs <= t) {
+  const st = pass.steps, scale = pass.scale / speed, size = replaySizeNow();
+  while (passI < st.length && st[passI].tMs <= passClock) {
     const step = st[passI++];
-    brushTake(retime(step, passT0 + step.tMs, pass.scale));
+    brushTake(retime(step, now - (passClock - step.tMs) / speed, scale, size));
   }
 }
 

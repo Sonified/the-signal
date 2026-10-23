@@ -164,3 +164,21 @@ test('real time: retime at scale 1 keeps every point gap as drawn', () => {
   const m = retime({ id: 3, s: motif(1, [10000, 40, 60]) }, 70000, 1);
   assert.deepEqual(m.q, [69900, 40, 60]);
 });
+
+test('replay size: a stroke drawn at w 50 plays at 100 at 2x, held to the wire\'s 1 to 100', () => {
+  const s = motif(1, [1000, 20, 20]);
+  assert.equal(s.w, 50);
+  assert.equal(retime({ id: 1, s }, 5000, 1).w, 50, 'as drawn by default');
+  assert.equal(retime({ id: 1, s }, 5000, 1, 2).w, 100);
+  assert.equal(retime({ id: 1, s }, 5000, 1, 4).w, 100, 'held at the top');
+  assert.equal(retime({ id: 1, s }, 5000, 1, 0.25).w, 13);
+  assert.equal(retime({ id: 1, s: Object.assign({}, s, { w: 2 }) }, 5000, 1, 0.25).w, 1, 'never under 1');
+  assert.ok(decodeStroke(retime({ id: 1, s }, 5000, 1, 2)));
+  assert.equal(s.w, 50, 'the tape\'s own copy untouched');
+});
+
+test('replay speed: the gaps at the pass\'s scale over the speed, 0.5x twice as far apart, 2x half', () => {
+  const s = motif(1, [10000, 40, 60]);
+  assert.deepEqual(retime({ id: 1, s }, 50000, 1 / 0.5).q, [49800, 80, 120]);
+  assert.deepEqual(retime({ id: 1, s }, 50000, 1 / 2).q, [49950, 20, 30]);
+});

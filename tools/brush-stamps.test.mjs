@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  stampCopies, walkBatch, walkSegment, stampsFor, fieldSquare, brushSpacing, brushSide, BRUSH_W,
+  stampCopies, walkBatch, walkSegment, stampsFor, fieldSquare, brushSpacing, brushSide, BRUSH_W, CONTINUITY_MAX,
   fadeSeconds, fadeHalfLife, fadeLabel, fadeFromText, FADE_HALVINGS,
   SPACING_SHARE, rateContinuous, printsPerSecond, rateLabel
 } from '../core/brush-stamps.js';
@@ -411,4 +411,20 @@ test('a follower lets the room\'s copy of the broadcaster\'s stroke go (the broa
   assert.equal(drain().length, 0, 'the room copy, marked, is not drawn');
   brushTake({ ...m, cd: 1 }, 'broadcast');
   assert.equal(drain().length, 1, 'the broadcast copy is');
+});
+
+test('Continuity: the spacing over the screen\'s density, 1x the law, held to 1x..10x', () => {
+  const sp = brushSpacing(BRUSH_W);
+  assert.equal(brushSpacing(BRUSH_W, 1), sp);
+  assert.equal(brushSpacing(BRUSH_W, undefined), sp);
+  assert.ok(close(brushSpacing(BRUSH_W, 10), sp / 10));
+  assert.ok(close(brushSpacing(BRUSH_W, 2.5), sp / 2.5));
+  assert.ok(close(brushSpacing(BRUSH_W, 40), sp / CONTINUITY_MAX), 'held at the top');
+  assert.equal(brushSpacing(BRUSH_W, 0.2), sp, 'never sparser than the law');
+  // the same line at 10x: ten stamps where the law laid one, still evenly
+  const line = [{ u: 0.2, v: 0.3 }, { u: 0.6, v: 0.46 }];
+  const one = [], ten = [];
+  walkBatch(line, 0, 0, brushSpacing(BRUSH_W), 1, (u, v) => one.push({ u, v }));
+  walkBatch(line, 0, 0, brushSpacing(BRUSH_W, 10), 1, (u, v) => ten.push({ u, v }));
+  assert.ok(Math.abs(ten.length - 1 - (one.length - 1) * 10) <= 10);
 });

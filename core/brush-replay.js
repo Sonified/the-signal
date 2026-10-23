@@ -100,9 +100,12 @@ export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS) {
 // replay key, its points' times (when it carries them) laid on this
 // screen's clock with its last point at `base` and the rest `scale` as far
 // apart as they were drawn. Whole ms, as the wire wants: each point's time
-// rounded, the gaps taken between the rounded times, so none drifts.
-export function retime(step, base, scale) {
+// rounded, the gaps taken between the rounded times, so none drifts. size
+// (the Brush section's Replay size, 1 as drawn) scales the width it is
+// drawn at, whole and held to the wire's 1 to 100.
+export function retime(step, base, scale, size = 1) {
   const s = step.s, msg = Object.assign({}, s, { id: REPLAY_ID + step.id });
+  if (size !== 1 && typeof s.w === 'number') msg.w = Math.max(1, Math.min(100, Math.round(s.w * size)));
   const q = s.q;
   if (!Array.isArray(q) || !q.length) { delete msg.q; return msg; }
   const T = new Array(q.length);

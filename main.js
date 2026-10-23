@@ -72,7 +72,7 @@ import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent, relayHost } from './platform/broadcast-socket.js';
 import { openBrushHall } from './platform/brush-hall.js';
-import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember, setBrushBell, setBrushStarted } from './core/brush.js';
+import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember, setBrushBell, setBrushStarted, brushReplayHold } from './core/brush.js';
 import { ringBell } from './js/brush-bells.js';
 import { linkBell } from './core/audio-link.js';
 import { drawHand } from './ui/screens/hand.js';
@@ -399,6 +399,8 @@ async function boot() {
     // Run/stop is not a setting, so no save() announces it; the demo
     // broadcast is told directly (a no-op unless this tab broadcasts).
     broadcastPoke();
+    // the standing playback pauses with the page and carries on with it
+    if (replayTape) brushReplayHold(!S.running);
   }
   const colorQuick = byId('colorQuick');
   // The floating windows in the order of the drawer's Windows buttons
@@ -785,7 +787,10 @@ async function boot() {
     // Space to the app. A slide that has played to its end takes Space
     // first: it starts again from the top, and the walk or run is left as
     // it stands.
-    const journeyKeys = journey.active && journeyCount() > 0;
+    // The standing playback (?replay&draw) has no journey: Space is its
+    // pause, the very run and stop a tap on the field makes, so the two
+    // can never disagree, and no journey walk ever redresses its stage.
+    const journeyKeys = !replayTape && journey.active && journeyCount() > 0;
     if (e.code === 'Space' && replayEndedSlide()) return true;
     if (e.code === 'Space') { if (journeyKeys) journeyTogglePlay(); else toggleRun(); return true; }
     if (journeyKeys && (k === 'ArrowLeft' || k === 'ArrowRight')) { journeyStepBy(k === 'ArrowLeft' ? -1 : 1); return true; }
