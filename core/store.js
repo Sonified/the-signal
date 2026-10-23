@@ -477,20 +477,10 @@ function applyExtra(x) {
   applyWordFxState(S, x);
 }
 
-// A followed tab (?follow=<room>) is only a viewer: its settings are the
-// room's, and every tab of this origin shares the one settings record, which
-// each tab takes in live (syncFromStorage). Were the follower to write, the
-// broadcaster's own tab, open in the same browser, would take the follower's
-// master volume (or anything else the viewer touched) as another tab's
-// change. So a follower never writes the two shared records.
-let writesHeld = false;
-export function holdSettingsWrites(on) { writesHeld = !!on; }
-
 function writeNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
   if (!storage) return;
-  if (writesHeld) { dirtyShared = dirtyExtra = false; return; }
   if (dirtyShared) {
     dirtyShared = false;
     const out = buildSettings();
