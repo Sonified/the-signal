@@ -265,6 +265,12 @@ function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 
+// Whether the Sun's first picture has come in on this page: a follower's
+// phone holds its other downloads until it has (main.js), so the Sun has the
+// connection first.
+let pictureIn = false;
+export const sunPictureIn = () => pictureIn;
+
 export function createSun(device, format) {
   const bgl = device.createBindGroupLayout({
     label: 'sun.bgl',
@@ -473,6 +479,7 @@ export function createSun(device, format) {
 
   function onLoaded(e) {
     if (e.target !== video) return;
+    pictureIn = true;
     if (holding) { holding = false; idleRelease('the sun video'); }
   }
   // Both elements onto a source; the ghost goes back to waiting, unloaded.

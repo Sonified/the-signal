@@ -36,7 +36,8 @@ import { startWorkerShell } from './platform/worker-bridge.js';
 import { createEngine } from './gpu/engine.js';
 import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
-import { createSun } from './gpu/sun.js';
+import { createSun, sunPictureIn } from './gpu/sun.js';
+import { showMediaFollowerGo } from './js/show-media.js';
 import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide, seekSlide, slidesProgress } from './gpu/slides.js';
 import { createSunQr } from './gpu/sun-qr.js';
 import { createStars } from './gpu/stars.js';
@@ -1173,7 +1174,6 @@ async function boot() {
   // after the loop starts: long enough that the modules, the presets, the
   // first frames and set one's own stand-in and upgrade (gpu/kaleido.js)
   // have had the network to themselves.
-  setTimeout(kaleidoPrefetch, 10000);
   // And its atlas for the wanted Image set, built whether the layer is on or
   // not, so a preset that uses it finds it ready. It starts with the loop,
   // not on a timer: until the first gesture the audio has fetched nothing, so
@@ -1182,11 +1182,31 @@ async function boot() {
   // yields between tiles through the dark-frame chores, and a visit after
   // the first reads it back from the browser's saved copy (platform
   // loadImageBaked).
-  kaleidoPreload();
   // The music's recordings too, in the audio's own order: nothing here needs
   // a gesture, so they are local before anyone presses a key
   // (js/audio-prefetch.js; a no-op in the engine's worker).
-  prefetchMusic();
+  const fetchAhead = () => {
+    setTimeout(kaleidoPrefetch, 10000);
+    kaleidoPreload();
+    prefetchMusic();
+  };
+  if (!followTab) fetchAhead();
+  else {
+    // A phone in by the QR (?follow=) is arriving at the Sun, so the Sun has
+    // the connection first: the rest, and the show's next slide
+    // (js/show-media.js showMediaFollowerGo), wait for its first picture,
+    // for 3 s if the room's Sun is off, and for 20 s at most.
+    const t0 = performance.now();
+    const sunWait = setInterval(() => {
+      const ms = performance.now() - t0;
+      const why = sunPictureIn() ? 'the Sun is up' : ms > 3000 && !(S.layers && S.layers.sun) ? 'no Sun in this room' : ms > 20000 ? 'waited 20 s for the Sun' : '';
+      if (!why) return;
+      clearInterval(sunWait);
+      console.log('[boot] follower: ' + why + ' (+' + Math.round(ms) + 'ms); fetching the rest');
+      fetchAhead();
+      showMediaFollowerGo();
+    }, 250);
+  }
   // a page that was live comes back live (js/livesound.js)
   restoreLive();
 }

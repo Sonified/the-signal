@@ -61,7 +61,8 @@ import { onSave, wireSettings, readKey, saveKey } from './store.js';
 import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl, recallStreamScene } from './presets.js';
 import { idleTouch, setFollowerTab } from '../js/idle-ahead.js';
 import { setPerfGlideHooks, perfGlideWriting, perfEachGlide, perfFollowGlide, perfFollowDrop } from './perform.js';
-import { setJourneyGlideHooks, journeyGlideWriting, journeyEachGlide } from './journey.js';
+import { setJourneyGlideHooks, journeyGlideWriting, journeyEachGlide, journeyPlayIdx, journeyCount, journeyStepAt } from './journey.js';
+import { showMediaNext } from '../js/show-media.js';
 import { CONTROLS, byId } from './schema.js';
 import { setStrobeClockOffset, setStrobeSyncTarget, clearStrobeSync } from './strobe.js';
 import { sunBreath, breathBeacon, setBreathClockOffset, setBreathSyncTarget, clearBreathSync } from './breath.js';
@@ -343,9 +344,23 @@ function stateBody(glide) {
   const msg = JSON.stringify({
     t: 'state', run: !!hooks.isRunning(), snap: wireSettings(),
     at: isNaN(clockOff) ? undefined : hooks.now() + clockOff, glide,
-    wk: sentRepeating ? 1 : 0, tw: fillGlides()
+    wk: sentRepeating ? 1 : 0, tw: fillGlides(), ns: nextSlide()
   });
   return msg.slice(0, -1);
+}
+
+// The slide the show plays next (ns in the state message): the first step
+// after the journey's current one whose slide differs from the one on now, so
+// a follower can have it ready (js/show-media.js showMediaNext). Nothing
+// outside a journey, or past its last slide.
+function nextSlide() {
+  const i = journeyPlayIdx(), n = journeyCount(), cur = S.slideFile;
+  if (!(i >= 0)) return undefined;
+  for (let k = i + 1; k < n; k++) {
+    const st = journeyStepAt(k), f = st && st.overrides ? st.overrides.slideFile : undefined;
+    if (typeof f === 'string' && f !== 'none' && f !== cur) return f;
+  }
+  return undefined;
 }
 
 function stateFor(s, body) {
@@ -1202,6 +1217,8 @@ export function initBroadcast(bits_, hooks_) {
         // rests again once it is still (core/idle.js, main.js).
         if (!followStill()) idleWake('broadcast');
         if (msg.t === 'state' && msg.snap && typeof msg.snap === 'object') {
+          // the show's next slide, made ready on this phone (js/show-media.js)
+          if (typeof msg.ns === 'string') showMediaNext(msg.ns);
           // Deadline alignment (see sendNow): a message carrying a recall
           // says how long its glide was; this side runs what the network
           // left of it, so both screens land together. Without a fresh

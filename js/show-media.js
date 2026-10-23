@@ -45,9 +45,20 @@
 // The console says what each file is doing ([show-media]): from disk,
 // unchanged, changed, its download every quarter of its bytes, its check,
 // saved, and a total at the end.
+//
+// A FOLLOWER (a phone in by the QR's ?follow= link) downloads none of the
+// above. It streams the slide on screen as always, and gets the NEXT one
+// ready: the broadcaster names it in its state (core/broadcast.js, ns, from
+// its journey's next steps) and showMediaNext takes it, and once the phone's
+// Sun is up (showMediaFollowerGo, main.js) that file is fetched whole into
+// memory if it is FOLLOW_CAP or under, then plays from there when its cue
+// lands; a bigger one streams. A newer name aborts a download still under
+// way. The phone keeps the last few it fetched (FOLLOW_KEEP), never the
+// one on screen given up.
 import { SLIDE_DIR, SLIDE_FILES } from '../core/schema-slides.js';
 import { TURN, inTurn } from './load-order.js';
 import { mediaCache, mediaFetch, absUrl } from './media-cache.js';
+import { S } from './state.js';
 
 // Fetched before anything else, outside the turns (see above).
 const FIRST = ['audio/heartbeat.m4a'];
@@ -66,6 +77,65 @@ export function showMediaSrc(url) { return urls.get(absUrl(url)) || null; }
 export function showMediaPending() { return started && !diskDone; }
 // gpu/sun.js, at its creation: the remote URL of the Sun file to keep.
 export function registerSunFile(url, name) { sunFile = { url: absUrl(url), name }; }
+
+// ---------- a follower's next slide (see A FOLLOWER above) ----------
+const FOLLOW_CAP = 40 * 1048576;
+const FOLLOW_KEEP = 3;
+let slideOk = null;        // the show's file names, made on first use
+let nextWant = '', nextCtl = null, nextFile = '', followerGo = false;
+const kept = [];          // files fetched ahead, oldest first
+
+// The broadcaster's next slide (a file name, or nothing).
+export function showMediaNext(file) {
+  if (!slideOk) slideOk = new Set(SLIDE_FILES.map(f => f[0]));
+  if (typeof file !== 'string' || !slideOk.has(file) || file === nextWant) return;
+  nextWant = file;
+  if (followerGo) fetchNext();
+}
+// The phone's Sun is up (or gave up waiting): the next slide may come.
+export function showMediaFollowerGo() {
+  if (followerGo) return;
+  followerGo = true;
+  if (nextWant) fetchNext();
+}
+async function fetchNext() {
+  const file = nextWant, url = absUrl(SLIDE_DIR + encodeURIComponent(file));
+  if (urls.has(url) || nextFile === file) return;
+  if (nextCtl) { nextCtl.abort(); log('next slide: ' + nextFile + ' dropped, the show moved on'); }
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  nextCtl = ctl; nextFile = file;
+  const t0 = performance.now();
+  try {
+    const r = await fetch(url, ctl ? { signal: ctl.signal } : {});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const size = +r.headers.get('Content-Length') || 0;
+    if (!size || size > FOLLOW_CAP) {
+      if (ctl) ctl.abort();
+      log(`next slide: ${file} is ${size ? mb(size) : 'of unknown size'}, over ${mb(FOLLOW_CAP)}; it streams when its cue lands`);
+      return;
+    }
+    log(`next slide: ${file}: downloading ${mb(size)}`);
+    const blob = await download(r, 'next slide: ' + file, 'video/mp4');
+    if (blob.size !== size) throw new Error('got ' + blob.size + ' bytes of ' + size);
+    use(url, blob);
+    kept.push(file);
+    while (kept.length > FOLLOW_KEEP) {
+      const old = kept[0], oldUrl = absUrl(SLIDE_DIR + encodeURIComponent(old));
+      if (old === S.slideFile) break;   // on screen: kept until it is not
+      kept.shift();
+      const b = urls.get(oldUrl);
+      urls.delete(oldUrl);
+      if (b) URL.revokeObjectURL(b);
+    }
+    log(`next slide: ${file}: ready, ${mb(blob.size)} in ${secs(t0)}`);
+  } catch (e) {
+    if (!(e && e.name === 'AbortError')) console.warn('[show-media] next slide: ' + file + ' failed (' + (e && e.message ? e.message : e) + '); it streams when its cue lands');
+  } finally {
+    if (nextCtl === ctl) { nextCtl = null; nextFile = ''; }
+  }
+  // the show named another while this one came
+  if (followerGo && nextWant !== file) fetchNext();
+}
 
 // A blob URL now plays the file. The old one is never revoked: a slide or
 // the Sun on screen may still be reading from it.
