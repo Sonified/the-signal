@@ -51,7 +51,7 @@ import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './fe
 import { MOTIFS, LAYOUT_STD, bakeTag, bakeAtlasPixels, buildAtlasMips } from './atlas-bake.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
-import { brushQueue, brushQueueRemove, brushAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
+import { brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
 import { noteSender, forgetIdle, activeSenders, bakeOrder, turnPlace } from '../core/brush-order.js';
 
@@ -245,19 +245,30 @@ export function createBrush(device, format, platform, opts) {
     const head = q.count ? setOf(q.buf[q.head * STAMP_FLOATS + 5]) : 0;
     let worst = null;
     for (const a of atlases.values()) {
-      if (a.set === cur || a.set === keep || a.set === head) continue;
+      if (a.set === cur || a.set === keep || a.set === head || a === shownHand) continue;
       if (!worst || a.used < worst.used) worst = a;
     }
     if (!worst) return;
-    if (worst === shown) { shown = null; if (picture) picture(null); }
+    if (worst === shown) { shown = null; if (picture) picture(null, 0); }
     if (worst.tex) worst.tex.destroy();
     atlases.delete(worst.set);
   }
 
+  // The dealt hand's row has a picture of its own (the UI renderer's slot
+  // 1): the atlas of the set it asked for this frame, once it is in.
+  let shownHand = null;
+  function publishHand(want) {
+    const a = atlases.get(setOf(want));
+    if (!a || !a.ready || a === shownHand) return;
+    shownHand = a;
+    const h = brushHandAtlas;
+    h.set = a.set; h.padUV = L.padUV; h.innerUV = L.innerUV; h.ready = true;
+    if (picture) picture(a.view, 1);
+  }
+
   // The atlas asked for this frame (the drawer's picker wants the current
-  // set, the dealt hand's strip its own set), else the current set's, as
-  // the picker's, once it is in: its painted tiles in sheet order and the
-  // picture the thumbnails sample.
+  // set), else the current set's, as the picker's, once it is in: its
+  // painted tiles in sheet order and the picture the thumbnails sample.
   function publish(want) {
     const cur = want > 0 ? setOf(want) : setOf(S.kaleidoSet);
     const a = atlases.get(cur);
@@ -271,7 +282,7 @@ export function createBrush(device, format, platform, opts) {
       if (!empty) b.tiles[n++] = t;
     }
     b.count = n; b.set = cur; b.padUV = L.padUV; b.innerUV = L.innerUV; b.ready = true;
-    if (picture) picture(a.view);
+    if (picture) picture(a.view, 0);
   }
 
   // ---------- per frame ----------
@@ -286,6 +297,9 @@ export function createBrush(device, format, platform, opts) {
     brushAtlas.want = 0;
     if (want > 0) { const s = setOf(want); load(s); const a = atlases.get(s); if (a) a.used = frame; }
     publish(want);
+    const hw = brushHandAtlas.want;
+    brushHandAtlas.want = 0;
+    if (hw > 0) { const s = setOf(hw); load(s); const a = atlases.get(s); if (a) a.used = frame; publishHand(hw); }
 
     // The field's square in device px: where a unit point lands.
     fieldSquare(S.W || pixelW / dpr, S.H || pixelH / dpr, S.edgeInset || 0, sq);

@@ -32,6 +32,7 @@ struct Uniforms {
 @group(2) @binding(1) var textSamp: sampler;
 @group(2) @binding(2) var picTex: texture_2d<f32>;
 @group(2) @binding(3) var picSamp: sampler;
+@group(2) @binding(4) var picTex1: texture_2d<f32>;
 
 struct VertexIn {
   @location(0) a0: vec4f, // kind, x, y, w
@@ -596,7 +597,11 @@ fn shadeImage(in: VOut) -> vec4f {
   if (any(abs(in.local) > in.halfSize)) { return vec4f(0.0); }
   let t = (in.local / in.halfSize) * 0.5 + vec2f(0.5, 0.5);
   let uv = mix(in.uv01.xy, in.uv01.zw, t);
-  let c = textureSample(picTex, picSamp, uv);
+  // field A says which picture: 0 the picker's, 1 the hand's (both sampled,
+  // so the read stays in uniform control flow)
+  let c0 = textureSample(picTex, picSamp, uv);
+  let c1 = textureSample(picTex1, picSamp, uv);
+  let c = select(c0, c1, in.fieldAB.x > 0.5);
   return c * (in.fill.a * in.opacity);
 }
 

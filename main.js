@@ -297,7 +297,7 @@ async function boot() {
   // asks for an atlas; the current set's atlas is the UI renderer's
   // picture, which the picker's thumbnails sample.
   const uiRenderer = createUIRenderer(device, format, text);
-  engine.registerBrush(createBrush(device, format, platform, { picture: v => uiRenderer.setPicture(v), yieldTile: choreYield }));
+  engine.registerBrush(createBrush(device, format, platform, { picture: (v, slot) => uiRenderer.setPicture(v, slot), yieldTile: choreYield }));
   engine.registerUI(uiRenderer, createBlur(device, format));
   // Presentation mode's Journey install fetches the tracked export and the
   // slide manifest from the site itself (core/presentation.js).

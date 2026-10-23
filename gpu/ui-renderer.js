@@ -16,10 +16,11 @@
 // slot per hasBlur value (see uniformLast), so two calls never share memory
 // that must hold different bytes for each.
 //
-// One picture rides beside the glyph atlas for the IMAGE instances (the
-// drawer's Brush picker): setPicture(view) hands it a texture view, null for
-// none, and the bind group is made again only then, between frames. Until
-// one is set a 1x1 transparent stand-in is bound.
+// Two pictures ride beside the glyph atlas for the IMAGE instances (the
+// drawer's Brush picker's, and the dealt hand's row's): setPicture(view,
+// slot) hands one a texture view, null for none, and the bind group is made
+// again only then, between frames. Until one is set a 1x1 transparent
+// stand-in is bound.
 
 import { UI_WGSL } from './ui.wgsl.js';
 import { STRIDE } from '../ui/drawlist.js';
@@ -94,6 +95,7 @@ export function createUIRenderer(device, format, text) {
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
     ],
   });
   // The picture's sampler: trilinear, since thumbnails are drawn well under
@@ -121,21 +123,24 @@ export function createUIRenderer(device, format, text) {
   }
 
   const textView = text.texture.createView();
-  const makeTextBind = pic => device.createBindGroup({
+  const makeTextBind = (pic, pic1) => device.createBindGroup({
     layout: textBGL,
     entries: [
       { binding: 0, resource: textView },
       { binding: 1, resource: text.sampler },
       { binding: 2, resource: pic },
       { binding: 3, resource: picSampler },
+      { binding: 4, resource: pic1 },
     ],
   });
-  let textBindGroup = makeTextBind(dummyPicView), picView = null;
-  function setPicture(view) {
-    const v = view || null;
-    if (v === picView) return;
-    picView = v;
-    textBindGroup = makeTextBind(v || dummyPicView);
+  let textBindGroup = makeTextBind(dummyPicView, dummyPicView);
+  const picViews = [null, null];
+  // slot 0 the drawer picker's picture, 1 the dealt hand's (DrawList image)
+  function setPicture(view, slot) {
+    const k = slot === 1 ? 1 : 0, v = view || null;
+    if (v === picViews[k]) return;
+    picViews[k] = v;
+    textBindGroup = makeTextBind(picViews[0] || dummyPicView, picViews[1] || dummyPicView);
   }
 
   // Two blur bind groups are kept side by side: one on the 1x1 stand-in, for

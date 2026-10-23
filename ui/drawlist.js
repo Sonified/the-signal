@@ -214,16 +214,19 @@ export class DrawList {
     d[o + 22] = stroke;
   }
 
-  // A rect of the UI renderer's picture (gpu/ui-renderer.js setPicture: the
-  // brush's motif atlas, premultiplied), u0 v0 to u1 v1 stretched over it,
-  // at alpha. The drawer's Brush picker draws its thumbnails with it. The
-  // picture is steady, as all UI is; nothing about it strobes.
-  image(x, y, w, h, u0, v0, u1, v1, alpha) {
+  // A rect of one of the UI renderer's two pictures (gpu/ui-renderer.js
+  // setPicture: brush motif atlases, premultiplied), u0 v0 to u1 v1
+  // stretched over it, at alpha. pic 0 is the drawer's Brush picker's (the
+  // current Image set), pic 1 the dealt hand's row's (its own set), so the
+  // two never fight over one texture. The pictures are steady, as all UI
+  // is; nothing about them strobes.
+  image(x, y, w, h, u0, v0, u1, v1, alpha, pic) {
     CLEAR_A[3] = alpha;
     const o = this._slot(KIND.IMAGE, x, y, w, h, 0, CLEAR_A, 0);
     if (o < 0) return;
     const d = this.data;
     d[o + 17] = u0; d[o + 18] = v0; d[o + 19] = u1; d[o + 20] = v1;
+    d[o + 21] = pic === 1 ? 1 : 0;
   }
 
   // Records taken from an earlier frame's list (a run of this.data copied
