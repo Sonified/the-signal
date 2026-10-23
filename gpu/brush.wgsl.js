@@ -24,8 +24,11 @@
 // than settling to a flat paint. Its colour is the tile's average at full
 // brightness (its hue and saturation kept, its value raised to 1, so a dark
 // motif glows as brightly as a light one; a tile with next to no colour
-// glows white), times PART_GAIN and view.w, the drawer's Particle
-// brightness. The shape's path is untouched by any of it.
+// glows white), times its stamp's share of the ribbon's light (b.w,
+// gpu/brush.js particleLight: a dense ribbon's stamps each give less, so the
+// ribbon stands at its colour instead of adding up to white) and view.w,
+// the drawer's Particle brightness. The shape's path is untouched by any of
+// it.
 
 export const BRUSH_WGSL = /* wgsl */ `
 struct BU {
@@ -44,14 +47,11 @@ struct VOut {
   @location(2) hi: vec2f,
   @location(3) q: vec2f,
   @location(4) @interpolate(flat) tint: vec3f,
+  @location(5) @interpolate(flat) light: f32,
 };
 
 // How far the particle's glow reaches, as a share of the quad's half side.
 const PART_REACH = 0.6;
-// A particle's light at its centre (core plus halo, 1.35) is this share of
-// its colour at full brightness, before Particle brightness: a lone
-// particle just under white, a ribbon of them blooming past it.
-const PART_GAIN = 0.6;
 
 const QUAD = array<vec2f, 6>(
   vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
@@ -59,7 +59,7 @@ const QUAD = array<vec2f, 6>(
 );
 
 // a: centre x, y (device px), half side (px), angle (radians)
-// b: the tile's inner square's top left as UV, the tile (0..63), unused
+// b: the tile's inner square's top left as UV, the tile (0..63), its light
 @vertex
 fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f) -> VOut {
   var out: VOut;
@@ -73,6 +73,7 @@ fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b
   out.lo = b.xy + vec2f(bu.lay.y, bu.lay.y);
   out.hi = b.xy + vec2f(bu.lay.x - bu.lay.y, bu.lay.x - bu.lay.y);
   out.q = q;
+  out.light = b.w * bu.view.w;
   // the tile's colour at full brightness: hue and saturation kept, value 1
   let avg = bu.tint[min(u32(b.z + 0.5), 63u)].rgb;
   let top = max(avg.r, max(avg.g, avg.b));
@@ -89,7 +90,7 @@ fn fsStamp(in: VOut) -> @location(0) vec4f {
   let core = exp(-d * d * 40.0);
   let halo = exp(-d * d * 6.0) * 0.35;
   let g = (core + halo) * (1.0 - smoothstep(0.9, 1.0, d));
-  let light = vec4f(in.tint * (g * PART_GAIN * bu.view.w), 0.0);
+  let light = vec4f(in.tint * (g * in.light), 0.0);
   return shape * (1.0 - m) + light * m;
 }
 `;

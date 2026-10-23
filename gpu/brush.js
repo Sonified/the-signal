@@ -73,11 +73,45 @@ const MAX_INST = 8192;
 // Stamps looked at a frame: the whole pending ring is sorted (it holds
 // about a delay's worth), past this the youngest wait.
 const MAX_PEND = 16384;
-const INST_FLOATS = 8;             // x y half angle | u0 v0 tile -
+const INST_FLOATS = 8;             // x y half angle | u0 v0 tile light
 const MAX_ATLASES = 3;
 // An atlas's uniforms: the frame's eight floats (rewritten each frame), then
 // its 64 tiles' tints as vec4s (written once, as it is installed).
 const UNI_BYTES = 32, TINT_BYTES = MOTIFS * 16;
+
+// The particles' light, shared out along a ribbon. A continuous stroke's
+// stamps fall every spacing s (core/brush-stamps.js brushSpacing, its side
+// over 20 and over Continuity), and each particle's glow reaches R, 0.3 of
+// the side (brush.wgsl.js PART_REACH of the half side), so a point on the
+// ribbon is lit by some 2R / s of them, a dozen at 1x and a hundred and
+// twenty at 10x: added up as light, the ribbon went white whatever its
+// colour or Particle brightness. So each stamp's light is its share: on the
+// ribbon's line the glows sum to (R / s) GLOW_AREA times each one's light
+// (GLOW_AREA the glow's integral across its reach, core plus halo,
+// 0.533), and each is given RIBBON_LIGHT s / (R GLOW_AREA), so the ribbon
+// at Particle brightness 100% stands at RIBBON_LIGHT of its colour at full
+// brightness, at any Continuity and any size: its hue plain, its core
+// bright but not white, a quarter as bright at 25%, and past white at 400%,
+// where only the halo's edges keep the colour. A print (separate stamps,
+// no spacing) or a sparse ribbon is a lone light: never more than
+// LONE_LIGHT, a single particle's centre just under white. Only where
+// different strokes cross does the light add up past the ribbon's.
+export const RIBBON_LIGHT = 0.7, LONE_LIGHT = 0.6;
+const GLOW_REACH = 0.3, GLOW_AREA = 0.5332;
+// span: a stamp's spacing over its side (the ring's eighth float), 0 for a print.
+export function particleLight(span) {
+  if (!(span > 0)) return LONE_LIGHT;
+  const k = RIBBON_LIGHT * span / (GLOW_REACH * GLOW_AREA);
+  return k < LONE_LIGHT ? k : LONE_LIGHT;
+}
+// The frame's eight uniforms (BU.view, BU.lay in brush.wgsl.js), for an
+// atlas laid out in L: the target's NDC scale, the morph, the particles'
+// brightness, then the atlas's inner square and half texel.
+export function packFrameUniforms(uni, pixelW, pixelH, L) {
+  uni[0] = 2 / pixelW; uni[1] = 2 / pixelH; uni[2] = brushMorphNow(); uni[3] = brushParticleBrightNow();
+  uni[4] = L.innerUV; uni[5] = L.halfTexel;
+  return uni;
+}
 // A tile painting less than this share of its inner square is empty: the
 // cut leaves a true blank at exactly 0, and a few stray texels are no shape.
 const EMPTY_FILL = 0.002;
@@ -400,7 +434,7 @@ export function createBrush(device, format, platform, opts) {
         inst[i + 3] = spinRate > 0 ? buf[o + 2] + brushSpinAt(spinRate, pKey[j], spinOff) : buf[o + 2];
         inst[i + 4] = (m % 8) / 8 + a.lay.padUV;
         inst[i + 5] = ((m / 8) | 0) / 8 + a.lay.padUV;
-        inst[i + 6] = m; inst[i + 7] = 0;
+        inst[i + 6] = m; inst[i + 7] = particleLight(buf[o + 7]);
         runCount[nRuns - 1]++;
         nInst++;
       }
@@ -421,11 +455,10 @@ export function createBrush(device, format, platform, opts) {
     params.cx = cx; params.cy = cy; params.unit = side;
     params.dt = dt > 0 ? dt : 0;
     if (nInst > 0) {
-      uni[0] = 2 / pixelW; uni[1] = 2 / pixelH; uni[2] = brushMorphNow(); uni[3] = brushParticleBrightNow();
+      // every frame there is a stamp to draw, so a slider moved shows at once
       for (const a of atlases.values()) {
         if (!a.uniBuf) continue;
-        uni[4] = a.lay.innerUV; uni[5] = a.lay.halfTexel;
-        device.queue.writeBuffer(a.uniBuf, 0, uni);
+        device.queue.writeBuffer(a.uniBuf, 0, packFrameUniforms(uni, pixelW, pixelH, a.lay));
       }
       device.queue.writeBuffer(instBuf, 0, inst, 0, nInst * INST_FLOATS);
     }

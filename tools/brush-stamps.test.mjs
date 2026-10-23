@@ -100,15 +100,19 @@ test('the wire: a motif stroke round-trips with its four fields', () => {
 });
 
 // The queue's contents as plain numbers, then emptied, once every remote
-// stroke has played out (core/brush.js brushPlay).
+// stroke has played out (core/brush.js brushPlay). Each stamp's light span
+// (its stroke's spacing over its side) is kept aside in spans.
+let spans = [];
 function drain() {
+  spans = [];
   for (let i = 0; i < 2000 && brushPlaying(); i++) { fakeNow += 1000 / 60; brushPlay(1 / 60); }
   const q = brushQueue, out = [];
   for (let i = 0; i < q.count; i++) {
     const o = ((q.head + i) % q.cap) * STAMP_FLOATS;
-    // the figure: everything but who drew it (the last field, which
-    // core/brush-order.js reads; a remote copy names its sender)
-    out.push(Array.from(q.buf.subarray(o, o + STAMP_FLOATS - 1)));
+    // the figure: everything but who drew it (core/brush-order.js reads
+    // it; a remote copy names its sender) and the light's span
+    out.push(Array.from(q.buf.subarray(o, o + 6)));
+    spans.push(q.buf[o + 7]);
   }
   brushQueueDrop(q.count);
   return out;
@@ -133,8 +137,11 @@ test('local and remote: the same messages stamp the same figure', () => {
   t += 16.7;
   const tapped = brushField(true, true, false, x + 2, y + 1, W, H, inset, t);
   assert.equal(tapped, false, 'a stroke is no tap');
-  const local = drain();
+  const local = drain(), localSpans = spans;
   assert.ok(local.length > 50, 'the stroke stamped');
+  // every stamp of a continuous stroke carries its spacing over its side,
+  // the law's twentieth at 1x Continuity, for the particles' share of light
+  for (const sp of localSpans) assert.ok(Math.abs(sp - SPACING_SHARE / Math.max(1, S.brushContinuity || 1)) < 1e-6, 'span ' + sp);
   assert.equal(local.length % 5, 0, 'every stamp has its five copies');
   // the first stamp is where the press went down, not where it became a drag
   const sq = fieldSquare(W, H, inset, {});
@@ -153,6 +160,7 @@ test('local and remote: the same messages stamp the same figure', () => {
   for (const m of sent) brushTake({ ...m, id: 7 });
   const remote = drain();
   assert.deepEqual(remote, local);
+  assert.deepEqual(spans, localSpans, 'and the same light along it');
   // two senders interleaved still each draw their own stroke whole
   for (let i = 0; i < sent.length; i++) { brushTake({ ...sent[i], id: 1 }); brushTake({ ...sent[i], id: 2 }); }
   const both = drain();

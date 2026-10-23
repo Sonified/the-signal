@@ -9,6 +9,9 @@ import assert from 'node:assert/strict';
 import { tileTints, atlasLayout, MOTIFS, GRID } from '../gpu/atlas-bake.js';
 import { stepBrushMorph, brushMorphNow, morphAt, morphPhaseOf, MORPH_HALF_PERIOD, brushParticleBrightNow, PART_BRIGHT_LO, PART_BRIGHT_HI } from '../core/brush-morph.js';
 import { S } from '../js/state.js';
+import { particleLight, packFrameUniforms, RIBBON_LIGHT, LONE_LIGHT } from '../gpu/brush.js';
+import { BRUSH_WGSL } from '../gpu/brush.wgsl.js';
+import { SPACING_SHARE, CONTINUITY_MAX } from '../core/brush-stamps.js';
 
 const close = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 
@@ -84,4 +87,44 @@ test('the particles\' brightness: 1 unset, held to a quarter and four times', ()
   S.brushParticleBright = 0; assert.equal(brushParticleBrightNow(), PART_BRIGHT_LO);
   S.brushParticleBright = NaN; assert.equal(brushParticleBrightNow(), 1);
   S.brushParticleBright = 1;
+});
+
+// the particle's glow as brush.wgsl.js draws it, d its distance over its reach
+const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const glow = d => (Math.exp(-d * d * 40) + 0.35 * Math.exp(-d * d * 6)) * (1 - ss(0.9, 1, d));
+
+test('a ribbon of particles stands at its colour, at any Continuity, never adding up to white', () => {
+  // a straight ribbon of stamps every span of the side, each glowing to 0.3
+  // of the side: the light on its line, at a stamp and between two
+  for (const C of [1, 2, 3, 5, 10, CONTINUITY_MAX]) {
+    const span = SPACING_SHARE / C, e = particleLight(span);
+    for (const at of [0, 0.5]) {
+      let L = 0;
+      for (let k = -2000; k <= 2000; k++) { const d = Math.abs((k + at) * span) / 0.3; if (d < 1) L += glow(d) * e; }
+      assert.ok(Math.abs(L - RIBBON_LIGHT) < 0.02, `${C}x: the ribbon at ${L.toFixed(3)}`);
+      // Particle brightness scales it: a quarter dim, four times past white
+      assert.ok(L * 0.25 < 0.2 && L * 4 > 2.5);
+    }
+  }
+  // a print, or a ribbon too sparse to share, is one light
+  assert.equal(particleLight(0), LONE_LIGHT);
+  assert.equal(particleLight(10), LONE_LIGHT);
+  assert.ok(glow(0) * LONE_LIGHT < 1, 'a lone particle\'s centre just under white');
+});
+
+test('the frame\'s uniforms carry the morph and the particles\' brightness where the shader reads them', () => {
+  const uni = new Float32Array(8);
+  S.brushMorph = 0.4; S.brushParticleBright = 0.25;
+  packFrameUniforms(uni, 1000, 500, { innerUV: 0.1, halfTexel: 0.001 });
+  assert.ok(close(uni[0], 0.002) && close(uni[1], 0.004));
+  assert.ok(close(uni[2], 0.4), 'the morph, view.z');
+  assert.equal(uni[3], 0.25, 'the brightness, view.w');
+  assert.ok(close(uni[4], 0.1) && close(uni[5], 0.001));
+  S.brushParticleBright = 4; packFrameUniforms(uni, 1000, 500, { innerUV: 0.1, halfTexel: 0.001 });
+  assert.equal(uni[3], 4, 'a new value lands on the next pack');
+  // the struct's first vec4 is view, and the particle's light reads view.w
+  assert.match(BRUSH_WGSL, /struct BU \{\s*view: vec4f,/);
+  assert.match(BRUSH_WGSL, /out\.light = b\.w \* bu\.view\.w;/);
+  assert.match(BRUSH_WGSL, /in\.tint \* \(g \* in\.light\)/);
+  S.brushMorph = 0; S.brushParticleBright = 1;
 });

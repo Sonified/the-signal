@@ -277,7 +277,7 @@ export const BRUSH_CONTROLS = [
     set: (S, on) => { S.brushMorphAuto = !!on; saveBrush(); }
   },
   // How bright the particles shine, 25% to 400% of their light
-  // (gpu/brush.wgsl.js PART_GAIN): the particles alone, the shapes never.
+  // (gpu/brush.js RIBBON_LIGHT): the particles alone, the shapes never.
   {
     id: 'brushParticleBright', section: 'brush', label: 'Particle brightness', kind: 'slider',
     min: PART_BRIGHT_LO * 20, max: PART_BRIGHT_HI * 20, step: 1, def: DEF_PART_BRIGHT * 20,

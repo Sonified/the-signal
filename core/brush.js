@@ -25,7 +25,9 @@
 //
 // The stamps wait in a ring (STAMP_FLOATS each: u, v in the wire's unit
 // square, the angle, the motif's side in unit-square units, the tile, the
-// atlas set, the sender's id for core/brush-order.js) until gpu/brush.js
+// atlas set, the sender's id for core/brush-order.js, and the stroke's
+// stamp spacing over the motif's side, 0 for a print, by which the
+// particles' light is shared out along a ribbon, gpu/brush.js) until gpu/brush.js
 // takes them, in order, which it does as soon
 // as the set's atlas is on the GPU; a ring that fills drops its oldest. Its
 // picker (the drawer's Brush section) reads brushAtlas, which the GPU side
@@ -94,7 +96,7 @@ const HUES = [8, 42, 95, 168, 212, 285, 330];
 const HUE = HUES[Math.floor(Math.random() * HUES.length)];
 
 // ---------- the ring ----------
-export const STAMP_FLOATS = 7;
+export const STAMP_FLOATS = 8;
 // Room for a few frames of the densest drawing (a fast flick at the
 // continuous spacing with 24 copies is some 4000 stamps a frame).
 const QCAP = 65536;
@@ -109,13 +111,13 @@ export const brushQueue = { buf: new Float32Array(QCAP * STAMP_FLOATS), key: new
                             cap: QCAP, head: 0, count: 0 };
 
 // What the walk's stamps are made of right now (set before each walk).
-let qSide = 0, qMotif = 0, qSet = 1, qWho = SOLO_ID, qKey = 0, qSeqN = 0;
+let qSide = 0, qMotif = 0, qSet = 1, qWho = SOLO_ID, qKey = 0, qSeqN = 0, qSpan = 0;
 function push(u, v, angle) {
   const q = brushQueue;
   if (q.count === q.cap) { q.head = (q.head + 1) % q.cap; q.count--; }
   const at = (q.head + q.count) % q.cap, o = at * STAMP_FLOATS, b = q.buf;
   b[o] = u; b[o + 1] = v; b[o + 2] = angle; b[o + 3] = qSide; b[o + 4] = qMotif; b[o + 5] = qSet;
-  b[o + 6] = qWho;
+  b[o + 6] = qWho; b[o + 7] = qSpan;
   q.key[at] = qKey; q.seq[at] = qSeqN++;
   q.count++;
 }
@@ -248,6 +250,7 @@ function begin(x, y, width, height, inset, t) {
   toUnit(x, y, width, height, inset);
   lastQu = lastU; lastQv = lastV;
   qSide = brushSide(sSize); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
+  qSpan = sPrints ? 0 : sSpacing / qSide;
   stampCopies(lastQu / QUANT, lastQv / QUANT, sCopies, emit);
   handBand = ringBand(-1, lastQv / QUANT, bellId());
   carry = 0;
@@ -263,7 +266,7 @@ function extend(x, y, width, height, inset, t) {
     // moved off the last one: stamped here, and one point on the wire.
     if ((lastU !== lastQu || lastV !== lastQv) && t - lastPrintT >= printMs) {
       lastPrintT = t;
-      qSide = brushSide(sSize); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
+      qSide = brushSide(sSize); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t; qSpan = 0;
       stampCopies(lastU / QUANT, lastV / QUANT, sCopies, emit);
       lastQu = lastU; lastQv = lastV;
       handBand = ringBand(handBand, lastQv / QUANT, bellId());
@@ -274,6 +277,7 @@ function extend(x, y, width, height, inset, t) {
   }
   if (lastU !== lastQu || lastV !== lastQv) {
     qSide = brushSide(sSize); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
+    qSpan = sSpacing / qSide;
     carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, sSpacing, sCopies, emit);
     lastQu = lastU; lastQv = lastV;
     handBand = ringBand(handBand, lastQv / QUANT, bellId());
@@ -592,6 +596,8 @@ const slotTlN = new Int32Array(SLOTS), slotTlI = new Int32Array(SLOTS);
 const slotRelI = new Int32Array(SLOTS);
 const slotEnd = new Float64Array(SLOTS), slotArc = new Float64Array(SLOTS), slotCarry = new Float64Array(SLOTS);
 const slotSpacing = new Float64Array(SLOTS);
+// whether its stroke lays separate prints (no spacing to share its light along)
+const slotPrints = new Uint8Array(SLOTS);
 const slotFed = new Float64Array(SLOTS), slotCursor = new Float64Array(SLOTS);
 // who drew it (core/brush-order.js): the hall's id, or the broadcaster's
 const slotWho = new Float64Array(SLOTS);
@@ -629,6 +635,7 @@ function letOut(i) {
   // sender's bell, as the stroke plays out here
   if (b[o + 2] === 0 && bellHook) slotBand[i] = ringBand(slotBand[i], b[o + 1], slotWho[i]);
   qSide = b[o + 3]; qMotif = b[o + 4]; qSet = b[o + 5]; qWho = slotWho[i]; qKey = releaseKey;
+  qSpan = slotPrints[i] || !(qSide > 0) ? 0 : slotSpacing[i] / qSide;
   push(b[o], b[o + 1], b[o + 2]);
   slotHead[i] = (slotHead[i] + 1) % SLOT_CAP;
   slotCount[i]--;
@@ -738,6 +745,7 @@ export function brushTake(msg, from) {
   const fresh = i < 0;
   if (fresh) i = openSlot(key, now);
   const prints = !rateContinuous(s.r);
+  slotPrints[i] = prints ? 1 : 0;
   // the stroke's spacing, held from its first batch here: this screen's
   // Continuity and the stroke's width as they were then, so a slider moved
   // mid-stroke (or a replayed batch drawn at another size) never shifts
