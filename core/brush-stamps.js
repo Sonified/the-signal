@@ -38,8 +38,8 @@
 const TAU = Math.PI * 2;
 
 // The motif's side at the wire's w = 100, as a share of the square's side.
-// The brush has no size slider: it sends BRUSH_W, a motif an eighth of the
-// field across, and a receiver draws whatever w a stroke carries.
+// The Size slider's default is BRUSH_W, a motif an eighth of the field
+// across; a stroke carries its w and a receiver draws whatever it says.
 export const SIDE_MAX = 0.24;
 export const BRUSH_W = 50;
 // Stamps every this share of the motif's side, continuous: a twentieth, so

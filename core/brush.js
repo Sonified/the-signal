@@ -53,6 +53,12 @@ import { BRUSH_W, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, 
 // goes with the frame's clock when it was made (the wire's q), so a
 // receiver plays the stroke on this hand's own timeline.
 const FLUSH_MS = 20, FLUSH_POINTS = 16;
+// The size a stroke is drawn at (its w): the room's when the hall has told
+// one to a member, else this screen's own Size.
+function brushSizeNow() {
+  const z = brushMember() && hallLink.size > 0 ? hallLink.size : S.brushSize;
+  return z >= 1 && z <= 100 ? z : BRUSH_W;
+}
 function flushMs() { return hallLink && hallLink.stream > 0 ? hallLink.stream : FLUSH_MS; }
 // The hue the stroke carries on the wire (its h): this screen's identity,
 // one of /touch/'s, for the stand-in it draws there. The motif itself keeps
@@ -145,7 +151,7 @@ let pressing = false;
 // The stroke's last point, quantized as the wire carries it, and the walk's
 // carry; its settings, held for the whole stroke.
 let lastQu = 0, lastQv = 0, carry = 0;
-let sCopies = 1, sMotif = 0, sSet = 1, sFade = 0.5;
+let sCopies = 1, sMotif = 0, sSet = 1, sFade = 0.5, sSize = BRUSH_W;
 // The Rate, held for the stroke: continuous, or prints every printMs (the
 // last at lastPrintT), each print one point on the wire (core/brush-stamps.js).
 let sRate = 1, sPrints = false, printMs = 1000, lastPrintT = 0;
@@ -198,13 +204,14 @@ function begin(x, y, width, height, inset, t) {
   sMotif = handSet ? Math.max(0, Math.min(63, S.brushMotif | 0)) : brushMotifNow();
   sSet = handSet || kaleidoscopeSet(S.kaleidoSet).id;
   sFade = S.brushFade >= 0 && S.brushFade <= 1 ? S.brushFade : 0.5;
+  sSize = brushSizeNow();
   sRate = S.brushRate >= 0 && S.brushRate <= 1 ? S.brushRate : 1;
   sPrints = !rateContinuous(sRate);
   printMs = 1000 / printsPerSecond(sRate);
   lastPrintT = t;
   toUnit(x, y, width, height, inset);
   lastQu = lastU; lastQv = lastV;
-  qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
+  qSide = brushSide(sSize); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
   stampCopies(lastQu / QUANT, lastQv / QUANT, sCopies, emit);
   handBand = ringBand(-1, lastQv / QUANT, bellId());
   carry = 0;
@@ -220,7 +227,7 @@ function extend(x, y, width, height, inset, t) {
     // moved off the last one: stamped here, and one point on the wire.
     if ((lastU !== lastQu || lastV !== lastQv) && t - lastPrintT >= printMs) {
       lastPrintT = t;
-      qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
+      qSide = brushSide(sSize); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
       stampCopies(lastU / QUANT, lastV / QUANT, sCopies, emit);
       lastQu = lastU; lastQv = lastV;
       handBand = ringBand(handBand, lastQv / QUANT, bellId());
@@ -230,8 +237,8 @@ function extend(x, y, width, height, inset, t) {
     return;
   }
   if (lastU !== lastQu || lastV !== lastQv) {
-    qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
-    carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, brushSpacing(BRUSH_W), sCopies, emit);
+    qSide = brushSide(sSize); qMotif = sMotif; qSet = sSet; qWho = handId(); qKey = t;
+    carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, brushSpacing(sSize), sCopies, emit);
     lastQu = lastU; lastQv = lastV;
     handBand = ringBand(handBand, lastQv / QUANT, bellId());
     if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
@@ -257,7 +264,7 @@ function flush(done, t) {
   if ((hallLink || toBc) && pendN > 0) {
     const pts = new Array(pendN), ts = new Array(pendN);
     for (let i = 0; i < pendN; i++) { pts[i] = { u: pend[i * 2] / QUANT, v: pend[i * 2 + 1] / QUANT }; ts[i] = pendT[i]; }
-    const msg = encodeStroke(MOTIF, HUE, BRUSH_W, done ? 2 : pendD, pts,
+    const msg = encodeStroke(MOTIF, HUE, sSize, done ? 2 : pendD, pts,
       { a: sSet, m: sMotif, c: sCopies, f: Math.round(sFade * 1000) / 1000, r: sRate, q: timesToQ(ts) });
     if (hallLink) hallLink.send(msg);
     if (toBc) bcSink.send(msg);
@@ -347,22 +354,23 @@ export function brushHallGroup() {
 }
 
 // ---------- the room's settings and the dealt brushes ----------
-// The conductor's Brush rows (core/schema-brush.js) are the room's: Stream
-// and Smoothing go to the hall as {t:'room', ms, sm}, and the dealt brushes
+// The conductor's Brush rows (core/schema-brush.js) are the room's: Stream,
+// Smoothing and Size go to the hall as {t:'room', ms, sm, sz}, and the dealt brushes
 // as {t:'brushes', on, n, a, tiles}, the tiles the current Image set's
 // painted ones in sheet order (brushAtlas, so the hall deals only shapes
 // that draw; broadcast-worker/src/deal.js). dealTick, every frame, sends
 // either one again whenever the conductor's own settings and what was last
 // sent part (a slider moved, a reconnect, the hall's wipe telling the deal
 // off), waiting for the set's atlas when it must.
-let roomSent = -1, dealSent = -1;
+let roomSent = '', dealSent = -1;
 function dealTick() {
   if (!brushConducting()) return;
   const ms = S.brushStream | 0, sm = S.brushSmooth | 0;
-  const room = ms * 1000 + sm;
+  const sz = brushSizeNow();
+  const room = ms + '/' + sm + '/' + sz;
   if (room !== roomSent && ms >= 10 && ms <= 60 && sm >= 0 && sm <= 200) {
     roomSent = room;
-    hallLink.send({ t: 'room', ms, sm });
+    hallLink.send({ t: 'room', ms, sm, sz });
   }
   const set = kaleidoscopeSet(S.kaleidoSet).id;
   const on = S.brushDeal === true && !dealHold, n = Math.max(1, Math.min(8, S.brushDealN | 0));

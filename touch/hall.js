@@ -27,7 +27,8 @@
 //
 // stream and smooth are the room's own settings as the hall last told them
 // (the conductor's Stream and Smoothing: how often to send a batch, ms, and
-// the playback's margin past it, ms); hand is this device's dealt brushes,
+// the playback's margin past it, ms) and size, the conductor's Size (a
+// stroke's w, 0 until the hall has told one); hand is this device's dealt brushes,
 // { on, a, tiles }, as the hall last said ({t:'hand'}, on.hand).
 //
 // phase and round are what the hall last told (hello, group): the show's
@@ -86,7 +87,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
   const tok = token || deviceToken();
   const link = {
     you: 0, phase: 'solo', round: 1, conduct: false,
-    stream: 0, smooth: -1, hand: null,
+    stream: 0, smooth: -1, size: 0, hand: null,
     group: new Set(), peers: new Set(),
     send, setPhase, next, close
   };
@@ -124,6 +125,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         link.conduct = msg.conduct === 1;
         if (Number.isFinite(msg.ms)) link.stream = msg.ms;
         if (Number.isFinite(msg.sm)) link.smooth = msg.sm;
+        if (Number.isFinite(msg.sz)) link.size = msg.sz;
         link.peers = new Set(msg.ids);
         tell('joined');
       } else if (msg.t === 'peer') {
@@ -134,6 +136,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         link.round = msg.round || 1;
         if (Number.isFinite(msg.ms)) link.stream = msg.ms;
         if (Number.isFinite(msg.sm)) link.smooth = msg.sm;
+        if (Number.isFinite(msg.sz)) link.size = msg.sz;
         link.group = new Set(msg.ids);
         on.group && on.group(msg);
       } else if (msg.t === 'hand') {
