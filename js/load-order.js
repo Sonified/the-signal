@@ -11,8 +11,10 @@
 // voice with nothing ahead of it in flight goes at once, so a later request
 // (a new drone render, the choir switched on mid-session) is never held
 // behind a queue that has already drained.
-// The show's slide videos (js/slide-prefetch.js) come last of all, behind
-// every recording.
+import { mediaFetch } from './media-cache.js';
+
+// The show's media (js/show-media.js: the slides, the Sun, the meditation's
+// audio) come last of all, behind every recording.
 export const TURN = { drone: 0, piano: 1, clouds: 2, choir: 3, slides: 4 };
 const inFlight = [new Set(), new Set(), new Set(), new Set(), new Set()];
 
@@ -39,8 +41,9 @@ async function waitTurn(turn) {
 // ahead again.
 const held = new Map();
 const taken = new Set();
+// From disk when a Presentation screen kept it (js/show-media.js).
 async function fetchBuffer(url) {
-  const r = await fetch(url);
+  const r = await mediaFetch(url);
   if (!r.ok) throw new Error(url + ': ' + r.status);
   return r.arrayBuffer();
 }

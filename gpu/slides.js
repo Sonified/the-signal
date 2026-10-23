@@ -85,7 +85,7 @@ import { idleHold, idleRelease, idleWake } from '../core/idle.js';
 import { SLIDE_DIR, SLIDE_NONE, slideVolOf, slideVolGain } from '../core/schema-slides.js';
 import { createGlobalFilter } from '../core/global-filter.js';
 import { ensureAudioGraph, getContext, getOutputBus } from '../js/audio.js';
-import { prefetchSlides, slideSrc } from '../js/slide-prefetch.js';
+import { showMediaStart, showMediaSrc } from '../js/show-media.js';
 
 const AUDIO_TC = 0.015;
 // Speed follows incoming control values with a 25 ms exponential time
@@ -371,8 +371,9 @@ export function createSlides(device, format) {
     hold(s);
     setLeg(s, 0);
     s.el.loop = S.slideLoop === true;
-    // from memory once js/slide-prefetch.js has it whole, else streamed
-    s.el.src = (slideSrc(file) || SLIDE_DIR + encodeURIComponent(file)) + (at > 0 ? '#t=' + at.toFixed(3) : '');
+    // from this machine once js/show-media.js has it, else streamed
+    const remote = SLIDE_DIR + encodeURIComponent(file);
+    s.el.src = (showMediaSrc(remote) || remote) + (at > 0 ? '#t=' + at.toFixed(3) : '');
     // a new source resets the rate to the default rate, so both are set
     s.speed = clampNum(S.slideRate, 0, 2, 1);
     s.speedMoving = false;
@@ -628,8 +629,8 @@ export function createSlides(device, format) {
 
   function update(t) {
     // A Presentation-mode screen fetches the whole show ahead, once
-    // (js/slide-prefetch.js); only the page's own thread can play its blobs.
-    if (S.presentationMode === true && typeof document !== 'undefined') prefetchSlides();
+    // (js/show-media.js); only the page's own thread can play its blobs.
+    if (S.presentationMode === true && typeof document !== 'undefined') showMediaStart();
     // the outgoing clocks' step, capped as the run factor's is
     const dtMs = Math.min(100, Math.max(0, t - lastMs));
     nowMs = lastMs = t;

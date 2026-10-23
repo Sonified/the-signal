@@ -149,6 +149,7 @@ import { roomPhase, roomPhaseState } from '../core/room-clock.js';
 import { breath, breathState, resetBreath, dipDepth } from '../core/variance.js';
 import { SIGNAL_ORIGIN } from '../core/signal.js';
 import { sunBreath, breathPhaseAt } from '../core/breath.js';
+import { showMediaStart, showMediaSrc, showMediaPending, registerSunFile } from '../js/show-media.js';
 
 const CLOUD_BASE = 'https://pub-716b01aa42b4455891728323b3586b99.r2.dev/';
 // Served from this machine (tools/serve.mjs on localhost), the Sun plays its
@@ -184,8 +185,13 @@ function pinnedTier() {
   for (let i = 0; i < TIERS.length; i++) if (TIERS[i].key === k) return i;
   return -1;
 }
-const urlX264 = stem => VIDEO_BASE + stem + '.mp4';
-const urlHevc = stem => VIDEO_BASE + stem + '_hevc.mp4';
+// A file on the network, and the URL to play it from: this machine's copy
+// when a Presentation screen kept it (js/show-media.js, Auto's top tier
+// only), the network otherwise.
+const remoteX264 = stem => VIDEO_BASE + stem + '.mp4';
+const remoteHevc = stem => VIDEO_BASE + stem + '_hevc.mp4';
+const urlX264 = stem => showMediaSrc(remoteX264(stem)) || remoteX264(stem);
+const urlHevc = stem => showMediaSrc(remoteHevc(stem)) || remoteHevc(stem);
 // The link probe (see the top of this file): the bytes timed, the bar in
 // Mbps (meditatewiththesun's, Robert's call 2026-09-16), and the most it may
 // take: a slow link pays no more than what 1.5 s brings, and the bytes that
@@ -376,6 +382,22 @@ export function createSun(device, format) {
   const topTier = () => T_TOP;
   const urlFor = stem => triedX264 ? urlX264(stem) : urlHevc(stem);
 
+  // ON DISK (js/show-media.js): a Presentation screen keeps Auto's top tier,
+  // in the codec this browser plays first, on this machine's disk. Once a
+  // copy is there, Auto starts on it with no link probe, and while it plays
+  // (fromDisk) no probe runs and nothing steps down: the network has no say
+  // in a file that never touches it. A first visit streams as before while
+  // the copy downloads, and plays from it from the next load; the source
+  // playing is never swapped to the copy mid-session. Local files
+  // (LOCAL_BASE) are on this disk already, and a worker engine plays no Sun.
+  if (VIDEO_BASE !== LOCAL_BASE && typeof document !== 'undefined') {
+    const hevc = !!document.createElement('video').canPlayType(HEVC_TYPE);
+    const stem = TIERS[T_TOP].stem;
+    registerSunFile(hevc ? remoteHevc(stem) : remoteX264(stem), 'the Sun at ' + TIERS[T_TOP].name + (hevc ? ' (HEVC)' : ' (x264)'));
+  }
+  const topOnDisk = () => !!(showMediaSrc(remoteHevc(TIERS[T_TOP].stem)) || showMediaSrc(remoteX264(TIERS[T_TOP].stem)));
+  const fromDisk = () => typeof srcNow === 'string' && srcNow.startsWith('blob:');
+
   // The link's speed in Mbps: a ranged fetch of the High file's head, cut
   // off at PROBE_WAIT_MS, the bytes that came by then counted (0 on an
   // error). PORTABILITY: fetch on the page thread, as the elements below are.
@@ -412,6 +434,8 @@ export function createSun(device, format) {
   // start whose video was made meanwhile (a tier pinned, then Auto again)
   // swaps as a flip does, so the tier always names the file playing.
   function probeLink(why) {
+    // the copy on disk owes the link nothing (see ON DISK)
+    if (video && fromDisk()) return;
     // a flip while another probe runs is measured after it
     if (probing) { if (why === 'flip') again = true; return; }
     probing = true;
@@ -440,7 +464,7 @@ export function createSun(device, format) {
   // return from away. A pinned tier never steps down: false, as at the
   // floor, so each caller falls back to its same-tier remedy.
   function stepDown(why) {
-    if (tier <= floorTier || VIDEO_BASE === LOCAL_BASE || pinnedTier() >= 0) return false;
+    if (tier <= floorTier || VIDEO_BASE === LOCAL_BASE || pinnedTier() >= 0 || fromDisk()) return false;
     upTo = -1;
     console.warn('sun: ' + why + '; stepping down to ' + TIERS[tier - 1].name + ' quality');
     setTier(tier - 1);
@@ -557,9 +581,13 @@ export function createSun(device, format) {
       console.warn('sun: no document on this thread (worker engine); the Sun layer needs the page engine');
       return;
     }
+    // A Presentation screen looks at its disk first (a fraction of a
+    // second), so a kept copy is what the Sun starts on (see ON DISK).
+    if (S.presentationMode === true) { showMediaStart(); if (showMediaPending()) return; }
     if (tier < 0) {
       if (pinnedTier() >= 0) tier = pinnedTier();   // pinned: no probe
       else if (VIDEO_BASE === LOCAL_BASE) tier = topTier();
+      else if (topOnDisk()) { tier = topTier(); console.log('sun: ' + TIERS[tier].name + ' quality from this machine\'s disk, no link probe'); }
       else { probeLink('start'); if (tier < 0) return; }   // the probe decides first (1.5 s at most)
     }
     video = makeElement('auto');

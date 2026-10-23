@@ -1,5 +1,6 @@
 // Each atmosphere recording has a fixed mixer channel on the main page.
 import { S } from './state.js';
+import { mediaFetch } from './media-cache.js';
 import {
   getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, continueGlide, holdParam,
   sourceGate
@@ -104,7 +105,8 @@ function layerGain(layer) {
 async function buf(url) {
   if (cache.has(url)) return cache.get(url);
   const ctx = getContext();
-  const job = fetch(url).then(r => {
+  // from disk when a Presentation screen kept it (js/show-media.js)
+  const job = mediaFetch(url).then(r => {
     if (!r.ok) throw new Error(`Audio request failed: ${r.status}`);
     return r.arrayBuffer();
   }).then(data => ctx.decodeAudioData(data));

@@ -52,6 +52,7 @@ import { createGlobalFilter } from './global-filter.js';
 import { createOutputGuard } from './output-guard.js';
 import { chanGate, onChannelGates } from '../js/mixgate.js';
 import { tapPeak } from '../js/util.js';
+import { mediaFetch } from '../js/media-cache.js';
 import { S } from '../js/state.js';
 import { roomClockRunning } from './room-clock.js';
 import {
@@ -241,7 +242,8 @@ export const heartPeak = () => src ? tapPeak(meterTap) : 0;
 function load() {
   if (buffer || loading || loadFailed) return;
   loading = true;
-  fetch(TRACK_URL)
+  // from disk when a Presentation screen kept it (js/show-media.js)
+  mediaFetch(TRACK_URL)
     .then(r => {
       if (!r.ok) throw new Error('request failed: ' + r.status);
       return r.arrayBuffer();

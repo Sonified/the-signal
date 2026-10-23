@@ -40,6 +40,7 @@ import { S } from '../js/state.js';
 import { getContext, getMaster, sourceGate, ensureAudioGraph } from '../js/audio.js';
 import { ctxFor } from '../js/heart/route.js';
 import { meterTap, tapPeak } from '../js/util.js';
+import { mediaFetch } from '../js/media-cache.js';
 
 const DATA_URL = 'audio/solar_wind_speed_hourly.u16';
 const HOURS_PER_YEAR = 8766;      // 365.25 * 24
@@ -394,7 +395,8 @@ function buildBuffer() {
 function load() {
   if (values) return Promise.resolve();
   if (!loading) {
-    loading = fetch(DATA_URL)
+    // from disk when a Presentation screen kept it (js/show-media.js)
+    loading = mediaFetch(DATA_URL)
       .then(res => {
         if (!res.ok) throw new Error(`${DATA_URL}: HTTP ${res.status}`);
         return res.arrayBuffer();
