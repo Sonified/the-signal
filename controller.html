@@ -98,9 +98,10 @@
   audio row: six of the same faders, DRONE (the drone file, the tone and
   the clouds together), PIANO, CHOIR, AMBIENCE, ROTSPD (the Sun hum's
   speed, 1x to 2x), HUM (meditatewiththesun.com's volume), and NOTES (the
-  brush notes' master volume, everyone's bells and notes). The audio row is
-  seven faders (7 x 58 + 6 x 10 = 466px), the visual row six (398px), so
-  the rows no longer end together.
+  brush notes' master volume, everyone's bells and notes). The audio row's
+  seven are 50px with 8px gaps (7 x 50 + 6 x 8 = 398px), so the row spans
+  exactly what the visual row's six 58px faders do: a fader added to either
+  row narrows that row's faders to keep the 398px span, never widens it.
 
   ?room=<name> (default 'show'), ?mac=<host:port> (the laptop, default
   Roberts-MacBook-Pro-2.local:8800), ?relay=<host> (the cloud relay),
@@ -202,12 +203,13 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
    ends 12px above their labels (the middle's 178px top row, its 12px gap and
    their 122px drop, less 12), and starts 48px down, clear of Presence's
    status line; it runs on past #middle into the edge's empty left half, as
-   #midFaders does. Its own box is 0 wide, so its 398px of faders spill
+   #midFaders does (seven faders at 50px, 8px apart, the same 398px span
+   as the visual row's six). Its own box is 0 wide, so its 398px of faders spill
    out visibly instead of widening the page's columns (the cues and the
    edge both size from the stage's content). */
 #topFaders { grid-row: 1 / 3; grid-column: 1; align-self: start; width: 0; height: 300px; padding-top: 48px;
-  display: flex; gap: 10px; }
-#topFaders .fader { width: 58px; flex: none; }
+  display: flex; gap: 8px; }
+#topFaders .fader { width: 50px; flex: none; }
 #edge { width: min(100%, 460px); min-height: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
 /* Presence's status and the show's bar across the whole stage, from the
    finale row's left edge (DRONE's) to the play button's right, in the strip
@@ -379,7 +381,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.09';
+  const VERSION = '3.10';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
