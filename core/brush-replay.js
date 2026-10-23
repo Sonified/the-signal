@@ -69,6 +69,32 @@ export function roomArrives(good, hands = ROOM_HANDS, windowMs = ROOM_WINDOW_MS)
   return at;
 }
 
+// Where the room leaves again: the last batch whose trailing LEAVE_WINDOW_MS
+// still holds ROOM_HANDS distinct drawers, from `from` on. Everything after
+// it is stragglers, and the Brush section's Trim event (on by default) ends
+// the pass there, so the loop is the room at full strength edge to edge.
+// Arrival listens wide (90 s: phones trickling in count toward a room) but
+// leaving listens tight: four hands sharing fifteen seconds is a room
+// still drawing, while stragglers trading turns across a minute is not —
+// on the first event's tape the wide window never cut at all, and 15 s
+// ends the pass at the room's true last gathering.
+export const LEAVE_WINDOW_MS = 15000;
+export function roomLeaves(good, from, hands = ROOM_HANDS, windowMs = LEAVE_WINDOW_MS) {
+  inWindow.clear();
+  let lo = from, last = good.length - 1;
+  for (let i = from; i < good.length; i++) {
+    const id = good[i].id;
+    inWindow.set(id, (inWindow.get(id) || 0) + 1);
+    while (good[i].at - good[lo].at > windowMs) {
+      const o = good[lo++].id, n = inWindow.get(o) - 1;
+      if (n) inWindow.set(o, n); else inWindow.delete(o);
+    }
+    if (inWindow.size >= hands) last = i;
+  }
+  inWindow.clear();
+  return last;
+}
+
 // The pass over `entries` (the tape's, oldest first): { steps, scale, ms,
 // skipped, drawers }, steps [{ tMs, id, s }] from the pass's zero, ms the
 // pass's length with its rest, skipped how many batches before the room
@@ -77,8 +103,11 @@ export function roomArrives(good, hands = ROOM_HANDS, windowMs = ROOM_WINDOW_MS)
 // a time, a drawer or a stroke are skipped. loopMs is the window a long
 // tape is squeezed into: LOOP_MS for the show's cue 24, Infinity for the
 // standing playback between shows (platform/tape-replay.js), whose passes
-// keep scale 1 and play the drawing in real time.
-export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS) {
+// keep scale 1 and play the drawing in real time. trim ends the pass where
+// the room leaves (roomLeaves above; trimmed says how many batches the cut
+// left out); it only ever cuts when the room arrived at all, so a solo
+// tape plays whole with or without it.
+export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS, trim = false) {
   const good = [];
   for (const e of entries || []) {
     if (e && typeof e.at === 'number' && typeof e.id === 'number' && e.s && e.s.t === 's') good.push(e);
@@ -86,14 +115,16 @@ export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS) {
   if (!good.length) return { steps: [], scale: 1, ms: 0 };
   const a = roomArrives(good), skipped = a > 0 ? a : 0;
   const drawers = a >= 0 ? ROOM_HANDS : 0;
-  const t0 = good[skipped].at, span = good[good.length - 1].at - t0;
+  const end = trim && a >= 0 ? roomLeaves(good, skipped) : good.length - 1;
+  const trimmed = good.length - 1 - end;
+  const t0 = good[skipped].at, span = good[end].at - t0;
   const scale = span > 0 ? Math.min(1, loopMs / span) : 1;
-  const steps = new Array(good.length - skipped);
-  for (let i = skipped; i < good.length; i++) {
+  const steps = new Array(end + 1 - skipped);
+  for (let i = skipped; i <= end; i++) {
     const e = good[i];
     steps[i - skipped] = { tMs: (e.at - t0) * scale, id: e.id, s: e.s };
   }
-  return { steps, scale, ms: span * scale + restMs, skipped, drawers };
+  return { steps, scale, ms: span * scale + restMs, skipped, drawers, trimmed };
 }
 
 // A step as the message brushTake plays: the stroke under the drawer's

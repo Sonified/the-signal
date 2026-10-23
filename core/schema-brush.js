@@ -25,7 +25,7 @@ const DEF_CONTINUITY = 1, DEF_REPLAY_SPEED = 1, DEF_REPLAY_SIZE = 1;
 const SPEED_LO = 0.05, SPEED_HI = 2, RSIZE_LO = 0.25, RSIZE_HI = 4;
 // The morph from shapes to particles (core/brush-morph.js): shapes, the
 // brush as it always was, with Auto off.
-const DEF_MORPH = 0, DEF_MORPH_AUTO = false;
+const DEF_MORPH = 0, DEF_MORPH_AUTO = false, DEF_TRIM = true;
 // a multiple as its readout: '0.05x', '0.75x', '1x', '1.5x'
 const timesLabel = v => (Math.round(v * 100) / 100) + 'x';
 const timesFromText = (text, per) => { const n = parseFloat(text); return n > 0 ? Math.round(n * per) : NaN; };
@@ -52,6 +52,7 @@ export function initBrushState(S) {
   if (typeof S.brushReplaySpeed !== 'number') S.brushReplaySpeed = DEF_REPLAY_SPEED;
   if (typeof S.brushReplaySize !== 'number') S.brushReplaySize = DEF_REPLAY_SIZE;
   if (typeof S.brushMorph !== 'number') S.brushMorph = DEF_MORPH;
+  if (typeof S.brushTrim !== 'boolean') S.brushTrim = DEF_TRIM;
   if (typeof S.brushMorphAuto !== 'boolean') S.brushMorphAuto = DEF_MORPH_AUTO;
   if (typeof S.brushDeal !== 'boolean') S.brushDeal = DEF_DEAL;
   if (typeof S.brushDealN !== 'number') S.brushDealN = DEF_DEAL_N;
@@ -83,7 +84,7 @@ export function applyBrushWire(S, o) {
 export function brushStateOf(S) {
   return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushContinuity: S.brushContinuity, brushReplaySpeed: S.brushReplaySpeed, brushReplaySize: S.brushReplaySize,
-           brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto,
+           brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushTrim: S.brushTrim,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
            brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax };
@@ -107,6 +108,7 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushReplaySize)) S.brushReplaySize = Math.max(RSIZE_LO, Math.min(RSIZE_HI, o.brushReplaySize));
   if (Number.isFinite(o.brushMorph)) S.brushMorph = Math.max(0, Math.min(1, o.brushMorph));
   if (typeof o.brushMorphAuto === 'boolean') S.brushMorphAuto = o.brushMorphAuto;
+  if (typeof o.brushTrim === 'boolean') S.brushTrim = o.brushTrim;
   if (typeof o.brushDeal === 'boolean') S.brushDeal = o.brushDeal;
   if (Number.isFinite(o.brushDealN)) S.brushDealN = n(o.brushDealN, 1, 8);
   if (typeof o.brushHideFollow === 'boolean') S.brushHideFollow = o.brushHideFollow;
@@ -237,6 +239,15 @@ export const BRUSH_CONTROLS = [
     set: (S, pos) => { S.brushReplaySize = Math.max(RSIZE_LO * 20, Math.min(RSIZE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
     formatAt: pos => timesLabel(pos / 20),
     parse: (S, text) => timesFromText(text, 20)
+  },
+  // Trim event, on by default: the playback's pass ends where the room
+  // leaves (core/brush-replay.js roomLeaves) instead of playing the
+  // stragglers' tail to the tape's end. Off plays the whole tape. Only a
+  // tape the room arrived on is ever cut, and the next pass takes a change.
+  {
+    id: 'brushTrim', section: 'brush', label: 'Trim event', kind: 'toggle', def: DEF_TRIM,
+    get: S => S.brushTrim !== false,
+    set: (S, on) => { S.brushTrim = !!on; saveBrush(); }
   },
   // The morph (core/brush-morph.js): every stamp from its shape (Shapes, at
   // the left) to a small glowing particle in the shape's own colour

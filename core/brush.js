@@ -874,12 +874,12 @@ function replayTick(now) {
   passClock += lastTick < 0 ? 0 : (now - lastTick) * speed;
   lastTick = now;
   if (!pass || (passI >= pass.steps.length && passClock >= pass.ms)) {
-    pass = planPass(showTape, replayLoopMs);
+    pass = planPass(showTape, replayLoopMs, undefined, S.brushTrim !== false);
     passI = 0; passClock = 0;
     if (!pass.steps.length) { pass = null; return; }
     if (pass.drawers && pass.skipped !== saidSkip) {
       saidSkip = pass.skipped;
-      console.log('[drawing] playback begins where the room arrives: ' + pass.drawers + ' drawers within ' + Math.round(ROOM_WINDOW_MS / 1000) + ' s, skipping the first ' + pass.skipped + ' batches');
+      console.log('[drawing] playback begins where the room arrives: ' + pass.drawers + ' drawers within ' + Math.round(ROOM_WINDOW_MS / 1000) + ' s, skipping the first ' + pass.skipped + ' batches' + (pass.trimmed ? ' and ending where it leaves, ' + pass.trimmed + ' batches early' : ''));
     }
   }
   const st = pass.steps, scale = pass.scale / speed, size = replaySizeNow();

@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planPass, retime, LOOP_MS, LOOP_REST_MS, REPLAY_ID, ROOM_HANDS, ROOM_WINDOW_MS } from '../core/brush-replay.js';
+import { planPass, retime, LOOP_MS, LOOP_REST_MS, REPLAY_ID, ROOM_HANDS, ROOM_WINDOW_MS, roomLeaves } from '../core/brush-replay.js';
 import { encodeStroke, decodeStroke, MOTIF } from '../touch/strokes.js';
 
 const motif = (d, q) => encodeStroke(MOTIF, 200, 50, d, [{ u: 0.4, v: 0.4 }, { u: 0.5, v: 0.5 }, { u: 0.6, v: 0.6 }],
@@ -181,4 +181,25 @@ test('replay speed: the gaps at the pass\'s scale over the speed, 0.5x twice as 
   const s = motif(1, [10000, 40, 60]);
   assert.deepEqual(retime({ id: 1, s }, 50000, 1 / 0.5).q, [49800, 80, 120]);
   assert.deepEqual(retime({ id: 1, s }, 50000, 1 / 2).q, [49950, 20, 30]);
+});
+
+test('trim event: the pass ends where the room leaves, off plays whole, solo untouched', () => {
+  // four hands dense for 60 s, then one straggler on to 400 s
+  const tape = [];
+  for (let t = 0; t <= 60000; t += 500) tape.push({ at: t, id: 1 + ((t / 500) % 4), s: { t: 's' } });
+  for (let t = 70000; t <= 400000; t += 5000) tape.push({ at: t, id: 9, s: { t: 's' } });
+  const whole = planPass(tape, Infinity, 0, false);
+  assert.equal(whole.steps.length, tape.length);
+  assert.equal(whole.trimmed, 0);
+  const cut = planPass(tape, Infinity, 0, true);
+  assert.ok(cut.trimmed > 0, 'the stragglers are cut');
+  // the cut breathes at most the leave window past the last crowded batch (60 s)
+  const endT = cut.steps[cut.steps.length - 1].tMs;
+  assert.ok(endT >= 60000 && endT <= 60000 + 15000, 'ends within the leave window of the cliff, got ' + endT);
+  // a solo tape (room never arrives) plays whole even with trim on
+  const solo = [];
+  for (let t = 0; t <= 100000; t += 1000) solo.push({ at: t, id: 1, s: { t: 's' } });
+  const sp = planPass(solo, Infinity, 0, true);
+  assert.equal(sp.steps.length, solo.length);
+  assert.equal(sp.trimmed, 0);
 });
