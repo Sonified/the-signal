@@ -448,7 +448,7 @@ export async function createEngine(platform, opts) {
     if (particles && particles.setTimestampWrites) particles.setTimestampWrites(undefined);
   }
 
-  let scene = null, uiRenderer = null, blur = null, flowers = null, sun = null, slides = null, sunQr = null, stars = null, heartbeat = null, kaleido = null, particles = null, fireworks = null, confetti = null, wordCloud = null, wordSmoke = null;
+  let scene = null, uiRenderer = null, blur = null, flowers = null, sun = null, slides = null, sunQr = null, stars = null, heartbeat = null, kaleido = null, particles = null, fireworks = null, confetti = null, brush = null, wordCloud = null, wordSmoke = null;
   let deviceLost = false;
   const lostCbs = [];
 
@@ -476,7 +476,7 @@ export async function createEngine(platform, opts) {
     energySink: null,
     // The energy test's faster sampling (core/energy-test.js).
     energyFast: on => energyProbe.setFast(on),
-    start, render, registerScene, registerFlowers, registerSun, registerSlides, registerSunQr, registerStars, registerHeartbeat, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
+    start, render, registerScene, registerFlowers, registerSun, registerSlides, registerSunQr, registerStars, registerHeartbeat, registerKaleido, registerParticles, registerFireworks, registerConfetti, registerBrush, registerWordCloud, registerWordSmoke, registerUI, onDeviceLost,
     onGpuError: fn => { gpuErrorCbs.push(fn); },
     profileBegin, profileEnd
   };
@@ -497,6 +497,7 @@ export async function createEngine(platform, opts) {
     if (particles && particles.resize) particles.resize(pixelWidth, pixelHeight, dpr);
     if (fireworks) fireworks.resize(pixelWidth, pixelHeight, dpr);
     if (confetti) confetti.resize(pixelWidth, pixelHeight, dpr);
+    if (brush) brush.resize(pixelWidth, pixelHeight, dpr);
     if (wordCloud) wordCloud.resize(pixelWidth, pixelHeight, dpr);
     if (wordSmoke) wordSmoke.resize(pixelWidth, pixelHeight, dpr);
     if (uiRenderer && uiRenderer.resize) uiRenderer.resize(pixelWidth, pixelHeight, dpr);
@@ -576,6 +577,13 @@ export async function createEngine(platform, opts) {
     confetti = c;
     if (pixelWidth) confetti.resize(pixelWidth, pixelHeight, engine.dpr);
   }
+  // The brush (gpu/brush.js) draws over the confetti and under the edge:
+  // the hand's marks, from the feedback image it fills before the scene
+  // pass (brush.encode below).
+  function registerBrush(b) {
+    brush = b;
+    if (pixelWidth) brush.resize(pixelWidth, pixelHeight, engine.dpr);
+  }
   // The word cloud (gpu/word-cloud.js) draws straight after the word, in
   // whichever pass the word is in; its seed dispatch, on the frame a word
   // first clouds, is encoded before either route.
@@ -606,7 +614,7 @@ export async function createEngine(platform, opts) {
   // one call.
   function drawScene(pass) {
     if (!scene) return;
-    if ((flowers || sun || stars || heartbeat || kaleido || particles || fireworks || confetti) && scene.drawBack) {
+    if ((flowers || sun || stars || heartbeat || kaleido || particles || fireworks || confetti || brush) && scene.drawBack) {
       scene.drawBack(pass);
       if (heartbeat) heartbeat.draw(pass);
       if (flowers) flowers.draw(pass);
@@ -616,6 +624,7 @@ export async function createEngine(platform, opts) {
       if (particles) particles.draw(pass);
       if (fireworks) fireworks.draw(pass);
       if (confetti) confetti.draw(pass);
+      if (brush) brush.draw(pass);
       scene.drawFront(pass);
     } else if (scene.draw) {
       scene.draw(pass);
@@ -652,6 +661,7 @@ export async function createEngine(platform, opts) {
     if (particles) particles.update(frameT, frameDt, lum);
     if (fireworks) fireworks.update(frameT, frameDt);
     if (confetti) confetti.update(frameT, frameDt, lum);
+    if (brush) brush.update(frameT, frameDt);
     if (wordCloud) wordCloud.update(frameT, frameDt);
     if (wordSmoke) wordSmoke.update(frameT, frameDt);
     const gateWas = gate;
@@ -709,6 +719,7 @@ export async function createEngine(platform, opts) {
     if (kaleido && kaleido.encodeChamber) kaleido.encodeChamber(encoder);
     if (particles && particles.encode) particles.encode(encoder);
     if (confetti && confetti.encode) confetti.encode(encoder);
+    if (brush) brush.encode(encoder);
     // The edge's feedback image, when it has one (scene.js).
     if (scene && scene.encode) scene.encode(encoder);
     if (wordCloud) wordCloud.encode(encoder);
@@ -816,10 +827,11 @@ export async function createEngine(platform, opts) {
   // Whether anything the engine draws is still on the move by itself while
   // the scene stands still: a layer's own change of setting running out on
   // the frame's clock (the edge's crossfade, a word's cloud or smoke tail),
-  // or the glass owing a capture. main.js asks before letting the loop rest.
+  // or the glass owing a capture, or the brush's marks still fading. main.js
+  // asks before letting the loop rest.
   let captureOwed = false;
   function busy() {
-    return captureOwed || gate !== gateTarget() || !!(scene && scene.busy && scene.busy()) || !!(sun && sun.busy()) || !!(slides && slides.busy()) || !!(sunQr && sunQr.busy()) ||
+    return captureOwed || gate !== gateTarget() || !!(scene && scene.busy && scene.busy()) || !!(brush && brush.busy()) || !!(sun && sun.busy()) || !!(slides && slides.busy()) || !!(sunQr && sunQr.busy()) ||
       !!(wordCloud && wordCloud.busy && wordCloud.busy()) || !!(wordSmoke && wordSmoke.busy && wordSmoke.busy());
   }
 

@@ -16,6 +16,7 @@ import { SLIDES_CONTROLS, SLIDES_SECTIONS } from './schema-slides.js';
 import { HEARTBEAT_CONTROLS, HEARTBEAT_SECTIONS } from './schema-heartbeat.js';
 import { FIREWORK_CONTROLS, FIREWORK_SECTIONS, FIREWORKS_ENABLED } from './schema-fireworks.js';
 import { CONFETTI_CONTROLS, CONFETTI_SECTIONS } from './schema-confetti.js';
+import { BRUSH_CONTROLS, BRUSH_SECTIONS } from './schema-brush.js';
 import { wireVariances } from './schema-variance.js';
 
 // The Layers section's rows run in this list's order. The sun goes straight
@@ -27,11 +28,12 @@ import { wireVariances } from './schema-variance.js';
 // particles follow the kaleidoscope, so lParticles comes after them,
 // then the fireworks' lFireworks, with the confetti's lConfetti last. The
 // show's Slides (schema-slides.js) follow the sun, so lSlides sits straight
-// beneath lSun, ahead of lHeartbeat. With
+// beneath lSun, ahead of lHeartbeat. The Brush (schema-brush.js), which is
+// no layer and has no toggle there, follows the confetti. With
 // FIREWORKS_ENABLED off (schema-fireworks.js) the fireworks' controls and
 // section are left out here, so every screen, picker and recall that walks
 // these lists simply never meets them.
-export const CONTROLS = [...VISUAL_CONTROLS, ...SUN_CONTROLS, ...SLIDES_CONTROLS, ...HEARTBEAT_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONTROLS, ...PARTICLE_CONTROLS, ...(FIREWORKS_ENABLED ? FIREWORK_CONTROLS : []), ...CONFETTI_CONTROLS, ...AUDIO_CONTROLS];
+export const CONTROLS = [...VISUAL_CONTROLS, ...SUN_CONTROLS, ...SLIDES_CONTROLS, ...HEARTBEAT_CONTROLS, ...FLOWER_CONTROLS, ...KALEIDO_CONTROLS, ...PARTICLE_CONTROLS, ...(FIREWORKS_ENABLED ? FIREWORK_CONTROLS : []), ...CONFETTI_CONTROLS, ...BRUSH_CONTROLS, ...AUDIO_CONTROLS];
 
 // The Flowers section slots in after Edge, the Kaleidoscope section right
 // after it, then the Particles, Sun, Fireworks and Confetti sections, all before
@@ -39,7 +41,7 @@ export const CONTROLS = [...VISUAL_CONTROLS, ...SUN_CONTROLS, ...SLIDES_CONTROLS
 const visualSections = VISUAL_SECTIONS.slice();
 {
   const at = visualSections.findIndex(s => s.id === 'edge');
-  visualSections.splice(at < 0 ? visualSections.length : at + 1, 0, ...FLOWER_SECTIONS, ...KALEIDO_SECTIONS, ...PARTICLE_SECTIONS, ...SUN_SECTIONS, ...SLIDES_SECTIONS, ...HEARTBEAT_SECTIONS, ...(FIREWORKS_ENABLED ? FIREWORK_SECTIONS : []), ...CONFETTI_SECTIONS);
+  visualSections.splice(at < 0 ? visualSections.length : at + 1, 0, ...FLOWER_SECTIONS, ...KALEIDO_SECTIONS, ...PARTICLE_SECTIONS, ...SUN_SECTIONS, ...SLIDES_SECTIONS, ...HEARTBEAT_SECTIONS, ...(FIREWORKS_ENABLED ? FIREWORK_SECTIONS : []), ...CONFETTI_SECTIONS, ...BRUSH_SECTIONS);
 }
 export const SECTIONS = [...visualSections, ...AUDIO_SECTIONS];
 

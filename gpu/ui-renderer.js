@@ -15,6 +15,11 @@
 // the small uniforms, which differ between calls only by hasBlur, keep one
 // slot per hasBlur value (see uniformLast), so two calls never share memory
 // that must hold different bytes for each.
+//
+// One picture rides beside the glyph atlas for the IMAGE instances (the
+// drawer's Brush picker): setPicture(view) hands it a texture view, null for
+// none, and the bind group is made again only then, between frames. Until
+// one is set a 1x1 transparent stand-in is bound.
 
 import { UI_WGSL } from './ui.wgsl.js';
 import { STRIDE } from '../ui/drawlist.js';
@@ -87,8 +92,21 @@ export function createUIRenderer(device, format, text) {
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
     ],
   });
+  // The picture's sampler: trilinear, since thumbnails are drawn well under
+  // the atlas's size.
+  const picSampler = device.createSampler({
+    magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear',
+    addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge',
+  });
+  const dummyPicTexture = device.createTexture({
+    size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture({ texture: dummyPicTexture }, new Uint8Array([0, 0, 0, 0]), { bytesPerRow: 4 }, { width: 1, height: 1 });
+  const dummyPicView = dummyPicTexture.createView();
 
   const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [uniformsBGL, blurBGL, textBGL] });
 
@@ -102,13 +120,23 @@ export function createUIRenderer(device, format, text) {
     }));
   }
 
-  const textBindGroup = device.createBindGroup({
+  const textView = text.texture.createView();
+  const makeTextBind = pic => device.createBindGroup({
     layout: textBGL,
     entries: [
-      { binding: 0, resource: text.texture.createView() },
+      { binding: 0, resource: textView },
       { binding: 1, resource: text.sampler },
+      { binding: 2, resource: pic },
+      { binding: 3, resource: picSampler },
     ],
   });
+  let textBindGroup = makeTextBind(dummyPicView), picView = null;
+  function setPicture(view) {
+    const v = view || null;
+    if (v === picView) return;
+    picView = v;
+    textBindGroup = makeTextBind(v || dummyPicView);
+  }
 
   // Two blur bind groups are kept side by side: one on the 1x1 stand-in, for
   // the overlay list drawn inside the scene pass with no blur, and one on the
@@ -221,5 +249,5 @@ export function createUIRenderer(device, format, text) {
     }
   }
 
-  return { draw, resize };
+  return { draw, resize, setPicture };
 }

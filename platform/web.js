@@ -577,7 +577,10 @@ export function createPlatform(canvas) {
     loadImagePixels,
     loadImageBaked,
     // the text fields' keyboard on a touch screen, null elsewhere
-    softKeyboard: kbLink
+    softKeyboard: kbLink,
+    // the page's query string, for what core reads off the address (the
+    // brush's hall, platform/brush-hall.js), so it reads the same in a worker
+    pageSearch: location.search
   };
   // Measured synchronously once, so the engine has real device-pixel
   // dimensions to configure the canvas with before the first (asynchronous)

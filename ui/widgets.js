@@ -1470,6 +1470,56 @@ function swatches(ui, ctrl, S, enabled, raw) {
   return picked;
 }
 
+// Tiles (kind 'tiles', the Brush's Shape): a grid of image thumbnails, one
+// per painted tile of an 8 x 8 atlas, the picked one ringed. ctrl.tiles(S)
+// hands over the atlas as the GPU side has it ({ ready, set, want, count,
+// tiles, empty, padUV, innerUV }; core/brush.js brushAtlas), the UI
+// renderer's picture being that atlas (gpu/ui-renderer.js setPicture);
+// until it is in for the set wanted, one quiet line says so. Empty tiles
+// are left out, so the grid only ever offers a shape that will draw. A pick
+// that is empty in this set shows the first tile ringed, as that is what a
+// stroke stamps. A drag over the grid scrolls the drawer (dragHold 0); only
+// a tap picks. Returns the tile clicked, -1 for none; ui.control writes it.
+const TILE_MIN = 34, TILE_GAP = 6, TILE_INSET = 3, TILE_COLS_MAX = 8;
+function tilePicker(ui, ctrl, S, enabled) {
+  const a = ctrl.tiles(S);
+  ui.label(ctrl.label, TYPE.sm, W.regular, COLOR.inkDim);
+  if (!a.ready || a.set !== a.want || a.count === 0) {
+    ui.label(a.ready && a.set === a.want ? 'No shapes in this set' : 'Loading shapes', TYPE.xs, W.regular, COLOR.inkFaint);
+    return -1;
+  }
+  ui.peek();
+  const maxW = ui.pw;
+  let cols = Math.floor((maxW + TILE_GAP) / (TILE_MIN + TILE_GAP));
+  if (cols > TILE_COLS_MAX) cols = TILE_COLS_MAX;
+  if (cols < 1) cols = 1;
+  const side = (maxW - TILE_GAP * (cols - 1)) / cols;
+  const rows = Math.ceil(a.count / cols);
+  ui.nextRect(rows * side + (rows - 1) * TILE_GAP);
+  const x0 = ui.rx, y0 = ui.ry;
+  let cur = ctrl.get(S) | 0;
+  if (cur < 0 || cur > 63 || a.empty[cur]) cur = a.tiles[0];
+  const k = 1 / 8;
+  let picked = -1;
+  for (let i = 0; i < a.count; i++) {
+    const t = a.tiles[i];
+    const x = x0 + (i % cols) * (side + TILE_GAP), y = y0 + ((i / cols) | 0) * (side + TILE_GAP);
+    if (ui.culled(x, y, side, side)) continue;
+    const id = ui.idx(ctrl.id, t);
+    ui.dragHold = 0;
+    ui.interact(id, x, y, side, side, !enabled);
+    if (ui.clicked) picked = t;
+    const h = ui.spring(id, ui.hover ? 1 : 0, MOTION.hover);
+    const on = t === cur;
+    ui.dl.rect(x, y, side, side, RADIUS.sm, on ? COLOR.accentSoft : (h > 0.5 ? COLOR.wellHi : COLOR.well),
+               on ? 1.5 : 0, on ? COLOR.accent : null, 0, 0);
+    const u0 = (t % 8) * k + a.padUV, v0 = ((t / 8) | 0) * k + a.padUV;
+    ui.dl.image(x + TILE_INSET, y + TILE_INSET, side - 2 * TILE_INSET, side - 2 * TILE_INSET,
+                u0, v0, u0 + a.innerUV, v0 + a.innerUV, 1);
+  }
+  return picked;
+}
+
 // ---------------- slider position mapping ----------------
 
 // A log slider's Alt+wheel and arrow-key notch: a fixed share of the travel,
@@ -1907,6 +1957,11 @@ function control(ctrl, S, shown) {
     case 'text':
       changed = textControl(ui, ctrl, S, enabled);
       break;
+    case 'tiles': {
+      const t = tilePicker(ui, ctrl, S, enabled);
+      if (t >= 0 && t !== ctrl.get(S)) { ctrl.set(S, t); changed = true; }
+      break;
+    }
   }
   // the name's reset, through the door as any other ask
   if (ui.labelClicked && enabled && ctrl.def !== undefined && aimOf(ctrl, S, door) !== ctrl.def) {

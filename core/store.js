@@ -58,6 +58,7 @@ import { initParticleState, particleStateOf, applyParticleState } from './schema
 import { initSunState, sunStateOf, applySunState } from './schema-sun.js';
 import { initSlidesState, slidesStateOf, applySlidesState } from './schema-slides.js';
 import { initHeartbeatState, heartbeatStateOf, applyHeartbeatState } from './schema-heartbeat.js';
+import { initBrushState, brushStateOf, applyBrushState } from './schema-brush.js';
 import { initFireworkState, fireworkStateOf, applyFireworkState } from './schema-fireworks.js';
 import { initConfettiState, confettiStateOf, applyConfettiState } from './schema-confetti.js';
 import { FX_NAMES } from './word-fx.js';
@@ -852,6 +853,22 @@ function loadLive() {
   }
 }
 
+// The Brush section (core/schema-brush.js) keeps its settings in a record of
+// its own too, for the same reason as Live Sound's: the shared object and
+// the extra record are the snapshot, and the brush is the hand's
+// instrument, not the scene, so no preset, step or broadcast may carry it.
+// The fade is a level, held to 0..1 as it is read back (applyBrushState).
+const BRUSH_KEY = 'signal.v1.brush';
+export function saveBrush() {
+  idleWake('a setting changed');
+  saveKey(BRUSH_KEY, brushStateOf(S));
+}
+function loadBrush() {
+  let x;
+  try { x = JSON.parse(readKey(BRUSH_KEY) || 'null'); } catch (e) { x = null; }
+  applyBrushState(S, x);
+}
+
 // The v0 hue-band buttons derive their own label from hueLo/hueSpan rather
 // than storing a name, so load() does the same derivation the schema's Hue
 // range control uses. Duplicated in both places on purpose: the schema needs
@@ -872,6 +889,7 @@ export function load() {
   initHeartbeatState(S);
   initFireworkState(S);
   initConfettiState(S);
+  initBrushState(S);
   if (!storage) return false;
   let s;
   try { s = JSON.parse(storage.get(STORE) || '{}'); } catch (e) { s = {}; }
@@ -888,6 +906,7 @@ export function load() {
   try { x = JSON.parse(storage.get(EXTRA_KEY) || 'null'); } catch (e) { x = null; }
   applyExtra(x);
   loadLive();
+  loadBrush();
   return first;
 }
 

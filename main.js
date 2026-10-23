@@ -46,6 +46,7 @@ import { createParticles } from './gpu/particles.js';
 import { createFireworks } from './gpu/fireworks.js';
 import { FIREWORKS_ENABLED } from './core/schema-fireworks.js';
 import { createConfetti } from './gpu/confetti.js';
+import { createBrush } from './gpu/brush.js';
 import { createWordCloud } from './gpu/word-cloud.js';
 import { createWordSmoke } from './gpu/word-smoke.js';
 import { createText } from './gpu/text-atlas.js';
@@ -69,6 +70,8 @@ import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionR
 import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent } from './platform/broadcast-socket.js';
+import { brushHallIntent, openBrushHall } from './platform/brush-hall.js';
+import { brushField, setBrushHall, brushHallState, brushHallGroup, brushTake } from './core/brush.js';
 import { initShowRemote } from './platform/show-remote.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
@@ -285,7 +288,22 @@ async function boot() {
   // The Smoke transition: recorded dissolution, prepared offscreen, played
   // backward for arrival. Builds nothing until first used.
   engine.registerWordSmoke(createWordSmoke(device, format, text));
-  engine.registerUI(createUIRenderer(device, format, text), createBlur(device, format));
+  // The brush (gpu/brush.js): the hand's strokes on the field, and the
+  // hall's. It builds nothing until the first stamp or the drawer's picker
+  // asks for an atlas; the current set's atlas is the UI renderer's
+  // picture, which the picker's thumbnails sample.
+  const uiRenderer = createUIRenderer(device, format, text);
+  engine.registerBrush(createBrush(device, format, platform, { picture: v => uiRenderer.setPicture(v), yieldTile: choreYield }));
+  engine.registerUI(uiRenderer, createBlur(device, format));
+  // ?hall=<name> joins the brush to a group touch hall (platform/brush-hall.js):
+  // its strokes go out there and the strokes that reach it are drawn here.
+  // Without one, or offline, the brush plays alone; it never waits on it.
+  {
+    const hallIntent = brushHallIntent(platform.pageSearch);
+    if (hallIntent) {
+      setBrushHall(openBrushHall(hallIntent, { state: brushHallState, group: brushHallGroup, message: brushTake }), hallIntent.hall);
+    }
+  }
 
   // The frame profiler (the drawer's Profile chip, or signalProfile in the
   // console). Idle until asked; see core/profiler.js.
@@ -999,11 +1017,16 @@ async function boot() {
                              (S.panelOpen && px < drawerEdge()));
       }
 
-      // the field: any press nothing above claimed. With the drawer open it
-      // puts the drawer away, as v0 does; otherwise it starts and stops,
-      // except that a wake tap on a running session only woke the chrome.
+      // the field: any press nothing above claimed. A press that travels is a
+      // brush stroke (core/brush.js, core/tap-drag.js tells the two apart)
+      // and its release is no tap. A tap, with the drawer open, puts the
+      // drawer away, as v0 does; otherwise it starts and stops, except that a
+      // wake tap on a running session only woke the chrome. A release the
+      // field did not take as a click (a cancel) is never a tap.
       ui.interact(ui.id('field'), 0, 0, width, height, false);
-      if (ui.clicked) {
+      const fieldTap = brushField(ui.pressed, ui.released, ui.released && !ui.clicked,
+                                  ui.pointerX, ui.pointerY, width, height, S.edgeInset, t);
+      if (fieldTap && ui.clicked) {
         if (S.panelOpen) { S.panelOpen = false; save(); }
         else if (!(wakeTap && S.running)) toggleRun();
       }

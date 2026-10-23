@@ -154,7 +154,10 @@ export function createWorkerPlatform(init, post) {
     loadImagePixels: url => loadImagePixels(new URL(url, init.baseURI).href),
     loadImageBaked: (url, tag, build) => loadImageBaked(new URL(url, init.baseURI).href, tag, build),
     // the text fields' keyboard on a touch screen, null elsewhere
-    softKeyboard: kbLink
+    softKeyboard: kbLink,
+    // the page's query string (platform/web.js's): the worker's own location
+    // is its script's, so it is read off the page's address it was handed
+    pageSearch: (() => { try { return new URL(init.baseURI).search; } catch (e) { return ''; } })()
   };
 
   // Render > Pixel density, as platform/web.js applies it: above the cap the

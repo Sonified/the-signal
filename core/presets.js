@@ -238,8 +238,9 @@ export const REPLAY_CONTROLS = REPLAY;
 // A control marked machineOnPhone is one on a phone only: there it holds the
 // phone's own choice (the Reverb type, core/schema-audio.js).
 // The Settings section is this machine's own too (its Control overlays rows:
-// how this screen's floating controls come up).
-export function machineControl(c) { return c.section === 'render' || c.section === 'settings' || (c.machineOnPhone === true && onPhone()); }
+// how this screen's floating controls come up), and so is the Brush (the
+// hand's instrument, core/schema-brush.js, kept in a record of its own).
+export function machineControl(c) { return c.section === 'render' || c.section === 'settings' || c.section === 'brush' || (c.machineOnPhone === true && onPhone()); }
 
 // store.applySnapshot writes state and nothing else, which is all a boot
 // needs, but mid-session the audio graph, the edge particles and the rest

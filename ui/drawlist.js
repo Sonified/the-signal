@@ -1,6 +1,6 @@
 // The DrawList: the only thing the UI hands to the GPU.
 //
-// Everything the viewer sees outside the scene is one of four shapes, and each
+// Everything the viewer sees outside the scene is one of five shapes, and each
 // shape is one fixed-size instance record in a single Float32Array. The UI
 // renderer uploads that array once per frame and draws it with one instanced
 // call per clip batch. Nothing here allocates while a frame is being built:
@@ -14,7 +14,7 @@
 // sRGB in 0..1, the same numbers a CSS colour would have. The renderer does
 // the premultiply and the device-pixel scale.
 
-export const KIND = { RECT: 0, GLASS: 1, GLYPH: 2, ICON: 3 };
+export const KIND = { RECT: 0, GLASS: 1, GLYPH: 2, ICON: 3, IMAGE: 4 };
 
 // Icons are drawn analytically in the shader, so adding one means adding a
 // case there and a number here, never an image.
@@ -36,7 +36,7 @@ export const ICON = {
 //   11..14 border rgba; panel strip top/bottom in 11/12 (relative to centre), bottom-edge alphas in 13/14
 //   15 shadow radius                css px, 0 for none; the quad is expanded by this (three times it for a slab)
 //   16 shadow alpha
-//   17..20 u0 v0 u1 v1              GLYPH atlas uvs; panel strip left/right and top-edge alphas
+//   17..20 u0 v0 u1 v1              GLYPH and IMAGE atlas uvs; panel strip left/right and top-edge alphas
 //   21 A                            GLYPH sdf range in atlas px; ICON icon id; GLASS blur mix 0..1; RECT grain amount (grainRect)
 //   22 B                            ICON stroke width; GLYPH softness; RECT 1 slab, 2 hard panel strip, 3 soft panel strip; ICON rotation in 17
 //   23 opacity                      the group-alpha stack product at emit time
@@ -44,6 +44,8 @@ export const STRIDE = 24;
 
 const MAX_CLIP_DEPTH = 32, MAX_ALPHA_DEPTH = 32;
 const CLEAR = new Float32Array([0, 0, 0, 0]);
+// image()'s fill: only its alpha is read, as the picture's own opacity.
+const CLEAR_A = new Float32Array([0, 0, 0, 1]);
 
 export class DrawList {
   constructor(capacity = 2048) {
@@ -210,6 +212,18 @@ export class DrawList {
     d[o + 17] = rotation;
     d[o + 21] = id;
     d[o + 22] = stroke;
+  }
+
+  // A rect of the UI renderer's picture (gpu/ui-renderer.js setPicture: the
+  // brush's motif atlas, premultiplied), u0 v0 to u1 v1 stretched over it,
+  // at alpha. The drawer's Brush picker draws its thumbnails with it. The
+  // picture is steady, as all UI is; nothing about it strobes.
+  image(x, y, w, h, u0, v0, u1, v1, alpha) {
+    CLEAR_A[3] = alpha;
+    const o = this._slot(KIND.IMAGE, x, y, w, h, 0, CLEAR_A, 0);
+    if (o < 0) return;
+    const d = this.data;
+    d[o + 17] = u0; d[o + 18] = v0; d[o + 19] = u1; d[o + 20] = v1;
   }
 
   // Records taken from an earlier frame's list (a run of this.data copied

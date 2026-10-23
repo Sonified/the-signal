@@ -2,7 +2,8 @@
 // vertex stage expands a quad from six float32x4 instance attributes (the
 // DrawList's 24-float stride, chunked into six vec4s in order) and the
 // fragment stage switches on `kind` to shade a rounded rect, a frosted glass
-// pane, an SDF glyph, or an analytic icon. Everything is computed straight
+// pane, an SDF glyph, an analytic icon, or a rect of the picture (the
+// brush's motif atlas, ui-renderer.js setPicture). Everything is computed straight
 // from the instance data; there is nothing per-frame here that allocates,
 // the GPU just runs the same program over however many instances the UI
 // emitted this frame.
@@ -29,6 +30,8 @@ struct Uniforms {
 @group(1) @binding(1) var blurSamp: sampler;
 @group(2) @binding(0) var textTex: texture_2d<f32>;
 @group(2) @binding(1) var textSamp: sampler;
+@group(2) @binding(2) var picTex: texture_2d<f32>;
+@group(2) @binding(3) var picSamp: sampler;
 
 struct VertexIn {
   @location(0) a0: vec4f, // kind, x, y, w
@@ -586,12 +589,24 @@ fn shadeIcon(in: VOut) -> vec4f {
   return vec4f(in.fill.rgb * outA, outA);
 }
 
+// A rect of the picture, its uvs stretched over the rect, nothing outside
+// it (the quad reaches a pixel past for the other kinds' edges). The
+// picture is premultiplied already, so it is only scaled by the alpha.
+fn shadeImage(in: VOut) -> vec4f {
+  if (any(abs(in.local) > in.halfSize)) { return vec4f(0.0); }
+  let t = (in.local / in.halfSize) * 0.5 + vec2f(0.5, 0.5);
+  let uv = mix(in.uv01.xy, in.uv01.zw, t);
+  let c = textureSample(picTex, picSamp, uv);
+  return c * (in.fill.a * in.opacity);
+}
+
 @fragment
 fn fsMain(in: VOut) -> @location(0) vec4f {
   let k = i32(round(in.kind));
   if (k == 0) { return shadeRect(in, in.pos.xy); }
   if (k == 1) { return shadeGlass(in, in.pos.xy); }
   if (k == 2) { return shadeGlyph(in); }
+  if (k == 4) { return shadeImage(in); }
   return shadeIcon(in);
 }
 `;

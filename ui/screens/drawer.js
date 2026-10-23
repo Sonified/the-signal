@@ -39,7 +39,7 @@ import {
 import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 
-const DRAWER_SECTIONS = ['layers', 'slides', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'sun', 'music', 'audio', 'heartbeat', 'atmosphere', 'live', 'reverb', 'render', 'settings'];
+const DRAWER_SECTIONS = ['layers', 'slides', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'brush', 'sun', 'music', 'audio', 'heartbeat', 'atmosphere', 'live', 'reverb', 'render', 'settings'];
 
 // The control each section's header switch stands for: the layer's own on/off,
 // the same one the section holds as its first row, so the header and the row

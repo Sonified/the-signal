@@ -28,7 +28,7 @@
 
 // The deployed relay's host, printed by `npx wrangler deploy` in
 // broadcast-worker/.
-const RELAY_HOST = 'the-signal-broadcast.robertalexander-music.workers.dev';
+export const RELAY_HOST = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const LIVE_PAGE = 'https://presence.now.audio/';
 
 const PING_MS = 20000;
