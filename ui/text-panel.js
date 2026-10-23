@@ -1,20 +1,30 @@
 // A fixed dark backing whose opacity arrives separately behind each letter.
-// Neighbouring letter levels blend across the panel — along each line
-// between letter centres, and vertically through the gap between lines —
-// without overlapping dark patches or changing the box's size as the
-// letters fade.
+// Each letter holds its own level across its whole box and runs out past it
+// over a lead of one line height, so a letter is never half-backed as it
+// arrives and the front of the dark is a soft run, not a wall at the
+// letter's centre. Neighbouring letters' levels meet by taking the higher,
+// so the dark never doubles where two overlap, and the box's size never
+// changes as the letters fade. The outermost letters hold their level on
+// out to the panel's edge, and between lines the dark crossfades through
+// the gap.
 const MAX_LETTERS = 4096, MAX_LINES = 16;
 const BLACK = new Float32Array([0, 0, 0, 1]);
 
 export class TextPanel {
   constructor() {
     this.starts = new Float64Array(MAX_LETTERS);
-    this.letters = new Float32Array(MAX_LETTERS * 2); // centre x, opacity
+    this.letters = new Float32Array(MAX_LETTERS * 3); // box x0, box x1, opacity
     this.lines = new Float32Array(MAX_LINES * 6); // first, count, x0, y0, x1, y1
     this.used = new Int32Array(MAX_LINES);
+    // each line's breakpoints, sorted: where its level stops being straight
+    this.cuts = new Float64Array(MAX_LETTERS * 4);
+    this.cutAt = new Int32Array(MAX_LINES);
+    this.cutN = new Int32Array(MAX_LINES);
+    this.lead = new Float64Array(MAX_LINES);
     this.seed = -1;
     this.text = '';
     this.age = 0;
+    this.pend = false; // a flat strip held back to merge with its neighbour
   }
 
   begin(seed, text, age, fadeMs, lineCount) {
@@ -44,70 +54,123 @@ export class TextPanel {
     l[o + 1]++;
     l[o + 2] = Math.min(l[o + 2], x0); l[o + 3] = Math.min(l[o + 3], y0);
     l[o + 4] = Math.max(l[o + 4], x1); l[o + 5] = Math.max(l[o + 5], y1);
-    this.letters[this.count * 2] = (x0 + x1) * 0.5;
-    this.letters[this.count * 2 + 1] = a;
+    this.letters[this.count * 3] = x0;
+    this.letters[this.count * 3 + 1] = x1;
+    this.letters[this.count * 3 + 2] = a;
     this.count++;
   }
 
-  // The strips of one horizontal band: the panel's rect, each quad cropped
-  // to [left,right] x [top,bottom], with line k's alphas run centre to
-  // centre, the same along the band's top and bottom edges. One strip
-  // before the first centre, one between each pair, and one after the last;
-  // the strips share edges and never blend over each other.
-  _band(dl, k, x, y, w, h, radius, blur, reach, top, bottom) {
-    const l = this.lines, p = this.letters, o = k * 6;
+  // Line k's breakpoints into this.cuts, sorted: for each letter that has
+  // any level, the foot and shoulder of its run-out on either side (the
+  // outermost letters have none outward, they hold on to the edge). Between
+  // two breakpoints every letter's level is straight, so the strips cut here
+  // follow the envelope.
+  _prepare(k, at) {
+    const l = this.lines, p = this.letters, o = k * 6, c = this.cuts;
     const first = l[o], n = l[o + 1];
-    let left = x - reach, a0 = p[first * 2 + 1];
-    for (let j = 0; j <= n; j++) {
-      const right = j < n ? p[(first + j) * 2] : x + w + reach;
-      const a1 = j < n ? p[(first + j) * 2 + 1] : a0;
-      if (right > left && Math.max(a0, a1) > 0.001) {
-        dl.panelStrip(x, y, w, h, radius, BLACK, blur, left, right, top, bottom, a0, a1, a0, a1);
-      }
+    const lead = this.lead[k] = Math.max(1, l[o + 5] - l[o + 3]);
+    let m = at;
+    for (let j = 0; j < n; j++) {
+      if (p[(first + j) * 3 + 2] <= 0.001) continue;
+      const x0 = p[(first + j) * 3], x1 = p[(first + j) * 3 + 1];
+      if (j > 0) c[m++] = x0 - lead;
+      c[m++] = x0; c[m++] = x1;
+      if (j < n - 1) c[m++] = x1 + lead;
+    }
+    for (let i = at + 1; i < m; i++) {   // nearly sorted already
+      const v = c[i];
+      let j = i - 1;
+      while (j >= at && c[j] > v) { c[j + 1] = c[j]; j--; }
+      c[j + 1] = v;
+    }
+    this.cutAt[k] = at; this.cutN[k] = m - at;
+    return m;
+  }
+
+  // Line k's level at x: the highest of its letters' levels, each full over
+  // its own box and running out linearly over the lead past either side.
+  _env(k, x) {
+    const p = this.letters, o = k * 6;
+    const first = this.lines[o], n = this.lines[o + 1], lead = this.lead[k];
+    let best = 0;
+    for (let j = 0; j < n; j++) {
+      const a = p[(first + j) * 3 + 2];
+      if (a <= best) continue;
+      const x0 = p[(first + j) * 3], x1 = p[(first + j) * 3 + 1];
+      let d = 0;
+      if (x < x0) d = j === 0 ? 0 : x0 - x;
+      else if (x > x1) d = j === n - 1 ? 0 : x - x1;
+      const t = a * (1 - d / lead);
+      if (t > best) best = t;
+    }
+    return best;
+  }
+
+  // Strips are handed to the draw list through here so two flat strips at
+  // the same levels, edge to edge, go out as one: a settled panel is a single
+  // strip however many letters it has. Ramps are never merged, the shader
+  // eases each strip's own run.
+  _put(dl, left, right, a0, a1, b0, b1) {
+    if (Math.max(a0, a1, b0, b1) <= 0.001) { this._flush(dl); return; }
+    const flat = a0 === a1 && b0 === b1;
+    if (this.pend) {
+      if (flat && this.pFlat && this.pRight === left && this.pA === a0 && this.pB0 === b0) { this.pRight = right; return; }
+      this._flush(dl);
+    }
+    this.pend = true; this.pFlat = flat;
+    this.pLeft = left; this.pRight = right;
+    this.pA = a0; this.pA1 = a1; this.pB0 = b0; this.pB1 = b1;
+  }
+
+  _flush(dl) {
+    if (!this.pend) return;
+    this.pend = false;
+    dl.panelStrip(this.bx, this.by, this.bw, this.bh, this.br, BLACK, this.bblur,
+                  this.pLeft, this.pRight, this.bTop, this.bBottom, this.pA, this.pA1, this.pB0, this.pB1);
+  }
+
+  // The strips of one horizontal band: the panel's rect, each quad cropped
+  // to [left,right] x [top,bottom], with line k's levels along both the
+  // band's top and bottom edges. The strips share edges and never blend
+  // over each other.
+  _band(dl, k, x, y, w, h, radius, blur, reach, top, bottom) {
+    this.bx = x; this.by = y; this.bw = w; this.bh = h; this.br = radius; this.bblur = blur;
+    this.bTop = top; this.bBottom = bottom;
+    const end = x + w + reach;
+    let left = x - reach, a0 = this._env(k, left);
+    for (let i = this.cutAt[k], e = i + this.cutN[k]; i < e && left < end; i++) {
+      const right = Math.min(this.cuts[i], end);
+      if (right <= left) continue;
+      const a1 = this._env(k, right);
+      this._put(dl, left, right, a0, a1, a0, a1);
       left = right; a0 = a1;
     }
+    if (end > left) this._put(dl, left, end, a0, a0, a0, a0);
+    this._flush(dl);
   }
 
-  // Line k's alpha at x: linear between its letter centres, constant past
-  // either end.
-  _at(k, x) {
-    const p = this.letters, o = k * 6;
-    const first = this.lines[o], n = this.lines[o + 1];
-    if (x <= p[first * 2]) return p[first * 2 + 1];
-    for (let i = 1; i < n; i++) {
-      const x1 = p[(first + i) * 2];
-      if (x <= x1) {
-        const x0 = p[(first + i - 1) * 2];
-        const a0 = p[(first + i - 1) * 2 + 1], a1 = p[(first + i) * 2 + 1];
-        return x1 > x0 ? a0 + (a1 - a0) * (x - x0) / (x1 - x0) : a1;
-      }
-    }
-    return p[(first + n - 1) * 2 + 1];
-  }
-
-  // The band between two lines: its top edge carries line ka's alphas, its
-  // bottom edge line kb's, cut at both lines' letter centres so every strip
-  // is linear in x along both edges. The dark crossfades through the gap
-  // from one line's arrival to the other's instead of jumping at a seam.
+  // The band between two lines: its top edge carries line ka's levels, its
+  // bottom edge line kb's, cut at both lines' breakpoints so every strip is
+  // linear in x along both edges. The dark crossfades through the gap from
+  // one line's arrival to the other's instead of jumping at a seam.
   _gap(dl, ka, kb, x, y, w, h, radius, blur, reach, top, bottom) {
-    const l = this.lines, p = this.letters;
-    const fa = l[ka * 6], na = l[ka * 6 + 1], fb = l[kb * 6], nb = l[kb * 6 + 1];
+    this.bx = x; this.by = y; this.bw = w; this.bh = h; this.br = radius; this.bblur = blur;
+    this.bTop = top; this.bBottom = bottom;
     const end = x + w + reach;
-    let ia = 0, ib = 0, left = x - reach;
-    let a0 = p[fa * 2 + 1], b0 = p[fb * 2 + 1];
-    for (;;) {
-      const xa = ia < na ? p[(fa + ia) * 2] : Infinity;
-      const xb = ib < nb ? p[(fb + ib) * 2] : Infinity;
+    let ia = this.cutAt[ka], ib = this.cutAt[kb];
+    const ea = ia + this.cutN[ka], eb = ib + this.cutN[kb];
+    let left = x - reach, a0 = this._env(ka, left), b0 = this._env(kb, left);
+    while (left < end) {
+      const xa = ia < ea ? this.cuts[ia] : Infinity, xb = ib < eb ? this.cuts[ib] : Infinity;
       const right = Math.min(xa, xb, end);
-      const a1 = this._at(ka, right), b1 = this._at(kb, right);
-      if (right > left && Math.max(a0, a1, b0, b1) > 0.001) {
-        dl.panelStrip(x, y, w, h, radius, BLACK, blur, left, right, top, bottom, a0, a1, b0, b1);
-      }
-      if (right >= end) break;
       if (xa <= right) ia++;
       if (xb <= right) ib++;
+      if (right <= left) continue;
+      const a1 = this._env(ka, right), b1 = this._env(kb, right);
+      this._put(dl, left, right, a0, a1, b0, b1);
       left = right; a0 = a1; b0 = b1;
     }
+    this._flush(dl);
   }
 
   draw(dl, strength, pad, radius, blur, perLine, lineH) {
@@ -122,6 +185,7 @@ export class TextPanel {
       bx1 = Math.max(bx1, l[o + 4]); by1 = Math.max(by1, l[o + 5]);
     }
     if (!m) return;
+    for (let j = 0, at = 0; j < m; j++) at = this._prepare(used[j], at);
     const reach = blur >= 1 ? 3 * blur + 1 : 1;
     dl.pushAlpha(strength);
     if (perLine) {

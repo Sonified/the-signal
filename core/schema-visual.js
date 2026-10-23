@@ -1555,7 +1555,7 @@ export const VISUAL_CONTROLS = [
     // 0 follows the letters exactly, as before (ui/screens/overlay.js).
     id: 'textShadowFadeIn', section: 'text', label: 'Fade in', kind: 'slider',
     parent: 'textShadowDrawer',
-    min: 0, max: 2000, step: 50, def: 0,
+    min: 0, max: 2000, step: 50, def: 1000,
     get: S => S.textShadowFadeInMs || 0,
     set: (S, pos) => { S.textShadowFadeInMs = pos; save(); },
     formatAt: pos => pos + ' ms',
@@ -1565,7 +1565,7 @@ export const VISUAL_CONTROLS = [
     // sinks over this. 0 rides the letters out, as before.
     id: 'textShadowFadeOut', section: 'text', label: 'Fade out', kind: 'slider',
     parent: 'textShadowDrawer',
-    min: 0, max: 2000, step: 50, def: 0,
+    min: 0, max: 2000, step: 50, def: 1000,
     get: S => S.textShadowFadeOutMs || 0,
     set: (S, pos) => { S.textShadowFadeOutMs = pos; save(); },
     formatAt: pos => pos + ' ms',
@@ -1625,7 +1625,7 @@ export const VISUAL_CONTROLS = [
     // starting when that letter appears. Zero is immediate.
     id: 'textPanelFadeIn', section: 'text', label: 'Fade in', kind: 'slider',
     parent: 'textPanelDrawer',
-    min: 0, max: 2000, step: 50, def: 0,
+    min: 0, max: 2000, step: 50, def: 1000,
     get: S => S.textPanelFadeInMs || 0,
     set: (S, pos) => { S.textPanelFadeInMs = pos; save(); },
     formatAt: pos => pos + ' ms',
@@ -1634,7 +1634,7 @@ export const VISUAL_CONTROLS = [
     // And its leaving, from the word's first step out.
     id: 'textPanelFadeOut', section: 'text', label: 'Fade out', kind: 'slider',
     parent: 'textPanelDrawer',
-    min: 0, max: 2000, step: 50, def: 0,
+    min: 0, max: 2000, step: 50, def: 1000,
     get: S => S.textPanelFadeOutMs || 0,
     set: (S, pos) => { S.textPanelFadeOutMs = pos; save(); },
     formatAt: pos => pos + ' ms',

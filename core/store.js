@@ -68,6 +68,8 @@ import { FX_NAMES } from './word-fx.js';
 // alone and v0 never reads or writes it. Today it holds the Flowers and
 // Kaleidoscope layers, side by side in one flat object (their field names
 // never collide, since every one carries its layer's prefix).
+// What a save that never stored the backing fades (Text > Shadow, Panel) takes.
+const BACKING_FADE_MS = 1000;
 const EXTRA_KEY = 'signal.v1.extra';
 
 let storage = null;
@@ -1139,8 +1141,10 @@ function applySettings(s, live, scene) {
   if (typeof s.textPanelPerLine === 'boolean') S.textPanelPerLine = s.textPanelPerLine;
   if (typeof s.textPanelOn === 'boolean') S.textPanelOn = s.textPanelOn;
   // the backing's fades, milliseconds, clamped to their sliders' span
+  // A save that never stored one (an older preset, a first visit) takes
+  // BACKING_FADE_MS rather than keeping whatever the last scene left.
   for (const k of ['textShadowFadeInMs', 'textShadowFadeOutMs', 'textPanelFadeInMs', 'textPanelFadeOutMs']) {
-    if (Number.isFinite(s[k])) S[k] = Math.max(0, Math.min(2000, s[k]));
+    S[k] = Number.isFinite(s[k]) ? Math.max(0, Math.min(2000, s[k])) : BACKING_FADE_MS;
   }
   if (s.textColorMode === 'white' || s.textColorMode === 'system') S.textColorMode = s.textColorMode;
   if (s.textThemes && typeof s.textThemes === 'object') S.textThemes = { ...s.textThemes };

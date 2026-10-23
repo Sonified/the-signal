@@ -266,6 +266,10 @@ export const S = {
   textLinked: true, textRateHz: 2,
   textFreq: 0.5, textRandom: 1,
   textDwellMs: 80, textFadeInMs: 0, textFadeOutMs: 0, textSize: 35,
+  // the word's backing fades (Text > Shadow, Panel), ms; a first visit and
+  // any save that never stored them take 1000 (core/store.js BACKING_FADE_MS)
+  textShadowFadeInMs: 1000, textShadowFadeOutMs: 1000,
+  textPanelFadeInMs: 1000, textPanelFadeOutMs: 1000,
   textAppearMode: 'frame',    // v1: 'frame' rolls per tick, 'time' holds words per minute
   textAppearPerMin: 10,
   textFadeInVar: 0,           // v1: each word's fade-in rolls between (1-var)x and 1x the set time
