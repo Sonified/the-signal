@@ -73,7 +73,7 @@ const MAX_INST = 8192;
 // Stamps looked at a frame: the whole pending ring is sorted (it holds
 // about a delay's worth), past this the youngest wait.
 const MAX_PEND = 16384;
-const INST_FLOATS = 8;             // x y half angle | u0 v0 tile light
+const INST_FLOATS = 12;            // x y half angle | u0 v0 tile - | keep light - -
 const MAX_ATLASES = 3;
 // An atlas's uniforms: the frame's eight floats (rewritten each frame), then
 // its 64 tiles' tints as vec4s (written once, as it is installed).
@@ -98,6 +98,21 @@ const UNI_BYTES = 32, TINT_BYTES = MOTIFS * 16;
 // different strokes cross does the light add up past the ribbon's.
 export const RIBBON_LIGHT = 0.7, LONE_LIGHT = 0.6;
 const GLOW_REACH = 0.3, GLOW_AREA = 0.5332;
+// The shape's share of the crossfade. A stamp drawn at 1 - m of its
+// coverage is no crossfade on a ribbon: some 1 / span stamps lie over each
+// point of it (a motif covers its whole side, a stamp falls every span of
+// it, twenty deep at 1x Continuity), and twenty layers at half coverage are
+// 1 - 0.5^20 of it, solid, so the shapes stood whole until the morph's very
+// top and then went at once. Each stamp keeps 1 - m^span of its coverage
+// instead, so the ribbon's twenty together keep 1 - m: half at 0.5, the
+// crossfade the slider says, at any Continuity. A print, or a ribbon too
+// sparse to overlap, is one layer: 1 - m. At 0 the whole shape, as before
+// the morph; at 1 none.
+export function shapeKeep(m, span) {
+  if (!(m > 0)) return 1;
+  if (m >= 1) return 0;
+  return 1 - Math.pow(m, span > 0 && span < 1 ? span : 1);
+}
 // span: a stamp's spacing over its side (the ring's eighth float), 0 for a print.
 export function particleLight(span) {
   if (!(span > 0)) return LONE_LIGHT;
@@ -177,7 +192,8 @@ export function createBrush(device, format, platform, opts) {
           arrayStride: INST_FLOATS * 4, stepMode: 'instance',
           attributes: [
             { shaderLocation: 0, offset: 0, format: 'float32x4' },
-            { shaderLocation: 1, offset: 16, format: 'float32x4' }
+            { shaderLocation: 1, offset: 16, format: 'float32x4' },
+            { shaderLocation: 2, offset: 32, format: 'float32x4' }
           ]
         }]
       },
@@ -205,7 +221,8 @@ export function createBrush(device, format, platform, opts) {
           arrayStride: INST_FLOATS * 4, stepMode: 'instance',
           attributes: [
             { shaderLocation: 0, offset: 0, format: 'float32x4' },
-            { shaderLocation: 1, offset: 16, format: 'float32x4' }
+            { shaderLocation: 1, offset: 16, format: 'float32x4' },
+            { shaderLocation: 2, offset: 32, format: 'float32x4' }
           ]
         }]
       },
@@ -391,6 +408,8 @@ export function createBrush(device, format, platform, opts) {
     const sec = Math.floor(Date.now() / 1000);
     // the shape's turn: a speed, and the shared clock's lead over this one
     const spinRate = brushSpinNow(), spinOff = spinRate > 0 ? brushSharedOffset() : 0;
+    // the frame's morph, shapes to particles (core/brush-morph.js)
+    const morph = brushMorphNow();
     if (n > 0) forgetIdle(sec);
     for (let j = 0; j < n; j++) {
       const at = (q.head + j) % q.cap, o = at * STAMP_FLOATS;
@@ -434,7 +453,10 @@ export function createBrush(device, format, platform, opts) {
         inst[i + 3] = spinRate > 0 ? buf[o + 2] + brushSpinAt(spinRate, pKey[j], spinOff) : buf[o + 2];
         inst[i + 4] = (m % 8) / 8 + a.lay.padUV;
         inst[i + 5] = ((m / 8) | 0) / 8 + a.lay.padUV;
-        inst[i + 6] = m; inst[i + 7] = particleLight(buf[o + 7]);
+        inst[i + 6] = m; inst[i + 7] = 0;
+        // the crossfade (shapeKeep, and the particle's light at the morph)
+        inst[i + 8] = shapeKeep(morph, buf[o + 7]); inst[i + 9] = particleLight(buf[o + 7]) * morph;
+        inst[i + 10] = 0; inst[i + 11] = 0;
         runCount[nRuns - 1]++;
         nInst++;
       }

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { tileTints, atlasLayout, MOTIFS, GRID } from '../gpu/atlas-bake.js';
 import { stepBrushMorph, brushMorphNow, morphAt, morphPhaseOf, MORPH_HALF_PERIOD, brushParticleBrightNow, PART_BRIGHT_LO, PART_BRIGHT_HI } from '../core/brush-morph.js';
 import { S } from '../js/state.js';
-import { particleLight, packFrameUniforms, RIBBON_LIGHT, LONE_LIGHT } from '../gpu/brush.js';
+import { particleLight, packFrameUniforms, shapeKeep, RIBBON_LIGHT, LONE_LIGHT } from '../gpu/brush.js';
 import { BRUSH_WGSL } from '../gpu/brush.wgsl.js';
 import { SPACING_SHARE, CONTINUITY_MAX } from '../core/brush-stamps.js';
 
@@ -124,7 +124,42 @@ test('the frame\'s uniforms carry the morph and the particles\' brightness where
   assert.equal(uni[3], 4, 'a new value lands on the next pack');
   // the struct's first vec4 is view, and the particle's light reads view.w
   assert.match(BRUSH_WGSL, /struct BU \{\s*view: vec4f,/);
-  assert.match(BRUSH_WGSL, /out\.light = b\.w \* bu\.view\.w;/);
+  assert.match(BRUSH_WGSL, /out\.light = c4\.y \* bu\.view\.w;/);
+  assert.match(BRUSH_WGSL, /return shape \* in\.keep \+ light;/);
   assert.match(BRUSH_WGSL, /in\.tint \* \(g \* in\.light\)/);
   S.brushMorph = 0; S.brushParticleBright = 1;
+});
+
+test('the crossfade: a ribbon of shapes fades as one, 1 - m, while its light comes in as m, smooth all the way', () => {
+  // a solid motif's coverage where 1 / span stamps lie over a point, and the
+  // ribbon's particle light (as above), at Particle brightness 100%
+  const ribbon = (m, C) => {
+    const span = SPACING_SHARE / C, n = Math.round(1 / span), k = shapeKeep(m, span);
+    let L = 0;
+    for (let j = -2000; j <= 2000; j++) { const d = Math.abs(j * span) / 0.3; if (d < 1) L += glow(d) * particleLight(span) * m; }
+    return { cover: 1 - Math.pow(1 - k, n), light: L };
+  };
+  for (const C of [1, 3, 10]) {
+    // 0: the shape exactly as before the morph, no light at all
+    assert.equal(shapeKeep(0, SPACING_SHARE / C), 1);
+    assert.equal(ribbon(0, C).light, 0);
+    // halfway: half the coverage, half the light
+    const h = ribbon(0.5, C);
+    assert.ok(Math.abs(h.cover - 0.5) < 1e-9, `${C}x: half-way cover ${h.cover}`);
+    assert.ok(Math.abs(h.light - RIBBON_LIGHT / 2) < 0.02, `${C}x: half-way light ${h.light}`);
+    // 1: no coverage, all the light
+    assert.equal(shapeKeep(1, SPACING_SHARE / C), 0);
+    assert.ok(Math.abs(ribbon(1, C).light - RIBBON_LIGHT) < 0.02);
+    // every step of the slider: cover falls and light rises, by no more than the step
+    let prev = ribbon(0, C);
+    for (let i = 1; i <= 100; i++) {
+      const r = ribbon(i / 100, C);
+      assert.ok(r.cover < prev.cover && prev.cover - r.cover <= 0.0100001, `${C}x at ${i}%: cover ${r.cover}`);
+      assert.ok(r.light > prev.light && r.light - prev.light <= RIBBON_LIGHT * 0.0101, `${C}x at ${i}%: light`);
+      prev = r;
+    }
+  }
+  // a print is one layer: 1 - m
+  assert.ok(Math.abs(shapeKeep(0.3, 0) - 0.7) < 1e-12);
+  assert.ok(Math.abs(shapeKeep(0.3, 5) - 0.7) < 1e-12);
 });

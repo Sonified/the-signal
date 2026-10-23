@@ -15,9 +15,12 @@
 // any turn), tinted with its own tile's average colour (tint, measured from
 // the atlas, gpu/atlas-bake.js tileTints) and sized with the stamp, its glow
 // reaching PART_REACH of the quad's half side: the voice's glow shape
-// (particles.wgsl.js), a bright core in a soft halo. The shape is drawn at
-// 1 - m and the particle at m, in the one draw, so the crossfade costs no
-// second pass; at 0 the particle is never worked out. The particle is
+// (particles.wgsl.js), a bright core in a soft halo. The shape keeps its
+// share of its coverage (c.x, colour and coverage alike, premultiplied)
+// and the particle gives its share of light (c.y), both worked out per
+// stamp so a ribbon of overlapping stamps crossfades as one, 1 - m and m
+// (gpu/brush.js shapeKeep, particleLight), in the one draw, so the
+// crossfade costs no second pass; at 0 the particle is never worked out. The particle is
 // light, as the voice's glow is: its alpha stays 0, so premultiplied "over"
 // adds it to whatever is beneath, and where particles crowd (a dense
 // ribbon, two hands over one spot) they bloom brighter toward white rather
@@ -48,6 +51,7 @@ struct VOut {
   @location(3) q: vec2f,
   @location(4) @interpolate(flat) tint: vec3f,
   @location(5) @interpolate(flat) light: f32,
+  @location(6) @interpolate(flat) keep: f32,
 };
 
 // How far the particle's glow reaches, as a share of the quad's half side.
@@ -59,9 +63,11 @@ const QUAD = array<vec2f, 6>(
 );
 
 // a: centre x, y (device px), half side (px), angle (radians)
-// b: the tile's inner square's top left as UV, the tile (0..63), its light
+// b: the tile's inner square's top left as UV, the tile (0..63), unused
+// c: the share of its shape's coverage it keeps, its particle's light (the
+//    morph already in both, gpu/brush.js shapeKeep and particleLight), unused, unused
 @vertex
-fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f) -> VOut {
+fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f, @location(2) c4: vec4f) -> VOut {
   var out: VOut;
   let q = QUAD[vi];
   let c = cos(a.w);
@@ -73,7 +79,8 @@ fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b
   out.lo = b.xy + vec2f(bu.lay.y, bu.lay.y);
   out.hi = b.xy + vec2f(bu.lay.x - bu.lay.y, bu.lay.x - bu.lay.y);
   out.q = q;
-  out.light = b.w * bu.view.w;
+  out.light = c4.y * bu.view.w;
+  out.keep = c4.x;
   // the tile's colour at full brightness: hue and saturation kept, value 1
   let avg = bu.tint[min(u32(b.z + 0.5), 63u)].rgb;
   let top = max(avg.r, max(avg.g, avg.b));
@@ -90,7 +97,9 @@ fn fsStamp(in: VOut) -> @location(0) vec4f {
   let core = exp(-d * d * 40.0);
   let halo = exp(-d * d * 6.0) * 0.35;
   let g = (core + halo) * (1.0 - smoothstep(0.9, 1.0, d));
+  // the shape premultiplied, colour and coverage faded together; the
+  // particle light alone (alpha 0), so it adds
   let light = vec4f(in.tint * (g * in.light), 0.0);
-  return shape * (1.0 - m) + light * m;
+  return shape * in.keep + light;
 }
 `;
