@@ -2,6 +2,8 @@
 # The show controller's old name.
 /show        /controller  301
 /show.html   /controller  301
+# The presentation as an address: the main app with its receiver on.
+/presentation   /?presentation  301
 /v1     /        301
 /v1/    /        301
 /v1/*   /:splat  301
