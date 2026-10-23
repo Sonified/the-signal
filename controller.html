@@ -37,7 +37,7 @@
         named outright; Presence must conduct a hall (?hall=<name>&conduct=
         <key>) or nothing moves. Its reports carry the hall's answer back
         (hall {p, r, pl}, null while conducting none), which lights the cue.
-    {k:'replay'}  cue 24: the room's drawing since cue 17 played back on a
+    {k:'replay'}  cue 24: the room's drawing since the first pairing played back on a
         loop on the laptop; lit while the report's hall.pl is 1.
     {k:'seek', f}  the playing cue tapped again: its video to share f (0..1)
     {k:'ctl', id, v}  v in the control's OWN position units (what
@@ -390,7 +390,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     { label: 'Drawing — Fours 2', p: 'quads', r: 2 },
     { label: 'Drawing — Half Room', p: 'halves', r: 1 },
     { label: 'Drawing — Whole Room 🌊', p: 'all', r: 1 },
-    // not a phase: the room's drawing since cue 17 played back on a loop on
+    // not a phase: the room's drawing since the first pairing played back on a loop on
     // the laptop ({k:'replay'}), the room left in its phase
     { label: 'Drawing — Playback 🔁', play: true }
   ];

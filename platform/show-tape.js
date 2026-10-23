@@ -8,7 +8,8 @@
 // the whole show's drawing is already here, and anything drawn during the
 // playback arrives while it plays.
 //
-// The show's start is a place on the tape, not a wipe: cue 17 (Solo) asks
+// The show's start is a place on the tape, not a wipe: the first group
+// phase after Solo (cue 18, Pairs; platform/presentation-receiver.js) asks
 // the relay for the tape's length and keeps it (localStorage, per room,
 // with the tape's epoch), and only what comes after it is the show's, so
 // rehearsals on the same room stay on the tape and out of the playback. A

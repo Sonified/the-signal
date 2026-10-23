@@ -41,7 +41,7 @@
 //                       quads, halves, all) and round (1 or 2) named outright
 //                       (core/brush.js brushShowPhase); only a screen opened
 //                       conducting a hall (?hall=<name>&conduct=<key>) moves
-//   {k:'replay'}        cue 24: everything the room drew since cue 17
+//   {k:'replay'}        cue 24: everything the room drew since the first pairing
 //                       played back on a loop on this screen (core/brush.js
 //                       brushReplay, the tape kept by platform/show-tape.js);
 //                       the next {k:'hall'} stops it
@@ -342,12 +342,15 @@ export function initPresentationReceiver(hooks = {}) {
     // brushShowPhase; nothing moves unless this screen conducts a hall, and
     // the hall's answer is what lights the chips and the iPad's cue)
     // Every drawing cue keeps this screen's copy of the room's tape coming
-    // (platform/show-tape.js), and Solo, the first, marks where the show's
-    // drawing starts on it; a phase stops the playback.
+    // (platform/show-tape.js), and the first group phase (Pairs, or
+    // whichever comes first after Solo) marks where the show's drawing
+    // starts on it: Solo is the time for phones to get online, the playback
+    // is everyone drawing together. A phase stops the playback.
     else if (m.k === 'hall') {
       if (!HALL_PHASES.has(m.p)) return;
       const r = m.r === 2 ? 2 : 1;
-      if (m.p === 'solo' && r === 1) showTape.mark(); else showTape.run();
+      const solo = p => p === 'solo' || p === 'master';
+      if (!solo(m.p) && solo(brushPhase())) showTape.mark(); else showTape.run();
       brushReplay(false);
       brushShowPhase(m.p, r);
       broadcastDrawing(true);
