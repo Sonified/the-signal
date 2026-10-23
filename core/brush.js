@@ -195,6 +195,15 @@ export function setBrushHall(link, name) { hallLink = link; hallName = name || '
 export function brushHallState(s) { hallState = s; statusAt = -1e9; idleWake('the hall'); }
 export function brushHallGroup() { statusAt = -1e9; }
 
+// The conductor's phase row (core/schema-brush.js): shown only while this
+// page is joined as the hall's conductor, lit from the phase the hall last
+// told (its hello and every group message, touch/hall.js), so it shows the
+// server's truth, follows a phase moved from /touch/, and comes back right
+// after a reconnect. A click only asks; the hall's answer is what lights.
+export function brushConducting() { return !!hallLink && hallState === 'joined' && hallLink.conduct === true; }
+export function brushPhase() { return hallLink ? hallLink.phase : 'solo'; }
+export function brushSetPhase(p) { if (brushConducting()) hallLink.setPhase(p); }
+
 // Each sender's stroke in flight: the carry its last batch left, by the id
 // the hall stamps. A first batch starts afresh, a last one lets go.
 const carries = new Map();

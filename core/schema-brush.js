@@ -11,7 +11,7 @@
 // object or the extra record, which are what a snapshot carries. Every
 // control saves on change and comes back on reload.
 import { saveBrush } from './store.js';
-import { brushAtlas, brushStatusLine } from './brush.js';
+import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushSetPhase } from './brush.js';
 import { fadeLabel, fadeFromText } from './brush-stamps.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 
@@ -70,6 +70,25 @@ export const BRUSH_CONTROLS = [
     parse: (S, text) => { const f = fadeFromText(text); return f === f ? Math.round(f * 100) : NaN; },
     // the hall the brush is joined to, when the page was opened with one
     statusLine: () => brushStatusLine()
+  },
+  // The conductor's phases, in the hall's order (broadcast-worker/src/groups.js
+  // PHASES) and /touch/'s words. A live show control, not a setting: it
+  // reads the hall's phase and sends the hall {t:'phase', p} (touch/hall.js
+  // setPhase), and nothing of it is saved. Shown only to a conductor. No
+  // def, so a click on its name never moves the room back to Alone.
+  {
+    id: 'brushPhase', section: 'brush', label: 'Phase', kind: 'segment',
+    options: [
+      { value: 'solo',   label: 'Alone',    domId: null },
+      { value: 'master', label: 'Master',   domId: null },
+      { value: 'pairs',  label: 'Pairs',    domId: null },
+      { value: 'quads',  label: 'Fours',    domId: null },
+      { value: 'halves', label: 'Halves',   domId: null },
+      { value: 'all',    label: 'Together', domId: null }
+    ],
+    get: () => brushPhase(),
+    set: (S, v) => brushSetPhase(v),
+    visible: () => brushConducting()
   }
 ];
 

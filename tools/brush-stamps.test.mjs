@@ -175,3 +175,45 @@ test('fade: 1 s to a minute, the half-life a fifth of it', () => {
   assert.ok(close(fadeFromText('1 min'), 1, 1e-12));
   assert.ok(Number.isNaN(fadeFromText('soon')));
 });
+
+test('the conductor\'s phase row: shown only to a joined conductor, lit by the hall, never saved', async () => {
+  // the schema's file pulls in the store and, through it, v0's page modules:
+  // the journey sim's stand-ins for a browser (tools/journey-sim.test.mjs)
+  const noop = () => {};
+  const any = new Proxy(function () {}, { get: (t, k) => k === Symbol.toPrimitive ? () => 0 : k === 'then' ? undefined : any, apply: () => any, construct: () => any, set: () => true });
+  const mem = new Map();
+  globalThis.localStorage ??= { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: k => mem.delete(k), key: () => null, length: 0 };
+  globalThis.window ??= globalThis; globalThis.addEventListener ??= noop; globalThis.removeEventListener ??= noop; globalThis.dispatchEvent ??= () => true;
+  globalThis.matchMedia ??= () => ({ matches: false, addEventListener: noop });
+  globalThis.document ??= any; globalThis.requestAnimationFrame ??= noop;
+  globalThis.location ??= { search: '', hostname: 'localhost', href: 'http://localhost/' };
+  for (const k of ['AudioContext', 'Worker', 'BroadcastChannel', 'ResizeObserver', 'Image', 'Audio', 'OffscreenCanvas', 'MessageChannel', 'AudioWorkletNode', 'GainNode', 'OscillatorNode', 'MediaStream', 'IntersectionObserver', 'MutationObserver', 'PointerEvent', 'KeyboardEvent', 'CustomEvent', 'FontFace', 'screen', 'visualViewport']) globalThis[k] ??= any;
+  // the schema first, the order the app loads it in (its files import each other)
+  const { byId } = await import('../core/schema.js');
+  const { brushStateOf } = await import('../core/schema-brush.js');
+  const { brushHallState } = await import('../core/brush.js');
+  const row = byId('brushPhase');
+  assert.deepEqual(row.options.map(o => o.value), ['solo', 'master', 'pairs', 'quads', 'halves', 'all']);
+  assert.deepEqual(row.options.map(o => o.label), ['Alone', 'Master', 'Pairs', 'Fours', 'Halves', 'Together']);
+  assert.equal(row.def, undefined, 'no reset to Alone from a click on its name');
+  const asked = [];
+  const link = { send() {}, peers: new Set(), phase: 'solo', conduct: false, setPhase: p => asked.push(p) };
+  setBrushHall(null);
+  assert.equal(row.visible(S), false, 'no hall, no row');
+  setBrushHall(link, 'show');
+  brushHallState('joined');
+  assert.equal(row.visible(S), false, 'a member sees no row');
+  link.conduct = true;
+  assert.equal(row.visible(S), true);
+  brushHallState('joining');
+  assert.equal(row.visible(S), false, 'hidden while reconnecting');
+  brushHallState('joined');
+  // a click only asks; the light follows what the hall says
+  row.set(S, 'pairs');
+  assert.deepEqual(asked, ['pairs']);
+  assert.equal(row.get(S), 'solo');
+  link.phase = 'quads';          // the hall's group message, or /touch/'s conductor
+  assert.equal(row.get(S), 'quads');
+  assert.ok(!('brushPhase' in brushStateOf(S)), 'not in the saved record');
+  setBrushHall(null);
+});
