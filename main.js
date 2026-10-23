@@ -63,7 +63,7 @@ import { setIdleWaker, idleWake, idleHeld, IDLE_DIAG } from './core/idle.js';
 import { eye, stepEye } from './core/eye.js';
 import { initChores, choreRegister, choreRun, choreYield, choreBusy } from './core/chores.js';
 import { initWords, stepWords, wordsResume, wordState } from './core/words.js';
-import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame, savePending, settingsKey } from './core/store.js';
+import { initStore, load, save, flush, setHidden, holdSettingsWrites, syncFromStorage, writeDueAfterFrame, savePending, settingsKey } from './core/store.js';
 import { idleTouch } from './js/idle-ahead.js';
 import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionRemaining } from './core/presets.js';
 import { seedFactoryPresets } from './platform/factory-presets.js';
@@ -474,6 +474,8 @@ async function boot() {
     const bIntent = broadcastUrlIntent();
     if (bIntent && bIntent.follow) {
       setOverlayFollow();
+      // a viewer, not a writer: its changes stay off the settings every tab shares
+      holdSettingsWrites(true);
       // the join gate (index.html) holds the stream's start until its tap
       if (document.getElementById('follow-audio-gate')) holdFollowJoin();
     }
