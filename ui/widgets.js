@@ -711,6 +711,9 @@ function segment(id, labels, index, disabled, label, softIndex) {
   ui.dl.rect(rx, ry, rw, totalH, RADIUS.pill, COLOR.well, 0, null, 0, 0);
 
   let newIndex = index;
+  // which option the press landed on this frame, even the one already
+  // chosen (a control with retap takes that as an ask of its own)
+  ui.segmentClicked = -1;
   let selX = rx, selY = ry, selW = rw / row0, selH = rh;
 
   for (let i = 0; i < n; i++) {
@@ -724,7 +727,7 @@ function segment(id, labels, index, disabled, label, softIndex) {
     const iid = ui.idx(id, i);
     ui.interact(iid, cx, cy, colW, rh, !!disabled);
     if (ui.hover) ui.setCursorHint('pointer');
-    if (ui.clicked) newIndex = i;
+    if (ui.clicked) { newIndex = i; ui.segmentClicked = i; }
 
     if (i === index) { selX = cx; selY = cy; selW = colW; selH = rh; }
 
@@ -1918,6 +1921,11 @@ function control(ctrl, S, shown) {
       if (ni !== idx) {
         if (doorWrite(ctrl, S, door, opts[ni].value, ui.pointerShift)) doored = true;
         else ctrl.set(S, opts[ni].value);
+        changed = true;
+      } else if (ctrl.retap && ui.segmentClicked === idx) {
+        // the chosen option pressed again: a live control's own ask (the
+        // conductor's Pairs and Fours, a round on)
+        ctrl.set(S, opts[idx].value);
         changed = true;
       }
       break;

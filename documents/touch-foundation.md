@@ -70,6 +70,32 @@ Three layers, each usable without the ones above it:
    | `halves` | whole quads merged into two, never one split: the list of quads cut where the two head counts come nearest (on a tie the first half is the smaller), the earlier quads first; under 8 the roster is one quad, so one half | hears nothing, reaches nobody |
    | `all`    | everyone in one group                         | in it: hears everything, so the master screen shows the final drawing |
 
+   **The rounds** (2026-10-23, the show's script; groups.js SCRIPT,
+   planStep, liveGroups, regroup): Alone, Master, Pairs 1 (find your
+   partner: adjacent twos), Pairs 2 (everyone's partner switches, found by
+   a deterministic search for the grouping with the fewest old pairs; this
+   pairing is the bond for the rest of the show), Fours 1 (the bonded pairs
+   matched two and two), Fours 2 (your pair stays, the other changes, never
+   the round-1 opposing pair again), Together. With four or more present,
+   round 2 splits every round-1 pair (no repeat at all but at five, where
+   none is possible and everyone still meets someone new); with four or
+   more pairs, Fours 2 re-meets no round-1 opposing pair (five pairs
+   excepted). The hall keeps `round` beside `phase` and the rounds'
+   history (`hist`): each step of pairs or quads is planned once, from the
+   drawers present when it is first reached, and found again when it is
+   reached again. Within a step nobody already bonded moves: a leaver's
+   place waits (the one left keeps it, for a blip), joiners pair or make
+   fours among themselves as new groups at the end, or join the last group
+   while too few for their own. Each later round is planned over the roster
+   as it stands when it starts: a joiner since has no old partner to avoid,
+   a leaver is not placed, and Fours build on the bonds as they stand
+   (bonded pairs, joiners paired as new units). The wipe forgets the
+   history, for a new show. Halves stays a phase of its own, outside the
+   script, from the ids. The conductor's chips (/touch/ and the main app's
+   Brush section): a phase's chip asks for its round 1, the lit Pairs or
+   Fours tapped again its round 2, the chip naming the round the hall says
+   ('Pairs 2'); Next walks the script.
+
    The groups nest strictly: every pair inside one quad, every quad inside
    one half, every half inside all, so each step up the phases only merges
    groups and nobody is torn from the people they were drawing with (ten
@@ -151,9 +177,9 @@ performance.now() is the thin part.
 ## 2. The protocol
 
     join  ws  wss://<relay>/touch/<hall>?d=<device token>[&conduct=1&key=...]
-    s->c  {t:'hello', you, phase, ids, conduct}     on joining
+    s->c  {t:'hello', you, phase, round, ids, conduct} on joining
           {t:'peer', id, on:1|0}                    arrivals and leaves
-          {t:'group', phase, you, ids}              you plus whoever reaches
+          {t:'group', phase, round, you, ids}       you plus whoever reaches
                                                     you, re-told on
                                                     join/leave/phase
           {t:'time', c, s}                          the probe's echo
@@ -166,9 +192,14 @@ performance.now() is the thin part.
                                                     f 0-1; r 0-1 optional,
                                                     under 1 each point a
                                                     print)
-          {t:'phase', p}                            conductor only; p one of
+          {t:'phase', p[, r]}                       conductor only; p one of
                                                     solo master pairs quads
-                                                    halves all
+                                                    halves all; r its round
+                                                    (pairs, quads: 1-2), 1
+                                                    when left out
+          {t:'next'}                                conductor only; the next
+                                                    step of the script (the
+                                                    last stays)
           {t:'wipe'}                                conductor only; clears the
                                                     tape and its epoch
           'ping'                                    answered at the edge

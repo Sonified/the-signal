@@ -13,7 +13,7 @@ import {
 } from '../core/brush-stamps.js';
 import { encodeStroke, decodeStroke, MOTIF, QUANT } from '../touch/strokes.js';
 import { S } from '../js/state.js';
-import { brushField, brushTake, setBrushHall, setBrushBroadcast, brushQueue, brushQueueDrop, STAMP_FLOATS } from '../core/brush.js';
+import { brushField, brushTake, setBrushHall, setBrushBroadcast, brushQueue, brushQueueDrop, STAMP_FLOATS, brushPlay, brushPlaying } from '../core/brush.js';
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
@@ -95,8 +95,10 @@ test('the wire: a motif stroke round-trips with its four fields', () => {
   assert.deepEqual(back.points, [{ u: 0.25, v: 0.75 }, { u: 0.5, v: 0.5 }]);
 });
 
-// The queue's contents as plain numbers, then emptied.
+// The queue's contents as plain numbers, then emptied, once every remote
+// stroke has played out (core/brush.js brushPlay).
 function drain() {
+  for (let i = 0; i < 2000 && brushPlaying(); i++) brushPlay(1 / 60);
   const q = brushQueue, out = [];
   for (let i = 0; i < q.count; i++) {
     const o = ((q.head + i) % q.cap) * STAMP_FLOATS;

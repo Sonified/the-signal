@@ -6,7 +6,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pairGroups, phaseGroups, routes, PHASES, CONDUCTOR_HEARS_GROUPS, Hall, REPLACED } from '../broadcast-worker/src/index.js';
+import { pairGroups, phaseGroups, routes, PHASES, CONDUCTOR_HEARS_GROUPS, Hall, REPLACED, SCRIPT, nextStep, planStep, liveGroups, roundOf } from '../broadcast-worker/src/index.js';
+import { tapStep, chipLabel } from '../touch/hall.js';
 import { encodeStroke, decodeStroke, BRUSHES, QUANT, MOTIF } from '../touch/strokes.js';
 import { planReplay } from '../touch/replay.js';
 
@@ -430,4 +431,146 @@ test('hall: junk tokens are refused, the map is capped', async () => {
   const full = await hall.join(T(1));
   assert.equal(hall.idIn(full), 2);
   assert.equal(ctx.storage.m.get('tok:' + T(1)), undefined, 'past the cap, not remembered');
+});
+
+// ---------- the rounds ----------
+
+// Every pair of ids that shared a group.
+const pairsIn = groups => {
+  const out = new Set();
+  for (const g of groups) for (const a of g) for (const b of g) if (a < b) out.add(a + '-' + b);
+  return out;
+};
+function walk(ids) {
+  let h = {};
+  for (const [p, r] of [['pairs', 1], ['pairs', 2], ['quads', 1], ['quads', 2]]) h = planStep(p, r, ids, h).hist;
+  return h;
+}
+
+test('rounds: the script and its Next', () => {
+  assert.deepEqual(SCRIPT, [['solo', 1], ['master', 1], ['pairs', 1], ['pairs', 2], ['quads', 1], ['quads', 2], ['all', 1]]);
+  let st = ['solo', 1];
+  const seen = [st];
+  for (let i = 0; i < 8; i++) { st = nextStep(st[0], st[1]); seen.push(st); }
+  assert.deepEqual(seen.slice(0, 7), SCRIPT);
+  assert.deepEqual(seen[7], ['all', 1], 'the end stays put');
+  assert.deepEqual(nextStep('halves', 1), ['all', 1]);
+  assert.equal(roundOf('pairs', 5), 2);
+  assert.equal(roundOf('all', 2), 1);
+  assert.equal(roundOf('quads', undefined), 1);
+});
+
+test('rounds: pairs round 2 switches every partner, rosters 2..16', () => {
+  for (let n = 2; n <= 16; n++) {
+    const ids = range(n).map(i => i * 3);
+    const h = walk(ids);
+    const where = `n=${n}`;
+    assert.deepEqual(h.pairs2.flat().sort((a, b) => a - b), ids, `${where}: everyone placed once`);
+    assert.ok(h.pairs2.every(g => g.length >= 2 && g.length <= 3), `${where}: twos, one trio at most`);
+    if (n < 4) continue;   // two or three people have nobody else
+    const before = pairsIn(h.pairs1), again = [...pairsIn(h.pairs2)].filter(x => before.has(x));
+    // nobody keeps a round-1 partner of a twosome
+    for (const g of h.pairs1) if (g.length === 2) assert.ok(!again.includes(g[0] + '-' + g[1]), `${where}: ${g} split`);
+    // everyone meets someone new
+    for (const g of h.pairs2) for (const a of g) assert.ok(g.some(b => b !== a && !before.has(Math.min(a, b) + '-' + Math.max(a, b))), `${where}: ${a} meets someone new`);
+    // and no repeat at all but where there is no way round it (five)
+    if (n !== 5) assert.deepEqual(again, [], `${where}: no repeat`);
+  }
+});
+
+test('rounds: quads nest the bonds, and round 2 never re-meets the round-1 opposing pair', () => {
+  for (let n = 2; n <= 32; n++) {
+    const ids = range(n);
+    const h = walk(ids);
+    const where = `n=${n}`;
+    // the bonded pairs sit whole inside every quad, both rounds
+    for (const q of [h.quads1, h.quads2]) {
+      assert.deepEqual(q.flat().sort((a, b) => a - b), ids, `${where}: everyone placed once`);
+      for (const p of h.pairs2) assert.equal(q.filter(g => p.every(id => g.includes(id))).length, 1, `${where}: pair ${p} whole`);
+    }
+    // round 2: two bonded pairs that met in round 1 never meet again, with
+    // four pairs or more (five pairs excepted: three into two groups cannot)
+    const units = h.pairs2.length;
+    if (units < 4 || units === 5) continue;
+    const unitOf = new Map();
+    h.pairs2.forEach((p, i) => p.forEach(id => unitOf.set(id, i)));
+    const metUnits = groups => {
+      const out = new Set();
+      for (const g of groups) {
+        const us = [...new Set(g.map(id => unitOf.get(id)))];
+        for (const a of us) for (const b of us) if (a < b) out.add(a + '-' + b);
+      }
+      return out;
+    };
+    const r1 = metUnits(h.quads1);
+    for (const x of metUnits(h.quads2)) assert.ok(!r1.has(x), `${where}: units ${x} met twice`);
+  }
+});
+
+test('rounds: a join or leave mid-round moves nobody already bonded', () => {
+  const ids = range(9);
+  const { groups } = planStep('pairs', 1, ids, {});
+  assert.deepEqual(groups, [[1, 2], [3, 4], [5, 6], [7, 8, 9]]);
+  // 3 leaves: 4 waits in its place, nobody else moves
+  assert.deepEqual(liveGroups(groups, ids.filter(i => i !== 3), 2), [[1, 2], [4], [5, 6], [7, 8, 9]]);
+  // one joiner folds into the last group; a second makes a new pair with it
+  assert.deepEqual(liveGroups(groups, [...ids, 20], 2), [[1, 2], [3, 4], [5, 6], [7, 8, 9, 20]]);
+  assert.deepEqual(liveGroups(groups, [...ids, 20, 21], 2), [[1, 2], [3, 4], [5, 6], [7, 8, 9], [20, 21]]);
+  // 3 back (a blip): its old place, its old partner
+  assert.deepEqual(liveGroups(groups, ids, 2), groups);
+  // the next round is planned over who is here then: the joiners have no
+  // old partner to avoid, the leaver is simply not placed
+  const h = planStep('pairs', 2, [...ids.filter(i => i !== 3), 20, 21], planStep('pairs', 1, ids, {}).hist).hist;
+  assert.deepEqual(h.pairs2.flat().sort((a, b) => a - b), [1, 2, 4, 5, 6, 7, 8, 9, 20, 21]);
+  // a step reached again finds the very groups it was planned with
+  assert.deepEqual(planStep('pairs', 1, range(30), h).groups, groups);
+});
+
+test('rounds: the chips - a re-tap is the next round, the label names the hall\'s', () => {
+  assert.deepEqual(tapStep('pairs', 'master', 1), ['pairs', 1]);
+  assert.deepEqual(tapStep('pairs', 'pairs', 1), ['pairs', 2]);
+  assert.deepEqual(tapStep('pairs', 'pairs', 2), ['pairs', 2]);
+  assert.deepEqual(tapStep('quads', 'pairs', 2), ['quads', 1]);
+  assert.deepEqual(tapStep('all', 'all', 1), ['all', 1]);
+  assert.equal(chipLabel('Pairs', 'pairs', 'pairs', 2), 'Pairs 2');
+  assert.equal(chipLabel('Pairs', 'pairs', 'pairs', 1), 'Pairs');
+  assert.equal(chipLabel('Fours', 'quads', 'pairs', 2), 'Fours');
+});
+
+test('hall: Next walks the script, the groups carry the round, a late joiner moves nobody', async () => {
+  const { hall } = fakeHall();
+  const c = await hall.join(T(90), '&conduct=1&key=k');
+  const ws = [];
+  for (let i = 1; i <= 8; i++) ws.push(await hall.join(T(i)));
+  const said = () => { const g = c.sent.filter(m => m.t === 'group').pop(); return [g.phase, g.round]; };
+  for (const step of SCRIPT.slice(1)) {
+    await hall.webSocketMessage(c, JSON.stringify({ t: 'next' }));
+    assert.deepEqual(said(), step);
+    if (step[0] === 'pairs' && step[1] === 2) {
+      const before = ws.map(w => hall.groupOf(w));
+      // a ninth joins mid-round: folds into the last group, nobody moves
+      const late = await hall.join(T(9));
+      ws.forEach((w, i) => {
+        const g = hall.groupOf(w);
+        assert.ok(before[i].every(id => g.includes(id)), `member ${i + 2} keeps its partner`);
+      });
+      assert.ok(hall.groupOf(late).length === 3, 'the joiner made a trio of the last pair');
+      await hall.leave(late);
+    }
+  }
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'next' }));
+  assert.deepEqual(said(), ['all', 1], 'idempotent at the end');
+  // a phase with its round, from a chip
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'phase', p: 'pairs', r: 2 }));
+  assert.deepEqual(said(), ['pairs', 2]);
+  // the bond is the round-2 pairing it was the first time
+  const bond = hall.groupOf(ws[0]);
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'phase', p: 'quads' }));
+  assert.ok(bond.every(id => hall.groupOf(ws[0]).includes(id)), 'the bond sits whole in the fours');
+  // a member cannot move the show
+  await hall.webSocketMessage(ws[0], JSON.stringify({ t: 'next' }));
+  assert.deepEqual(said(), ['quads', 1]);
+  // the wipe forgets the rounds
+  await hall.webSocketMessage(c, JSON.stringify({ t: 'wipe' }));
+  assert.equal(await hall.ctx.storage.get('hist'), undefined);
 });

@@ -93,7 +93,8 @@ import { DrawList } from './ui/drawlist.js';
 import { createUI } from './ui/imgui.js';
 import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
-import { LAYOUT, MOTION } from './ui/theme.js';
+import { LAYOUT, MOTION, COLOR, TYPE, W, TRACK } from './ui/theme.js';
+import { BUILD } from './core/version.js';
 import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow, liftVeil } from './ui/screens/overlay.js';
 import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk, drawEnergyChip, freshAsk, drawFreshAsk } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
@@ -1055,6 +1056,10 @@ async function boot() {
         joinGate.style.paddingLeft = (28 + gateInset) + 'px';
       }
     }
+    // The build stamp (core/version.js), tiny and dim in the lower right,
+    // every frame whether the UI was built or not; never in Presentation
+    // mode, where the screen is the audience's.
+    if (S.presentationMode !== true) text.draw(uiList, BUILD, width - 6, height - 6, TYPE.micro, W.regular, COLOR.inkFaint, 2, TRACK.ui, 0.55);
     if (followStill()) liftVeil();   // the stream's scene shows, still, before the tap
     drawOverlay(overlayList, text, t, width, height);
     // While recording with the drawer shut, a small steady badge in the

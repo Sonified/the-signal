@@ -23,12 +23,31 @@
 // and this link stays offline rather than taking it back.
 //
 //   createHall({ host, hall, key, token, on }) ->
-//     { send(msg), you, phase, group, peers, conduct, setPhase(p), close() }
+//     { send(msg), you, phase, round, group, peers, conduct, setPhase(p, r), next(), close() }
+//
+// phase and round are what the hall last told (hello, group): the show's
+// step (broadcast-worker/src/groups.js SCRIPT). A conductor asks for a step
+// with setPhase(p, r) (r 1 when left out) or the next one along the script
+// with next(); the hall's answer is what moves phase and round here.
 //
 //   on.state(s)          'joining' | 'joined' | 'offline'
-//   on.group(g)          { phase, you, ids } whenever it changes
+//   on.group(g)          { phase, round, you, ids } whenever it changes
 //   on.peer(id, there)   an arrival or a leave, roster already updated
 //   on.message(msg)      a groupmate spoke; msg.id is who
+
+// The conductor's chips, the same on /touch/ and the main app: a chip for a
+// phase asks for its first round, and tapped again while that phase is the
+// hall's, its next round (Pairs and Fours have two; the last stays). The
+// chip names the round it shows (the hall's), 'Pairs 2'.
+const ROUNDS = { pairs: 2, quads: 2 };
+export function tapStep(p, phase, round) {
+  const max = ROUNDS[p] || 1;
+  if (p === phase && max > 1) return [p, Math.min(max, (round || 1) + 1)];
+  return [p, 1];
+}
+export function chipLabel(label, p, phase, round) {
+  return p === phase && (round || 1) > 1 ? label + ' ' + round : label;
+}
 
 const PING_MS = 20000;
 const BACKOFF_MS = [1000, 2000, 4000, 8000];
@@ -61,9 +80,9 @@ export function deviceToken(name = 'signal.hall.device', store) {
 export function createHall({ host, hall, key = '', token, on = {} }) {
   const tok = token || deviceToken();
   const link = {
-    you: 0, phase: 'solo', conduct: false,
+    you: 0, phase: 'solo', round: 1, conduct: false,
     group: new Set(), peers: new Set(),
-    send, setPhase, close
+    send, setPhase, next, close
   };
   let ws = null, closed = false, tries = 0, pinger = 0, state = '';
 
@@ -95,6 +114,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
       if (msg.t === 'hello') {
         link.you = msg.you;
         link.phase = msg.phase;
+        link.round = msg.round || 1;
         link.conduct = msg.conduct === 1;
         link.peers = new Set(msg.ids);
         tell('joined');
@@ -103,6 +123,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         on.peer && on.peer(msg.id, msg.on === 1);
       } else if (msg.t === 'group') {
         link.phase = msg.phase;
+        link.round = msg.round || 1;
         link.group = new Set(msg.ids);
         on.group && on.group(msg);
       } else if (msg.t !== 'time') {
@@ -138,8 +159,11 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
   function send(msg) {
     if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch (e) {} }
   }
-  function setPhase(p) {
-    if (link.conduct) send({ t: 'phase', p });
+  function setPhase(p, r) {
+    if (link.conduct) send(r > 1 ? { t: 'phase', p, r } : { t: 'phase', p });
+  }
+  function next() {
+    if (link.conduct) send({ t: 'next' });
   }
   function close() {
     closed = true;

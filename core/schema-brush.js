@@ -11,7 +11,7 @@
 // object or the extra record, which are what a snapshot carries. Every
 // control saves on change and comes back on reload.
 import { saveBrush } from './store.js';
-import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushSetPhase } from './brush.js';
+import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushRound, brushSetPhase, brushNext } from './brush.js';
 import { fadeLabel, fadeFromText, rateLabel } from './brush-stamps.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 
@@ -42,6 +42,18 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushFade)) S.brushFade = Math.max(0, Math.min(1, o.brushFade));
   if (Number.isFinite(o.brushRate)) S.brushRate = Math.max(0, Math.min(1, o.brushRate));
 }
+
+const phaseOpts = (pairs, quads) => [
+  { value: 'solo',   label: 'Alone',    domId: null },
+  { value: 'master', label: 'Master',   domId: null },
+  { value: 'pairs',  label: pairs,      domId: null },
+  { value: 'quads',  label: quads,      domId: null },
+  { value: 'halves', label: 'Halves',   domId: null },
+  { value: 'all',    label: 'Together', domId: null }
+];
+const PHASE_OPTS = phaseOpts('Pairs', 'Fours');
+const PHASE_OPTS_PAIRS2 = phaseOpts('Pairs 2', 'Fours');
+const PHASE_OPTS_QUADS2 = phaseOpts('Pairs', 'Fours 2');
 
 export const BRUSH_CONTROLS = [
   // The picker: the current Image set's painted tiles as a grid of
@@ -95,18 +107,27 @@ export const BRUSH_CONTROLS = [
   // reads the hall's phase and sends the hall {t:'phase', p} (touch/hall.js
   // setPhase), and nothing of it is saved. Shown only to a conductor. No
   // def, so a click on its name never moves the room back to Alone.
+  // Pressing the lit Pairs or Fours again asks for its next round (retap;
+  // touch/hall.js tapStep), and the chip names the round the hall says,
+  // 'Pairs 2': the options are one of three fixed lists, picked by the
+  // hall's phase and round, so the labels are built once.
   {
-    id: 'brushPhase', section: 'brush', label: 'Phase', kind: 'segment',
-    options: [
-      { value: 'solo',   label: 'Alone',    domId: null },
-      { value: 'master', label: 'Master',   domId: null },
-      { value: 'pairs',  label: 'Pairs',    domId: null },
-      { value: 'quads',  label: 'Fours',    domId: null },
-      { value: 'halves', label: 'Halves',   domId: null },
-      { value: 'all',    label: 'Together', domId: null }
-    ],
+    id: 'brushPhase', section: 'brush', label: 'Phase', kind: 'segment', retap: true,
+    get options() {
+      const r = brushRound();
+      if (r > 1 && brushPhase() === 'pairs') return PHASE_OPTS_PAIRS2;
+      if (r > 1 && brushPhase() === 'quads') return PHASE_OPTS_QUADS2;
+      return PHASE_OPTS;
+    },
     get: () => brushPhase(),
     set: (S, v) => brushSetPhase(v),
+    visible: () => brushConducting()
+  },
+  // Next walks the show's script: Alone, Master, Pairs, Pairs 2, Fours,
+  // Fours 2, Together (broadcast-worker/src/groups.js SCRIPT).
+  {
+    id: 'brushNext', section: 'brush', label: 'Next', kind: 'action',
+    act: () => brushNext(),
     visible: () => brushConducting()
   }
 ];

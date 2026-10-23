@@ -230,8 +230,8 @@ export class Room {
 // The phases, the groups and who hears whom live in groups.js, pure, so
 // node tests the very code the hall runs: solo, master (the conductor to
 // everyone), pairs, quads, halves, all (the conductor hearing everything).
-import { PHASES, routes } from './groups.js';
-export { PHASES, CONDUCTOR_HEARS_GROUPS, pairGroups, phaseGroups, routes } from './groups.js';
+import { PHASES, routes, roundOf, nextStep, planStep, stepGroups } from './groups.js';
+export { PHASES, CONDUCTOR_HEARS_GROUPS, pairGroups, phaseGroups, routes, SCRIPT, roundOf, nextStep, planStep, stepGroups, liveGroups, regroup } from './groups.js';
 
 const TAPE_MAX = 1000000;  // entries; ~50 min of 15 hands drawing nonstop, ~250 MB at worst, well under any storage worry
 const TAPE_PAD = 8;        // key digits; room past the cap if it ever grows
@@ -274,9 +274,21 @@ export class Hall {
     return a ? a.id : -1;
   }
 
-  // Who hears whom under `phase`, from the sockets present (groups.js):
-  // id -> { to, with }. The conductor flag rides each socket's attachment.
-  routesNow(phase, members) {
+  // Where the show stands: the phase, its round, and the rounds' history
+  // (groups.js planStep), all in storage beside each other.
+  async step() {
+    return {
+      phase: (await this.ctx.storage.get('phase')) || 'solo',
+      round: (await this.ctx.storage.get('round')) || 1,
+      hist: (await this.ctx.storage.get('hist')) || {}
+    };
+  }
+
+  // Who hears whom at step st, from the sockets present (groups.js): id ->
+  // { to, with }. The conductor flag rides each socket's attachment; the
+  // drawers' groups are the step's live ones (stepGroups: the planned
+  // groups as they stand, joiners folded in).
+  routesNow(st, members) {
     const ids = [], conductors = [];
     for (const w of members) {
       const a = w.deserializeAttachment();
@@ -284,7 +296,29 @@ export class Hall {
       ids.push(a.id);
       if (a.conduct) conductors.push(a.id);
     }
-    return routes(phase, ids, conductors);
+    const cond = new Set(conductors);
+    const drawers = ids.filter(id => !cond.has(id)).sort((x, y) => x - y);
+    const groups = st.phase === 'pairs' || st.phase === 'quads' || st.phase === 'halves'
+      ? stepGroups(st.phase, st.round, drawers, st.hist) : null;
+    return routes(st.phase, ids, conductors, { groups });
+  }
+
+  // The conductor moves the show to (phase, round): a step of pairs or
+  // quads not reached before is planned now, over the drawers present
+  // (groups.js planStep), and kept, so going back to it finds it again.
+  async setStep(phase, round) {
+    const r = roundOf(phase, round);
+    const st = await this.step();
+    const drawers = [];
+    for (const w of this.members()) {
+      const a = w.deserializeAttachment();
+      if (a && !a.conduct) drawers.push(a.id);
+    }
+    const hist = planStep(phase, r, drawers, st.hist).hist;
+    await this.ctx.storage.put('phase', phase);
+    await this.ctx.storage.put('round', r);
+    await this.ctx.storage.put('hist', hist);
+    this.tellGroups({ phase, round: r, hist });
   }
 
   // One stroke onto the tape. Seeds the counter on first use - and after
@@ -337,6 +371,8 @@ export class Hall {
       }
     }
     await this.ctx.storage.delete('epoch');
+    // and the rounds' history: a new show plans its rounds afresh
+    await this.ctx.storage.delete('hist');
     this.tapeN = 0;
     let n = 0;
     for (const w of this.members()) {
@@ -367,14 +403,15 @@ export class Hall {
 
   // Tells every member its group and the phase, after anything that moves
   // either: a join, a leave, a phase change.
-  tellGroups(phase) {
+  tellGroups(st) {
     const members = this.members();
-    const plan = this.routesNow(phase, members);
+    const plan = this.routesNow(st, members);
+    const phase = st.phase, round = st.round;
     for (const w of members) {
       const id = this.idOf(w);
       const r = plan.get(id);
       try {
-        w.send(JSON.stringify({ t: 'group', phase, you: id, ids: r ? r.with : [id] }));
+        w.send(JSON.stringify({ t: 'group', phase, round, you: id, ids: r ? r.with : [id] }));
       } catch (e) {}
     }
   }
@@ -408,20 +445,20 @@ export class Hall {
       w.serializeAttachment(Object.assign({}, a, { replaced: true }));
       try { w.close(REPLACED, 'replaced by a newer connection of this device'); } catch (e) {}
     }
-    const phase = (await this.ctx.storage.get('phase')) || 'solo';
+    const st = await this.step();
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1], ['member']);
     pair[1].serializeAttachment({ id, conduct, token });
     const ids = this.members().map(w => this.idOf(w));
     try {
-      pair[1].send(JSON.stringify({ t: 'hello', you: id, phase, ids, conduct: conduct ? 1 : 0 }));
+      pair[1].send(JSON.stringify({ t: 'hello', you: id, phase: st.phase, round: st.round, ids, conduct: conduct ? 1 : 0 }));
     } catch (e) {}
     const arrived = JSON.stringify({ t: 'peer', id, on: 1 });
     for (const w of this.members()) {
       if (this.idOf(w) !== id) { try { w.send(arrived); } catch (e) {} }
     }
     // a join re-draws the groups; solo only learns the roster
-    this.tellGroups(phase);
+    this.tellGroups(st);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
@@ -437,10 +474,18 @@ export class Hall {
     }
     const me = ws.deserializeAttachment();
     if (!me) return;
+    // the conductor's steps: a phase and its round (1 when not said), or
+    // the next step along the script (groups.js SCRIPT; the last stays)
     if (msg.t === 'phase') {
       if (!me.conduct || !PHASES.includes(msg.p)) return;
-      await this.ctx.storage.put('phase', msg.p);
-      this.tellGroups(msg.p);
+      await this.setStep(msg.p, msg.r);
+      return;
+    }
+    if (msg.t === 'next') {
+      if (!me.conduct) return;
+      const st = await this.step();
+      const [p, r] = nextStep(st.phase, st.round);
+      await this.setStep(p, r);
       return;
     }
     if (msg.t === 'wipe') {
@@ -454,9 +499,8 @@ export class Hall {
     // after the relay so the recording never delays the room, in its
     // canonical shape (the fields the wire defines, nothing a client
     // smuggled alongside them).
-    const phase = (await this.ctx.storage.get('phase')) || 'solo';
     const members = this.members();
-    const r = this.routesNow(phase, members).get(me.id);
+    const r = this.routesNow(await this.step(), members).get(me.id);
     const to = new Set(r ? r.to : []);
     msg.id = me.id;
     const out = JSON.stringify(msg);
@@ -490,8 +534,7 @@ export class Hall {
     for (const w of this.members()) {
       try { w.send(gone); } catch (e) {}
     }
-    const phase = (await this.ctx.storage.get('phase')) || 'solo';
-    this.tellGroups(phase);
+    this.tellGroups(await this.step());
     // An empty hall keeps everything: the tape and its epoch (the drawings
     // outlive the drawers, until a {t:'wipe'}), and the phase, the id
     // counter and the devices' ids, so a show whose whole room dropped at

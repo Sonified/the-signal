@@ -20,6 +20,10 @@
 // thumbnails sample (opts.picture), and its painted tiles are published in
 // core/brush.js brushAtlas.
 //
+// Remote strokes are played out first (core/brush.js brushPlay): their
+// stamps reach the queue as each one's playback cursor passes them, so the
+// ribbon glides; local ones are in the queue the frame the hand made them.
+//
 // Stamps are taken from the queue in order, at most MAX_INST a frame, and
 // only while the atlas each names is on the GPU, so the painting order is
 // the order they were made in; one waiting on its atlas holds the rest
@@ -37,7 +41,7 @@ import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './fe
 import { MOTIFS, LAYOUT_STD, bakeTag, bakeAtlasPixels, buildAtlasMips } from './atlas-bake.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
-import { brushQueue, brushQueueDrop, brushAtlas, STAMP_FLOATS } from '../core/brush.js';
+import { brushQueue, brushQueueDrop, brushAtlas, STAMP_FLOATS, brushPlay, brushPlaying } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
 
 const MAX_INST = 4096;
@@ -224,6 +228,9 @@ export function createBrush(device, format, platform, opts) {
   // ---------- per frame ----------
   function update(t, dt) {
     frame++;
+    // remote strokes let out what their playback cursors have passed
+    // (core/brush.js brushPlay), into the ring taken below
+    brushPlay(dt > 0 ? dt : 0);
     // The picker drew this frame and wants its set (the widget asks each
     // frame it is drawn; core/schema-brush.js).
     const want = brushAtlas.want;
@@ -318,7 +325,7 @@ export function createBrush(device, format, platform, opts) {
 
   // Still moving by itself: marks fading, or stamps waiting for a frame.
   function busy() {
-    return (fbOn && fb.view !== null) || (brushQueue.count > 0 && nInst > 0);
+    return (fbOn && fb.view !== null) || (brushQueue.count > 0 && nInst > 0) || brushPlaying();
   }
 
   return { update, encode, draw, resize, busy };

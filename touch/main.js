@@ -10,7 +10,7 @@
 //   ?replay=1     play the hall's tape instead of joining it (replay.js)
 
 import { createScene } from './scene.js';
-import { createHall } from './hall.js';
+import { createHall, tapStep, chipLabel } from './hall.js';
 import { BRUSHES, MOTIF, encodeStroke, decodeStroke, drawStroke } from './strokes.js';
 import { runReplay } from './replay.js';
 
@@ -44,7 +44,7 @@ const hall = REPLAY ? null : createHall({
   on: {
     state: say,
     peer: () => say(),
-    group: g => { flash(groupWords(g)); say(); },
+    group: g => { flash(groupWords(g)); say(); markConductor(); },
     message: msg => {
       const s = decodeStroke(msg);
       if (s) scene.stamp(ctx => drawStroke(ctx, s, scene.map, scene.side));
@@ -199,6 +199,17 @@ if (REPLAY) {
 // the conductor's phases in show order, only on a key that worked
 const PHASE_WORDS = [['solo', 'Alone'], ['master', 'Master'], ['pairs', 'Pairs'],
   ['quads', 'Fours'], ['halves', 'Halves'], ['all', 'Together']];
+// Tapping the hall's own phase again moves it to its next round (Pairs 2,
+// Fours 2; hall.js tapStep), and Next walks the show's script. The lit chip
+// and its round are the hall's word (markConductor on every group message),
+// never the tap's.
+const phaseChips = [];
+function markConductor() {
+  for (const [p, label, b] of phaseChips) {
+    b.textContent = chipLabel(label, p, hall.phase, hall.round);
+    b.classList.toggle('on', p === hall.phase);
+  }
+}
 function buildConductor() {
   if (!hall.conduct) return;
   const bar = $('conduct');
@@ -207,9 +218,16 @@ function buildConductor() {
     const b = document.createElement('button');
     b.className = 'chip';
     b.textContent = label;
-    b.onclick = () => hall.setPhase(p);
+    b.onclick = () => { const [q, r] = tapStep(p, hall.phase, hall.round); hall.setPhase(q, r); };
     bar.appendChild(b);
+    phaseChips.push([p, label, b]);
   }
+  const nx = document.createElement('button');
+  nx.className = 'chip';
+  nx.textContent = 'Next';
+  nx.onclick = () => hall.next();
+  bar.appendChild(nx);
+  markConductor();
   // Replay sails this page into playback: same hall, the conduct key kept,
   // so the chips come back when the tape ends and the page is reloaded
   const r = document.createElement('button');
