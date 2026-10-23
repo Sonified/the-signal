@@ -534,6 +534,7 @@ async function boot() {
     });
   }
   // Whether the pointer rested on the UI (see chromeAwake) at the last build.
+  let joinGate = inWorker ? null : document.getElementById('follow-audio-gate'), gateInset = -1;
   let overUI = false, overWin = false;
   // The floating windows' stacking, back to front: each entry is a window's
   // state object (its open flag and last drawn rect) and its draw function.
@@ -1018,6 +1019,16 @@ async function boot() {
     // is written as it is let go (core/journey.js)
     journeyHoldWrites(ui.activeId !== -1);
 
+    // The join gate (index.html) centres on the field the drawer leaves, as
+    // the overlay's text does: the drawer's width (S.edgeInset) joins its
+    // left padding, in the same CSS pixels.
+    if (joinGate) {
+      if (!joinGate.isConnected) joinGate = null;
+      else if (S.edgeInset !== gateInset) {
+        gateInset = S.edgeInset;
+        joinGate.style.paddingLeft = (28 + gateInset) + 'px';
+      }
+    }
     if (followStill()) liftVeil();   // the stream's scene shows, still, before the tap
     drawOverlay(overlayList, text, t, width, height);
     // While recording with the drawer shut, a small steady badge in the
