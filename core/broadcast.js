@@ -544,6 +544,21 @@ function sendBeacon() {
   for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) s.sock.send(msg);
 }
 
+// The show remote's tap on the playing cue (platform/presentation-receiver.js)
+// moved this screen's slide video to a new place, f of its length. A live
+// act, not a setting, so no state carries it: it rides the relay's phase
+// path (relayed, never stored) as a message of its own, with the file it
+// was for, so a follower on another slide leaves its own alone. Sent the
+// moment it happens, to every session someone is watching.
+export function broadcastSeek(f, file) {
+  if (!Number.isFinite(f) || typeof file !== 'string' || !file) return;
+  wakeDozing();
+  if (!liveCount()) return;
+  const msg = JSON.stringify({ t: 'phase', sk: { f, file } });
+  for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) s.sock.send(msg);
+  lastActivityMs = Date.now();
+}
+
 function takeBeacon(msg) {
   if (!Number.isFinite(msg.at) || !Number.isFinite(msg.p) || !Number.isFinite(msg.f)) return;
   // kept even while the strobe is the viewer's, so a sync can steer by it at once
@@ -1125,6 +1140,7 @@ export function initBroadcast(bits_, hooks_) {
   hooks = hooks_ || {};
   hooks.notify = hooks.notify || noop;
   hooks.copy = hooks.copy || noop;
+  hooks.seekSlide = hooks.seekSlide || noop;
   const intent = bits.intent;
 
   // A follower tab is only a follower: no sessions, no drawer section. Its
@@ -1195,6 +1211,9 @@ export function initBroadcast(bits_, hooks_) {
           setRoomClockRoom(true);
         } else if (msg.t === 'phase') {
           takeBeacon(msg);
+          // a seek of the broadcaster's slide video (broadcastSeek): this
+          // screen's same video goes to the same share of its length
+          if (msg.sk && Number.isFinite(msg.sk.f) && typeof msg.sk.file === 'string') hooks.seekSlide(msg.sk.f, msg.sk.file);
         } else if (msg.t === 'word') {
           // The broadcaster's exact word, with its seed and fade rolls, so
           // the same word dissolves the same way here. The first one hands

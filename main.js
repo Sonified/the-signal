@@ -37,7 +37,7 @@ import { createEngine } from './gpu/engine.js';
 import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
 import { createSun } from './gpu/sun.js';
-import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide } from './gpu/slides.js';
+import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide, seekSlide, slidesProgress } from './gpu/slides.js';
 import { createSunQr } from './gpu/sun-qr.js';
 import { createStars } from './gpu/stars.js';
 import { createHeartbeat } from './gpu/heartbeat.js';
@@ -533,7 +533,11 @@ async function boot() {
         // the strobe clock's timebase: the same clock the frame loop's t is on
         now: platform.now,
         // the brush's room, the broadcast's own (see brushJoinRoom above)
-        drawRoom: brushJoinRoom
+        drawRoom: brushJoinRoom,
+        // the broadcaster's seek of its slide video: this screen's same
+        // video goes to the same share of its length (a different slide is
+        // left alone)
+        seekSlide: (f, file) => { const pr = slidesProgress(); if (pr && pr.f === file) seekSlide(f); }
       }
     );
     // The show remote (controller.html on the iPad): ?presentation makes this tab take
