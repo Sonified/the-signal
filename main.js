@@ -537,6 +537,20 @@ async function boot() {
     // socket to the relay ever opens; the brush is started at once, the
     // tape loops as soon as it is fetched, and the scene runs (a stopped
     // page sits under its black veil, which would hide the drawing).
+    //
+    // A bare stage: the drawing and nothing else. Whatever a visit here
+    // would otherwise open on (the starting preset's field, rings, corners,
+    // edge, Sun, words and the rest) is switched off, every S.layers switch
+    // at once, so a layer added later is off here too. Not saved: it is this
+    // page's stage, not a setting. The brush is no layer (gpu/brush.js
+    // draws whatever stamps come, from atlases of its own), so it alone
+    // shows, the tape's strokes and the visitor's. No hint either
+    // (setOverlayFollow, as on a follower: nothing to begin, it is already
+    // playing), and the veil is let go at once rather than over its first
+    // two seconds, so the first strokes are not under it.
+    for (const k of Object.keys(S.layers)) S.layers[k] = false;
+    setOverlayFollow();
+    liftVeil();
     setBrushStarted();
     startTapeReplay(replayTape);
     if (!S.running) flipRun();
