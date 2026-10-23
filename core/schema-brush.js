@@ -75,7 +75,7 @@ export const BRUSH_CONTROLS = [
   },
   // How the brush lays its shape down (core/brush-stamps.js): at the top,
   // Frame rate, a continuous ribbon along the hand; below it, separate
-  // prints dropped as the hand drags, 8 a second down to 1.
+  // prints dropped as the hand drags, 60 a second down to 1.
   {
     id: 'brushRate', section: 'brush', label: 'Rate', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(DEF_RATE * 100),
@@ -86,8 +86,8 @@ export const BRUSH_CONTROLS = [
       if (/frame/i.test(text)) return 100;
       const n = parseFloat(text);
       if (!(n > 0)) return NaN;
-      if (n >= 8.5) return 100;
-      return Math.round(99 * Math.log(Math.max(1, n)) / Math.log(8));
+      if (n > 60) return 100;
+      return Math.round(99 * Math.log(Math.max(1, n)) / Math.log(60));
     }
   },
   // How long a mark takes to fade away, 1 s to a minute (core/brush-stamps.js

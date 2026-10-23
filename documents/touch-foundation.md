@@ -131,7 +131,7 @@ Three layers, each usable without the ones above it:
    (every stroke from before it), the stroke is continuous: a receiver
    fills the path with stamps along its length (core/brush-stamps.js,
    arc-length spacing carried across batches). Under 1 the sender has
-   already chosen its prints by time (8 a second just under the top, down
+   already chosen its prints by time (60 a second just under the top, down
    to 1 at 0), so every point of the stroke IS a print: a receiver stamps
    each point as it stands, with no fill and no carry, and the sender
    repeats no joint between batches. decodeStroke refuses a motif stroke

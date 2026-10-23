@@ -203,6 +203,14 @@ test('the conductor\'s phase row: shown only to a joined conductor, lit by the h
   const { byId } = await import('../core/schema.js');
   const { brushStateOf } = await import('../core/schema-brush.js');
   const { brushHallState } = await import('../core/brush.js');
+  // (the Rate row's one formatter and its typed readout, from the same schema)
+  const rate = byId('brushRate');
+  assert.equal(rate.formatAt(0), '1 /s');
+  assert.equal(rate.formatAt(99), '60 /s');
+  assert.equal(rate.formatAt(100), 'Frame rate');
+  assert.equal(rate.parse(null, '60 /s'), 99);
+  assert.equal(rate.parse(null, '1'), 0);
+  assert.equal(rate.parse(null, 'Frame rate'), 100);
   const row = byId('brushPhase');
   assert.deepEqual(row.options.map(o => o.value), ['solo', 'master', 'pairs', 'quads', 'halves', 'all']);
   assert.deepEqual(row.options.map(o => o.label), ['Alone', 'Master', 'Pairs', 'Fours', 'Halves', 'Together']);
@@ -270,10 +278,15 @@ test('Rate at the top is Frame rate: continuous and dense; r 1 or absent draws t
 
 test('Rate slowed: separate prints at the rate, every point a print, the same on both sides', () => {
   assert.equal(rateLabel(0), '1 /s');
-  assert.equal(rateLabel(0.99), '8 /s');
-  assert.ok(close(printsPerSecond(0), 1) && close(printsPerSecond(0.99), 8));
+  assert.equal(rateLabel(0.99), '60 /s');
+  assert.equal(rateLabel(1), 'Frame rate');
+  assert.ok(close(printsPerSecond(0.99), 60, 1e-9) && close(printsPerSecond(0), 1));
+  // the 8 to 60 band has as much travel as 1 to 8
+  const at = p => 0.99 * Math.log(p) / Math.log(60);
+  assert.ok(Math.abs((at(60) - at(8)) - (at(8) - at(1))) < 0.1);
+
   // three seconds of drag at 2 prints a second-ish
-  const r = 0.33, pps = printsPerSecond(r);
+  const r = 0.17, pps = printsPerSecond(r);
   const { local, sent } = drag(180, 16.7, r);
   const prints = local.length / 3;
   // the first at the down point, then one each 1/pps of a second

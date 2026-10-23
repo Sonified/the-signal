@@ -51,16 +51,25 @@ export const BRUSH_W = 50;
 export const SPACING_SHARE = 0.05;
 
 // The Rate slider (0 to 1, the wire's r): 1 is Frame rate, continuous;
-// below it prints per second, PRINTS_MAX just under the top down to
-// PRINTS_MIN at the bottom, evenly in the logarithm. Absent is continuous,
-// so every stroke from before r draws as it always did.
-export const PRINTS_MIN = 1, PRINTS_MAX = 8;
+// below it prints per second, PRINTS_MAX just under the top (0.99) down
+// to PRINTS_MIN at the bottom, evenly in the logarithm, so the travel from
+// 8 a second up to 60 is as long as from 1 to 8. Absent is continuous, so
+// every stroke from before r draws as it always did.
+//
+// The mapping changed on 2026-10-23, the top of the prints raised from 8 a
+// second to 60 (8 then sat a step under Frame rate, which runs at the
+// display's 60 or more, a leap): r keeps its 0 to 1 and its one meaning on
+// the wire, continuous at 1 and prints below, which is all a receiver reads
+// (the sender alone times its prints), so no stroke or tape entry changes
+// meaning; a hand's own saved Rate under the top now prints faster than it
+// did (0.5 was 2.8 a second, is 7.9).
+export const PRINTS_MIN = 1, PRINTS_MAX = 60;
 export function rateContinuous(r) { return !(r < 1); }
 export function printsPerSecond(r) {
   const x = r > 0 ? (r < 0.99 ? r / 0.99 : 1) : 0;
   return PRINTS_MIN * Math.pow(PRINTS_MAX / PRINTS_MIN, x);
 }
-// The readout: 'Frame rate' at the top, else '8 /s' ... '1 /s'.
+// The readout: 'Frame rate' at the top, else '60 /s' ... '1 /s'.
 export function rateLabel(r) {
   if (rateContinuous(r)) return 'Frame rate';
   const p = printsPerSecond(r);
