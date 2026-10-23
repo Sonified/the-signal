@@ -284,7 +284,10 @@ export function initPresentationReceiver(hooks = {}) {
       try { s.ws = new WebSocket(base + '/room/' + roomName + '?role=' + role + '&key=' + encodeURIComponent(KEY)); }
       catch (e) { setTimeout(openIt, s.retry); return; }
       s.ws.onopen = () => { s.retry = 2000; console.log('[presentation-receiver] ' + name + ' ' + role + ' ' + roomName + ' open'); if (onOpen) onOpen(s); };
-      s.ws.onclose = () => { setTimeout(openIt, s.retry); s.retry = Math.min(s.retry * 2, 15000); };
+      // the retry doubles from 2 s up to once per 5 min, so a path that is
+      // simply absent (the local relay not running tonight) quiets down to a
+      // rare knock instead of hammering the console; a success resets it
+      s.ws.onclose = () => { setTimeout(openIt, s.retry); s.retry = Math.min(s.retry * 2, 300000); };
       s.ws.onmessage = e => {
         if (typeof e.data !== 'string' || e.data === 'pong') return;
         let m; try { m = JSON.parse(e.data); } catch (err) { return; }
