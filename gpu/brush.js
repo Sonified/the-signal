@@ -54,8 +54,8 @@
 // (0) to a small glowing particle in that tile's average colour (1), in the
 // same draw (brush.wgsl.js). Each atlas measures its tiles' colours as it
 // is installed (atlas-bake.js tileTints) into its uniform buffer, once; the
-// morph rides in the frame's uniforms and the tile in the instance's spare
-// float.
+// morph and the particles' brightness ride in the frame's uniforms and the
+// tile in the instance's spare float.
 
 import { S } from '../js/state.js';
 import { BRUSH_WGSL } from './brush.wgsl.js';
@@ -65,7 +65,7 @@ import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
 import { brushRotateNow, brushSpinNow, brushSharedOffset, brushSpinAt, brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
-import { brushMorphNow } from '../core/brush-morph.js';
+import { brushMorphNow, brushParticleBrightNow } from '../core/brush-morph.js';
 import { noteSender, forgetIdle, activeSenders, bakeOrder, turnPlace } from '../core/brush-order.js';
 
 // Stamps drawn a frame, baked and live together.
@@ -421,7 +421,7 @@ export function createBrush(device, format, platform, opts) {
     params.cx = cx; params.cy = cy; params.unit = side;
     params.dt = dt > 0 ? dt : 0;
     if (nInst > 0) {
-      uni[0] = 2 / pixelW; uni[1] = 2 / pixelH; uni[2] = brushMorphNow();
+      uni[0] = 2 / pixelW; uni[1] = 2 / pixelH; uni[2] = brushMorphNow(); uni[3] = brushParticleBrightNow();
       for (const a of atlases.values()) {
         if (!a.uniBuf) continue;
         uni[4] = a.lay.innerUV; uni[5] = a.lay.halfTexel;

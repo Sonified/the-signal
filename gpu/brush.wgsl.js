@@ -17,14 +17,19 @@
 // reaching PART_REACH of the quad's half side: the voice's glow shape
 // (particles.wgsl.js), a bright core in a soft halo. The shape is drawn at
 // 1 - m and the particle at m, in the one draw, so the crossfade costs no
-// second pass; at 0 the particle is never worked out. The particle's halo
-// is laid over like the shape (premultiplied, its alpha its coverage), so a
-// dense stroke of them settles to its colour rather than burning white, and
-// only its core's peak over 1 adds light.
+// second pass; at 0 the particle is never worked out. The particle is
+// light, as the voice's glow is: its alpha stays 0, so premultiplied "over"
+// adds it to whatever is beneath, and where particles crowd (a dense
+// ribbon, two hands over one spot) they bloom brighter toward white rather
+// than settling to a flat paint. Its colour is the tile's average at full
+// brightness (its hue and saturation kept, its value raised to 1, so a dark
+// motif glows as brightly as a light one; a tile with next to no colour
+// glows white), times PART_GAIN and view.w, the drawer's Particle
+// brightness. The shape's path is untouched by any of it.
 
 export const BRUSH_WGSL = /* wgsl */ `
 struct BU {
-  view: vec4f,  // 2 / target width, 2 / target height (device px), the morph (0 shapes, 1 particles), unused
+  view: vec4f,  // 2 / target width, 2 / target height (device px), the morph (0 shapes, 1 particles), the particles' brightness
   lay: vec4f,   // the inner square's side as UV, half a texel as UV, unused, unused
   tint: array<vec4f, 64>,  // each tile's average colour, straight, 0..1 (sheet order)
 };
@@ -43,6 +48,10 @@ struct VOut {
 
 // How far the particle's glow reaches, as a share of the quad's half side.
 const PART_REACH = 0.6;
+// A particle's light at its centre (core plus halo, 1.35) is this share of
+// its colour at full brightness, before Particle brightness: a lone
+// particle just under white, a ribbon of them blooming past it.
+const PART_GAIN = 0.6;
 
 const QUAD = array<vec2f, 6>(
   vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
@@ -64,7 +73,10 @@ fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b
   out.lo = b.xy + vec2f(bu.lay.y, bu.lay.y);
   out.hi = b.xy + vec2f(bu.lay.x - bu.lay.y, bu.lay.x - bu.lay.y);
   out.q = q;
-  out.tint = bu.tint[min(u32(b.z + 0.5), 63u)].rgb;
+  // the tile's colour at full brightness: hue and saturation kept, value 1
+  let avg = bu.tint[min(u32(b.z + 0.5), 63u)].rgb;
+  let top = max(avg.r, max(avg.g, avg.b));
+  out.tint = select(vec3f(1.0, 1.0, 1.0), avg / max(top, 1e-3), top >= 0.02);
   return out;
 }
 
@@ -77,7 +89,7 @@ fn fsStamp(in: VOut) -> @location(0) vec4f {
   let core = exp(-d * d * 40.0);
   let halo = exp(-d * d * 6.0) * 0.35;
   let g = (core + halo) * (1.0 - smoothstep(0.9, 1.0, d));
-  let light = vec4f(in.tint * g, min(g, 1.0));
+  let light = vec4f(in.tint * (g * PART_GAIN * bu.view.w), 0.0);
   return shape * (1.0 - m) + light * m;
 }
 `;

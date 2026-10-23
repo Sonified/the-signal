@@ -1,6 +1,6 @@
 // The brush's morph from its shapes to particles: S.brushMorph, 0 every
 // stamp drawn as its atlas tile (the brush as it always was), 1 every stamp
-// a small glowing particle in its tile's average colour, between them each
+// a small glowing particle, light in its tile's own hue, between them each
 // stamp both at once, the shape at 1 - m and the particle at m
 // (gpu/brush.wgsl.js). The swirl is the stamps either way: the same places,
 // the same walk, only how each is drawn moves. Every stamp drawn from now on
@@ -33,6 +33,15 @@ const clamp01 = v => (v > 0 ? (v < 1 ? v : 1) : 0);
 export function morphAt(p) { return 0.5 - 0.5 * Math.cos(p); }
 // The phase on the rising half where the sweep reads v.
 export function morphPhaseOf(v) { return Math.acos(1 - 2 * clamp01(v)); }
+
+// How bright the particles shine (S.brushParticleBright, the drawer's
+// Particle brightness): a multiple of their light, 0.25 to 4, 1 the
+// default. The shapes never feel it.
+export const PART_BRIGHT_LO = 0.25, PART_BRIGHT_HI = 4;
+export function brushParticleBrightNow() {
+  const v = S.brushParticleBright;
+  return typeof v === 'number' && v === v ? (v < PART_BRIGHT_LO ? PART_BRIGHT_LO : v > PART_BRIGHT_HI ? PART_BRIGHT_HI : v) : 1;
+}
 
 // The value the brush draws with this frame.
 export function brushMorphNow() {

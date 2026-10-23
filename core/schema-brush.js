@@ -14,6 +14,7 @@ import { saveBrush, save } from './store.js';
 import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushRound, brushSetPhase, brushNext, brushPickAtlas, brushMember } from './brush.js';
 import { fadeLabel, fadeFromText, rateLabel, BRUSH_W, ROTATE_MAX, CONTINUITY_MAX } from './brush-stamps.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
+import { PART_BRIGHT_LO, PART_BRIGHT_HI } from './brush-morph.js';
 
 const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_SPIN = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
 // Continuity (stamps per spacing of the law, core/brush-stamps.js), and
@@ -26,6 +27,9 @@ const SPEED_LO = 0.05, SPEED_HI = 2, RSIZE_LO = 0.25, RSIZE_HI = 4;
 // The morph from shapes to particles (core/brush-morph.js): shapes, the
 // brush as it always was, with Auto off.
 const DEF_MORPH = 0, DEF_MORPH_AUTO = false, DEF_TRIM = true;
+// The particles' brightness, a multiple of their light: 1, in twentieths
+// (5%) from a quarter to four times.
+const DEF_PART_BRIGHT = 1;
 // a multiple as its readout: '0.05x', '0.75x', '1x', '1.5x'
 const timesLabel = v => (Math.round(v * 100) / 100) + 'x';
 const timesFromText = (text, per) => { const n = parseFloat(text); return n > 0 ? Math.round(n * per) : NaN; };
@@ -54,6 +58,7 @@ export function initBrushState(S) {
   if (typeof S.brushMorph !== 'number') S.brushMorph = DEF_MORPH;
   if (typeof S.brushTrim !== 'boolean') S.brushTrim = DEF_TRIM;
   if (typeof S.brushMorphAuto !== 'boolean') S.brushMorphAuto = DEF_MORPH_AUTO;
+  if (typeof S.brushParticleBright !== 'number') S.brushParticleBright = DEF_PART_BRIGHT;
   if (typeof S.brushDeal !== 'boolean') S.brushDeal = DEF_DEAL;
   if (typeof S.brushDealN !== 'number') S.brushDealN = DEF_DEAL_N;
   if (typeof S.brushHideFollow !== 'boolean') S.brushHideFollow = DEF_HIDE_FOLLOW;
@@ -84,7 +89,7 @@ export function applyBrushWire(S, o) {
 export function brushStateOf(S) {
   return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushContinuity: S.brushContinuity, brushReplaySpeed: S.brushReplaySpeed, brushReplaySize: S.brushReplaySize,
-           brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushTrim: S.brushTrim,
+           brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushParticleBright: S.brushParticleBright, brushTrim: S.brushTrim,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
            brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax };
@@ -108,6 +113,7 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushReplaySize)) S.brushReplaySize = Math.max(RSIZE_LO, Math.min(RSIZE_HI, o.brushReplaySize));
   if (Number.isFinite(o.brushMorph)) S.brushMorph = Math.max(0, Math.min(1, o.brushMorph));
   if (typeof o.brushMorphAuto === 'boolean') S.brushMorphAuto = o.brushMorphAuto;
+  if (Number.isFinite(o.brushParticleBright)) S.brushParticleBright = Math.max(PART_BRIGHT_LO, Math.min(PART_BRIGHT_HI, o.brushParticleBright));
   if (typeof o.brushTrim === 'boolean') S.brushTrim = o.brushTrim;
   if (typeof o.brushDeal === 'boolean') S.brushDeal = o.brushDeal;
   if (Number.isFinite(o.brushDealN)) S.brushDealN = n(o.brushDealN, 1, 8);
@@ -269,6 +275,16 @@ export const BRUSH_CONTROLS = [
     id: 'brushMorphAuto', section: 'brush', label: 'Particles auto', kind: 'toggle', def: DEF_MORPH_AUTO,
     get: S => S.brushMorphAuto === true,
     set: (S, on) => { S.brushMorphAuto = !!on; saveBrush(); }
+  },
+  // How bright the particles shine, 25% to 400% of their light
+  // (gpu/brush.wgsl.js PART_GAIN): the particles alone, the shapes never.
+  {
+    id: 'brushParticleBright', section: 'brush', label: 'Particle brightness', kind: 'slider',
+    min: PART_BRIGHT_LO * 20, max: PART_BRIGHT_HI * 20, step: 1, def: DEF_PART_BRIGHT * 20,
+    get: S => Math.round(S.brushParticleBright * 20),
+    set: (S, pos) => { S.brushParticleBright = Math.max(PART_BRIGHT_LO * 20, Math.min(PART_BRIGHT_HI * 20, Math.round(pos))) / 20; saveBrush(); },
+    formatAt: pos => (pos * 5) + '%',
+    parse: (S, text) => { const n = parseFloat(text); return n > 0 ? Math.round(n / 5) : NaN; }
   },
   // How long a mark takes to fade away, 1 s to a minute (core/brush-stamps.js
   // fadeSeconds): the trail image's half-life is a fifth of it.

@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { tileTints, atlasLayout, MOTIFS, GRID } from '../gpu/atlas-bake.js';
-import { stepBrushMorph, brushMorphNow, morphAt, morphPhaseOf, MORPH_HALF_PERIOD } from '../core/brush-morph.js';
+import { stepBrushMorph, brushMorphNow, morphAt, morphPhaseOf, MORPH_HALF_PERIOD, brushParticleBrightNow, PART_BRIGHT_LO, PART_BRIGHT_HI } from '../core/brush-morph.js';
 import { S } from '../js/state.js';
 
 const close = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
@@ -75,4 +75,13 @@ test('the value drawn is held to 0..1', () => {
   S.brushMorph = -1; assert.equal(brushMorphNow(), 0);
   S.brushMorph = NaN; assert.equal(brushMorphNow(), 0);
   S.brushMorph = 0;
+});
+
+test('the particles\' brightness: 1 unset, held to a quarter and four times', () => {
+  delete S.brushParticleBright; assert.equal(brushParticleBrightNow(), 1);
+  S.brushParticleBright = 2.5; assert.equal(brushParticleBrightNow(), 2.5);
+  S.brushParticleBright = 9; assert.equal(brushParticleBrightNow(), PART_BRIGHT_HI);
+  S.brushParticleBright = 0; assert.equal(brushParticleBrightNow(), PART_BRIGHT_LO);
+  S.brushParticleBright = NaN; assert.equal(brushParticleBrightNow(), 1);
+  S.brushParticleBright = 1;
 });
