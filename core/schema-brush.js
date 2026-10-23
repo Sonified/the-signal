@@ -23,6 +23,9 @@ const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_SPIN = 0, DEF_COPIE
 // replay knobs in twentieths (0.05x).
 const DEF_CONTINUITY = 1, DEF_REPLAY_SPEED = 1, DEF_REPLAY_SIZE = 1;
 const SPEED_LO = 0.05, SPEED_HI = 2, RSIZE_LO = 0.25, RSIZE_HI = 4;
+// The morph from shapes to particles (core/brush-morph.js): shapes, the
+// brush as it always was, with Auto off.
+const DEF_MORPH = 0, DEF_MORPH_AUTO = false;
 // a multiple as its readout: '0.05x', '0.75x', '1x', '1.5x'
 const timesLabel = v => (Math.round(v * 100) / 100) + 'x';
 const timesFromText = (text, per) => { const n = parseFloat(text); return n > 0 ? Math.round(n * per) : NaN; };
@@ -48,6 +51,8 @@ export function initBrushState(S) {
   if (typeof S.brushContinuity !== 'number') S.brushContinuity = DEF_CONTINUITY;
   if (typeof S.brushReplaySpeed !== 'number') S.brushReplaySpeed = DEF_REPLAY_SPEED;
   if (typeof S.brushReplaySize !== 'number') S.brushReplaySize = DEF_REPLAY_SIZE;
+  if (typeof S.brushMorph !== 'number') S.brushMorph = DEF_MORPH;
+  if (typeof S.brushMorphAuto !== 'boolean') S.brushMorphAuto = DEF_MORPH_AUTO;
   if (typeof S.brushDeal !== 'boolean') S.brushDeal = DEF_DEAL;
   if (typeof S.brushDealN !== 'number') S.brushDealN = DEF_DEAL_N;
   if (typeof S.brushHideFollow !== 'boolean') S.brushHideFollow = DEF_HIDE_FOLLOW;
@@ -78,6 +83,7 @@ export function applyBrushWire(S, o) {
 export function brushStateOf(S) {
   return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushContinuity: S.brushContinuity, brushReplaySpeed: S.brushReplaySpeed, brushReplaySize: S.brushReplaySize,
+           brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
            brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax };
@@ -99,6 +105,8 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushContinuity)) S.brushContinuity = Math.max(1, Math.min(CONTINUITY_MAX, o.brushContinuity));
   if (Number.isFinite(o.brushReplaySpeed)) S.brushReplaySpeed = Math.max(SPEED_LO, Math.min(SPEED_HI, o.brushReplaySpeed));
   if (Number.isFinite(o.brushReplaySize)) S.brushReplaySize = Math.max(RSIZE_LO, Math.min(RSIZE_HI, o.brushReplaySize));
+  if (Number.isFinite(o.brushMorph)) S.brushMorph = Math.max(0, Math.min(1, o.brushMorph));
+  if (typeof o.brushMorphAuto === 'boolean') S.brushMorphAuto = o.brushMorphAuto;
   if (typeof o.brushDeal === 'boolean') S.brushDeal = o.brushDeal;
   if (Number.isFinite(o.brushDealN)) S.brushDealN = n(o.brushDealN, 1, 8);
   if (typeof o.brushHideFollow === 'boolean') S.brushHideFollow = o.brushHideFollow;
@@ -229,6 +237,27 @@ export const BRUSH_CONTROLS = [
     set: (S, pos) => { S.brushReplaySize = Math.max(RSIZE_LO * 20, Math.min(RSIZE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
     formatAt: pos => timesLabel(pos / 20),
     parse: (S, text) => timesFromText(text, 20)
+  },
+  // The morph (core/brush-morph.js): every stamp from its shape (Shapes, at
+  // the left) to a small glowing particle in the shape's own colour
+  // (Particles, at the right), crossfading between. Each screen's own, as
+  // Continuity is. The standing playback's page shows the same value as a
+  // slider of its own over the field (ui/screens/morph.js). Moved by hand,
+  // either one switches Auto off.
+  {
+    id: 'brushMorph', section: 'brush', label: 'Particles', kind: 'slider',
+    min: 0, max: 100, step: 1, def: DEF_MORPH * 100,
+    get: S => Math.round(S.brushMorph * 100),
+    set: (S, pos) => { S.brushMorph = Math.max(0, Math.min(100, Math.round(pos))) / 100; S.brushMorphAuto = false; saveBrush(); },
+    formatAt: pos => pos <= 0 ? 'Shapes' : pos >= 100 ? 'Particles' : pos + '%'
+  },
+  // Auto: the morph sweeps shapes to particles and back, a cosine with a
+  // half period of MORPH_HALF_PERIOD (core/brush-morph.js), from where it
+  // stands.
+  {
+    id: 'brushMorphAuto', section: 'brush', label: 'Particles auto', kind: 'toggle', def: DEF_MORPH_AUTO,
+    get: S => S.brushMorphAuto === true,
+    set: (S, on) => { S.brushMorphAuto = !!on; saveBrush(); }
   },
   // How long a mark takes to fade away, 1 s to a minute (core/brush-stamps.js
   // fadeSeconds): the trail image's half-life is a fifth of it.

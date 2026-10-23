@@ -48,15 +48,24 @@
 // The image exists only while there is something in it: made for the first
 // stamp, let go once it has faded to nothing (feedback.js says when, to the
 // texel), so an idle brush costs no memory. Nothing is allocated per frame.
+//
+// The morph (core/brush-morph.js): every stamp drawn this frame, baked or
+// live, any sender's, is drawn at the frame's morph, from its atlas tile
+// (0) to a small glowing particle in that tile's average colour (1), in the
+// same draw (brush.wgsl.js). Each atlas measures its tiles' colours as it
+// is installed (atlas-bake.js tileTints) into its uniform buffer, once; the
+// morph rides in the frame's uniforms and the tile in the instance's spare
+// float.
 
 import { S } from '../js/state.js';
 import { BRUSH_WGSL } from './brush.wgsl.js';
 import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './feedback.js';
-import { MOTIFS, LAYOUT_STD, LAYOUT_HI, bakeTag, bakeAtlasPixels, buildAtlasMips } from './atlas-bake.js';
+import { MOTIFS, LAYOUT_STD, LAYOUT_HI, bakeTag, bakeAtlasPixels, buildAtlasMips, tileTints } from './atlas-bake.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
 import { brushRotateNow, brushSpinNow, brushSharedOffset, brushSpinAt, brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
+import { brushMorphNow } from '../core/brush-morph.js';
 import { noteSender, forgetIdle, activeSenders, bakeOrder, turnPlace } from '../core/brush-order.js';
 
 // Stamps drawn a frame, baked and live together.
@@ -64,8 +73,11 @@ const MAX_INST = 8192;
 // Stamps looked at a frame: the whole pending ring is sorted (it holds
 // about a delay's worth), past this the youngest wait.
 const MAX_PEND = 16384;
-const INST_FLOATS = 8;             // x y half angle | u0 v0 - -
+const INST_FLOATS = 8;             // x y half angle | u0 v0 tile -
 const MAX_ATLASES = 3;
+// An atlas's uniforms: the frame's eight floats (rewritten each frame), then
+// its 64 tiles' tints as vec4s (written once, as it is installed).
+const UNI_BYTES = 32, TINT_BYTES = MOTIFS * 16;
 // A tile painting less than this share of its inner square is empty: the
 // cut leaves a true blank at exactly 0, and a few stray texels are no shape.
 const EMPTY_FILL = 0.002;
@@ -179,7 +191,7 @@ export function createBrush(device, format, platform, opts) {
   // set (the kaleidoscope's own numbering, as kaleidoscopeSet resolves it)
   // -> { set, url, lay, uniBuf, tex, view, bind, fill, first, ready, failed, used }
   // (lay: the layout its sheet is packed in; uniBuf: the stamp shader's
-  // uniforms, whose atlas numbers are this layout's)
+  // uniforms, whose atlas numbers are this layout's, and its tiles' tints)
   const atlases = new Map();
   let shown = null;            // the atlas published as the picker's
 
@@ -236,7 +248,9 @@ export function createBrush(device, format, platform, opts) {
   function install(a, baked) {
     if (!made) make();
     const L = a.lay;
-    a.uniBuf = device.createBuffer({ label: 'brush.uniforms' + a.set, size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    a.uniBuf = device.createBuffer({ label: 'brush.uniforms' + a.set, size: UNI_BYTES + TINT_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    // each tile's average colour, what its particle glows with (the morph)
+    device.queue.writeBuffer(a.uniBuf, UNI_BYTES, tileTints(baked.out, L, new Float32Array(MOTIFS * 4)));
     const tex = device.createTexture({
       label: 'brush.atlas' + a.set,
       size: { width: L.atlas, height: L.atlas },
@@ -386,7 +400,7 @@ export function createBrush(device, format, platform, opts) {
         inst[i + 3] = spinRate > 0 ? buf[o + 2] + brushSpinAt(spinRate, pKey[j], spinOff) : buf[o + 2];
         inst[i + 4] = (m % 8) / 8 + a.lay.padUV;
         inst[i + 5] = ((m / 8) | 0) / 8 + a.lay.padUV;
-        inst[i + 6] = 0; inst[i + 7] = 0;
+        inst[i + 6] = m; inst[i + 7] = 0;
         runCount[nRuns - 1]++;
         nInst++;
       }
@@ -407,7 +421,7 @@ export function createBrush(device, format, platform, opts) {
     params.cx = cx; params.cy = cy; params.unit = side;
     params.dt = dt > 0 ? dt : 0;
     if (nInst > 0) {
-      uni[0] = 2 / pixelW; uni[1] = 2 / pixelH;
+      uni[0] = 2 / pixelW; uni[1] = 2 / pixelH; uni[2] = brushMorphNow();
       for (const a of atlases.values()) {
         if (!a.uniBuf) continue;
         uni[4] = a.lay.innerUV; uni[5] = a.lay.halfTexel;

@@ -76,6 +76,8 @@ import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand
 import { ringBell } from './js/brush-bells.js';
 import { linkBell } from './core/audio-link.js';
 import { drawHand } from './ui/screens/hand.js';
+import { drawMorph } from './ui/screens/morph.js';
+import { stepBrushMorph } from './core/brush-morph.js';
 import { initPresentationReceiver } from './platform/presentation-receiver.js';
 import { tapePath, startTapeReplay } from './platform/tape-replay.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
@@ -987,6 +989,9 @@ async function boot() {
     if (guardStep(t, r.lum)) guardPause();
     if (guard.noticeOpen && S.running) guard.noticeOpen = false;
     stepWords(t, dt);
+    // the brush's shapes-to-particles sweep, while its Auto is on
+    // (core/brush-morph.js)
+    stepBrushMorph(dt);
     // the journey's walk and its authoring diff (core/journey.js)
     stepJourney(t);
     // the performer window's ramps (core/perform.js): every glide it has
@@ -1092,6 +1097,9 @@ async function boot() {
       // the dealt hand (ui/screens/hand.js), ahead of the field, which a tap
       // on one of its buttons never reaches
       drawHand(ui, uiList, width, height, true);
+      // the standing playback's shapes-to-particles slider (ui/screens/
+      // morph.js), with the chrome's fade, ahead of the field too
+      if (replayTape) drawMorph(ui, uiList, width, height, chromeA);
 
       // Everything above the field has run its hit tests, so a hot widget
       // here is UI under the pointer; the window and drawer rects catch the

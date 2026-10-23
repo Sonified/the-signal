@@ -218,6 +218,36 @@ export async function bakeAtlasPixels(img, L, stale, yieldTile) {
   return { out, fill };
 }
 
+// Each motif's average colour, the tint its particle glows with (the
+// brush's particle mode, gpu/brush.js): straight (not premultiplied), 0..1,
+// its painted texels' colour weighted by their alpha. Read from a finished
+// atlas, which is premultiplied, so the colour sums over the alpha's sum is
+// already that weighting. Every other texel of every other row is plenty for
+// an average and a quarter of the reads (a high resolution atlas is 2.4
+// million texels). into: MOTIFS x 4 floats, r g b and 1 for each tile in
+// sheet order, as a uniform array of vec4 takes them; an empty tile, never
+// stamped (the brush draws the set's first painted one instead), is white.
+export function tileTints(out, L, into) {
+  const TILE = L.tile, ATLAS = L.atlas;
+  for (let t = 0; t < MOTIFS; t++) {
+    const tx = (t % GRID) * TILE, ty = ((t / GRID) | 0) * TILE;
+    let r = 0, g = 0, b = 0, a = 0;
+    for (let y = 0; y < TILE; y += 2) {
+      let si = ((ty + y) * ATLAS + tx) * 4;
+      for (let x = 0; x < TILE; x += 2, si += 8) {
+        const k = out[si + 3];
+        if (k === 0) continue;
+        r += out[si]; g += out[si + 1]; b += out[si + 2]; a += k;
+      }
+    }
+    const o = t * 4;
+    if (a > 0) { into[o] = Math.min(1, r / a); into[o + 1] = Math.min(1, g / a); into[o + 2] = Math.min(1, b / a); }
+    else { into[o] = 1; into[o + 1] = 1; into[o + 2] = 1; }
+    into[o + 3] = 1;
+  }
+  return into;
+}
+
 // The mip chain under a finished atlas: one small render pass per level,
 // each reading the level above it, as flowers.js builds its chain. 128 px
 // tiles (and 192 px ones) halve cleanly at every level here, so a 2 x 2 box
