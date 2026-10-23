@@ -26,3 +26,12 @@
 /audio/*.json
   ! Cache-Control
   Cache-Control: public, max-age=0, must-revalidate
+
+# The kaleidoscope atlases may be fetched cross-origin by
+# meditatewiththesun.com (its site/event.js warms them in the background on
+# arrival, so the drawing layer's brushes are on disk before the first
+# drawing cue; the layer itself, being this origin, was never blocked).
+# Cache-Control stays the /* rule's: the warmed bytes revalidate as a 304.
+/assets/kaleidoscope/*
+  ! Cross-Origin-Resource-Policy
+  Cross-Origin-Resource-Policy: cross-origin
