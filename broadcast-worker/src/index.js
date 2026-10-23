@@ -231,9 +231,9 @@ export class Room {
 import { PHASES, routes } from './groups.js';
 export { PHASES, CONDUCTOR_HEARS_GROUPS, pairGroups, phaseGroups, routes } from './groups.js';
 
-const TAPE_MAX = 100000;   // entries; a long evening, well under any storage worry
+const TAPE_MAX = 1000000;  // entries; ~50 min of 15 hands drawing nonstop, ~250 MB at worst, well under any storage worry
 const TAPE_PAD = 8;        // key digits; room past the cap if it ever grows
-const MOTIF_FIELDS = ['a', 'm', 'c', 'f'];   // the motif brush's extras (touch/strokes.js)
+const MOTIF_FIELDS = ['a', 'm', 'c', 'f', 'r'];   // the motif brush's extras (touch/strokes.js)
 
 export class Hall {
   constructor(ctx, env) {
