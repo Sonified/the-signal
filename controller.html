@@ -96,6 +96,12 @@
   speed, 1x to 2x), and SUN (the Sun layer's opacity, to fade it down
   under the room's brushes).
 
+  The surface is drawn for DESIGN_W (1180px, the iPad landscape it was
+  laid out on); a window any skinnier scales the whole page down evenly
+  (CSS zoom, transform where zoom is missing), so every fader, cue and gap
+  keeps its shape at any width. At 760px and under the stacked phone
+  layout below takes over at full size.
+
   ?room=<name> (default 'show'), ?mac=<host:port> (the laptop, default
   Roberts-MacBook-Pro-2.local:8800), ?relay=<host> (the cloud relay),
   ?cloud=<origin> (where Switch to Cloud goes).
@@ -150,10 +156,6 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
   border-radius: 5px; background: #000; overflow: hidden; pointer-events: none; }
 .cue-thumb img, .cue-thumb video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .cue-thumb video { background: #000; }
-@media (max-width: 1024px) {
-  .cue { font-size: 16px; gap: 8px; padding-left: 10px; padding-right: 10px; }
-  .cue-thumb { flex-basis: 72px; width: 72px; height: 41px; }
-}
 .cue.past { opacity: .42; }
 /* the playing cue's video, filling left to right in soft yellow */
 .cue { position: relative; overflow: hidden; }
@@ -287,6 +289,30 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
 </style>
 </head>
 <body>
+<script>
+  // Scale-to-fit: the layout is pixel-tuned for DESIGN_W; a skinnier window
+  // shows the same surface smaller instead of a broken one. Zoom scales
+  // layout itself, so 100%-height flex and the media queries (real viewport)
+  // keep working; without zoom, transform plus a compensated size does it.
+  (() => {
+    const DESIGN_W = 1180, PHONE_W = 760;
+    const zoomOk = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('zoom', '0.5');
+    function fitScale() {
+      const b = document.body, w = innerWidth;
+      const z = w <= PHONE_W ? 1 : Math.min(1, w / DESIGN_W);
+      if (zoomOk) { b.style.zoom = z === 1 ? '' : z; return; }
+      if (z === 1) { b.style.transform = ''; b.style.width = ''; b.style.height = ''; return; }
+      b.style.transformOrigin = '0 0';
+      b.style.transform = 'scale(' + z + ')';
+      b.style.width = (100 / z) + '%';
+      b.style.height = (100 / z) + '%';
+    }
+    addEventListener('resize', fitScale);
+    addEventListener('orientationchange', fitScale);
+    document.addEventListener('DOMContentLoaded', fitScale);
+    fitScale();
+  })();
+</script>
 <div id="lock">
   <form id="lockForm" autocomplete="on">
     <h1>Show Remote</h1>
@@ -373,7 +399,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.05';
+  const VERSION = '3.06';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
