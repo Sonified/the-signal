@@ -171,7 +171,10 @@ export async function createEngine(platform, opts) {
   // platform/presentation-receiver.js): one fullscreen triangle drawn after everything
   // the room sees and before the operator's UI, multiplying what is already
   // there by the blend constant, so at 0 the experience is black and the
-  // drawer and windows still show. It draws nothing at 1. The fader's words
+  // drawer and windows still show. It draws nothing at 1. The brush is the
+  // one layer it spares: while the gate is down the brush (every hand's
+  // strokes, the hall's and this screen's) leaves its place under the edge
+  // and draws just after the gate, at full brightness over the dimmed room. The fader's words
   // arrive in bunches over the network, so the gate glides to its target
   // (a 60 ms one-pole) instead of stepping, and keeps the loop awake (busy)
   // until it lands.
@@ -612,8 +615,10 @@ export async function createEngine(platform, opts) {
   // The strobing content of the scene pass, identical in both render paths.
   // A scene without the split (or no layers between its halves) draws in
   // one call.
+  // While the gate is down the brush is drawn after it instead (drawGateAndLifted).
   function drawScene(pass) {
     if (!scene) return;
+    const lifted = gate < 1;
     if ((flowers || sun || stars || heartbeat || kaleido || particles || fireworks || confetti || brush) && scene.drawBack) {
       scene.drawBack(pass);
       if (heartbeat) heartbeat.draw(pass);
@@ -624,11 +629,17 @@ export async function createEngine(platform, opts) {
       if (particles) particles.draw(pass);
       if (fireworks) fireworks.draw(pass);
       if (confetti) confetti.draw(pass);
-      if (brush) brush.draw(pass);
+      if (brush && !lifted) brush.draw(pass);
       scene.drawFront(pass);
     } else if (scene.draw) {
       scene.draw(pass);
     }
+  }
+
+  // The gate, then the brush over it while the gate is down.
+  function drawGateAndLifted(pass) {
+    drawGate(pass);
+    if (brush && gate < 1 && scene && scene.drawBack) brush.draw(pass);
   }
 
   device.lost.then(info => {
@@ -735,7 +746,7 @@ export async function createEngine(platform, opts) {
         if (overlayList && overlayList.count > 0) uiRenderer.draw(pass, overlayList, null);
         if (wordCloud) wordCloud.draw(pass);
         if (wordSmoke) wordSmoke.draw(pass);
-        drawGate(pass);
+        drawGateAndLifted(pass);
         const bv = blur ? blur.view : null;
         if (uiList && uiList.count > 0) uiRenderer.draw(pass, uiList, bv);
         if (topList && topList.count > 0) uiRenderer.draw(pass, topList, bv);
@@ -752,7 +763,7 @@ export async function createEngine(platform, opts) {
       if (uiRenderer && overlayList && overlayList.count > 0) uiRenderer.draw(scenePass, overlayList, null);
       if (wordCloud) wordCloud.draw(scenePass);
       if (wordSmoke) wordSmoke.draw(scenePass);
-      drawGate(scenePass);
+      drawGateAndLifted(scenePass);
       scenePass.end();
 
       if (lightSample) energyProbe.encodeLight(encoder, lit);
