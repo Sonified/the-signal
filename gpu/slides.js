@@ -156,7 +156,7 @@ const outGain = S => slideGain(S) * clampNum(S.volume, 0, 1, 0.5);
 const smooth = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 
 // ---------- the duck ----------
-// The show remote's Duck button (show.html, through platform/show-remote.js):
+// The show remote's Duck button (controller.html, through platform/show-remote.js):
 // a multiplier on the slides' gain, so the room's video sound drops under
 // the speaker's voice; the heartbeat and the Sun's hum take the same
 // multiplier on their own levels (core/heartbeat.js setHeartDuck,

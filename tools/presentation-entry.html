@@ -15,13 +15,13 @@ a{color:#eed567}#message{min-height:26px}button:disabled{opacity:.65;cursor:wait
 <p>The presentation includes your 16-step Journey.</p>
 <form id="start"><label for="password">Show password</label><input id="password" type="password" autocomplete="current-password" required>
 <button id="go">Open presentation</button><p id="message" role="status"></p></form>
-<p><a href="./show.html">Open iPad controller</a></p>
+<p><a href="./controller.html">Open iPad controller</a></p>
 </main>
 <script>
 const relay='https://the-signal-broadcast.robertalexander-music.workers.dev';
 const form=document.getElementById('start'),input=document.getElementById('password'),button=document.getElementById('go'),message=document.getElementById('message');
 const room=new URLSearchParams(location.search).get('room');
-if(room)document.querySelector('a').href='./show.html?room='+encodeURIComponent(room);
+if(room)document.querySelector('a').href='./controller.html?room='+encodeURIComponent(room);
 try{input.value=localStorage.getItem('mirror.pw')||'';}catch{}
 form.onsubmit=async event=>{
  event.preventDefault();button.disabled=true;message.textContent='Connecting…';

@@ -6,7 +6,7 @@ A browser-based tool for rhythmic audio-visual stimulation, built for meditation
 
 ## TSC 2026 cloud presentation backup
 
-**Presentation computer:** [Open the presentation](https://presence-presentation.pages.dev/presentation.html). **iPad:** [Open the show controller](https://presence-presentation.pages.dev/show.html). Enter the existing show password on each device. Both use room `show` by default. Keep the presentation visible in its own browser window, using the page-thread engine and a browser with WebGPU support.
+**Presentation computer:** [Open the presentation](https://presence-presentation.pages.dev/presentation.html). **iPad:** [Open the show controller](https://presence-presentation.pages.dev/controller.html). Enter the existing show password on each device. Both use room `show` by default. Keep the presentation visible in its own browser window, using the page-thread engine and a browser with WebGPU support.
 
 This is a separate, manually deployed Cloudflare Pages project, **`presence-presentation`**, with the supplied **16-step TSC 2026 Journey** installed automatically on first app load. It includes 14 optimized slide videos (420.9 MB total), silent 144p/30fps cue previews, the QR overlay, and the existing cloud Sun footage. Both devices need internet for this setup. The Mac/local-router setup remains available for a show without internet; these cloud links are not an offline installation.
 

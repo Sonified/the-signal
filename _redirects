@@ -1,4 +1,7 @@
 # Old links into the app's former home. Exact paths first, then the splat.
+# The show controller's old name.
+/show        /controller  301
+/show.html   /controller  301
 /v1     /        301
 /v1/    /        301
 /v1/*   /:splat  301

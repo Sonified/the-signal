@@ -1,5 +1,5 @@
 // The show remote's receiving end: Presence (this app, on the laptop) taking
-// cues from the iPad's show controller (show.html at the repo root). Off
+// cues from the iPad's show controller (controller.html at the repo root). Off
 // unless the page is opened with ?remote (room 'show') or ?remote=<room>.
 // Page thread only (main.js calls initShowRemote outside worker mode): the
 // journey and the Slides layer both live on the page engine.
@@ -12,7 +12,7 @@
 // by its sender (src, n), so whichever path delivers a copy first acts and
 // the other copy is dropped. Mirror rooms need the password for both roles:
 // it is read from localStorage 'mirror.pw' (the same key remote.html and
-// show.html keep), seeded once by opening the page with ?remote&pw=<password>
+// controller.html keep), seeded once by opening the page with ?remote&pw=<password>
 // (pw, not key: a bare ?key= is the demo broadcast's own passphrase seed,
 // platform/broadcast-socket.js, and would overwrite it). The pw parameter is
 // wiped from the address bar once stored.
@@ -23,7 +23,7 @@
 // numbering and never edit settings. The dot says this page hears the iPad,
 // even with its window behind another (which pauses its frames).
 //
-// COMMANDS (show.html -> here), each {t:'word', src, n, k, ...}. The sender
+// COMMANDS (controller.html -> here), each {t:'word', src, n, k, ...}. The sender
 // rides as src, never id: a ctl's id is the control's (the first build put
 // the sender in id too, overwriting it, so every ctl was refused):
 //   {k:'jump', i}       journeyJumpTo(i), i 0-based (the step already playing
@@ -131,7 +131,7 @@
 // The slides' own level (Master slide volume, slideVolume) is the laptop's
 // and is never sent from here.
 //
-// STATUS (here -> show.html): a second pair of sockets, this page the
+// STATUS (here -> controller.html): a second pair of sockets, this page the
 // broadcaster of 'mirror-<room>-status', sends
 //   {t:'state', k:'step', i, n, p, vp, sl, src, q}
 // whenever any of it changes (polled 4x a second) and as each path opens:

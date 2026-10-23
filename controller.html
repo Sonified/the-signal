@@ -19,7 +19,7 @@
   slides' Crossfade and the global filters' resonance and interpolation.
 
   TRANSPORT: the mirror test's (remote.html), lifted. The Cloudflare relay
-  and, when this page came from the laptop (http://<mac>.local:8800/show.html,
+  and, when this page came from the laptop (http://<mac>.local:8800/controller.html,
   tools/mirror-local.mjs), the laptop's own relay too, both at once; each
   command goes down every open path numbered (src, n) and Presence acts on
   whichever copy lands first. This page broadcasts on 'mirror-<room>' and
@@ -410,8 +410,8 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     sw.onclick = () => {
       const q = new URLSearchParams(location.search);
       let to;
-      if (SERVED_LOCAL) { q.delete('cloud'); to = CLOUD_PAGE + '/show?' + q.toString(); }
-      else { q.set('cloud', location.origin); to = 'http://' + MAC + '/show.html?' + q.toString(); }
+      if (SERVED_LOCAL) { q.delete('cloud'); to = CLOUD_PAGE + '/controller?' + q.toString(); }
+      else { q.set('cloud', location.origin); to = 'http://' + MAC + '/controller.html?' + q.toString(); }
       location.href = to + '#k=' + encodeURIComponent(KEY);
     };
   }

@@ -72,9 +72,9 @@ await fs.writeFile(path.join(output, 'presentation-seed.js'), seed);
 const indexFile = path.join(output, 'index.html');
 const index = await fs.readFile(indexFile, 'utf8');
 await fs.writeFile(indexFile, index.replace('<script type="module" src="main.js">', '<script src="presentation-seed.js"></script>\n<script type="module" src="main.js">'));
-const showFile = path.join(output, 'show.html');
-const show = await fs.readFile(showFile, 'utf8');
-await fs.writeFile(showFile, show.replace("'https://sun-layer.presence-generator.pages.dev'", "'https://presence-presentation.pages.dev'"));
+const ctlFile = path.join(output, 'controller.html');
+const show = await fs.readFile(ctlFile, 'utf8');
+await fs.writeFile(ctlFile, show.replace("'https://sun-layer.presence-generator.pages.dev'", "'https://presence-presentation.pages.dev'"));
 await fs.writeFile(path.join(output, 'presentation-build.json'), JSON.stringify({ builtAt: new Date().toISOString(),
   mediaRelease: manifest.release, journeyRevision: revision, steps: journey.steps.length, videos: manifest.videos.length }, null, 2));
 console.log(JSON.stringify({ output, mediaRelease: manifest.release, journeyRevision: revision, steps: journey.steps.length, videos: manifest.videos.length }));
