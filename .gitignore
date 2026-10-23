@@ -32,3 +32,4 @@ tools/.headless-profiles/
 
 # per-file logs of tools/heart-tests/run-each.sh
 tools/heart-tests/logs/
+__pycache__/
