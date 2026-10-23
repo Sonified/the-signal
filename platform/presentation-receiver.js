@@ -81,6 +81,9 @@
 //                                                Master volume, %: the phones
 //                                                following the broadcast,
 //                                                core/schema-sun.js)
+//                         textOpacity  0..100   (the Text layer's Opacity, %:
+//                                                the journey's words over the
+//                                                sun, core/schema-visual.js)
 //                         screenGate   0..100   (the screen gate, %: the
 //                                                room's picture's master
 //                                                brightness, 0 black; NOT a
@@ -139,7 +142,7 @@
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
-// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, wi: finaleWind, play, on} (play: what is actually happening, the
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, tx: textOpacity, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, wi: finaleWind, play, on} (play: what is actually happening, the
 // live hold included), vp the slide video's place {t, d, r, f, l} (seconds in,
 // its length, the rate it advances at, 0 when held; null with no video of
 // known length; the iPad fills the playing cue with it, running on between
@@ -161,7 +164,7 @@ import { PRESENT_PASSWORD } from '../core/presentation.js';
 import { ampToPos } from '../js/util.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
-const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume']);
+const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume', 'textOpacity']);
 // the hall's phases (broadcast-worker/src/groups.js PHASES, which the app
 // never imports), the drawing cues' words
 const HALL_PHASES = new Set(['solo', 'master', 'pairs', 'quads', 'halves', 'all']);
@@ -418,7 +421,7 @@ export function initPresentationReceiver(hooks = {}) {
       hall: brushConducting() ? { p: brushPhase(), r: brushRound(), g: brushGroups() } : null,
       vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000,
         f: pr.f || S.slideFile, l: pr.l === true } : null,
-      sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'),
+      sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'), tx: get('textOpacity'),
             gt: Math.round(Math.max(0, Math.min(1, +S.screenGate)) * 1000) / 10,
             ch: finalePos('finaleChoir'), dr: finalePos('finaleDrone'), pn: finalePos('finalePiano'), am: finalePos('finaleAmb'), hu: finalePos('finaleHum'), su: finalePos('finaleSun'), wi: finalePos('finaleWind'),
             play: playingNow(), on: !!(S.layers && S.layers.slides) }

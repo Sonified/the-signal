@@ -54,6 +54,8 @@
             flash together: HEART)
           mwtsVolume 0..100 (meditatewiththesun.com's Master volume, %, the
             phones following the broadcast: HUM)
+          textOpacity 0..100 (the Text layer's Opacity, %, the journey's
+            words over the sun, breathe in and breathe out: TXT)
           screenGate 0..100 (the room's picture's master brightness, %, 0
             black, live only: SCREEN)
           finaleDrone, finalePiano, finaleChoir, finaleAmb 0..100 (the
@@ -163,8 +165,10 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-/* HEART and HUM carry on the SCREEN, SUN, WIND row: HEART under
-   AMBIENCE, HUM under ROTSPD, the finale row's fourth and fifth columns. Their
+/* HEART, HUM and TXT carry on the SCREEN, SUN, WIND row: HEART under
+   AMBIENCE, HUM under ROTSPD, the finale row's fourth and fifth columns, and
+   TXT one column past the finale row's end, in the edge's empty left half
+   as the finale row's own spill is. Their
    box starts where SCREEN's does and is shifted right by three faders and
    their gaps (3 x (72 + 10) = 246px); a relative shift, so it never widens
    the page's columns, and the box itself is 0 wide for the same reason (see
@@ -362,7 +366,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.01';
+  const VERSION = '3.02';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
@@ -680,6 +684,9 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // following the broadcast fade their sound to it (core/schema-sun.js
     // mwtsVolume), linear 0..100%.
     { id: 'mwtsVolume', key: 'mw', label: 'HUM', color: '#ff9f43', max: 100, def: 100, box: 'midFaders', fmt: p => Math.round(p) + '%' },
+    // The Text layer's Opacity: the journey's words over the sun (breathe
+    // in, breathe out), linear 0..100%, the app's own 95% to start.
+    { id: 'textOpacity', key: 'tx', label: 'TXT', color: '#c9d4ff', max: 100, def: 95, box: 'midFaders', fmt: p => Math.round(p) + '%' },
     // The finale row, above those three, left to right: DRONE, PIANO,
     // CHOIR, AMBIENCE, ROTSPD. The four levels each their own 0..100%, which the laptop lays linearly
     // onto its levels, silent at 0 and the finale's own at 100%
@@ -751,7 +758,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     lpf: 1000, hpf: 0, slideRate: 500, vol: 100,
     finaleDrone: 0, finalePiano: 0, finaleChoir: 0, finaleAmb: 0,
     finaleHum: 0, finaleSun: 0, finaleWind: 0, heartMaster: 0,
-    screenGate: 100, mwtsVolume: 0
+    screenGate: 100, mwtsVolume: 0, textOpacity: 95
   };
   $('defaults').onclick = () => {
     const now = performance.now();
