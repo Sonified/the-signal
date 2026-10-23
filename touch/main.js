@@ -11,12 +11,15 @@
 
 import { createScene } from './scene.js';
 import { createHall, tapStep, chipLabel } from './hall.js';
-import { BRUSHES, MOTIF, encodeStroke, decodeStroke, drawStroke } from './strokes.js';
+import { BRUSHES, MOTIF, encodeStroke, decodeStroke, drawStroke, timesToQ } from './strokes.js';
 import { runReplay } from './replay.js';
 
 const RELAY_HOST = 'the-signal-broadcast.robertalexander-music.workers.dev';
 const HUES = [8, 42, 95, 168, 212, 285, 330];
-const FLUSH_MS = 45, FLUSH_POINTS = 16;
+// A batch every 30 ms at least while a finger moves, each point stamped
+// with this page's clock (the wire's q), so a receiver can play the stroke
+// on its own timeline (core/brush.js).
+const FLUSH_MS = 30, FLUSH_POINTS = 16;
 const SLICE_STEPS = [1, 4, 6, 8, 12];
 
 const Q = new URLSearchParams(location.search);
@@ -92,16 +95,17 @@ function stampLocal(points) {
 
 function flush(f, done) {
   if (f.pts.length) {
-    if (hall) hall.send(encodeStroke(brush, hue, width, done ? 2 : f.d, f.pts));
+    if (hall) hall.send(encodeStroke(brush, hue, width, done ? 2 : f.d, f.pts, { q: timesToQ(f.ts) }));
     f.d = 1;
     f.pts = [f.pts[f.pts.length - 1]];   // the joint the next batch grows from
+    f.ts = [f.ts[f.ts.length - 1]];      // and its time
   }
 }
 
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture(e.pointerId);
   const p = unit(e);
-  const f = { pts: [p], d: 0, timer: setInterval(() => flush(f, false), FLUSH_MS) };
+  const f = { pts: [p], ts: [performance.now()], d: 0, timer: setInterval(() => flush(f, false), FLUSH_MS) };
   fingers.set(e.pointerId, f);
   stampLocal([p]);
   e.preventDefault();
@@ -113,6 +117,7 @@ canvas.addEventListener('pointermove', e => {
   const prev = f.pts[f.pts.length - 1];
   stampLocal([prev, p]);
   f.pts.push(p);
+  f.ts.push(performance.now());
   if (f.pts.length >= FLUSH_POINTS) flush(f, false);
 });
 for (const type of ['pointerup', 'pointercancel']) {

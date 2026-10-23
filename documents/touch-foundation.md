@@ -138,7 +138,25 @@ Three layers, each usable without the ones above it:
    with any of the four missing, non-integer where an integer is due, or
    out of range, or with an `r` that is not a number in 0-1, and decodes
    every other brush exactly as before (ignoring stray extras);
-   encodeStroke takes them as an optional sixth argument `{a, m, c, f, r}`. The real motif rendering lives in the main
+   encodeStroke takes them as an optional sixth argument `{a, m, c, f, r}`.
+   Any brush may also carry `q`, its points' times (2026-10-23): q[0] the
+   first point's time in whole ms on the sender's own clock (its
+   performance.now, an integer 0-1e13), then for each later point the whole
+   ms since the one before (0-60000), one entry per point (a batch's joint
+   carries the time it had in the batch before). timesToQ builds it from
+   absolute times, decodeStroke checks it (wrong length, a fraction, a
+   negative or an oversized gap refuses the stroke) and hands back `times`,
+   absolute ms; without q a stroke decodes as ever. The main app plays a
+   timed remote stroke on the sender's own timeline (core/brush.js,
+   core/brush-playback.js): each point shown at its sender time plus the
+   least offset ever seen from that sender (arrival less the batch's last
+   point time, no clock protocol) plus a delay of one batch and 30 ms (60
+   ms to start), interpolated between points; a batch arriving after its
+   first new point's play time raises the delay by the lateness, and the
+   delay never comes down in a session. An untimed stroke glides as it did.
+   Batches go every 30 ms now (both senders). The tape keeps q with the
+   other fields, so a replay can use it; planReplay still schedules whole
+   batches by their arrival `at` (a follow-up could play their points by q). The real motif rendering lives in the main
    app's WebGPU lane; /touch/ draws a small ring at each point as its
    stand-in and does not offer the brush in its picker. The tape records
    the four fields whenever a stroke carried them.
@@ -153,7 +171,7 @@ Three layers, each usable without the ones above it:
    (out- or inward), spin, decay.
 
 The page (touch/index.html + main.js) wires them: brush and hue picker,
-multi-touch drawing (a batch per finger, flushed every 45 ms or 16 points,
+multi-touch drawing (a batch per finger, flushed every 30 ms or 16 points,
 stamped locally the moment it lands so the hand never waits on the wire),
 the hall link with reconnect and a clean offline life as a solo instrument
 (touch/hall.js), a one-line status, a flash when the group changes, and the
@@ -187,7 +205,7 @@ performance.now() is the thin part.
                                                     the phase's routes stamped
                                                     {id}, and appended to the
                                                     tape
-          {t:'s', k:4, h, w, d, p, a, m, c, f[, r]} a motif batch (a 1-99,
+          {t:'s', k:4, h, w, d, p, a, m, c, f[, r][, q]} a motif batch (a 1-99,
                                                     m 0-63, c 1-24 integers,
                                                     f 0-1; r 0-1 optional,
                                                     under 1 each point a

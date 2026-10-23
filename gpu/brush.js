@@ -26,7 +26,8 @@
 //
 // Stamps are taken from the queue in order, at most MAX_INST a frame, and
 // only while the atlas each names is on the GPU, so the painting order is
-// the order they were made in; one waiting on its atlas holds the rest
+// the order they were made in (but that within a frame the senders take
+// turns at the top, core/brush-order.js); one waiting on its atlas holds the rest
 // back until it lands (a set that fails to load lets its stamps go). They
 // leave the queue only once encoded into the image, so a frame that holds
 // the image (one with no step, a wake) draws them on the next.
@@ -43,6 +44,7 @@ import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
 import { brushQueue, brushQueueDrop, brushAtlas, STAMP_FLOATS, brushPlay, brushPlaying } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
+import { frameOrder, noteSender, forgetIdle, activeSenders, MAX_SENDERS } from '../core/brush-order.js';
 
 const MAX_INST = 4096;
 const INST_FLOATS = 8;             // x y half angle | u0 v0 - -
@@ -65,6 +67,11 @@ export function createBrush(device, format, platform, opts) {
   const runBind = new Array(MAX_INST).fill(null);
   const runFirst = new Int32Array(MAX_INST), runCount = new Int32Array(MAX_INST);
   let nRuns = 0, nInst = 0, fbOn = false;
+  // The frame's chosen stamps before they are ordered: each one's place in
+  // the queue, its atlas and its sender, and the order's scratch.
+  const selO = new Int32Array(MAX_INST), selAtlas = new Array(MAX_INST).fill(null);
+  const selWho = new Float64Array(MAX_INST), selOrder = new Int32Array(MAX_INST);
+  const selRank = new Int32Array(MAX_INST), selTally = new Int32Array(MAX_SENDERS + 2);
   const params = { keepHalfLife: 1, zoomRate: 0, twistRate: 0, cx: 0, cy: 0, unit: 1, dt: 0 };
   const sq = { cx: 0, cy: 0, side: 1 };
   let frame = 0;
@@ -242,11 +249,13 @@ export function createBrush(device, format, platform, opts) {
     fieldSquare(S.W || pixelW / dpr, S.H || pixelH / dpr, S.edgeInset || 0, sq);
     const cx = sq.cx * dpr, cy = sq.cy * dpr, side = sq.side * dpr;
 
-    // Take the queue's head, in order, while its atlases are in.
+    // Take the queue's head, in order, while its atlases are in; then lay
+    // the frame's stamps in sender by sender, the one in front this second
+    // last (core/brush-order.js), each sender's in the order they came.
     nInst = 0; nRuns = 0;
     const q = brushQueue, buf = q.buf;
-    let take = 0, runSet = -1;
-    while (take < q.count && nInst < MAX_INST) {
+    let take = 0, nSel = 0;
+    while (take < q.count && nSel < MAX_INST) {
       const o = ((q.head + take) % q.cap) * STAMP_FLOATS;
       const set = setOf(buf[o + 5]);
       let a = atlases.get(set);
@@ -255,8 +264,20 @@ export function createBrush(device, format, platform, opts) {
       if (a.failed) { take++; continue; }    // a set that will never draw lets its stamps go
       if (!a.ready) break;
       a.used = frame;
-      if (set !== runSet) {
-        runSet = set;
+      selO[nSel] = o; selAtlas[nSel] = a; selWho[nSel] = buf[o + 6];
+      nSel++; take++;
+    }
+    if (nSel > 0) {
+      const sec = Math.floor(Date.now() / 1000);
+      forgetIdle(sec);
+      for (let j = 0; j < nSel; j++) noteSender(selWho[j], sec);
+      frameOrder(selWho, nSel, activeSenders.ids, activeSenders.n, sec, selOrder, selRank, selTally);
+    }
+    let runAtlas = null;
+    for (let jj = 0; jj < nSel; jj++) {
+      const j = selOrder[jj], o = selO[j], a = selAtlas[j];
+      if (a !== runAtlas) {
+        runAtlas = a;
         runBind[nRuns] = a.bind; runFirst[nRuns] = nInst; runCount[nRuns] = 0; nRuns++;
       }
       // An empty tile draws the set's first painted one, as the picker
@@ -272,7 +293,7 @@ export function createBrush(device, format, platform, opts) {
       inst[i + 5] = ((m / 8) | 0) / 8 + L.padUV;
       inst[i + 6] = 0; inst[i + 7] = 0;
       runCount[nRuns - 1]++;
-      nInst++; take++;
+      nInst++;
     }
     takeN = take;
 

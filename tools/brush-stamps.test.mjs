@@ -13,7 +13,11 @@ import {
 } from '../core/brush-stamps.js';
 import { encodeStroke, decodeStroke, MOTIF, QUANT } from '../touch/strokes.js';
 import { S } from '../js/state.js';
-import { brushField, brushTake, setBrushHall, setBrushBroadcast, brushQueue, brushQueueDrop, STAMP_FLOATS, brushPlay, brushPlaying } from '../core/brush.js';
+import { brushField, brushTake, setBrushHall, setBrushBroadcast, brushQueue, brushQueueDrop, STAMP_FLOATS, brushPlay, brushPlaying, setBrushClock } from '../core/brush.js';
+
+// the receiver's clock, moved by drain()
+let fakeNow = 1e6;
+setBrushClock(() => fakeNow);
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
@@ -98,11 +102,13 @@ test('the wire: a motif stroke round-trips with its four fields', () => {
 // The queue's contents as plain numbers, then emptied, once every remote
 // stroke has played out (core/brush.js brushPlay).
 function drain() {
-  for (let i = 0; i < 2000 && brushPlaying(); i++) brushPlay(1 / 60);
+  for (let i = 0; i < 2000 && brushPlaying(); i++) { fakeNow += 1000 / 60; brushPlay(1 / 60); }
   const q = brushQueue, out = [];
   for (let i = 0; i < q.count; i++) {
     const o = ((q.head + i) % q.cap) * STAMP_FLOATS;
-    out.push(Array.from(q.buf.subarray(o, o + STAMP_FLOATS)));
+    // the figure: everything but who drew it (the last field, which
+    // core/brush-order.js reads; a remote copy names its sender)
+    out.push(Array.from(q.buf.subarray(o, o + STAMP_FLOATS - 1)));
   }
   brushQueueDrop(q.count);
   return out;

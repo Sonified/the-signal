@@ -42,6 +42,18 @@
 // paints a simple stand-in so /touch/ draws something sensible when one
 // arrives.
 //
+// and, on any brush, one more optional field, the batch's timing:
+//
+//   q   the sender's clock at each point, so a receiver can play the
+//       stroke on the sender's own timeline (core/brush.js): q[0] the first
+//       point's time, whole ms on the sender's clock (performance.now's
+//       domain, an integer 0 to 1e13), then for each later point the whole
+//       ms since the one before (0 to 60000). One entry per point, so a
+//       batch's joint (its first point, the last batch's last) carries the
+//       time it had there. Absent (strokes from before it) a receiver glides
+//       as it always did. timesToQ and decodeStroke's `times` turn it to
+//       and from absolute ms.
+//
 // The hall stamps `id` on relayed copies; the drawing never needs it, the
 // page may (a cursor, a credit).
 
@@ -60,9 +72,9 @@ export const MOTIF = 4;
 
 // ---------- the wire ----------
 
-// extras: the motif brush's { a, m, c, f } and its optional r; copied onto
-// the message as given (only those five), so decodeStroke is the one judge
-// of them.
+// extras: the motif brush's { a, m, c, f } and its optional r, and any
+// brush's optional q; copied onto the message as given (only those six),
+// so decodeStroke is the one judge of them.
 export function encodeStroke(k, h, w, d, points, extras) {
   const p = new Array(points.length * 2);
   for (let i = 0; i < points.length; i++) {
@@ -71,16 +83,43 @@ export function encodeStroke(k, h, w, d, points, extras) {
   }
   const msg = { t: 's', k, h, w, d, p };
   if (extras) {
-    for (const f of ['a', 'm', 'c', 'f', 'r']) if (extras[f] !== undefined) msg[f] = extras[f];
+    for (const f of ['a', 'm', 'c', 'f', 'r', 'q']) if (extras[f] !== undefined) msg[f] = extras[f];
   }
   return msg;
 }
 
 const intIn = (x, lo, hi) => Number.isInteger(x) && x >= lo && x <= hi;
 
+// A batch's point times (ms, any clock) as the wire's q: the first rounded
+// to a whole ms, then each later one's whole ms since the one before, taken
+// between the rounded times so no rounding gathers along a long stroke.
+export function timesToQ(times) {
+  const q = new Array(times.length);
+  let prev = 0;
+  for (let i = 0; i < times.length; i++) {
+    const r = Math.max(0, Math.round(times[i]));
+    q[i] = i === 0 ? r : Math.max(0, r - prev);
+    prev = i === 0 ? r : prev + q[i];
+  }
+  return q;
+}
+// q back to absolute ms, or null when it is not a valid q for n points.
+function qTimes(q, n) {
+  if (!Array.isArray(q) || q.length !== n || !intIn(q[0], 0, 1e13)) return null;
+  const out = new Array(n);
+  out[0] = q[0];
+  for (let i = 1; i < n; i++) {
+    if (!intIn(q[i], 0, 60000)) return null;
+    out[i] = out[i - 1] + q[i];
+  }
+  return out;
+}
+
 // null for anything malformed: a hall relays whatever a member said. A
 // motif stroke must carry a, m, c and f in range, and r, when it carries
-// one, in 0-1; any other brush decodes exactly as before, ignoring them.
+// one, in 0-1; any other brush decodes exactly as before, ignoring them. A
+// q, on any brush, must be one valid entry per point, and comes back as
+// `times`, absolute ms; a stroke without one has no times.
 export function decodeStroke(msg) {
   if (!msg || msg.t !== 's' || !Array.isArray(msg.p) || msg.p.length < 2 || msg.p.length % 2) return null;
   const k = msg.k | 0, h = msg.h | 0, w = msg.w | 0, d = msg.d | 0;
@@ -91,13 +130,22 @@ export function decodeStroke(msg) {
     if (!(u >= 0 && u <= 1 && v >= 0 && v <= 1)) return null;
     points[i] = { u, v };
   }
-  if (k !== MOTIF) return { k, h, w, d, points };
-  const { a, m, c, f, r } = msg;
-  if (!intIn(a, 1, 99) || !intIn(m, 0, 63) || !intIn(c, 1, 24) ||
-      typeof f !== 'number' || !(f >= 0 && f <= 1)) return null;
-  if (r === undefined) return { k, h, w, d, points, a, m, c, f };
-  if (typeof r !== 'number' || !(r >= 0 && r <= 1)) return null;
-  return { k, h, w, d, points, a, m, c, f, r };
+  let times;
+  if (msg.q !== undefined) {
+    times = qTimes(msg.q, points.length);
+    if (!times) return null;
+  }
+  let out;
+  if (k !== MOTIF) out = { k, h, w, d, points };
+  else {
+    const { a, m, c, f, r } = msg;
+    if (!intIn(a, 1, 99) || !intIn(m, 0, 63) || !intIn(c, 1, 24) ||
+        typeof f !== 'number' || !(f >= 0 && f <= 1)) return null;
+    if (r !== undefined && (typeof r !== 'number' || !(r >= 0 && r <= 1))) return null;
+    out = r === undefined ? { k, h, w, d, points, a, m, c, f } : { k, h, w, d, points, a, m, c, f, r };
+  }
+  if (times) out.times = times;
+  return out;
 }
 
 // ---------- the brushes ----------

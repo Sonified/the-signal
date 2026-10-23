@@ -25,7 +25,8 @@
 //
 // The stamps wait in a ring (STAMP_FLOATS each: u, v in the wire's unit
 // square, the angle, the motif's side in unit-square units, the tile, the
-// atlas set) until gpu/brush.js takes them, in order, which it does as soon
+// atlas set, the sender's id for core/brush-order.js) until gpu/brush.js
+// takes them, in order, which it does as soon
 // as the set's atlas is on the GPU; a ring that fills drops its oldest. Its
 // picker (the drawer's Brush section) reads brushAtlas, which the GPU side
 // keeps for the current Image set.
@@ -37,15 +38,18 @@
 import { S } from '../js/state.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleWake } from './idle.js';
-import { MOTIF, QUANT, encodeStroke, decodeStroke } from '../touch/strokes.js';
+import { MOTIF, QUANT, encodeStroke, decodeStroke, timesToQ } from '../touch/strokes.js';
 import { tapStep } from '../touch/hall.js';
-import { playStep, PLAY_STAGES } from './brush-playback.js';
+import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
+import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
 import { BRUSH_W, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
 
 // The wire's pace: a batch at least this often while the hand moves, and
-// never more than this many points in one (touch/main.js's numbers).
-const FLUSH_MS = 45, FLUSH_POINTS = 16;
+// never more than this many points in one (touch/main.js's numbers). Each
+// point goes with the frame's clock when it was made (the wire's q), so a
+// receiver plays the stroke on this hand's own timeline.
+const FLUSH_MS = 30, FLUSH_POINTS = 16;
 // The hue the stroke carries on the wire (its h): this screen's identity,
 // one of /touch/'s, for the stand-in it draws there. The motif itself keeps
 // its own colours.
@@ -53,19 +57,20 @@ const HUES = [8, 42, 95, 168, 212, 285, 330];
 const HUE = HUES[Math.floor(Math.random() * HUES.length)];
 
 // ---------- the ring ----------
-export const STAMP_FLOATS = 6;
+export const STAMP_FLOATS = 7;
 // Room for a few frames of the densest drawing (a fast flick at the
 // continuous spacing with 24 copies is some 4000 stamps a frame).
 const QCAP = 65536;
 export const brushQueue = { buf: new Float32Array(QCAP * STAMP_FLOATS), cap: QCAP, head: 0, count: 0 };
 
 // What the walk's stamps are made of right now (set before each walk).
-let qSide = 0, qMotif = 0, qSet = 1;
+let qSide = 0, qMotif = 0, qSet = 1, qWho = SOLO_ID;
 function push(u, v, angle) {
   const q = brushQueue;
   if (q.count === q.cap) { q.head = (q.head + 1) % q.cap; q.count--; }
   const o = ((q.head + q.count) % q.cap) * STAMP_FLOATS, b = q.buf;
   b[o] = u; b[o + 1] = v; b[o + 2] = angle; b[o + 3] = qSide; b[o + 4] = qMotif; b[o + 5] = qSet;
+  b[o + 6] = qWho;
   q.count++;
 }
 // The walk's emit, made once.
@@ -116,6 +121,7 @@ let sRate = 1, sPrints = false, printMs = 1000, lastPrintT = 0;
 // The batch waiting to go out: quantized points, the first the joint.
 const PEND_MAX = 64;
 const pend = new Int32Array(PEND_MAX * 2);
+const pendT = new Float64Array(PEND_MAX);   // each point's time, ms
 let pendN = 0, pendD = 0, lastFlushT = 0;
 // a stroke begun and not yet finished
 let strokeOpen = false;
@@ -166,10 +172,10 @@ function begin(x, y, width, height, inset, t) {
   lastPrintT = t;
   toUnit(x, y, width, height, inset);
   lastQu = lastU; lastQv = lastV;
-  qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet;
+  qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId();
   stampCopies(lastQu / QUANT, lastQv / QUANT, sCopies, emit);
   carry = 0;
-  pend[0] = lastQu; pend[1] = lastQv; pendN = 1; pendD = 0; lastFlushT = t;
+  pend[0] = lastQu; pend[1] = lastQv; pendT[0] = t; pendN = 1; pendD = 0; lastFlushT = t;
   strokeOpen = true;
   idleWake('a stroke');
 }
@@ -181,19 +187,19 @@ function extend(x, y, width, height, inset, t) {
     // moved off the last one: stamped here, and one point on the wire.
     if ((lastU !== lastQu || lastV !== lastQv) && t - lastPrintT >= printMs) {
       lastPrintT = t;
-      qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet;
+      qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId();
       stampCopies(lastU / QUANT, lastV / QUANT, sCopies, emit);
       lastQu = lastU; lastQv = lastV;
-      if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendN++; }
+      if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
     }
     if (pendN > 0 && (pendN >= FLUSH_POINTS || t - lastFlushT >= FLUSH_MS)) flush(false, t);
     return;
   }
   if (lastU !== lastQu || lastV !== lastQv) {
-    qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet;
+    qSide = brushSide(BRUSH_W); qMotif = sMotif; qSet = sSet; qWho = handId();
     carry = walkSegment(lastQu / QUANT, lastQv / QUANT, lastU / QUANT, lastV / QUANT, carry, brushSpacing(BRUSH_W), sCopies, emit);
     lastQu = lastU; lastQv = lastV;
-    if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendN++; }
+    if (pendN < PEND_MAX) { pend[pendN * 2] = lastU; pend[pendN * 2 + 1] = lastV; pendT[pendN] = t; pendN++; }
   }
   if (pendN >= FLUSH_POINTS || (t - lastFlushT >= FLUSH_MS && (pendN > 1 || pendD === 0))) flush(false, t);
 }
@@ -214,16 +220,16 @@ function flush(done, t) {
   lastFlushT = t;
   const toBc = !!bcSink && bcSink.wanted();
   if ((hallLink || toBc) && pendN > 0) {
-    const pts = new Array(pendN);
-    for (let i = 0; i < pendN; i++) pts[i] = { u: pend[i * 2] / QUANT, v: pend[i * 2 + 1] / QUANT };
+    const pts = new Array(pendN), ts = new Array(pendN);
+    for (let i = 0; i < pendN; i++) { pts[i] = { u: pend[i * 2] / QUANT, v: pend[i * 2 + 1] / QUANT }; ts[i] = pendT[i]; }
     const msg = encodeStroke(MOTIF, HUE, BRUSH_W, done ? 2 : pendD, pts,
-      { a: sSet, m: sMotif, c: sCopies, f: Math.round(sFade * 1000) / 1000, r: sRate });
+      { a: sSet, m: sMotif, c: sCopies, f: Math.round(sFade * 1000) / 1000, r: sRate, q: timesToQ(ts) });
     if (hallLink) hallLink.send(msg);
     if (toBc) bcSink.send(msg);
   }
   pendD = 1;
   if (sPrints) { pendN = 0; return; }
-  pend[0] = lastQu; pend[1] = lastQv; pendN = 1;
+  pend[0] = lastQu; pend[1] = lastQv; pendT[0] = pendT[pendN - 1]; pendN = 1;
 }
 
 // ---------- the hall ----------
@@ -232,6 +238,9 @@ function flush(done, t) {
 // drawer's status line.
 let hallLink = null, hallName = '', hallState = '';
 export function setBrushHall(link, name) { hallLink = link; hallName = name || ''; }
+// The hand's own id among the senders (core/brush-order.js): its hall id
+// once joined, else the solo one.
+function handId() { return hallLink && hallLink.you ? hallLink.you : SOLO_ID; }
 // The broadcast's end (core/broadcast.js, on the broadcasting tab only):
 // { wanted() whether anyone watches, send(msg) to every watched session,
 // touch() wake a dozing one }, or null.
@@ -260,52 +269,91 @@ export function brushNext() { if (brushConducting()) hallLink.next(); }
 // A stroke from the hall or the broadcast is walked the moment a batch
 // arrives, exactly as a local one (the same stamps, the same order), but
 // its stamps wait in a slot of their own and are let out as the slot's
-// playback cursor passes them (core/brush-playback.js), so the ribbon
-// glides after the hand instead of jumping a batch at a time. Each stamp
-// carries its number in the stroke (k; a stamp's copies share it): for a
-// continuous stroke the walk's stamps fall every spacing of arc, so the
-// stroke's end in that count is its received arc over the spacing; for a
-// slowed one each point is a print, and the end is the last print's
-// number. A stroke's last batch (d 2) marks it done, and the slot lets out
-// the rest as the cursor drains to the end, then frees; one whose sender
-// vanished mid-stroke is done once ABANDON_S passes with nothing new, and
-// drains the same way. A first batch from a sender whose last stroke is
-// still draining starts a slot of its own beside it. With every slot busy
-// the one fed longest ago is let out whole at once and taken. All of it is
-// allocated once; brushPlay, every frame, only reads and moves numbers.
+// cursor passes them (core/brush-playback.js): on the sender's own timeline
+// when the stroke carries its times, else on the glide. Each stamp carries
+// its number in the stroke (k; a stamp's copies share it), and each point
+// received its place in that count (for a continuous stroke the arc so far
+// over the spacing, the walk's stamps falling every spacing; for a slowed
+// one the print's own number) with its sender time, so the cursor is the
+// count at the play time, interpolated between points. A stroke's last
+// batch (d 2) marks it done, and the slot lets out the rest as play reaches
+// the end, then frees; one whose sender vanished mid-stroke is done once
+// ABANDON_MS passes with nothing new, and lets out what it has. A first
+// batch from a sender whose last stroke is still playing starts a slot of
+// its own beside it. With every slot busy the one fed longest ago is let
+// out whole at once and taken. All of it is allocated once (but the
+// senders' offsets, a small map touched as batches arrive); brushPlay,
+// every frame, only reads and moves numbers.
 const SLOTS = 16, SLOT_CAP = 8192, PF = 7;    // per stamp: u v angle side motif set k
-const ABANDON_S = 3;
+const TL_CAP = 2048;                          // timeline points held per slot
+const ABANDON_MS = 3000;
 const slotBuf = new Array(SLOTS).fill(null);  // each a Float32Array, made on first use
+const slotTlT = new Array(SLOTS).fill(null), slotTlP = new Array(SLOTS).fill(null);
 const slotKey = new Array(SLOTS).fill(null);
-const slotOn = new Uint8Array(SLOTS), slotDone = new Uint8Array(SLOTS), slotPrints = new Uint8Array(SLOTS);
+const slotOn = new Uint8Array(SLOTS), slotDone = new Uint8Array(SLOTS), slotTimed = new Uint8Array(SLOTS);
 const slotHead = new Int32Array(SLOTS), slotCount = new Int32Array(SLOTS), slotNextK = new Int32Array(SLOTS);
+const slotTlN = new Int32Array(SLOTS), slotTlI = new Int32Array(SLOTS);
 const slotEnd = new Float64Array(SLOTS), slotArc = new Float64Array(SLOTS), slotCarry = new Float64Array(SLOTS);
-const slotSpacing = new Float64Array(SLOTS), slotFed = new Float64Array(SLOTS);
+const slotFed = new Float64Array(SLOTS), slotCursor = new Float64Array(SLOTS);
+// who drew it (core/brush-order.js): the hall's id, or the broadcaster's
+const slotWho = new Float64Array(SLOTS);
 const slotStage = new Float64Array(SLOTS * PLAY_STAGES);
-let playClock = 0;
+// Each sender's clock offset (minOffset), by key, and this screen's delay,
+// which only ever rises (ratchetDelay).
+const offsets = new Map();
+let playDelay = DELAY0_MS;
+const at = { i: 0 };
+// This screen's clock, ms; a test hands in its own.
+let clock = () => performance.now();
+export function setBrushClock(fn) { clock = fn || (() => performance.now()); }
+export function brushPlayDelay() { return playDelay; }
+// A fresh session's playback (the tests' between cases): the starting delay
+// and no senders' offsets known.
+export function brushPlayReset() { playDelay = DELAY0_MS; offsets.clear(); }
 
 // Stamps leave a slot for the ring the GPU side drains.
 function letOut(i) {
   const b = slotBuf[i], o = slotHead[i] * PF;
-  qSide = b[o + 3]; qMotif = b[o + 4]; qSet = b[o + 5];
+  qSide = b[o + 3]; qMotif = b[o + 4]; qSet = b[o + 5]; qWho = slotWho[i];
   push(b[o], b[o + 1], b[o + 2]);
   slotHead[i] = (slotHead[i] + 1) % SLOT_CAP;
   slotCount[i]--;
 }
+function letOutTo(i, cursor) {
+  const b = slotBuf[i];
+  while (slotCount[i] > 0 && b[slotHead[i] * PF + 6] <= cursor + 1e-9) letOut(i);
+}
 
-function openSlot(key) {
-  let at = -1, oldest = -1;
-  for (let i = 0; i < SLOTS; i++) {
-    if (!slotOn[i]) { at = i; break; }
-    if (oldest < 0 || slotFed[i] < slotFed[oldest]) oldest = i;
+function openSlot(key, now) {
+  let i = -1, oldest = -1;
+  for (let j = 0; j < SLOTS; j++) {
+    if (!slotOn[j]) { i = j; break; }
+    if (oldest < 0 || slotFed[j] < slotFed[oldest]) oldest = j;
   }
-  if (at < 0) { at = oldest; while (slotCount[at] > 0) letOut(at); }
-  if (!slotBuf[at]) slotBuf[at] = new Float32Array(SLOT_CAP * PF);
-  slotOn[at] = 1; slotDone[at] = 0; slotKey[at] = key;
-  slotHead[at] = 0; slotCount[at] = 0; slotNextK[at] = 0;
-  slotEnd[at] = 0; slotArc[at] = 0; slotCarry[at] = 0; slotFed[at] = playClock;
-  for (let j = 0; j < PLAY_STAGES; j++) slotStage[at * PLAY_STAGES + j] = 0;
-  return at;
+  if (i < 0) { i = oldest; while (slotCount[i] > 0) letOut(i); }
+  if (!slotBuf[i]) {
+    slotBuf[i] = new Float32Array(SLOT_CAP * PF);
+    slotTlT[i] = new Float64Array(TL_CAP); slotTlP[i] = new Float64Array(TL_CAP);
+  }
+  slotOn[i] = 1; slotDone[i] = 0; slotKey[i] = key;
+  slotWho[i] = typeof key === 'number' ? key : BROADCAST_ID;
+  slotHead[i] = 0; slotCount[i] = 0; slotNextK[i] = 0; slotTlN[i] = 0; slotTlI[i] = 0;
+  slotEnd[i] = 0; slotArc[i] = 0; slotCarry[i] = 0; slotFed[i] = now; slotCursor[i] = -1;
+  for (let j = 0; j < PLAY_STAGES; j++) slotStage[i * PLAY_STAGES + j] = 0;
+  return i;
+}
+
+// One point onto a slot's timeline: its sender time and its place in the
+// stamp count. A full timeline lets go of the points already played.
+function addPoint(i, t, p) {
+  if (slotTlN[i] === TL_CAP) {
+    const from = slotTlI[i] > 0 ? slotTlI[i] : 1;
+    if (from === 1 && slotTlI[i] === 0) letOutTo(i, slotTlP[i][0]);   // nothing played yet: the oldest point's stamps go now
+    slotTlT[i].copyWithin(0, from, TL_CAP); slotTlP[i].copyWithin(0, from, TL_CAP);
+    slotTlN[i] -= from; slotTlI[i] = slotTlI[i] > from ? slotTlI[i] - from : 0;
+  }
+  const n = slotTlN[i]++;
+  slotTlT[i][n] = t; slotTlP[i][n] = p;
 }
 
 // The walk's emit for a remote stroke: into slot `into`, numbered.
@@ -326,39 +374,76 @@ export function brushTake(msg, from) {
   const s = decodeStroke(msg);
   if (!s || s.k !== MOTIF) return;
   const key = from !== undefined ? from : msg.id;
-  let at = -1;
-  for (let i = 0; i < SLOTS; i++) if (slotOn[i] && !slotDone[i] && slotKey[i] === key) { at = i; break; }
-  if (s.d === 0 && at >= 0) { slotDone[at] = 1; at = -1; }   // the last one drains on beside it
-  if (at < 0) at = openSlot(key);
+  const now = clock();
+  let i = -1;
+  for (let j = 0; j < SLOTS; j++) if (slotOn[j] && !slotDone[j] && slotKey[j] === key) { i = j; break; }
+  if (s.d === 0 && i >= 0) { slotDone[i] = 1; i = -1; }   // the last one plays on beside it
+  const fresh = i < 0;
+  if (fresh) i = openSlot(key, now);
   const prints = !rateContinuous(s.r);
   const spacing = brushSpacing(s.w);
-  slotPrints[at] = prints ? 1 : 0; slotSpacing[at] = spacing; slotFed[at] = playClock;
-  qSide = brushSide(s.w); qMotif = s.m; qSet = s.a;
-  into = at;
-  if (prints) {
-    // each point a print (core/brush-stamps.js), no carry
-    walkBatch(s.points, s.d, 0, 0, s.c, emitRemote, true);
-    slotEnd[at] = slotNextK[at] - 1;
-  } else {
-    slotCarry[at] = walkBatch(s.points, s.d, s.d === 0 ? 0 : slotCarry[at], spacing, s.c, emitRemote);
-    const p = s.points;
-    for (let i = 1; i < p.length; i++) slotArc[at] += Math.hypot(p[i].u - p[i - 1].u, p[i].v - p[i - 1].v);
-    slotEnd[at] = slotArc[at] / spacing;
+  const p = s.points, T = s.times;
+  slotFed[i] = now;
+  slotTimed[i] = T ? 1 : 0;
+  // A continuous stroke joined mid-way has no stamp at its first point:
+  // its count starts at 1, the first stamp a spacing on.
+  if (fresh && !prints && s.d !== 0) slotNextK[i] = 1;
+  if (T) {
+    // Late? The first point this batch adds, against where play stands
+    // (with the offset as it was): the delay rises by the lateness.
+    const first = fresh || prints ? 0 : 1;
+    const off0 = offsets.get(key);
+    if (off0 !== undefined && first < T.length) playDelay = ratchetDelay(playDelay, playTime(now, off0, playDelay), T[first]);
+    offsets.set(key, minOffset(off0 === undefined ? NaN : off0, now, T[T.length - 1]));
   }
-  if (s.d === 2) slotDone[at] = 1;
+  qSide = brushSide(s.w); qMotif = s.m; qSet = s.a;
+  into = i;
+  if (prints) {
+    // each point a print (core/brush-stamps.js), no carry; print n at n
+    const k0 = slotNextK[i];
+    walkBatch(p, s.d, 0, 0, s.c, emitRemote, true);
+    if (T) for (let j = 0; j < p.length; j++) addPoint(i, T[j], k0 + j);
+    slotEnd[i] = slotNextK[i] - 1;
+  } else {
+    const k0 = fresh ? slotNextK[i] - (s.d === 0 ? 0 : 1) : 0;
+    slotCarry[i] = walkBatch(p, s.d, s.d === 0 ? 0 : slotCarry[i], spacing, s.c, emitRemote);
+    if (T && fresh) addPoint(i, T[0], k0 + slotArc[i] / spacing);
+    for (let j = 1; j < p.length; j++) {
+      slotArc[i] += Math.hypot(p[j].u - p[j - 1].u, p[j].v - p[j - 1].v);
+      if (T) addPoint(i, T[j], k0 + slotArc[i] / spacing);
+    }
+    slotEnd[i] = k0 + slotArc[i] / spacing;
+  }
+  if (s.d === 2) slotDone[i] = 1;
   idleWake('a stroke');
 }
 
-// Every frame (gpu/brush.js update, before it drains the ring): each slot's
-// cursor moves on by dt seconds and lets out what it has passed.
+// Every frame (gpu/brush.js update, before it drains the ring): each slot
+// lets out what its cursor has passed. dt (seconds) moves the glide; the
+// timeline reads the clock.
 export function brushPlay(dt) {
-  if (dt > 0) playClock += dt;
+  const now = clock();
   for (let i = 0; i < SLOTS; i++) {
     if (!slotOn[i]) continue;
-    if (!slotDone[i] && playClock - slotFed[i] > ABANDON_S) slotDone[i] = 1;
-    const cursor = playStep(slotStage, i * PLAY_STAGES, slotEnd[i], dt);
-    const b = slotBuf[i];
-    while (slotCount[i] > 0 && b[slotHead[i] * PF + 6] <= cursor) letOut(i);
+    if (!slotDone[i] && now - slotFed[i] > ABANDON_MS) slotDone[i] = 1;
+    let cursor;
+    if (slotTimed[i]) {
+      const n = slotTlN[i];
+      const off = offsets.get(slotKey[i]);
+      const P = playTime(now, off === undefined ? now : off, playDelay);
+      // done and played to its last point, or abandoned: all of it
+      if (slotDone[i] && (n === 0 || P >= slotTlT[i][n - 1] || now - slotFed[i] > ABANDON_MS)) cursor = Infinity;
+      else {
+        cursor = timelineAt(slotTlT[i], slotTlP[i], n, slotTlI[i], P, at);
+        slotTlI[i] = at.i;
+      }
+      // never back, even when a ratchet moves play time back for every slot
+      if (cursor < slotCursor[i]) cursor = slotCursor[i];
+      slotCursor[i] = cursor;
+    } else {
+      cursor = playStep(slotStage, i * PLAY_STAGES, slotEnd[i], dt);
+    }
+    letOutTo(i, cursor);
     if (slotDone[i] && slotCount[i] === 0) { slotOn[i] = 0; slotKey[i] = null; }
   }
 }

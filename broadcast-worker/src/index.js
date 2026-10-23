@@ -235,7 +235,7 @@ export { PHASES, CONDUCTOR_HEARS_GROUPS, pairGroups, phaseGroups, routes, SCRIPT
 
 const TAPE_MAX = 1000000;  // entries; ~50 min of 15 hands drawing nonstop, ~250 MB at worst, well under any storage worry
 const TAPE_PAD = 8;        // key digits; room past the cap if it ever grows
-const MOTIF_FIELDS = ['a', 'm', 'c', 'f', 'r'];   // the motif brush's extras (touch/strokes.js)
+const MOTIF_FIELDS = ['a', 'm', 'c', 'f', 'r', 'q'];   // the motif brush's extras and any stroke's timing (touch/strokes.js)
 // Sticky identity. Each device joins with a token of its own (touch/hall.js,
 // ?d=<token>), and the hall remembers which id it gave that token, under
 // 'tok:<token>' keys beside the tape, so a phone that blips and comes back

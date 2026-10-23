@@ -12,7 +12,7 @@
 // A stamp lands every spacing along the path, measured as arc length from
 // the stroke's first point, so where the stamps fall depends only on the
 // polyline, never on how it was cut up: the hand's frame by frame segments
-// here and the sender's 45 ms batches over there walk the very same line
+// here and the sender's 30 ms batches over there walk the very same line
 // through the same arithmetic, carrying the distance since the last stamp
 // (the carry) from one piece to the next. The stroke's first batch (d 0)
 // stamps its first point and starts the carry at 0; a continuation starts
