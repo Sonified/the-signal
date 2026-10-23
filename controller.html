@@ -381,7 +381,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.11';
+  const VERSION = '3.12';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
@@ -511,7 +511,12 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     drawEls.forEach((b, j) => {
       const d = DRAW[j];
       const playing = !!hallNow && !!hallNow.pl;
-      b.classList.toggle('now', !!hallNow && (d.play ? playing : !playing && hallNow.p === d.p && hallNow.r === d.r));
+      // a drawing cue lights only while the show is in its drawing (dw):
+      // a journey cue clears dw on the laptop and the chip dims with it,
+      // though the room quietly keeps its phase for the next drawing cue
+      // (an older laptop sends no dw and the chips light as they used to)
+      const inDraw = !!hallNow && hallNow.dw !== 0;
+      b.classList.toggle('now', inDraw && (d.play ? playing : !playing && hallNow.p === d.p && hallNow.r === d.r));
       b.classList.toggle('past', !hallNow);
     });
   }

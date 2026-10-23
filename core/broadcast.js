@@ -379,6 +379,10 @@ export function broadcastDrawing(on) {
   if (available) queueSend();
 }
 
+// Whether the show is in its drawing (the controller's chips read it off
+// the status report, so a journey cue dims the drawing cue it left).
+export function broadcastDrawingOn() { return drawShow; }
+
 function stateFor(s, body) {
   if (drawShow && drawRoomName && s.room === ECHO_ROOM) body += ',"dr":' + JSON.stringify(drawRoomName);
   if (!s.event) return body + ',"ev":0}';

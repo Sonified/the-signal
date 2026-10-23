@@ -164,7 +164,7 @@ import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
 import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyPerformanceControl, journeySetLiveAudio } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
-import { broadcastSeek, broadcastDrawing } from '../core/broadcast.js';
+import { broadcastSeek, broadcastDrawing, broadcastDrawingOn } from '../core/broadcast.js';
 import { idleTouch } from '../js/idle-ahead.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
@@ -469,7 +469,10 @@ export function initPresentationReceiver(hooks = {}) {
       // iPad's drawing cues; null (the cues dim) while it conducts none.
       // g is every drawer's group (id arrays), the iPad's dots
       // pl while the show's playback loops (cue 24)
-      hall: brushConducting() ? { p: brushPhase(), r: brushRound(), g: brushGroups(), pl: brushReplaying() ? 1 : 0 } : null,
+      // dw: whether the show is in its drawing at all — a journey cue
+      // clears it, and the controller dims the drawing cues by it while the
+      // room quietly keeps its phase for the next drawing cue
+      hall: brushConducting() ? { p: brushPhase(), r: brushRound(), g: brushGroups(), pl: brushReplaying() ? 1 : 0, dw: broadcastDrawingOn() ? 1 : 0 } : null,
       vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000,
         f: pr.f || S.slideFile, l: pr.l === true } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'), tx: get('textOpacity'),
