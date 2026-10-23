@@ -58,7 +58,7 @@ import { S } from '../js/state.js';
 import { idleWake, idleMute } from './idle.js';
 import { onSave, wireSettings, readKey, saveKey } from './store.js';
 import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl, recallStreamScene } from './presets.js';
-import { idleTouch } from '../js/idle-ahead.js';
+import { idleTouch, setFollowerTab } from '../js/idle-ahead.js';
 import { setPerfGlideHooks, perfGlideWriting, perfEachGlide, perfFollowGlide, perfFollowDrop } from './perform.js';
 import { setJourneyGlideHooks, journeyGlideWriting, journeyEachGlide } from './journey.js';
 import { CONTROLS, byId } from './schema.js';
@@ -68,6 +68,7 @@ import { SIGNAL_ORIGIN } from './signal.js';
 import { onWordAppear, wordState, remoteWord, setWordsRemote,
          setWordWalk, setWordWalkClock, wordWalkRunning, wordsRepeating, gateWords } from './words.js';
 import { setRoomClockRoom, setRoomClockOffset } from './room-clock.js';
+import { heartReport, takeHeartBeacon, clearHeartBeacon } from './heart-sync.js';
 import { initLiveAudio, liveAudioCheck, liveFollowNotice, liveFollowChunk, liveFollowEnd } from './live-audio.js';
 
 const REC_KEY = 'signal.broadcast.v1';
@@ -508,13 +509,17 @@ function sendBeacon() {
   if (isNaN(clockOff) || !hooks.isRunning() || !liveCount()) return;
   const now = hooks.now();
   const br = breathBeacon(sunBreath, SIGNAL_ORIGIN + now);
+  // where in the heartbeat's track this screen is hearing now, which the
+  // followers' hearts steer onto (core/heart-sync.js); absent while it is off
+  const hr = heartReport();
   const msg = JSON.stringify({
     t: 'phase', at: now + clockOff,
     p: S.phase, f: S.effFreq,
     dp: S.driftPhase, vp: S.varPhase, bp: S.brightVarPhase,
     rp: S.ringBrightPhase, sp: S.edgeSpeedVarPhase, zp: S.edgeSizeVarPhase,
     // the breath's phase and rate then; absent while it is not running steady
-    bh: br ? br.ph : undefined, bf: br ? br.hz : undefined
+    bh: br ? br.ph : undefined, bf: br ? br.hz : undefined,
+    hp: hr ? hr.pos : undefined, hd: hr ? hr.dur : undefined
   });
   for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) s.sock.send(msg);
 }
@@ -526,6 +531,10 @@ function takeBeacon(msg) {
   // the breath has no "own" mode: it follows the room whenever a beacon has it
   if (Number.isFinite(msg.bh) && Number.isFinite(msg.bf)) setBreathSyncTarget(msg.at, msg.bh, msg.bf);
   else clearBreathSync();
+  // the heartbeat is the room's too, whatever the viewer's strobe does; the
+  // beacon's moment goes onto this screen's clock (shared ms = rAF ms + clockOff)
+  if (!isNaN(clockOff) && Number.isFinite(msg.hp) && Number.isFinite(msg.hd)) takeHeartBeacon(msg.at - clockOff, msg.hp, msg.hd, hooks.now());
+  else clearHeartBeacon();
   if (strobeOwn) return;
   const n = v => Number.isFinite(v) ? v : 0;
   setStrobeSyncTarget(msg.at, msg.p, msg.f,
@@ -1103,6 +1112,11 @@ export function initBroadcast(bits_, hooks_) {
   // flashes land with the broadcaster's, not just at the same rate.
   if (intent && intent.follow) {
     const room = intent.follow;
+    // A follower never grows an idle cushion (js/idle-ahead.js): every
+    // arriving state takes idleTouch, so a cushion here was skipped and
+    // re-rendered on every sync, a burst cycle that could starve the
+    // engine into its concealment loop.
+    setFollowerTab(() => true);
     watchStrobeWrites();
     initLiveAudio(bits.media, hooks.notify, null);
     followSock = bits.open(room, 'follow', '', {
@@ -1183,6 +1197,7 @@ export function initBroadcast(bits_, hooks_) {
           liveFollowEnd();
           clearStrobeSync();
           clearBreathSync();
+          clearHeartBeacon();
           releaseStrobe();
           releaseEvent();
           setWordsRemote(false);
@@ -1201,7 +1216,7 @@ export function initBroadcast(bits_, hooks_) {
           setWordsRemote(true);
         }
         else if (st === 'lost') hooks.notify('Broadcast link lost, reconnecting…');
-        else if (st === 'dead') { liveFollowEnd(); clearStrobeSync(); clearBreathSync(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
+        else if (st === 'dead') { liveFollowEnd(); clearStrobeSync(); clearBreathSync(); clearHeartBeacon(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);

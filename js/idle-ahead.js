@@ -98,8 +98,19 @@ const moving = now => now - lastMove < STILL_MS;
 // audio.js, which imports this, so the reading comes in rather than out).
 export function setLiveCapturing(fn) { capturing = fn; }
 
+// core/broadcast.js hands over "this tab is a follower" the same way. A
+// follower must hear the broadcaster's messages at the base latency: every
+// arriving state takes idleTouch before its commands, so any cushion grown
+// here is skipped and re-rendered on every sync — a ten-second forward
+// jump and a render burst, over and over, in a tab nobody is touching.
+// That burst cycle is what starved the music island into its concealment
+// loop (the frozen-audio session, 2026-10-22). So a follower never grows
+// a cushion at all, and every message lands at the base latency naturally.
+let followerTab = () => false;
+export function setFollowerTab(fn) { followerTab = fn; }
+
 function eligible(eng) {
-  return !!eng && eng.mode === 'sab' && !eng.isResting() && !capturing() &&
+  return !!eng && eng.mode === 'sab' && !eng.isResting() && !capturing() && !followerTab() &&
     S.running === true && S.audioEnabled === true;
 }
 
@@ -291,6 +302,7 @@ export function idleStatusLine() {
   if (!active) {
     if (!eligible(eng)) {
       parts.push(eng.isResting() ? 'resting' : capturing() ? 'held: live sound'
+        : followerTab() ? 'held: following'
         : !(S.running === true && S.audioEnabled === true) ? 'held: paused' : 'held');
     } else {
       const at = grown >= setting() ? Infinity : Math.max(nextStepAt, lastMove + STEP_MS);
