@@ -171,6 +171,14 @@ export function brushMotifNow() {
   return m < 0 ? 0 : m > 63 ? 63 : m;
 }
 
+// Whether the dealt hand shows as a row of buttons to pick from
+// (ui/screens/hand.js). Off — the show's way for now — the hand is dealt
+// exactly as ever, but no selector shows anywhere: each drawer simply draws
+// with the first brush of their own hand (brushHallHand picks it the moment
+// a hand arrives), assigned, not chosen. The drawer's atlas picker still
+// picks any tile over it. Turn it back on and the row returns, pick and all.
+export const SHOW_HAND = false;
+
 // ---------- the hand ----------
 const sq = { cx: 0, cy: 0, side: 1 };
 const gesture = createTapDrag();
@@ -446,6 +454,10 @@ export function brushHallHand(h) {
   // said once per change: the room repeats the same hand (or none) often
   const said = h ? h.a + ':' + h.tiles.join(',') : '';
   if (said !== handSaid) {
+    // no selector shown: a NEW hand assigns its first brush to this drawer
+    // (a repeat of the same hand never does, so a tile picked meanwhile in
+    // the drawer's atlas picker stands)
+    if (!SHOW_HAND && h && h.tiles.length) { S.brushMotif = h.tiles[0]; handSet = h.a; }
     if (h && h.tiles.length) console.log('[drawing] dealt a hand of ' + h.tiles.length + ' brush' + (h.tiles.length > 1 ? 'es' : '') + ' (set ' + h.a + ')');
     else if (!h && handSaid !== null) console.log('[drawing] the hand is cleared');
     handSaid = said;

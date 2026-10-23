@@ -16,13 +16,16 @@
 // touch brings the build back, which is when it takes the press.
 
 import { S } from '../../js/state.js';
-import { brushHand, brushPickHand, brushHandPicked, brushHandAtlas } from '../../core/brush.js';
+import { brushHand, brushPickHand, brushHandPicked, brushHandAtlas, SHOW_HAND } from '../../core/brush.js';
 import { COLOR, RADIUS, LAYOUT, MOTION, TYPE, W, TRACK } from '../theme.js';
 
 const SIDE_MOUSE = 46, SIDE_TOUCH = 56, GAP = 10, INSET = 4, ABOVE = 12;
 const BACK = new Float32Array([0, 0, 0, 0.5]);
 
 export function drawHand(ui, dl, width, height, live) {
+  // the selector is off (core/brush.js SHOW_HAND): hands are dealt and worn,
+  // never shown
+  if (!SHOW_HAND) return;
   const h = brushHand();
   if (!h) return;
   brushHandAtlas.want = h.a;
