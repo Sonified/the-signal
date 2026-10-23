@@ -381,7 +381,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.10';
+  const VERSION = '3.11';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
@@ -732,7 +732,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // NOTES, beside HUM: the brush notes' master volume, everyone's bells
     // and notes on every screen that sounds them (schema-brush brushVol,
     // riding the broadcast to every follower), linear 0..100%.
-    { id: 'brushVol', key: 'nv', label: 'NOTES', color: '#9fe8c0', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' }
+    { id: 'brushVol', key: 'nv', label: 'NOTES', color: '#9fe8c0', max: 100, def: 0, box: 'topFaders', fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
   let rafOn = false;
@@ -798,7 +798,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const SHOW_DEFAULTS = {
     lpf: 1000, hpf: 0, slideRate: 500, vol: 100,
     finaleDrone: 0, finalePiano: 0, finaleChoir: 0, finaleAmb: 0,
-    finaleHum: 0, finaleSun: 0, finaleWind: 0, finaleSunLayer: 100, brushVol: 100, heartMaster: 0,
+    finaleHum: 0, finaleSun: 0, finaleWind: 0, finaleSunLayer: 100, brushVol: 0, heartMaster: 0,
     screenGate: 100, mwtsVolume: 0, textOpacity: 95
   };
   $('defaults').onclick = () => {

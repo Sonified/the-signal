@@ -44,7 +44,7 @@ export function initBrushState(S) {
   if (typeof S.brushTones !== 'boolean') S.brushTones = DEF_TONES;
   if (typeof S.brushToneMin !== 'number') S.brushToneMin = DEF_TONE_MIN;
   if (typeof S.brushToneMax !== 'number') S.brushToneMax = DEF_TONE_MAX;
-  if (typeof S.brushVol !== 'number') S.brushVol = 1;
+  if (typeof S.brushVol !== 'number') S.brushVol = 0;
 }
 
 // The notes' master volume alone among the brush's settings is the ROOM's
@@ -293,10 +293,11 @@ export const BRUSH_CONTROLS = [
     visible: S => S.brushTones === true
   },
   // The notes' master volume (see brushWireOf above): every strike's peak,
-  // bell and note alike, on every screen that sounds them. 0 is silence.
+  // bell and note alike, on every screen that sounds them. It starts at 0,
+  // silence: the notes enter the show only when the fader brings them in.
   {
     id: 'brushVol', section: 'brush', label: 'Notes volume', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 100,
+    min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round(S.brushVol * 100),
     set: (S, pos) => { S.brushVol = Math.max(0, Math.min(100, pos)) / 100; save(); },
     formatAt: pos => pos + '%',
