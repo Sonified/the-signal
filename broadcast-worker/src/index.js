@@ -225,7 +225,11 @@ export class Room {
 // conductor's {t:'wipe'} clears it, key by key by prefix (deleteAll would
 // also take a live phase and id counter), and the epoch with it. A plain
 // GET to /touch/<name>/tape (no websocket upgrade) answers
-// { epoch, n, entries } with open CORS, which is all the replay page needs.
+// { epoch, n, entries, from, total } with open CORS, which is all the
+// replay page needs. ?from=N starts at the N-th entry (0 the first), so a
+// screen keeping a copy as the show goes (platform/show-tape.js) asks only
+// for what is new; total is the whole tape's length either way, so a from
+// past the end is how to ask for the length alone.
 
 // The phases, the groups and who hears whom live in groups.js, pure, so
 // node tests the very code the hall runs: solo, master (the conductor to
@@ -392,12 +396,15 @@ export class Hall {
   // One stroke onto the tape. Seeds the counter on first use - and after
   // any eviction - from the last stored key, so hibernation cannot fork
   // the sequence; the first entry pins the hall's epoch.
-  async record(id, s) {
+  async tapeLength() {
     if (this.tapeN === null) {
       const last = await this.ctx.storage.list({ prefix: 'tape:', reverse: true, limit: 1 });
       this.tapeN = last.size ? parseInt([...last.keys()][0].slice(5), 10) + 1 : 0;
     }
-    if (this.tapeN >= TAPE_MAX) return;   // a full tape just stops listening
+    return this.tapeN;
+  }
+  async record(id, s) {
+    if (await this.tapeLength() >= TAPE_MAX) return;   // a full tape just stops listening
     let epoch = await this.ctx.storage.get('epoch');
     if (epoch === undefined) {
       epoch = Date.now();
@@ -407,20 +414,24 @@ export class Hall {
       { at: Date.now() - epoch, id, s });
   }
 
-  // The whole tape as JSON, oldest first: the zero-padded keys make it a
-  // plain prefix walk, read in pages and concatenated.
-  async readTape() {
+  // The tape as JSON from its from-th entry (the whole of it from 0),
+  // oldest first: the zero-padded keys make it a plain prefix walk, read in
+  // pages and concatenated.
+  async readTape(from = 0) {
     const entries = [];
+    const total = await this.tapeLength();
     let startAfter;
     for (;;) {
+      if (from >= total) break;
       const opts = { prefix: 'tape:', limit: 1000 };
       if (startAfter !== undefined) opts.startAfter = startAfter;
+      else if (from > 0) opts.start = 'tape:' + String(from).padStart(TAPE_PAD, '0');
       const page = await this.ctx.storage.list(opts);
       for (const [k, v] of page) { entries.push(v); startAfter = k; }
       if (page.size < 1000 || entries.length >= TAPE_MAX) break;
     }
     const epoch = (await this.ctx.storage.get('epoch')) || 0;
-    return new Response(JSON.stringify({ epoch, n: entries.length, entries }), {
+    return new Response(JSON.stringify({ epoch, n: entries.length, entries, from, total }), {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
   }
@@ -495,8 +506,10 @@ export class Hall {
   async fetch(request) {
     if (request.headers.get('Upgrade') !== 'websocket') {
       // the tape is plain HTTP: the replay page fetches it, no socket needed
-      if (request.method === 'GET' && /\/tape$/.test(new URL(request.url).pathname)) {
-        return this.readTape();
+      const u = new URL(request.url);
+      if (request.method === 'GET' && /\/tape$/.test(u.pathname)) {
+        const from = parseInt(u.searchParams.get('from') || '0', 10);
+        return this.readTape(from > 0 ? from : 0);
       }
       return new Response('expected a websocket', { status: 426 });
     }

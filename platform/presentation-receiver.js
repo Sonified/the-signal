@@ -39,6 +39,10 @@
 //                       quads, halves, all) and round (1 or 2) named outright
 //                       (core/brush.js brushShowPhase); only a screen opened
 //                       conducting a hall (?hall=<name>&conduct=<key>) moves
+//   {k:'replay'}        cue 24: everything the room drew since cue 17
+//                       played back on a loop on this screen (core/brush.js
+//                       brushReplay, the tape kept by platform/show-tape.js);
+//                       the next {k:'hall'} stops it
 //   {k:'ctl', id, v}    a control, by schema id, v in the CONTROL'S OWN
 //                       position units, exactly what byId(id).set takes:
 //                         vol          0..100   the FADER's position, on a
@@ -159,7 +163,8 @@ import { idleTouch } from '../js/idle-ahead.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
-import { brushShowPhase, brushConducting, brushPhase, brushRound, brushGroups, brushDealHold } from '../core/brush.js';
+import { brushShowPhase, brushConducting, brushPhase, brushRound, brushGroups, brushDealHold, brushReplay, brushReplaying } from '../core/brush.js';
+import { createShowTape } from './show-tape.js';
 import { PRESENT_PASSWORD } from '../core/presentation.js';
 import { ampToPos } from '../js/util.js';
 
@@ -306,6 +311,7 @@ export function initPresentationReceiver(hooks = {}) {
   }
   // the Speed fader is at 0 and has stopped the slide itself
   let speedStopped = false;
+  const showTape = createShowTape();
   function act(m) {
     if (m.k === 'jump') {
       // a cue past the journey's end plays the newest step there is: the
@@ -326,7 +332,19 @@ export function initPresentationReceiver(hooks = {}) {
     // a drawing cue: the hall's phase and round, named outright (core/brush.js
     // brushShowPhase; nothing moves unless this screen conducts a hall, and
     // the hall's answer is what lights the chips and the iPad's cue)
-    else if (m.k === 'hall') { if (HALL_PHASES.has(m.p)) brushShowPhase(m.p, m.r === 2 ? 2 : 1); }
+    // Every drawing cue keeps this screen's copy of the room's tape coming
+    // (platform/show-tape.js), and Solo, the first, marks where the show's
+    // drawing starts on it; a phase stops the playback.
+    else if (m.k === 'hall') {
+      if (!HALL_PHASES.has(m.p)) return;
+      const r = m.r === 2 ? 2 : 1;
+      if (m.p === 'solo' && r === 1) showTape.mark(); else showTape.run();
+      brushReplay(false);
+      brushShowPhase(m.p, r);
+    }
+    // cue 24: the show's drawing played back on a loop (core/brush.js
+    // brushReplay), the room left in its phase
+    else if (m.k === 'replay') { showTape.run(); brushReplay(true); }
     else if (m.k === 'ctl') {
       if (m.id === 'screenGate') {
         // not a schema control: live only, never saved (js/state.js)
@@ -418,7 +436,8 @@ export function initPresentationReceiver(hooks = {}) {
       // the hall this screen conducts: its phase and round, lighting the
       // iPad's drawing cues; null (the cues dim) while it conducts none.
       // g is every drawer's group (id arrays), the iPad's dots
-      hall: brushConducting() ? { p: brushPhase(), r: brushRound(), g: brushGroups() } : null,
+      // pl while the show's playback loops (cue 24)
+      hall: brushConducting() ? { p: brushPhase(), r: brushRound(), g: brushGroups(), pl: brushReplaying() ? 1 : 0 } : null,
       vp: pr ? { t: Math.round(pr.t * 100) / 100, d: Math.round(pr.d * 100) / 100, r: Math.round(pr.r * 1000) / 1000,
         f: pr.f || S.slideFile, l: pr.l === true } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'), tx: get('textOpacity'),

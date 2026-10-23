@@ -276,8 +276,10 @@
     // same gesture that reveals the session also wakes the audio, so there
     // is no separate audio toll booth and nothing plays before the tap.
     const gate = document.getElementById('follow-audio-gate');
-    const follow = new URLSearchParams(location.search).get('follow');
-    if (follow) gate.classList.add('show');
+    const q = new URLSearchParams(location.search), follow = q.get('follow');
+    // a drawing layer (?draw, inside meditatewiththesun.com) was joined by
+    // the tap on the page around it, so it shows no gate (main.js drawOnly)
+    if (follow && !q.has('draw')) gate.classList.add('show');
     else gate.remove();
   })();
 </script>

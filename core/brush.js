@@ -44,6 +44,7 @@ import { roomClockMs } from './room-clock.js';
 import { dealHand } from '../broadcast-worker/src/deal.js';
 import { seedOf, notesFor, nextBand } from './brush-notes.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
+import { planPass, retime } from './brush-replay.js';
 import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
 import { BRUSH_W, ROTATE_MAX, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
@@ -348,6 +349,8 @@ function bellId() { return brushConducting() ? BROADCAST_ID : handId(); }
 // drawer's status line.
 let hallLink = null, hallName = '', hallState = '';
 export function setBrushHall(link, name) { hallLink = link; hallName = name || ''; }
+// the room's name, the hall's (and its tape's) on the relay
+export function brushHallName() { return hallLink ? hallName : ''; }
 // The hand's own id among the senders (core/brush-order.js): its hall id
 // once joined, else the solo one.
 function handId() { return hallLink && hallLink.you ? hallLink.you : SOLO_ID; }
@@ -714,6 +717,7 @@ export function brushPlay(dt) {
   // a stamp let out now was drawn a delay ago on its sender's timeline
   releaseKey = now - delayNow;
   dealTick();
+  replayTick(now);
   for (let i = 0; i < SLOTS; i++) {
     if (!slotOn[i]) continue;
     if (!slotDone[i] && now - slotFed[i] > ABANDON_MS) slotDone[i] = 1;
@@ -739,10 +743,51 @@ export function brushPlay(dt) {
   }
 }
 
-// Whether any remote stroke is still playing out (the still frame waits).
+// Whether any remote stroke is still playing out, or the show's playback
+// runs (the still frame waits).
 export function brushPlaying() {
+  if (replayOn) return true;
   for (let i = 0; i < SLOTS; i++) if (slotOn[i]) return true;
   return false;
+}
+
+// ---------- the show's playback ----------
+// The controller's cue 24 (platform/presentation-receiver.js): the tape of
+// everything the room drew since the show's first drawing cue, which the
+// presentation screen keeps as it grows (platform/show-tape.js hands it in
+// here), played on a loop through brushTake like any stroke from the hall
+// (core/brush-replay.js plans each pass and retimes its strokes). A pass
+// runs to its end and the next is planned from the tape as it stands then.
+const showTape = [];
+let replayOn = false, pass = null, passI = 0, passT0 = 0;
+export function brushTapeReset() { showTape.length = 0; }
+export function brushTapeAdd(entries) {
+  for (const e of entries) showTape.push(e);
+  if (entries.length && replayOn) idleWake('the tape');
+}
+export function brushTapeCount() { return showTape.length; }
+export function brushReplay(on) {
+  on = !!on;
+  if (on) brushDealHold(false);
+  if (on === replayOn) return;
+  replayOn = on;
+  pass = null;
+  console.log(on ? '[drawing] playing back the room\'s drawing on a loop (' + showTape.length + ' batches so far)' : '[drawing] the playback stops');
+  idleWake('the playback');
+}
+export function brushReplaying() { return replayOn; }
+function replayTick(now) {
+  if (!replayOn) return;
+  if (!pass || (passI >= pass.steps.length && now - passT0 >= pass.ms)) {
+    pass = planPass(showTape);
+    passI = 0; passT0 = now;
+    if (!pass.steps.length) { pass = null; return; }
+  }
+  const st = pass.steps, t = now - passT0;
+  while (passI < st.length && st[passI].tMs <= t) {
+    const step = st[passI++];
+    brushTake(retime(step, passT0 + step.tMs, pass.scale));
+  }
 }
 
 // The drawer's line under the picker: where the brush is heard, rebuilt at

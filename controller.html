@@ -34,7 +34,9 @@
     {k:'hall', p, r}  a drawing cue (17 on): the hall's phase and round,
         named outright; Presence must conduct a hall (?hall=<name>&conduct=
         <key>) or nothing moves. Its reports carry the hall's answer back
-        (hall {p, r}, null while conducting none), which lights the cue.
+        (hall {p, r, pl}, null while conducting none), which lights the cue.
+    {k:'replay'}  cue 24: the room's drawing since cue 17 played back on a
+        loop on the laptop; lit while the report's hall.pl is 1.
     {k:'seek', f}  the playing cue tapped again: its video to share f (0..1)
     {k:'ctl', id, v}  v in the control's OWN position units (what
         byId(id).set takes in core/schema-audio.js / schema-slides.js):
@@ -65,10 +67,11 @@
           finaleHum 0..100 (the Sun hum's Speed: 1x at 0, 2x at 100, even
             in pitch: ROTSPD)
           finaleSun 0..100 (the Sun's Speed 2x..8x, even in ratio, with its
-            Speed variance 0..78% and Breath Amount 0..67%: SUN)
+            Speed variance 0..78% and Breath Amount 0..67%: BREATH)
           finaleWind 0..100 (the Sun's Feedback Amount 0..83% and Opacity
             0..36%, the rings' opacity 0..29% over the top half, the
             flowers' 0..15% over the top quarter: WIND)
+          finaleSunLayer 0..100 (the Sun layer's Opacity, %: SUN)
     {k:'duck', on, amt, dn, up}  amt 0..1, dn and up in seconds; DUCK is
         hold-and-release: on at pointerdown, off at pointerup, pointercancel
         or the finger sliding off the button
@@ -81,14 +84,15 @@
   hugging the right edge, as the photo has them) in the
   surface's order LP, HP, SPEED, VOLUME, and in the bottom corner DUCK.
   The middle holds the faders that are not the surface's, level with the
-  four: SCREEN (the picture's master brightness, down to black), SUN beside
+  four: SCREEN (the picture's master brightness, down to black), BREATH beside
   it (the Sun's speed, its variance and its breath together), WIND beside
   that (the Sun's feedback, the rings and the flowers), HEART (the
   Heartbeat's Master), then HUM (meditatewiththesun.com's volume), one
-  row 10px apart. Above them, column for column, the finale row: five of
+  row 10px apart. Above them, column for column, the finale row: six of
   the same faders, DRONE (the drone file, the tone and the
-  clouds together), PIANO, CHOIR, AMBIENCE, and ROTSPD (the Sun hum's
-  speed, 1x to 2x).
+  clouds together), PIANO, CHOIR, AMBIENCE, ROTSPD (the Sun hum's
+  speed, 1x to 2x), and SUN (the Sun layer's opacity, to fade it down
+  under the room's brushes).
 
   ?room=<name> (default 'show'), ?mac=<host:port> (the laptop, default
   Roberts-MacBook-Pro-2.local:8800), ?relay=<host> (the cloud relay),
@@ -165,7 +169,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 /* the middle: its faders level with the edge's four (the edge's top row is
    the 178px play/pause block, its bottom row the 110px DUCK) */
 #middle { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: 178px 1fr 110px; gap: 12px; }
-/* HEART, HUM and TXT carry on the SCREEN, SUN, WIND row. The six share the
+/* HEART, HUM and TXT carry on the SCREEN, BREATH, WIND row. The six share the
    width the finale row's five take (5 x 72 + 4 x 10 = 400px), so each is
    58px (6 x 58 + 5 x 10 = 398px): the row ends where the finale row does,
    though its columns no longer sit under the finale's. Their
@@ -178,18 +182,18 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(227p
 #midFaders { grid-row: 2 / 4; min-height: 282px; padding-top: 122px; display: flex; gap: 10px;
   justify-self: start; width: 0; position: relative; left: 204px; }
 #midFaders .fader { width: 58px; flex: none; }
-/* SCREEN at the middle's left edge, next to the cues, SUN and WIND
+/* SCREEN at the middle's left edge, next to the cues, BREATH and WIND
    beside it 10px apart. The box itself is 0 wide, so the three spill out visibly instead
    of widening the page's columns (see #topFaders) */
 #leftFader { grid-row: 2 / 4; grid-column: 1; min-height: 282px; padding-top: 122px; display: flex; gap: 10px; justify-self: start; width: 0; }
 #leftFader .fader { width: 58px; flex: none; }
 #midFaders { grid-column: 1; }
-/* The finale row: five more of the same 72px faders in the band above
+/* The finale row: six more of the same 72px faders in the band above
    SCREEN, HEART and HUM, starting over SCREEN and running right. Its box
    ends 12px above their labels (the middle's 178px top row, its 12px gap and
    their 122px drop, less 12), and starts 48px down, clear of Presence's
    status line; it runs on past #middle into the edge's empty left half, as
-   #midFaders does. Its own box is 0 wide, so its 400px of faders spill
+   #midFaders does. Its own box is 0 wide, so its 482px of faders spill
    out visibly instead of widening the page's columns (the cues and the
    edge both size from the stage's content). */
 #topFaders { grid-row: 1 / 3; grid-column: 1; align-self: start; width: 0; height: 300px; padding-top: 48px;
@@ -366,7 +370,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.03';
+  const VERSION = '3.04';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
@@ -383,7 +387,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     { label: 'Drawing — Fours', p: 'quads', r: 1 },
     { label: 'Drawing — Fours 2', p: 'quads', r: 2 },
     { label: 'Drawing — Half Room', p: 'halves', r: 1 },
-    { label: 'Drawing — Whole Room 🌊', p: 'all', r: 1 }
+    { label: 'Drawing — Whole Room 🌊', p: 'all', r: 1 },
+    // not a phase: the room's drawing since cue 17 played back on a loop on
+    // the laptop ({k:'replay'}), the room left in its phase
+    { label: 'Drawing — Playback 🔁', play: true }
   ];
 
   // ---------- the password (remote.html's, as is) ----------
@@ -483,8 +490,8 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       // a journey step first (so cue 17's videos-off and its kin land; a
       // step not written yet plays the newest one, the receiver clamps),
       // then the phase beside it
-      send({ k: 'jump', i: CUES.length + j });
-      send({ k: 'hall', p: d.p, r: d.r });
+      send({ k: 'jump', i: CUES.length + j, dr: 1 });
+      send(d.play ? { k: 'replay' } : { k: 'hall', p: d.p, r: d.r });
     });
     $('cues').appendChild(b);
     return b;
@@ -492,7 +499,8 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   function drawHall() {
     drawEls.forEach((b, j) => {
       const d = DRAW[j];
-      b.classList.toggle('now', !!hallNow && hallNow.p === d.p && hallNow.r === d.r);
+      const playing = !!hallNow && !!hallNow.pl;
+      b.classList.toggle('now', !!hallNow && (d.play ? playing : !playing && hallNow.p === d.p && hallNow.r === d.r));
       b.classList.toggle('past', !hallNow);
     });
   }
@@ -666,13 +674,13 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // brightness (S.screenGate, gpu/engine.js), linear 0..100%, 0 black.
     // Slide it down to end the show; the laptop's own drawer stays lit.
     { id: 'screenGate', key: 'gt', label: 'SCREEN', color: '#f4efe0', max: 100, def: 100, box: 'leftFader', fmt: p => p <= 0 ? 'black' : Math.round(p) + '%' },
-    // SUN, beside it: the Sun video's baseline Speed 2x to 8x (4x halfway,
+    // BREATH, beside it: the Sun video's baseline Speed 2x to 8x (4x halfway,
     // even in ratio as its own slider moves), its Speed variance 0 to 78%
     // and the Breath's Amount 0 to 67%, together (finaleSun); the readout
     // is the speed
-    { id: 'finaleSun', key: 'su', label: 'SUN', color: '#ffb13b', max: 100, def: 0, box: 'leftFader',
+    { id: 'finaleSun', key: 'su', label: 'BREATH', color: '#ffb13b', max: 100, def: 0, box: 'leftFader',
       fmt: p => (2 * Math.pow(4, p / 100)).toFixed(1) + '×' },
-    // WIND, beside SUN: the Sun's Feedback Amount 0 to 83% and Opacity 0 to
+    // WIND, beside BREATH: the Sun's Feedback Amount 0 to 83% and Opacity 0 to
     // 36% over the whole fader, the rings' opacity 0 to 29% over its top
     // half and the flowers' 0 to 15% over its top quarter (finaleWind)
     { id: 'finaleWind', key: 'wi', label: 'WIND', color: '#a8f0d8', max: 100, def: 0, box: 'leftFader', fmt: p => Math.round(p) + '%' },
@@ -688,7 +696,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // in, breathe out), linear 0..100%, the app's own 95% to start.
     { id: 'textOpacity', key: 'tx', label: 'TXT', color: '#c9d4ff', max: 100, def: 95, box: 'midFaders', fmt: p => Math.round(p) + '%' },
     // The finale row, above those three, left to right: DRONE, PIANO,
-    // CHOIR, AMBIENCE, ROTSPD. The four levels each their own 0..100%, which the laptop lays linearly
+    // CHOIR, AMBIENCE, ROTSPD, SUN. The four levels each their own 0..100%, which the laptop lays linearly
     // onto its levels, silent at 0 and the finale's own at 100%
     // (platform/presentation-receiver.js FINALE); each level's variance keeps
     // breathing around wherever it sits.
@@ -705,7 +713,10 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // ROTSPD: the Sun hum's Speed, 1x at the bottom and 2x at the top, even
     // in pitch (1.41x halfway), as its own Speed slider moves
     { id: 'finaleHum', key: 'hu', label: 'ROTSPD', color: '#ff7e47', max: 100, def: 0, box: 'topFaders',
-      fmt: p => Math.pow(2, p / 100).toFixed(2) + '×' }
+      fmt: p => Math.pow(2, p / 100).toFixed(2) + '×' },
+    // SUN, beside ROTSPD: the Sun layer's Opacity, linear 0..100%, so the
+    // Sun can fade down under the room's brushes
+    { id: 'finaleSunLayer', key: 'so', label: 'SUN', color: '#ffd23b', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
   let rafOn = false;
@@ -757,7 +768,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const SHOW_DEFAULTS = {
     lpf: 1000, hpf: 0, slideRate: 500, vol: 100,
     finaleDrone: 0, finalePiano: 0, finaleChoir: 0, finaleAmb: 0,
-    finaleHum: 0, finaleSun: 0, finaleWind: 0, heartMaster: 0,
+    finaleHum: 0, finaleSun: 0, finaleWind: 0, finaleSunLayer: 100, heartMaster: 0,
     screenGate: 100, mwtsVolume: 0, textOpacity: 95
   };
   $('defaults').onclick = () => {
@@ -1037,7 +1048,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     $('showBar').style.width = (m.n > 0 && statusStep >= 0 ? (statusStep + 1) / m.n * 100 : 0) + '%';
     drawCues();
     setProg(m.vp);
-    hallNow = m.hall && typeof m.hall.p === 'string' ? { p: m.hall.p, r: +m.hall.r || 1, g: m.hall.g } : null;
+    hallNow = m.hall && typeof m.hall.p === 'string' ? { p: m.hall.p, r: +m.hall.r || 1, g: m.hall.g, pl: m.hall.pl === 1 } : null;
     drawHall();
     drawDots();
     const sl = m.sl || {};

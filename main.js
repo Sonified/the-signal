@@ -144,6 +144,15 @@ function fadeStillFrame(c) {
   setTimeout(() => c.remove(), JOIN_FADE_MS + 300);
 }
 
+// ?follow=<room>&draw: the drawing layer meditatewiththesun.com lays over
+// its own page at the show's drawing cues (its site/event.js). The phones
+// tapped once already, on that page, whose sound plays on, so this tab asks
+// for nothing: no join gate (index.html), no sound of its own, the hand
+// dealt at once, and a word to the page around it when the first frame is
+// up, so the layer fades in on a picture.
+const drawOnly = !host.worker && typeof location !== 'undefined' &&
+  (q => q.has('draw') && !!q.get('follow'))(new URLSearchParams(location.search));
+
 if (!host.worker && typeof document !== 'undefined') {
   const followAudioGate = document.getElementById('follow-audio-gate');
   if (followAudioGate) {
@@ -181,7 +190,10 @@ boot().catch(err => { console.error('[boot] FAILED', err); if (host.bootFailed) 
 // mode the page sends this as its shell takes over.
 function firstLight() {
   if (typeof document === 'undefined') return;
-  requestAnimationFrame(() => requestAnimationFrame(() => document.dispatchEvent(new Event('first-light'))));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.dispatchEvent(new Event('first-light'));
+    if (drawOnly && window.parent !== window) window.parent.postMessage({ signal: 'draw-ready' }, '*');
+  }));
 }
 
 async function boot() {
@@ -519,6 +531,7 @@ async function boot() {
       setOverlayFollow();
       // the join gate (index.html) holds the stream's start until its tap
       if (document.getElementById('follow-audio-gate')) holdFollowJoin();
+      if (drawOnly) setBrushStarted();
     }
     initBroadcast(
       { intent: bIntent, open: openBroadcastSocket, followUrl: makeFollowUrl,
@@ -563,7 +576,8 @@ async function boot() {
   // lastActivity starts at -Infinity so the chrome is born asleep: at 0 the
   // boot clock itself (t near 0) read as fresh activity and the chrome woke
   // for its first idleMs on every load, no hand anywhere near the mouse.
-  let lastActivity = -Infinity, audioWoken = false, lastCursor = '';
+  // a drawing layer never wakes a sound (drawOnly above): it counts as woken
+  let lastActivity = -Infinity, audioWoken = drawOnly, lastCursor = '';
   // The browser delivers a pointermove as the page loads, at the cursor's
   // resting spot, which flashed the chrome awake for a moment on every boot.
   // Until the mouse is live a move is not activity: the first move only
