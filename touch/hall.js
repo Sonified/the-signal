@@ -89,6 +89,7 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
   const link = {
     you: 0, phase: 'solo', round: 1, conduct: false,
     stream: 0, smooth: -1, size: 0, rotate: -1, spin: -1, hand: null,
+    bells: -1, tones: -1,
     group: new Set(), peers: new Set(), groups: null,
     send, setPhase, next, close
   };
@@ -129,6 +130,8 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         if (Number.isFinite(msg.sz)) link.size = msg.sz;
         if (Number.isFinite(msg.rt)) link.rotate = msg.rt;
         if (Number.isFinite(msg.sr)) link.spin = msg.sr;
+        if (msg.nb === 0 || msg.nb === 1) link.bells = msg.nb;
+        if (msg.nt === 0 || msg.nt === 1) link.tones = msg.nt;
         link.peers = new Set(msg.ids);
         tell('joined');
       } else if (msg.t === 'peer') {
@@ -142,6 +145,8 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
         if (Number.isFinite(msg.sz)) link.size = msg.sz;
         if (Number.isFinite(msg.rt)) link.rotate = msg.rt;
         if (Number.isFinite(msg.sr)) link.spin = msg.sr;
+        if (msg.nb === 0 || msg.nb === 1) link.bells = msg.nb;
+        if (msg.nt === 0 || msg.nt === 1) link.tones = msg.nt;
         link.group = new Set(msg.ids);
         // every drawer's group, told to a conductor only
         link.groups = Array.isArray(msg.gs) ? msg.gs : null;

@@ -330,7 +330,17 @@ let bellHook = null, handBand = -1;
 export function setBrushBell(fn) { bellHook = fn || null; }
 const voices = new Map();   // identity -> { seed, notes }
 function ringBand(cur, v, who) {
-  if (!bellHook || (S.brushNotes !== true && S.brushTones !== true) || !started) return cur < 0 ? -1 : cur;
+  // In a room the conductor's switches are the room's (the hall's nb and
+  // nt, touch/hall.js): a kind the room has off counts for nobody here,
+  // whatever this screen's own switches say. Which sound then rings is
+  // still the screen's own pair (js/brush-bells.js), so the gate is the
+  // pair: the master presenter off is silence for the room. Out of a room,
+  // or under a conductor from before the room carried them, the screen's
+  // own switches decide alone.
+  const m = brushMember();
+  const notes = S.brushNotes === true && (!m || hallLink.bells !== 0);
+  const tones = S.brushTones === true && (!m || hallLink.tones !== 0);
+  if (!bellHook || (!notes && !tones) || !started) return cur < 0 ? -1 : cur;
   const nb = nextBand(cur, v);
   if (cur >= 0 && nb !== cur) {
     let vc = voices.get(who);
@@ -411,10 +421,13 @@ function dealTick() {
   const sz = brushSizeNow();
   const rt = brushRotateNow();
   const sr = brushSpinNow();
-  const room = ms + '/' + sm + '/' + sz + '/' + rt + '/' + sr;
+  // the conductor's Brush bells and Brush notes are the room's sound policy:
+  // off here is off on every drawer (ringBand), their own switches notwithstanding
+  const nb = S.brushNotes === true ? 1 : 0, nt = S.brushTones === true ? 1 : 0;
+  const room = ms + '/' + sm + '/' + sz + '/' + rt + '/' + sr + '/' + nb + '/' + nt;
   if (room !== roomSent && ms >= 10 && ms <= 60 && sm >= 0 && sm <= 200) {
     roomSent = room;
-    hallLink.send({ t: 'room', ms, sm, sz, rt, sr });
+    hallLink.send({ t: 'room', ms, sm, sz, rt, sr, nb, nt });
   }
   const set = kaleidoscopeSet(S.kaleidoSet).id;
   const on = S.brushDeal === true && !dealHold, n = Math.max(1, Math.min(8, S.brushDealN | 0));
