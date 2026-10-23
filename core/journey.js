@@ -741,7 +741,8 @@ function lockHolds(i, st) {
 // filterGlide; a step never holds these at all, NEVER_IN_STEP), HEART
 // (heartMaster) and MWTS (mwtsVolume), and the finale row's audio faders:
 // DRONE (bedVol, toneVol, cloudVol), PIANO (pianoVol), CHOIR (choirVol),
-// AMBIENCE (ambVol) and ROTSPD (sunHumRate); and SUN's pair, the Sun
+// AMBIENCE (ambVol), ROTSPD (sunHumRate) and NOTES (brushVol, everyone's
+// bells and notes); and SUN's pair, the Sun
 // layer's Opacity (sunOpacity) and its hum's Amplitude (sunHumAmp), the
 // Sun's fade being the operator's to ride at the drawing too. A new fader
 // the operator rides on the controller joins this list; its other visual
@@ -749,7 +750,7 @@ function lockHolds(i, st) {
 // to move, as they always were.
 export const LIVE_AUDIO = ['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'heartMaster', 'mwtsVolume',
                            'bedVol', 'toneVol', 'cloudVol', 'pianoVol', 'choirVol', 'ambVol', 'sunHumRate',
-                           'sunOpacity', 'sunHumAmp'];
+                           'sunOpacity', 'sunHumAmp', 'brushVol'];
 const liveAt = new Uint8Array(R.length);
 for (const id of LIVE_AUDIO) for (const t of withTwins(id)) { const j = idxOf.get(t); if (j !== undefined) liveAt[j] = 1; }
 // Whether step i leaves the live audio live; turned on for the step the walk

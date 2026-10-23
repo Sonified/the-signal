@@ -75,6 +75,8 @@
             flowers' 0..15% over the top quarter: WIND)
           finaleSunLayer 0..100 (the Sun layer's Opacity and its hum's
             Amplitude together: SUN)
+          brushVol 0..100 (the brush notes' master volume, everyone's bells
+            and notes on every screen that sounds them: NOTES)
     {k:'duck', on, amt, dn, up}  amt 0..1, dn and up in seconds; DUCK is
         hold-and-release: on at pointerdown, off at pointerup, pointercancel
         or the finger sliding off the button
@@ -95,7 +97,10 @@
   row 10px apart: the visual row. Above them, column for column, the
   audio row: six of the same faders, DRONE (the drone file, the tone and
   the clouds together), PIANO, CHOIR, AMBIENCE, ROTSPD (the Sun hum's
-  speed, 1x to 2x), and HUM (meditatewiththesun.com's volume).
+  speed, 1x to 2x), HUM (meditatewiththesun.com's volume), and NOTES (the
+  brush notes' master volume, everyone's bells and notes). The audio row is
+  seven faders (7 x 58 + 6 x 10 = 466px), the visual row six (398px), so
+  the rows no longer end together.
 
   ?room=<name> (default 'show'), ?mac=<host:port> (the laptop, default
   Roberts-MacBook-Pro-2.local:8800), ?relay=<host> (the cloud relay),
@@ -374,7 +379,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.08';
+  const VERSION = '3.09';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
@@ -721,7 +726,11 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     // HUM, beside ROTSPD in the audio row: meditatewiththesun.com's Master
     // volume, the phones in the room following the broadcast fade their
     // sound to it (core/schema-sun.js mwtsVolume), linear 0..100%.
-    { id: 'mwtsVolume', key: 'mw', label: 'HUM', color: '#ff9f43', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' }
+    { id: 'mwtsVolume', key: 'mw', label: 'HUM', color: '#ff9f43', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' },
+    // NOTES, beside HUM: the brush notes' master volume, everyone's bells
+    // and notes on every screen that sounds them (schema-brush brushVol,
+    // riding the broadcast to every follower), linear 0..100%.
+    { id: 'brushVol', key: 'nv', label: 'NOTES', color: '#9fe8c0', max: 100, def: 100, box: 'topFaders', fmt: p => Math.round(p) + '%' }
   ];
   const pending = new Map();
   let rafOn = false;
@@ -787,7 +796,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   const SHOW_DEFAULTS = {
     lpf: 1000, hpf: 0, slideRate: 500, vol: 100,
     finaleDrone: 0, finalePiano: 0, finaleChoir: 0, finaleAmb: 0,
-    finaleHum: 0, finaleSun: 0, finaleWind: 0, finaleSunLayer: 100, heartMaster: 0,
+    finaleHum: 0, finaleSun: 0, finaleWind: 0, finaleSunLayer: 100, brushVol: 100, heartMaster: 0,
     screenGate: 100, mwtsVolume: 0, textOpacity: 95
   };
   $('defaults').onclick = () => {

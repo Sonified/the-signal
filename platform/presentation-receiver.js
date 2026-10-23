@@ -152,7 +152,7 @@
 // whenever any of it changes (polled 4x a second) and as each path opens:
 // i the journey's current step (-1 none), n journeyCount(), p whether the
 // walk plays, sl the faders' controls in the same units as above
-// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, tx: textOpacity, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, wi: finaleWind, so: finaleSunLayer, play, on} (play: what is actually happening, the
+// {vol: vol, rate: slideRate, lp: lpf, hp: hpf, lr: lpfRes, hr: hpfRes, fg: filterGlide, hm: heartMaster, mw: mwtsVolume, tx: textOpacity, gt: screenGate, ch: finaleChoir, dr: finaleDrone, pn: finalePiano, am: finaleAmb, hu: finaleHum, su: finaleSun, wi: finaleWind, so: finaleSunLayer, nv: brushVol, play, on} (play: what is actually happening, the
 // live hold included), vp the slide video's place {t, d, r, f, l} (seconds in,
 // its length, the rate it advances at, 0 when held; null with no video of
 // known length; the iPad fills the playing cue with it, running on between
@@ -177,7 +177,7 @@ import { ampToPos } from '../js/util.js';
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
 // An audio fader added here or to FINALE below joins core/journey.js
 // LIVE_AUDIO, so a step with LIVE AUDIO on leaves it where the hand has it.
-const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume', 'textOpacity']);
+const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume', 'textOpacity', 'brushVol']);
 // the hall's phases (broadcast-worker/src/groups.js PHASES, which the app
 // never imports), the drawing cues' words
 const HALL_PHASES = new Set(['solo', 'master', 'pairs', 'quads', 'halves', 'all']);
@@ -463,7 +463,7 @@ export function initPresentationReceiver(hooks = {}) {
         f: pr.f || S.slideFile, l: pr.l === true } : null,
       sl: { rate: speedStopped && slidesLiveState() === 2 ? 0 : get('slideRate'), vol: Math.round(Math.sqrt(Math.max(0, Math.min(1, +S.volume || 0))) * 1000) / 10, lp: get('lpf'), hp: get('hpf'), lr: get('lpfRes'), hr: get('hpfRes'), fg: get('filterGlide'), hm: get('heartMaster'), mw: get('mwtsVolume'), tx: get('textOpacity'),
             gt: Math.round(Math.max(0, Math.min(1, +S.screenGate)) * 1000) / 10,
-            ch: finalePos('finaleChoir'), dr: finalePos('finaleDrone'), pn: finalePos('finalePiano'), am: finalePos('finaleAmb'), hu: finalePos('finaleHum'), su: finalePos('finaleSun'), wi: finalePos('finaleWind'), so: finalePos('finaleSunLayer'),
+            ch: finalePos('finaleChoir'), dr: finalePos('finaleDrone'), pn: finalePos('finalePiano'), am: finalePos('finaleAmb'), hu: finalePos('finaleHum'), su: finalePos('finaleSun'), wi: finalePos('finaleWind'), so: finalePos('finaleSunLayer'), nv: get('brushVol'),
             play: playingNow(), on: !!(S.layers && S.layers.slides) }
     };
   }

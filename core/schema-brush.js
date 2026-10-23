@@ -10,7 +10,7 @@
 // own (store.js saveBrush, 'signal.v1.brush'), never in the shared settings
 // object or the extra record, which are what a snapshot carries. Every
 // control saves on change and comes back on reload.
-import { saveBrush } from './store.js';
+import { saveBrush, save } from './store.js';
 import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushRound, brushSetPhase, brushNext, brushPickAtlas, brushMember } from './brush.js';
 import { fadeLabel, fadeFromText, rateLabel, BRUSH_W, ROTATE_MAX } from './brush-stamps.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
@@ -44,6 +44,21 @@ export function initBrushState(S) {
   if (typeof S.brushTones !== 'boolean') S.brushTones = DEF_TONES;
   if (typeof S.brushToneMin !== 'number') S.brushToneMin = DEF_TONE_MIN;
   if (typeof S.brushToneMax !== 'number') S.brushToneMax = DEF_TONE_MAX;
+  if (typeof S.brushVol !== 'number') S.brushVol = 1;
+}
+
+// The notes' master volume alone among the brush's settings is the ROOM's
+// sound, not the hand's instrument: the show remote's NOTES fader rides it
+// on the broadcasting screen and every follower hears it off the snapshot,
+// so one finger sets how loud everyone's bells and notes ring everywhere.
+// It travels in the v1 extra record (core/store.js buildExtra), beside the
+// scene, while the rest of the brush stays off the wire as ever.
+export function brushWireOf(S) {
+  return { brushVol: S.brushVol };
+}
+export function applyBrushWire(S, o) {
+  if (!o || typeof o !== 'object') return;
+  if (typeof o.brushVol === 'number' && Number.isFinite(o.brushVol)) S.brushVol = Math.max(0, Math.min(1, o.brushVol));
 }
 
 // What the record holds.
@@ -276,6 +291,15 @@ export const BRUSH_CONTROLS = [
     set: (S, pos) => { S.brushToneMax = Math.max(TONE_LO * 10, Math.min(TONE_HI * 10, Math.round(pos))) / 10; saveBrush(); },
     formatAt: pos => (pos / 10).toFixed(1) + ' s',
     visible: S => S.brushTones === true
+  },
+  // The notes' master volume (see brushWireOf above): every strike's peak,
+  // bell and note alike, on every screen that sounds them. 0 is silence.
+  {
+    id: 'brushVol', section: 'brush', label: 'Notes volume', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => Math.round(S.brushVol * 100),
+    set: (S, pos) => { S.brushVol = Math.max(0, Math.min(100, pos)) / 100; save(); },
+    formatAt: pos => pos + '%',
   },
   // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
   // and the full screen button) left off a follower's screen: a tab

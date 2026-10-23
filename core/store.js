@@ -58,7 +58,7 @@ import { initParticleState, particleStateOf, applyParticleState } from './schema
 import { initSunState, sunStateOf, applySunState } from './schema-sun.js';
 import { initSlidesState, slidesStateOf, applySlidesState } from './schema-slides.js';
 import { initHeartbeatState, heartbeatStateOf, applyHeartbeatState } from './schema-heartbeat.js';
-import { initBrushState, brushStateOf, applyBrushState } from './schema-brush.js';
+import { initBrushState, brushStateOf, applyBrushState, brushWireOf, applyBrushWire } from './schema-brush.js';
 import { initFireworkState, fireworkStateOf, applyFireworkState } from './schema-fireworks.js';
 import { initConfettiState, confettiStateOf, applyConfettiState } from './schema-confetti.js';
 import { FX_NAMES } from './word-fx.js';
@@ -457,7 +457,7 @@ function applyWordFxState(s, x) {
 
 function buildExtra() {
   return Object.assign(flowerStateOf(S), kaleidoStateOf(S), particleStateOf(S), sunStateOf(S), slidesStateOf(S), heartbeatStateOf(S), fireworkStateOf(S), confettiStateOf(S), mixStateOf(S), seqStateOf(S),
-                       wordFxStateOf(S));
+                       wordFxStateOf(S), brushWireOf(S));
 }
 
 // Each layer's helper picks out only its own fields and leaves S alone for
@@ -476,6 +476,7 @@ function applyExtra(x) {
   applyMixState(S, x);
   applySeqState(S, x);
   applyWordFxState(S, x);
+  applyBrushWire(S, x);
 }
 
 function writeNow() {

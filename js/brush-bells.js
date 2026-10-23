@@ -42,6 +42,10 @@ let live = 0;
 export function ringBell(seed, degree) {
   const bell = S.brushNotes === true, note = S.brushTones === true;
   if (!(bell || note) || !S.audioEnabled) return;
+  // the notes' master volume (schema-brush brushVol, the remote's NOTES
+  // fader): every strike's peak scales by it, and 0 strikes nothing
+  const vol = Math.max(0, Math.min(1, typeof S.brushVol === 'number' ? S.brushVol : 1));
+  if (vol <= 0) return;
   const ctx = peekCtxFor('music') || getContext();
   const master = peekMasterFor('music') || getMaster();
   if (!ctx || !master || ctx.state !== 'running') return;
@@ -49,11 +53,11 @@ export function ringBell(seed, degree) {
   // On Heart a strike made now is heard from the present (js/piano.js
   // heardNow); natively the two are one.
   const t = ctx.presentTime !== undefined ? ctx.presentTime : ctx.currentTime;
-  if (bell) strikeBell(ctx, master, t, f, bellFor(seed));
-  if (note) strikeNote(ctx, master, t, f);
+  if (bell) strikeBell(ctx, master, t, f, bellFor(seed), PEAK * vol);
+  if (note) strikeNote(ctx, master, t, f, PEAK * vol);
 }
 
-function strikeBell(ctx, master, t, f, b) {
+function strikeBell(ctx, master, t, f, b, peak) {
   if (live >= MAX_VOICES) return;
   try {
     const { car, mod, depth, amp } = fmPair(ctx, f, b.ratio);
@@ -61,14 +65,14 @@ function strikeBell(ctx, master, t, f, b) {
     depth.gain.setValueAtTime(dev, t);
     depth.gain.setTargetAtTime(dev * 0.12, t, b.modDecay);
     amp.gain.setValueAtTime(0, t);
-    amp.gain.linearRampToValueAtTime(PEAK, t + 0.004);
+    amp.gain.linearRampToValueAtTime(peak, t + 0.004);
     amp.gain.setTargetAtTime(0, t + 0.004, b.decay / 5);
     play(ctx, master, t, t + b.decay * 1.25, car, mod, depth, amp);
   } catch (e) { /* a context that refuses a node: no bell this time */ }
 }
 
 const NOTE_INDEX = 1.6;   // the note's brightness at its attack, falling to a third of it
-function strikeNote(ctx, master, t, f) {
+function strikeNote(ctx, master, t, f, peak) {
   if (live >= MAX_VOICES) return;
   const n = noteShape(S.brushToneMin, S.brushToneMax, Math.random);
   try {
@@ -78,10 +82,10 @@ function strikeNote(ctx, master, t, f) {
     depth.gain.linearRampToValueAtTime(dev, ta);
     depth.gain.setTargetAtTime(dev / 3, ta, n.decay / 3);
     amp.gain.setValueAtTime(0, t);
-    amp.gain.linearRampToValueAtTime(PEAK, ta);
+    amp.gain.linearRampToValueAtTime(peak, ta);
     // the decay, near its sustain by its end; held; then the release, all
     // but gone (under 1 %) by the note's length
-    amp.gain.setTargetAtTime(PEAK * n.sustain, ta, n.decay / 3);
+    amp.gain.setTargetAtTime(peak * n.sustain, ta, n.decay / 3);
     amp.gain.setTargetAtTime(0, tr, n.release / 5);
     play(ctx, master, t, t + n.len + 0.02, car, mod, depth, amp);
   } catch (e) { /* a context that refuses a node: no note this time */ }
