@@ -322,9 +322,29 @@ export function brushHallState(s) {
   hallState = s; statusAt = -1e9;
   // a fresh join: the conductor says its room settings and deal again
   if (s === 'joined') { roomSent = -1; dealSent = -1; }
+  // the room's life, said aloud: who this screen is there, and when it isn't
+  if (s === 'joined') console.log('[drawing] room ' + hallName + ': joined as drawer ' + hallLink.you + (hallLink.conduct ? ', conducting' : '') + ' — phase ' + hallLink.phase + ' ' + (hallLink.round || 1) + ', ' + hallLink.peers.size + ' here');
+  else if (s === 'offline') console.log('[drawing] room ' + hallName + ': offline');
   idleWake('the hall');
 }
-export function brushHallGroup() { statusAt = -1e9; idleWake('the hall'); }
+// Every regroup, said plainly: the phase, and for a drawer in a grouped
+// phase who it is drawing with (ids, this screen's own left out).
+export function brushHallGroup() {
+  statusAt = -1e9;
+  if (hallLink) {
+    const p = hallLink.phase, r = hallLink.round || 1;
+    const word = p + (r > 1 ? ' ' + r : '');
+    let who = '';
+    if (p === 'pairs' || p === 'quads' || p === 'halves') {
+      const mates = hallLink.group ? [...hallLink.group].filter(i => i !== hallLink.you) : [];
+      who = hallLink.conduct ? ' — told to the room' : mates.length ? ' — drawing with drawer' + (mates.length > 1 ? 's' : '') + ' ' + mates.join(', ') : ' — waiting for a partner';
+    } else if (p === 'solo') who = ' — everyone draws alone';
+    else if (p === 'master') who = ' — the conductor draws to everyone';
+    else if (p === 'all') who = ' — everyone together';
+    console.log('[drawing] phase ' + word + who);
+  }
+  idleWake('the hall');
+}
 
 // ---------- the room's settings and the dealt brushes ----------
 // The conductor's Brush rows (core/schema-brush.js) are the room's: Stream
@@ -376,6 +396,8 @@ export function brushHallHand(h) {
   if (!h || !h.tiles.includes(S.brushMotif | 0) || h.a !== handSet) handSet = 0;
   // the room told the deal off while the broadcaster has it on: say it again
   if (!h && brushConducting() && S.brushDeal === true) dealSent = -1;
+  if (h && h.tiles.length) console.log('[drawing] dealt a hand of ' + h.tiles.length + ' brush' + (h.tiles.length > 1 ? 'es' : '') + ' (set ' + h.a + ')');
+  else if (!h) console.log('[drawing] the hand is cleared');
   idleWake('the hand');
 }
 export function brushHand() {
@@ -438,7 +460,10 @@ export function brushNext() { if (brushConducting()) hallLink.next(); }
 // as the chips do; the hall's answer lights the chips and the iPad alike.
 export function brushShowPhase(p, r) {
   brushDealHold(false);
-  if (brushConducting()) hallLink.setPhase(p, r);
+  if (brushConducting()) {
+    console.log('[drawing] asking the room for ' + p + (r > 1 ? ' ' + r : ''));
+    hallLink.setPhase(p, r);
+  } else console.log('[drawing] a drawing cue arrived but this screen conducts no room (not broadcasting?) — only the deal hold was lifted');
 }
 
 // A presentation screen (platform/presentation-receiver.js) holds the deal

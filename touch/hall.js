@@ -147,7 +147,12 @@ export function createHall({ host, hall, key = '', token, on = {} }) {
       if (sock !== ws) return;
       clearInterval(pinger);
       // another connection of this device holds the id now: stay away
-      if (e && e.code === REPLACED) { closed = true; tell('offline'); return; }
+      if (e && e.code === REPLACED) {
+        closed = true;
+        console.warn('[drawing] another tab of this browser took this device\'s place in the room (one identity per browser profile) — this tab is out of the drawing. For a second drawer on one machine use a private window or another browser.');
+        tell('offline');
+        return;
+      }
       retry();
     };
     ws.onerror = () => { try { sock.close(); } catch (e) {} };
