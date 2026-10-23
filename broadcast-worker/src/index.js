@@ -166,8 +166,10 @@ export class Room {
       // a fresh recording arms the room for its header; off air lets it go
       this.liveInit = null;
       this.liveArm = msg.on === 1;
-    } else if (msg.t !== 'phase' && msg.t !== 'word') return;
-    // A phase beacon, a word or a live notice is relayed but never stored:
+    } else if (msg.t !== 'phase' && msg.t !== 'word' && msg.t !== 's') return;
+    // A phase beacon, a word, a brush stroke (the wire's {t:'s'},
+    // touch/strokes.js, which every follower draws itself) or a live notice
+    // is relayed but never stored:
     // each says what is happening NOW, and a copy served minutes later would
     // be worse than none.
     for (const peer of this.followers()) {
