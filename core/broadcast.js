@@ -146,6 +146,7 @@ function persistScenes() {
 function persist() {
   version++;
   syncWalkRoom();
+  syncEcho();
   const out = { key, linkTarget, sessions: [] };
   for (const s of sessions) {
     out.sessions.push({ name: s.name, room: s.room, active: s.active,
@@ -175,7 +176,37 @@ function slugFor(name) {
 function liveCount() {
   let n = 0;
   for (const s of sessions) if (s.sock && s.status === 'live') n++;
+  if (echo && echo.sock && echo.status === 'live') n++;
   return n;
+}
+
+// ---------- the live room ----------
+// meditatewiththesun.com/?event=live (its site/event.js) follows the room
+// "live" for the host's MWTS Master volume, whatever room the show itself
+// is broadcast in. So while any session here is on, a hidden twin session
+// broadcasts the same state messages into "live" as well: never saved,
+// never in the drawer's list, never the drawing room (syncWalkRoom reads
+// the list alone), and carrying state only (no beacons, words, strokes or
+// sound, none of which the MWTS page reads). It dozes and wakes with the
+// rest, as the list's last entry in sendNow, checkDoze and wakeDozing. A
+// session of the user's own already in "live" makes it unneeded. One that
+// died (relay unreachable, wrong key) is not retried until every session
+// has gone off.
+const ECHO_ROOM = 'live';
+let echo = null;
+function syncEcho() {
+  if (!available || !bits || followSock) return;
+  let any = false, own = false;
+  for (const s of sessions) if (s.active) { any = true; if (s.room === ECHO_ROOM) own = true; }
+  if (any && !own) {
+    if (!echo) echo = makeSession(ECHO_ROOM, ECHO_ROOM, false);
+    if (echo.active || echo.status === 'dead' || !key) return;
+    echo.active = true;
+    openSession(echo);
+  } else if (echo) {
+    if (echo.active) { echo.active = false; closeSession(echo, true); }
+    echo = null;
+  }
 }
 
 // A state message carries its own timing: `at`, the shared-clock moment it
@@ -290,8 +321,10 @@ function sendNow() {
   }
   const body = stateBody(glide);
   let sent = 0;
-  for (const s of sessions) {
-    if (!s.sock || s.status !== 'live') continue;
+  // the list, then the live room's twin (see syncEcho)
+  for (let i = 0; i <= sessions.length; i++) {
+    const s = i < sessions.length ? sessions[i] : echo;
+    if (!s || !s.sock || s.status !== 'live') continue;
     if (!s.watchers) { s.stale = true; continue; }
     s.sock.send(stateFor(s, body));
     s.sent = body;
@@ -411,8 +444,9 @@ function checkDoze() {
   // a send already armed is activity about to happen; let it land first
   if (sendTimer || Date.now() - lastActivityMs <= IDLE_DOZE_MS) return;
   let body = null, dozed = false;
-  for (const s of sessions) {
-    if (s.status !== 'live' || !s.sock) continue;
+  for (let i = 0; i <= sessions.length; i++) {
+    const s = i < sessions.length ? sessions[i] : echo;
+    if (!s || s.status !== 'live' || !s.sock) continue;
     if (s.stale) {
       if (body === null) body = stateBody(0);
       s.sock.send(stateFor(s, body));
@@ -430,6 +464,7 @@ function checkDoze() {
 
 function wakeDozing() {
   for (const s of sessions) if (s.status === 'doze' && s.active) openSession(s);
+  if (echo && echo.status === 'doze' && echo.active) openSession(echo);
 }
 
 // Ending a session that is dozing still owes the room its {t:'end'}, so a
@@ -1338,4 +1373,5 @@ export function initBroadcast(bits_, hooks_) {
   // Sessions left active last time come back up on their own.
   for (const s of sessions) if (s.active) openSession(s);
   syncWalkRoom();
+  syncEcho();
 }

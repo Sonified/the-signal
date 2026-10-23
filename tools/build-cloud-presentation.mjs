@@ -33,7 +33,7 @@ for (const file of tracked) {
   await fs.mkdir(path.dirname(to), { recursive: true }); await fs.copyFile(from, to);
 }
 await fs.cp(path.join(root, 'slides/previews/144p-30fps'), path.join(output, 'slides/previews/144p-30fps'), { recursive: true });
-await fs.copyFile(path.join(root, 'slides/qr_overlay_TSC2026@2x.png'), path.join(output, 'slides/qr_overlay_TSC2026@2x.png'));
+await fs.copyFile(path.join(root, 'slides/qr_overlay_live@2x.png'), path.join(output, 'slides/qr_overlay_live@2x.png'));
 await fs.copyFile(path.join(root, 'slides/qr_overlay_follow@2x.png'), path.join(output, 'slides/qr_overlay_follow@2x.png'));
 await fs.copyFile(path.join(root, 'tools/presentation-media-handler.mjs'), path.join(output, 'presentation-media-handler.mjs'));
 await fs.copyFile(path.join(root, 'tools/presentation-entry.html'), path.join(output, 'presentation.html'));

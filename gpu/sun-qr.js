@@ -1,7 +1,8 @@
 // The show's QR code (core/schema-sun.js, sunQrOn, sunQrWhich and
 // sunQrSize): one of two QR PNGs drawn over the whole frame while the switch
-// is on, the TSC 2026 code to meditatewiththesun.com or the one that brings a
-// phone into the show as a follower (presence.now.audio/?follow=win), the
+// is on, the code to meditatewiththesun.com/?event=live (which follows any
+// show this screen broadcasts: core/broadcast.js syncEcho) or the one that
+// brings a phone into the show as a follower (presence.now.audio/?follow=win), the
 // pair made alike by tools/make-qr-overlay.py so either sits in one place.
 //
 // FADE: the switch never pops. Its drawn opacity eases (smoothstep) from
@@ -45,7 +46,7 @@ import { presetTransitionCount, transitionRemaining } from '../core/presets.js';
 
 // By sunQrWhich: 0 meditatewiththesun.com, 1 the follower's code.
 const QR_URLS = [
-  new URL('../slides/qr_overlay_TSC2026@2x.png', import.meta.url).href,
+  new URL('../slides/qr_overlay_live@2x.png', import.meta.url).href,
   new URL('../slides/qr_overlay_follow@2x.png', import.meta.url).href
 ];
 // The art's authored height against a 1080-high render.
