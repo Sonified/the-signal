@@ -301,7 +301,7 @@ async function boot() {
   {
     const hallIntent = brushHallIntent(platform.pageSearch);
     if (hallIntent) {
-      setBrushHall(openBrushHall(hallIntent, { state: brushHallState, group: brushHallGroup, message: brushTake }), hallIntent.hall);
+      setBrushHall(openBrushHall(hallIntent, { state: brushHallState, group: brushHallGroup, message: brushTake }, platform.storage), hallIntent.hall);
     }
   }
 

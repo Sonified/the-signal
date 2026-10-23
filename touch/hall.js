@@ -14,7 +14,15 @@
 // without a server: the page is told 'offline' once and everything else
 // still runs, a solo instrument.
 //
-//   createHall({ host, hall, key, on }) ->
+// Every device joins with a token of its own (deviceToken: random, made
+// once, kept in localStorage, a session's memory where storage is refused),
+// and the hall gives a token it has seen before its old id back, so a
+// reconnect - this link's own, or a reload - lands in exactly the group it
+// left and nobody else moves. If a newer connection of the same device
+// (another tab) takes the id over, the hall closes this one with REPLACED
+// and this link stays offline rather than taking it back.
+//
+//   createHall({ host, hall, key, token, on }) ->
 //     { send(msg), you, phase, group, peers, conduct, setPhase(p), close() }
 //
 //   on.state(s)          'joining' | 'joined' | 'offline'
@@ -24,8 +32,34 @@
 
 const PING_MS = 20000;
 const BACKOFF_MS = [1000, 2000, 4000, 8000];
+const REPLACED = 4000;   // broadcast-worker/src/index.js's close code
 
-export function createHall({ host, hall, key = '', on = {} }) {
+// This device's token under `name` in `store` ({ get(k), set(k, v) }; the
+// page's localStorage when left out), made the first time it is asked for.
+// A store that refuses (a private tab, a worker) gets a token for this
+// session only, kept in memory.
+const memTokens = new Map();
+export function deviceToken(name = 'signal.hall.device', store) {
+  let st = store;
+  if (!st) {
+    try { st = { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v) }; } catch (e) { st = null; }
+  }
+  let t = null;
+  try { t = st ? st.get(name) : null; } catch (e) { t = null; }
+  if (typeof t === 'string' && /^[\w-]{8,64}$/.test(t)) return t;
+  t = memTokens.get(name);
+  if (!t) {
+    try { t = crypto.randomUUID(); } catch (e) {
+      t = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 14);
+    }
+    memTokens.set(name, t);
+  }
+  try { if (st) st.set(name, t); } catch (e) {}
+  return t;
+}
+
+export function createHall({ host, hall, key = '', token, on = {} }) {
+  const tok = token || deviceToken();
   const link = {
     you: 0, phase: 'solo', conduct: false,
     group: new Set(), peers: new Set(),
@@ -36,20 +70,25 @@ export function createHall({ host, hall, key = '', on = {} }) {
   const tell = s => { if (s !== state) { state = s; on.state && on.state(s); } };
 
   function url() {
-    const q = key ? `?conduct=1&key=${encodeURIComponent(key)}` : '';
+    const q = `?d=${encodeURIComponent(tok)}` + (key ? `&conduct=1&key=${encodeURIComponent(key)}` : '');
     return `wss://${host}/touch/${encodeURIComponent(hall)}${q}`;
   }
 
   function connect() {
     if (closed) return;
     tell('joining');
-    try { ws = new WebSocket(url()); } catch (e) { offline(); return; }
+    let sock;
+    try { sock = ws = new WebSocket(url()); } catch (e) { offline(); return; }
+    // Only the newest socket speaks: a stale one's late events are let go,
+    // so it can never start a second reconnect of its own.
     ws.onopen = () => {
+      if (sock !== ws) return;
       tries = 0;
       clearInterval(pinger);
       pinger = setInterval(() => { try { ws.send('ping'); } catch (e) {} }, PING_MS);
     };
     ws.onmessage = e => {
+      if (sock !== ws) return;
       let msg;
       try { msg = JSON.parse(e.data); } catch (err) { return; }
       if (!msg || typeof msg !== 'object') return;
@@ -70,8 +109,14 @@ export function createHall({ host, hall, key = '', on = {} }) {
         on.message && on.message(msg);
       }
     };
-    ws.onclose = () => { clearInterval(pinger); retry(); };
-    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    ws.onclose = e => {
+      if (sock !== ws) return;
+      clearInterval(pinger);
+      // another connection of this device holds the id now: stay away
+      if (e && e.code === REPLACED) { closed = true; tell('offline'); return; }
+      retry();
+    };
+    ws.onerror = () => { try { sock.close(); } catch (e) {} };
   }
 
   function retry() {

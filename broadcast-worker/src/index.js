@@ -236,6 +236,19 @@ export { PHASES, CONDUCTOR_HEARS_GROUPS, pairGroups, phaseGroups, routes } from 
 const TAPE_MAX = 1000000;  // entries; ~50 min of 15 hands drawing nonstop, ~250 MB at worst, well under any storage worry
 const TAPE_PAD = 8;        // key digits; room past the cap if it ever grows
 const MOTIF_FIELDS = ['a', 'm', 'c', 'f', 'r'];   // the motif brush's extras (touch/strokes.js)
+// Sticky identity. Each device joins with a token of its own (touch/hall.js,
+// ?d=<token>), and the hall remembers which id it gave that token, under
+// 'tok:<token>' keys beside the tape, so a phone that blips and comes back
+// takes its old id again and lands in exactly the group it left, nobody
+// else moving. The map lives as long as the tape: it survives the hall
+// emptying (a show survives everyone dropping at once), and a conductor's
+// wipe clears it, keeping the devices still connected. TOKENS_MAX caps it
+// against junk; past it a new device simply gets a fresh id each join.
+const TOKENS_MAX = 10000;
+const TOKEN_RE = /^[\w-]{8,64}$/;
+// The close code a socket is sent when a newer one of the same device has
+// taken its id: the client must not reconnect on it (touch/hall.js).
+export const REPLACED = 4000;
 
 export class Hall {
   constructor(ctx, env) {
@@ -247,8 +260,14 @@ export class Hall {
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
+  // The sockets present, less any a newer socket of the same device has
+  // replaced (still lingering, not yet closed out).
   members() {
-    return this.ctx.getWebSockets('member').filter(w => w.readyState === 1);
+    return this.ctx.getWebSockets('member').filter(w => {
+      if (w.readyState !== 1) return false;
+      const a = w.deserializeAttachment();
+      return !!a && !a.replaced;
+    });
   }
   idOf(ws) {
     const a = ws.deserializeAttachment();
@@ -305,15 +324,45 @@ export class Hall {
   }
 
   // The conductor's eraser: every tape key, by prefix (deleteAll would also
-  // take a live phase and id counter), then the epoch.
+  // take a live phase and id counter), then the epoch, then the devices'
+  // ids, all but those of the devices still here, which keep theirs so the
+  // room is not reshuffled by the wipe. The id counter runs on, so no id
+  // is ever given twice.
   async wipe() {
-    for (;;) {
-      const page = await this.ctx.storage.list({ prefix: 'tape:', limit: 128 });
-      if (!page.size) break;
-      await this.ctx.storage.delete([...page.keys()]);
+    for (const prefix of ['tape:', 'tok:']) {
+      for (;;) {
+        const page = await this.ctx.storage.list({ prefix, limit: 128 });
+        if (!page.size) break;
+        await this.ctx.storage.delete([...page.keys()]);
+      }
     }
     await this.ctx.storage.delete('epoch');
     this.tapeN = 0;
+    let n = 0;
+    for (const w of this.members()) {
+      const a = w.deserializeAttachment();
+      if (a && a.token) { await this.ctx.storage.put('tok:' + a.token, a.id); n++; }
+    }
+    await this.ctx.storage.put('tokN', n);
+  }
+
+  // The id for a joining device: its own again if its token is known, else
+  // the next one, remembered under the token while there is room.
+  async idFor(token) {
+    if (token) {
+      const known = await this.ctx.storage.get('tok:' + token);
+      if (known !== undefined) return known;
+    }
+    const id = (await this.ctx.storage.get('nextId')) || 1;
+    await this.ctx.storage.put('nextId', id + 1);
+    if (token) {
+      const n = (await this.ctx.storage.get('tokN')) || 0;
+      if (n < TOKENS_MAX) {
+        await this.ctx.storage.put('tok:' + token, id);
+        await this.ctx.storage.put('tokN', n + 1);
+      }
+    }
+    return id;
   }
 
   // Tells every member its group and the phase, after anything that moves
@@ -344,12 +393,25 @@ export class Hall {
     // rather than failing, so a stale link still gets to draw.
     const conduct = url.searchParams.get('conduct') === '1' &&
       !!this.env.BROADCAST_KEY && url.searchParams.get('key') === this.env.BROADCAST_KEY;
-    const id = (await this.ctx.storage.get('nextId')) || 1;
-    await this.ctx.storage.put('nextId', id + 1);
+    const raw = url.searchParams.get('d') || '';
+    const token = TOKEN_RE.test(raw) ? raw : '';
+    const id = await this.idFor(token);
+    // The same id still held by a socket here: that is this device's old
+    // socket, lingering (the network dropped it before the hall heard), or
+    // the device in a second tab. Either way the new socket IS the member:
+    // the old one is marked replaced (so its close, whenever it comes, says
+    // nothing to anyone) and closed with REPLACED, which tells its client
+    // not to come back.
+    for (const w of this.ctx.getWebSockets('member')) {
+      const a = w.deserializeAttachment();
+      if (!a || a.id !== id || a.replaced) continue;
+      w.serializeAttachment(Object.assign({}, a, { replaced: true }));
+      try { w.close(REPLACED, 'replaced by a newer connection of this device'); } catch (e) {}
+    }
     const phase = (await this.ctx.storage.get('phase')) || 'solo';
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1], ['member']);
-    pair[1].serializeAttachment({ id, conduct });
+    pair[1].serializeAttachment({ id, conduct, token });
     const ids = this.members().map(w => this.idOf(w));
     try {
       pair[1].send(JSON.stringify({ t: 'hello', you: id, phase, ids, conduct: conduct ? 1 : 0 }));
@@ -422,19 +484,19 @@ export class Hall {
   }
   async left(ws) {
     const me = ws.deserializeAttachment();
-    if (!me) return;
+    // a replaced socket's id is already the newer socket's: nobody left
+    if (!me || me.replaced) return;
     const gone = JSON.stringify({ t: 'peer', id: me.id, on: 0 });
     for (const w of this.members()) {
       try { w.send(gone); } catch (e) {}
     }
     const phase = (await this.ctx.storage.get('phase')) || 'solo';
     this.tellGroups(phase);
-    // an empty hall starts its next gathering fresh - but the tape and its
-    // epoch stay: the drawings outlive the drawers, until a {t:'wipe'}
-    if (!this.members().length) {
-      await this.ctx.storage.delete('phase');
-      await this.ctx.storage.delete('nextId');
-    }
+    // An empty hall keeps everything: the tape and its epoch (the drawings
+    // outlive the drawers, until a {t:'wipe'}), and the phase, the id
+    // counter and the devices' ids, so a show whose whole room dropped at
+    // once comes back in the phase and the groups it left. The conductor
+    // starts a new gathering with Alone.
   }
 }
 

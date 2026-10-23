@@ -12,8 +12,17 @@
 //   quads    adjacent fours (two pairs merged); the leftover 1-3 fold into
 //            the last group, so 5-7 only when the roster is not a multiple
 //            of 4, and never under 4 unless the whole roster is
-//   halves   the first floor(n/2) joiners, then the rest (the odd one goes
-//            to the second half)
+//   halves   whole quads merged into two halves, never splitting one: the
+//            quads' list cut where the two halves' head counts come out
+//            nearest to equal (on a tie the first half is the smaller), the
+//            earlier quads first; a roster of one quad (under 8) is one
+//            half, everyone
+//
+// The groups nest strictly: every pair lies inside one quad, every quad
+// inside one half, every half inside all, so moving up the phases only ever
+// merges groups and nobody is torn from the people they were drawing with.
+// (Pairs nest in quads because both are adjacent runs of the joining order
+// with the leftover folded into the last, and 4 is two pairs.)
 //   all      everyone in one group, the conductor included: the master
 //            screen shows the final drawing
 //
@@ -60,8 +69,15 @@ export function phaseGroups(phase, ids) {
   if (phase === 'pairs') return runs(a, 2);
   if (phase === 'quads') return runs(a, 4);
   if (phase === 'halves') {
-    const h = Math.floor(a.length / 2);
-    return h ? [a.slice(0, h), a.slice(h)] : [a];
+    const quads = runs(a, 4);
+    if (quads.length < 2) return [a];
+    let best = 1, bestGap = Infinity, first = 0;
+    for (let b = 1; b < quads.length; b++) {
+      first += quads[b - 1].length;
+      const gap = Math.abs(a.length - 2 * first);
+      if (gap < bestGap) { bestGap = gap; best = b; }
+    }
+    return [quads.slice(0, best).flat(), quads.slice(best).flat()];
   }
   if (phase === 'all') return [a];
   return a.map(id => [id]);

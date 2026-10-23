@@ -26,8 +26,24 @@ Three layers, each usable without the ones above it:
    The time probe ({t:'time'}) answers as the Room's does, one clock per
    hall, for whatever later needs phase-locked motion. Hibernation-safe like
    the Room: per-socket state rides the socket's attachment, the phase and
-   id counter live in storage, pings are answered at the edge, and an
-   emptied hall forgets itself so the next gathering starts fresh.
+   id counter live in storage, and pings are answered at the edge.
+
+   **Sticky ids** (2026-10-22, for the show): every device joins with a
+   token of its own (`?d=<token>`; touch/hall.js deviceToken, random, made
+   once and kept in localStorage, in memory for a session where storage is
+   refused; the main app keeps its own under another name, so a /touch/
+   tab on the same machine is a separate member). The hall remembers the id
+   it gave each token (`tok:<token>` keys, capped at 10000), so a device
+   that blips and reconnects, or reloads, takes its old id back and lands
+   in exactly the group it left, nobody else moving. A socket still holding
+   that id (the old one lingering, or the same device in a second tab) is
+   replaced: closed with code 4000, its later close saying nothing, and
+   its client staying away rather than taking the id back. The map, the
+   phase and the id counter all survive the hall emptying, so a show whose
+   whole room dropped at once returns in the phase and groups it left (the
+   conductor starts a new gathering with Alone); a conductor's wipe clears
+   the map but for the devices still connected, and ids are never given
+   twice.
 
    **The tape**: every stroke a member sends is also appended to the hall's
    Durable Object storage as `{at, id, s}` - ms since the hall's epoch (the
@@ -51,8 +67,14 @@ Three layers, each usable without the ones above it:
    | `master` | each alone; their strokes reach nobody        | its strokes reach everyone |
    | `pairs`  | adjacent twos, an odd joiner makes the last pair a trio | hears nothing, reaches nobody |
    | `quads`  | adjacent fours (two pairs merged); the leftover 1-3 fold into the last, so 5-7 only when the roster is not a multiple of 4, never under 4 unless the whole roster is | hears nothing, reaches nobody |
-   | `halves` | the first floor(n/2) joiners, then the rest (the odd one goes to the second) | hears nothing, reaches nobody |
+   | `halves` | whole quads merged into two, never one split: the list of quads cut where the two head counts come nearest (on a tie the first half is the smaller), the earlier quads first; under 8 the roster is one quad, so one half | hears nothing, reaches nobody |
    | `all`    | everyone in one group                         | in it: hears everything, so the master screen shows the final drawing |
+
+   The groups nest strictly: every pair inside one quad, every quad inside
+   one half, every half inside all, so each step up the phases only merges
+   groups and nobody is torn from the people they were drawing with (ten
+   drawers: quads 1-4 and 5-10, halves the same, where the old floor(n/2)
+   cut tore 5 from its pair and its quad).
 
    The conductor is not a drawer in the groups: `phaseGroups(phase, ids)`
    groups the members' ids only (ascending, every id in exactly one group,
@@ -128,7 +150,7 @@ performance.now() is the thin part.
 
 ## 2. The protocol
 
-    join  ws  wss://<relay>/touch/<hall>[?conduct=1&key=...]
+    join  ws  wss://<relay>/touch/<hall>?d=<device token>[&conduct=1&key=...]
     s->c  {t:'hello', you, phase, ids, conduct}     on joining
           {t:'peer', id, on:1|0}                    arrivals and leaves
           {t:'group', phase, you, ids}              you plus whoever reaches

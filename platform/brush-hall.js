@@ -13,7 +13,7 @@
 // 'offline' and waits for the network). Read from the platform's pageSearch,
 // so a worker reads the page's address and not its own script's.
 
-import { createHall } from '../touch/hall.js';
+import { createHall, deviceToken } from '../touch/hall.js';
 import { RELAY_HOST } from './broadcast-socket.js';
 
 // { hall, key, host } from the query string, or null for none.
@@ -30,7 +30,11 @@ export function brushHallIntent(search) {
 }
 
 // The link for an intent. on: { state(s), group(g), message(msg) }, as
-// touch/hall.js takes them.
-export function openBrushHall(intent, on) {
-  return createHall({ host: intent.host, hall: intent.hall, key: intent.key, on });
+// touch/hall.js takes them. storage is the platform's ({ get, set }), which
+// reaches the page's localStorage from a worker too: this device's token is
+// kept there, under a name of the main app's own, so a /touch/ tab on the
+// same machine is a member of its own rather than taking this one's id.
+export function openBrushHall(intent, on, storage) {
+  const token = deviceToken('signal.hall.device.main', storage);
+  return createHall({ host: intent.host, hall: intent.hall, key: intent.key, token, on });
 }
