@@ -73,6 +73,7 @@ import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcas
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent, relayHost } from './platform/broadcast-socket.js';
 import { openBrushHall } from './platform/brush-hall.js';
 import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember, setBrushBell, setBrushStarted, brushReplayHold } from './core/brush.js';
+import { CONTINUITY_MAX } from './core/brush-stamps.js';
 import { ringBell } from './js/brush-bells.js';
 import { linkBell } from './core/audio-link.js';
 import { drawHand } from './ui/screens/hand.js';
@@ -563,6 +564,11 @@ async function boot() {
     // playing), and the veil is let go at once rather than over its first
     // two seconds, so the first strokes are not under it.
     for (const k of Object.keys(S.layers)) S.layers[k] = false;
+    // This page's strokes are ribbons: Continuity at its full 10x, the
+    // replayed strokes and the visitor's own alike (each stroke takes it as
+    // it starts, core/brush.js). The page's stage, not a setting: set after
+    // the brush record loaded, never saved from here.
+    S.brushContinuity = CONTINUITY_MAX;
     setOverlayFollow();
     liftVeil();
     setBrushStarted();
