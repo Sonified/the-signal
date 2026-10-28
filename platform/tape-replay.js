@@ -40,6 +40,24 @@ export function tapePath(p) {
   return p;
 }
 
+// An event's name resolved to its tape: tapes/events.json maps slugs to
+// archives ("win-iv" to the file tools/tape-archive.mjs wrote), so
+// ?event=WIN-IV is a standing address while each show's archive is chosen
+// by one line in the manifest. The name is slugged as broadcast rooms are
+// (lowercase, runs of anything else as one dash), '' when the manifest
+// lacks it or the path it names is not a tape's.
+export function eventSlug(name) {
+  return typeof name === 'string'
+    ? name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) : '';
+}
+export async function eventTape(slug, get = fetch) {
+  if (!slug) return '';
+  const r = await get('tapes/events.json', { cache: 'no-cache' });
+  if (!r.ok) throw new Error('events.json answered ' + r.status);
+  const map = await r.json();
+  return tapePath(map && typeof map === 'object' ? map[slug] : '');
+}
+
 // The entries of a fetched tape, or null when it holds none in a shape the
 // brush can play.
 export function tapeEntries(doc) {

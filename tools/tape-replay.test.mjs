@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { tapePath, tapeEntries, startTapeReplay, REAL_TIME } from '../platform/tape-replay.js';
+import { tapePath, tapeEntries, startTapeReplay, REAL_TIME, eventSlug, eventTape } from '../platform/tape-replay.js';
 import { planPass, LOOP_MS, LOOP_REST_MS } from '../core/brush-replay.js';
 import { brushTapeCount, brushReplaying, brushReplay, brushReplayHold, brushPlay, brushPlaying, brushQueue, brushQueueDrop, setBrushClock, brushPlayReset, STAMP_FLOATS } from '../core/brush.js';
 import { brushSide } from '../core/brush-stamps.js';
@@ -160,4 +160,19 @@ test('Replay size: replayed stamps at the scaled width, a live stroke never', as
     brushReplay(false);
     assert.ok(Math.abs(side - brushSide(100)) < 1e-6, 'drawn at w 100: ' + side);
   } finally { S.brushReplaySize = 1; }
+});
+
+test('an event name resolves through the manifest to its tape, slugged as rooms are', async () => {
+  assert.equal(eventSlug('WIN-IV'), 'win-iv');
+  assert.equal(eventSlug('  Win IV!! '), 'win-iv');
+  assert.equal(eventSlug(null), '');
+  const get = async (url) => {
+    assert.equal(url, 'tapes/events.json');
+    return { ok: true, json: async () => ({ 'win-iv': 'tapes/win-1.json', bad: 'https://evil/x.json' }) };
+  };
+  assert.equal(await eventTape('win-iv', get), 'tapes/win-1.json');
+  assert.equal(await eventTape('bad', get), '');        // a path outside tapes/ never passes
+  assert.equal(await eventTape('unknown', get), '');
+  assert.equal(await eventTape('', get), '');
+  await assert.rejects(() => eventTape('win-iv', async () => ({ ok: false, status: 404 })));
 });

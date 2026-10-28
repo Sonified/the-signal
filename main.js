@@ -79,7 +79,7 @@ import { drawHand } from './ui/screens/hand.js';
 import { drawMorph } from './ui/screens/morph.js';
 import { stepBrushMorph } from './core/brush-morph.js';
 import { initPresentationReceiver } from './platform/presentation-receiver.js';
-import { tapePath, startTapeReplay } from './platform/tape-replay.js';
+import { tapePath, startTapeReplay, eventSlug, eventTape } from './platform/tape-replay.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
 import { journeyImport } from './core/journey.js';
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
@@ -159,9 +159,19 @@ function fadeStillFrame(c) {
 // (platform/tape-replay.js), and the visitor drawing over it on this
 // screen alone. It follows no broadcast and joins no hall, so nothing
 // drawn here leaves the phone. ?follow wins when both are given.
+//
+// ?event=<name> is the same standing playback as its own front door
+// (presence.now.audio/?event=WIN-IV): the name resolves through
+// tapes/events.json to that event's archived tape (platform/tape-replay.js
+// eventTape), and the page is the bare stage straight away, no &draw
+// needed. The manifest is fetched in boot, so replayTape is a let: empty
+// until the event resolves, while replayMode says from the URL alone that
+// this page is the playback.
 const pageQuery = !host.worker && typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
-const replayTape = pageQuery && pageQuery.has('draw') && !pageQuery.get('follow') ? tapePath(pageQuery.get('replay')) : '';
-const drawOnly = !!pageQuery && pageQuery.has('draw') && (!!pageQuery.get('follow') || !!replayTape);
+let replayTape = pageQuery && pageQuery.has('draw') && !pageQuery.get('follow') ? tapePath(pageQuery.get('replay')) : '';
+const replayEvent = pageQuery && !pageQuery.get('follow') && !replayTape ? eventSlug(pageQuery.get('event')) : '';
+const replayMode = !!replayTape || !!replayEvent;
+const drawOnly = !!pageQuery && (pageQuery.has('draw') && !!pageQuery.get('follow')) || replayMode;
 
 if (!host.worker && typeof document !== 'undefined') {
   const followAudioGate = document.getElementById('follow-audio-gate');
@@ -402,7 +412,7 @@ async function boot() {
     // broadcast is told directly (a no-op unless this tab broadcasts).
     broadcastPoke();
     // the standing playback pauses with the page and carries on with it
-    if (replayTape) brushReplayHold(!S.running);
+    if (replayMode) brushReplayHold(!S.running);
   }
   const colorQuick = byId('colorQuick');
   // The floating windows in the order of the drawer's Windows buttons
@@ -536,7 +546,7 @@ async function boot() {
   let finishRemoteFrame = null;
   // whether this tab follows a broadcast (the follower buttons' rule below)
   let followTab = false;
-  if (!inWorker && replayTape) {
+  if (!inWorker && replayMode) {
     // The standing playback (drawOnly above): no broadcast, no hall, so no
     // socket to the relay ever opens; the brush is started at once, the
     // tape loops as soon as it is fetched, and the scene runs (a stopped
@@ -556,7 +566,12 @@ async function boot() {
     setOverlayFollow();
     liftVeil();
     setBrushStarted();
-    startTapeReplay(replayTape);
+    if (replayTape) startTapeReplay(replayTape);
+    else eventTape(replayEvent).then(path => {
+      if (!path) { console.warn('[replay] no event named "' + replayEvent + '" in tapes/events.json'); return; }
+      replayTape = path;
+      startTapeReplay(path);
+    }, err => console.warn('[replay] the events manifest did not answer: ' + err.message));
     if (!S.running) flipRun();
   } else if (!inWorker) {
     const bIntent = broadcastUrlIntent();
@@ -792,7 +807,7 @@ async function boot() {
     // The standing playback (?replay&draw) has no journey: Space is its
     // pause, the very run and stop a tap on the field makes, so the two
     // can never disagree, and no journey walk ever redresses its stage.
-    const journeyKeys = !replayTape && journey.active && journeyCount() > 0;
+    const journeyKeys = !replayMode && journey.active && journeyCount() > 0;
     if (e.code === 'Space' && replayEndedSlide()) return true;
     if (e.code === 'Space') { if (journeyKeys) journeyTogglePlay(); else toggleRun(); return true; }
     if (journeyKeys && (k === 'ArrowLeft' || k === 'ArrowRight')) { journeyStepBy(k === 'ArrowLeft' ? -1 : 1); return true; }
@@ -1099,7 +1114,7 @@ async function boot() {
       drawHand(ui, uiList, width, height, true);
       // the standing playback's shapes-to-particles slider (ui/screens/
       // morph.js), with the chrome's fade, ahead of the field too
-      if (replayTape) drawMorph(ui, uiList, width, height, chromeA);
+      if (replayMode) drawMorph(ui, uiList, width, height, chromeA);
 
       // Everything above the field has run its hit tests, so a hot widget
       // here is UI under the pointer; the window and drawer rects catch the
