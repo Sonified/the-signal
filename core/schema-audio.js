@@ -26,10 +26,10 @@ import {
   rebuildClickIR, setAmRate, audioOn, audioOff, applyAudioGain,
   warmDevice, isDeviceWarm, refreshChirp, setPipShape, applyPipLpf, applyAmOn, applyToneBreath
 } from '../js/audio.js';
-import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, applyRevHP, applyRevHPSlope, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
-import { cloudsOn, cloudsOff, applyCloudTrim, applyCloudReverb, applyCloudAm, cloudEffectiveAm, rebuildCloudIR } from '../js/clouds.js';
+import { pianoOn, pianoOff, applyPianoTrim, applyPianoReverb, applyPianoHP, rebuildPianoIR, applyRevType, applyPianoRevShape, applyRevHP, applyRevHPSlope, pianoEffectiveReverb, pianoEffectiveRevTime, applyBedVol, applyBedOn, applyArp, applyBedLpf, applyBedVerb, applyBedDetune, applyPianoTune, applyBedTune, arpEffectiveVol, arpEffectiveAm } from '../js/piano.js';
+import { cloudsOn, cloudsOff, applyCloudTune, applyCloudTrim, applyCloudReverb, applyCloudAm, cloudEffectiveAm, rebuildCloudIR } from '../js/clouds.js';
 import {
-  applyChoir, applyChoirVol, applyChoirOn, choirEffectiveStack, choirEffectiveDensity
+  applyChoir, applyChoirVol, applyChoirOn, applyChoirTune, choirEffectiveStack, choirEffectiveDensity
 } from '../js/choir.js';
 import { ambienceOn, ambienceOff, applyAmbVol, applyAmbReverb, rebuildAmbIR, applyAmbRevType, applyAmbRevShape, ambEffectiveReverb, ambEffectiveRevTime, AMBIENCE_SOURCES } from '../js/ambience.js';
 import { applyMixGates } from '../js/mixgate.js';
@@ -42,6 +42,7 @@ import {
 import { startDrift, stopDrift } from './atmosphere.js';
 import { pipDipNow, toneVolMulNow, toneAmMulNow, bedVolMulNow, choirVolMulNow, ambVolMulNow } from './audio-mirror.js';
 import { save, saveLive } from './store.js';
+import { TUNE_MAX, clampCents, formatCents } from './tune.js';
 import { subDrawer } from './schema-visual.js';
 import { varianceRows, driveRow } from './schema-variance.js';
 import { driveOf, levelDriveOf, TIME_STROBE } from './variance.js';
@@ -118,6 +119,22 @@ function droneDrive() {
   return row;
 }
 const droneTimeDriven = s => driveOf(s.bedVolVarDrive) === 'time';
+// Fine tuning, one row per music voice (the piano, the drone, the clouds,
+// the choir): the voice bent up or down by as much as a whole semitone, in
+// cents, on its recordings' detune (core/tune.js; each voice's apply says
+// how its schedule follows the change of speed). A scene setting like the
+// voice's level, so it rides presets, journeys and the broadcast and a
+// follower's music stays in tune with the laptop's. 0 reads '0 cents': no
+// adjustment, and nothing more.
+function tuneRow(id, label, parent, apply) {
+  return {
+    id, section: 'music', label, kind: 'slider', parent,
+    min: -TUNE_MAX, max: TUNE_MAX, step: 1, def: 0,
+    get: s => clampCents(s[id]),
+    set: (s, pos) => { s[id] = clampCents(pos); apply(); save(); },
+    formatAt: formatCents,
+  };
+}
 // The atmosphere level's variance chooses from all three too: its strobe
 // dip runs at audio rate on the bus's own stage (js/ambience.js). A change
 // of driver is applied at once, since it moves the sound between the
@@ -983,6 +1000,8 @@ const musicControls = [
     set: (s, pos) => { s.pianoVol = pos / 100; applyPianoTrim(); save(); },
     formatAt: pos => pos + '%',
   },
+  // every note the piano strikes, and the ones still ringing (js/piano.js)
+  tuneRow('pianoTune', 'Piano fine tuning', 'musicPianoDrawer', applyPianoTune),
   {
     id: 'pianoHP', section: 'music',
     parent: 'musicPianoDrawer', label: 'Piano high-pass', kind: 'slider',
@@ -1159,6 +1178,9 @@ const musicControls = [
     set: (s, v) => { s.bedDetune = v; applyBedDetune(); save(); },
     format: s => '.' + s.bedDetune,
   },
+  // beneath the render's own detune: the whole drone bent, whichever render
+  // plays, its loop's passes re-planned at the new speed (js/piano.js)
+  tuneRow('bedTune', 'Drone fine tuning', 'musicDroneDrawer', applyBedTune),
   // The drone's filter sweep: the click train's set above, on the drone's own
   // low-pass (js/piano.js), with the same ranges, tapers and readouts.
   {
@@ -1328,6 +1350,8 @@ const musicControls = [
     effective: s => Math.max(0, s.choirVol) * choirVolMulNow() * 100,
     rows: { mode: { visible: choirLevelTimeDriven }, period: { visible: choirLevelTimeDriven } }
   }),
+  // all seven voices together, nothing retriggered (js/choir.js)
+  tuneRow('choirTune', 'Choir fine tuning', 'musicChoirDrawer', applyChoirTune),
   {
     // How long the choir takes to come in, every time it does: its switch,
     // the music's, a play after a pause, the first start (js/choir.js
@@ -1412,6 +1436,8 @@ const musicControls = [
     set: (s, pos) => { s.cloudVol = pos / 100; save(); },
     formatAt: pos => pos + '%',
   },
+  // every pad, the ones sounding too (js/clouds.js)
+  tuneRow('cloudTune', 'Clouds fine tuning', 'musicCloudsDrawer', applyCloudTune),
   {
     id: 'cloudDensity', section: 'music', label: 'Clouds density', kind: 'slider',
     parent: 'musicCloudsDrawer',

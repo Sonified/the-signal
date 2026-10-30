@@ -750,7 +750,7 @@ function bedTake(startAt, offset, playLen, xf, fadeIn, inLen = xf) {
   s.at = startAt; s.offset = offset; s.end = offset + playLen;
   s.h = playhead(startAt, offset, rate);
   s.fadeAt = fadeAt; s.stopAt = stopAt;
-  s.g = g; s.cut = cut; s.cutFade = null;
+  s.g = g; s.cut = cut; s.cutFade = null; s.fadeIn = fadeIn; s.inLen = inLen;
   bedTakes.push(s);
   run.takes.push(s);
   return fadeAt;
@@ -812,7 +812,13 @@ function bedReplan() {
     bedRun.takes = bedRun.takes.filter(s => !plan.drop.includes(s));
   }
   for (const e of plan.early) bedEndEarly(e.pass, t, e.from, e.to);
-  if (plan.nextAt !== null) { bedNextAt = plan.nextAt; bedNextFade = plan.nextFade; }
+  if (plan.first) {
+    // nothing sounding yet: the run's first pass booked again as it was,
+    // at the new speed, and the loop after it
+    const f = plan.first, loopLen = bedMeta.loopEnd - bedMeta.loopStart;
+    bedNextFade = null;
+    bedNextAt = bedTake(f.at, f.offset, f.end - f.offset, Math.min(BED_XFADE, loopLen / 2 - 0.01), f.fadeIn, f.inLen);
+  } else if (plan.nextAt !== null) { bedNextAt = plan.nextAt; bedNextFade = plan.nextFade; }
   bedPump();
 }
 function bedEndEarly(s, t, from, to) {

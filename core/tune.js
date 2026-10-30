@@ -111,22 +111,25 @@ export function endInTime(h, end, endAt, t, fadeLen, margin = TUNE_END_MARGIN) {
 //   nextAt   when the next pass begins: the last sounding pass's fade,
 //            moved earlier if that pass now ends early;
 //   nextFade how long that next pass fades in over, the same window, so
-//            the two still overlap the audio they are meant to.
-// With nothing sounding (a run not yet begun), nothing is moved and the
-// caller's own next time stands (nextAt null).
+//            the two still overlap the audio they are meant to;
+//   first    with nothing sounding yet (a run booked a moment ahead, the
+//            drone just switched on or a render swap just begun), the first
+//            pass dropped, to be booked again exactly as it was (its start,
+//            its place in the recording, its fade in) at the new rate, the
+//            rest following from it; null otherwise.
 export function replanPasses(passes, t) {
   const drop = [], sounding = [], early = [];
   for (const p of passes) (p.at > t ? drop : sounding).push(p);
+  if (!sounding.length) return { drop, early, nextAt: drop.length ? drop[0].at : null, nextFade: null, first: drop[0] || null };
   for (const p of sounding) {
     const w = endInTime(p.h, p.end, p.stopAt, t, p.stopAt - p.fadeAt);
     if (w) early.push({ pass: p, from: w.from, to: w.to });
   }
   const last = sounding[sounding.length - 1];
-  if (!last) return { drop, early, nextAt: null, nextFade: null };
   const mine = early.find(e => e.pass === last);
   const nextAt = mine ? mine.from : last.fadeAt;
   const nextFade = mine ? mine.to - mine.from : last.stopAt - last.fadeAt;
-  return { drop, early, nextAt, nextFade };
+  return { drop, early, nextAt, nextFade, first: null };
 }
 
 // ---------- fades that can be redirected ----------
