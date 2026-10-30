@@ -569,6 +569,14 @@ async function boot() {
     // it starts, core/brush.js). The page's stage, not a setting: set after
     // the brush record loaded, never saved from here.
     S.brushContinuity = CONTINUITY_MAX;
+    // The drawer starts shut here, whatever the record remembers: the page
+    // opens on the drawing alone. The handle still opens it.
+    S.panelOpen = false;
+    // And the morph sweeps from the first frame (core/brush-morph.js): the
+    // shapes breathe into glowing particles and back, which is this page's
+    // welcome. The slider over the field (or the drawer's rows) switches it
+    // off the moment a hand moves one.
+    S.brushMorphAuto = true;
     setOverlayFollow();
     liftVeil();
     setBrushStarted();
