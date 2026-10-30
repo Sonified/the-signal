@@ -96,7 +96,9 @@ export function roomLeaves(good, from, hands = ROOM_HANDS, windowMs = LEAVE_WIND
 }
 
 // The pass over `entries` (the tape's, oldest first): { steps, scale, ms,
-// skipped, drawers }, steps [{ tMs, id, s }] from the pass's zero, ms the
+// skipped, drawers }, steps [{ tMs, takeMs, id, s }] from the pass's zero
+// (tMs the batch's last point, takeMs when it is handed to the brush, its
+// first new point's moment, see paceStrokes), ms the
 // pass's length with its rest, skipped how many batches before the room
 // arrived were left out (0 when it never arrived and the whole tape plays)
 // and drawers how many hands it arrived with (0 then too). Entries without
@@ -117,14 +119,86 @@ export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS, trim 
   const drawers = a >= 0 ? ROOM_HANDS : 0;
   const end = trim && a >= 0 ? roomLeaves(good, skipped) : good.length - 1;
   const trimmed = good.length - 1 - end;
-  const t0 = good[skipped].at, span = good[end].at - t0;
+  paceStrokes(good);
+  let t0 = Infinity, tEnd = -Infinity;
+  for (let i = skipped; i <= end; i++) {
+    if (paceTake[i] < t0) t0 = paceTake[i];
+    if (paceLast[i] > tEnd) tEnd = paceLast[i];
+  }
+  const span = tEnd - t0;
   const scale = span > 0 ? Math.min(1, loopMs / span) : 1;
   const steps = new Array(end + 1 - skipped);
   for (let i = skipped; i <= end; i++) {
     const e = good[i];
-    steps[i - skipped] = { tMs: (e.at - t0) * scale, id: e.id, s: e.s };
+    steps[i - skipped] = { tMs: (paceLast[i] - t0) * scale, takeMs: (paceTake[i] - t0) * scale, id: e.id, s: e.s };
   }
+  // taken in the order their first points come due (stable, so a drawer's
+  // own batches, whose takes never go back, keep their order)
+  steps.sort((a, b) => a.takeMs - b.takeMs);
   return { steps, scale, ms: span * scale + restMs, skipped, drawers, trimmed };
+}
+
+// Each batch's moment on the tape, from its sender's own clock. The tape's
+// `at` is when the batch reached the hall, the network's moods and all: a
+// batch held up 100 ms and then the next ones bunched in behind it. Played
+// by `at`, the stroke stalled through the hold-up and then the bunch landed
+// at once, laid on top of each other in time, and the cursor leapt through
+// all of them in one frame: the jump, 20 times as long and as far at 0.05x
+// as at 1x. So within a stroke (a drawer's d 0 to its d 2) every batch
+// keeps its own points' times (q) and the stroke is placed by its fastest
+// delivery, the least (at - its last point's time) over its batches, as
+// the live playback rides its fastest delivery (core/brush-playback.js
+// minOffset): the stroke at the hand's own pace, never later than it
+// reached the hall. paceLast is that moment for each batch's last point,
+// paceTake for its first new point (the joint excepted: it is the last
+// batch's), when the batch must be in hand to play it in time. A batch
+// without times keeps `at` for both. A drawer's batches never go back
+// against its own last one, so a stroke never starts before the one before
+// it ends. Arrays kept across passes, as inWindow is.
+const paceLast = [], paceTake = [];
+const drawerLast = new Map();
+function batchTimes(e) {
+  const q = e.s.q;
+  if (!Array.isArray(q) || !q.length) return null;
+  let last = 0;
+  for (let j = 0; j < q.length; j++) last += q[j];
+  const first = e.s.d === 0 || e.s.r < 1 || q.length < 2 ? 0 : 1;   // prints repeat no joint
+  let lead = 0;
+  for (let j = first + 1; j < q.length; j++) lead += q[j];
+  return { last, lead };
+}
+function paceStrokes(good) {
+  const n = good.length;
+  paceLast.length = n; paceTake.length = n;
+  const open = new Map();   // drawer -> its open stroke's batch indices
+  const close = list => {
+    let off = Infinity;
+    for (const i of list) { const b = batchTimes(good[i]); if (b) off = Math.min(off, good[i].at - b.last); }
+    for (const i of list) {
+      const b = batchTimes(good[i]);
+      if (b && off < Infinity) { paceLast[i] = b.last + off; paceTake[i] = paceLast[i] - b.lead; }
+      else { paceLast[i] = paceTake[i] = good[i].at; }
+    }
+  };
+  for (let i = 0; i < n; i++) {
+    const id = good[i].id, s = good[i].s;
+    let list = open.get(id);
+    if (list && s.d === 0) { close(list); list = null; }
+    if (!list) { list = []; open.set(id, list); }
+    list.push(i);
+    if (s.d === 2) { close(list); open.delete(id); }
+  }
+  for (const list of open.values()) close(list);
+  drawerLast.clear();
+  for (let i = 0; i < n; i++) {
+    const id = good[i].id, prev = drawerLast.get(id);
+    if (prev !== undefined && paceTake[i] < prev) {
+      const d = prev - paceTake[i];
+      paceTake[i] += d; paceLast[i] += d;
+    }
+    drawerLast.set(id, paceTake[i]);
+  }
+  drawerLast.clear();
 }
 
 // A step as the message brushTake plays: the stroke under the drawer's

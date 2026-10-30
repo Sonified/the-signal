@@ -599,6 +599,8 @@ const slotSpacing = new Float64Array(SLOTS);
 // whether its stroke lays separate prints (no spacing to share its light along)
 const slotPrints = new Uint8Array(SLOTS);
 const slotFed = new Float64Array(SLOTS), slotCursor = new Float64Array(SLOTS);
+// whether its times are already on this clock (the playback's, brushTake's onClock)
+const slotLocal = new Uint8Array(SLOTS);
 // who drew it (core/brush-order.js): the hall's id, or the broadcaster's
 const slotWho = new Float64Array(SLOTS);
 // the band its stroke is in, for the sender's bell (-1 before its first)
@@ -730,7 +732,9 @@ const emitRemote = (u, v, angle, copy) => {
 
 // A batch from the hall or the broadcast. from is who sent it, when the
 // message itself does not say (the broadcast's strokes have one sender).
-export function brushTake(msg, from) {
+// onClock: its times are this screen's clock already (the playback's,
+// core/brush-replay.js retime), so its offset is 0, known and not guessed.
+export function brushTake(msg, from, onClock = false) {
   const s = decodeStroke(msg);
   if (!s || s.k !== MOTIF) return;
   // the broadcaster's own strokes reach a follower by the broadcast
@@ -755,6 +759,7 @@ export function brushTake(msg, from) {
   const p = s.points, T = s.times;
   slotFed[i] = now;
   slotTimed[i] = T ? 1 : 0;
+  slotLocal[i] = onClock ? 1 : 0;
   // A continuous stroke joined mid-way has no stamp at its first point:
   // its count starts at 1, the first stamp a spacing on.
   if (fresh && !prints && s.d !== 0) slotNextK[i] = 1;
@@ -773,7 +778,7 @@ export function brushTake(msg, from) {
       const d = playDelayNow();
       playLate += ratchetDelay(d, playTime(now, off0, d), T[first]) - d;
     }
-    offsets.set(key, minOffset(off0 === undefined ? NaN : off0, now, T[T.length - 1]));
+    offsets.set(key, onClock ? 0 : minOffset(off0 === undefined ? NaN : off0, now, T[T.length - 1]));
   }
   qSide = brushSide(s.w); qMotif = s.m; qSet = s.a;
   into = i;
@@ -808,16 +813,21 @@ export function brushPlay(dt) {
   releaseKey = now - delayNow;
   dealTick();
   replayTick(now);
+  // a playback's stillness lasts as long as the hand's did, its speed
+  // stretching it: 0.05x makes a hand's 150 ms pause 3 s here, and that is
+  // no abandoned stroke
+  const replayAbandon = ABANDON_MS / replaySpeedNow();
   for (let i = 0; i < SLOTS; i++) {
     if (!slotOn[i]) continue;
-    if (!slotDone[i] && now - slotFed[i] > ABANDON_MS) slotDone[i] = 1;
+    const abandon = slotLocal[i] ? replayAbandon : ABANDON_MS;
+    if (!slotDone[i] && now - slotFed[i] > abandon) slotDone[i] = 1;
     let cursor;
     if (slotTimed[i]) {
       const n = slotTlN[i];
       const off = offsets.get(slotKey[i]);
       const P = playTime(now, off === undefined ? now : off, delayNow);
       // done and played to its last point, or abandoned: all of it
-      if (slotDone[i] && (n === 0 || P >= slotTlT[i][n - 1] || now - slotFed[i] > ABANDON_MS)) cursor = Infinity;
+      if (slotDone[i] && (n === 0 || P >= slotTlT[i][n - 1] || now - slotFed[i] > abandon)) cursor = Infinity;
       else {
         cursor = timelineAt(slotTlT[i], slotTlP[i], n, slotTlI[i], P, at);
         slotTlI[i] = at.i;
@@ -864,8 +874,9 @@ export function brushPlaying() {
 // section's Replay speed (S.brushReplaySpeed, 0.05x to 2x) for the
 // standing playback, read every frame, so a move of the slider changes
 // the pace from where the pass stands, never jumping or starting it over.
-// Each step taken is laid on this screen's clock at the moment the pass
-// clock passed it, its point gaps at the pass's scale over the speed.
+// Each step is taken when the pass clock reaches its first new point and
+// laid on this screen's clock where the pass will play it, its point gaps
+// at the pass's scale over the speed.
 //
 // Replay size (S.brushReplaySize, 0.25x to 4x) scales the width every
 // replayed batch is drawn at, cue 24's and the standing playback's alike
@@ -936,9 +947,12 @@ function replayTick(now) {
     }
   }
   const st = pass.steps, scale = pass.scale / speed, size = replaySizeNow();
-  while (passI < st.length && st[passI].tMs <= passClock) {
+  // each batch handed over as its first new point comes due, its last
+  // point laid ahead on this clock where the pass will reach it, so the
+  // brush has every point before its moment and never plays catch-up
+  while (passI < st.length && st[passI].takeMs <= passClock) {
     const step = st[passI++];
-    brushTake(retime(step, now - (passClock - step.tMs) / speed, scale, size));
+    brushTake(retime(step, now - (passClock - step.tMs) / speed, scale, size), undefined, true);
   }
 }
 
