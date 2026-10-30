@@ -65,16 +65,22 @@ import { createFeedback, feedbackRes, feedbackKeep, FEEDBACK_FORMAT } from './fe
 import { MOTIFS, LAYOUT_STD, LAYOUT_HI, bakeTag, bakeAtlasPixels, buildAtlasMips, tileTints } from './atlas-bake.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { idleHold, idleRelease } from '../core/idle.js';
-import { brushRotateNow, brushSpinNow, brushSharedOffset, brushSpinAt, brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay } from '../core/brush.js';
+import { brushRotateNow, brushSpinNow, brushSharedOffset, brushSpinAt, brushQueue, brushQueueRemove, brushAtlas, brushHandAtlas, STAMP_FLOATS, brushPlay, brushPlaying, brushNow, brushPlayDelay, brushHandWho, BRUSH_LOOK } from '../core/brush.js';
 import { fadeHalfLife, fieldSquare } from '../core/brush-stamps.js';
 import { brushMorphNow, brushParticleBrightNow } from '../core/brush-morph.js';
-import { noteSender, forgetIdle, activeSenders, bakeOrder, turnPlace } from '../core/brush-order.js';
+import { noteSender, forgetIdle, activeSenders, bakeOrder, turnPlace, pendingWindow, shareFrame } from '../core/brush-order.js';
 
 // Stamps drawn a frame, baked and live together.
 const MAX_INST = 8192;
 // Stamps looked at a frame: the whole pending ring is sorted (it holds
-// about a delay's worth), past this the youngest wait.
-const MAX_PEND = 16384;
+// about a delay's worth), past this the youngest wait, but for the hand's.
+const MAX_PEND = BRUSH_LOOK;
+// The visitor's own stamps given their place first each frame, wherever
+// they sit in the ring (core/brush-order.js pendingWindow, shareFrame): a
+// delay's worth of one hand's drawing, a few hundred stamps for a 10x
+// ribbon and a couple of thousand with many copies, fits in half a frame,
+// and the other half always stays the others', so neither ever starves.
+const HAND_MAX = MAX_INST / 2;
 const INST_FLOATS = 12;            // x y half angle | u0 v0 tile - | keep light gain -
 const MAX_ATLASES = 3;
 // An atlas's uniforms: the frame's eight floats (rewritten each frame), then
@@ -156,12 +162,19 @@ export function createBrush(device, format, platform, opts) {
   // Instances [0, nBake) go into the trail this frame (runs [0, bakeRuns)),
   // [nBake, nInst) are drawn live over it (the rest of the runs).
   let nBake = 0, bakeRuns = 0;
-  // The pending ring as this frame sorts it: per stamp (its number from the
-  // ring's head) its time, its turn place, its sender, its seq and its
-  // atlas; the order; and which were baked (or let go, a failed set's), to
-  // leave the ring once the trail has them.
-  const pIdx = new Int32Array(MAX_PEND), pKey = new Float64Array(MAX_PEND), pPlace = new Float64Array(MAX_PEND);
-  const pWho = new Float64Array(MAX_PEND), pSeq = new Float64Array(MAX_PEND), pAtlas = new Array(MAX_PEND).fill(null);
+  // The pending ring as this frame sorts it: per stamp looked at (the head
+  // window's, then the hand's from beyond it) its place from the ring's
+  // head, its time, its turn place, its sender, its seq, its atlas, whether
+  // it is the hand's and whether its atlas is in; the order; the frame's
+  // share of it (shareFrame's out, gone, pri); and, by ring place, which
+  // were baked (or let go, a failed set's), to leave the ring once the
+  // trail has them.
+  const PEND = MAX_PEND + HAND_MAX;
+  const pPos = new Int32Array(PEND);
+  const pIdx = new Int32Array(PEND), pKey = new Float64Array(PEND), pPlace = new Float64Array(PEND);
+  const pWho = new Float64Array(PEND), pSeq = new Float64Array(PEND), pAtlas = new Array(PEND).fill(null);
+  const pMine = new Uint8Array(PEND), pReady = new Uint8Array(PEND);
+  const pOut = new Int32Array(MAX_INST), pGone = new Uint8Array(PEND), pPri = new Uint8Array(PEND);
   const baked = new Uint8Array(65536);
   let bakedAny = false;
   const params = { keepHalfLife: 1, zoomRate: 0, twistRate: 0, cx: 0, cy: 0, unit: 1, dt: 0 };
@@ -410,10 +423,16 @@ export function createBrush(device, format, platform, opts) {
     // drawn live over it, in that order too, so nothing on top changes as
     // a stamp moves from one to the other. A due stamp whose atlas is not in
     // yet holds back every later one's bake (they draw live meanwhile when
-    // they can), and a set that failed to load lets its stamps go.
+    // they can), and a set that failed to load lets its stamps go. The
+    // visitor's own stamps take their place in the frame first, wherever
+    // the others' line has got to (core/brush-order.js pendingWindow and
+    // shareFrame), and the others take what is left: the order the frame
+    // draws in is the same, only who waits when it is full.
     nInst = 0; nRuns = 0; nBake = 0; bakeRuns = 0; bakedAny = false;
     const q = brushQueue, buf = q.buf;
-    const n = q.count < MAX_PEND ? q.count : MAX_PEND;
+    const n0 = q.count < MAX_PEND ? q.count : MAX_PEND;
+    const hand = Math.fround(brushHandWho());
+    const n = pendingWindow(q, STAMP_FLOATS, hand, MAX_PEND, HAND_MAX, pPos);
     const sec = Math.floor(Date.now() / 1000);
     // the shape's turn: a speed, and the shared clock's lead over this one
     const spinRate = brushSpinNow(), spinOff = spinRate > 0 ? brushSharedOffset() : 0;
@@ -421,61 +440,58 @@ export function createBrush(device, format, platform, opts) {
     const morph = brushMorphNow();
     if (n > 0) forgetIdle(sec);
     for (let j = 0; j < n; j++) {
-      const at = (q.head + j) % q.cap, o = at * STAMP_FLOATS;
+      const at = (q.head + pPos[j]) % q.cap, o = at * STAMP_FLOATS;
       const set = setOf(buf[o + 5]);
       let a = atlases.get(set);
       if (!a) { load(set); a = atlases.get(set); }
       pIdx[j] = j; pKey[j] = q.key[at]; pWho[j] = buf[o + 6]; pSeq[j] = q.seq[at]; pAtlas[j] = a || null;
+      pMine[j] = buf[o + 6] === hand ? 1 : 0;
+      pReady[j] = !a ? 0 : a.failed ? 2 : a.ready ? 1 : 0;
       noteSender(pWho[j], sec);
     }
     for (let j = 0; j < n; j++) pPlace[j] = turnPlace(pWho[j], activeSenders.ids, activeSenders.n, sec);
     if (n > 1) bakeOrder(pIdx, n, pKey, pPlace, pWho, pSeq);
     const due = brushNow() - brushPlayDelay();
-    let blocked = false, runAtlas = null;
-    // two walks over the one order: what bakes, then what draws live
-    for (let pass = 0; pass < 2; pass++) {
-      runAtlas = null;
-      for (let jj = 0; jj < n && nInst < MAX_INST; jj++) {
-        const j = pIdx[jj], a = pAtlas[j];
-        if (pass === 0) {
-          if (blocked || pKey[j] > due) continue;
-          if (a && a.failed) { baked[j] = 1; bakedAny = true; continue; }
-          if (!a || !a.ready) { blocked = true; continue; }
-        } else {
-          if (baked[j] || !a || !a.ready || a.failed) continue;
-        }
-        a.used = frame;
-        if (pass === 0) { baked[j] = 1; bakedAny = true; }
-        if (a !== runAtlas) {
-          runAtlas = a;
-          runBind[nRuns] = a.bind; runFirst[nRuns] = nInst; runCount[nRuns] = 0; nRuns++;
-        }
-        const o = ((q.head + j) % q.cap) * STAMP_FLOATS;
-        // An empty tile draws the set's first painted one, as the picker
-        // shows it (a pick made before the atlas was known, or another set's).
-        let m = buf[o + 4] | 0;
-        if (m < 0 || m >= MOTIFS || !(a.fill[m] > EMPTY_FILL)) m = a.first;
-        const i = nInst * INST_FLOATS;
-        inst[i] = cx + (buf[o] - 0.5) * side;
-        inst[i + 1] = cy + (buf[o + 1] - 0.5) * side;
-        inst[i + 2] = buf[o + 3] * side * 0.5;
-        inst[i + 3] = spinRate > 0 ? buf[o + 2] + brushSpinAt(spinRate, pKey[j], spinOff) : buf[o + 2];
-        inst[i + 4] = (m % 8) / 8 + a.lay.padUV;
-        inst[i + 5] = ((m / 8) | 0) / 8 + a.lay.padUV;
-        inst[i + 6] = m; inst[i + 7] = 0;
-        // the crossfade (shapeKeep, and the particle's light at the morph)
-        inst[i + 8] = shapeKeep(morph, buf[o + 7]); inst[i + 9] = particleLight(buf[o + 7]) * morph;
-        // its brightness (the ring's ninth float: 1, but on a replayed
-        // stroke's fade up and fade down, core/brush.js fadeGains), on shape
-        // and light alike, baked or live
-        inst[i + 10] = buf[o + 8]; inst[i + 11] = 0;
-        runCount[nRuns - 1]++;
-        nInst++;
+    const share = shareFrame(pIdx, n, n0, pKey, pMine, pReady, due, MAX_INST, HAND_MAX, pPri, pOut, pGone);
+    for (let j = 0; j < n; j++) if (pGone[j]) { baked[pPos[j]] = 1; bakedAny = true; }
+    let runAtlas = null;
+    // one walk over what the frame draws: what bakes, then what draws live
+    // (a fresh run where the one turns into the other)
+    for (let jj = 0; jj < share.inst; jj++) {
+      if (jj === share.bake) { nBake = nInst; bakeRuns = nRuns; runAtlas = null; }
+      const j = pOut[jj], a = pAtlas[j];
+      a.used = frame;
+      if (a !== runAtlas) {
+        runAtlas = a;
+        runBind[nRuns] = a.bind; runFirst[nRuns] = nInst; runCount[nRuns] = 0; nRuns++;
       }
-      if (pass === 0) { nBake = nInst; bakeRuns = nRuns; }
+      const o = ((q.head + pPos[j]) % q.cap) * STAMP_FLOATS;
+      // An empty tile draws the set's first painted one, as the picker
+      // shows it (a pick made before the atlas was known, or another set's).
+      let m = buf[o + 4] | 0;
+      if (m < 0 || m >= MOTIFS || !(a.fill[m] > EMPTY_FILL)) m = a.first;
+      const i = nInst * INST_FLOATS;
+      inst[i] = cx + (buf[o] - 0.5) * side;
+      inst[i + 1] = cy + (buf[o + 1] - 0.5) * side;
+      inst[i + 2] = buf[o + 3] * side * 0.5;
+      inst[i + 3] = spinRate > 0 ? buf[o + 2] + brushSpinAt(spinRate, pKey[j], spinOff) : buf[o + 2];
+      inst[i + 4] = (m % 8) / 8 + a.lay.padUV;
+      inst[i + 5] = ((m / 8) | 0) / 8 + a.lay.padUV;
+      inst[i + 6] = m; inst[i + 7] = 0;
+      // the crossfade (shapeKeep, and the particle's light at the morph)
+      inst[i + 8] = shapeKeep(morph, buf[o + 7]); inst[i + 9] = particleLight(buf[o + 7]) * morph;
+      // its brightness (the ring's ninth float: 1, but on a replayed
+      // stroke's fade up and fade down, core/brush.js fadeGains), on shape
+      // and light alike, baked or live
+      inst[i + 10] = buf[o + 8]; inst[i + 11] = 0;
+      runCount[nRuns - 1]++;
+      nInst++;
     }
-    const take = n;
-    lookedN = n;
+    if (share.bake === share.inst) { nBake = nInst; bakeRuns = nRuns; }
+    // only the head window's places are ever marked baked (shareFrame never
+    // bakes a stamp from beyond it), so only they are cleared after
+    const take = n0;
+    lookedN = n0;
 
     // The image: made for the first stamp, let go once faded to nothing.
     if (nInst > 0 && !made) make();

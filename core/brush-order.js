@@ -85,3 +85,98 @@ export function turnPlace(who, ids, count, sec) {
   for (let j = 0; j < count; j++) if (ids[j] === who) return count - ((j - f + count) % count);
   return 0;
 }
+
+// ---------- the frame's share ----------
+// A frame draws at most so many stamps (gpu/brush.js MAX_INST) and looks at
+// only the ring's oldest so many (its MAX_PEND). Every sender's stamps share
+// the one ring, the visitor's own hand among the replay's or the hall's, and
+// the hand's are always the youngest: at the ring's tail, and last in the
+// bake order (they carry the moment they were made, while a remote stamp
+// is let out a delay after its own and is due the frame it arrives). So
+// whenever the others' line was longer than a frame could draw (the
+// standing playback at 10x Continuity on a laptop whose frames had slowed),
+// the hand's marks were either outside the window or past the budget, and
+// drew nothing until the line had drained: seconds of a stroke not there
+// under the finger. The hand comes first now, and the others take what is
+// left; the bake order itself is untouched, only who gets the frame.
+
+// The stamps a frame looks at, as ring places (from the head) into pos:
+// the oldest headMax, as ever, then, from the rest of the ring, the hand's
+// own (who === hand), newest first, up to handMax of them. Returns how many.
+// q is the ring (core/brush.js brushQueue), F its floats per stamp, the
+// sender at float 6. The rest of the ring is read only when there is a
+// line past the window, and then only its senders.
+export function pendingWindow(q, F, hand, headMax, handMax, pos) {
+  const n0 = q.count < headMax ? q.count : headMax;
+  for (let j = 0; j < n0; j++) pos[j] = j;
+  let m = n0;
+  if (q.count > n0 && handMax > 0) {
+    const h = Math.fround(hand), b = q.buf;
+    for (let j = q.count - 1; j >= n0 && m < n0 + handMax; j--)
+      if (b[((q.head + j) % q.cap) * F + 6] === h) pos[m++] = j;
+  }
+  return m;
+}
+
+// Which of the m stamps looked at take this frame, and how: order is their
+// bake order (bakeOrder above, over entries 0..m), key each one's time,
+// mine whether it is the hand's, ready its atlas (1 in, 0 not yet, 2 failed
+// to load), n0 how many are the ring's head window (entries at or past n0
+// are the hand's from beyond it, pendingWindow). due is the bake's moment.
+// Into out, in order, the entries drawn: [0, bake) go into the trail,
+// [bake, inst) are drawn live over it; gone[e] marks each that leaves the
+// ring (baked, or a failed set's let go). pri is scratch. Returns
+// frameShare { bake, inst }. Nothing is allocated.
+//
+// The law kept: what bakes is always a prefix of the bake order's due
+// stamps, as before, so the trail's layering is the time order on every
+// screen however the frame's budget is shared out; a due stamp that cannot
+// bake now (its atlas not in, no room, or beyond the window) holds back
+// every later one's bake, and those draw live meanwhile, in the same order,
+// over the trail. A stamp from beyond the window never bakes: stamps older
+// than it may still be waiting outside the window, and they must go into
+// the trail first. It is drawn live till the window reaches it.
+//
+// What changes is the budget: the hand's newest handMax stamps (ready ones)
+// are reserved their place before anything else is drawn, so another
+// sender's stamp takes an instance only while the reservation still fits
+// beside it. The hand is one person's drawing, a delay's worth of it at
+// most, so the reservation is small; handMax well under maxInst means the
+// others always have the rest of the frame and their line still moves on.
+// The hand's stamps being the youngest, drawing them on top is exactly the
+// order's own: nothing is lifted out of turn, a few older stamps of the
+// others simply wait a frame or two to be drawn.
+export const frameShare = { bake: 0, inst: 0 };
+export function shareFrame(order, m, n0, key, mine, ready, due, maxInst, handMax, pri, out, gone) {
+  let reserve = 0;
+  for (let e = 0; e < m; e++) { pri[e] = 0; gone[e] = 0; }
+  for (let jj = m - 1; jj >= 0 && reserve < handMax; jj--) {
+    const e = order[jj];
+    if (mine[e] && ready[e] === 1) { pri[e] = 1; reserve++; }
+  }
+  let n = 0, blocked = false;
+  // the bake: the due stamps in order, while each can go
+  for (let jj = 0; jj < m; jj++) {
+    const e = order[jj];
+    if (blocked || key[e] > due) continue;
+    if (e >= n0) { blocked = true; continue; }
+    if (ready[e] === 2) { gone[e] = 1; continue; }
+    if (ready[e] !== 1) { blocked = true; continue; }
+    if (pri[e]) reserve--;
+    else if (n + reserve >= maxInst) { blocked = true; continue; }
+    gone[e] = 1;
+    out[n++] = e;
+  }
+  const bake = n;
+  // the rest live, in the same order: the reserved always, the others
+  // while there is room beside what is still reserved
+  for (let jj = 0; jj < m; jj++) {
+    const e = order[jj];
+    if (gone[e] || ready[e] !== 1) continue;
+    if (pri[e]) reserve--;
+    else if (n + reserve >= maxInst) { if (reserve === 0) break; continue; }
+    out[n++] = e;
+  }
+  frameShare.bake = bake; frameShare.inst = n;
+  return frameShare;
+}

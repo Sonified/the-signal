@@ -133,3 +133,114 @@ test('baking order: by time, then this second\'s turn, sender, seq', () => {
   bakeOrder(idx1, 5, key, place1, who, seq);
   assert.deepEqual(Array.from(idx1), [1, 4, 2, 0, 3]);
 });
+
+// ---------- the frame's share: the hand first ----------
+import { pendingWindow, shareFrame } from '../core/brush-order.js';
+
+// A ring as core/brush.js keeps it (8 floats a stamp here, the sender at
+// float 6), wrapped round its end, filled with `spec` in arrival order:
+// each [who, key]. The frame's draw as gpu/brush.js runs it, with every
+// atlas in unless `ready` says otherwise: the window, the bake order, the
+// share. Returns what was drawn, by arrival number, and the order.
+const F8 = 8, CAP = 65536;
+function ringOf(spec) {
+  const q = { buf: new Float32Array(CAP * F8), key: new Float64Array(CAP), seq: new Float64Array(CAP), cap: CAP, head: CAP - 1000, count: 0 };
+  for (const [who, key] of spec) {
+    const at = (q.head + q.count) % CAP;
+    q.buf[at * F8 + 6] = who; q.key[at] = key; q.seq[at] = q.count; q.count++;
+  }
+  return q;
+}
+function frame(q, hand, due, { headMax = 16384, handMax = 4096, maxInst = 8192, ready = () => 1 } = {}) {
+  const P = headMax + handMax;
+  const pos = new Int32Array(P), idx = new Int32Array(P), key = new Float64Array(P), place = new Float64Array(P);
+  const who = new Float64Array(P), seq = new Float64Array(P), mine = new Uint8Array(P), rdy = new Uint8Array(P);
+  const out = new Int32Array(maxInst), gone = new Uint8Array(P), pri = new Uint8Array(P);
+  const n0 = q.count < headMax ? q.count : headMax;
+  const n = pendingWindow(q, F8, hand, headMax, handMax, pos);
+  for (let e = 0; e < n; e++) {
+    const at = (q.head + pos[e]) % CAP;
+    idx[e] = e; key[e] = q.key[at]; who[e] = q.buf[at * F8 + 6]; seq[e] = q.seq[at]; mine[e] = who[e] === hand ? 1 : 0;
+    rdy[e] = ready(seq[e]);
+  }
+  bakeOrder(idx, n, key, place, who, seq);
+  const s = shareFrame(idx, n, n0, key, mine, rdy, due, maxInst, handMax, pri, out, gone);
+  const rank = new Map();
+  for (let jj = 0; jj < n; jj++) rank.set(idx[jj], jj);
+  const arr = e => seq[e];
+  return {
+    n, n0,
+    baked: Array.from(out.subarray(0, s.bake), arr), live: Array.from(out.subarray(s.bake, s.inst), arr),
+    ranks: Array.from(out.subarray(0, s.inst), e => rank.get(e)),
+    dueInOrder: Array.from(idx.subarray(0, n)).filter(e => key[e] <= due).map(arr),
+    gone: Array.from(gone.subarray(0, n)).reduce((a, g, e) => (g ? a.concat(seq[e]) : a), [])
+  };
+}
+const REPLAY = 100001, HAND = 0;
+
+test('the hand draws on the frame it made its marks, however long the replay\'s line', () => {
+  // 30,000 replayed stamps waiting, all due (let out a delay old), then the
+  // hand's 40 newest, made this frame, a few more of the tape's after them
+  const spec = [];
+  for (let i = 0; i < 30000; i++) spec.push([REPLAY, 1000 + i * 0.01]);
+  for (let i = 0; i < 40; i++) spec.push([HAND, 2000]);
+  for (let i = 0; i < 500; i++) spec.push([REPLAY, 1300 + i * 0.01]);
+  const q = ringOf(spec), handSeqs = spec.map((s, i) => (s[0] === HAND ? i : -1)).filter(i => i >= 0);
+  const f = frame(q, HAND, 1950);
+  assert.equal(f.n0, 16384, 'the head window as ever');
+  assert.equal(f.n, 16384 + 40, 'and the hand\'s 40 from beyond it');
+  // every one of the hand's drawn, live (they are not due yet), on top
+  assert.deepEqual(f.live, handSeqs);
+  // the replay takes the rest of the frame, and only by baking a prefix of
+  // the due stamps in order: the trail's layering is the time order still
+  assert.equal(f.baked.length, 8192 - 40);
+  assert.deepEqual(f.baked, f.dueInOrder.slice(0, f.baked.length));
+  assert.deepEqual(f.gone, [...f.baked].sort((a, b) => a - b), 'only what baked leaves the ring');
+  // what is drawn is drawn in the bake order, back to front
+  for (let i = 1; i < f.ranks.length; i++) assert.ok(f.ranks[i] > f.ranks[i - 1], 'drawn in order');
+
+  // as it was: no place kept for the hand, and it drew nothing at all
+  const before = frame(q, HAND, 1950, { handMax: 0 });
+  assert.equal(before.live.length, 0, 'the old frame starved the hand');
+  assert.equal(before.baked.length, 8192);
+});
+
+test('the hand\'s due marks behind the line stay live till the line reaches them, never baked out of turn', () => {
+  // the hand's stamps are due, but 9000 older due ones are ahead of them:
+  // baking the hand's now would put those older marks on top of it later
+  const spec = [];
+  for (let i = 0; i < 9000; i++) spec.push([REPLAY, 1000 + i * 0.01]);
+  for (let i = 0; i < 30; i++) spec.push([HAND, 1500]);
+  const f = frame(ringOf(spec), HAND, 1950);
+  assert.equal(f.live.filter(s => s >= 9000).length, 30, 'all the hand\'s drawn, live');
+  assert.ok(f.baked.every(s => s < 9000), 'none of the hand\'s baked ahead of the older');
+  assert.deepEqual(f.baked, f.dueInOrder.slice(0, f.baked.length));
+  // with room for everything, the hand's bake in their turn, as ever
+  const g = frame(ringOf(spec.slice(5000)), HAND, 1950);
+  assert.equal(g.baked.length, 4030);
+  assert.deepEqual(g.baked, g.dueInOrder);
+  assert.equal(g.live.length, 0);
+});
+
+test('a hand stamp from beyond the window never bakes; a stamp without its atlas holds the bake; a failed set\'s go', () => {
+  const spec = [];
+  for (let i = 0; i < 100; i++) spec.push([REPLAY, 1000 + i]);
+  spec.push([HAND, 1200]);
+  const f = frame(ringOf(spec), HAND, 5000, { headMax: 50 });
+  assert.deepEqual(f.live, [100], 'beyond the window: drawn live');
+  assert.equal(f.baked.length, 50, 'the window baked whole, the hand left for its turn');
+  assert.ok(!f.gone.includes(100));
+  // stamp 10's atlas not in: it and everything after wait (and draw live
+  // once in), stamp 5's set failed: it goes, drawn nowhere
+  const h = frame(ringOf(spec), HAND, 5000, { ready: s => (s === 10 ? 0 : s === 5 ? 2 : 1) });
+  assert.deepEqual(h.baked, [0, 1, 2, 3, 4, 6, 7, 8, 9]);
+  assert.ok(h.gone.includes(5) && !h.live.includes(5) && !h.live.includes(10));
+  assert.equal(h.live.length, 101 - 11, 'the rest live, the hand\'s among them');
+  // the reservation: never more than handMax of the hand's, its newest
+  const many = [];
+  for (let i = 0; i < 20; i++) many.push([HAND, 3000 + i]);
+  for (let i = 0; i < 100; i++) many.push([REPLAY, 1000 + i * 0.1]);
+  const k = frame(ringOf(many), HAND, 1050, { maxInst: 60, handMax: 8 });
+  assert.equal(k.baked.length + k.live.length, 60);
+  for (let s = 12; s < 20; s++) assert.ok(k.live.includes(s), 'the newest 8 of the hand\'s always drawn');
+});

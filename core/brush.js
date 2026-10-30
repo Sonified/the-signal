@@ -111,6 +111,11 @@ const QCAP = 65536;
 // is who drew later, never whose stamps happened to arrive later.
 export const brushQueue = { buf: new Float32Array(QCAP * STAMP_FLOATS), key: new Float64Array(QCAP), seq: new Float64Array(QCAP),
                             cap: QCAP, head: 0, count: 0 };
+// How many of the ring's oldest stamps gpu/brush.js looks at in a frame
+// (its MAX_PEND). The show's playback also waits while the ring holds more
+// than this (replayTick): past it the GPU side is behind, and letting more
+// of the tape out would only lengthen the line, not draw it any sooner.
+export const BRUSH_LOOK = 16384;
 
 // What the walk's stamps are made of right now (set before each walk).
 let qSide = 0, qMotif = 0, qSet = 1, qWho = SOLO_ID, qKey = 0, qSeqN = 0, qSpan = 0, qGain = 1;
@@ -379,6 +384,10 @@ export function brushHallName() { return hallLink ? hallName : ''; }
 // The hand's own id among the senders (core/brush-order.js): its hall id
 // once joined, else the solo one.
 function handId() { return hallLink && hallLink.you ? hallLink.you : SOLO_ID; }
+// The same, for gpu/brush.js: the frame's draw finds the hand's own stamps
+// by it in the ring, to give them their share first (core/brush-order.js
+// pendingWindow, shareFrame).
+export function brushHandWho() { return handId(); }
 // The broadcast's end (core/broadcast.js, on the broadcasting tab only):
 // { wanted() whether anyone watches, send(msg) to every watched session,
 // touch() wake a dozing one }, or null.
@@ -1004,6 +1013,18 @@ export function brushReplayHold(on) {
 export function brushReplayHeld() { return held; }
 function replayTick(now) {
   if (!replayOn || held) return;
+  // The GPU side behind: the ring holds more than it looks at in a frame
+  // (BRUSH_LOOK). A replayed stamp is let out already a delay old, due the
+  // frame it arrives, so every stamp the tape lets out past what the frame
+  // can draw only joins a line that grows (and at QCAP loses its oldest
+  // marks outright). So the pass clock stands, as a hold stands it (lastTick
+  // kept at now, so nothing jumps when it runs on), and no new batch is
+  // taken until the ring is back under: the tape slows to the pace this
+  // screen can draw, the strokes already taken playing out their last
+  // moments, and the line in front of the visitor's own hand stays a frame
+  // or two long instead of seconds (Robert: "the user drawn input should be
+  // high priority"). A screen that keeps up never meets it.
+  if (brushQueue.count > BRUSH_LOOK) { lastTick = now; return; }
   const speed = replaySpeedNow();
   passClock += lastTick < 0 ? 0 : (now - lastTick) * speed;
   lastTick = now;
