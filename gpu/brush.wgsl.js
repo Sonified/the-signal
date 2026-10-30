@@ -32,6 +32,11 @@
 // ribbon stands at its colour instead of adding up to white) and view.w,
 // the drawer's Particle brightness. The shape's path is untouched by any of
 // it.
+//
+// Each stamp's brightness (c.z, 1 but on a replayed stroke's fade up and
+// fade down, core/brush.js fadeGains) multiplies all it gives, shape and
+// light together, premultiplied, so a faded stamp is dimmer and thinner
+// alike, in the trail and live; at 1 it is exactly what it was.
 
 export const BRUSH_WGSL = /* wgsl */ `
 struct BU {
@@ -52,6 +57,7 @@ struct VOut {
   @location(4) @interpolate(flat) tint: vec3f,
   @location(5) @interpolate(flat) light: f32,
   @location(6) @interpolate(flat) keep: f32,
+  @location(7) @interpolate(flat) gain: f32,
 };
 
 // How far the particle's glow reaches, as a share of the quad's half side.
@@ -65,7 +71,8 @@ const QUAD = array<vec2f, 6>(
 // a: centre x, y (device px), half side (px), angle (radians)
 // b: the tile's inner square's top left as UV, the tile (0..63), unused
 // c: the share of its shape's coverage it keeps, its particle's light (the
-//    morph already in both, gpu/brush.js shapeKeep and particleLight), unused, unused
+//    morph already in both, gpu/brush.js shapeKeep and particleLight), its
+//    brightness, unused
 @vertex
 fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f, @location(2) c4: vec4f) -> VOut {
   var out: VOut;
@@ -81,6 +88,7 @@ fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b
   out.q = q;
   out.light = c4.y * bu.view.w;
   out.keep = c4.x;
+  out.gain = c4.z;
   // the tile's colour at full brightness: hue and saturation kept, value 1
   let avg = bu.tint[min(u32(b.z + 0.5), 63u)].rgb;
   let top = max(avg.r, max(avg.g, avg.b));
@@ -92,7 +100,7 @@ fn vsStamp(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b
 fn fsStamp(in: VOut) -> @location(0) vec4f {
   let shape = textureSample(atlas, samp, clamp(in.uv, in.lo, in.hi));
   let m = bu.view.z;
-  if (m <= 0.0) { return shape; }
+  if (m <= 0.0) { return shape * in.gain; }
   let d = length(in.q) / PART_REACH;
   let core = exp(-d * d * 40.0);
   let halo = exp(-d * d * 6.0) * 0.35;
@@ -100,6 +108,6 @@ fn fsStamp(in: VOut) -> @location(0) vec4f {
   // the shape premultiplied, colour and coverage faded together; the
   // particle light alone (alpha 0), so it adds
   let light = vec4f(in.tint * (g * in.light), 0.0);
-  return shape * in.keep + light;
+  return (shape * in.keep + light) * in.gain;
 }
 `;

@@ -34,6 +34,8 @@
 // Pure: tape in, plans and messages out (tools/brush-replay.test.mjs).
 
 import { TOGETHER_MS } from '../touch/replay.js';
+import { QUANT } from '../touch/strokes.js';
+import { printsPerSecond } from './brush-stamps.js';
 
 export const LOOP_MS = TOGETHER_MS;
 export const LOOP_REST_MS = 2000;
@@ -131,6 +133,7 @@ export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS, trim 
   for (let i = skipped; i <= end; i++) {
     const e = good[i];
     steps[i - skipped] = { tMs: (paceLast[i] - t0) * scale, takeMs: (paceTake[i] - t0) * scale, id: e.id, s: e.s };
+    if (paceEnd[i]) steps[i - skipped].end = paceEnd[i];
   }
   // taken in the order their first points come due (stable, so a drawer's
   // own batches, whose takes never go back, keep their order)
@@ -154,8 +157,10 @@ export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS, trim 
 // batch's), when the batch must be in hand to play it in time. A batch
 // without times keeps `at` for both. A drawer's batches never go back
 // against its own last one, so a stroke never starts before the one before
-// it ends. Arrays kept across passes, as inWindow is.
-const paceLast = [], paceTake = [];
+// it ends. Arrays kept across passes, as inWindow is. paceEnd is how a
+// finished stroke was moving as it ended (endMotion), on its d 2 batch,
+// for the fade down's tail (retime); null elsewhere.
+const paceLast = [], paceTake = [], paceEnd = [];
 const drawerLast = new Map();
 function batchTimes(e) {
   const q = e.s.q;
@@ -169,7 +174,7 @@ function batchTimes(e) {
 }
 function paceStrokes(good) {
   const n = good.length;
-  paceLast.length = n; paceTake.length = n;
+  paceLast.length = n; paceTake.length = n; paceEnd.length = n;
   const open = new Map();   // drawer -> its open stroke's batch indices
   const close = list => {
     let off = Infinity;
@@ -178,6 +183,15 @@ function paceStrokes(good) {
       const b = batchTimes(good[i]);
       if (b && off < Infinity) { paceLast[i] = b.last + off; paceTake[i] = paceLast[i] - b.lead; }
       else { paceLast[i] = paceTake[i] = good[i].at; }
+      paceEnd[i] = null;
+    }
+    // a finished stroke's end: how long the hand held still before letting
+    // go is how much later than its fastest delivery the last batch reached
+    // the hall, its last point's time being the hand's last move
+    const z = list[list.length - 1], bz = batchTimes(good[z]);
+    if (good[z].s.d === 2 && bz && off < Infinity) {
+      const from = list.length > END_BATCHES ? list.length - END_BATCHES : 0;
+      paceEnd[z] = endMotion(list.slice(from).map(i => good[i].s), good[z].at - bz.last - off);
     }
   };
   for (let i = 0; i < n; i++) {
@@ -208,7 +222,16 @@ function paceStrokes(good) {
 // rounded, the gaps taken between the rounded times, so none drifts. size
 // (the Brush section's Replay size, 1 as drawn) scales the width it is
 // drawn at, whole and held to the wire's 1 to 100.
-export function retime(step, base, scale, size = 1) {
+//
+// fadeUp and fadeDown are the Brush section's Replay fade up and fade down,
+// ms of the stroke's own drawing time (0 off). They ride the message laid
+// on this screen's clock, as fu and fd (the same times times the scale, so
+// a fade covers the same stretch of the line at any speed), for
+// core/brush.js to fade each stamp by; a stroke's last batch also gets its
+// tail (fadeTail below) and fe, the moment of its real last point, after
+// which the marks fade. Only the playback's messages carry them; nothing
+// with them is ever sent.
+export function retime(step, base, scale, size = 1, fadeUp = 0, fadeDown = 0) {
   const s = step.s, msg = Object.assign({}, s, { id: REPLAY_ID + step.id });
   if (size !== 1 && typeof s.w === 'number') msg.w = Math.max(1, Math.min(100, Math.round(s.w * size)));
   const q = s.q;
@@ -224,5 +247,89 @@ export function retime(step, base, scale, size = 1) {
     prev = a;
   }
   msg.q = q2;
+  if (fadeUp > 0) msg.fu = fadeUp * scale;
+  if (fadeDown > 0 && s.d === 2 && step.end) {
+    msg.fe = prev; msg.fd = fadeDown * scale;
+    fadeTail(msg, step.end, fadeDown, prev, scale);
+  }
+  return msg;
+}
+
+// ---------- the fade down's tail ----------
+// A replayed stroke with Replay fade down on does not stop dead at its last
+// point: the line carries on past it the way it was going, at the speed it
+// was going, for the fade-down time, and the brush fades those extra marks
+// out to nothing while the real stroke keeps its full brightness.
+//
+// endMotion is how the stroke was moving as it ended, from its own batches
+// (the wire's messages, oldest first, the last its d 2): the displacement
+// over its last END_SPAN point gaps, over their time, so one jittery point
+// never aims it, in unit-square units a ms; and the pace its points came at
+// (their mean gap, or a print stroke's print interval), at which the tail
+// is laid. null for a hand at rest as it lifted: restMs, how long it held
+// still before letting go, REST_MS or more, or no time between its points.
+// Joints are left out, and a repeat of the point before (a last batch of
+// only its joint) counts once.
+export const END_SPAN = 4, REST_MS = 150;
+const END_BATCHES = END_SPAN + 2;
+export function endMotion(batches, restMs = 0) {
+  if (!batches || !batches.length || restMs >= REST_MS) return null;
+  const lastB = batches[batches.length - 1];
+  const prints = lastB.r < 1;
+  let n = 0, u1 = 0, v1 = 0, t1 = 0, u0 = 0, v0 = 0, t0 = 0;
+  for (let b = batches.length - 1; b >= 0 && n <= END_SPAN; b--) {
+    const s = batches[b], q = s.q, p = s.p;
+    if (!Array.isArray(q) || !Array.isArray(p) || p.length !== q.length * 2) return null;
+    const ts = new Array(q.length);
+    let T = 0;
+    for (let j = 0; j < q.length; j++) { T += q[j]; ts[j] = T; }
+    const first = s.d === 0 || prints || q.length < 2 ? 0 : 1;
+    for (let j = q.length - 1; j >= first && n <= END_SPAN; j--) {
+      const u = p[2 * j], v = p[2 * j + 1];
+      if (n > 0 && ts[j] === t0 && u === u0 && v === v0) continue;
+      if (n === 0) { u1 = u; v1 = v; t1 = ts[j]; }
+      u0 = u; v0 = v; t0 = ts[j];
+      n++;
+    }
+  }
+  const dt = t1 - t0;
+  if (n < 2 || !(dt > 0)) return null;
+  return { vu: (u1 - u0) / QUANT / dt, vv: (v1 - v0) / QUANT / dt,
+           gap: prints ? 1000 / printsPerSecond(lastB.r) : dt / (n - 1), prints };
+}
+
+// The tail onto a stroke's last batch as retime laid it (msg, its last
+// point's time on this clock at endT): points along end's way from the last
+// point out to fadeMs of drawing time later, at the stroke's own pace (a
+// continuous stroke's evenly so the last falls at fadeMs, a print stroke's
+// at its print interval, none when the first would fall past it), each at
+// its moment on this clock at the scale. It stops at the unit square's edge
+// (the wire holds no point outside it), and has nothing to add when the
+// line would not travel a step of the wire's grid in the whole tail.
+const TAIL_MAX = 256, TAIL_GAP_MIN = 4;
+export function fadeTail(msg, end, fadeMs, endT, scale) {
+  const q = msg.q, n = msg.p ? msg.p.length : 0;
+  if (!(fadeMs > 0) || !end || n < 2 || !q || q.length * 2 !== n) return msg;
+  // the message's own copy: its points are the tape's own array till now
+  const p = msg.p = msg.p.slice();
+  const vu = end.vu * QUANT, vv = end.vv * QUANT;
+  if (Math.hypot(vu, vv) * fadeMs < 1) return msg;
+  // how long before the line leaves the square
+  let reach = fadeMs;
+  const u = p[n - 2], v = p[n - 1];
+  if (vu > 0) reach = Math.min(reach, (QUANT - u) / vu); else if (vu < 0) reach = Math.min(reach, -u / vu);
+  if (vv > 0) reach = Math.min(reach, (QUANT - v) / vv); else if (vv < 0) reach = Math.min(reach, -v / vv);
+  const gap = end.gap > TAIL_GAP_MIN ? end.gap : TAIL_GAP_MIN;
+  const count = end.prints ? Math.min(TAIL_MAX, Math.floor(fadeMs / gap)) : Math.min(TAIL_MAX, Math.ceil(fadeMs / gap));
+  const step = end.prints ? gap : fadeMs / count;
+  let prev = endT;
+  for (let k = 1; k <= count; k++) {
+    const dt = k * step;
+    if (dt > reach + 1e-9) break;
+    const a = Math.max(prev, Math.round(endT + dt * scale));
+    p.push(Math.max(0, Math.min(QUANT, Math.round(u + vu * dt))), Math.max(0, Math.min(QUANT, Math.round(v + vv * dt))));
+    q.push(a - prev);
+    prev = a;
+  }
   return msg;
 }

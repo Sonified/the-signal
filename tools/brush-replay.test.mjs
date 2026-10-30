@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planPass, retime, LOOP_MS, LOOP_REST_MS, REPLAY_ID, ROOM_HANDS, ROOM_WINDOW_MS, roomLeaves } from '../core/brush-replay.js';
+import { planPass, retime, LOOP_MS, LOOP_REST_MS, REPLAY_ID, ROOM_HANDS, ROOM_WINDOW_MS, roomLeaves, endMotion, fadeTail, REST_MS } from '../core/brush-replay.js';
 import { encodeStroke, decodeStroke, MOTIF } from '../touch/strokes.js';
 
 const motif = (d, q) => encodeStroke(MOTIF, 200, 50, d, [{ u: 0.4, v: 0.4 }, { u: 0.5, v: 0.5 }, { u: 0.6, v: 0.6 }],
@@ -202,4 +202,89 @@ test('trim event: the pass ends where the room leaves, off plays whole, solo unt
   const sp = planPass(solo, Infinity, 0, true);
   assert.equal(sp.steps.length, solo.length);
   assert.equal(sp.trimmed, 0);
+});
+
+// A line across at v 0.5, u from `u0` by `du` a point, the points `gap` ms
+// apart from t0, as batches of `per` new points (each later one led by its
+// joint, as the hand's are), the last d 2.
+function line(u0, du, n, t0, gap, per = 3, extra = {}) {
+  const out = [];
+  let i = 0;
+  while (i < n) {
+    const from = i === 0 ? 0 : i - 1, to = Math.min(n, i + per);
+    const pts = [], ts = [];
+    for (let j = from; j < to; j++) { pts.push({ u: u0 + du * j, v: 0.5 }); ts.push(t0 + gap * j); }
+    const q = ts.map((t, k) => k ? t - ts[k - 1] : t);
+    const d = to >= n ? 2 : i === 0 ? 0 : 1;
+    out.push(encodeStroke(MOTIF, 200, 50, d, pts, Object.assign({ a: 1, m: 3, c: 6, f: 0.5, q }, extra)));
+    i = to;
+  }
+  return out;
+}
+
+test('fade down: endMotion reads the way and pace of the last few points, joints left out', () => {
+  const b = line(0.3, 0.02, 9, 1000, 20);
+  const e = endMotion(b);
+  assert.ok(e);
+  assert.ok(Math.abs(e.vu - 0.001) < 2e-5, 'a fiftieth of the field per 20 ms, got ' + e.vu);
+  assert.equal(e.vv, 0);
+  assert.equal(e.gap, 20);
+  assert.equal(endMotion(b, REST_MS), null, 'a hand held still before lifting gets no tail');
+  assert.equal(endMotion(b, REST_MS - 1) !== null, true);
+  // a last batch of only its joint repeats the point before and counts once
+  const only = encodeStroke(MOTIF, 200, 50, 2, [{ u: 0.3 + 0.02 * 8, v: 0.5 }], { a: 1, m: 3, c: 6, f: 0.5, q: [1160] });
+  b[b.length - 1].d = 1;
+  assert.equal(endMotion(b.concat([only])).gap, 20);
+});
+
+test('fade down: the tail carries on along the line at its pace, after the real end, on this clock', () => {
+  const b = line(0.3, 0.02, 9, 1000, 20), last = b[b.length - 1];
+  const step = { id: 4, s: last, end: endMotion(b) };
+  const plain = retime(step, 50000, 1);
+  const m = retime(step, 50000, 1, 1, 0, 100);
+  assert.equal(m.fe, 50000, 'the real end is where the batch ends');
+  assert.equal(m.fd, 100);
+  assert.equal(m.q.length, plain.q.length + 5, '100 ms of tail at 20 ms a point');
+  assert.deepEqual(m.q.slice(plain.q.length), [20, 20, 20, 20, 20]);
+  const d = decodeStroke(m);
+  assert.ok(d, 'still a valid stroke');
+  assert.equal(d.times[d.times.length - 1], 50100);
+  const endU = d.points[d.points.length - 1].u, realU = d.points[plain.q.length - 1].u;
+  assert.ok(Math.abs(endU - realU - 0.1) < 0.002, 'a tenth further along, got ' + (endU - realU));
+  assert.equal(d.points[d.points.length - 1].v, 0.5);
+  // the tape's own copy is untouched
+  assert.equal(last.p.length, plain.p.length);
+  // at 0.5x (scale 2) the same tail, twice as long on this clock
+  const slow = retime(step, 50000, 2, 1, 50, 100);
+  assert.equal(slow.fd, 200);
+  assert.equal(slow.fu, 100);
+  assert.deepEqual(slow.q.slice(plain.q.length), [40, 40, 40, 40, 40]);
+  // off, or a batch that is not the stroke's last, gets none
+  assert.deepEqual(retime(step, 50000, 1, 1, 0, 0), plain);
+  assert.equal(retime(Object.assign({}, step, { s: b[0] }), 50000, 1, 1, 0, 100).fe, undefined);
+});
+
+test('fade down: the tail stops at the field\'s edge, and a still or print stroke gets what falls inside', () => {
+  const b = line(0.8, 0.04, 5, 1000, 20), last = b[b.length - 1];
+  const m = retime({ id: 1, s: last, end: endMotion(b) }, 9000, 1, 1, 0, 2000);
+  assert.ok(decodeStroke(m), 'every point inside the square');
+  assert.ok(m.p.length / 2 - last.p.length / 2 < 10, 'stopped at the edge');
+  // a line that barely moves adds nothing
+  const still = retime({ id: 1, s: last, end: { vu: 1e-9, vv: 0, gap: 20 } }, 9000, 1, 1, 0, 100);
+  assert.equal(still.p.length, last.p.length);
+  // prints: one at each print interval inside the tail, none when the first falls past it
+  const pr = fadeTail({ p: [2048, 2048], q: [1000] }, { vu: 0.0001, vv: 0, gap: 300, prints: true }, 1000, 1000, 1);
+  assert.deepEqual(pr.q, [1000, 300, 300, 300]);
+  const none = fadeTail({ p: [2048, 2048], q: [1000] }, { vu: 0.0001, vv: 0, gap: 300, prints: true }, 200, 1000, 1);
+  assert.deepEqual(none.q, [1000]);
+});
+
+test('fade down: the pass gives a finished stroke its end, but not one whose hand rested before lifting', () => {
+  const b = line(0.3, 0.02, 9, 1000, 20);
+  const tape = b.map(s => { let t = 0; for (const x of s.q) t += x; return { at: t + 50, id: 1, s }; });
+  const p = planPass(tape, Infinity, 0);
+  assert.ok(p.steps[p.steps.length - 1].end, 'the d 2 step carries how it ended');
+  assert.equal(p.steps[0].end, undefined);
+  tape[tape.length - 1] = Object.assign({}, tape[tape.length - 1], { at: tape[tape.length - 1].at + 400 });
+  assert.equal(planPass(tape, Infinity, 0).steps.at(-1).end, undefined);
 });

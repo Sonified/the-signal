@@ -75,7 +75,7 @@ const MAX_INST = 8192;
 // Stamps looked at a frame: the whole pending ring is sorted (it holds
 // about a delay's worth), past this the youngest wait.
 const MAX_PEND = 16384;
-const INST_FLOATS = 12;            // x y half angle | u0 v0 tile - | keep light - -
+const INST_FLOATS = 12;            // x y half angle | u0 v0 tile - | keep light gain -
 const MAX_ATLASES = 3;
 // An atlas's uniforms: the frame's eight floats (rewritten each frame), then
 // its 64 tiles' tints as vec4s (written once, as it is installed).
@@ -465,7 +465,10 @@ export function createBrush(device, format, platform, opts) {
         inst[i + 6] = m; inst[i + 7] = 0;
         // the crossfade (shapeKeep, and the particle's light at the morph)
         inst[i + 8] = shapeKeep(morph, buf[o + 7]); inst[i + 9] = particleLight(buf[o + 7]) * morph;
-        inst[i + 10] = 0; inst[i + 11] = 0;
+        // its brightness (the ring's ninth float: 1, but on a replayed
+        // stroke's fade up and fade down, core/brush.js fadeGains), on shape
+        // and light alike, baked or live
+        inst[i + 10] = buf[o + 8]; inst[i + 11] = 0;
         runCount[nRuns - 1]++;
         nInst++;
       }

@@ -27,7 +27,9 @@
 // square, the angle, the motif's side in unit-square units, the tile, the
 // atlas set, the sender's id for core/brush-order.js, and the stroke's
 // stamp spacing over the motif's side, 0 for a print, by which the
-// particles' light is shared out along a ribbon, gpu/brush.js) until gpu/brush.js
+// particles' light is shared out along a ribbon, gpu/brush.js, and its
+// brightness, 1 but on a replayed stroke's fade up and fade down,
+// fadeGains) until gpu/brush.js
 // takes them, in order, which it does as soon
 // as the set's atlas is on the GPU; a ring that fills drops its oldest. Its
 // picker (the drawer's Brush section) reads brushAtlas, which the GPU side
@@ -96,7 +98,7 @@ const HUES = [8, 42, 95, 168, 212, 285, 330];
 const HUE = HUES[Math.floor(Math.random() * HUES.length)];
 
 // ---------- the ring ----------
-export const STAMP_FLOATS = 8;
+export const STAMP_FLOATS = 9;
 // Room for a few frames of the densest drawing (a fast flick at the
 // continuous spacing with 24 copies is some 4000 stamps a frame).
 const QCAP = 65536;
@@ -111,13 +113,13 @@ export const brushQueue = { buf: new Float32Array(QCAP * STAMP_FLOATS), key: new
                             cap: QCAP, head: 0, count: 0 };
 
 // What the walk's stamps are made of right now (set before each walk).
-let qSide = 0, qMotif = 0, qSet = 1, qWho = SOLO_ID, qKey = 0, qSeqN = 0, qSpan = 0;
+let qSide = 0, qMotif = 0, qSet = 1, qWho = SOLO_ID, qKey = 0, qSeqN = 0, qSpan = 0, qGain = 1;
 function push(u, v, angle) {
   const q = brushQueue;
   if (q.count === q.cap) { q.head = (q.head + 1) % q.cap; q.count--; }
   const at = (q.head + q.count) % q.cap, o = at * STAMP_FLOATS, b = q.buf;
   b[o] = u; b[o + 1] = v; b[o + 2] = angle; b[o + 3] = qSide; b[o + 4] = qMotif; b[o + 5] = qSet;
-  b[o + 6] = qWho; b[o + 7] = qSpan;
+  b[o + 6] = qWho; b[o + 7] = qSpan; b[o + 8] = qGain;
   q.key[at] = qKey; q.seq[at] = qSeqN++;
   q.count++;
 }
@@ -583,7 +585,7 @@ export function brushDealHold(on) {
 // out whole at once and taken. All of it is allocated once (but the
 // senders' offsets, a small map touched as batches arrive); brushPlay,
 // every frame, only reads and moves numbers.
-const SLOTS = 16, SLOT_CAP = 8192, PF = 7;    // per stamp: u v angle side motif set k
+const SLOTS = 16, SLOT_CAP = 8192, PF = 8;    // per stamp: u v angle side motif set k gain
 const TL_CAP = 2048;                          // timeline points held per slot
 const ABANDON_MS = 3000;
 const slotBuf = new Array(SLOTS).fill(null);  // each a Float32Array, made on first use
@@ -601,6 +603,13 @@ const slotPrints = new Uint8Array(SLOTS);
 const slotFed = new Float64Array(SLOTS), slotCursor = new Float64Array(SLOTS);
 // whether its times are already on this clock (the playback's, brushTake's onClock)
 const slotLocal = new Uint8Array(SLOTS);
+// A replayed stroke's fades (the Brush section's Replay fade up and fade
+// down, on the playback's messages, core/brush-replay.js retime), all on
+// this clock: its first point's moment and the fade up's length from it,
+// held from its first batch; the moment of its real last point and the
+// fade down's length after it, from its last. 0 lengths are no fade.
+const slotStart = new Float64Array(SLOTS), slotFadeUp = new Float64Array(SLOTS);
+const slotFadeEnd = new Float64Array(SLOTS), slotFadeDown = new Float64Array(SLOTS);
 // who drew it (core/brush-order.js): the hall's id, or the broadcaster's
 const slotWho = new Float64Array(SLOTS);
 // the band its stroke is in, for the sender's bell (-1 before its first)
@@ -638,7 +647,9 @@ function letOut(i) {
   if (b[o + 2] === 0 && bellHook) slotBand[i] = ringBand(slotBand[i], b[o + 1], slotWho[i]);
   qSide = b[o + 3]; qMotif = b[o + 4]; qSet = b[o + 5]; qWho = slotWho[i]; qKey = releaseKey;
   qSpan = slotPrints[i] || !(qSide > 0) ? 0 : slotSpacing[i] / qSide;
+  qGain = b[o + 7];
   push(b[o], b[o + 1], b[o + 2]);
+  qGain = 1;
   slotHead[i] = (slotHead[i] + 1) % SLOT_CAP;
   slotCount[i]--;
 }
@@ -700,6 +711,7 @@ function openSlot(key, now) {
   slotWho[i] = typeof key === 'number' ? key : BROADCAST_ID;
   slotHead[i] = 0; slotCount[i] = 0; slotNextK[i] = 0; slotTlN[i] = 0; slotTlI[i] = 0; slotRelI[i] = 0;
   slotEnd[i] = 0; slotArc[i] = 0; slotCarry[i] = 0; slotFed[i] = now; slotCursor[i] = -1;
+  slotStart[i] = 0; slotFadeUp[i] = 0; slotFadeEnd[i] = 0; slotFadeDown[i] = 0;
   for (let j = 0; j < PLAY_STAGES; j++) slotStage[i * PLAY_STAGES + j] = 0;
   return i;
 }
@@ -720,15 +732,49 @@ function addPoint(i, t, p) {
 
 // The walk's emit for a remote stroke: into slot `into`, numbered.
 let into = 0;
+let emitN = 0;   // how many it has made since brushTake last counted
 const emitRemote = (u, v, angle, copy) => {
   const i = into;
   if (slotCount[i] === SLOT_CAP) letOut(i);     // full: the oldest goes now
   if (copy === 0) slotNextK[i]++;
   const o = ((slotHead[i] + slotCount[i]) % SLOT_CAP) * PF, b = slotBuf[i];
   b[o] = u; b[o + 1] = v; b[o + 2] = angle; b[o + 3] = qSide; b[o + 4] = qMotif; b[o + 5] = qSet;
-  b[o + 6] = slotNextK[i] - 1;
+  b[o + 6] = slotNextK[i] - 1; b[o + 7] = 1;
   slotCount[i]++;
+  emitN++;
 };
+
+// A replayed stroke's fades, onto the stamps its batch just made (the
+// slot's last n), each by its own moment: the time its number stands at on
+// the slot's timeline (read as letOutTimed reads it, from no further back
+// than the batch's `pts` points and the joint before them), already this
+// clock's. Faded up from 0 at the stroke's first point to full a fade up
+// later, and past its real last point (the tail core/brush-replay.js
+// fadeTail laid on) down from full to 0 over the fade down, the two
+// multiplied where they meet on a short stroke. Brightness alone: the
+// stamp's place, size and turn are as they were.
+function fadeGains(i, n, pts) {
+  const b = slotBuf[i], T = slotTlT[i], Q = slotTlP[i], N = slotTlN[i];
+  const up = slotFadeUp[i], t0 = slotStart[i], down = slotFadeDown[i], te = slotFadeEnd[i];
+  if (n > slotCount[i]) n = slotCount[i];
+  if (N === 0 || n <= 0) return;
+  let j = N - pts - 1 > 0 ? N - pts - 1 : 0;
+  for (let c = slotCount[i] - n; c < slotCount[i]; c++) {
+    const o = ((slotHead[i] + c) % SLOT_CAP) * PF, k = b[o + 6];
+    while (j + 1 < N && Q[j + 1] < k) j++;
+    let t;
+    if (k <= Q[j]) t = T[j];
+    else if (j + 1 >= N) t = T[N - 1];
+    else {
+      const span = Q[j + 1] - Q[j];
+      t = span > 0 ? T[j] + (T[j + 1] - T[j]) * ((k - Q[j]) / span) : T[j + 1];
+    }
+    let g = 1;
+    if (up > 0 && t - t0 < up) g = t > t0 ? (t - t0) / up : 0;
+    if (down > 0 && t > te) g *= t - te < down ? 1 - (t - te) / down : 0;
+    b[o + 7] = g;
+  }
+}
 
 // A batch from the hall or the broadcast. from is who sent it, when the
 // message itself does not say (the broadcast's strokes have one sender).
@@ -760,6 +806,14 @@ export function brushTake(msg, from, onClock = false) {
   slotFed[i] = now;
   slotTimed[i] = T ? 1 : 0;
   slotLocal[i] = onClock ? 1 : 0;
+  // the playback's fades (retime's fu, fe and fd; only an onClock take
+  // has them): the fade up from a stroke's first batch, the fade down from
+  // its last, each on this clock
+  if (onClock && T) {
+    if (fresh && s.d === 0) { slotStart[i] = T[0]; slotFadeUp[i] = msg.fu > 0 ? msg.fu : 0; }
+    if (s.d === 2 && msg.fd > 0 && Number.isFinite(msg.fe)) { slotFadeEnd[i] = msg.fe; slotFadeDown[i] = msg.fd; }
+  }
+  const fading = slotFadeUp[i] > 0 || slotFadeDown[i] > 0;
   // A continuous stroke joined mid-way has no stamp at its first point:
   // its count starts at 1, the first stamp a spacing on.
   if (fresh && !prints && s.d !== 0) slotNextK[i] = 1;
@@ -782,6 +836,7 @@ export function brushTake(msg, from, onClock = false) {
   }
   qSide = brushSide(s.w); qMotif = s.m; qSet = s.a;
   into = i;
+  emitN = 0;
   if (prints) {
     // each point a print (core/brush-stamps.js), no carry; print n at n
     const k0 = slotNextK[i];
@@ -798,6 +853,7 @@ export function brushTake(msg, from, onClock = false) {
     }
     slotEnd[i] = k0 + slotArc[i] / spacing;
   }
+  if (fading && T) fadeGains(i, emitN, p.length);
   if (s.d === 2) slotDone[i] = 1;
   idleWake('a stroke');
 }
@@ -886,6 +942,15 @@ export function brushPlaying() {
 // marks grow or shrink along the line, which keeps the stroke's own
 // spacing (brushTake holds each slot's spacing from its first batch).
 //
+// Replay fade up and Replay fade down light a replayed stroke in and out:
+// its marks rise from nothing to full brightness over the fade up from its
+// first point, and at its end the line carries on past its last point the
+// way it was going for the fade down (core/brush-replay.js fadeTail), those
+// extra marks fading out to nothing (fadeGains). Both are times of the
+// drawing as the hand drew it, laid on this clock at the scale its point
+// gaps are, so a fade covers the same stretch of the line at any Replay
+// speed. Brightness alone, and only ever on the playback.
+//
 // A playback can be held (brushReplayHold: the standing page's pause, its
 // Space or a tap on the field) and let go again: held, the pass clock
 // stands, so on letting go the pass carries on from the very step it
@@ -904,6 +969,11 @@ function replaySizeNow() {
   const v = S.brushReplaySize;
   return v >= REPLAY_SIZE_MIN ? (v <= REPLAY_SIZE_MAX ? v : REPLAY_SIZE_MAX) : (v > 0 ? REPLAY_SIZE_MIN : 1);
 }
+// Replay fade up and Replay fade down (S.brushReplayFadeUp, ...FadeDown,
+// seconds of the stroke's own drawing time, 0 off, up to 2), as the ms
+// retime takes. Both playbacks, the standing one and cue 24's.
+const REPLAY_FADE_MAX = 2;
+function replayFadeMs(v) { return v > 0 ? (v < REPLAY_FADE_MAX ? v : REPLAY_FADE_MAX) * 1000 : 0; }
 export function brushTapeReset() { showTape.length = 0; }
 export function brushTapeAdd(entries) {
   for (const e of entries) showTape.push(e);
@@ -947,12 +1017,13 @@ function replayTick(now) {
     }
   }
   const st = pass.steps, scale = pass.scale / speed, size = replaySizeNow();
+  const fadeUp = replayFadeMs(S.brushReplayFadeUp), fadeDown = replayFadeMs(S.brushReplayFadeDown);
   // each batch handed over as its first new point comes due, its last
   // point laid ahead on this clock where the pass will reach it, so the
   // brush has every point before its moment and never plays catch-up
   while (passI < st.length && st[passI].takeMs <= passClock) {
     const step = st[passI++];
-    brushTake(retime(step, now - (passClock - step.tMs) / speed, scale, size), undefined, true);
+    brushTake(retime(step, now - (passClock - step.tMs) / speed, scale, size, fadeUp, fadeDown), undefined, true);
   }
 }
 

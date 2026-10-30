@@ -32,6 +32,16 @@ const DEF_ZOOM = 0, ZOOM_MAX = 2;
 // replay knobs in twentieths (0.05x).
 const DEF_CONTINUITY = 1, DEF_REPLAY_SPEED = 1, DEF_REPLAY_SIZE = 1;
 const SPEED_LO = 0.05, SPEED_HI = 2, RSIZE_LO = 0.25, RSIZE_HI = 4;
+// The playback's fade up and fade down (core/brush.js): seconds of the
+// stroke's own drawing time, 0 (off, the playback exactly as it was) to 2,
+// in twentieths.
+const DEF_REPLAY_FADE = 0, RFADE_HI = 2;
+const fadeSecLabel = pos => pos <= 0 ? 'Off' : Math.round(pos * 5) / 100 + ' s';
+const fadeSecFromText = text => {
+  if (/^\s*off\s*$/i.test(text)) return 0;
+  const n = parseFloat(text);
+  return n >= 0 ? Math.round(n * 20) : NaN;
+};
 // The morph from shapes to particles (core/brush-morph.js): shapes, the
 // brush as it always was, with Auto off.
 const DEF_MORPH = 0, DEF_MORPH_AUTO = false, DEF_TRIM = true;
@@ -79,6 +89,8 @@ export function initBrushState(S) {
   if (typeof S.brushContinuity !== 'number') S.brushContinuity = DEF_CONTINUITY;
   if (typeof S.brushReplaySpeed !== 'number') S.brushReplaySpeed = DEF_REPLAY_SPEED;
   if (typeof S.brushReplaySize !== 'number') S.brushReplaySize = DEF_REPLAY_SIZE;
+  if (typeof S.brushReplayFadeUp !== 'number') S.brushReplayFadeUp = DEF_REPLAY_FADE;
+  if (typeof S.brushReplayFadeDown !== 'number') S.brushReplayFadeDown = DEF_REPLAY_FADE;
   if (typeof S.brushMorph !== 'number') S.brushMorph = DEF_MORPH;
   if (typeof S.brushTrim !== 'boolean') S.brushTrim = DEF_TRIM;
   if (typeof S.brushMorphAuto !== 'boolean') S.brushMorphAuto = DEF_MORPH_AUTO;
@@ -119,6 +131,7 @@ export function applyBrushWire(S, o) {
 export function brushStateOf(S) {
   return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushZoom: S.brushZoom, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushContinuity: S.brushContinuity, brushReplaySpeed: S.brushReplaySpeed, brushReplaySize: S.brushReplaySize,
+           brushReplayFadeUp: S.brushReplayFadeUp, brushReplayFadeDown: S.brushReplayFadeDown,
            brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushParticleBright: S.brushParticleBright, brushTrim: S.brushTrim,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
@@ -142,6 +155,8 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushContinuity)) S.brushContinuity = Math.max(1, Math.min(CONTINUITY_MAX, o.brushContinuity));
   if (Number.isFinite(o.brushReplaySpeed)) S.brushReplaySpeed = Math.max(SPEED_LO, Math.min(SPEED_HI, o.brushReplaySpeed));
   if (Number.isFinite(o.brushReplaySize)) S.brushReplaySize = Math.max(RSIZE_LO, Math.min(RSIZE_HI, o.brushReplaySize));
+  if (Number.isFinite(o.brushReplayFadeUp)) S.brushReplayFadeUp = Math.max(0, Math.min(RFADE_HI, o.brushReplayFadeUp));
+  if (Number.isFinite(o.brushReplayFadeDown)) S.brushReplayFadeDown = Math.max(0, Math.min(RFADE_HI, o.brushReplayFadeDown));
   if (Number.isFinite(o.brushMorph)) S.brushMorph = Math.max(0, Math.min(1, o.brushMorph));
   if (typeof o.brushMorphAuto === 'boolean') S.brushMorphAuto = o.brushMorphAuto;
   if (Number.isFinite(o.brushParticleBright)) S.brushParticleBright = Math.max(PART_BRIGHT_LO, Math.min(PART_BRIGHT_HI, o.brushParticleBright));
@@ -307,6 +322,30 @@ export const BRUSH_CONTROLS = [
     set: (S, pos) => { S.brushReplaySize = Math.max(RSIZE_LO * 20, Math.min(RSIZE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
     formatAt: pos => timesLabel(pos / 20),
     parse: (S, text) => timesFromText(text, 20)
+  },
+  // Each replayed stroke lit in from nothing over this much of its own
+  // drawing time from its first point (both playbacks; core/brush.js). A
+  // time of the drawing as drawn, so at 0.05x a half second fades over ten.
+  // Off at 0. Brightness alone, and a live hand's strokes are never touched.
+  {
+    id: 'brushReplayFadeUp', section: 'brush', label: 'Replay fade up', kind: 'slider',
+    min: 0, max: RFADE_HI * 20, step: 1, def: DEF_REPLAY_FADE * 20,
+    get: S => Math.round(S.brushReplayFadeUp * 20),
+    set: (S, pos) => { S.brushReplayFadeUp = Math.max(0, Math.min(RFADE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
+    formatAt: fadeSecLabel,
+    parse: (S, text) => fadeSecFromText(text)
+  },
+  // Each replayed stroke carried on past its last point the way it was
+  // going, for this much drawing time, those extra marks fading out to
+  // nothing, so a line ends in a fade instead of a stop (core/brush-replay.js
+  // fadeTail). A hand at rest as it lifted gets no tail. Off at 0.
+  {
+    id: 'brushReplayFadeDown', section: 'brush', label: 'Replay fade down', kind: 'slider',
+    min: 0, max: RFADE_HI * 20, step: 1, def: DEF_REPLAY_FADE * 20,
+    get: S => Math.round(S.brushReplayFadeDown * 20),
+    set: (S, pos) => { S.brushReplayFadeDown = Math.max(0, Math.min(RFADE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
+    formatAt: fadeSecLabel,
+    parse: (S, text) => fadeSecFromText(text)
   },
   // Trim event, on by default: the playback's pass ends where the room
   // leaves (core/brush-replay.js roomLeaves) instead of playing the
