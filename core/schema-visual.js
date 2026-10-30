@@ -44,7 +44,7 @@ import { varied, driveOf } from './variance.js';
 import { applyHeartLookahead, applyHeartGrow, applyHeartConceal, simulateUnderrun } from '../js/heart/route.js';
 import { idleRefresh, idleStatusLine, IDLE_AHEAD_BUILT } from '../js/idle-ahead.js';
 import { applyOutputGuards } from './output-guard.js';
-import { GF_GLIDE_MAX } from './global-filter.js';
+import { GF_GLIDE_MAX, notifyGlobalFilter } from './global-filter.js';
 
 const glideMs = v => typeof v === 'number' && v === v ? Math.round(Math.max(0, Math.min(GF_GLIDE_MAX, v))) : 25;
 
@@ -2283,6 +2283,22 @@ export const VISUAL_CONTROLS = [
       save();
       if (on) presentInstall();
     }
+  },
+  {
+    // A show's audio controls, bypassed. The iPad's faders (the show
+    // remote's LP, HP, VOLUME and the finale row) set real controls on this
+    // machine, and they stay set: a filter closed for a performance is
+    // still closed the next week, which sounds like a broken app rather
+    // than a leftover show. On, the global filter reports itself open and
+    // flat (core/global-filter.js) and the receiver drops every audio word
+    // the remote sends (platform/presentation-receiver.js), so nothing from
+    // a show can shape this machine's sound. Nothing on S is changed, so
+    // switching it off hands the show back exactly as it was. This
+    // machine's own, like Presentation mode above: never on the wire, never
+    // in a preset.
+    id: 'presentBypassAudio', section: 'settings', label: 'Bypass live show audio', kind: 'toggle', def: false,
+    get: S => S.presentBypassAudio === true,
+    set: (S, on) => { S.presentBypassAudio = !!on; notifyGlobalFilter(); save(); }
   },
   {
     // The gate's password, typed in place of a browser prompt (which would

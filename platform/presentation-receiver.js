@@ -177,6 +177,14 @@ import { ampToPos } from '../js/util.js';
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
 // An audio fader added here or to FINALE below joins core/journey.js
 // LIVE_AUDIO, so a step with LIVE AUDIO on leaves it where the hand has it.
+// The show's audio words, dropped while Settings' Bypass live show audio is
+// on (S.presentBypassAudio): every ctl and finale fader that shapes what is
+// heard, so a remote still running cannot re-impose a filter or a level on
+// a machine whose operator has bypassed the show. The visual faders
+// (SCREEN, BREATH, WIND, SUN, TXT) and the slides' own transport go
+// through as ever: this bypasses the audio alone, as its name says.
+const AUDIO_CTL = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'heartMaster', 'mwtsVolume', 'brushVol',
+                           'finaleDrone', 'finalePiano', 'finaleChoir', 'finaleAmb', 'finaleHum']);
 const CTL_IDS = new Set(['vol', 'lpf', 'hpf', 'lpfRes', 'hpfRes', 'filterGlide', 'slideRate', 'slidePlay', 'slideRestart', 'slideXfade', 'heartMaster', 'mwtsVolume', 'textOpacity', 'brushVol']);
 // the hall's phases (broadcast-worker/src/groups.js PHASES, which the app
 // never imports), the drawing cues' words
@@ -378,6 +386,8 @@ export function initPresentationReceiver(hooks = {}) {
     // brushReplay), the room left in its phase
     else if (m.k === 'replay') { showTape.run(); brushReplay(true); broadcastDrawing(true); }
     else if (m.k === 'ctl') {
+      // the bypass drops the show's audio words outright (AUDIO_CTL above)
+      if (S.presentBypassAudio === true && AUDIO_CTL.has(m.id)) return;
       if (m.id === 'screenGate') {
         // not a schema control: live only, never saved (js/state.js)
         const v = +m.v;

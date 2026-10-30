@@ -746,7 +746,7 @@ export function snapshot() {
 const MACHINE_KEYS = ['spareMode', 'pauseWindDown', 'pauseFlickerStop',
                       'hintFadeInMs', 'hintFadeMs', 'hintSweep', 'hintArrive', 'hintShow',
                       'fbResScale', 'fbResSwitch', 'parallaxAmount', 'parallaxSpeed', 'phoneRevType', 'heartLookaheadS', 'heartGrowX', 'heartIdleAheadS', 'outputLatComp', 'syncDiagLog', 'sunRateHz', 'sunRateRev', 'sunTier', 'dprCap', 'energyButton',
-                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload', 'presentationMode',
+                      'outLimiter', 'outSoftClip', 'overlayMode', 'overlayModeRev', 'overlayKey', 'journeyReload', 'presentationMode', 'presentBypassAudio',
                       'heartLoopMode', 'heartLoopS', 'heartXfadeMs', 'heartQuantize', 'heartReturnS', 'heartWash', 'heartWashRiseS', 'heartWashDecayS', 'simGapMs', 'simGapRandom', 'simGapCount', 'simStallWorkers'];
 
 // The same object snapshot() gives, uncopied, for a caller that stringifies

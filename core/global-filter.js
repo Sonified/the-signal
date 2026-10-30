@@ -35,12 +35,19 @@ import { S } from '../js/state.js';
 
 export const GF_HZ_LO = 20, GF_HZ_HI = 20000, GF_RES_MAX = 24, GF_GLIDE_MAX = 200;
 
+// The bypass (Settings' Bypass live show audio, S.presentBypassAudio): a
+// show's filter, left where the iPad's faders put it, would otherwise
+// still be shaping this machine's sound days later. On, the pair reports
+// itself fully open and flat, so every chain glides transparent at once;
+// the corners themselves are untouched on S, so switching it off hands the
+// show back exactly as it was.
+const bypassed = () => S.presentBypassAudio === true;
 const clampHz = (v, def) => typeof v === 'number' && v === v ? Math.max(GF_HZ_LO, Math.min(GF_HZ_HI, v)) : def;
-export const globalLowpassHz = () => clampHz(S.lpfHz, GF_HZ_HI);
-export const globalHighpassHz = () => clampHz(S.hpfHz, GF_HZ_LO);
+export const globalLowpassHz = () => bypassed() ? GF_HZ_HI : clampHz(S.lpfHz, GF_HZ_HI);
+export const globalHighpassHz = () => bypassed() ? GF_HZ_LO : clampHz(S.hpfHz, GF_HZ_LO);
 const clampRes = v => typeof v === 'number' && v === v ? Math.max(0, Math.min(GF_RES_MAX, v)) : 0;
-export const globalLowpassRes = () => clampRes(S.lpfRes);
-export const globalHighpassRes = () => clampRes(S.hpfRes);
+export const globalLowpassRes = () => bypassed() ? 0 : clampRes(S.lpfRes);
+export const globalHighpassRes = () => bypassed() ? 0 : clampRes(S.hpfRes);
 const glideSec = () => {
   const ms = S.filterGlideMs;
   return typeof ms === 'number' && ms === ms ? Math.max(0, Math.min(GF_GLIDE_MAX, ms)) / 1000 : 0.025;
