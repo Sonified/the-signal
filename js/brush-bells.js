@@ -31,6 +31,7 @@ import { S } from './state.js';
 import { getContext, getMaster } from './audio.js';
 import { peekCtxFor, peekMasterFor } from './heart/route.js';
 import { roomInput, roomContext } from './room.js';
+import { chanGate } from './mixgate.js';
 import { bellFor, degreeHz, noteShape } from '../core/brush-notes.js';
 
 const PEAK = 0.05;        // the strike's peak gain (the piano's notes sit several times higher)
@@ -44,7 +45,9 @@ export function ringBell(seed, degree) {
   if (!(bell || note) || !S.audioEnabled) return;
   // the notes' master volume (schema-brush brushVol, the remote's NOTES
   // fader): every strike's peak scales by it, and 0 strikes nothing
-  const vol = Math.max(0, Math.min(1, typeof S.brushVol === 'number' ? S.brushVol : 1));
+  // the Levels window's own channel rides with it: mute, or another
+  // channel's solo, silences the strikes as it silences a voice
+  const vol = Math.max(0, Math.min(1, typeof S.brushVol === 'number' ? S.brushVol : 1)) * chanGate('notes');
   if (vol <= 0) return;
   const ctx = peekCtxFor('music') || getContext();
   const master = peekMasterFor('music') || getMaster();

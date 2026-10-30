@@ -177,6 +177,10 @@ const MASTER = makeFader(byId('ambMixerMaster')), REVERB = makeFader(byId('ambMi
 // drawer and this row are one control and can never disagree.
 const HUM = makeFader(byId('sunHumAmp'));
 const HUM_MUTE = byId('mixHumMute'), HUM_SOLO = byId('mixHumSolo');
+// The brush's bells and notes, a second surface on the Brush section's
+// Notes volume, so the drawer's row and this one are one control.
+const NOTES = makeFader(byId('brushVol'));
+const NOTES_MUTE = byId('mixNotesMute'), NOTES_SOLO = byId('mixNotesSolo');
 // The Heartbeat layer's recording the same way, on its Audio level.
 const HEART = makeFader(byId('heartAudio'));
 const HEART_MUTE = byId('mixHeartMute'), HEART_SOLO = byId('mixHeartSolo');
@@ -865,6 +869,11 @@ export function drawMixer(ui, app, fade = 1) {
     masterRow(ui, MUSIC[i], i === 0, MUSIC_LABELS[i], '%', meterCount(MUSIC_IDS[i]),
       MUSIC_MUTE[i], MUSIC_SOLO[i], chanSilenced(MUSIC_CH[i]));
   }
+  // The brush's bells and notes at the foot of the music: no meter of its
+  // own (a strike builds its nodes and lets them go), dimmed while the gate
+  // holds it or both its switches are off.
+  masterRow(ui, NOTES, false, 'BRUSH NOTES', '%', -1, NOTES_MUTE, NOTES_SOLO,
+    chanSilenced('notes') || !(S.brushNotes === true || S.brushTones === true));
 
   // The sounds outside the music: the Sun's Rotational hum and the
   // Heartbeat, each dimmed, as a muted channel is, while the gate holds it

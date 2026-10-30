@@ -2110,6 +2110,8 @@ const mixerControls = [
   ...gateControls('mixHum', 'hum', 'Rotational hum'),
   // and the Heartbeat layer: mixHeartMute, mixHeartSolo
   ...gateControls('mixHeart', 'heart', 'Heartbeat'),
+  // and the brush's bells and notes: mixNotesMute, mixNotesSolo
+  ...gateControls('mixNotes', 'notes', 'Brush notes'),
   {
     id: 'mixFund', section: 'mixer', label: 'Fundamental', kind: 'slider',
     min: 0, max: 100, step: 1, def: 83,
