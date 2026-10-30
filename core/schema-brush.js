@@ -17,6 +17,7 @@ import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { PART_BRIGHT_LO, PART_BRIGHT_HI } from './brush-morph.js';
 import { BRUSH_WAVES, waveOf } from './brush-notes.js';
 import { SMOOTH_MODES, SET_MS_MAX, SET_MS_DEFAULT } from './brush-smooth.js';
+import { subDrawer } from './schema-visual.js';
 
 const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_SPIN = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
 // The trail image's zoom, the companion to Feedback rotation: signed, out at
@@ -224,13 +225,39 @@ export const BRUSH_CONTROLS = [
     formatAt: pos => String(pos),
     visible: () => !brushMember()
   },
+  {
+    id: 'brushCopies', section: 'brush', label: 'Copies', kind: 'slider',
+    min: 1, max: 24, step: 1, def: DEF_COPIES,
+    get: S => S.brushCopies,
+    set: (S, pos) => { S.brushCopies = Math.max(1, Math.min(24, Math.round(pos))); saveBrush(); },
+    formatAt: pos => String(pos)
+  },
+  // How long a mark takes to fade away, 1 s to a minute (core/brush-stamps.js
+  // fadeSeconds): the trail image's half-life is a fifth of it.
+  {
+    id: 'brushFade', section: 'brush', label: 'Fade', kind: 'slider',
+    min: 0, max: 100, step: 1, def: Math.round(DEF_FADE * 100),
+    get: S => Math.round(S.brushFade * 100),
+    set: (S, pos) => { S.brushFade = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
+    formatAt: pos => fadeLabel(pos / 100),
+    parse: (S, text) => { const f = fadeFromText(text); return f === f ? Math.round(f * 100) : NaN; },
+    // the broadcast room the brush draws in, while this screen broadcasts
+    // or follows one
+    statusLine: () => brushStatusLine()
+  },
+  // The sub-drawers (see subDrawer in schema-visual.js): Motion, Stroke,
+  // Particles, Notes, Replay and the Room, each folding its rows under one
+  // strip that shows its primary readouts while shut. Layout only: every
+  // row keeps its id, its record and its own visible rule. Motion's rows are
+  // all the room's, so a member sees no strip at all.
+  Object.assign(subDrawer('brushMotionDrawer', 'Motion', 'brush', ['brushRotate', 'brushZoom']), { visible: () => !brushMember() }),
   // How fast the shape itself turns, in turns a second, 0 (still) to
   // ROTATE_MAX (core/brush-stamps.js), a tenth of a turn a step: each stamp
   // is laid down at the angle the shared clock gives its moment
   // (core/brush.js brushSpinAt), so only this speed is ever sent. The room's,
   // like Size: the conductor's goes to every member.
   {
-    id: 'brushSpin', section: 'brush', label: 'Shape rotation', kind: 'slider',
+    id: 'brushSpin', section: 'brush', parent: 'brushMotionDrawer', label: 'Shape rotation', kind: 'slider',
     min: 0, max: Math.round(ROTATE_MAX * 10), step: 1, def: Math.round(DEF_SPIN * 10),
     get: S => Math.round(S.brushSpin * 10),
     set: (S, pos) => { S.brushSpin = Math.max(0, Math.min(Math.round(ROTATE_MAX * 10), Math.round(pos))) / 10; saveBrush(); },
@@ -240,7 +267,7 @@ export const BRUSH_CONTROLS = [
   // How fast the whole trail image turns about the field's centre, in turns
   // a second, same range (the feedback's twist). The room's, like Size.
   {
-    id: 'brushRotate', section: 'brush', label: 'Feedback rotation', kind: 'slider',
+    id: 'brushRotate', section: 'brush', parent: 'brushMotionDrawer', label: 'Feedback rotation', kind: 'slider',
     min: 0, max: Math.round(ROTATE_MAX * 10), step: 1, def: Math.round(DEF_ROTATE * 10),
     get: S => Math.round(S.brushRotate * 10),
     set: (S, pos) => { S.brushRotate = Math.max(0, Math.min(Math.round(ROTATE_MAX * 10), Math.round(pos))) / 10; saveBrush(); },
@@ -264,7 +291,7 @@ export const BRUSH_CONTROLS = [
   // word of its own in the room message is the follow-up, and needs the
   // broadcast worker redeployed to carry it.
   {
-    id: 'brushZoom', section: 'brush', label: 'Feedback zoom', kind: 'slider',
+    id: 'brushZoom', section: 'brush', parent: 'brushMotionDrawer', label: 'Feedback zoom', kind: 'slider',
     min: -ZOOM_MAX, max: ZOOM_MAX, step: 0.01, def: DEF_ZOOM,
     get: S => S.brushZoom || 0,
     set: (S, pos) => { S.brushZoom = Math.max(-ZOOM_MAX, Math.min(ZOOM_MAX, pos)); saveBrush(); },
@@ -272,18 +299,12 @@ export const BRUSH_CONTROLS = [
       : (pos > 0 ? '+' + pos.toFixed(2) + ' out' : pos.toFixed(2) + ' in'),
     visible: () => !brushMember()
   },
-  {
-    id: 'brushCopies', section: 'brush', label: 'Copies', kind: 'slider',
-    min: 1, max: 24, step: 1, def: DEF_COPIES,
-    get: S => S.brushCopies,
-    set: (S, pos) => { S.brushCopies = Math.max(1, Math.min(24, Math.round(pos))); saveBrush(); },
-    formatAt: pos => String(pos)
-  },
+  subDrawer('brushStrokeDrawer', 'Stroke', 'brush', ['brushRate', 'brushContinuity']),
   // How the brush lays its shape down (core/brush-stamps.js): at the top,
   // Frame rate, a continuous ribbon along the hand; below it, separate
   // prints dropped as the hand drags, 60 a second down to 1.
   {
-    id: 'brushRate', section: 'brush', label: 'Rate', kind: 'slider',
+    id: 'brushRate', section: 'brush', parent: 'brushStrokeDrawer', label: 'Rate', kind: 'slider',
     min: 0, max: 100, step: 1, def: Math.round(DEF_RATE * 100),
     get: S => Math.round(S.brushRate * 100),
     set: (S, pos) => { S.brushRate = Math.max(0, Math.min(100, Math.round(pos))) / 100; saveBrush(); },
@@ -303,19 +324,180 @@ export const BRUSH_CONTROLS = [
   // hand's, the hall's, the playback's), never sent and never the room's:
   // the room deals Size, not this. Held for each stroke from its start.
   {
-    id: 'brushContinuity', section: 'brush', label: 'Continuity', kind: 'slider',
+    id: 'brushContinuity', section: 'brush', parent: 'brushStrokeDrawer', label: 'Continuity', kind: 'slider',
     min: 10, max: CONTINUITY_MAX * 10, step: 1, def: DEF_CONTINUITY * 10,
     get: S => Math.round(S.brushContinuity * 10),
     set: (S, pos) => { S.brushContinuity = Math.max(10, Math.min(CONTINUITY_MAX * 10, Math.round(pos))) / 10; saveBrush(); },
     formatAt: pos => timesLabel(pos / 10),
     parse: (S, text) => timesFromText(text, 10)
   },
+  subDrawer('brushParticlesDrawer', 'Particles', 'brush', ['brushMorph', 'brushParticleBright']),
+  // The morph (core/brush-morph.js): every stamp from its shape (Shapes, at
+  // the left) to a small glowing particle in the shape's own colour
+  // (Particles, at the right), crossfading between. Each screen's own, as
+  // Continuity is. The standing playback's page shows the same value as a
+  // slider of its own over the field (ui/screens/morph.js). Moved by hand,
+  // either one switches Auto off.
+  {
+    id: 'brushMorph', section: 'brush', parent: 'brushParticlesDrawer', label: 'Particles', kind: 'slider',
+    min: 0, max: 100, step: 1, def: DEF_MORPH * 100,
+    get: S => Math.round(S.brushMorph * 100),
+    set: (S, pos) => { S.brushMorph = Math.max(0, Math.min(100, Math.round(pos))) / 100; S.brushMorphAuto = false; saveBrush(); },
+    formatAt: pos => pos <= 0 ? 'Shapes' : pos >= 100 ? 'Particles' : pos + '%'
+  },
+  // Auto: the morph sweeps shapes to particles and back, a cosine with a
+  // half period of MORPH_HALF_PERIOD (core/brush-morph.js), from where it
+  // stands.
+  {
+    id: 'brushMorphAuto', section: 'brush', parent: 'brushParticlesDrawer', label: 'Particles auto', kind: 'toggle', def: DEF_MORPH_AUTO,
+    get: S => S.brushMorphAuto === true,
+    set: (S, on) => { S.brushMorphAuto = !!on; saveBrush(); }
+  },
+  // How bright the particles shine, 25% to 400% of their light
+  // (gpu/brush.js RIBBON_LIGHT): the particles alone, the shapes never.
+  {
+    id: 'brushParticleBright', section: 'brush', parent: 'brushParticlesDrawer', label: 'Particle brightness', kind: 'slider',
+    min: PART_BRIGHT_LO * 20, max: PART_BRIGHT_HI * 20, step: 1, def: DEF_PART_BRIGHT * 20,
+    get: S => Math.round(S.brushParticleBright * 20),
+    set: (S, pos) => { S.brushParticleBright = Math.max(PART_BRIGHT_LO * 20, Math.min(PART_BRIGHT_HI * 20, Math.round(pos))) / 20; saveBrush(); },
+    formatAt: pos => (pos * 5) + '%',
+    parse: (S, text) => { const n = parseFloat(text); return n > 0 ? Math.round(n / 5) : NaN; }
+  },
+  subDrawer('brushNotesDrawer', 'Notes', 'brush', ['brushVol', 'brushWave']),
+  // Brush bells and Brush notes: every hand has four notes of its own, on
+  // the four lines between the field's five bands, one struck as a stroke
+  // crosses each line (core/brush-notes.js), as a bell, a note, or both.
+  // This screen's own: a follower can silence what it hears. (The bells'
+  // id is still brushNotes, the name it was saved under.)
+  {
+    id: 'brushNotes', section: 'brush', parent: 'brushNotesDrawer', label: 'Brush bells', kind: 'toggle', def: DEF_NOTES,
+    get: S => S.brushNotes === true,
+    set: (S, on) => { S.brushNotes = !!on; saveBrush(); }
+  },
+  {
+    id: 'brushTones', section: 'brush', parent: 'brushNotesDrawer', label: 'Brush notes', kind: 'toggle', def: DEF_TONES,
+    get: S => S.brushTones === true,
+    set: (S, on) => { S.brushTones = !!on; saveBrush(); }
+  },
+  // Each note's length is drawn anew between these two, 0.1 to 3 s in
+  // tenths, its ADSR cut to fit (core/brush-notes.js noteShape); either may
+  // pass the other, the draw takes them in whichever order.
+  {
+    id: 'brushToneMin', section: 'brush', parent: 'brushNotesDrawer', label: 'Min note length', kind: 'slider',
+    min: TONE_LO * 10, max: TONE_HI * 10, step: 1, def: DEF_TONE_MIN * 10,
+    get: S => Math.round(S.brushToneMin * 10),
+    set: (S, pos) => { S.brushToneMin = Math.max(TONE_LO * 10, Math.min(TONE_HI * 10, Math.round(pos))) / 10; saveBrush(); },
+    formatAt: pos => (pos / 10).toFixed(1) + ' s',
+    visible: S => S.brushTones === true
+  },
+  {
+    id: 'brushToneMax', section: 'brush', parent: 'brushNotesDrawer', label: 'Max note length', kind: 'slider',
+    min: TONE_LO * 10, max: TONE_HI * 10, step: 1, def: DEF_TONE_MAX * 10,
+    get: S => Math.round(S.brushToneMax * 10),
+    set: (S, pos) => { S.brushToneMax = Math.max(TONE_LO * 10, Math.min(TONE_HI * 10, Math.round(pos))) / 10; saveBrush(); },
+    formatAt: pos => (pos / 10).toFixed(1) + ' s',
+    visible: S => S.brushTones === true
+  },
+  // The notes' master volume (see brushWireOf above): every strike's peak,
+  // bell and note alike, on every screen that sounds them. It starts at 0,
+  // silence: the notes enter the show only when the fader brings them in.
+  {
+    id: 'brushVol', section: 'brush', parent: 'brushNotesDrawer', label: 'Notes volume', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => Math.round(S.brushVol * 100),
+    set: (S, pos) => { S.brushVol = Math.max(0, Math.min(100, pos)) / 100; save(); },
+    formatAt: pos => pos + '%',
+  },
+  // The shape of every strike's carrier, a dropdown of the four the app's
+  // other instrument offers (js/piano.js SEQ_WAVES). The modulator stays a
+  // sine whatever this says: an FM pair with a rich shape on both sides
+  // turns to noise within a step or two, while a rich carrier swung by a
+  // sine stays a note with an edge on it. Each shape is played at its own
+  // level (core/brush-notes.js BRUSH_WAVE_GAIN), so moving this row is a
+  // change of colour and not of loudness. Sine is the voice as it has
+  // always sounded, so nothing moves until he picks another.
+  {
+    id: 'brushWave', section: 'brush', parent: 'brushNotesDrawer', label: 'Notes waveform', kind: 'segment', def: 'sine',
+    dropdown: true,
+    options: [
+      { value: 'sine',     label: 'Sine',     domId: null },
+      { value: 'triangle', label: 'Triangle', domId: null },
+      { value: 'sawtooth', label: 'Sawtooth', domId: null },
+      { value: 'square',   label: 'Square',   domId: null }
+    ],
+    get: S => waveOf(S.brushWave),
+    set: (S, v) => { S.brushWave = waveOf(v); saveBrush(); }
+  },
+  // Fine tuning: the notes' pitch bent up or down by up to a whole
+  // semitone, in cents (js/brush-bells.js lays it on every strike's
+  // frequency, bell and note alike, so the hand's instrument tunes to
+  // whatever the room's music is doing). Each screen's own.
+  {
+    id: 'brushDetune', section: 'brush', parent: 'brushNotesDrawer', label: 'Notes fine tuning', kind: 'slider',
+    min: -DETUNE_MAX, max: DETUNE_MAX, step: 1, def: DEF_DETUNE,
+    get: S => Math.round(S.brushDetune),
+    set: (S, pos) => { S.brushDetune = Math.max(-DETUNE_MAX, Math.min(DETUNE_MAX, Math.round(pos))); saveBrush(); },
+    formatAt: pos => (pos > 0 ? '+' : '') + pos + ' cents',
+  },
+  // How much of each strike goes into the master reverb room (js/room.js):
+  // the send's own level, the strike always dry into the master beside it.
+  // Each screen's own.
+  {
+    id: 'brushVerb', section: 'brush', parent: 'brushNotesDrawer', label: 'Notes reverb', kind: 'slider',
+    min: 0, max: 100, step: 1, def: Math.round(DEF_VERB * 100),
+    get: S => Math.round(S.brushVerb * 100),
+    set: (S, pos) => { S.brushVerb = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
+    formatAt: pos => pos + '%',
+  },
+  // How wide the strikes are thrown across the stereo field. Each takes
+  // the side opposite where the recent ones sat and a random distance out
+  // (js/brush-bells.js nextPan), so they ping-pong instead of clustering
+  // three left then three right, and a pause leans the walk back to the
+  // middle. 0 is every strike centred. The room's send is tapped before
+  // the panner, so the reverb stays even around the centre.
+  {
+    id: 'brushPan', section: 'brush', parent: 'brushNotesDrawer', label: 'Notes stereo width', kind: 'slider',
+    min: 0, max: 100, step: 1, def: Math.round(DEF_PAN * 100),
+    get: S => Math.round(S.brushPan * 100),
+    set: (S, pos) => { S.brushPan = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
+    formatAt: pos => pos <= 0 ? 'centred' : pos + '%',
+  },
+  // The strikes' own highpass, 20 Hz (open: under the lowest note, so no
+  // filter is built at all) to 2 kHz, log as the Audio section's are. With
+  // the lowpass under it the voice is heard through a band of its own, the
+  // two the only filters an FM pair otherwise carries nothing of.
+  {
+    id: 'brushHpf', section: 'brush', parent: 'brushNotesDrawer', label: 'Notes highpass', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => hpfHzToPos(S.brushHpf),
+    set: (S, pos) => { S.brushHpf = hpfPosToHz(pos); saveBrush(); },
+    formatAt: pos => {
+      const hz = hpfPosToHz(pos);
+      return pos <= 0 ? 'open' : hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz';
+    },
+  },
+  // The strikes' own lowpass, the highpass's mirror: 20 kHz at the top
+  // (open, above everything the voice makes, so no filter is built at all)
+  // down to 200 Hz, the same log taper read the other way, so the row is
+  // open where a lowpass is open and darkens as it falls. It sits after the
+  // highpass on the strike, the pair in the order the global filter uses.
+  {
+    id: 'brushLpf', section: 'brush', parent: 'brushNotesDrawer', label: 'Notes lowpass', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => lpfHzToPos(S.brushLpf),
+    set: (S, pos) => { S.brushLpf = lpfPosToHz(pos); saveBrush(); },
+    formatAt: pos => {
+      const hz = lpfPosToHz(pos);
+      return pos >= 100 ? 'open' : hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz';
+    },
+  },
+  subDrawer('brushReplayDrawer', 'Replay', 'brush', ['brushReplaySpeed', 'brushReplaySmooth']),
   // The tape's playback, at the pace of the playback between shows
   // (?replay=, platform/tape-replay.js): 1x is real time, the drawing as
   // it happened, 0.05x to 2x, live, from where the pass stands. The show's
   // cue 24 keeps its own squeeze and is never moved by this.
   {
-    id: 'brushReplaySpeed', section: 'brush', label: 'Replay speed', kind: 'slider',
+    id: 'brushReplaySpeed', section: 'brush', parent: 'brushReplayDrawer', label: 'Replay speed', kind: 'slider',
     min: Math.round(SPEED_LO * 20), max: SPEED_HI * 20, step: 1, def: DEF_REPLAY_SPEED * 20,
     get: S => Math.round(S.brushReplaySpeed * 20),
     set: (S, pos) => { S.brushReplaySpeed = Math.max(SPEED_LO * 20, Math.min(SPEED_HI * 20, Math.round(pos))) / 20; saveBrush(); },
@@ -327,7 +509,7 @@ export const BRUSH_CONTROLS = [
   // wire's 1 to 100, so a stroke drawn at the default 50 grows at most 2x.
   // A live hand's strokes are never touched. From the next batch on.
   {
-    id: 'brushReplaySize', section: 'brush', label: 'Replay size', kind: 'slider',
+    id: 'brushReplaySize', section: 'brush', parent: 'brushReplayDrawer', label: 'Replay size', kind: 'slider',
     min: RSIZE_LO * 20, max: RSIZE_HI * 20, step: 1, def: DEF_REPLAY_SIZE * 20,
     get: S => Math.round(S.brushReplaySize * 20),
     set: (S, pos) => { S.brushReplaySize = Math.max(RSIZE_LO * 20, Math.min(RSIZE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
@@ -339,7 +521,7 @@ export const BRUSH_CONTROLS = [
   // time of the drawing as drawn, so at 0.05x a half second fades over ten.
   // Off at 0. Brightness alone, and a live hand's strokes are never touched.
   {
-    id: 'brushReplayFadeUp', section: 'brush', label: 'Replay fade up', kind: 'slider',
+    id: 'brushReplayFadeUp', section: 'brush', parent: 'brushReplayDrawer', label: 'Replay fade up', kind: 'slider',
     min: 0, max: RFADE_HI * 20, step: 1, def: DEF_REPLAY_FADE * 20,
     get: S => Math.round(S.brushReplayFadeUp * 20),
     set: (S, pos) => { S.brushReplayFadeUp = Math.max(0, Math.min(RFADE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
@@ -351,7 +533,7 @@ export const BRUSH_CONTROLS = [
   // nothing, so a line ends in a fade instead of a stop (core/brush-replay.js
   // fadeTail). A hand at rest as it lifted gets no tail. Off at 0.
   {
-    id: 'brushReplayFadeDown', section: 'brush', label: 'Replay fade down', kind: 'slider',
+    id: 'brushReplayFadeDown', section: 'brush', parent: 'brushReplayDrawer', label: 'Replay fade down', kind: 'slider',
     min: 0, max: RFADE_HI * 20, step: 1, def: DEF_REPLAY_FADE * 20,
     get: S => Math.round(S.brushReplayFadeDown * 20),
     set: (S, pos) => { S.brushReplayFadeDown = Math.max(0, Math.min(RFADE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
@@ -368,7 +550,7 @@ export const BRUSH_CONTROLS = [
   // the softest of the three. Curves come out a little softer. Off is the
   // playback exactly as it was. From the next batch on.
   {
-    id: 'brushReplaySmooth', section: 'brush', label: 'Replay smoothing', kind: 'segment', def: DEF_REPLAY_SMOOTH,
+    id: 'brushReplaySmooth', section: 'brush', parent: 'brushReplayDrawer', label: 'Replay smoothing', kind: 'segment', def: DEF_REPLAY_SMOOTH,
     dropdown: true,
     options: [
       { value: 'off',  label: 'Off',  domId: null },
@@ -384,7 +566,7 @@ export const BRUSH_CONTROLS = [
   // so at 0.05x it covers a twentieth as much of the drawing as at 1x.
   // Shown only while Set is picked. Off at 0.
   {
-    id: 'brushReplaySmoothMs', section: 'brush', label: 'Smoothing time', kind: 'slider',
+    id: 'brushReplaySmoothMs', section: 'brush', parent: 'brushReplayDrawer', label: 'Smoothing time', kind: 'slider',
     min: 0, max: SET_MS_MAX / RSMOOTH_STEP, step: 1, def: SET_MS_DEFAULT / RSMOOTH_STEP,
     get: S => Math.round(S.brushReplaySmoothMs / RSMOOTH_STEP),
     set: (S, pos) => { S.brushReplaySmoothMs = Math.max(0, Math.min(SET_MS_MAX / RSMOOTH_STEP, Math.round(pos))) * RSMOOTH_STEP; saveBrush(); },
@@ -401,54 +583,14 @@ export const BRUSH_CONTROLS = [
   // stragglers' tail to the tape's end. Off plays the whole tape. Only a
   // tape the room arrived on is ever cut, and the next pass takes a change.
   {
-    id: 'brushTrim', section: 'brush', label: 'Trim event', kind: 'toggle', def: DEF_TRIM,
+    id: 'brushTrim', section: 'brush', parent: 'brushReplayDrawer', label: 'Trim event', kind: 'toggle', def: DEF_TRIM,
     get: S => S.brushTrim !== false,
     set: (S, on) => { S.brushTrim = !!on; saveBrush(); }
   },
-  // The morph (core/brush-morph.js): every stamp from its shape (Shapes, at
-  // the left) to a small glowing particle in the shape's own colour
-  // (Particles, at the right), crossfading between. Each screen's own, as
-  // Continuity is. The standing playback's page shows the same value as a
-  // slider of its own over the field (ui/screens/morph.js). Moved by hand,
-  // either one switches Auto off.
-  {
-    id: 'brushMorph', section: 'brush', label: 'Particles', kind: 'slider',
-    min: 0, max: 100, step: 1, def: DEF_MORPH * 100,
-    get: S => Math.round(S.brushMorph * 100),
-    set: (S, pos) => { S.brushMorph = Math.max(0, Math.min(100, Math.round(pos))) / 100; S.brushMorphAuto = false; saveBrush(); },
-    formatAt: pos => pos <= 0 ? 'Shapes' : pos >= 100 ? 'Particles' : pos + '%'
-  },
-  // Auto: the morph sweeps shapes to particles and back, a cosine with a
-  // half period of MORPH_HALF_PERIOD (core/brush-morph.js), from where it
-  // stands.
-  {
-    id: 'brushMorphAuto', section: 'brush', label: 'Particles auto', kind: 'toggle', def: DEF_MORPH_AUTO,
-    get: S => S.brushMorphAuto === true,
-    set: (S, on) => { S.brushMorphAuto = !!on; saveBrush(); }
-  },
-  // How bright the particles shine, 25% to 400% of their light
-  // (gpu/brush.js RIBBON_LIGHT): the particles alone, the shapes never.
-  {
-    id: 'brushParticleBright', section: 'brush', label: 'Particle brightness', kind: 'slider',
-    min: PART_BRIGHT_LO * 20, max: PART_BRIGHT_HI * 20, step: 1, def: DEF_PART_BRIGHT * 20,
-    get: S => Math.round(S.brushParticleBright * 20),
-    set: (S, pos) => { S.brushParticleBright = Math.max(PART_BRIGHT_LO * 20, Math.min(PART_BRIGHT_HI * 20, Math.round(pos))) / 20; saveBrush(); },
-    formatAt: pos => (pos * 5) + '%',
-    parse: (S, text) => { const n = parseFloat(text); return n > 0 ? Math.round(n / 5) : NaN; }
-  },
-  // How long a mark takes to fade away, 1 s to a minute (core/brush-stamps.js
-  // fadeSeconds): the trail image's half-life is a fifth of it.
-  {
-    id: 'brushFade', section: 'brush', label: 'Fade', kind: 'slider',
-    min: 0, max: 100, step: 1, def: Math.round(DEF_FADE * 100),
-    get: S => Math.round(S.brushFade * 100),
-    set: (S, pos) => { S.brushFade = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
-    formatAt: pos => fadeLabel(pos / 100),
-    parse: (S, text) => { const f = fadeFromText(text); return f === f ? Math.round(f * 100) : NaN; },
-    // the broadcast room the brush draws in, while this screen broadcasts
-    // or follows one
-    statusLine: () => brushStatusLine()
-  },
+  // The room, last: the conductor's show controls and the room's settings.
+  // Show brushes and the followers' buttons are everyone's, so the strip
+  // always shows; Phase, its summary, reads only on a conductor's.
+  subDrawer('brushRoomDrawer', 'Room', 'brush', ['brushPhase']),
   // The conductor's phases, in the hall's order (broadcast-worker/src/groups.js
   // PHASES) and /touch/'s words. A live show control, not a setting: it
   // reads the hall's phase and sends the hall {t:'phase', p} (touch/hall.js
@@ -459,7 +601,7 @@ export const BRUSH_CONTROLS = [
   // 'Pairs 2': the options are one of three fixed lists, picked by the
   // hall's phase and round, so the labels are built once.
   {
-    id: 'brushPhase', section: 'brush', label: 'Phase', kind: 'segment', retap: true,
+    id: 'brushPhase', section: 'brush', parent: 'brushRoomDrawer', label: 'Phase', kind: 'segment', retap: true,
     get options() {
       const r = brushRound();
       if (r > 1 && brushPhase() === 'pairs') return PHASE_OPTS_PAIRS2;
@@ -473,7 +615,7 @@ export const BRUSH_CONTROLS = [
   // Next walks the show's script: Alone, Master, Pairs, Pairs 2, Fours,
   // Fours 2, Together (broadcast-worker/src/groups.js SCRIPT).
   {
-    id: 'brushNext', section: 'brush', label: 'Next', kind: 'action',
+    id: 'brushNext', section: 'brush', parent: 'brushRoomDrawer', label: 'Next', kind: 'action',
     act: () => brushNext(),
     visible: () => brushConducting()
   },
@@ -483,7 +625,7 @@ export const BRUSH_CONTROLS = [
   // screen holds a remote stroke back to play it smoothly (its jitter
   // margin; a late batch still raises it there).
   {
-    id: 'brushStream', section: 'brush', label: 'Stream', kind: 'slider',
+    id: 'brushStream', section: 'brush', parent: 'brushRoomDrawer', label: 'Stream', kind: 'slider',
     min: 10, max: 60, step: 1, def: DEF_STREAM,
     get: S => S.brushStream,
     set: (S, pos) => { S.brushStream = Math.max(10, Math.min(60, Math.round(pos))); saveBrush(); },
@@ -491,7 +633,7 @@ export const BRUSH_CONTROLS = [
     visible: () => brushConducting()
   },
   {
-    id: 'brushSmooth', section: 'brush', label: 'Smoothing', kind: 'slider',
+    id: 'brushSmooth', section: 'brush', parent: 'brushRoomDrawer', label: 'Smoothing', kind: 'slider',
     min: 0, max: 200, step: 1, def: DEF_SMOOTH,
     get: S => S.brushSmooth,
     set: (S, pos) => { S.brushSmooth = Math.max(0, Math.min(200, Math.round(pos))); saveBrush(); },
@@ -507,154 +649,34 @@ export const BRUSH_CONTROLS = [
   // screens (ui/screens/hand.js). It goes to the hall while this screen
   // conducts one.
   {
-    id: 'brushDeal', section: 'brush', label: 'Show brushes', kind: 'toggle', def: DEF_DEAL,
+    id: 'brushDeal', section: 'brush', parent: 'brushRoomDrawer', label: 'Show brushes', kind: 'toggle', def: DEF_DEAL,
     get: S => S.brushDeal === true,
     set: (S, on) => { S.brushDeal = !!on; saveBrush(); }
   },
   {
-    id: 'brushDealN', section: 'brush', label: 'Brushes each', kind: 'slider',
+    id: 'brushDealN', section: 'brush', parent: 'brushRoomDrawer', label: 'Brushes each', kind: 'slider',
     min: 1, max: 8, step: 1, def: DEF_DEAL_N,
     get: S => S.brushDealN,
     set: (S, pos) => { S.brushDealN = Math.max(1, Math.min(8, Math.round(pos))); saveBrush(); },
     formatAt: pos => String(pos),
     visible: S => S.brushDeal === true
   },
-  // Brush bells and Brush notes: every hand has four notes of its own, on
-  // the four lines between the field's five bands, one struck as a stroke
-  // crosses each line (core/brush-notes.js), as a bell, a note, or both.
-  // This screen's own: a follower can silence what it hears. (The bells'
-  // id is still brushNotes, the name it was saved under.)
-  {
-    id: 'brushNotes', section: 'brush', label: 'Brush bells', kind: 'toggle', def: DEF_NOTES,
-    get: S => S.brushNotes === true,
-    set: (S, on) => { S.brushNotes = !!on; saveBrush(); }
-  },
-  {
-    id: 'brushTones', section: 'brush', label: 'Brush notes', kind: 'toggle', def: DEF_TONES,
-    get: S => S.brushTones === true,
-    set: (S, on) => { S.brushTones = !!on; saveBrush(); }
-  },
-  // Each note's length is drawn anew between these two, 0.1 to 3 s in
-  // tenths, its ADSR cut to fit (core/brush-notes.js noteShape); either may
-  // pass the other, the draw takes them in whichever order.
-  {
-    id: 'brushToneMin', section: 'brush', label: 'Min note length', kind: 'slider',
-    min: TONE_LO * 10, max: TONE_HI * 10, step: 1, def: DEF_TONE_MIN * 10,
-    get: S => Math.round(S.brushToneMin * 10),
-    set: (S, pos) => { S.brushToneMin = Math.max(TONE_LO * 10, Math.min(TONE_HI * 10, Math.round(pos))) / 10; saveBrush(); },
-    formatAt: pos => (pos / 10).toFixed(1) + ' s',
-    visible: S => S.brushTones === true
-  },
-  {
-    id: 'brushToneMax', section: 'brush', label: 'Max note length', kind: 'slider',
-    min: TONE_LO * 10, max: TONE_HI * 10, step: 1, def: DEF_TONE_MAX * 10,
-    get: S => Math.round(S.brushToneMax * 10),
-    set: (S, pos) => { S.brushToneMax = Math.max(TONE_LO * 10, Math.min(TONE_HI * 10, Math.round(pos))) / 10; saveBrush(); },
-    formatAt: pos => (pos / 10).toFixed(1) + ' s',
-    visible: S => S.brushTones === true
-  },
-  // The notes' master volume (see brushWireOf above): every strike's peak,
-  // bell and note alike, on every screen that sounds them. It starts at 0,
-  // silence: the notes enter the show only when the fader brings them in.
-  {
-    id: 'brushVol', section: 'brush', label: 'Notes volume', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 0,
-    get: S => Math.round(S.brushVol * 100),
-    set: (S, pos) => { S.brushVol = Math.max(0, Math.min(100, pos)) / 100; save(); },
-    formatAt: pos => pos + '%',
-  },
-  // The shape of every strike's carrier, a dropdown of the four the app's
-  // other instrument offers (js/piano.js SEQ_WAVES). The modulator stays a
-  // sine whatever this says: an FM pair with a rich shape on both sides
-  // turns to noise within a step or two, while a rich carrier swung by a
-  // sine stays a note with an edge on it. Each shape is played at its own
-  // level (core/brush-notes.js BRUSH_WAVE_GAIN), so moving this row is a
-  // change of colour and not of loudness. Sine is the voice as it has
-  // always sounded, so nothing moves until he picks another.
-  {
-    id: 'brushWave', section: 'brush', label: 'Notes waveform', kind: 'segment', def: 'sine',
-    dropdown: true,
-    options: [
-      { value: 'sine',     label: 'Sine',     domId: null },
-      { value: 'triangle', label: 'Triangle', domId: null },
-      { value: 'sawtooth', label: 'Sawtooth', domId: null },
-      { value: 'square',   label: 'Square',   domId: null }
-    ],
-    get: S => waveOf(S.brushWave),
-    set: (S, v) => { S.brushWave = waveOf(v); saveBrush(); }
-  },
-  // Fine tuning: the notes' pitch bent up or down by up to a whole
-  // semitone, in cents (js/brush-bells.js lays it on every strike's
-  // frequency, bell and note alike, so the hand's instrument tunes to
-  // whatever the room's music is doing). Each screen's own.
-  {
-    id: 'brushDetune', section: 'brush', label: 'Notes fine tuning', kind: 'slider',
-    min: -DETUNE_MAX, max: DETUNE_MAX, step: 1, def: DEF_DETUNE,
-    get: S => Math.round(S.brushDetune),
-    set: (S, pos) => { S.brushDetune = Math.max(-DETUNE_MAX, Math.min(DETUNE_MAX, Math.round(pos))); saveBrush(); },
-    formatAt: pos => (pos > 0 ? '+' : '') + pos + ' cents',
-  },
-  // How much of each strike goes into the master reverb room (js/room.js):
-  // the send's own level, the strike always dry into the master beside it.
-  // Each screen's own.
-  {
-    id: 'brushVerb', section: 'brush', label: 'Notes reverb', kind: 'slider',
-    min: 0, max: 100, step: 1, def: Math.round(DEF_VERB * 100),
-    get: S => Math.round(S.brushVerb * 100),
-    set: (S, pos) => { S.brushVerb = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
-    formatAt: pos => pos + '%',
-  },
-  // How wide the strikes are thrown across the stereo field. Each takes
-  // the side opposite where the recent ones sat and a random distance out
-  // (js/brush-bells.js nextPan), so they ping-pong instead of clustering
-  // three left then three right, and a pause leans the walk back to the
-  // middle. 0 is every strike centred. The room's send is tapped before
-  // the panner, so the reverb stays even around the centre.
-  {
-    id: 'brushPan', section: 'brush', label: 'Notes stereo width', kind: 'slider',
-    min: 0, max: 100, step: 1, def: Math.round(DEF_PAN * 100),
-    get: S => Math.round(S.brushPan * 100),
-    set: (S, pos) => { S.brushPan = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
-    formatAt: pos => pos <= 0 ? 'centred' : pos + '%',
-  },
-  // The strikes' own highpass, 20 Hz (open: under the lowest note, so no
-  // filter is built at all) to 2 kHz, log as the Audio section's are. With
-  // the lowpass under it the voice is heard through a band of its own, the
-  // two the only filters an FM pair otherwise carries nothing of.
-  {
-    id: 'brushHpf', section: 'brush', label: 'Notes highpass', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 0,
-    get: S => hpfHzToPos(S.brushHpf),
-    set: (S, pos) => { S.brushHpf = hpfPosToHz(pos); saveBrush(); },
-    formatAt: pos => {
-      const hz = hpfPosToHz(pos);
-      return pos <= 0 ? 'open' : hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz';
-    },
-  },
-  // The strikes' own lowpass, the highpass's mirror: 20 kHz at the top
-  // (open, above everything the voice makes, so no filter is built at all)
-  // down to 200 Hz, the same log taper read the other way, so the row is
-  // open where a lowpass is open and darkens as it falls. It sits after the
-  // highpass on the strike, the pair in the order the global filter uses.
-  {
-    id: 'brushLpf', section: 'brush', label: 'Notes lowpass', kind: 'slider',
-    min: 0, max: 100, step: 1, def: 100,
-    get: S => lpfHzToPos(S.brushLpf),
-    set: (S, pos) => { S.brushLpf = lpfPosToHz(pos); saveBrush(); },
-    formatAt: pos => {
-      const hz = lpfPosToHz(pos);
-      return pos >= 100 ? 'open' : hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz';
-    },
-  },
   // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
   // and the full screen button) left off a follower's screen: a tab
   // following a broadcast (a drawer in its room).
   {
-    id: 'brushHideFollow', section: 'brush', label: 'Hide bottom buttons for followers', kind: 'toggle', def: DEF_HIDE_FOLLOW,
+    id: 'brushHideFollow', section: 'brush', parent: 'brushRoomDrawer', label: 'Hide bottom buttons for followers', kind: 'toggle', def: DEF_HIDE_FOLLOW,
     get: S => S.brushHideFollow !== false,
     set: (S, on) => { S.brushHideFollow = !!on; saveBrush(); }
   }
 ];
+
+// Shorthand names for the shut sub-drawer strips' summaries (see summary in
+// schema-visual.js subDrawer), where a label's first word would say the same
+// thing twice ('Feedback 0.3 /s · Feedback none').
+const BRUSH_SHORT = { brushRotate: 'Rotation', brushZoom: 'Zoom', brushParticleBright: 'Brightness',
+  brushVol: 'Volume', brushWave: 'Waveform', brushReplaySpeed: 'Speed', brushReplaySmooth: 'Smoothing' };
+for (const c of BRUSH_CONTROLS) if (BRUSH_SHORT[c.id]) c.summaryLabel = BRUSH_SHORT[c.id];
 
 export const BRUSH_SECTIONS = [
   { id: 'brush', title: 'Brush' }
