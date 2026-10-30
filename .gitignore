@@ -33,3 +33,6 @@ tools/.headless-profiles/
 # per-file logs of tools/heart-tests/run-each.sh
 tools/heart-tests/logs/
 __pycache__/
+
+# Private event material (transcripts of real people) — never tracked; the repo is public
+documents/win2026/
