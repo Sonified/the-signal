@@ -41,7 +41,19 @@ export const GF_HZ_LO = 20, GF_HZ_HI = 20000, GF_RES_MAX = 24, GF_GLIDE_MAX = 20
 // itself fully open and flat, so every chain glides transparent at once;
 // the corners themselves are untouched on S, so switching it off hands the
 // show back exactly as it was.
-const bypassed = () => S.presentBypassAudio === true;
+// A page may also bypass the pair for itself, saving nothing: the standing
+// playback (?event, main.js) does, so an event's page sounds as it was made
+// to whatever a visitor's browser remembers — a filter closed for a show
+// weeks ago is still in that browser's settings, and the drawing's page is
+// nobody's mixing desk.
+let pageBypass = false;
+export function bypassGlobalFilter(on) {
+  on = !!on;
+  if (on === pageBypass) return;
+  pageBypass = on;
+  notifyGlobalFilter();
+}
+const bypassed = () => pageBypass || S.presentBypassAudio === true;
 const clampHz = (v, def) => typeof v === 'number' && v === v ? Math.max(GF_HZ_LO, Math.min(GF_HZ_HI, v)) : def;
 export const globalLowpassHz = () => bypassed() ? GF_HZ_HI : clampHz(S.lpfHz, GF_HZ_HI);
 export const globalHighpassHz = () => bypassed() ? GF_HZ_LO : clampHz(S.hpfHz, GF_HZ_LO);

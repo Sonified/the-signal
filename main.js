@@ -74,6 +74,7 @@ import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent, relayHost } fro
 import { openBrushHall } from './platform/brush-hall.js';
 import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember, setBrushBell, setBrushStarted, brushReplayHold } from './core/brush.js';
 import { CONTINUITY_MAX } from './core/brush-stamps.js';
+import { bypassGlobalFilter } from './core/global-filter.js';
 import { ringBell } from './js/brush-bells.js';
 import { linkBell } from './core/audio-link.js';
 import { drawHand } from './ui/screens/hand.js';
@@ -577,6 +578,11 @@ async function boot() {
     // welcome. The slider over the field (or the drawer's rows) switches it
     // off the moment a hand moves one.
     S.brushMorphAuto = true;
+    // And the sound is the drawing's own: the global Lowpass and Highpass
+    // are bypassed for this page (core/global-filter.js, nothing saved and
+    // nothing on S moved), so a filter a visitor's browser remembers from
+    // some other day cannot muffle the notes here.
+    bypassGlobalFilter(true);
     setOverlayFollow();
     liftVeil();
     setBrushStarted();
