@@ -84,6 +84,19 @@ export function bellFor(seed) {
   };
 }
 
+// The shape of the strike's carrier (schema-brush brushWave, js/brush-bells.js
+// fmPair). Sine is the voice as it always was; the other three give the same
+// FM pair a harder edge before the modulation even speaks. Each shape carries
+// a gain beside it, rough loudness matching between them, so a change of
+// waveform is a change of colour rather than of level: the numbers are the
+// sequencer's own (js/piano.js ARP_WAVE_GAIN), kept the same here so the two
+// instruments agree about how loud a sawtooth is.
+export const BRUSH_WAVES = ['sine', 'triangle', 'sawtooth', 'square'];
+export const BRUSH_WAVE_GAIN = { sine: 1, triangle: 0.85, sawtooth: 0.42, square: 0.34 };
+// Whatever a record or a stale setting holds, read as one of the four; a
+// name the table does not know is the default sine.
+export const waveOf = v => (typeof v === 'string' && BRUSH_WAVE_GAIN[v] ? v : 'sine');
+
 // A note's shape, new for every strike (rand is Math.random on the page):
 // its whole length drawn between lo and hi seconds, in either order, and an
 // ADSR cut to fit it. A quick attack (1 to 4 % of the length, 3 to 30 ms),

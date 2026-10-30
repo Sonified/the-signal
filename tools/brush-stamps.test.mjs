@@ -243,6 +243,39 @@ test('the conductor\'s phase row: shown only to a joined conductor, lit by the h
   assert.equal(row.get(S), 'quads');
   assert.ok(!('brushPhase' in brushStateOf(S)), 'not in the saved record');
   setBrushHall(null);
+
+  // The notes' two filter rows and the waveform, from the same schema. Each
+  // filter is a log taper with one end open, and a position must survive the
+  // round trip through Hz and back so a saved record returns the slider to
+  // where the hand left it.
+  const { BRUSH_WAVES, BRUSH_WAVE_GAIN, waveOf } = await import('../core/brush-notes.js');
+  for (const [id, open] of [['brushHpf', 0], ['brushLpf', 100]]) {
+    const r = byId(id);
+    assert.equal(r.formatAt(open), 'open', id + ' reads open at its open end');
+    assert.equal(r.def, open);
+    for (let pos = 0; pos <= 100; pos++) {
+      r.set(S, pos);
+      assert.equal(r.get(S), pos, id + ' round trips at ' + pos);
+    }
+    r.set(S, open);
+  }
+  // the highpass climbs with its position, the lowpass falls as it leaves
+  // the top: mirrors, so both rows read open where their filter is open
+  assert.ok(byId('brushHpf').formatAt(100) === '2.00 kHz' && byId('brushLpf').formatAt(0) === '200 Hz');
+  const wv = byId('brushWave');
+  assert.equal(wv.def, 'sine', 'sine until he picks another');
+  assert.deepEqual(wv.options.map(o => o.value), BRUSH_WAVES);
+  assert.deepEqual(wv.options.map(o => o.label), ['Sine', 'Triangle', 'Sawtooth', 'Square']);
+  // every shape the row offers is in the loudness table, so no choice can
+  // jump the level (js/brush-bells.js scales the peak by it)
+  for (const w of wv.options.map(o => o.value)) assert.ok(BRUSH_WAVE_GAIN[w] > 0, w + ' has a level');
+  assert.equal(Object.keys(BRUSH_WAVE_GAIN).length, wv.options.length, 'the table and the row hold the same four');
+  wv.set(S, 'sawtooth');
+  assert.equal(wv.get(S), 'sawtooth');
+  assert.equal(brushStateOf(S).brushWave, 'sawtooth', 'saved with the brush record');
+  wv.set(S, 'nonsense');
+  assert.equal(wv.get(S), 'sine', 'a name the table does not know is sine');
+  assert.equal(waveOf(undefined), 'sine');
 });
 
 // A drag of `frames` frames at `dt` ms, wobbling right and down, sent to a

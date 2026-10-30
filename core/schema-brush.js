@@ -15,6 +15,7 @@ import { brushAtlas, brushStatusLine, brushConducting, brushPhase, brushRound, b
 import { fadeLabel, fadeFromText, rateLabel, BRUSH_W, ROTATE_MAX, CONTINUITY_MAX } from './brush-stamps.js';
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { PART_BRIGHT_LO, PART_BRIGHT_HI } from './brush-morph.js';
+import { BRUSH_WAVES, waveOf } from './brush-notes.js';
 
 const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_SPIN = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
 // Continuity (stamps per spacing of the law, core/brush-stamps.js), and
@@ -32,11 +33,16 @@ const DEF_MORPH = 0, DEF_MORPH_AUTO = false, DEF_TRIM = true;
 // 35% is the level the strikes always sent at before it was a slider).
 const DEF_DETUNE = 0, DEF_VERB = 0.35, DETUNE_MAX = 100;
 // The strikes' stereo width (how far out the walk may throw one; the walk
-// itself is js/brush-bells.js) and their highpass corner, 20 Hz open to
-// 2 kHz on a log taper, as the Audio section's own filters are read.
-const DEF_PAN = 0.5, HPF_LO = 20, HPF_HI = 2000;
+// itself is js/brush-bells.js) and their two filter corners, each on a log
+// taper as the Audio section's own filters are read: the highpass 20 Hz open
+// to 2 kHz, the lowpass 200 Hz up to 20 kHz open. They are a pair in that
+// order on the strike, a band the voice is heard through, so between them
+// they can thin it, darken it, or leave it exactly as it was.
+const DEF_PAN = 0.5, HPF_LO = 20, HPF_HI = 2000, LPF_LO = 200, LPF_HI = 20000;
 const hpfPosToHz = pos => HPF_LO * Math.pow(HPF_HI / HPF_LO, Math.max(0, Math.min(100, pos)) / 100);
 const hpfHzToPos = hz => Math.round(Math.log(Math.max(HPF_LO, Math.min(HPF_HI, hz)) / HPF_LO) / Math.log(HPF_HI / HPF_LO) * 100);
+const lpfPosToHz = pos => LPF_LO * Math.pow(LPF_HI / LPF_LO, Math.max(0, Math.min(100, pos)) / 100);
+const lpfHzToPos = hz => Math.round(Math.log(Math.max(LPF_LO, Math.min(LPF_HI, hz)) / LPF_LO) / Math.log(LPF_HI / LPF_LO) * 100);
 // The particles' brightness, a multiple of their light: 1, in twentieths
 // (5%) from a quarter to four times.
 const DEF_PART_BRIGHT = 1;
@@ -83,6 +89,8 @@ export function initBrushState(S) {
   if (typeof S.brushVerb !== 'number') S.brushVerb = DEF_VERB;
   if (typeof S.brushPan !== 'number') S.brushPan = DEF_PAN;
   if (typeof S.brushHpf !== 'number') S.brushHpf = HPF_LO;
+  if (typeof S.brushLpf !== 'number') S.brushLpf = LPF_HI;
+  if (typeof S.brushWave !== 'string') S.brushWave = 'sine';
 }
 
 // The notes' master volume alone among the brush's settings is the ROOM's
@@ -106,7 +114,7 @@ export function brushStateOf(S) {
            brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushParticleBright: S.brushParticleBright, brushTrim: S.brushTrim,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
-           brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax, brushDetune: S.brushDetune, brushVerb: S.brushVerb, brushPan: S.brushPan, brushHpf: S.brushHpf };
+           brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax, brushDetune: S.brushDetune, brushVerb: S.brushVerb, brushPan: S.brushPan, brushHpf: S.brushHpf, brushLpf: S.brushLpf, brushWave: S.brushWave };
 }
 
 // The record read back, field by field, each held to its range: the tile
@@ -140,6 +148,8 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushVerb)) S.brushVerb = Math.max(0, Math.min(1, o.brushVerb));
   if (Number.isFinite(o.brushPan)) S.brushPan = Math.max(0, Math.min(1, o.brushPan));
   if (Number.isFinite(o.brushHpf)) S.brushHpf = Math.max(HPF_LO, Math.min(HPF_HI, o.brushHpf));
+  if (Number.isFinite(o.brushLpf)) S.brushLpf = Math.max(LPF_LO, Math.min(LPF_HI, o.brushLpf));
+  if (typeof o.brushWave === 'string' && BRUSH_WAVES.includes(o.brushWave)) S.brushWave = o.brushWave;
   if (Number.isFinite(o.brushStream)) S.brushStream = n(o.brushStream, 10, 60);
   if (Number.isFinite(o.brushSmooth)) S.brushSmooth = n(o.brushSmooth, 0, 200);
 }
@@ -431,6 +441,26 @@ export const BRUSH_CONTROLS = [
     set: (S, pos) => { S.brushVol = Math.max(0, Math.min(100, pos)) / 100; save(); },
     formatAt: pos => pos + '%',
   },
+  // The shape of every strike's carrier, a dropdown of the four the app's
+  // other instrument offers (js/piano.js SEQ_WAVES). The modulator stays a
+  // sine whatever this says: an FM pair with a rich shape on both sides
+  // turns to noise within a step or two, while a rich carrier swung by a
+  // sine stays a note with an edge on it. Each shape is played at its own
+  // level (core/brush-notes.js BRUSH_WAVE_GAIN), so moving this row is a
+  // change of colour and not of loudness. Sine is the voice as it has
+  // always sounded, so nothing moves until he picks another.
+  {
+    id: 'brushWave', section: 'brush', label: 'Notes waveform', kind: 'segment', def: 'sine',
+    dropdown: true,
+    options: [
+      { value: 'sine',     label: 'Sine',     domId: null },
+      { value: 'triangle', label: 'Triangle', domId: null },
+      { value: 'sawtooth', label: 'Sawtooth', domId: null },
+      { value: 'square',   label: 'Square',   domId: null }
+    ],
+    get: S => waveOf(S.brushWave),
+    set: (S, v) => { S.brushWave = waveOf(v); saveBrush(); }
+  },
   // Fine tuning: the notes' pitch bent up or down by up to a whole
   // semitone, in cents (js/brush-bells.js lays it on every strike's
   // frequency, bell and note alike, so the hand's instrument tunes to
@@ -466,9 +496,9 @@ export const BRUSH_CONTROLS = [
     formatAt: pos => pos <= 0 ? 'centred' : pos + '%',
   },
   // The strikes' own highpass, 20 Hz (open: under the lowest note, so no
-  // filter is built at all) to 2 kHz, log as the Audio section's are. The
-  // voice is a sine FM pair with nothing else on it, so this is the one
-  // place to thin it.
+  // filter is built at all) to 2 kHz, log as the Audio section's are. With
+  // the lowpass under it the voice is heard through a band of its own, the
+  // two the only filters an FM pair otherwise carries nothing of.
   {
     id: 'brushHpf', section: 'brush', label: 'Notes highpass', kind: 'slider',
     min: 0, max: 100, step: 1, def: 0,
@@ -477,6 +507,21 @@ export const BRUSH_CONTROLS = [
     formatAt: pos => {
       const hz = hpfPosToHz(pos);
       return pos <= 0 ? 'open' : hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz';
+    },
+  },
+  // The strikes' own lowpass, the highpass's mirror: 20 kHz at the top
+  // (open, above everything the voice makes, so no filter is built at all)
+  // down to 200 Hz, the same log taper read the other way, so the row is
+  // open where a lowpass is open and darkens as it falls. It sits after the
+  // highpass on the strike, the pair in the order the global filter uses.
+  {
+    id: 'brushLpf', section: 'brush', label: 'Notes lowpass', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 100,
+    get: S => lpfHzToPos(S.brushLpf),
+    set: (S, pos) => { S.brushLpf = lpfPosToHz(pos); saveBrush(); },
+    formatAt: pos => {
+      const hz = lpfPosToHz(pos);
+      return pos >= 100 ? 'open' : hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz';
     },
   },
   // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
