@@ -16,6 +16,7 @@ import { fadeLabel, fadeFromText, rateLabel, BRUSH_W, ROTATE_MAX, CONTINUITY_MAX
 import { kaleidoscopeSet } from '../assets/kaleidoscope/sets.mjs';
 import { PART_BRIGHT_LO, PART_BRIGHT_HI } from './brush-morph.js';
 import { BRUSH_WAVES, waveOf } from './brush-notes.js';
+import { SMOOTH_MODES, SET_MS_MAX, SET_MS_DEFAULT } from './brush-smooth.js';
 
 const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_SPIN = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
 // The trail image's zoom, the companion to Feedback rotation: signed, out at
@@ -36,6 +37,11 @@ const SPEED_LO = 0.05, SPEED_HI = 2, RSIZE_LO = 0.25, RSIZE_HI = 4;
 // stroke's own drawing time, 0 (off, the playback exactly as it was) to 2,
 // in twentieths.
 const DEF_REPLAY_FADE = 0, RFADE_HI = 2;
+// The playback's smoothing (core/brush-smooth.js): Off, the playback
+// exactly as it was; Set's time constant in screen ms, 0 to SET_MS_MAX in
+// fives, Off at 0.
+const DEF_REPLAY_SMOOTH = 'off', RSMOOTH_STEP = 5;
+const smoothOf = v => SMOOTH_MODES.includes(v) ? v : DEF_REPLAY_SMOOTH;
 const fadeSecLabel = pos => pos <= 0 ? 'Off' : Math.round(pos * 5) / 100 + ' s';
 const fadeSecFromText = text => {
   if (/^\s*off\s*$/i.test(text)) return 0;
@@ -91,6 +97,8 @@ export function initBrushState(S) {
   if (typeof S.brushReplaySize !== 'number') S.brushReplaySize = DEF_REPLAY_SIZE;
   if (typeof S.brushReplayFadeUp !== 'number') S.brushReplayFadeUp = DEF_REPLAY_FADE;
   if (typeof S.brushReplayFadeDown !== 'number') S.brushReplayFadeDown = DEF_REPLAY_FADE;
+  if (typeof S.brushReplaySmooth !== 'string') S.brushReplaySmooth = DEF_REPLAY_SMOOTH;
+  if (typeof S.brushReplaySmoothMs !== 'number') S.brushReplaySmoothMs = SET_MS_DEFAULT;
   if (typeof S.brushMorph !== 'number') S.brushMorph = DEF_MORPH;
   if (typeof S.brushTrim !== 'boolean') S.brushTrim = DEF_TRIM;
   if (typeof S.brushMorphAuto !== 'boolean') S.brushMorphAuto = DEF_MORPH_AUTO;
@@ -132,6 +140,7 @@ export function brushStateOf(S) {
   return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushZoom: S.brushZoom, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushContinuity: S.brushContinuity, brushReplaySpeed: S.brushReplaySpeed, brushReplaySize: S.brushReplaySize,
            brushReplayFadeUp: S.brushReplayFadeUp, brushReplayFadeDown: S.brushReplayFadeDown,
+           brushReplaySmooth: S.brushReplaySmooth, brushReplaySmoothMs: S.brushReplaySmoothMs,
            brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushParticleBright: S.brushParticleBright, brushTrim: S.brushTrim,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
@@ -157,6 +166,8 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushReplaySize)) S.brushReplaySize = Math.max(RSIZE_LO, Math.min(RSIZE_HI, o.brushReplaySize));
   if (Number.isFinite(o.brushReplayFadeUp)) S.brushReplayFadeUp = Math.max(0, Math.min(RFADE_HI, o.brushReplayFadeUp));
   if (Number.isFinite(o.brushReplayFadeDown)) S.brushReplayFadeDown = Math.max(0, Math.min(RFADE_HI, o.brushReplayFadeDown));
+  if (typeof o.brushReplaySmooth === 'string' && SMOOTH_MODES.includes(o.brushReplaySmooth)) S.brushReplaySmooth = o.brushReplaySmooth;
+  if (Number.isFinite(o.brushReplaySmoothMs)) S.brushReplaySmoothMs = Math.max(0, Math.min(SET_MS_MAX, o.brushReplaySmoothMs));
   if (Number.isFinite(o.brushMorph)) S.brushMorph = Math.max(0, Math.min(1, o.brushMorph));
   if (typeof o.brushMorphAuto === 'boolean') S.brushMorphAuto = o.brushMorphAuto;
   if (Number.isFinite(o.brushParticleBright)) S.brushParticleBright = Math.max(PART_BRIGHT_LO, Math.min(PART_BRIGHT_HI, o.brushParticleBright));
@@ -346,6 +357,44 @@ export const BRUSH_CONTROLS = [
     set: (S, pos) => { S.brushReplayFadeDown = Math.max(0, Math.min(RFADE_HI * 20, Math.round(pos))) / 20; saveBrush(); },
     formatAt: fadeSecLabel,
     parse: (S, text) => fadeSecFromText(text)
+  },
+  // Each replayed stroke's points eased into a curve and laid finer than
+  // they were drawn, so a slowed playback glides from point to point
+  // instead of ticking (core/brush-smooth.js; both playbacks, a live
+  // hand's strokes never touched). Auto eases each stretch over most of its
+  // own gap, the same figure at every speed with nothing to set; Set over a
+  // time constant of its own, the row beneath; 1€ the One Euro filter,
+  // steady when the hand was slow and close behind it when it was fast,
+  // the softest of the three. Curves come out a little softer. Off is the
+  // playback exactly as it was. From the next batch on.
+  {
+    id: 'brushReplaySmooth', section: 'brush', label: 'Replay smoothing', kind: 'segment', def: DEF_REPLAY_SMOOTH,
+    dropdown: true,
+    options: [
+      { value: 'off',  label: 'Off',  domId: null },
+      { value: 'auto', label: 'Auto', domId: null },
+      { value: 'set',  label: 'Set',  domId: null },
+      { value: 'euro', label: '1€',   domId: null }
+    ],
+    get: S => smoothOf(S.brushReplaySmooth),
+    set: (S, v) => { S.brushReplaySmooth = smoothOf(v); saveBrush(); }
+  },
+  // Set's time constant: how long the pen takes to ease most of the way
+  // onto where the drawing has gone, in ms of screen time (what you see),
+  // so at 0.05x it covers a twentieth as much of the drawing as at 1x.
+  // Shown only while Set is picked. Off at 0.
+  {
+    id: 'brushReplaySmoothMs', section: 'brush', label: 'Smoothing time', kind: 'slider',
+    min: 0, max: SET_MS_MAX / RSMOOTH_STEP, step: 1, def: SET_MS_DEFAULT / RSMOOTH_STEP,
+    get: S => Math.round(S.brushReplaySmoothMs / RSMOOTH_STEP),
+    set: (S, pos) => { S.brushReplaySmoothMs = Math.max(0, Math.min(SET_MS_MAX / RSMOOTH_STEP, Math.round(pos))) * RSMOOTH_STEP; saveBrush(); },
+    formatAt: pos => pos <= 0 ? 'Off' : Math.round(pos) * RSMOOTH_STEP + ' ms',
+    parse: (S, text) => {
+      if (/^\s*off\s*$/i.test(text)) return 0;
+      const n = parseFloat(text);
+      return n >= 0 ? Math.round(n / RSMOOTH_STEP) : NaN;
+    },
+    visible: S => S.brushReplaySmooth === 'set'
   },
   // Trim event, on by default: the playback's pass ends where the room
   // leaves (core/brush-replay.js roomLeaves) instead of playing the

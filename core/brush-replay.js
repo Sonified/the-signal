@@ -36,6 +36,7 @@
 import { TOGETHER_MS } from '../touch/replay.js';
 import { QUANT } from '../touch/strokes.js';
 import { printsPerSecond } from './brush-stamps.js';
+import { smoothBatch, smoothState, smoothOut, smoothJoins, smoothEnd, smoothLive, smoothPen, SMOOTH_MODES } from './brush-smooth.js';
 
 export const LOOP_MS = TOGETHER_MS;
 export const LOOP_REST_MS = 2000;
@@ -101,7 +102,8 @@ export function roomLeaves(good, from, hands = ROOM_HANDS, windowMs = LEAVE_WIND
 // skipped, drawers }, steps [{ tMs, takeMs, id, s }] from the pass's zero
 // (tMs the batch's last point, takeMs when it is handed to the brush, its
 // first new point's moment, see paceStrokes), ms the
-// pass's length with its rest, skipped how many batches before the room
+// pass's length with its rest, ahead how early the smoothing takes each
+// step (jointGap below), skipped how many batches before the room
 // arrived were left out (0 when it never arrived and the whole tape plays)
 // and drawers how many hands it arrived with (0 then too). Entries without
 // a time, a drawer or a stroke are skipped. loopMs is the window a long
@@ -130,15 +132,39 @@ export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS, trim 
   const span = tEnd - t0;
   const scale = span > 0 ? Math.min(1, loopMs / span) : 1;
   const steps = new Array(end + 1 - skipped);
+  let ahead = 0;
   for (let i = skipped; i <= end; i++) {
     const e = good[i];
     steps[i - skipped] = { tMs: (paceLast[i] - t0) * scale, takeMs: (paceTake[i] - t0) * scale, id: e.id, s: e.s };
     if (paceEnd[i]) steps[i - skipped].end = paceEnd[i];
+    const g = jointGap(e);
+    if (g > ahead) ahead = g;
   }
   // taken in the order their first points come due (stable, so a drawer's
   // own batches, whose takes never go back, keep their order)
   steps.sort((a, b) => a.takeMs - b.takeMs);
-  return { steps, scale, ms: span * scale + restMs, skipped, drawers, trimmed };
+  return { steps, scale, ms: span * scale + restMs, skipped, drawers, trimmed,
+           ahead: (ahead < AHEAD_MAX_MS ? ahead : AHEAD_MAX_MS) * scale };
+}
+
+// How far ahead of its first new point a batch must be in hand for the
+// playback's smoothing: from its joint on, since the eased pen leaves the
+// joint at once, its sub-steps between the joint and the first new point
+// coming due through that whole gap (taken only at the first new point, it
+// would find them gone by and the cursor would leap to catch up). The
+// pass's `ahead` is the longest such gap (pass ms), held to AHEAD_MAX_MS
+// of drawing time so one long stillness does not hand every batch over
+// seconds early; core/brush.js takes every step that much early while the
+// smoothing is on (a batch in hand early only waits for its moment). On
+// the WIN 2026 tape a joint's gap is 17 ms at the median, 134 at p99 and
+// 673 at p99.9, and 283 of 57,288 pass 250 ms: those few, a hand's pause,
+// still come in late by the rest, as every one did unsmoothed. 250 ms at
+// 0.05x is 5 s early, about 625 sub-steps held ahead in a slot, well
+// within its timeline (core/brush.js TL_CAP, 2048).
+export const AHEAD_MAX_MS = 250;
+function jointGap(e) {
+  const s = e.s, q = s.q;
+  return s.d !== 0 && !(s.r < 1) && Array.isArray(q) && q.length > 1 && q[1] > 0 ? q[1] : 0;
 }
 
 // Each batch's moment on the tape, from its sender's own clock. The tape's
@@ -231,7 +257,15 @@ function paceStrokes(good) {
 // tail (fadeTail below) and fe, the moment of its real last point, after
 // which the marks fade. Only the playback's messages carry them; nothing
 // with them is ever sent.
-export function retime(step, base, scale, size = 1, fadeUp = 0, fadeDown = 0) {
+//
+// smooth is the Brush section's Replay smoothing ('off', 'auto', 'set' or
+// 'euro', core/brush-smooth.js) and smoothMs Set's time constant in screen
+// ms: a continuous stroke's points are eased into a curve and laid finer
+// than they were drawn (smoothInto below), so a slowed playback glides
+// from point to point instead of ticking. 'off' is the playback exactly
+// as it was. A stroke whose last batch gets the fade down's tail is not
+// settled into its end: the tail carries on from the eased end.
+export function retime(step, base, scale, size = 1, fadeUp = 0, fadeDown = 0, smooth = 'off', smoothMs = 0) {
   const s = step.s, msg = Object.assign({}, s, { id: REPLAY_ID + step.id });
   if (size !== 1 && typeof s.w === 'number') msg.w = Math.max(1, Math.min(100, Math.round(s.w * size)));
   const q = s.q;
@@ -239,20 +273,79 @@ export function retime(step, base, scale, size = 1, fadeUp = 0, fadeDown = 0) {
   const T = new Array(q.length);
   T[0] = q[0];
   for (let j = 1; j < q.length; j++) T[j] = T[j - 1] + q[j];
-  const last = T[q.length - 1], q2 = new Array(q.length);
-  let prev = 0;
-  for (let j = 0; j < q.length; j++) {
-    const a = Math.max(0, Math.round(base - (last - T[j]) * scale));
-    q2[j] = j ? a - prev : a;
-    prev = a;
+  const last = T[q.length - 1];
+  const tail = fadeDown > 0 && s.d === 2 && !!step.end;
+  let prev = smoothInto(msg, step.id, T, base, scale, smooth, smoothMs, !tail);
+  if (prev < 0) {
+    const q2 = new Array(q.length);
+    prev = 0;
+    for (let j = 0; j < q.length; j++) {
+      const a = Math.max(0, Math.round(base - (last - T[j]) * scale));
+      q2[j] = j ? a - prev : a;
+      prev = a;
+    }
+    msg.q = q2;
   }
-  msg.q = q2;
   if (fadeUp > 0) msg.fu = fadeUp * scale;
-  if (fadeDown > 0 && s.d === 2 && step.end) {
+  if (tail) {
     msg.fe = prev; msg.fd = fadeDown * scale;
     fadeTail(msg, step.end, fadeDown, prev, scale);
   }
   return msg;
+}
+
+// ---------- the smoothing ----------
+// A batch's points through its drawer's filter (core/brush-smooth.js
+// smoothBatch, in the drawing's own time), and the eased points it gives
+// back laid on this screen's clock as retime lays the drawn ones (the
+// batch's last at base, the rest scale as far apart, whole ms, gaps taken
+// between the rounded times) with a settle's after it, each position
+// rounded to the wire's grid. msg gets its own p and q; the tape's arrays
+// are never touched. Returns the last point's time on this clock, or -1
+// when it left the batch as it was: smoothing off, a print stroke (each
+// point a print where the hand put it, nothing between to ease), a batch
+// whose points and times do not pair. Off still minds a stroke the
+// smoothing was easing when it was switched off: its next batch's joint
+// is moved to where the eased pen stands, so the line bends back onto the
+// drawing instead of jumping to it. Each drawer's state is kept across
+// batches and passes (smoothSt), as the pace's arrays are, and a batch
+// that does not carry on from it starts afresh.
+const smoothSt = new Map();
+let smU = new Float64Array(64), smV = new Float64Array(64);
+const smPen = { u: 0, v: 0 };
+function smoothInto(msg, id, T, base, scale, smooth, smoothMs, settle) {
+  const s = msg, p = s.p, n = T.length;
+  if (s.r < 1 || !Array.isArray(p) || p.length !== n * 2) return -1;
+  const mode = SMOOTH_MODES.indexOf(smooth);
+  let st = smoothSt.get(id);
+  if (!(mode >= 1)) {
+    if (st && smoothLive(st)) {
+      if (s.d !== 0 && smoothJoins(st, T[0], p[0] / QUANT, p[1] / QUANT)) {
+        smoothPen(st, smPen);
+        msg.p = p.slice();
+        msg.p[0] = Math.max(0, Math.min(QUANT, Math.round(smPen.u * QUANT)));
+        msg.p[1] = Math.max(0, Math.min(QUANT, Math.round(smPen.v * QUANT)));
+      }
+      smoothEnd(st);
+    }
+    return -1;
+  }
+  if (!st) { st = smoothState(); smoothSt.set(id, st); }
+  if (smU.length < n) { smU = new Float64Array(n * 2); smV = new Float64Array(n * 2); }
+  for (let j = 0; j < n; j++) { smU[j] = p[2 * j] / QUANT; smV[j] = p[2 * j + 1] / QUANT; }
+  const m = smoothBatch(mode, smoothMs, T, smU, smV, n, s.d, scale, st, settle);
+  if (!(m > 0)) return -1;
+  const o = smoothOut, last = T[n - 1], p2 = new Array(m * 2), q2 = new Array(m);
+  let prev = 0;
+  for (let j = 0; j < m; j++) {
+    p2[2 * j] = Math.max(0, Math.min(QUANT, Math.round(o.u[j] * QUANT)));
+    p2[2 * j + 1] = Math.max(0, Math.min(QUANT, Math.round(o.v[j] * QUANT)));
+    const a = Math.max(j ? prev : 0, Math.round(base - (last - o.t[j]) * scale));
+    q2[j] = j ? a - prev : a;
+    prev = a;
+  }
+  msg.p = p2; msg.q = q2;
+  return prev;
 }
 
 // ---------- the fade down's tail ----------

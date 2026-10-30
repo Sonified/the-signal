@@ -49,6 +49,7 @@ import { dealHand } from '../broadcast-worker/src/deal.js';
 import { seedOf, notesFor, nextBand } from './brush-notes.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
 import { planPass, retime, ROOM_WINDOW_MS, LOOP_MS } from './brush-replay.js';
+import { SMOOTH_MODES, SET_MS_MAX } from './brush-smooth.js';
 import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
 import { BRUSH_W, ROTATE_MAX, brushSide, brushSpacing, stampCopies, walkSegment, walkBatch, fieldSquare, rateContinuous, printsPerSecond } from './brush-stamps.js';
@@ -983,6 +984,20 @@ function replaySizeNow() {
 // retime takes. Both playbacks, the standing one and cue 24's.
 const REPLAY_FADE_MAX = 2;
 function replayFadeMs(v) { return v > 0 ? (v < REPLAY_FADE_MAX ? v : REPLAY_FADE_MAX) * 1000 : 0; }
+// Replay smoothing (S.brushReplaySmooth, core/brush-smooth.js): 'off'
+// (the playback exactly as it was), 'auto', 'set' or 'euro', each
+// replayed stroke's points eased into a curve and laid finer than drawn,
+// so a slowed playback glides instead of ticking from point to point; and
+// Set's time constant (S.brushReplaySmoothMs, screen ms, 0 to SET_MS_MAX).
+// Both playbacks; a live hand's strokes and the hall's are never touched.
+function replaySmoothNow() {
+  const v = S.brushReplaySmooth;
+  return SMOOTH_MODES.includes(v) ? v : 'off';
+}
+function replaySmoothMsNow() {
+  const v = S.brushReplaySmoothMs;
+  return v > 0 ? (v < SET_MS_MAX ? v : SET_MS_MAX) : 0;
+}
 export function brushTapeReset() { showTape.length = 0; }
 export function brushTapeAdd(entries) {
   for (const e of entries) showTape.push(e);
@@ -1039,12 +1054,15 @@ function replayTick(now) {
   }
   const st = pass.steps, scale = pass.scale / speed, size = replaySizeNow();
   const fadeUp = replayFadeMs(S.brushReplayFadeUp), fadeDown = replayFadeMs(S.brushReplayFadeDown);
-  // each batch handed over as its first new point comes due, its last
-  // point laid ahead on this clock where the pass will reach it, so the
-  // brush has every point before its moment and never plays catch-up
-  while (passI < st.length && st[passI].takeMs <= passClock) {
+  const smooth = replaySmoothNow(), smoothMs = smooth === 'set' ? replaySmoothMsNow() : 0;
+  // each batch handed over as its first new point comes due (smoothed, as
+  // its joint does: the pass's ahead), its last point laid ahead on this
+  // clock where the pass will reach it, so the brush has every point
+  // before its moment and never plays catch-up
+  const ahead = smooth !== 'off' && pass.ahead > 0 ? pass.ahead : 0;
+  while (passI < st.length && st[passI].takeMs <= passClock + ahead) {
     const step = st[passI++];
-    brushTake(retime(step, now - (passClock - step.tMs) / speed, scale, size, fadeUp, fadeDown), undefined, true);
+    brushTake(retime(step, now - (passClock - step.tMs) / speed, scale, size, fadeUp, fadeDown, smooth, smoothMs), undefined, true);
   }
 }
 

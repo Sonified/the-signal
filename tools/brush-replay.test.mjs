@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planPass, retime, LOOP_MS, LOOP_REST_MS, REPLAY_ID, ROOM_HANDS, ROOM_WINDOW_MS, roomLeaves, endMotion, fadeTail, REST_MS } from '../core/brush-replay.js';
+import { planPass, retime, LOOP_MS, LOOP_REST_MS, REPLAY_ID, ROOM_HANDS, ROOM_WINDOW_MS, roomLeaves, endMotion, fadeTail, REST_MS, AHEAD_MAX_MS } from '../core/brush-replay.js';
 import { encodeStroke, decodeStroke, MOTIF } from '../touch/strokes.js';
 
 const motif = (d, q) => encodeStroke(MOTIF, 200, 50, d, [{ u: 0.4, v: 0.4 }, { u: 0.5, v: 0.5 }, { u: 0.6, v: 0.6 }],
@@ -287,4 +287,82 @@ test('fade down: the pass gives a finished stroke its end, but not one whose han
   assert.equal(p.steps[0].end, undefined);
   tape[tape.length - 1] = Object.assign({}, tape[tape.length - 1], { at: tape[tape.length - 1].at + 400 });
   assert.equal(planPass(tape, Infinity, 0).steps.at(-1).end, undefined);
+});
+
+// ---------- the smoothing (core/brush-smooth.js through retime) ----------
+// A zigzag stroke in batches of three new points, each batch's first point
+// the last one's last (the sender's joint), points 20 ms apart.
+function zig(n, t0 = 1000, gap = 20, per = 3, extra = {}) {
+  const out = [];
+  let i = 0;
+  while (i < n) {
+    const from = i === 0 ? 0 : i - 1, to = Math.min(n, i + per);
+    const pts = [], ts = [];
+    for (let j = from; j < to; j++) { pts.push({ u: 0.3 + 0.01 * j, v: j % 2 ? 0.52 : 0.48 }); ts.push(t0 + gap * j); }
+    const q = ts.map((t, k) => k ? t - ts[k - 1] : t);
+    const d = to >= n ? 2 : i === 0 ? 0 : 1;
+    out.push(encodeStroke(MOTIF, 200, 50, d, pts, Object.assign({ a: 1, m: 3, c: 6, f: 0.5, q }, extra)));
+    i = to;
+  }
+  return out;
+}
+const lastT = s => s.q.reduce((a, x) => a + x, 0);
+
+test('smoothing off leaves the playback exactly as it was', () => {
+  for (const s of zig(10)) {
+    const step = { id: 7, s };
+    assert.deepEqual(retime(step, 50000, 20, 1, 0, 0, 'off', 80), retime(step, 50000, 20));
+  }
+});
+
+test('smoothing lays a batch finer than drawn, from its joint to its last point at base, every one a valid stroke', () => {
+  for (const mode of ['auto', 'set', 'euro']) {
+    const b = zig(10);
+    let prev = null;
+    for (const s of b) {
+      const base = 100000 + (lastT(s) - 1000) * 20;
+      const m = retime({ id: 8, s }, base, 20, 1, 0, 0, mode, 80);
+      const d = decodeStroke(m);
+      assert.ok(d, mode + ': decodes');
+      assert.ok(m.p.length > s.p.length * 4, mode + ': finer than drawn');
+      if (s.d === 0) assert.deepEqual(m.p.slice(0, 2), s.p.slice(0, 2), mode + ': a stroke starts where it was drawn');
+      else assert.deepEqual(m.p.slice(0, 2), prev, mode + ': the joint is the last batch\'s last output');
+      if (s.d !== 2) assert.equal(d.times[d.times.length - 1], Math.round(base), mode + ': last point at base');
+      else assert.deepEqual(m.p.slice(-2), s.p.slice(-2), mode + ': a stroke settles onto its real end');
+      for (let j = 1; j < d.times.length; j++) assert.ok(d.times[j] >= d.times[j - 1]);
+      prev = m.p.slice(-2);
+    }
+  }
+});
+
+test('smoothing leaves a print stroke alone, and does not settle a stroke given the fade down\'s tail', () => {
+  for (const s of zig(7, 1000, 20, 3, { r: 0.5 })) {
+    const step = { id: 9, s };
+    assert.deepEqual(retime(step, 50000, 20, 1, 0, 0, 'euro'), retime(step, 50000, 20));
+  }
+  const b = zig(7);
+  const end = endMotion(b);
+  let m;
+  for (const s of b) m = retime({ id: 10, s, end: s.d === 2 ? end : undefined }, 100000 + (lastT(s) - 1000) * 20, 20, 1, 0, 500, 'auto');
+  // the tail begins at the eased end, whose time is the stroke's last point at base
+  const T = []; let t = 0; for (const x of m.q) { t += x; T.push(t); }
+  assert.ok(T.includes(m.fe), 'fe is one of the points\' times');
+  assert.ok(T[T.length - 1] > m.fe, 'the tail runs on past it');
+});
+
+test('switched off mid-stroke, the next batch starts from where the eased pen stands', () => {
+  const b = zig(10);
+  const a = retime({ id: 11, s: b[0] }, 100000 + (lastT(b[0]) - 1000) * 20, 20, 1, 0, 0, 'euro');
+  const off = retime({ id: 11, s: b[1] }, 100000 + (lastT(b[1]) - 1000) * 20, 20, 1, 0, 0, 'off');
+  assert.deepEqual(off.p.slice(0, 2), a.p.slice(-2));
+  assert.deepEqual(off.p.slice(2), b[1].p.slice(2));
+  assert.notStrictEqual(off.p, b[1].p, 'the tape\'s own array untouched');
+});
+
+test('a pass says how early the smoothing takes its steps: the longest joint gap, held to AHEAD_MAX_MS', () => {
+  const b = zig(10, 1000, 20);
+  const tape = b.map(s => ({ at: lastT(s) + 50, id: 1, s }));
+  assert.equal(planPass(tape, Infinity, 0).ahead, 20);
+  const slow = zig(10, 1000, 2000).map(s => ({ at: lastT(s) + 50, id: 1, s }));
+  assert.equal(planPass(slow, Infinity, 0).ahead, AHEAD_MAX_MS);
 });
