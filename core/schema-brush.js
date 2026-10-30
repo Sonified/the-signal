@@ -203,12 +203,18 @@ const PHASE_OPTS_PAIRS2 = phaseOpts('Pairs 2', 'Fours');
 const PHASE_OPTS_QUADS2 = phaseOpts('Pairs', 'Fours 2');
 
 export const BRUSH_CONTROLS = [
+  // The sub-drawers (see subDrawer in schema-visual.js): Shapes, Motion,
+  // Stroke, Particles, Notes, Replay and the Room, each folding its rows
+  // under one strip that shows its primary readouts while shut. Layout only:
+  // every row keeps its id, its record and its own visible rule. Motion's
+  // rows are the room's but for Fade, so a member's Motion holds Fade alone.
+  subDrawer('brushShapesDrawer', 'Shapes', 'brush', ['brushSize', 'brushCopies']),
   // The picker: the current Image set's painted tiles as a grid of
   // thumbnails (widgets.js tiles). tiles(S) hands it the atlas as the GPU
   // side has it (core/brush.js brushAtlas) and says which set it wants
   // shown, so the atlas loads the first time the grid is drawn.
   {
-    id: 'brushMotif', section: 'brush', label: 'Shape', kind: 'tiles', def: DEF_MOTIF,
+    id: 'brushMotif', section: 'brush', parent: 'brushShapesDrawer', label: 'Shape', kind: 'tiles', def: DEF_MOTIF,
     get: S => S.brushMotif,
     set: (S, v) => { S.brushMotif = Math.max(0, Math.min(63, Math.round(Number(v) || 0))); brushPickAtlas(); saveBrush(); },
     tiles: S => { brushAtlas.want = kaleidoscopeSet(S.kaleidoSet).id; return brushAtlas; }
@@ -218,7 +224,7 @@ export const BRUSH_CONTROLS = [
   // the room's: it goes to the hall with Stream and Smoothing and every
   // member's own strokes are drawn at it, so a member has no row of its own.
   {
-    id: 'brushSize', section: 'brush', label: 'Size', kind: 'slider',
+    id: 'brushSize', section: 'brush', parent: 'brushShapesDrawer', label: 'Size', kind: 'slider',
     min: 1, max: 100, step: 1, def: DEF_SIZE,
     get: S => S.brushSize,
     set: (S, pos) => { S.brushSize = Math.max(1, Math.min(100, Math.round(pos))); saveBrush(); },
@@ -226,31 +232,13 @@ export const BRUSH_CONTROLS = [
     visible: () => !brushMember()
   },
   {
-    id: 'brushCopies', section: 'brush', label: 'Copies', kind: 'slider',
+    id: 'brushCopies', section: 'brush', parent: 'brushShapesDrawer', label: 'Copies', kind: 'slider',
     min: 1, max: 24, step: 1, def: DEF_COPIES,
     get: S => S.brushCopies,
     set: (S, pos) => { S.brushCopies = Math.max(1, Math.min(24, Math.round(pos))); saveBrush(); },
     formatAt: pos => String(pos)
   },
-  // How long a mark takes to fade away, 1 s to a minute (core/brush-stamps.js
-  // fadeSeconds): the trail image's half-life is a fifth of it.
-  {
-    id: 'brushFade', section: 'brush', label: 'Fade', kind: 'slider',
-    min: 0, max: 100, step: 1, def: Math.round(DEF_FADE * 100),
-    get: S => Math.round(S.brushFade * 100),
-    set: (S, pos) => { S.brushFade = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
-    formatAt: pos => fadeLabel(pos / 100),
-    parse: (S, text) => { const f = fadeFromText(text); return f === f ? Math.round(f * 100) : NaN; },
-    // the broadcast room the brush draws in, while this screen broadcasts
-    // or follows one
-    statusLine: () => brushStatusLine()
-  },
-  // The sub-drawers (see subDrawer in schema-visual.js): Motion, Stroke,
-  // Particles, Notes, Replay and the Room, each folding its rows under one
-  // strip that shows its primary readouts while shut. Layout only: every
-  // row keeps its id, its record and its own visible rule. Motion's rows are
-  // all the room's, so a member sees no strip at all.
-  Object.assign(subDrawer('brushMotionDrawer', 'Motion', 'brush', ['brushRotate', 'brushZoom']), { visible: () => !brushMember() }),
+  subDrawer('brushMotionDrawer', 'Motion', 'brush', ['brushRotate', 'brushZoom']),
   // How fast the shape itself turns, in turns a second, 0 (still) to
   // ROTATE_MAX (core/brush-stamps.js), a tenth of a turn a step: each stamp
   // is laid down at the angle the shared clock gives its moment
@@ -298,6 +286,19 @@ export const BRUSH_CONTROLS = [
     formatAt: pos => pos === 0 ? 'none'
       : (pos > 0 ? '+' + pos.toFixed(2) + ' out' : pos.toFixed(2) + ' in'),
     visible: () => !brushMember()
+  },
+  // How long a mark takes to fade away, 1 s to a minute (core/brush-stamps.js
+  // fadeSeconds): the trail image's half-life is a fifth of it.
+  {
+    id: 'brushFade', section: 'brush', parent: 'brushMotionDrawer', label: 'Fade', kind: 'slider',
+    min: 0, max: 100, step: 1, def: Math.round(DEF_FADE * 100),
+    get: S => Math.round(S.brushFade * 100),
+    set: (S, pos) => { S.brushFade = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
+    formatAt: pos => fadeLabel(pos / 100),
+    parse: (S, text) => { const f = fadeFromText(text); return f === f ? Math.round(f * 100) : NaN; },
+    // the broadcast room the brush draws in, while this screen broadcasts
+    // or follows one
+    statusLine: () => brushStatusLine()
   },
   subDrawer('brushStrokeDrawer', 'Stroke', 'brush', ['brushRate', 'brushContinuity']),
   // How the brush lays its shape down (core/brush-stamps.js): at the top,
