@@ -35,6 +35,32 @@ import { chanGate } from './mixgate.js';
 import { bellFor, degreeHz, noteShape } from '../core/brush-notes.js';
 
 const PEAK = 0.05;        // the strike's peak gain (the piano's notes sit several times higher)
+// The stereo walk (schema-brush brushPan, Notes stereo width). Strikes
+// should fall across the field without clustering, so each one takes the
+// side OPPOSITE where the recent ones have been sitting and a random
+// distance out: ping-pong in its balance, never in its width. `bias` is
+// that memory, every strike's place added in and the whole decayed, so it
+// leans back toward the middle through a pause and a lone strike after
+// silence may land either side. PAN_OUT is how near the middle the nearest
+// strike may fall, as a share of the width, so a wide setting still reads
+// as two sides rather than a smear.
+const PAN_MEMORY = 0.6, PAN_OUT = 0.35;
+let panBias = 0;
+function nextPan(width) {
+  if (!(width > 0)) return 0;
+  const side = panBias > 0 ? -1 : panBias < 0 ? 1 : (Math.random() < 0.5 ? -1 : 1);
+  const p = side * width * (PAN_OUT + (1 - PAN_OUT) * Math.random());
+  panBias = panBias * PAN_MEMORY + p;
+  return Math.max(-1, Math.min(1, p));
+}
+// The strikes' own highpass (schema-brush brushHpf), 20 Hz open to 2 kHz:
+// a corner under the lowest note is no filter at all, so one is built only
+// when the setting asks for it.
+const HPF_OPEN = 20;
+const noteHpfHz = () => {
+  const hz = S.brushHpf;
+  return typeof hz === 'number' && hz === hz ? Math.max(HPF_OPEN, Math.min(2000, hz)) : HPF_OPEN;
+};
 const SEND = 0.35;        // into the room, when no Notes reverb is set
 const MAX_VOICES = 12;
 let live = 0;
@@ -112,19 +138,45 @@ function fmPair(ctx, f, ratio) {
 // Out to the master, dry and through the room's send, from t until end,
 // then let go.
 function play(ctx, master, t, end, car, mod, depth, amp) {
-  amp.connect(master);
+  // amp -> [highpass] -> [panner] -> master, with the room's send tapped
+  // before the panner: the dry strike ping-pongs, the room stays even
+  // around the middle, which is the open focus the whole piece keeps.
+  let tail = amp, hp = null, pan = null;
+  const hz = noteHpfHz();
+  if (hz > HPF_OPEN) {
+    hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = hz;
+    tail.connect(hp);
+    tail = hp;
+  }
+  const dry = tail;
+  const width = Math.max(0, Math.min(1, typeof S.brushPan === 'number' ? S.brushPan : 0));
+  const place = nextPan(width);
+  if (place !== 0 && ctx.createStereoPanner) {
+    pan = ctx.createStereoPanner();
+    pan.pan.value = place;
+    tail.connect(pan);
+    tail = pan;
+  }
+  tail.connect(master);
   let send = null;
   if (roomContext() === ctx) {
     const room = roomInput(ctx, master);
     // the strike's share of the room (schema-brush brushVerb); 0 sends nothing
     const verb = Math.max(0, Math.min(1, typeof S.brushVerb === 'number' ? S.brushVerb : SEND));
-    if (room && verb > 0) { send = ctx.createGain(); send.gain.value = verb; amp.connect(send); send.connect(room); }
+    if (room && verb > 0) { send = ctx.createGain(); send.gain.value = verb; dry.connect(send); send.connect(room); }
   }
   car.start(t); mod.start(t);
   car.stop(end); mod.stop(end);
   live++;
   car.onended = () => {
     live--;
-    try { car.disconnect(); mod.disconnect(); depth.disconnect(); amp.disconnect(); if (send) send.disconnect(); } catch (e) {}
+    try {
+      car.disconnect(); mod.disconnect(); depth.disconnect(); amp.disconnect();
+      if (hp) hp.disconnect();
+      if (pan) pan.disconnect();
+      if (send) send.disconnect();
+    } catch (e) {}
   };
 }

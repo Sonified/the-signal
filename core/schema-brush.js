@@ -31,6 +31,12 @@ const DEF_MORPH = 0, DEF_MORPH_AUTO = false, DEF_TRIM = true;
 // to a whole one) and their share of the master reverb room (js/room.js;
 // 35% is the level the strikes always sent at before it was a slider).
 const DEF_DETUNE = 0, DEF_VERB = 0.35, DETUNE_MAX = 100;
+// The strikes' stereo width (how far out the walk may throw one; the walk
+// itself is js/brush-bells.js) and their highpass corner, 20 Hz open to
+// 2 kHz on a log taper, as the Audio section's own filters are read.
+const DEF_PAN = 0.5, HPF_LO = 20, HPF_HI = 2000;
+const hpfPosToHz = pos => HPF_LO * Math.pow(HPF_HI / HPF_LO, Math.max(0, Math.min(100, pos)) / 100);
+const hpfHzToPos = hz => Math.round(Math.log(Math.max(HPF_LO, Math.min(HPF_HI, hz)) / HPF_LO) / Math.log(HPF_HI / HPF_LO) * 100);
 // The particles' brightness, a multiple of their light: 1, in twentieths
 // (5%) from a quarter to four times.
 const DEF_PART_BRIGHT = 1;
@@ -75,6 +81,8 @@ export function initBrushState(S) {
   if (typeof S.brushVol !== 'number') S.brushVol = 0;
   if (typeof S.brushDetune !== 'number') S.brushDetune = DEF_DETUNE;
   if (typeof S.brushVerb !== 'number') S.brushVerb = DEF_VERB;
+  if (typeof S.brushPan !== 'number') S.brushPan = DEF_PAN;
+  if (typeof S.brushHpf !== 'number') S.brushHpf = HPF_LO;
 }
 
 // The notes' master volume alone among the brush's settings is the ROOM's
@@ -98,7 +106,7 @@ export function brushStateOf(S) {
            brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushParticleBright: S.brushParticleBright, brushTrim: S.brushTrim,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
-           brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax, brushDetune: S.brushDetune, brushVerb: S.brushVerb };
+           brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax, brushDetune: S.brushDetune, brushVerb: S.brushVerb, brushPan: S.brushPan, brushHpf: S.brushHpf };
 }
 
 // The record read back, field by field, each held to its range: the tile
@@ -130,6 +138,8 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushToneMax)) S.brushToneMax = Math.max(TONE_LO, Math.min(TONE_HI, o.brushToneMax));
   if (Number.isFinite(o.brushDetune)) S.brushDetune = Math.max(-DETUNE_MAX, Math.min(DETUNE_MAX, Math.round(o.brushDetune)));
   if (Number.isFinite(o.brushVerb)) S.brushVerb = Math.max(0, Math.min(1, o.brushVerb));
+  if (Number.isFinite(o.brushPan)) S.brushPan = Math.max(0, Math.min(1, o.brushPan));
+  if (Number.isFinite(o.brushHpf)) S.brushHpf = Math.max(HPF_LO, Math.min(HPF_HI, o.brushHpf));
   if (Number.isFinite(o.brushStream)) S.brushStream = n(o.brushStream, 10, 60);
   if (Number.isFinite(o.brushSmooth)) S.brushSmooth = n(o.brushSmooth, 0, 200);
 }
@@ -441,6 +451,33 @@ export const BRUSH_CONTROLS = [
     get: S => Math.round(S.brushVerb * 100),
     set: (S, pos) => { S.brushVerb = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
     formatAt: pos => pos + '%',
+  },
+  // How wide the strikes are thrown across the stereo field. Each takes
+  // the side opposite where the recent ones sat and a random distance out
+  // (js/brush-bells.js nextPan), so they ping-pong instead of clustering
+  // three left then three right, and a pause leans the walk back to the
+  // middle. 0 is every strike centred. The room's send is tapped before
+  // the panner, so the reverb stays even around the centre.
+  {
+    id: 'brushPan', section: 'brush', label: 'Notes stereo width', kind: 'slider',
+    min: 0, max: 100, step: 1, def: Math.round(DEF_PAN * 100),
+    get: S => Math.round(S.brushPan * 100),
+    set: (S, pos) => { S.brushPan = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
+    formatAt: pos => pos <= 0 ? 'centred' : pos + '%',
+  },
+  // The strikes' own highpass, 20 Hz (open: under the lowest note, so no
+  // filter is built at all) to 2 kHz, log as the Audio section's are. The
+  // voice is a sine FM pair with nothing else on it, so this is the one
+  // place to thin it.
+  {
+    id: 'brushHpf', section: 'brush', label: 'Notes highpass', kind: 'slider',
+    min: 0, max: 100, step: 1, def: 0,
+    get: S => hpfHzToPos(S.brushHpf),
+    set: (S, pos) => { S.brushHpf = hpfPosToHz(pos); saveBrush(); },
+    formatAt: pos => {
+      const hz = hpfPosToHz(pos);
+      return pos <= 0 ? 'open' : hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz';
+    },
   },
   // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
   // and the full screen button) left off a follower's screen: a tab
