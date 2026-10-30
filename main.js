@@ -79,6 +79,7 @@ import { ringBell } from './js/brush-bells.js';
 import { linkBell } from './core/audio-link.js';
 import { drawHand } from './ui/screens/hand.js';
 import { drawMorph } from './ui/screens/morph.js';
+import { drawReplayBar } from './ui/screens/replay-bar.js';
 import { stepBrushMorph } from './core/brush-morph.js';
 import { initPresentationReceiver } from './platform/presentation-receiver.js';
 import { tapePath, startTapeReplay, eventSlug, eventTape } from './platform/tape-replay.js';
@@ -1135,6 +1136,9 @@ async function boot() {
       // the standing playback's shapes-to-particles slider (ui/screens/
       // morph.js), with the chrome's fade, ahead of the field too
       if (replayMode) drawMorph(ui, uiList, width, height, chromeA);
+      // and its scrub bar at the very bottom (ui/screens/replay-bar.js),
+      // with the same fade: a press or drag on it moves the playback
+      if (replayMode) drawReplayBar(ui, uiList, width, height, chromeA);
 
       // Everything above the field has run its hit tests, so a hot widget
       // here is UI under the pointer; the window and drawer rects catch the

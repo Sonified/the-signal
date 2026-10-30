@@ -311,6 +311,12 @@ export function retime(step, base, scale, size = 1, fadeUp = 0, fadeDown = 0, sm
 // batches and passes (smoothSt), as the pace's arrays are, and a batch
 // that does not carry on from it starts afresh.
 const smoothSt = new Map();
+// A seek (core/brush.js brushReplaySeek): every drawer's filter let go, so
+// the first batch from the new place starts its pen afresh where it is
+// drawn, never gliding over from where the eased pen stood before the
+// jump. The only state retime carries from batch to batch; the pace's
+// arrays are a plan's, made afresh with each pass.
+export function replaySmoothReset() { smoothSt.clear(); }
 let smU = new Float64Array(64), smV = new Float64Array(64);
 const smPen = { u: 0, v: 0 };
 function smoothInto(msg, id, T, base, scale, smooth, smoothMs, settle) {

@@ -48,7 +48,7 @@ import { roomClockMs } from './room-clock.js';
 import { dealHand } from '../broadcast-worker/src/deal.js';
 import { seedOf, notesFor, nextBand } from './brush-notes.js';
 import { SOLO_ID, BROADCAST_ID } from './brush-order.js';
-import { planPass, retime, ROOM_WINDOW_MS, LOOP_MS } from './brush-replay.js';
+import { planPass, retime, replaySmoothReset, ROOM_WINDOW_MS, LOOP_MS } from './brush-replay.js';
 import { SMOOTH_MODES, SET_MS_MAX } from './brush-smooth.js';
 import { playStep, PLAY_STAGES, DELAY0_MS, minOffset, playTime, ratchetDelay, timelineAt } from './brush-playback.js';
 import { createTapDrag, tapDragStep, TD_START, TD_MOVE, TD_TAP, TD_END, TD_CANCEL } from './tap-drag.js';
@@ -966,6 +966,10 @@ export function brushPlaying() {
 // stands, so on letting go the pass carries on from the very step it
 // stopped at, never planned afresh. Batches already taken when the hold
 // comes play out their last few moments.
+//
+// The standing page's scrub bar (ui/screens/replay-bar.js) reads where the
+// pass stands (brushReplayPosition) and moves it (brushReplaySeek), held or
+// playing, forward or back.
 const showTape = [];
 let replayOn = false, pass = null, passI = 0, passClock = 0, lastTick = -1, saidSkip = -1, replayLoopMs = LOOP_MS;
 let held = false;
@@ -1026,6 +1030,49 @@ export function brushReplayHold(on) {
   idleWake('the playback');
 }
 export function brushReplayHeld() { return held; }
+// Where the pass stands, { at, ms }: its clock and its length (the rest
+// after its last mark included), both pass ms, which on the standing page
+// (scale 1) are the drawing's own ms, at 1x the wall clock's. null while
+// no pass is planned (the tape still coming, or a playback held from its
+// start). One object, filled afresh each call.
+const replayPos = { at: 0, ms: 0 };
+export function brushReplayPosition() {
+  if (!replayOn || !pass || !pass.steps.length) return null;
+  replayPos.ms = pass.ms;
+  replayPos.at = passClock < pass.ms ? (passClock > 0 ? passClock : 0) : pass.ms;
+  return replayPos;
+}
+// The pass moved to ms (pass ms, held to 0..its length), forward or back,
+// held or playing. The next step is the first whose take is at or past it
+// (steps are sorted by takeMs), so the tick takes from there with its
+// usual ahead and none is taken late; lastTick stays as it is, the next
+// frame adding only its own time from the new place.
+//
+// A clean break: every replayed stroke in flight is closed and its stamps
+// not yet let out are dropped, not played out. Their moments were laid on
+// this clock for the old place, so played out they would go on drawing the
+// old stretch over the new for as long as was taken ahead, and a slot left
+// open would join the drawer's next batch to the old stroke, a line across
+// the jump. Dropped, each drawer's next batch opens a fresh slot and a
+// stroke the seek lands in the middle of starts at that batch, as one the
+// pass joins mid-way does. Marks already let out stay drawn. And every
+// drawer's smoothing filter is let go (replaySmoothReset), or the eased
+// pen would glide from the old place to the new.
+export function brushReplaySeek(ms) {
+  if (!replayOn || !pass || !pass.steps.length) return;
+  const t = ms > 0 ? (ms < pass.ms ? ms : pass.ms) : 0;
+  const st = pass.steps;
+  let lo = 0, hi = st.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (st[m].takeMs < t) lo = m + 1; else hi = m; }
+  passI = lo; passClock = t;
+  for (let i = 0; i < SLOTS; i++) {
+    if (!slotOn[i] || !slotLocal[i]) continue;
+    slotHead[i] = 0; slotCount[i] = 0; slotDone[i] = 1;
+    slotOn[i] = 0; slotKey[i] = null;
+  }
+  replaySmoothReset();
+  idleWake('the playback');
+}
 function replayTick(now) {
   if (!replayOn || held) return;
   // The GPU side behind: the ring holds more than it looks at in a frame
