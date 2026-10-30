@@ -275,7 +275,10 @@ export function retime(step, base, scale, size = 1, fadeUp = 0, fadeDown = 0, sm
   for (let j = 1; j < q.length; j++) T[j] = T[j - 1] + q[j];
   const last = T[q.length - 1];
   const tail = fadeDown > 0 && s.d === 2 && !!step.end;
-  let prev = smoothInto(msg, step.id, T, base, scale, smooth, smoothMs, !tail);
+  // the settle into the real end is the stroke's last batch's alone: on
+  // every batch it laid each one's ease-out past the next one's start, the
+  // timeline going back at every batch and the pen leaping (the stutter)
+  let prev = smoothInto(msg, step.id, T, base, scale, smooth, smoothMs, s.d === 2 && !tail);
   if (prev < 0) {
     const q2 = new Array(q.length);
     prev = 0;

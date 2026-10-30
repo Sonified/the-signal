@@ -838,7 +838,16 @@ export function brushTake(msg, from, onClock = false) {
     // took the replay's delay to its 2 s cap).
     const first = prints || (fresh && s.d === 0) ? 0 : 1;
     const off0 = offsets.get(key);
-    if (off0 !== undefined && first < T.length) {
+    // Never for a playback's batch (onClock): its times are this clock's
+    // own, so a point already gone by when it comes is the plan's choice,
+    // not the network's mood. The smoothing's eased pen leaves the joint at
+    // once, and after a hand's pause longer than the pass takes ahead the
+    // joint is long gone: counted late, every such batch raised the delay
+    // for every stroke on the screen, each rise freezing them all while
+    // play caught up, to the 2 s cap (the stutter Replay smoothing gave at
+    // any setting, where Off, whose first point is the next drawn one,
+    // never rose from 50 ms).
+    if (!onClock && off0 !== undefined && first < T.length) {
       const d = playDelayNow();
       playLate += ratchetDelay(d, playTime(now, off0, d), T[first]) - d;
     }
