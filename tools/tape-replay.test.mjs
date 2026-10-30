@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { tapePath, tapeEntries, startTapeReplay, REAL_TIME, eventSlug, eventTape } from '../platform/tape-replay.js';
+import { tapePath, tapeEntries, startTapeReplay, REAL_TIME, eventSlug, eventTape, eventScene } from '../platform/tape-replay.js';
 import { planPass, LOOP_MS, LOOP_REST_MS } from '../core/brush-replay.js';
 import { brushTapeCount, brushReplaying, brushReplay, brushReplayHold, brushPlay, brushPlaying, brushQueue, brushQueueDrop, setBrushClock, brushPlayReset, STAMP_FLOATS } from '../core/brush.js';
 import { brushSide } from '../core/brush-stamps.js';
@@ -175,4 +175,20 @@ test('an event name resolves through the manifest to its tape, slugged as rooms 
   assert.equal(await eventTape('unknown', get), '');
   assert.equal(await eventTape('', get), '');
   await assert.rejects(() => eventTape('win-iv', async () => ({ ok: false, status: 404 })));
+});
+
+test('an event\'s scene is its file under presets/events/, or nothing to apply', async () => {
+  const get = async (url) => {
+    if (url === 'presets/events/win2026.json') return { ok: true, json: async () => ({ freq: 3 }) };
+    if (url === 'presets/events/list.json') return { ok: true, json: async () => [1, 2] };
+    return { ok: false, status: 404 };
+  };
+  assert.deepEqual(await eventScene('win2026', get), { freq: 3 });
+  assert.equal(await eventScene('unknown', get), null);    // no scene: the visitor's own settings
+  assert.equal(await eventScene('list', get), null);       // not a settings object
+  assert.equal(await eventScene('', get), null);
+  assert.equal(await eventScene('win2026', async () => { throw new Error('offline'); }), null);
+  // the shipped WIN 2026 scene parses and carries none of the machine's own settings
+  const win = JSON.parse(fs.readFileSync(new URL('../presets/events/win2026.json', import.meta.url)));
+  for (const k of ['sunTier', 'dprCap', 'heartLookaheadS', 'presentationMode', 'panelOpen', '_v1w']) assert.ok(!(k in win), k);
 });

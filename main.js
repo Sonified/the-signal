@@ -65,7 +65,7 @@ import { setIdleWaker, idleWake, idleHeld, IDLE_DIAG } from './core/idle.js';
 import { eye, stepEye } from './core/eye.js';
 import { initChores, choreRegister, choreRun, choreYield, choreBusy } from './core/chores.js';
 import { initWords, stepWords, wordsResume, wordState } from './core/words.js';
-import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame, savePending, settingsKey } from './core/store.js';
+import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfterFrame, savePending, settingsKey, applySnapshot } from './core/store.js';
 import { idleTouch } from './js/idle-ahead.js';
 import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionRemaining } from './core/presets.js';
 import { seedFactoryPresets } from './platform/factory-presets.js';
@@ -82,7 +82,7 @@ import { drawMorph } from './ui/screens/morph.js';
 import { drawReplayBar } from './ui/screens/replay-bar.js';
 import { stepBrushMorph } from './core/brush-morph.js';
 import { initPresentationReceiver } from './platform/presentation-receiver.js';
-import { tapePath, startTapeReplay, eventSlug, eventTape } from './platform/tape-replay.js';
+import { tapePath, startTapeReplay, eventSlug, eventTape, eventScene } from './platform/tape-replay.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
 import { journeyImport } from './core/journey.js';
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
@@ -229,6 +229,9 @@ async function boot() {
   // A first visit fetches the starting presets and writes them in before
   // anything reads storage (the worker's copy of it included); a return
   // visit, which already has a presets record, fetches nothing.
+  // An ?event= page's own scene (presets/events/<slug>.json) is fetched
+  // beside it and applied once the store has loaded, below.
+  const sceneWait = !inWorker && replayEvent ? eventScene(replayEvent) : null;
   if (!inWorker) await seedFactoryPresets();
   if (!inWorker && await startWorkerShell(canvas)) { firstLight(); return; }
   console.log('[boot] engine stays on this thread +' + Math.round(performance.now()) + 'ms');
@@ -243,6 +246,9 @@ async function boot() {
   // A first visit starts on the lit chip's settings (the starting row's
   // Blooming Grace 2) rather than the bare defaults.
   if (load()) applyActivePresetState();
+  // An event's scene wins over both, on every visit: the piece's settings,
+  // the way a preset recall lands them (this machine's own left alone).
+  if (sceneWait) { const scene = await sceneWait; if (scene) applySnapshot(scene); }
   // The colour walk needs hue, saturation and lightness seeded from the
   // current colour; v0 does this from its picker on every boot, saved or not.
   {

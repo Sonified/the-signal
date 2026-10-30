@@ -58,6 +58,30 @@ export async function eventTape(slug, get = fetch) {
   return tapePath(map && typeof map === 'object' ? map[slug] : '');
 }
 
+// An event's own scene: presets/events/<slug>.json, a settings snapshot
+// (the drawer's state as the store saves it, the machine's own settings
+// left out) that an ?event= page starts from on every visit, applied as a
+// preset recall is (core/store.js applySnapshot, main.js boot). null when
+// the event has none, the file cannot be reached, or it takes too long, so
+// a page with no scene boots on the visitor's own settings as before.
+const SCENE_TIMEOUT_MS = 8000;
+export async function eventScene(slug, get = fetch) {
+  if (!slug) return null;
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), SCENE_TIMEOUT_MS) : 0;
+  try {
+    const r = await get('presets/events/' + slug + '.json', { cache: 'no-cache', signal: ctl ? ctl.signal : undefined });
+    if (!r.ok) return null;
+    const s = await r.json();
+    return s && typeof s === 'object' && !Array.isArray(s) ? s : null;
+  } catch (e) {
+    console.info('[replay] no scene for event "' + slug + '": ' + (e && e.message || e));
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // The entries of a fetched tape, or null when it holds none in a shape the
 // brush can play.
 export function tapeEntries(doc) {
