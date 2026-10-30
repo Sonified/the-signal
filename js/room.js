@@ -113,7 +113,7 @@ function teardown() {
   clearTimeout(hpIdle); hpIdle = null;
   ctx = null; input = null; wet = null; out = null; convFeed = null;
   hp = null; hpOld = null;
-  room = null; algo = null; algoFeed = null; algoDead = false;
+  room = null; algo = null; algoFeed = null; algoDead = false; algoWait = false;
   revAlgoNow = false;
 }
 
