@@ -619,6 +619,8 @@ const slotLocal = new Uint8Array(SLOTS);
 // held from its first batch; the moment of its real last point and the
 // fade down's length after it, from its last. 0 lengths are no fade.
 const slotStart = new Float64Array(SLOTS), slotFadeUp = new Float64Array(SLOTS);
+// each replayed drawer's stroke being faded up and when it began here (brushTake)
+const fadeStroke = new Map();
 const slotFadeEnd = new Float64Array(SLOTS), slotFadeDown = new Float64Array(SLOTS);
 // who drew it (core/brush-order.js): the hall's id, or the broadcaster's
 const slotWho = new Float64Array(SLOTS);
@@ -820,7 +822,26 @@ export function brushTake(msg, from, onClock = false) {
   // has them): the fade up from a stroke's first batch, the fade down from
   // its last, each on this clock
   if (onClock && T) {
-    if (fresh && s.d === 0) { slotStart[i] = T[0]; slotFadeUp[i] = msg.fu > 0 ? msg.fu : 0; }
+    // The fade up runs from the stroke's own start, not the slot's: a stroke
+    // can come in a slot that never saw its first batch (a quick dab sent as
+    // one last batch with no first, the rest of a stroke after its slot was
+    // let go through a pause or taken for another drawer, a stroke a seek or
+    // a pass lands in the middle of), and keyed on the slot those all came
+    // up at full brightness at once. So each drawer keeps the stroke it is
+    // fading (fadeStroke, by retime's fk, its first point's sender time) and
+    // when it began here: a fresh slot of the same stroke carries on its
+    // fade, any other starts one at its first point. Let go at a seek and a
+    // new pass, so a stroke landed in fades up from where it is met.
+    if (fresh) {
+      let f = fadeStroke.get(key);
+      // from when it starts drawing (retime's fm), or where it is met when
+      // that is later
+      if (!f || s.d === 0 || f.k !== msg.fk) {
+        f = { k: msg.fk, start: Number.isFinite(msg.fm) && msg.fm > T[0] ? msg.fm : T[0] };
+        fadeStroke.set(key, f);
+      }
+      slotStart[i] = f.start; slotFadeUp[i] = msg.fu > 0 ? msg.fu : 0;
+    }
     if (s.d === 2 && msg.fd > 0 && Number.isFinite(msg.fe)) { slotFadeEnd[i] = msg.fe; slotFadeDown[i] = msg.fd; }
   }
   const fading = slotFadeUp[i] > 0 || slotFadeDown[i] > 0;
@@ -1082,6 +1103,7 @@ export function brushReplaySeek(ms) {
     slotOn[i] = 0; slotKey[i] = null;
   }
   replaySmoothReset();
+  fadeStroke.clear();
   idleWake('the playback');
 }
 function replayTick(now) {
@@ -1103,6 +1125,7 @@ function replayTick(now) {
   lastTick = now;
   if (!pass || (passI >= pass.steps.length && passClock >= pass.ms)) {
     pass = planPass(showTape, replayLoopMs, undefined, S.brushTrim !== false);
+    fadeStroke.clear();
     passI = 0; passClock = 0;
     if (!pass.steps.length) { pass = null; return; }
     if (pass.drawers && pass.skipped !== saidSkip) {

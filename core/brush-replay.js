@@ -135,7 +135,7 @@ export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS, trim 
   let ahead = 0;
   for (let i = skipped; i <= end; i++) {
     const e = good[i];
-    steps[i - skipped] = { tMs: (paceLast[i] - t0) * scale, takeMs: (paceTake[i] - t0) * scale, id: e.id, s: e.s };
+    steps[i - skipped] = { tMs: (paceLast[i] - t0) * scale, takeMs: (paceTake[i] - t0) * scale, id: e.id, s: e.s, first: paceFirst[i], move: paceMove[i] };
     if (paceEnd[i]) steps[i - skipped].end = paceEnd[i];
     const g = jointGap(e);
     if (g > ahead) ahead = g;
@@ -186,7 +186,28 @@ function jointGap(e) {
 // it ends. Arrays kept across passes, as inWindow is. paceEnd is how a
 // finished stroke was moving as it ended (endMotion), on its d 2 batch,
 // for the fade down's tail (retime); null elsewhere.
-const paceLast = [], paceTake = [], paceEnd = [];
+// paceFirst is its stroke's first point's time on the sender's clock (the
+// first batch the tape holds of it), which names the stroke for the fade up,
+// and paceMove when it starts drawing: its first point away from where it
+// went down (a print stroke's first print), the fade up's zero, since a
+// finger pressed and held still draws nothing to fade.
+const paceLast = [], paceTake = [], paceEnd = [], paceFirst = [], paceMove = [];
+function strokeMoves(good, list) {
+  const s0 = good[list[0]].s, p0 = s0.p, q0 = s0.q;
+  if (!Array.isArray(p0) || !Array.isArray(q0) || !q0.length) return NaN;
+  if (s0.r < 1) return q0[0];
+  const u0 = p0[0], v0 = p0[1];
+  for (const i of list) {
+    const s = good[i].s, p = s.p, q = s.q;
+    if (!Array.isArray(p) || !Array.isArray(q) || p.length !== q.length * 2) return NaN;
+    let t = 0;
+    for (let j = 0; j < q.length; j++) {
+      t += q[j];
+      if (p[2 * j] !== u0 || p[2 * j + 1] !== v0) return t;
+    }
+  }
+  return NaN;
+}
 const drawerLast = new Map();
 function batchTimes(e) {
   const q = e.s.q;
@@ -200,11 +221,14 @@ function batchTimes(e) {
 }
 function paceStrokes(good) {
   const n = good.length;
-  paceLast.length = n; paceTake.length = n; paceEnd.length = n;
+  paceLast.length = n; paceTake.length = n; paceEnd.length = n; paceFirst.length = n; paceMove.length = n;
   const open = new Map();   // drawer -> its open stroke's batch indices
   const close = list => {
     let off = Infinity;
     for (const i of list) { const b = batchTimes(good[i]); if (b) off = Math.min(off, good[i].at - b.last); }
+    const q0 = good[list[0]].s.q, first = Array.isArray(q0) && q0.length ? q0[0] : NaN;
+    const moves = strokeMoves(good, list);
+    for (const i of list) { paceFirst[i] = first; paceMove[i] = moves; }
     for (const i of list) {
       const b = batchTimes(good[i]);
       if (b && off < Infinity) { paceLast[i] = b.last + off; paceTake[i] = paceLast[i] - b.lead; }
@@ -289,7 +313,14 @@ export function retime(step, base, scale, size = 1, fadeUp = 0, fadeDown = 0, sm
     }
     msg.q = q2;
   }
-  if (fadeUp > 0) msg.fu = fadeUp * scale;
+  // fk names the stroke (its first point's sender time), so the brush fades
+  // it up once from its own start, however many slots it comes in
+  // and fm is when it starts drawing, on this clock as its points are
+  if (fadeUp > 0) {
+    msg.fu = fadeUp * scale;
+    if (Number.isFinite(step.first)) msg.fk = step.first;
+    if (Number.isFinite(step.move)) msg.fm = base - (last - step.move) * scale;
+  }
   if (tail) {
     msg.fe = prev; msg.fd = fadeDown * scale;
     fadeTail(msg, step.end, fadeDown, prev, scale);
