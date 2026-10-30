@@ -893,7 +893,9 @@ export function brushPlay(dt) {
       const off = offsets.get(slotKey[i]);
       const P = playTime(now, off === undefined ? now : off, delayNow);
       // done and played to its last point, or abandoned: all of it
-      if (slotDone[i] && (n === 0 || P >= slotTlT[i][n - 1] || now - slotFed[i] > abandon)) cursor = Infinity;
+      // (a playback's slot never all at once: its times are this clock's
+      // own, so it plays to its last point, a long smoothing's settle too)
+      if (slotDone[i] && (n === 0 || P >= slotTlT[i][n - 1] || (!slotLocal[i] && now - slotFed[i] > abandon))) cursor = Infinity;
       else {
         cursor = timelineAt(slotTlT[i], slotTlP[i], n, slotTlI[i], P, at);
         slotTlI[i] = at.i;

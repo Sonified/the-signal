@@ -63,7 +63,7 @@ export const SUB_MAX = 512, SETTLE_MAX = 256;
 // laptop's field) the settle stops and the pen is placed on the end.
 export const SETTLE_EPS = 0.0005;
 // Set's time constant, ms of screen time, and its slider's top.
-export const SET_MS_MAX = 500, SET_MS_DEFAULT = 80;
+export const SET_MS_MAX = 2000, SET_MS_DEFAULT = 80;
 
 // The numbers, from the WIN 2026 tape (tools/replay-smoothing-tune.mjs:
 // 730 strokes, 101,755 point gaps). The points come about 59 a second
