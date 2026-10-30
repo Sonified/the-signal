@@ -16,7 +16,8 @@ for f in "$SRC"/*.MOV; do
   mlx_whisper "$WAV/$b.wav" \
     --model mlx-community/whisper-large-v3-turbo \
     --language en --output-dir "$OUT" --output-format srt \
-    --word-timestamps True --verbose False 2>/dev/null
+    --word-timestamps True --condition-on-previous-text False \
+    --hallucination-silence-threshold 2 --verbose False 2>/dev/null
   rm -f "$WAV/$b.wav"
 done
 echo "ALL DONE"
