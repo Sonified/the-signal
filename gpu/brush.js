@@ -2,8 +2,10 @@
 // the hall's) drawn as motif tiles into a video feedback image of the
 // layer's own (feedback.js), which fades each frame by the Fade slider's
 // half-life (core/brush-stamps.js fadeHalfLife), and laid over the scene,
-// over the confetti and under the edge. The marks never stream. They fade
-// where they were made, turn about the field's centre at the Rotation
+// over the confetti and under the edge. The marks fade where they were made
+// unless Feedback zoom streams them (the feedback's zoom, signed: outward
+// above 0, inward below, evenly in every direction; 0 leaves them put), turn
+// about the field's centre at the Feedback rotation
 // slider's speed (the feedback's twist; 0 leaves them still), and follow the
 // field when the drawer slides it aside (the image's centre and unit are the field's square, so
 // the trails ride the field as every feedback image does). The fade runs on
@@ -78,6 +80,13 @@ const MAX_ATLASES = 3;
 // An atlas's uniforms: the frame's eight floats (rewritten each frame), then
 // its 64 tiles' tints as vec4s (written once, as it is installed).
 const UNI_BYTES = 32, TINT_BYTES = MOTIFS * 16;
+// Feedback zoom's scale change per second at 1 either way: the trail image
+// grows or shrinks by exp(STREAM_MAX * zoom) a second, so at the slider's
+// top it is e times bigger a second and at its bottom e times smaller. The
+// same number the kaleidoscope, the confetti, the particles and the edge
+// read their own Stream through (gpu/scene.js), so a 1 means one thing
+// across the whole app.
+const STREAM_MAX = 0.5;
 
 // The particles' light, shared out along a ribbon. A continuous stroke's
 // stamps fall every spacing s (core/brush-stamps.js brushSpacing, its side
@@ -474,6 +483,11 @@ export function createBrush(device, format, platform, opts) {
     fb.ensure(pixelW, pixelH, feedbackRes(S.fbResScale), feedbackKeep(S.fbResSwitch));
     params.keepHalfLife = fadeHalfLife(S.brushFade);
     params.twistRate = brushRotateNow() * Math.PI * 2;
+    // Each screen's own, read straight off S (the hall deals the rotations,
+    // not this), held to the slider's range so a stale record can only ever
+    // ask for a zoom the slider could have asked for.
+    const zoom = Number.isFinite(S.brushZoom) ? Math.max(-2, Math.min(2, S.brushZoom)) : 0;
+    params.zoomRate = STREAM_MAX * zoom;
     params.cx = cx; params.cy = cy; params.unit = side;
     params.dt = dt > 0 ? dt : 0;
     if (nInst > 0) {

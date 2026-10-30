@@ -18,6 +18,13 @@ import { PART_BRIGHT_LO, PART_BRIGHT_HI } from './brush-morph.js';
 import { BRUSH_WAVES, waveOf } from './brush-notes.js';
 
 const DEF_MOTIF = 0, DEF_SIZE = BRUSH_W, DEF_ROTATE = 0, DEF_SPIN = 0, DEF_COPIES = 6, DEF_FADE = 0.5, DEF_RATE = 1;
+// The trail image's zoom, the companion to Feedback rotation: signed, out at
+// the top and in at the bottom, 0 the brush exactly as it drew before it, so
+// nobody's marks move until the slider does. The same -2 to 2 the
+// kaleidoscope, the confetti, the particles and the edge give their Stream,
+// read through the same STREAM_MAX in gpu/brush.js, so a 1 here means what a
+// 1 there means.
+const DEF_ZOOM = 0, ZOOM_MAX = 2;
 // Continuity (stamps per spacing of the law, core/brush-stamps.js), and
 // the playback's Replay speed and Replay size (core/brush.js): all three
 // 1, the brush exactly as it was before them. Each is a multiple on a
@@ -65,6 +72,7 @@ export function initBrushState(S) {
   if (typeof S.brushSize !== 'number') S.brushSize = DEF_SIZE;
   if (typeof S.brushSpin !== 'number') S.brushSpin = DEF_SPIN;
   if (typeof S.brushRotate !== 'number') S.brushRotate = DEF_ROTATE;
+  if (typeof S.brushZoom !== 'number') S.brushZoom = DEF_ZOOM;
   if (typeof S.brushCopies !== 'number') S.brushCopies = DEF_COPIES;
   if (typeof S.brushFade !== 'number') S.brushFade = DEF_FADE;
   if (typeof S.brushRate !== 'number') S.brushRate = DEF_RATE;
@@ -109,7 +117,7 @@ export function applyBrushWire(S, o) {
 
 // What the record holds.
 export function brushStateOf(S) {
-  return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
+  return { brushMotif: S.brushMotif, brushSize: S.brushSize, brushSpin: S.brushSpin, brushRotate: S.brushRotate, brushZoom: S.brushZoom, brushCopies: S.brushCopies, brushRate: S.brushRate, brushFade: S.brushFade,
            brushContinuity: S.brushContinuity, brushReplaySpeed: S.brushReplaySpeed, brushReplaySize: S.brushReplaySize,
            brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushParticleBright: S.brushParticleBright, brushTrim: S.brushTrim,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
@@ -127,6 +135,7 @@ export function applyBrushState(S, o) {
   if (Number.isFinite(o.brushSize)) S.brushSize = n(o.brushSize, 1, 100);
   if (Number.isFinite(o.brushSpin)) S.brushSpin = Math.max(0, Math.min(ROTATE_MAX, o.brushSpin));
   if (Number.isFinite(o.brushRotate)) S.brushRotate = Math.max(0, Math.min(ROTATE_MAX, o.brushRotate));
+  if (Number.isFinite(o.brushZoom)) S.brushZoom = Math.max(-ZOOM_MAX, Math.min(ZOOM_MAX, o.brushZoom));
   if (Number.isFinite(o.brushCopies)) S.brushCopies = n(o.brushCopies, 1, 24);
   if (Number.isFinite(o.brushFade)) S.brushFade = Math.max(0, Math.min(1, o.brushFade));
   if (Number.isFinite(o.brushRate)) S.brushRate = Math.max(0, Math.min(1, o.brushRate));
@@ -210,6 +219,31 @@ export const BRUSH_CONTROLS = [
     get: S => Math.round(S.brushRotate * 10),
     set: (S, pos) => { S.brushRotate = Math.max(0, Math.min(Math.round(ROTATE_MAX * 10), Math.round(pos))) / 10; saveBrush(); },
     formatAt: pos => pos === 0 ? 'Off' : (pos / 10).toFixed(1) + ' /s',
+    visible: () => !brushMember()
+  },
+  // Beneath the turn, the other half of the same motion: each frame's faded
+  // copy of the trail image is taken a little larger about the field's
+  // centre (out, +) or a little smaller (in, -), evenly in every direction,
+  // so the marks drift away from the centre or draw toward it while they
+  // fade. It is the Stream the kaleidoscope, the confetti, the particles and
+  // the edge already give their own feedback, with their range and their
+  // reading, because the brush's trail image is the same kind of image and
+  // should answer a 1 the same way. 0 is no zoom: the marks fade where the
+  // hand made them, the brush as it has always drawn.
+  //
+  // Shown where Feedback rotation is shown, and like it never on the wire,
+  // but unlike it this is each screen's own rather than the room's: the hall
+  // has no word for a zoom (core/brush.js dealTick sends the two rotations
+  // as rt and sr), so a conductor's setting is not dealt to the members. A
+  // word of its own in the room message is the follow-up, and needs the
+  // broadcast worker redeployed to carry it.
+  {
+    id: 'brushZoom', section: 'brush', label: 'Feedback zoom', kind: 'slider',
+    min: -ZOOM_MAX, max: ZOOM_MAX, step: 0.01, def: DEF_ZOOM,
+    get: S => S.brushZoom || 0,
+    set: (S, pos) => { S.brushZoom = Math.max(-ZOOM_MAX, Math.min(ZOOM_MAX, pos)); saveBrush(); },
+    formatAt: pos => pos === 0 ? 'none'
+      : (pos > 0 ? '+' + pos.toFixed(2) + ' out' : pos.toFixed(2) + ' in'),
     visible: () => !brushMember()
   },
   {
