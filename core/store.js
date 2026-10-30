@@ -48,6 +48,7 @@ import { applyEdgeDir } from '../js/sim.js';
 import { normalizeAmbLayers, syncAmbLayers } from '../js/ambience.js';
 import { CHANNELS, applyMixGates } from '../js/mixgate.js';
 import { driveOf, levelDriveOf } from './variance.js';
+import { clampCents } from './tune.js';
 import { MUSIC_LAYERS, layerOnKey, layerVolKey } from '../js/layer-defs.js';
 // A cycle (schema-flowers.js and schema-kaleido.js import save() from here),
 // but a harmless one: neither side calls into the other while it is being
@@ -186,6 +187,7 @@ function buildSettings() {
     pianoSpread: S.pianoSpread, pianoHold: S.pianoHold, pianoBass: S.pianoBass,
     cloudsOn: S.cloudsOn, cloudVol: S.cloudVol, cloudDensity: S.cloudDensity,
     cloudPhrase: S.cloudPhrase, cloudReverb: S.cloudReverb,
+    pianoTune: S.pianoTune, bedTune: S.bedTune, cloudTune: S.cloudTune, choirTune: S.choirTune,
     ambOn: S.ambOn, ambVol: S.ambVol, ambFadeInS: S.ambFadeInS, ambDrift: S.ambDrift, ambDriftFadeS: S.ambDriftFadeS, ambKidsFreq: S.ambKidsFreq,
     ambReverb: S.ambReverb, ambRevTime: S.ambRevTime, ambRevType: S.ambRevType, ambRevDamp: S.ambRevDamp, ambRevMod: S.ambRevMod,
     ambReverbVar: S.ambReverbVar, ambReverbPeriod: S.ambReverbPeriod, ambRevTimeVar: S.ambRevTimeVar, ambRevTimePeriod: S.ambRevTimePeriod,
@@ -1192,6 +1194,11 @@ function applySettings(s, live, scene) {
   ['pianoVol','bedVol','pianoReverb','arpVol','arpRev','ambVol','ambReverb','cloudVol','cloudReverb'].forEach(k => {
     if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = clampN(s[k], 0, 1);
   });
+  // The four voices' fine tuning, cents, held to the knobs' range and their
+  // whole-cent grid (core/tune.js clampCents), so a stored or broadcast value
+  // from anywhere can never bend a voice further than a semitone.
+  for (const k of ['pianoTune', 'bedTune', 'cloudTune', 'choirTune'])
+    if (typeof s[k] === 'number' && Number.isFinite(s[k])) S[k] = clampCents(s[k]);
   ['pianoRevTime','pianoHP','arpRate','arpAtk','arpDec','arpOct','arpSpread','arpStrobeAm','arpSwLo','arpSwHi','arpSwPeriod','arpSwWander','pianoDensity','pianoCentre',
    'arpVolVar','arpVolPeriod','pianoReverbVar','pianoReverbPeriod','pianoRevTimeVar','pianoRevTimePeriod','pianoRevDamp','pianoRevMod','pianoRevHP','pianoRevHPSlope','arpStrobeAmVar','arpStrobeAmPeriod','arpHfCut',
    'pianoSpread','pianoHold','pianoBass','ambFadeInS','ambRevTime','ambDriftFadeS','ambKidsFreq',

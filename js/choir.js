@@ -35,6 +35,7 @@ import { every, clear, walkAhead } from './ticker.js';
 import { breath, breathState, resetBreath, resetBreathLow, variedBy, driveOf, levelDriveOf, TIME_STROBE } from '../core/variance.js';
 import { signal, signalNow, valueAt } from '../core/signal.js';
 import { breathHeardAt } from '../core/breath.js';
+import { TUNE_TC, clampCents } from '../core/tune.js';
 
 // Semitone above the keyboard root -> the degree sung, ascending the mode.
 const LAH = { 24: '1', 26: '2', 28: '3', 31: '5', 35: '7', 36: '8', 38: '9' };
@@ -291,6 +292,9 @@ async function choirStart() {
     const gain = ctx.createGain();
     source.buffer = loop.buf; source.loop = true; source.loopStart = loop.a; source.loopEnd = loop.b;
     source.playbackRate.value = Math.pow(2, choirTrim(part).cents / 1200);
+    // Choir fine tuning on the detune param, multiplied by Web Audio onto
+    // the voice's own retune above (applyChoirTune).
+    source.detune.value = choirCents();
     gain.gain.value = 0;
     source.connect(gain); gain.connect(g);
     source.start();
@@ -307,6 +311,22 @@ async function choirStart() {
   // the performer's opening: every voice rising to its place from silence
   applyChoirTargets(1.6);
   syncWanderTimer();
+}
+
+// Choir fine tuning: S.choirTune, cents (core/tune.js), every voice glided
+// to it together so the chord bends as one, nothing retriggered. Each voice
+// loops on the source's own loop points (loopBuffer's seam baked into the
+// copy), which are in buffer time and so follow any speed by themselves:
+// nothing about the choir is timed on the clock from a buffer's length, so
+// there is no schedule to plan again, only the pitch to move. On the
+// voices' own context, from its present (Heart's lookahead later, natively
+// now), so on Heart the glide is not late.
+const choirCents = () => clampCents(S.choirTune);
+export function applyChoirTune() {
+  if (!voices || !voices.length) return;
+  const ctx = voices[0].source.context, c = choirCents();
+  const t = ctx.presentTime ?? ctx.currentTime;
+  for (const v of voices) v.source.detune.setTargetAtTime(c, t, TUNE_TC);
 }
 
 function choirStop() {

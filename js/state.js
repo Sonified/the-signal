@@ -323,6 +323,10 @@ export const S = {
   // four takes played by hand rather than a guess.
   musicOn: true,
   pianoVol: 0.9, pianoReverb: 1.0, pianoRevTime: 4.5,
+  // Fine tuning, in cents (-100..100, a semitone each way; core/tune.js) for
+  // the piano, the drone, the clouds and the choir, each its own. 0 is no
+  // adjustment: the voices tuned as their roots and recordings make them.
+  pianoTune: 0, bedTune: 0, cloudTune: 0, choirTune: 0,
   pianoRevHP: 20,             // high-pass on the master room's return, Hz; 20 is the floor and reads as off
   pianoRevHPSlope: 12,        // its slope, dB an octave: 3, 6, then 12 to 48 by 6 (js/room.js HP_SLOPES)
   pianoOn: true,              // the generative piano voice alone
