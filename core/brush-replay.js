@@ -102,7 +102,7 @@ export function roomLeaves(good, from, hands = ROOM_HANDS, windowMs = LEAVE_WIND
 // skipped, drawers }, steps [{ tMs, takeMs, id, s }] from the pass's zero
 // (tMs the batch's last point, takeMs when it is handed to the brush, its
 // first new point's moment, see paceStrokes), ms the
-// pass's length with its rest, ahead how early the smoothing takes each
+// pass's length with its rest, ahead how early the playback takes each
 // step (jointGap below), skipped how many batches before the room
 // arrived were left out (0 when it never arrived and the whole tape plays)
 // and drawers how many hands it arrived with (0 then too). Entries without
@@ -154,8 +154,8 @@ export function planPass(entries, loopMs = LOOP_MS, restMs = LOOP_REST_MS, trim 
 // would find them gone by and the cursor would leap to catch up). The
 // pass's `ahead` is the longest such gap (pass ms), held to AHEAD_MAX_MS
 // of drawing time so one long stillness does not hand every batch over
-// seconds early; core/brush.js takes every step that much early while the
-// smoothing is on (a batch in hand early only waits for its moment). On
+// seconds early; core/brush.js takes every step that much early, smoothed
+// or not (a batch in hand early only waits for its moment). On
 // the WIN 2026 tape a joint's gap is 17 ms at the median, 134 at p99 and
 // 673 at p99.9, and 283 of 57,288 pass 250 ms: those few, a hand's pause,
 // still come in late by the rest, as every one did unsmoothed. 250 ms at

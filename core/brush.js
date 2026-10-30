@@ -1055,11 +1055,13 @@ function replayTick(now) {
   const st = pass.steps, scale = pass.scale / speed, size = replaySizeNow();
   const fadeUp = replayFadeMs(S.brushReplayFadeUp), fadeDown = replayFadeMs(S.brushReplayFadeDown);
   const smooth = replaySmoothNow(), smoothMs = smooth === 'set' ? replaySmoothMsNow() : 0;
-  // each batch handed over as its first new point comes due (smoothed, as
-  // its joint does: the pass's ahead), its last point laid ahead on this
-  // clock where the pass will reach it, so the brush has every point
-  // before its moment and never plays catch-up
-  const ahead = smooth !== 'off' && pass.ahead > 0 ? pass.ahead : 0;
+  // each batch handed over as its joint comes due (the pass's ahead, before
+  // its first new point), its last point laid ahead on this clock where the
+  // pass will reach it, so the brush has every point before its moment and
+  // never plays catch-up. Smoothing off too: taken only at its first new
+  // point, the pen held at the joint through the whole gap and then leapt
+  // most of it, the tick a slowed playback showed at every point.
+  const ahead = pass.ahead > 0 ? pass.ahead : 0;
   while (passI < st.length && st[passI].takeMs <= passClock + ahead) {
     const step = st[passI++];
     brushTake(retime(step, now - (passClock - step.tMs) / speed, scale, size, fadeUp, fadeDown, smooth, smoothMs), undefined, true);
