@@ -34,7 +34,7 @@ import { roomInput, roomContext } from './room.js';
 import { bellFor, degreeHz, noteShape } from '../core/brush-notes.js';
 
 const PEAK = 0.05;        // the strike's peak gain (the piano's notes sit several times higher)
-const SEND = 0.35;        // into the room
+const SEND = 0.35;        // into the room, when no Notes reverb is set
 const MAX_VOICES = 12;
 let live = 0;
 
@@ -49,7 +49,10 @@ export function ringBell(seed, degree) {
   const ctx = peekCtxFor('music') || getContext();
   const master = peekMasterFor('music') || getMaster();
   if (!ctx || !master || ctx.state !== 'running') return;
-  const f = degreeHz(degree);
+  // Fine tuning (schema-brush brushDetune): the strike's pitch bent by up
+  // to a semitone each way, in cents, bell and note together
+  const cents = Math.max(-100, Math.min(100, typeof S.brushDetune === 'number' ? S.brushDetune : 0));
+  const f = degreeHz(degree) * (cents ? Math.pow(2, cents / 1200) : 1);
   // On Heart a strike made now is heard from the present (js/piano.js
   // heardNow); natively the two are one.
   const t = ctx.presentTime !== undefined ? ctx.presentTime : ctx.currentTime;
@@ -110,7 +113,9 @@ function play(ctx, master, t, end, car, mod, depth, amp) {
   let send = null;
   if (roomContext() === ctx) {
     const room = roomInput(ctx, master);
-    if (room) { send = ctx.createGain(); send.gain.value = SEND; amp.connect(send); send.connect(room); }
+    // the strike's share of the room (schema-brush brushVerb); 0 sends nothing
+    const verb = Math.max(0, Math.min(1, typeof S.brushVerb === 'number' ? S.brushVerb : SEND));
+    if (room && verb > 0) { send = ctx.createGain(); send.gain.value = verb; amp.connect(send); send.connect(room); }
   }
   car.start(t); mod.start(t);
   car.stop(end); mod.stop(end);

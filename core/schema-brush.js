@@ -27,6 +27,10 @@ const SPEED_LO = 0.05, SPEED_HI = 2, RSIZE_LO = 0.25, RSIZE_HI = 4;
 // The morph from shapes to particles (core/brush-morph.js): shapes, the
 // brush as it always was, with Auto off.
 const DEF_MORPH = 0, DEF_MORPH_AUTO = false, DEF_TRIM = true;
+// The notes' tuning offset in cents (a hundredth of a semitone each way up
+// to a whole one) and their share of the master reverb room (js/room.js;
+// 35% is the level the strikes always sent at before it was a slider).
+const DEF_DETUNE = 0, DEF_VERB = 0.35, DETUNE_MAX = 100;
 // The particles' brightness, a multiple of their light: 1, in twentieths
 // (5%) from a quarter to four times.
 const DEF_PART_BRIGHT = 1;
@@ -69,6 +73,8 @@ export function initBrushState(S) {
   if (typeof S.brushToneMin !== 'number') S.brushToneMin = DEF_TONE_MIN;
   if (typeof S.brushToneMax !== 'number') S.brushToneMax = DEF_TONE_MAX;
   if (typeof S.brushVol !== 'number') S.brushVol = 0;
+  if (typeof S.brushDetune !== 'number') S.brushDetune = DEF_DETUNE;
+  if (typeof S.brushVerb !== 'number') S.brushVerb = DEF_VERB;
 }
 
 // The notes' master volume alone among the brush's settings is the ROOM's
@@ -92,7 +98,7 @@ export function brushStateOf(S) {
            brushMorph: S.brushMorph, brushMorphAuto: S.brushMorphAuto, brushParticleBright: S.brushParticleBright, brushTrim: S.brushTrim,
            brushDeal: S.brushDeal, brushDealN: S.brushDealN, brushHideFollow: S.brushHideFollow,
            brushStream: S.brushStream, brushSmooth: S.brushSmooth, brushNotes: S.brushNotes,
-           brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax };
+           brushTones: S.brushTones, brushToneMin: S.brushToneMin, brushToneMax: S.brushToneMax, brushDetune: S.brushDetune, brushVerb: S.brushVerb };
 }
 
 // The record read back, field by field, each held to its range: the tile
@@ -122,6 +128,8 @@ export function applyBrushState(S, o) {
   if (typeof o.brushTones === 'boolean') S.brushTones = o.brushTones;
   if (Number.isFinite(o.brushToneMin)) S.brushToneMin = Math.max(TONE_LO, Math.min(TONE_HI, o.brushToneMin));
   if (Number.isFinite(o.brushToneMax)) S.brushToneMax = Math.max(TONE_LO, Math.min(TONE_HI, o.brushToneMax));
+  if (Number.isFinite(o.brushDetune)) S.brushDetune = Math.max(-DETUNE_MAX, Math.min(DETUNE_MAX, Math.round(o.brushDetune)));
+  if (Number.isFinite(o.brushVerb)) S.brushVerb = Math.max(0, Math.min(1, o.brushVerb));
   if (Number.isFinite(o.brushStream)) S.brushStream = n(o.brushStream, 10, 60);
   if (Number.isFinite(o.brushSmooth)) S.brushSmooth = n(o.brushSmooth, 0, 200);
 }
@@ -411,6 +419,27 @@ export const BRUSH_CONTROLS = [
     min: 0, max: 100, step: 1, def: 0,
     get: S => Math.round(S.brushVol * 100),
     set: (S, pos) => { S.brushVol = Math.max(0, Math.min(100, pos)) / 100; save(); },
+    formatAt: pos => pos + '%',
+  },
+  // Fine tuning: the notes' pitch bent up or down by up to a whole
+  // semitone, in cents (js/brush-bells.js lays it on every strike's
+  // frequency, bell and note alike, so the hand's instrument tunes to
+  // whatever the room's music is doing). Each screen's own.
+  {
+    id: 'brushDetune', section: 'brush', label: 'Notes fine tuning', kind: 'slider',
+    min: -DETUNE_MAX, max: DETUNE_MAX, step: 1, def: DEF_DETUNE,
+    get: S => Math.round(S.brushDetune),
+    set: (S, pos) => { S.brushDetune = Math.max(-DETUNE_MAX, Math.min(DETUNE_MAX, Math.round(pos))); saveBrush(); },
+    formatAt: pos => pos === 0 ? 'in tune' : (pos > 0 ? '+' : '') + pos + ' cents',
+  },
+  // How much of each strike goes into the master reverb room (js/room.js):
+  // the send's own level, the strike always dry into the master beside it.
+  // Each screen's own.
+  {
+    id: 'brushVerb', section: 'brush', label: 'Notes reverb', kind: 'slider',
+    min: 0, max: 100, step: 1, def: Math.round(DEF_VERB * 100),
+    get: S => Math.round(S.brushVerb * 100),
+    set: (S, pos) => { S.brushVerb = Math.max(0, Math.min(100, pos)) / 100; saveBrush(); },
     formatAt: pos => pos + '%',
   },
   // The quick bar (bottom right: the Text, Tone, Music and Atmosphere chips
