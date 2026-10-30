@@ -22,6 +22,7 @@ import { every, after, clear, walkAhead } from './ticker.js';
 import { breath, breathPhase, breathState, resetBreath, variedBy, driveOf } from '../core/variance.js';
 import { signal, signalNow, valueAt } from '../core/signal.js';
 import { breathHeardAt } from '../core/breath.js';
+import { TUNE_MAX, TUNE_TC, clampCents, centsRatio, playhead, posAt, retune, planPass, replanPasses, endInTime, layFade } from '../core/tune.js';
 
 const SEMIS = [0,2,4,5,7,9,11,12,14,16,17,19,21,23,24,26,28,29,31,33,35,36,38,40];
 const RELEASES = 18;
@@ -328,12 +329,41 @@ function strike(written, vel, at) {
   if (!buf || !dry) return;
   const s = ctx.createBufferSource();
   s.buffer = buf;
-  s.playbackRate.value = Math.pow(2, ((written - ROOT) - src) / 12);
+  const rate = Math.pow(2, ((written - ROOT) - src) / 12);
+  s.playbackRate.value = rate;
+  // Piano fine tuning, on the detune param, which multiplies onto the
+  // resampling rate above, so the two compose without either knowing.
+  s.detune.value = pianoCents();
   const g = ctx.createGain();
   g.gain.value = vel * vel * sampleTrim(src);
   s.connect(g); g.connect(hp);
   // never in the past: a start before the clock's zero throws
-  s.start(Math.max(at, ctx.currentTime));
+  const startAt = Math.max(at, ctx.currentTime);
+  s.start(startAt);
+  tuneNote(s, startAt + buf.duration / (rate * centsRatio(-TUNE_MAX)));
+}
+
+// Piano fine tuning (S.pianoTune, cents, core/tune.js). Struck in at each
+// note's start, and laid on every note still ringing or booked ahead (a
+// generative gesture books a minute and more) when the knob moves, so the
+// whole piano bends together and the next phrase never comes in at the old
+// pitch. A note is a sample left to ring out to its own end, never looped
+// and never cut, so its schedule has nothing timed by its length: only its
+// pitch follows. Each is held only until it is sure to have ended (its
+// length at the slowest the knob can play it), pruned as notes are struck.
+const pianoCents = () => clampCents(S.pianoTune);
+const tunedNotes = [];
+function tuneNote(s, end) {
+  const now = famCtx().currentTime;
+  let k = 0;
+  for (let i = 0; i < tunedNotes.length; i++) if (tunedNotes[i].end > now) tunedNotes[k++] = tunedNotes[i];
+  tunedNotes.length = k;
+  tunedNotes.push({ s, end });
+}
+export function applyPianoTune() {
+  if (!tunedNotes.length) return;
+  const ctx = famCtx(), t = heardNow(ctx), c = pianoCents();
+  for (const n of tunedNotes) if (n.end > ctx.currentTime) n.s.detune.setTargetAtTime(c, t, TUNE_TC);
 }
 function keyLift(at) {
   if (!lifts.length || !dry) return;
@@ -682,28 +712,112 @@ for (let i = 0; i < XF_N; i++) {
 // One pass over the buffer, fading out into whatever is scheduled after it.
 // Returns the time the next pass should start, which is one crossfade early so
 // the two overlap.
-function bedTake(startAt, offset, playLen, xf, fadeIn) {
-  const ctx = famCtx(), run = bedRun;
+//
+// Drone fine tuning (S.bedTune, core/tune.js) plays the recording faster or
+// slower, so a pass's playLen buffer seconds last playLen / rate on the
+// clock: every time below is worked out at the rate the pass plays at
+// (planPass), which at 0 cents is the schedule exactly as it always was.
+// inLen is the fade in's own length when a re-plan has had to shorten the
+// pass this one takes over from (applyBedTune); otherwise the crossfade.
+function bedTake(startAt, offset, playLen, xf, fadeIn, inLen = xf) {
+  const ctx = famCtx(), run = bedRun, rate = bedRate();
   const s = ctx.createBufferSource();
   s.buffer = run.buf;
+  s.detune.value = bedCents();
+  const { stopAt, fadeAt } = planPass(startAt, offset, offset + playLen, xf, rate);
   const g = ctx.createGain();
   g.gain.value = fadeIn ? 0 : 1;
-  if (fadeIn) g.gain.setValueCurveAtTime(xfIn, startAt, xf);
-  g.gain.setValueCurveAtTime(xfOut, startAt + playLen - xf, xf);
-  s.connect(g); g.connect(run.gain);
+  if (fadeIn) g.gain.setValueCurveAtTime(xfIn, startAt, inLen);
+  g.gain.setValueCurveAtTime(xfOut, fadeAt, xf);
+  // A second gain, at 1 unless a retune makes this pass run out of audio
+  // before its fade has finished: the early fade goes here (applyBedTune),
+  // since g's booked curves refuse any other automation inside their span.
+  const cut = ctx.createGain();
+  s.connect(g); g.connect(cut); cut.connect(run.gain);
+  // the duration counts buffer time (in Chrome and in Heart alike), so the
+  // pass always plays to the same point of the recording whatever its rate
   s.start(startAt, offset, playLen);
-  s.stop(startAt + playLen);
+  s.stop(stopAt);
   s.onended = () => {
-    try { g.disconnect(); } catch (e) {}
+    try { g.disconnect(); cut.disconnect(); } catch (e) {}
     bedTakes = bedTakes.filter(t => t !== s);
     run.takes = run.takes.filter(t => t !== s);
   };
-  // where this pass starts, in the context's time and in the buffer, so a
-  // change of render can find the point the drone has reached
-  s.at = startAt; s.offset = offset;
+  // where this pass starts, in the context's time and in the buffer, and
+  // where it has got to since (its playhead, which a retune re-anchors), so
+  // a change of render or of tuning can find the point the drone has
+  // reached; and its booked fade and end, which a retune may bring forward
+  s.at = startAt; s.offset = offset; s.end = offset + playLen;
+  s.h = playhead(startAt, offset, rate);
+  s.fadeAt = fadeAt; s.stopAt = stopAt;
+  s.g = g; s.cut = cut; s.cutFade = null;
   bedTakes.push(s);
   run.takes.push(s);
-  return startAt + playLen - xf;
+  return fadeAt;
+}
+
+// ---------- drone fine tuning ----------
+const bedCents = () => clampCents(S.bedTune);
+const bedRate = () => centsRatio(bedCents());
+// how long the next booked pass fades in over, when a re-plan has shortened
+// the crossfade it overlaps; null is the usual crossfade
+let bedNextFade = null;
+
+// The knob moved, mid-loop: every pass glides to the new pitch together,
+// and the schedule, booked up to 90 s ahead for the old speed, is planned
+// again from where the drone is (core/tune.js replanPasses). The passes not
+// yet begun are let go and booked afresh at the new rate; a sounding pass
+// that would now run out of recording before its fade has finished (the
+// rate went up) fades out early instead, on its cut gain, over a window
+// ending as its audio does, and the next pass comes in over that same
+// window; one whose audio now lasts longer (the rate went down) keeps its
+// booked fade, the next pass coming in exactly where it was booked. A
+// render swap's outgoing run is only made to end in time; it is fading out
+// for good. Nothing is restarted, so the drone never retriggers.
+// The pitch and the playheads follow every move at once; the re-plan, which
+// makes a few nodes each time, runs at most every BED_REPLAN_MS while the
+// knob is dragged (the first move at once, the last one always), every
+// playhead having been re-anchored at each move's own time, so a re-plan a
+// moment late still knows exactly where each pass is.
+const BED_REPLAN_MS = 100;
+let bedReplanLast = -Infinity, bedReplanTimer = null;
+export function applyBedTune() {
+  if (!bedTakes.length) return;
+  const ctx = famCtx(), t = heardNow(ctx), c = bedCents(), rate = centsRatio(c);
+  for (const s of bedTakes) { s.detune.setTargetAtTime(c, t, TUNE_TC); retune(s.h, t, rate); }
+  if (bedReplanTimer) return;
+  const wait = bedReplanLast + BED_REPLAN_MS - performance.now();
+  if (wait <= 0) bedReplan();
+  else bedReplanTimer = after(wait, () => { bedReplanTimer = null; bedReplan(); });
+}
+function bedReplan() {
+  bedReplanLast = performance.now();
+  if (!bedTakes.length) return;
+  const t = heardNow(famCtx());
+  const mine = bedRunning && bedRun ? bedRun.takes : [];
+  for (const s of bedTakes) {
+    if (mine.includes(s)) continue;
+    const w = endInTime(s.h, s.end, s.stopAt, t, s.stopAt - s.fadeAt);
+    if (w) bedEndEarly(s, t, w.from, w.to);
+  }
+  if (!mine.length) return;
+  const plan = replanPasses(mine, t);
+  for (const s of plan.drop) {
+    s.onended = null;
+    try { s.stop(); } catch (e) {}
+    try { s.g.disconnect(); s.cut.disconnect(); } catch (e) {}
+  }
+  if (plan.drop.length) {
+    bedTakes = bedTakes.filter(s => !plan.drop.includes(s));
+    bedRun.takes = bedRun.takes.filter(s => !plan.drop.includes(s));
+  }
+  for (const e of plan.early) bedEndEarly(e.pass, t, e.from, e.to);
+  if (plan.nextAt !== null) { bedNextAt = plan.nextAt; bedNextFade = plan.nextFade; }
+  bedPump();
+}
+function bedEndEarly(s, t, from, to) {
+  s.cutFade = layFade(s.cut.gain, s.cutFade, t, from, to, 'power');
+  s.fadeAt = from; s.stopAt = to;
 }
 
 function bedPump() {
@@ -718,7 +832,11 @@ function bedPump() {
   // leave setValueCurveAtTime with two curves fighting over the same range.
   const xf = Math.min(BED_XFADE, loopLen / 2 - 0.01);
   while (bedNextAt < ctx.currentTime + BED_LOOKAHEAD) {
-    bedNextAt = bedTake(bedNextAt, bedMeta.loopStart, loopLen, xf, true);
+    // the first pass after a tuning re-plan fades in over the window the
+    // pass before it now fades out in (applyBedTune); every other, xf
+    const inLen = bedNextFade === null ? xf : Math.max(0.01, Math.min(xf, bedNextFade));
+    bedNextFade = null;
+    bedNextAt = bedTake(bedNextAt, bedMeta.loopStart, loopLen, xf, true, inLen);
   }
 }
 
@@ -793,6 +911,7 @@ function bedOn() {
   const loopLen = bedMeta.loopEnd - bedMeta.loopStart;
   const xf = Math.min(BED_XFADE, loopLen / 2 - 0.01);
   bedRun = newBedRun(bed, 1);
+  bedNextFade = null;
   // The intro is played once, whole, from the top; it needs no fade in of its
   // own because the master gain below is already opening. It starts a moment
   // after the present, so on Heart it is not late and is not moved: its fade
@@ -820,7 +939,8 @@ function bedOff() {
   bedLpfSweep.stop(); bedVerbSweep.stop();
   const cut = bedCut, chains = bedChains, send = bedSend, rev = bedRev;
   bedCut = null; bedChains = null; bedSend = null; bedRev = null;
-  bedTakes = []; bedGain = null; bedNextAt = 0; bedTap = null; bedRun = null;
+  bedTakes = []; bedGain = null; bedNextAt = 0; bedTap = null; bedRun = null; bedNextFade = null;
+  if (bedReplanTimer) { clear(bedReplanTimer); bedReplanTimer = null; }
   // well inside the 2.6 s before the takes stop, transition or not
   glideParam(g.gain, 0, 0.6);
   setTimeout(() => {
@@ -1064,13 +1184,15 @@ export async function applyBedDetune() {
   // nothing here is late: both fades and the new pass keep their times.
   const ctx = famCtx(), now = heardNow(ctx) + 0.05, tc = BED_SWAP / 4;
   const old = bedRun;
-  // the newest pass already sounding says where the drone is
+  // the newest pass already sounding says where the drone is, its playhead
+  // following whatever the fine tuning has done to its speed
   let pos = bedMeta.loopStart;
-  for (const s of old.takes) if (s.at <= now) pos = s.offset + (now - s.at);
+  for (const s of old.takes) if (s.at <= now) pos = posAt(s.h, now);
   const loopLen = bedMeta.loopEnd - bedMeta.loopStart;
   const xf = Math.min(BED_XFADE, loopLen / 2 - 0.01);
-  // too close to the end for a pass and its crossfade: start at the loop
-  if (bedMeta.loopEnd - pos < xf + 1) pos = bedMeta.loopStart;
+  // too close to the end for a pass and its crossfade, on the clock at the
+  // speed it plays: start at the loop
+  if ((bedMeta.loopEnd - pos) / bedRate() < xf + 1) pos = bedMeta.loopStart;
 
   old.gain.gain.setTargetAtTime(0, now, tc);
   setTimeout(() => {
@@ -1081,6 +1203,7 @@ export async function applyBedDetune() {
 
   bedRun = newBedRun(buf, 0);
   bedRun.gain.gain.setTargetAtTime(1, now, tc);
+  bedNextFade = null;
   bedNextAt = bedTake(now, pos, bedMeta.loopEnd - pos, xf, false);
   bedPump();
 }

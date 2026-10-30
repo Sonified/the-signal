@@ -32,6 +32,7 @@ import { chanGate, onChannelGates } from './mixgate.js';
 import { strobeAm, strobeAmEffective } from './strobe-am.js';
 import { inTurn, TURN, fetchBytes } from './load-order.js';
 import { after, clear } from './ticker.js';
+import { TUNE_TC, clampCents, centsRatio, playhead, retune, endInTime, layFade } from '../core/tune.js';
 
 const ROOT = 48;                       // written C3; sounds ~79.5 Hz
 const DEG  = [0, 2, 4, 7, 11];         // 1 2 3 5 7, the 8 is the next octave's 1
@@ -314,7 +315,14 @@ function cloud(written, vel, at, tag = '') {
   s.buffer = buf;
   const rate = Math.pow(2, (semi - src) / 12);
   s.playbackRate.value = rate;
-  const life = buf.duration / s.playbackRate.value - 0.3;
+  // Clouds fine tuning (applyCloudTune, below) on the detune param, which
+  // Web Audio multiplies onto the resampling rate: the pad plays at the two
+  // together, and its life on the clock is worked out at that rate, so a pad
+  // tuned up is squeezed to the recording it really has left, as a pad
+  // resampled up always was.
+  const cents = cloudCents();
+  s.detune.value = cents;
+  const life = buf.duration / (rate * centsRatio(cents)) - 0.3;
 
   // A fixed length, release included: starting the release at the length and
   // letting it run on past it is what turns an 11 second note into a sixteen
@@ -352,7 +360,11 @@ function cloud(written, vel, at, tag = '') {
     node.connect(hp);
     node = hp;
   }
-  node.connect(g); g.connect(bus);
+  // The tuning's own gain, at 1 unless a retune would have the pad run out
+  // of recording before its envelope has closed (applyCloudTune): the early
+  // fade goes here, leaving the envelope's own automation on g untouched.
+  const cut = ctx.createGain();
+  node.connect(g); g.connect(cut); cut.connect(bus);
 
   // ---- the amplitude envelope -----------------------------------------------
   const A = Math.max(0.002, ENV.aA) * kA, D = Math.max(0.02, ENV.aD * kA);
@@ -371,6 +383,8 @@ function cloud(written, vel, at, tag = '') {
   s.start(at);
   let stopped = true;
   try { s.stop(at + LEN + 0.1); } catch (e) { stopped = false; }
+  tunePad({ s, cut, cutFade: null, end: buf.duration, endAt: at + LEN, R,
+            h: playhead(at, 0, rate * centsRatio(cents)), rate });
 
   if (LOG) {
     voices++;
@@ -401,6 +415,39 @@ function cloud(written, vel, at, tag = '') {
       console.log(`[cloud]   ${noteName(semi)} at attack top: gain=${actual.toFixed(4)}` +
         ` expected=${peak.toFixed(4)} off=${off.toFixed(1)}dB`);
     }, Math.max(0, (at - (ctx.presentTime ?? ctx.currentTime) + A) * 1000));
+  }
+}
+
+// ---------- clouds fine tuning ----------
+// S.cloudTune, cents (core/tune.js). A pad is struck in at the tuning of its
+// moment; when the knob moves, every pad still sounding or booked glides to
+// the new pitch together, so the line bends as one. A pad is a fixed-length
+// envelope timed against the recording it had left at its old speed: played
+// faster, it would reach the end of its file while its envelope was still
+// open and stop on an edge. So each pad's playhead follows the rate, and one
+// that would now run out first is faded to silence on its cut gain by the
+// time its audio ends, over its own release where there is room (a straight
+// line, as the release is), from now where there is not; played slower, it
+// has recording to spare and its envelope closes exactly as booked. Each is
+// held until its envelope has closed, pruned as pads are struck.
+const cloudCents = () => clampCents(S.cloudTune);
+const tunedPads = [];
+function tunePad(p) {
+  const now = actx.currentTime;
+  let k = 0;
+  for (let i = 0; i < tunedPads.length; i++) if (tunedPads[i].endAt > now) tunedPads[k++] = tunedPads[i];
+  tunedPads.length = k;
+  tunedPads.push(p);
+}
+export function applyCloudTune() {
+  if (!tunedPads.length || !actx) return;
+  const t = actx.presentTime ?? actx.currentTime, c = cloudCents(), k = centsRatio(c);
+  for (const p of tunedPads) {
+    if (p.endAt <= actx.currentTime) continue;
+    p.s.detune.setTargetAtTime(c, t, TUNE_TC);
+    retune(p.h, t, p.rate * k);
+    const w = endInTime(p.h, p.end, p.endAt, t, p.R);
+    if (w) { p.cutFade = layFade(p.cut.gain, p.cutFade, t, w.from, w.to, 'linear'); p.endAt = w.to; }
   }
 }
 
