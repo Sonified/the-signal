@@ -3,7 +3,7 @@ import { S } from './state.js';
 import { mediaFetch } from './media-cache.js';
 import {
   getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, continueGlide, holdParam,
-  sourceGate
+  sourceGate, fdnReady
 } from './audio.js';
 import { layerGate, layerSoloChanged, onLayerGates } from './mixgate.js';
 import { every, walkAhead } from './ticker.js';
@@ -88,7 +88,8 @@ const EXT = canOpus ? '.opus' : '.mp3';
 
 const cache = new Map();
 let out = null, room = null, wet = null, am = null;
-let revIn = null, convFeed = null, algo = null, algoFeed = null, algoDead = false;
+let revIn = null, convFeed = null, algo = null, algoFeed = null, algoDead = false, algoWait = false;
+const fdnLoaded = new WeakSet();   // contexts whose reverb module is in (algoNode)
 let running = false;
 const mixVoices = new Map();
 // One event object, dispatched again on every sync (a finished dispatch can
@@ -306,7 +307,22 @@ function convRoom() {
   return room;
 }
 function algoNode() {
-  if (algo || algoDead) return algo;
+  if (algo || algoDead || algoWait) return algo;
+  // Not loaded yet is not a no (js/audio.js fdnReady): the reverb plays on
+  // convolution until the module is in, then applyAmbRevType asks again and
+  // switches. Only a module that failed to load, or a node that will not
+  // build once it has, leaves this on convolution for good.
+  const c = outCtx;
+  if (!fdnLoaded.has(c)) {
+    algoWait = true;
+    fdnReady(c).then(ok => {
+      algoWait = false;
+      if (c !== outCtx) return;
+      if (ok) { fdnLoaded.add(c); applyAmbRevType(); }
+      else algoDead = true;
+    });
+    return null;
+  }
   try {
     algo = makeWorklet(outCtx, 'fdn-reverb', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
   } catch (e) {

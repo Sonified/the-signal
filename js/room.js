@@ -20,7 +20,7 @@
 // itself ahead of its split), so a pause stops what feeds the room while
 // the room rings on.
 import { S } from './state.js';
-import { getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd } from './audio.js';
+import { getContext, getMaster, createRoom, swapRoom, glideParam, glideEnd, fdnReady } from './audio.js';
 import { onPhone } from './handheld.js';
 import { peekCtxFor, peekMasterFor, makeWorklet, heartOn, onFallBack } from './heart/route.js';
 import { every } from './ticker.js';
@@ -32,7 +32,8 @@ import { setHumBus } from '../core/sun-hum.js';
 // the network), the wet return, and the master it plays into through the
 // Reverb high-pass (hp, below).
 let ctx = null, input = null, wet = null, out = null, convFeed = null;
-let room = null, algo = null, algoFeed = null, algoDead = false;
+let room = null, algo = null, algoFeed = null, algoDead = false, algoWait = false;
+const fdnLoaded = new WeakSet();   // contexts whose reverb module is in (algoNode)
 let breatheTimer = 0;
 
 // On Heart a gesture anchored at currentTime is heard from the present,
@@ -303,7 +304,22 @@ function convRoom() {
   return room;
 }
 function algoNode() {
-  if (algo || algoDead) return algo;
+  if (algo || algoDead || algoWait) return algo;
+  // Not loaded yet is not a no (js/audio.js fdnReady): the reverb plays on
+  // convolution until the module is in, then applyRevType asks again and
+  // switches. Only a module that failed to load, or a node that will not
+  // build once it has, leaves this on convolution for good.
+  const c = ctx;
+  if (!fdnLoaded.has(c)) {
+    algoWait = true;
+    fdnReady(c).then(ok => {
+      algoWait = false;
+      if (c !== ctx) return;
+      if (ok) { fdnLoaded.add(c); applyRevType(); }
+      else algoDead = true;
+    });
+    return null;
+  }
   try {
     algo = makeWorklet(ctx, 'fdn-reverb', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
   } catch (e) {

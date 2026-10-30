@@ -76,6 +76,25 @@ export function loadWorkletInto(ctx) {
 }
 // The master room's algorithmic reverb (fdn-worklet.js, js/room.js).
 const FDN_URL = new URL('./fdn-worklet.js', import.meta.url).href;
+// Its module, loaded once per context, as a promise of whether it loaded.
+// A reverb asked for before the load has finished (the standing playback
+// page starts its scene, and so the ambience, at boot, while the audio
+// graph is still awaiting its modules) must wait on this rather than take
+// the not-yet as a no: it plays on convolution meanwhile and switches when
+// the module is in. Heart's contexts make their processors themselves and
+// need no module.
+const fdnIn = new WeakMap();
+export function fdnReady(ctx) {
+  if (!ctx) return Promise.resolve(false);
+  if (ctx.isHeart) return Promise.resolve(true);
+  let p = fdnIn.get(ctx);
+  if (!p) {
+    p = ctx.audioWorklet.addModule(FDN_URL).then(() => true,
+      e => { console.warn('audio: algorithmic reverb failed to load', e); return false; });
+    fdnIn.set(ctx, p);
+  }
+  return p;
+}
 
 export const isDeviceWarm = () => deviceWarm;
 export const hasNode = () => !!node;
@@ -909,7 +928,7 @@ export function ensureAudioGraph() {
     // else notices.
     await Promise.all([
       audioCtx.audioWorklet.addModule(WORKLET_URL),
-      audioCtx.audioWorklet.addModule(FDN_URL).catch(e => console.warn('audio: algorithmic reverb failed to load', e))
+      fdnReady(audioCtx)
     ]);
     // Heart, the engine that renders ahead in workers, starts here for the
     // families flagged to use it (js/heart/route.js), playing into volGain
