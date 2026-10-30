@@ -470,7 +470,7 @@ export const BRUSH_CONTROLS = [
     min: -DETUNE_MAX, max: DETUNE_MAX, step: 1, def: DEF_DETUNE,
     get: S => Math.round(S.brushDetune),
     set: (S, pos) => { S.brushDetune = Math.max(-DETUNE_MAX, Math.min(DETUNE_MAX, Math.round(pos))); saveBrush(); },
-    formatAt: pos => pos === 0 ? 'in tune' : (pos > 0 ? '+' : '') + pos + ' cents',
+    formatAt: pos => (pos > 0 ? '+' : '') + pos + ' cents',
   },
   // How much of each strike goes into the master reverb room (js/room.js):
   // the send's own level, the strike always dry into the master beside it.
