@@ -17,8 +17,8 @@
 // On an iPhone too old for navigator.audioSession it is also the only thing
 // that lifts Web Audio out of ambient sound, so with the ring switch on
 // silent the sound plays exactly while this does. So a silent loop plays
-// beside it: one second of digital silence, a WAV built here as a blob URL,
-// never muted (a muted element is not playing media as far as iOS is
+// beside it: five minutes of digital silence (silentWav), a WAV built here
+// as a blob URL, never muted (a muted element is not playing media as far as iOS is
 // concerned). Its first play() must happen inside a user gesture, so
 // js/audio.js warmDevice starts it on the gesture that wakes the sound, and
 // every later gesture plays it again if it should be playing and is not
@@ -183,10 +183,16 @@ function makeLoop() {
   }
 }
 
-// One second of mono 16-bit PCM at 8 kHz, every sample zero: the smallest
-// honest WAV, about 16 KB.
+// Five minutes of mono 16-bit PCM at 8 kHz, every sample zero, about 4.8 MB
+// made here, never fetched. Long because the loop's seam is not free: at
+// every wrap iOS holds the page's main thread some 30 ms, and with the one
+// second this used to be, that was a held frame every 1.1 s (the
+// kaleidoscope's objects hopping outward, on a phone, whatever was drawn).
+// Measured on an iPhone 16 Pro with the loop paused under the playing
+// music: the hitches stop. Five minutes leaves one seam in five minutes.
+const SILENT_S = 300;
 function silentWav() {
-  const rate = 8000, bytes = rate * 2;
+  const rate = 8000, bytes = rate * 2 * SILENT_S;
   const v = new DataView(new ArrayBuffer(44 + bytes));
   const tag = (at, s) => { for (let i = 0; i < 4; i++) v.setUint8(at + i, s.charCodeAt(i)); };
   tag(0, 'RIFF'); v.setUint32(4, 36 + bytes, true); tag(8, 'WAVE');
