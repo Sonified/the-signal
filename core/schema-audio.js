@@ -415,6 +415,7 @@ export function audioToggleEffects(s) {
 
 // ---------- section list ----------
 export const AUDIO_SECTIONS = [
+  { id: 'sound',      title: 'Sound' },
   { id: 'music',      title: 'Music' },
   { id: 'audio',      title: 'Low Audio Tone' },
   { id: 'atmosphere', title: 'Ambience' },
@@ -425,29 +426,32 @@ export const AUDIO_SECTIONS = [
   { id: 'mixer',      title: 'Ambience mixer' }
 ];
 
-// ---------- Audio section ----------
+// ---------- Sound section, then the Low Audio Tone section ----------
 const audioControls = [
-  // The audio master switch at the head of the Audio section, the same one
-  // the Layers row carries as lAudio. Never dims.
+  // The audio master switch at the head of the Sound section, the same one
+  // the Layers row carries as lAudio: every voice the app has goes quiet
+  // under it, the music and the ambience as much as the tone, so it heads a
+  // section of its own, the whole app's sound, never the tone's. Never dims.
   {
-    id: 'audioOn', section: 'audio', label: 'On', kind: 'toggle',
+    id: 'audioOn', section: 'sound', label: 'On', kind: 'toggle',
     get: audioLayerOn,
     set: (s, on) => setAudioLayer(s, !!on)
   },
   {
-    id: 'vol', section: 'audio', label: 'Master volume', kind: 'slider',
+    id: 'vol', section: 'sound', label: 'Master volume', kind: 'slider',
     min: 0, max: 100, step: 1, def: 50,
     get: s => Math.round(s.volume * 100),
     set: (s, pos) => { s.volume = pos / 100; applyAudioGain(); save(); },
     formatAt: pos => pos + '%'
   },
-  // The global Lowpass and Highpass, straight under Master volume: every
+  // The global Lowpass and Highpass, straight under Master volume in the
+  // Sound section, since they are the whole app's and not the tone's: every
   // sound the app makes passes through the pair (core/global-filter.js), the
   // slides', the Sun's hum and the music alike. They ride presets and the
   // broadcast as Master volume does; a journey step never holds them
   // (core/journey.js leaves vol, lpf and hpf out of every step).
   {
-    id: 'lpf', section: 'audio', label: 'Lowpass', kind: 'slider',
+    id: 'lpf', section: 'sound', label: 'Lowpass', kind: 'slider',
     min: 0, max: GF_POS, step: 1, def: GF_POS,
     get: s => gfHzToPos(gfHz(s.lpfHz, GF_HZ_HI)),
     set: (s, pos) => { s.lpfHz = gfPosToHz(pos); notifyGlobalFilter(); save(); },
@@ -455,7 +459,7 @@ const audioControls = [
     parse: (s, text) => /^\s*open/i.test(text) ? GF_POS : gfParse(text)
   },
   {
-    id: 'hpf', section: 'audio', label: 'Highpass', kind: 'slider',
+    id: 'hpf', section: 'sound', label: 'Highpass', kind: 'slider',
     min: 0, max: GF_POS, step: 1, def: 0,
     get: s => gfHzToPos(gfHz(s.hpfHz, GF_HZ_LO)),
     set: (s, pos) => { s.hpfHz = gfPosToHz(pos); notifyGlobalFilter(); save(); },
@@ -466,19 +470,23 @@ const audioControls = [
   // before), riding presets and the broadcast with them and, like them,
   // never held by a journey step. The show remote's gear sets these too.
   {
-    id: 'lpfRes', section: 'audio', label: 'Lowpass resonance', kind: 'slider',
+    id: 'lpfRes', section: 'sound', label: 'Lowpass resonance', kind: 'slider',
     min: 0, max: GF_RES_MAX, step: 0.5, def: 0,
     get: s => gfRes(s.lpfRes),
     set: (s, db) => { s.lpfRes = gfRes(+db); notifyGlobalFilter(); save(); },
     formatAt: pos => gfResText(gfRes(pos))
   },
   {
-    id: 'hpfRes', section: 'audio', label: 'Highpass resonance', kind: 'slider',
+    id: 'hpfRes', section: 'sound', label: 'Highpass resonance', kind: 'slider',
     min: 0, max: GF_RES_MAX, step: 0.5, def: 0,
     get: s => gfRes(s.hpfRes),
     set: (s, db) => { s.hpfRes = gfRes(+db); notifyGlobalFilter(); save(); },
     formatAt: pos => gfResText(gfRes(pos))
   },
+  // From here on, the Low Audio Tone section, headed by the tone's own
+  // switch (aTone below; ui/screens/drawer.js SECTION_SWITCH), so switching
+  // the section off silences the tone and its harmonics and nothing else.
+  //
   // The Music window's trims for the tone and the pulse (ui/screens/
   // music.js). Each is how much of the voice's own level plays, 0 to 100%,
   // where 100% is exactly what the drawer and the Levels window set: the

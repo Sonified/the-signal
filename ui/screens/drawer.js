@@ -40,17 +40,20 @@ import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 import { BUILD } from '../../core/version.js';
 
-const DRAWER_SECTIONS = ['layers', 'slides', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'brush', 'sun', 'music', 'audio', 'heartbeat', 'atmosphere', 'live', 'reverb', 'render', 'settings'];
+const DRAWER_SECTIONS = ['layers', 'slides', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'brush', 'sun', 'sound', 'music', 'audio', 'heartbeat', 'atmosphere', 'live', 'reverb', 'render', 'settings'];
 
 // The control each section's header switch stands for: the layer's own on/off,
 // the same one the section holds as its first row, so the header and the row
 // always agree. A section missing here, or whose control the schema does not
-// have (yet), gets a header with no switch.
+// have (yet), gets a header with no switch. The whole app's sound is the
+// Sound section's (audioOn, the master); the Low Audio Tone's is the tone's
+// own (aTone, which its Tone strip carries as well), so turning that section
+// off leaves the music playing.
 const SECTION_SWITCH = {
   strobe: 'fieldOn', corners: 'cornersOn', tunnel: 'ringsOn', edge: 'edgeOn', text: 'textOn',
   flowers: 'flowersOn', kaleido: 'kaleidoOn', particles: 'particlesOn', fireworks: 'fireworksOn', confetti: 'confettiOn',
   sun: 'sunOn', slides: 'slidesOn', heartbeat: 'heartbeatOn',
-  audio: 'audioOn', music: 'musicOn', atmosphere: 'ambOn', reverb: 'musicRevOn'
+  sound: 'audioOn', audio: 'aTone', music: 'musicOn', atmosphere: 'ambOn', reverb: 'musicRevOn'
 };
 
 // The controls a sub-drawer's strip carries as its switch (the schema's
