@@ -635,39 +635,41 @@ export function createText(device, platform) {
   const phraseCache = { key: '', out: null };
 
   // One run of text into balanced lines appended to `out`: a single line if
-  // it fits, else up to four, each breaking near its fair share of the
-  // total width, so a block reads like a couplet, not a paragraph with an
-  // orphan. Breaks fall only on spaces.
+  // it fits, else as many lines as it needs at this size, all about the
+  // same width, so a block reads like a couplet, not a paragraph with an
+  // orphan. The count is the fewest lines that fit the view (a greedy fill
+  // to the full width), then the narrowest width that still fills in that
+  // many lines is found by halving, so the lines come out even. A long
+  // phrase takes more height, never a smaller size. Breaks fall only on
+  // spaces; widths add exactly (no kerning), so word sums are the line's.
   function wrapInto(str, wi, scale, spacingPx, avail, out) {
     const total = computeWidth(wi, scale, str, spacingPx);
     const words = str.split(' ');
     if (total <= avail || words.length < 2) { out.push(str); return; }
     const space = computeWidth(wi, scale, ' ', spacingPx);
-    let lines = null;
-    for (let n = 2; n <= 4; n++) {
-      const target = total / n;
-      const next = []; let line = ''; let w = 0;
+    const ws = words.map(w => computeWidth(wi, scale, w, spacingPx));
+    // greedy fill to limit: the line count, and the lines into `into`
+    const fill = (limit, into) => {
+      let n = 1, w = 0, line = '';
       for (let j = 0; j < words.length; j++) {
-        const ww = computeWidth(wi, scale, words[j], spacingPx);
-        const add = (line ? space : 0) + ww;
-        // break before this word once the line has content and the word
-        // would carry it past its fair share (or off the view entirely),
-        // as long as a line remains to break into
-        if (line && next.length < n - 1 && (w + add > avail || w + add / 2 > target)) {
-          next.push(line);
-          line = words[j]; w = ww;
+        if (line && w + space + ws[j] > limit) {
+          if (into) into.push(line);
+          n++; line = words[j]; w = ws[j];
         } else {
+          w += (line ? space : 0) + ws[j];
           line = line ? line + ' ' + words[j] : words[j];
-          w += add;
         }
       }
-      next.push(line);
-      lines = next;
-      let maxw = 0;
-      for (const L of next) maxw = Math.max(maxw, computeWidth(wi, scale, L, spacingPx));
-      if (maxw <= avail) break;
+      if (into) into.push(line);
+      return n;
+    };
+    const n = fill(avail, null);
+    let lo = Math.max(total / n, Math.max(...ws)), hi = Math.max(lo, avail);
+    for (let k = 0; k < 14 && hi - lo > 0.5; k++) {
+      const mid = (lo + hi) / 2;
+      if (fill(mid, null) <= n) hi = mid; else lo = mid;
     }
-    for (const L of lines) out.push(L);
+    fill(hi, out);
   }
 
   const text = {
@@ -683,12 +685,11 @@ export function createText(device, platform) {
     },
 
     // How the centre-screen text actually lays out: a word is one line at
-    // the configured size, and a phrase that does not fit wraps into up to
-    // four BALANCED lines around the middle before it ever shrinks — each
-    // line breaks near its fair share of the total width, so the block
-    // reads like a couplet, not a paragraph with an orphan. Only when even
-    // four lines cannot fit (or one unbreakable word cannot) does the size
-    // come down. Everyone who lays the word out — the overlay, the smoke,
+    // the configured size, and a phrase that does not fit wraps into as many
+    // BALANCED lines around the middle as it needs, each about the same
+    // width, so the block reads like a couplet, not a paragraph with an
+    // orphan. Only when one unbreakable word cannot fit does the size come
+    // down. Everyone who lays the word out — the overlay, the smoke,
     // the cloud — reads this one policy, so they always agree on the
     // pixels. Memoized on its inputs; the same object comes back until a
     // word, size or view width changes.
