@@ -36,3 +36,4 @@ __pycache__/
 
 # Private event material (transcripts of real people) — never tracked; the repo is public
 documents/win2026/
+tools/ios-timeline.out.json
