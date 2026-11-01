@@ -640,9 +640,13 @@ export function createText(device, platform) {
   // orphan. The count is the fewest lines that fit the view (a greedy fill
   // to the full width), then the narrowest width that still fills in that
   // many lines is found by halving, so the lines come out even. A long
-  // phrase takes more height, never a smaller size. Breaks fall only on
-  // spaces; widths add exactly (no kerning), so word sums are the line's.
-  function wrapInto(str, wi, scale, spacingPx, avail, out) {
+  // phrase takes more height, never a smaller size. But never a tower: a
+  // run whose lines would stack taller than the line width is wide (a long
+  // phrase under a narrow Line width on a phone, one word a line) widens
+  // its lines, up to cap, just until the block is no taller than it is
+  // wide. Breaks fall only on spaces; widths add exactly (no kerning), so
+  // word sums are the line's.
+  function wrapInto(str, wi, scale, spacingPx, avail, cap, lineH, out) {
     const total = computeWidth(wi, scale, str, spacingPx);
     const words = str.split(' ');
     if (total <= avail || words.length < 2) { out.push(str); return; }
@@ -663,8 +667,21 @@ export function createText(device, platform) {
       if (into) into.push(line);
       return n;
     };
-    const n = fill(avail, null);
-    let lo = Math.max(total / n, Math.max(...ws)), hi = Math.max(lo, avail);
+    let limit = avail;
+    if (cap > avail && fill(avail, null) * lineH > avail) {
+      // the narrowest width at which the block is no taller than wide
+      // (taller only shrinks as the lines widen, so halving finds it)
+      let a = avail, b = cap;
+      if (fill(cap, null) * lineH <= cap) {
+        for (let k = 0; k < 14 && b - a > 0.5; k++) {
+          const mid = (a + b) / 2;
+          if (fill(mid, null) * lineH <= mid) b = mid; else a = mid;
+        }
+      }
+      limit = b;
+    }
+    const n = fill(limit, null);
+    let lo = Math.max(total / n, Math.max(...ws)), hi = Math.max(lo, limit);
     for (let k = 0; k < 14 && hi - lo > 0.5; k++) {
       const mid = (lo + hi) / 2;
       if (fill(mid, null) <= n) hi = mid; else lo = mid;
@@ -688,8 +705,9 @@ export function createText(device, platform) {
     // the configured size, and a phrase that does not fit wraps into as many
     // BALANCED lines around the middle as it needs, each about the same
     // width, so the block reads like a couplet, not a paragraph with an
-    // orphan. Only when one unbreakable word cannot fit does the size come
-    // down. Everyone who lays the word out — the overlay, the smoke,
+    // orphan, and widening past the Line width rather than standing taller
+    // than it is wide. Only when one unbreakable word cannot fit the full
+    // line does the size come down. Everyone who lays the word out — the overlay, the smoke,
     // the cloud — reads this one policy, so they always agree on the
     // pixels. Memoized on its inputs; the same object comes back until a
     // word, size or view width changes.
@@ -707,19 +725,25 @@ export function createText(device, platform) {
       const spacingPx = letterSpacing * size;
       // Line width is THE wrap control: the one dial (a share of the view)
       // every line must fit inside; breaks fall only on spaces.
-      const avail = (availW > 0 ? availW : 1e9) * lw;
+      const view = availW > 0 ? availW : 1e9;
+      const avail = view * lw;
+      // how far a long phrase may widen past it rather than stand as a
+      // tower (wrapInto), and the one width a lone word must fit before the
+      // size comes down: the full line, the dial's own default
+      const cap = view * Math.max(lw, 0.92);
+      const lineH = size * 1.3;
       const lines = [];
       // A forced break (a '/' in the Custom source's text, turned into '\n'
       // as the pool is built, core/words.js) is honoured the same way: each
       // segment starts its own line whatever the Line width or Smart breaks
       // say, and a segment too wide wraps inside itself. Text with no '\n'
       // takes the plain path, so words and affirmations lay out as before.
-      if (pieces) for (const piece of pieces) wrapInto(piece, wi, scale, spacingPx, avail, lines);
-      else if (str.indexOf('\n') >= 0) for (const seg of str.split('\n')) wrapInto(seg, wi, scale, spacingPx, avail, lines);
-      else wrapInto(str, wi, scale, spacingPx, avail, lines);
+      if (pieces) for (const piece of pieces) wrapInto(piece, wi, scale, spacingPx, avail, cap, lineH, lines);
+      else if (str.indexOf('\n') >= 0) for (const seg of str.split('\n')) wrapInto(seg, wi, scale, spacingPx, avail, cap, lineH, lines);
+      else wrapInto(str, wi, scale, spacingPx, avail, cap, lineH, lines);
       let maxw = 0;
       for (const L of lines) maxw = Math.max(maxw, computeWidth(wi, scale, L, spacingPx));
-      const s2 = maxw > avail ? Math.max(10, size * avail / maxw) : size;
+      const s2 = maxw > cap ? Math.max(10, size * cap / maxw) : size;
       phraseCache.key = key;
       phraseCache.out = { size: s2, lines, lineH: s2 * 1.3 };
       return phraseCache.out;
