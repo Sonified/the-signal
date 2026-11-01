@@ -200,7 +200,6 @@ export const WORDS = [
   ['jumping', 'movement', 'play'],
   ['leap', 'movement', 'play'],
   ['leaping', 'movement', 'play'],
-  ['bound', 'movement', 'play'],
   ['bounding', 'movement', 'play'],
   ['bounce', 'movement', 'play'],
   ['bouncing', 'movement', 'play'],
