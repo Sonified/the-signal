@@ -72,7 +72,7 @@ import { seedFactoryPresets } from './platform/factory-presets.js';
 import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin } from './core/broadcast.js';
 import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent, relayHost } from './platform/broadcast-socket.js';
 import { openBrushHall } from './platform/brush-hall.js';
-import { brushField, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember, setBrushBell, setBrushStarted, brushReplayHold } from './core/brush.js';
+import { brushField, brushPressing, brushExtra, brushExtraHas, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember, setBrushBell, setBrushStarted, brushReplayHold } from './core/brush.js';
 import { CONTINUITY_MAX } from './core/brush-stamps.js';
 import { bypassGlobalFilter } from './core/global-filter.js';
 import { ringBell } from './js/brush-bells.js';
@@ -966,6 +966,12 @@ async function boot() {
         audioWoken = true;
         warmDevice();
         if (S.audioOnBoot !== false && !S.audioEnabled) audioOn();
+      }
+      // A phone's other fingers on a stroke draw strokes of their own, on
+      // this screen only (core/brush.js brushExtra); the UI never sees them.
+      if (e.pointerType === 'touch' && (e.type === 'down' ? brushPressing() : brushExtraHas(e.pointerId))) {
+        if (e.type !== 'leave') brushExtra(e.type, e.pointerId, e.x, e.y, width, height, S.edgeInset, t);
+        continue;
       }
       // While a text field has focus every key belongs to it: letters, Space,
       // Enter and Escape are typing and committing there, not shortcuts. The

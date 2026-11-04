@@ -217,7 +217,7 @@ function quant(x) { return Math.max(0, Math.min(QUANT, Math.round(x * QUANT))); 
 // became a stroke, the one case the caller takes as a tap; a stroke's
 // release, and any cancel, return false.
 export function brushField(pressed, released, cancelled, x, y, width, height, inset, t) {
-  if (pressed && !pressing) { pressing = true; tapDragStep(gesture, 'down', x, y); }
+  if (pressed && !pressing) { pressing = true; extraUsed = false; tapDragStep(gesture, 'down', x, y); }
   if (!pressing) return false;
   // the release frame's own place first, so a flick between two frames
   // still counts its travel (core/tap-drag.js)
@@ -229,7 +229,58 @@ export function brushField(pressed, released, cancelled, x, y, width, height, in
   // the field losing the press without a release counts as a cancel
   const e = tapDragStep(gesture, released && !cancelled ? 'up' : 'cancel', x, y);
   if (e === TD_END || e === TD_CANCEL) finish(t);
-  return e === TD_TAP;
+  // a first finger held still while others drew was no tap
+  return e === TD_TAP && !extraUsed;
+}
+
+// ---------- the other fingers ----------
+// A phone's second and later fingers, down while the first holds a press on
+// the field, each draw a stroke of their own, on this screen only: nothing
+// of theirs goes on the hall or the broadcast, and they ring no bells.
+// main.js hands their touches here and never to the UI. Each stamps where
+// it lands, with the settings it went down with, as begin() holds them.
+const extras = new Map();   // pointerId -> the finger's stroke
+let extraUsed = false;
+export function brushPressing() { return pressing; }
+export function brushExtraHas(id) { return extras.has(id); }
+export function brushExtra(type, id, x, y, width, height, inset, t) {
+  if (type === 'down') {
+    extraUsed = true;
+    const size = brushSizeNow(), rate = S.brushRate >= 0 && S.brushRate <= 1 ? S.brushRate : 1;
+    const f = {
+      qu: 0, qv: 0, carry: 0, printT: t,
+      copies: Math.max(1, Math.min(24, S.brushCopies | 0)),
+      motif: handSet ? Math.max(0, Math.min(63, S.brushMotif | 0)) : brushMotifNow(),
+      set: handSet || kaleidoscopeSet(S.kaleidoSet).id,
+      size, spacing: brushSpacing(size, S.brushContinuity),
+      prints: !rateContinuous(rate), printMs: 1000 / printsPerSecond(rate)
+    };
+    extras.set(id, f);
+    toUnit(x, y, width, height, inset);
+    f.qu = lastU; f.qv = lastV;
+    extraStamps(f, t, f.prints ? 0 : f.spacing / brushSide(size));
+    stampCopies(f.qu / QUANT, f.qv / QUANT, f.copies, emit);
+    idleWake('a stroke');
+    return;
+  }
+  const f = extras.get(id);
+  if (!f) return;
+  if (type !== 'move') { extras.delete(id); return; }
+  toUnit(x, y, width, height, inset);
+  if (lastU === f.qu && lastV === f.qv) return;
+  if (f.prints) {
+    if (t - f.printT < f.printMs) return;
+    f.printT = t;
+    extraStamps(f, t, 0);
+    stampCopies(lastU / QUANT, lastV / QUANT, f.copies, emit);
+  } else {
+    extraStamps(f, t, f.spacing / brushSide(f.size));
+    f.carry = walkSegment(f.qu / QUANT, f.qv / QUANT, lastU / QUANT, lastV / QUANT, f.carry, f.spacing, f.copies, emit);
+  }
+  f.qu = lastU; f.qv = lastV;
+}
+function extraStamps(f, t, span) {
+  qSide = brushSide(f.size); qMotif = f.motif; qSet = f.set; qWho = handId(); qKey = t; qSpan = span;
 }
 
 // The pointer in the wire's unit square, quantized (lastU, lastV): exactly
