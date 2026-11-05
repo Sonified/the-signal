@@ -710,6 +710,10 @@ async function boot() {
   // next tap, with the controls up, pauses as ever. A stopped session still
   // starts on its first tap ('Tap to resume').
   let wakeTap = false;
+  // the phone's first finger down (the UI's), the frame it went down, and
+  // the other fingers down meanwhile (see the input loop)
+  let leadTouch = -1, leadT = -1;
+  const otherTouch = new Set();
   let lastEyeX = 0, lastEyeY = 0;
   // ---- the still frame ----
   // Paused, wound down and left alone, the picture stops changing, yet the
@@ -967,11 +971,33 @@ async function boot() {
         warmDevice();
         if (S.audioOnBoot !== false && !S.audioEnabled) audioOn();
       }
-      // A phone's other fingers on a stroke draw strokes of their own, on
-      // this screen only (core/brush.js brushExtra); the UI never sees them.
-      if (e.pointerType === 'touch' && (e.type === 'down' ? brushPressing() : brushExtraHas(e.pointerId))) {
-        if (e.type !== 'leave') brushExtra(e.type, e.pointerId, e.x, e.y, width, height, S.edgeInset, t);
-        continue;
+      // A phone's fingers: the first one down is the UI's, as ever, and
+      // every other finger down meanwhile never reaches it. The UI has one
+      // pointer, so two fingers' touches there made it zip between them.
+      // Such a finger draws a stroke of its own while the first holds a
+      // press on the field (core/brush.js brushExtra), from wherever it is
+      // once that press has begun, so two fingers landing in the same frame
+      // both draw. A lead whose lift never came (nothing held, the brush
+      // not drawing, and it went down in an earlier frame) gives way.
+      if (e.pointerType === 'touch') {
+        const id = e.pointerId;
+        if (e.type === 'down' && (leadTouch === -1 || (leadT !== t && ui.activeId === -1 && !brushPressing()))) {
+          leadTouch = id; leadT = t; otherTouch.delete(id);
+        } else if (id === leadTouch) {
+          if (e.type === 'up' || e.type === 'cancel') leadTouch = -1;
+        } else {
+          if (e.type === 'down') {
+            otherTouch.add(id);
+            if (brushPressing()) brushExtra('down', id, e.x, e.y, width, height, S.edgeInset, t);
+          } else if (e.type === 'move') {
+            if (brushExtraHas(id)) brushExtra('move', id, e.x, e.y, width, height, S.edgeInset, t);
+            else if (otherTouch.has(id) && brushPressing()) brushExtra('down', id, e.x, e.y, width, height, S.edgeInset, t);
+          } else if (e.type === 'up' || e.type === 'cancel') {
+            if (brushExtraHas(id)) brushExtra(e.type, id, e.x, e.y, width, height, S.edgeInset, t);
+            otherTouch.delete(id);
+          }
+          continue;
+        }
       }
       // While a text field has focus every key belongs to it: letters, Space,
       // Enter and Escape are typing and committing there, not shortcuts. The

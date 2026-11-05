@@ -238,20 +238,40 @@ export function brushField(pressed, released, cancelled, x, y, width, height, in
 // the field, each draw a stroke of their own, on this screen only: nothing
 // of theirs goes on the hall or the broadcast, and they ring no bells.
 // main.js hands their touches here and never to the UI. Each stamps where
-// it lands, with the settings it went down with, as begin() holds them.
+// it lands, with the settings it went down with, as begin() holds them, and
+// a brush of its own: the k-th finger takes the k-th brush along from the
+// first finger's, in the dealt hand, or with no hand in the set's painted
+// tiles, round again past the last.
 const extras = new Map();   // pointerId -> the finger's stroke
 let extraUsed = false;
 export function brushPressing() { return pressing; }
 export function brushExtraHas(id) { return extras.has(id); }
+function fingerSlot() {
+  for (let k = 1; ; k++) {
+    let used = false;
+    for (const f of extras.values()) if (f.slot === k) { used = true; break; }
+    if (!used) return k;
+  }
+}
 export function brushExtra(type, id, x, y, width, height, inset, t) {
   if (type === 'down') {
     extraUsed = true;
     const size = brushSizeNow(), rate = S.brushRate >= 0 && S.brushRate <= 1 ? S.brushRate : 1;
+    const first = strokeOpen ? sMotif : handSet ? Math.max(0, Math.min(63, S.brushMotif | 0)) : brushMotifNow();
+    let motif = first, set = strokeOpen ? sSet : handSet || kaleidoscopeSet(S.kaleidoSet).id;
+    const slot = fingerSlot(), h = brushHand(), a = brushAtlas;
+    let pool = null, n = 0;
+    if (h && h.tiles.length) { pool = h.tiles; n = pool.length; set = h.a; }
+    else if (a.ready && a.set === set && a.count > 0) { pool = a.tiles; n = a.count; }
+    if (n > 1) {
+      let at = 0;
+      for (let i = 0; i < n; i++) if (pool[i] === first) { at = i; break; }
+      motif = pool[(at + slot) % n];
+    }
     const f = {
-      qu: 0, qv: 0, carry: 0, printT: t,
+      slot, qu: 0, qv: 0, carry: 0, printT: t,
       copies: Math.max(1, Math.min(24, S.brushCopies | 0)),
-      motif: handSet ? Math.max(0, Math.min(63, S.brushMotif | 0)) : brushMotifNow(),
-      set: handSet || kaleidoscopeSet(S.kaleidoSet).id,
+      motif, set,
       size, spacing: brushSpacing(size, S.brushContinuity),
       prints: !rateContinuous(rate), printMs: 1000 / printsPerSecond(rate)
     };
