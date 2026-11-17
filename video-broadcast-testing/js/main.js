@@ -194,11 +194,48 @@ function onResize() { if (scene) { try { scene.resize(); } catch (e) { /* next d
 addEventListener('resize', onResize);
 if (window.visualViewport) visualViewport.addEventListener('resize', onResize);
 
+// ONE window, straight ahead: the other device's live picture. The person
+// shown is whoever is sending now. A device that drops and comes back is a
+// new person to the relay, and its old self can linger with a frozen last
+// picture; that leftover must never take the window or share it. So: keep
+// showing the same person while their pictures keep coming, and once they
+// have stopped for STILL_MS, show whoever's picture is newest. Someone else
+// always comes before my own picture back from the relay.
+const STILL_MS = 500;        // no new picture for this long: no longer "sending now"
+const lastPicture = new Map();   // id -> { version, at }: when their picture last changed
+let shown = 0;                   // the id in the window, 0 for nobody
+const windowList = [];           // what scene.draw is handed: one panel or none
+
+function oneWindow() {
+  const now = performance.now();
+  const me = net && net.id ? net.id : 0;
+  const all = rx.panels();
+  let best = null, bestAt = -1, mine = null, current = null;
+  for (const p of all) {
+    let s = lastPicture.get(p.id);
+    if (!s) { s = { version: -1, at: 0 }; lastPicture.set(p.id, s); }
+    if (p.version !== s.version) { s.version = p.version; s.at = now; }
+    if (!p.frame) continue;
+    if (p.id === me) { mine = p; continue; }
+    if (p.id === shown) current = p;
+    if (s.at > bestAt) { best = p; bestAt = s.at; }
+  }
+  if (lastPicture.size > all.length) {
+    for (const id of [...lastPicture.keys()]) if (!all.some(p => p.id === id)) lastPicture.delete(id);
+  }
+  let pick = best || mine;
+  if (current && now - lastPicture.get(current.id).at < STILL_MS) pick = current;
+  shown = pick ? pick.id : 0;
+  windowList.length = 0;
+  if (pick) windowList.push(pick);
+  return windowList;
+}
+
 let drawFailed = false;
 function frame() {
   requestAnimationFrame(frame);
   if (!scene || scene.lost) return;
-  try { scene.draw(rx.panels()); } catch (e) {
+  try { scene.draw(oneWindow()); } catch (e) {
     if (!drawFailed) { drawFailed = true; console.error('scene.draw', e); }
   }
 }

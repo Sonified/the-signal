@@ -1,6 +1,6 @@
 # Video broadcast test
 
-A test page for sending a small camera picture from one device to another through the Cloudflare relay. Each device shows the others as flat video panels standing in a 3D space, about 2.5 metres in front of you. Change the settings, read the numbers, and judge how much data it takes, how good the picture looks, and how late it arrives.
+A test page for sending a small camera picture from one device to another through the Cloudflare relay. Each device shows the other device's live picture in one window standing in a 3D space, about 2.5 metres straight in front of you. Change the settings, read the numbers, and judge how much data it takes, how good the picture looks, and how late it arrives.
 
 Live: https://presence.now.audio/video-broadcast-testing/
 On this computer: http://localhost:8000/video-broadcast-testing/
@@ -10,7 +10,7 @@ On this computer: http://localhost:8000/video-broadcast-testing/
 1. Open the page on the laptop. It makes up a room name (six letters and digits) and puts it in the address.
 2. Under "Open this on the other device", tap "Copy link" and open that link on the phone. Both devices are now in the same room. You can also type the same room name into the Room box on each device.
 3. Tap "Turn camera on" on each device. The browser asks for the camera the first time.
-4. Each device now shows the other's picture as a panel. Your own camera shows small and mirrored in the corner.
+4. Each device now shows the other's picture in the window. Your own camera shows small and mirrored in the corner.
 
 To test alone, tick "Show my own picture, sent through the relay and back". Your picture goes out to the relay and comes back to the same device, so the whole round trip can be judged with one device.
 
@@ -26,8 +26,8 @@ Sending:
 - Full picture every: how often a whole picture is sent. Between them only the changes are sent. A full picture lets a newcomer, or someone whose picture stumbled, catch up.
 
 The space:
-- Distance: how far away the panels stand.
-- Panel width: how wide each panel is.
+- Distance: how far away the window stands.
+- Panel width: how wide the window is.
 
 ## What the numbers mean
 

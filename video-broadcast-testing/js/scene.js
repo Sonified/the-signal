@@ -13,21 +13,14 @@
 // THE SPACE: real metres. A perspective camera at the origin looks straight
 // ahead (down -Z), vertical field of view 50 degrees, near 0.1 m, far 100 m,
 // so a panel `size` metres wide standing `distance` metres away looks
-// exactly as big as that geometry says. One panel stands straight ahead,
-// centred, at eye height (y 0), facing the viewer. Several stand at the same
-// distance along an arc centred straight ahead, neighbours a tenth of a
-// panel apart (centre to centre, the chord is size x 1.1), each turned to
-// face the viewer, spread evenly about the centre so nothing pulls the eye
-// to one side. If one arc would need more than a full circle, the panels go
-// into rows instead (never smaller panels): as few rows as hold them, as
-// evenly filled as they divide, the spare panels placed so the rows balance
-// about eye height, and the rows stacked symmetric about eye height. Rows stand on the same cylinder,
-// each panel turned about the vertical only.
+// exactly as big as that geometry says. There is ONE window: it stands
+// straight ahead, centred, at eye height (y 0), facing the viewer. draw()
+// shows the first panel it is handed and no other; which person that is, is
+// the page's choice (main.js). How several people should stand in the space
+// is not decided, and nothing here decides it.
 //
-// Each panel keeps its picture's shape (height = size x height / width); one
-// with no picture yet is a dim plain 4:3 rectangle. Panels never overlap on
-// screen (each row's are spread around the cylinder, rows apart), so they
-// are drawn in order with no depth buffer.
+// The window keeps its picture's shape (height = size x height / width);
+// with no picture yet it is a dim plain 4:3 rectangle. No depth buffer.
 //
 // PICTURES: one rgba8unorm texture per panel, its picture's size, filled
 // with copyExternalImageToTexture straight from the VideoFrame ('direct'),
@@ -53,9 +46,7 @@
 const FOV_Y = 50 * Math.PI / 180;
 const NEAR = 0.1;
 const FAR = 100;
-const GAP = 0.1;                  // between neighbours, as a fraction of a panel's width
 const EMPTY_ASPECT = 3 / 4;       // height / width of a panel with no picture yet
-const MAX_ARC = 2 * Math.PI;      // one row may take at most a full circle
 const MAX_DPR = 2;
 const CLEAR = { r: 0.02, g: 0.02, b: 0.025, a: 1 };
 const EMPTY_RGB = [0.13, 0.13, 0.14];
@@ -118,53 +109,21 @@ export function multiply(a, b, out = new Float32Array(16)) {
   return out;
 }
 
-// A placed panel's model matrix: the unit square scaled to w x h, turned to
-// face the viewer, moved to its spot. A panel at arc angle a (to the right
-// of straight ahead) takes yaw -a, a turn about the vertical, so its right
-// edge points along (cos a, 0, sin a), the arc's tangent, and its front
-// along (-sin a, 0, cos a), back towards the vertical axis it stands around.
+// The window's model matrix: the unit square scaled to w x h and moved to
+// its spot. It is not turned: it stands straight ahead, facing the viewer.
 export function panelModel(p, out = new Float32Array(16)) {
-  const c = Math.cos(p.yaw), s = Math.sin(p.yaw);
   out.fill(0);
-  out[0] = c * p.w; out[2] = -s * p.w;
+  out[0] = p.w;
   out[5] = p.h;
-  out[8] = s; out[10] = c;
+  out[10] = 1;
   out[12] = p.x; out[13] = p.y; out[14] = p.z; out[15] = 1;
   return out;
 }
 
-// aspects: each panel's height / width, in order. Returns one placement per
-// panel, { x, y, z, yaw, w, h }, filling rows top to bottom, each row left
-// to right.
-export function layoutPanels(aspects, distance, size) {
-  const n = aspects.length;
-  if (!n) return [];
-  // Centre-to-centre angle along the arc: the chord size x (1 + GAP).
-  const step = 2 * Math.asin(Math.min(1, size * (1 + GAP) / (2 * distance)));
-  const perRow = Math.max(1, Math.floor(MAX_ARC / step + 1e-9));
-  const rows = Math.ceil(n / perRow);
-  // As even as they divide. The spare panels keep the rows balanced about
-  // eye height: an odd one to the middle row (when there is one), the rest
-  // in pairs, one above and one below, nearest eye height first. Only an
-  // even number of rows with an odd spare cannot balance; that one goes to
-  // the row just above eye height.
-  const counts = new Array(rows).fill(Math.floor(n / rows));
-  const mid = (rows - 1) / 2;
-  let spare = n % rows;
-  if (rows % 2 === 1 && spare % 2 === 1) { counts[mid]++; spare--; }
-  for (let d = rows % 2 === 1 ? 1 : 0.5; spare >= 2; d++, spare -= 2) { counts[mid - d]++; counts[mid + d]++; }
-  if (spare) counts[mid - 0.5]++;
-  const pitch = size * Math.max(...aspects) * (1 + GAP);
-  const out = [];
-  let i = 0;
-  for (let r = 0; r < rows; r++) {
-    const y = (mid - r) * pitch;
-    for (let j = 0; j < counts[r]; j++, i++) {
-      const a = (j - (counts[r] - 1) / 2) * step;
-      out.push({ x: distance * Math.sin(a), y, z: -distance * Math.cos(a), yaw: -a, w: size, h: size * aspects[i] });
-    }
-  }
-  return out;
+// Where the one window stands: straight ahead, `distance` metres away, at
+// eye height, `size` metres wide. aspect is its picture's height / width.
+export function placeAhead(aspect, distance, size) {
+  return { x: 0, y: 0, z: -distance, w: size, h: size * aspect };
 }
 
 export function aspectOf(panel) {
@@ -329,9 +288,9 @@ export async function createScene(canvas) {
     if (canvas.clientWidth !== cssW || canvas.clientHeight !== cssH || Math.min(MAX_DPR, window.devicePixelRatio || 1) !== dpr) resize();
     frameNo++;
 
-    const list = panels || [];
-    const aspects = list.map(aspectOf);
-    const placed = layoutPanels(aspects, distance, size);
+    // one window: the first panel handed in, and no other
+    const list = (panels || []).slice(0, 1);
+    const placed = list.map(p => placeAhead(aspectOf(p), distance, size));
 
     for (let i = 0; i < list.length; i++) {
       const p = list[i];
