@@ -140,7 +140,8 @@ function openRoom() {
       if (!live()) return;
       const now = new Set((ids || []).filter(id => id !== me));
       for (const id of peers) if (!now.has(id)) rx.drop(id);
-      // After a reconnect I have a new id, so my old echo panel goes too.
+      // Anyone I was showing who is no longer in the room goes. (I keep my
+      // own id across a reconnect: the relay knows this device.)
       for (const p of [...rx.panels()]) if (!now.has(p.id) && p.id !== me) rx.drop(p.id);
       peers.clear();
       for (const id of now) peers.add(id);

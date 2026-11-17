@@ -7,11 +7,22 @@
 // show.
 //
 // Every member may speak. Each gets an id from 1 to 65535 on joining, from a
-// counter in the room's storage, so an id is never handed out twice while
-// the room lives (a device that drops and comes back is a new member with a
-// new id, and nobody mistakes its frames for the old socket's). The
-// newcomer is told {t:'hello', you, ids} (ids: everyone already here); the
-// others hear {t:'peer', id, on:1}, and {t:'peer', id, on:0} when it goes.
+// counter in the room's storage, so no two devices ever share one while the
+// room lives. The newcomer is told {t:'hello', you, ids} (ids: everyone
+// already here); the others hear {t:'peer', id, on:1}, and {t:'peer', id,
+// on:0} when it goes.
+//
+// The room knows who is who. A device names itself as it joins
+// (/room/<name>?who=<token>, a random word the page makes up once and
+// keeps), and the room remembers which id that token was given
+// (storage, 'who:<token>'). So a device that drops and comes back is the
+// SAME member with the SAME id, not a stranger: its frames carry on under
+// the number everyone already knows it by. And its earlier connection, which
+// may still look open from here (a phone that changed networks never says
+// goodbye), is retired on the spot: told {t:'replaced'}, closed with code
+// 4000, and never announced as leaving, because nobody left. Without that, the old
+// connection lingered as a ghost member holding its last picture. A join
+// with no token is a nameless member with a fresh id, as before.
 //
 // A picture is a binary message in the shape js/wire.js sets out: a 24-byte
 // header and the encoded frame. The room never reads the picture. It writes
@@ -49,9 +60,11 @@
 // answers those at the edge without ever waking the room.
 //
 // Joining is open, as the test wants: anyone with the page and a room name
-// is in. A room name is 1-64 word characters or dashes.
+// is in. The token is not a password; it only says "me again". A room name is 1-64 word characters or dashes.
 
 const ID_MAX = 65535;   // ids are a u16 in the packet header
+const WHO_RE = /^[\w-]{8,64}$/;   // a device's own token
+const REPLACED = 4000;  // close code: this device joined again on a newer connection
 
 export class VideoRoom {
   constructor(ctx, env) {
@@ -108,11 +121,33 @@ export class VideoRoom {
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('expected a websocket', { status: 426 });
     }
-    const id = await this.nextId();
+    let who = new URL(request.url).searchParams.get('who') || '';
+    if (!WHO_RE.test(who)) who = '';
+    let id = 0;
+    if (who) {
+      id = (await this.ctx.storage.get('who:' + who)) || 0;
+      // This device's earlier connection, if one still stands: retired, not
+      // announced. Marked gone first, so its close event tells nobody.
+      for (const w of this.ctx.getWebSockets()) {
+        const a = this.att(w);
+        if (a && a.who === who && !a.gone) {
+          this.setAtt(w, Object.assign({}, a, { gone: true }));
+          // told in words as well as by the close code: a page on the other
+          // end of a live connection (a duplicated tab) may not see the
+          // close finish for a long while, and it must know at once
+          try { w.send('{"t":"replaced"}'); } catch (e) {}
+          try { w.close(REPLACED, 'replaced'); } catch (e) {}
+        }
+      }
+    }
+    if (!id) {
+      id = await this.nextId();
+      if (who) await this.ctx.storage.put('who:' + who, id);
+    }
     const ids = this.members().map(w => this.att(w).id);
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1]);
-    this.setAtt(pair[1], { id, echo: false, gone: false });
+    this.setAtt(pair[1], { id, who, echo: false, gone: false });
     try { pair[1].send(JSON.stringify({ t: 'hello', you: id, ids })); } catch (e) {}
     const arrived = JSON.stringify({ t: 'peer', id, on: 1 });
     for (const w of this.members()) {

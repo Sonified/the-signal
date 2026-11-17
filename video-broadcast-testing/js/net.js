@@ -5,11 +5,12 @@
 //   const net = connect({ room, onHello, onPeer, onPacket, onMessage, onStatus });
 //
 //   onHello(me, ids)  joined: my id, and the ids already present. After a
-//                     reconnect it comes again, with a NEW id for me (the
-//                     relay never reuses one); anyone known before and
-//                     missing from the new list is first reported gone
-//                     through onPeer(id, false), so a page that keeps its
-//                     panels in a Map by id stays right by adding each id
+//                     reconnect it comes again, with the SAME id for me (the
+//                     relay knows this device by its token, below); anyone
+//                     known before and missing from the new list is first
+//                     reported gone through onPeer(id, false), so a page that
+//                     keeps its panels in a Map by id stays right by adding
+//                     each id
 //   onPeer(id, on)    someone arrived (true) or left (false)
 //   onPacket(buf)     each binary packet as an ArrayBuffer, untouched
 //                     (js/wire.js unpack reads it; `from` is filled in)
@@ -30,7 +31,39 @@
 // the last PROBE_KEEP probes the one with the smallest round trip wins:
 // the usual trick for ignoring slow ones.
 
+// Who this is. The page makes up a random token once and tells the relay it
+// on every join (?who=), so the relay knows a device coming back from a
+// dropped link is the same member, keeps its id, and retires its old
+// connection instead of leaving it behind as a ghost. The token lives in
+// sessionStorage: it survives a reload and a reconnect, and each tab is its
+// own member (two tabs on one computer are two people, which a test wants).
+// A duplicated tab starts with a copy of the token; when the relay closes
+// the older one ({t:'replaced'}, then close code 4000: "you joined again
+// elsewhere"), that tab makes itself a new token and comes back as a new
+// member.
+
 export const RELAY_HOST = 'the-signal-video-test.robertalexander-music.workers.dev';
+
+const WHO_KEY = 'vbt.who';
+const WHO_RE = /^[\w-]{8,64}$/;
+const REPLACED = 4000;
+
+function newWho() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const a = new Uint8Array(16);
+  try { crypto.getRandomValues(a); } catch (e) { for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); }
+  let s = '';
+  for (const n of a) s += chars[n % chars.length];
+  try { sessionStorage.setItem(WHO_KEY, s); } catch (e) { /* no storage: the token lasts as long as the page */ }
+  return s;
+}
+function loadWho() {
+  try {
+    const s = sessionStorage.getItem(WHO_KEY);
+    if (s && WHO_RE.test(s)) return s;
+  } catch (e) {}
+  return newWho();
+}
 
 // How much may wait in the socket's send queue before send() refuses a
 // packet. A starting guess for the test to tune: too small and frames are
@@ -54,14 +87,14 @@ const BUCKET_MS = 100, BUCKETS = 10;    // the stats window: the last ten whole 
 const ROOM_RE = /^[\w-]{1,64}$/;
 const LOCAL_RE = /^(localhost|127\.)/;
 
-function relayUrl(room) {
+function relayUrl(room, who) {
   let host = RELAY_HOST;
   try {
     const q = new URLSearchParams(location.search);
     if (q.get('relay')) host = q.get('relay');
   } catch (e) {}
   const scheme = LOCAL_RE.test(host) ? 'ws' : 'wss';
-  return scheme + '://' + host + '/room/' + encodeURIComponent(room);
+  return scheme + '://' + host + '/room/' + encodeURIComponent(room) + '?who=' + encodeURIComponent(who);
 }
 
 export function connect(opts) {
@@ -69,7 +102,7 @@ export function connect(opts) {
   if (!ROOM_RE.test(room)) {
     console.warn('[net] room "' + room + '" is not 1-64 letters, digits, _ or -; the relay will not take it');
   }
-  const url = relayUrl(room);
+  let who = loadWho();
   const call = (name, ...args) => {
     const f = opts[name];
     if (typeof f === 'function') {
@@ -166,7 +199,7 @@ export function connect(opts) {
     if (closed) return;
     setStatus('connecting');
     let sock;
-    try { sock = new WebSocket(url); } catch (e) { fails++; retry(); return; }
+    try { sock = new WebSocket(relayUrl(room, who)); } catch (e) { fails++; retry(); return; }
     ws = sock;
     sock.binaryType = 'arraybuffer';
     since = performance.now();
@@ -198,6 +231,9 @@ export function connect(opts) {
       try { msg = JSON.parse(d); } catch (err) { return; }
       if (!msg || typeof msg !== 'object') return;
       if (msg.t === 'time' && msg.from === undefined) { onTime(msg); return; }
+      // retired by the relay because another page joined with my token (a
+      // duplicated tab): come back as someone new, not as a rival for it
+      if (msg.t === 'replaced' && msg.from === undefined) { who = newWho(); lost(sock); return; }
       if (msg.t === 'hello' && msg.from === undefined) {
         me = msg.you | 0;
         const ids = Array.isArray(msg.ids) ? msg.ids.filter(x => x !== me) : [];
@@ -218,7 +254,12 @@ export function connect(opts) {
       call('onMessage', msg);
     };
     sock.onerror = () => lost(sock);
-    sock.onclose = () => lost(sock);
+    sock.onclose = e => {
+      // retired by the relay because another page joined with my token (a
+      // duplicated tab): come back as someone new, not as a rival for it
+      if (sock === ws && e && e.code === REPLACED) who = newWho();
+      lost(sock);
+    };
   }
   function retry() {
     if (closed) return;
