@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0e">
+<title>Video broadcast test</title>
+<style>
+  :root {
+    --bg: #0b0c0e;
+    --panel: rgba(20, 22, 26, 0.92);
+    --line: rgba(255, 255, 255, 0.10);
+    --text: #e6e6e3;
+    --soft: #a3a6ab;
+    --accent: #e3b45a;
+    --accent-ink: #1a1408;
+    --bad: #f08a7a;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* The 3D view fills the window, behind everything. */
+  #view {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    display: block; background: var(--bg); touch-action: none;
+  }
+  #noview {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 24px calc(24px + var(--safe-r)) 24px calc(24px + var(--safe-l));
+    color: var(--soft); font-size: 17px;
+  }
+  #noview.show { display: flex; }
+  #noview p { max-width: 28em; margin: 0; }
+
+  /* Top-right: the camera button and the hide/show button. */
+  #bar {
+    position: fixed; z-index: 3;
+    top: calc(10px + var(--safe-t)); right: calc(10px + var(--safe-r));
+    display: flex; gap: 8px; align-items: center;
+  }
+  button {
+    font: inherit; font-size: 16px; color: var(--text);
+    background: rgba(40, 43, 49, 0.92); border: 1px solid var(--line);
+    border-radius: 10px; min-height: 44px; padding: 0 14px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.55; cursor: default; }
+  #camera {
+    background: var(--accent); color: var(--accent-ink); border-color: transparent;
+    font-weight: 600; min-height: 48px; padding: 0 18px;
+  }
+  #camera.on { background: rgba(40, 43, 49, 0.92); color: var(--accent); border-color: var(--accent); }
+
+  /* My own camera, small and mirrored, under the buttons. */
+  #preview {
+    position: fixed; z-index: 2; display: none;
+    top: calc(66px + var(--safe-t)); right: calc(10px + var(--safe-r));
+    width: 120px; border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--line); background: #000;
+  }
+  #preview.show { display: block; }
+  #preview video { display: block; width: 100%; height: auto; transform: scaleX(-1); }
+
+  /* The one panel: left column on a laptop, bottom sheet on a phone. */
+  #panel {
+    position: fixed; z-index: 1;
+    top: calc(10px + var(--safe-t)); left: calc(10px + var(--safe-l)); bottom: calc(10px + var(--safe-b));
+    width: 320px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px 18px;
+  }
+  body.hidden #panel { display: none; }
+  @media (max-width: 700px) {
+    #panel {
+      top: auto; left: 0; right: 0; bottom: 0; width: auto;
+      max-height: 52vh; max-height: 52dvh;
+      border-radius: 14px 14px 0 0; border-bottom: 0;
+      padding: 10px calc(16px + var(--safe-r)) calc(18px + var(--safe-b)) calc(16px + var(--safe-l));
+    }
+    #preview { width: 96px; }
+  }
+
+  h1 { font-size: 16px; font-weight: 600; margin: 2px 0 10px; }
+  h2 {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--accent); margin: 18px 0 6px; padding-top: 12px; border-top: 1px solid var(--line);
+  }
+  .row { margin: 8px 0; }
+  .row > label, .lab { display: flex; justify-content: space-between; gap: 8px; color: var(--soft); margin-bottom: 4px; }
+  .row output { color: var(--text); font-variant-numeric: tabular-nums; }
+  .help { color: var(--soft); font-size: 13px; margin: 4px 0 0; }
+  select, input[type=text] {
+    width: 100%; min-height: 44px; font: inherit; font-size: 16px; color: var(--text);
+    background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px;
+  }
+  input[type=range] { width: 100%; height: 44px; margin: 0; accent-color: var(--accent); }
+  .check { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--text); }
+  .check input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); flex: none; }
+  .pair { display: flex; gap: 8px; align-items: stretch; }
+  .pair > :first-child { flex: 1; min-width: 0; }
+  #link {
+    font-size: 13px; color: var(--soft); word-break: break-all; overflow-wrap: anywhere;
+    margin: 4px 0 6px; user-select: all; -webkit-user-select: all;
+  }
+  #camMsg { color: var(--bad); font-size: 14px; margin: 6px 0 0; }
+  #camMsg:empty { display: none; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* The numbers. */
+  #numbers { font-size: 14px; font-variant-numeric: tabular-nums; }
+  #numbers .g { margin: 0 0 10px; }
+  #numbers .gt { font-weight: 600; margin: 0 0 2px; }
+  #numbers .ln { color: var(--text); margin: 0; padding-left: 10px; }
+  #numbers .ln.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="noview"><p id="noviewText"></p></div>
+
+<div id="bar">
+  <button id="camera" type="button">Turn camera on</button>
+  <button id="toggle" type="button">Hide controls</button>
+</div>
+<div id="preview"></div>
+
+<aside id="panel">
+  <h1>Video broadcast test</h1>
+
+  <div class="row">
+    <label for="room">Room</label>
+    <input id="room" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+  </div>
+  <div class="row">
+    <div class="lab">Open this on the other device</div>
+    <div id="link"></div>
+    <button id="copyLink" type="button">Copy link</button>
+  </div>
+  <p id="camMsg"></p>
+
+  <h2>Numbers</h2>
+  <div id="numbers"></div>
+  <div class="actions"><button id="copyResults" type="button">Copy results</button></div>
+
+  <h2>Sending</h2>
+  <div class="row">
+    <label for="size">Picture size</label>
+    <select id="size">
+      <option value="160x120">160 × 120</option>
+      <option value="320x240">320 × 240</option>
+      <option value="480x360">480 × 360</option>
+      <option value="640x480">640 × 480</option>
+      <option value="960x720">960 × 720</option>
+      <option value="1280x720">1280 × 720</option>
+    </select>
+  </div>
+  <div class="row">
+    <label for="fps">Pictures a second</label>
+    <select id="fps">
+      <option value="5">5</option>
+      <option value="10">10</option>
+      <option value="15">15</option>
+      <option value="24">24</option>
+      <option value="30">30</option>
+    </select>
+  </div>
+  <div class="row">
+    <label for="rate">Data rate <output id="rateOut"></output></label>
+    <input id="rate" type="range" min="0" max="1000" step="1">
+  </div>
+  <div class="row">
+    <label for="codec">Format</label>
+    <select id="codec"><option>Checking what this device can send…</option></select>
+  </div>
+  <div class="row">
+    <label for="keyEvery">Full picture every</label>
+    <select id="keyEvery">
+      <option value="1">1 second</option>
+      <option value="2">2 seconds</option>
+      <option value="5">5 seconds</option>
+      <option value="10">10 seconds</option>
+    </select>
+    <p class="help">A full picture lets a newcomer or a stumble recover. Between them only the changes are sent.</p>
+  </div>
+
+  <h2>The space</h2>
+  <div class="row">
+    <label for="distance">Distance <output id="distanceOut"></output></label>
+    <input id="distance" type="range" min="0.5" max="10" step="0.1">
+  </div>
+  <div class="row">
+    <label for="width">Panel width <output id="widthOut"></output></label>
+    <input id="width" type="range" min="0.2" max="4" step="0.1">
+  </div>
+
+  <h2>Testing</h2>
+  <div class="row">
+    <label class="check"><input id="echo" type="checkbox"> Show my own picture, sent through the relay and back</label>
+    <p class="help">Lets one device test the whole round trip alone.</p>
+  </div>
+</aside>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

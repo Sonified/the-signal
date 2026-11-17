@@ -1,0 +1,16 @@
+# The video broadcast test's relay, apart from the show's own
+# (broadcast-worker/) on purpose, so nothing the test does can reach a show.
+# Deploy with `npx wrangler deploy` from this directory; no secrets needed.
+name = "the-signal-video-test"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+
+# SQLite-backed Durable Objects, which is what the free plan offers (and the
+# recommended kind on every plan).
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "VideoRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["VideoRoom"]
