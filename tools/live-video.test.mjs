@@ -279,3 +279,121 @@ test('a follower shows the broadcaster\'s switch and size, its own untouched', a
   // a follower never opens a camera, whatever its own switch says
   assert.equal(C.camAvailable(), false);
 });
+
+// ---------- the transport: the packet, and the safety rule ----------
+const W = await import('../platform/camera-wire.js');
+const T = await import('../platform/camera-transport.js');
+
+test('a packet round trips: header, description and frame', () => {
+  const data = new Uint8Array([9, 8, 7, 6, 5]), desc = new Uint8Array([1, 2, 3]);
+  const buf = W.pack({ key: true, seq: 4000000000, t: 1732400000123.5, width: 640, height: 360, codec: 0, fps: 15 }, data, desc);
+  assert.equal(buf.byteLength, W.HEADER + 3 + 5);
+  const p = W.unpack(buf);
+  assert.equal(p.kind, W.KIND_VIDEO); assert.equal(p.key, true); assert.equal(p.from, 0);
+  assert.equal(p.seq, 4000000000); assert.equal(p.t, 1732400000123.5);
+  assert.equal(p.width, 640); assert.equal(p.height, 360); assert.equal(p.codec, 0); assert.equal(p.fps, 15);
+  assert.deepEqual([...p.desc], [1, 2, 3]); assert.deepEqual([...p.data], [9, 8, 7, 6, 5]);
+  // a delta: no description, not a key
+  const q = W.unpack(W.pack({ key: false, seq: 1, t: 2, width: 640, height: 360, codec: 1, fps: 15 }, data));
+  assert.equal(q.key, false); assert.equal(q.desc, null); assert.deepEqual([...q.data], [9, 8, 7, 6, 5]);
+  assert.equal(W.codecById(0).name, 'H.264'); assert.equal(W.codecById(1).name, 'VP8');
+  // the relay's id, written into bytes 2-3, reads back as the sender
+  const r = new Uint8Array(buf.slice(0)); new DataView(r.buffer).setUint16(2, 7, true);
+  assert.equal(W.unpack(r.buffer).from, 7);
+  // too short, or a description longer than the packet: not a packet
+  assert.equal(W.unpack(new ArrayBuffer(10)), null);
+  const bad = new Uint8Array(W.HEADER); new DataView(bad.buffer).setUint16(22, 99, true);
+  assert.equal(W.unpack(bad.buffer), null);
+  assert.equal(W.unpack('not a buffer'), null);
+});
+
+test('the relay room is the livestream room with cam- before it', () => {
+  assert.equal(T.camRelayRoom('livestream'), 'cam-livestream');
+  assert.equal(T.camRelayRoom('livestream-rehearsal'), 'cam-livestream-rehearsal');
+  assert.equal(T.camRelayRoom('a b/c'), 'cam-a-b-c');
+  assert.ok(T.camRelayRoom('x'.repeat(100)).length <= 64);
+});
+
+// stand-in sockets that only count and record
+const sockets = [];
+class FakeSocket { constructor(url) { this.url = url; this.readyState = 0; this.sent = []; sockets.push(this); } send(d) { this.sent.push(d); } close() { this.closed = true; this.readyState = 3; } }
+globalThis.WebSocket = FakeSocket;
+const settle = () => new Promise(r => setTimeout(r, 50));
+const warns = [];
+const realWarn = console.warn;
+
+test('Live Video off: nothing connects, on either side', async () => {
+  console.warn = (...a) => warns.push(a.join(' '));
+  try {
+    // a follower whose broadcaster's camera is off: watching connects nothing
+    C.setCamRole(C.ROLE_FOLLOW, null);
+    C.takeCamWire(null);
+    globalThis.VideoDecoder = function () {}; globalThis.EncodedVideoChunk = function () {};
+    const got = [];
+    T.cameraWatch('livestream', s => got.push(s));
+    await settle();
+    assert.equal(sockets.length, 0, 'no socket while off');
+    // a state that keeps it off, or a size change while off, still nothing
+    C.takeCamWire({ on: 0, sz: 0.4 });
+    await settle();
+    assert.equal(sockets.length, 0);
+    // the presenter's switch off: no camera stream to send, and a send asked
+    // for anyway with the switch off is refused
+    C.setCamRole(C.ROLE_PRESENT, null);
+    S.camOn = false;
+    T.cameraSend({ getTracks: () => [] }, 'livestream', '');
+    await settle();
+    assert.equal(sockets.length, 0, 'no sender while off');
+    assert.equal(T.cameraSending(), false);
+  } finally { console.warn = realWarn; }
+});
+
+test('a follower connects while the broadcaster\'s camera is on, and lets go when it goes off or ends', async () => {
+  C.setCamRole(C.ROLE_FOLLOW, null);
+  const got = [];
+  T.cameraWatch('livestream', s => got.push(s));
+  C.takeCamWire({ on: 1, sz: 0.25 });
+  await settle();
+  assert.equal(sockets.length, 1, 'one socket');
+  assert.ok(sockets[0].url.includes('/room/cam-livestream?who='), sockets[0].url);
+  assert.ok(sockets[0].url.startsWith('wss://the-signal-video-test.'), 'the deployed video relay');
+  assert.equal(T.cameraReceiving(), true);
+  C.takeCamWire({ on: 0, sz: 0.25 });
+  assert.equal(sockets[0].closed, true, 'closed the moment it goes off');
+  assert.equal(T.cameraReceiving(), false);
+  assert.equal(got[got.length - 1], null, 'the panel told it went');
+  // on again, then the broadcast ends
+  C.takeCamWire({ on: 1, sz: 0.25 });
+  await settle();
+  assert.equal(sockets.length, 2);
+  C.takeCamWire(null);
+  assert.equal(sockets[1].closed, true, 'closed when the broadcast ends');
+  T.cameraUnwatch();
+});
+
+test('no WebCodecs: one warning, no socket, no panel, nothing thrown', async () => {
+  const n = sockets.length;
+  delete globalThis.VideoDecoder; delete globalThis.VideoEncoder;
+  warns.length = 0;
+  console.warn = (...a) => warns.push(a.join(' '));
+  try {
+    C.setCamRole(C.ROLE_FOLLOW, null);
+    const got = [];
+    T.cameraWatch('livestream', s => got.push(s));
+    C.takeCamWire({ on: 1, sz: 0.25 });
+    await settle();
+    assert.equal(sockets.length, n, 'the receiver connects nothing');
+    assert.equal(got.filter(Boolean).length, 0, 'no stream for the panel');
+    C.takeCamWire(null);
+    T.cameraUnwatch();
+    C.setCamRole(C.ROLE_PRESENT, null);
+    S.camOn = true;
+    T.cameraSend({ getTracks: () => [] }, 'livestream', '');
+    await settle();
+    assert.equal(sockets.length, n, 'the sender connects nothing');
+    T.cameraStopSending();
+    S.camOn = false;
+    assert.equal(warns.filter(w => w.includes('cannot unpack video')).length, 1, 'one warning for the receiver: ' + warns.join(' | '));
+    assert.equal(warns.filter(w => w.includes('cannot pack video')).length, 1, 'one for the sender');
+  } finally { console.warn = realWarn; }
+});
