@@ -9,6 +9,19 @@ import { wakeGap } from '../core/wake.js';
 import { S } from '../js/state.js';
 import { createEnergyProbe } from './energy-probe.js';
 
+// The timer's frame while the talk's laptop is out of sight: 30 a second,
+// enough for a cue's video to start and a fade to run smoothly.
+const HIDDEN_FRAME_MS = 1000 / 30;
+// Whether this page is the talk's laptop: ?presentation (or ?remote), and
+// not a follower or a replay, as main.js presentPage decides. Read here
+// with no import, so the engine's own load order is untouched.
+function playsHidden() {
+  try {
+    const P = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
+    return (P.has('presentation') || P.has('remote')) && !P.has('follow') && !P.has('livestream') && !P.has('replay');
+  } catch (e) { return false; }
+}
+
 let loggedAdapter = false;
 
 // The blur capture's refresh ceiling. Glass shows a heavily blurred image of
@@ -849,6 +862,22 @@ export async function createEngine(platform, opts) {
   let rafHandle = 0;
   function start(frameFn) {
     let lastFrameT = null;
+    // The talk's laptop (?presentation, main.js presentPage) keeps playing
+    // out of sight: a window over it, or Zoom on top while it is shared.
+    // Its slides, heartbeat and Sun are not dozed, and the loop runs on a
+    // timer (HIDDEN_FRAME_MS) in place of the display's frames, which a
+    // hidden page is not given, so a cue from the iPad still starts its
+    // video and a fade still finishes. Every other page stops outright.
+    const keepHidden = playsHidden();
+    let timerLoop = false;
+    const ask = () => {
+      if (pageHidden) { timerLoop = true; rafHandle = setTimeout(() => raf(performance.now()), HIDDEN_FRAME_MS); }
+      else { timerLoop = false; rafHandle = requestAnimationFrame(raf); }
+    };
+    const cancel = () => {
+      if (rafHandle) { if (timerLoop) clearTimeout(rafHandle); else cancelAnimationFrame(rafHandle); }
+      rafHandle = 0;
+    };
     // Out of sight (a phone's app switched away, the screen locked, a
     // background tab) the loop stops outright: no frame is asked for, so no
     // GPU work is encoded or submitted at all, rather than trusting each
@@ -870,8 +899,7 @@ export async function createEngine(platform, opts) {
       if (sun) sun.doze(true);
       if (slides) slides.doze(true);
       if (heartbeat) heartbeat.doze(true);
-      if (rafHandle) cancelAnimationFrame(rafHandle);
-      rafHandle = 0;
+      cancel();
     };
     engine.wake = () => {
       if (!asleep) return false;
@@ -880,11 +908,18 @@ export async function createEngine(platform, opts) {
       if (sun) sun.doze(false);
       if (slides) slides.doze(false);
       if (heartbeat) heartbeat.doze(false);
-      if (!rafHandle && !deviceLost && !pageHidden) rafHandle = requestAnimationFrame(raf);
+      if (!rafHandle && !deviceLost && (!pageHidden || keepHidden)) ask();
       return true;
     };
     platform.onVisibility(visible => {
       pageHidden = !visible;
+      // The talk's laptop plays on out of sight (keepHidden above): nothing
+      // dozes, and the loop changes from the display's frames to the timer
+      // and back, with no absence to wake from.
+      if (keepHidden) {
+        if (!asleep) { cancel(); if (!deviceLost) ask(); }
+        return;
+      }
       // Coming back into view is the absence's own wake, whatever the
       // loop was doing before it went.
       asleep = false;
@@ -892,12 +927,8 @@ export async function createEngine(platform, opts) {
       if (sun) sun.doze(pageHidden);
       if (slides) slides.doze(pageHidden);
       if (heartbeat) heartbeat.doze(pageHidden);
-      if (pageHidden) {
-        if (rafHandle) cancelAnimationFrame(rafHandle);
-        rafHandle = 0;
-      } else if (!rafHandle && !deviceLost) {
-        rafHandle = requestAnimationFrame(raf);
-      }
+      if (pageHidden) cancel();
+      else if (!rafHandle && !deviceLost) ask();
     });
     function raf(t) {
       rafHandle = 0;
@@ -907,8 +938,8 @@ export async function createEngine(platform, opts) {
       // new engine. Every other frame requests its successor first thing, as
       // v0 does, so a slow frame never pushes the next one further out than
       // it has to be; a frame that puts the loop to sleep cancels it again.
-      if (deviceLost || pageHidden || asleep) return;
-      rafHandle = requestAnimationFrame(raf);
+      if (deviceLost || (pageHidden && !keepHidden) || asleep) return;
+      ask();
       frameT = t;
       // The wake rule (core/wake.js): a frame after an absence, the first
       // frame, or the first after the page comes back into view advances
@@ -923,7 +954,7 @@ export async function createEngine(platform, opts) {
       frameDt = dt;
       frameFn(t, dt, away);
     }
-    rafHandle = requestAnimationFrame(raf);
+    if (!pageHidden || keepHidden) ask();
   }
 
   handleResize(platform.width, platform.height, platform.dpr);

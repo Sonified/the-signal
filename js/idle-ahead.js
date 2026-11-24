@@ -109,8 +109,19 @@ export function setLiveCapturing(fn) { capturing = fn; }
 let followerTab = () => false;
 export function setFollowerTab(fn) { followerTab = fn; }
 
+// The talk's laptop (?presentation) never grows one either: it plays on
+// behind other windows (gpu/engine.js), and every cue and fader from the
+// iPad touches the audio, which would skip a grown cushion each time, the
+// follower's burst cycle above. Read from the address, with no import.
+const presentPage = (() => {
+  try {
+    const P = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
+    return (P.has('presentation') || P.has('remote')) && !P.has('follow') && !P.has('livestream') && !P.has('replay');
+  } catch (e) { return false; }
+})();
+
 function eligible(eng) {
-  return !!eng && eng.mode === 'sab' && !eng.isResting() && !capturing() && !followerTab() &&
+  return !!eng && eng.mode === 'sab' && !eng.isResting() && !capturing() && !followerTab() && !presentPage &&
     S.running === true && S.audioEnabled === true;
 }
 
