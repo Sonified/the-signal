@@ -34,18 +34,12 @@
 // stretched or cropped (ui/camera-fit.js lays it out).
 import { S } from '../js/state.js';
 import { readKey, saveKey } from './store.js';
-
-// The Size slider's range, as shares (0.1 is 10%). Below a tenth the face is
-// a thumbnail; above six tenths the panel is the show.
-export const CAM_SIZE_MIN = 0.1, CAM_SIZE_MAX = 0.6, CAM_SIZE_DEF = 0.25;
-
-// A size held to the slider's range, three decimals at most (what the wire
-// carries); anything unreadable is the default.
-export function camSizeClamp(v) {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return CAM_SIZE_DEF;
-  const c = v < CAM_SIZE_MIN ? CAM_SIZE_MIN : v > CAM_SIZE_MAX ? CAM_SIZE_MAX : v;
-  return Math.round(c * 1000) / 1000;
-}
+// The Size slider's range (0.1 is 10%: below a tenth the face is a
+// thumbnail, above six tenths the panel is the show) and its clamp live in a
+// module with no imports, so the schema can read them at load inside the
+// store -> schema -> schema-camera import loop (core/camera-size.js).
+import { CAM_SIZE_MIN, CAM_SIZE_MAX, CAM_SIZE_DEF, camSizeClamp } from './camera-size.js';
+export { CAM_SIZE_MIN, CAM_SIZE_MAX, CAM_SIZE_DEF, camSizeClamp };
 
 // ---------- this machine's record ----------
 const CAM_KEY = 'signal.v1.camera';

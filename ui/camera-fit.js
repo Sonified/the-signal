@@ -19,7 +19,7 @@
 // as left). Whichever bound bites shrinks both sides together, so the shape
 // holds. A screen too small to leave the panel a chip's height shows none.
 import { LAYOUT, SPACE } from './theme.js';
-import { CAM_SIZE_MIN, CAM_SIZE_MAX, camSizeClamp } from '../core/camera.js';
+import { CAM_SIZE_MIN, CAM_SIZE_MAX, camSizeClamp } from '../core/camera-size.js';
 
 const EDGE = LAYOUT.chromeInset;
 const ROW = LAYOUT.chipH;       // the bottom row: the full-screen button and the quick-bar chips

@@ -25,7 +25,6 @@ import { setColorFromPicker } from './js/color.js';
 import { ensureAudioGraph, warmDevice, audioOn, heartNudge, heartRestInfo } from './js/audio.js';
 import { prefetchMusic } from './js/audio-prefetch.js';
 import { restoreLive } from './js/livesound.js';
-import { startCamera } from './platform/camera-panel.js';
 import { setMediaTransport } from './js/background.js';
 import { noteHandheld } from './js/handheld.js';
 import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from './js/panel-guard.js';
@@ -122,6 +121,12 @@ import { drawMusic, music } from './ui/screens/music.js';
 import { drawTextbank, textbank } from './ui/screens/textbank.js';
 import { perfTick, perfResume, perfBusy } from './core/perform.js';
 import { stepMixGates, mixGatesBusy } from './js/mixgate.js';
+// Live Video last of all. Imports run in the order written, and the camera's
+// state (core/camera.js) reaches the store, which reaches the schema, which
+// reaches the camera's own rows: entered from here first, that loop read
+// values not yet made and the page died at boot (v1.73). Last, everything it
+// leans on has finished loading before it starts.
+import { startCamera } from './platform/camera-panel.js';
 
 // Mobile browsers require a user gesture before audio can leave a suspended
 // AudioContext. A broadcast follower must keep running while it waits, so the

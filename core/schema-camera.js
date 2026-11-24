@@ -14,9 +14,11 @@
 // follows the broadcaster and offers nothing to change; the engine's worker
 // has no camera; and ?livestream never draws the drawer at all.
 import { S } from '../js/state.js';
-import {
-  CAM_SIZE_MIN, CAM_SIZE_MAX, CAM_SIZE_DEF, camSizeClamp, camSetOn, camSetSize, camSetDevice, camInputs, camAvailable
-} from './camera.js';
+// The size range from its import-free module: this file is loaded inside the
+// store -> schema loop, where core/camera.js's own exports are not yet
+// initialised (core/camera-size.js).
+import { CAM_SIZE_MIN, CAM_SIZE_MAX, CAM_SIZE_DEF, camSizeClamp } from './camera-size.js';
+import { camSetOn, camSetSize, camSetDevice, camInputs, camAvailable } from './camera.js';
 
 // The Camera row's options, a getter over the page's list as Live Sound's
 // Input row is (core/schema-audio.js liveDeviceOptions): the same array while
