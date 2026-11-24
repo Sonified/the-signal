@@ -12,6 +12,8 @@
 // nothing changes the video's course, which is why the broadcaster sends a
 // fresh state whenever it does (slideCourseSame below, core/broadcast.js
 // slideWatch): a new file, a pause or play, a change of rate, a seek, the end.
+// A follower watching already is moved again on each such change of its
+// slide's course (slideChanged), never while the course stays the same.
 
 // gpu/slides.js's own threshold for a playbackRate that has moved.
 const RATE_EPS = 0.001;
@@ -47,6 +49,28 @@ export function slideCourseSame(a, b) {
   if (!a || !b) return !a && !b;
   return a.f === b.f && a.l === b.l && Math.abs((a.r || 0) - (b.r || 0)) <= RATE_EPS &&
     (a.d === b.d || (!(a.d > 0) && !(b.d > 0)));
+}
+
+// Whether a sample is a slide that has played to its end and stopped there
+// (not a pause: nothing to hold, the follower's own copy runs out too).
+export function slideEnded(sp) {
+  return !!sp && !sp.l && sp.d > 0 && isFinite(sp.d) && sp.t >= sp.d;
+}
+
+// Whether a follower must be moved to the room's slide again, given the
+// last state's sample a (taken at aAt on the shared clock) and the new one
+// b (at bAt): the same slide changed its course (paused, played, a new
+// rate, Loop) or jumped from where a's course puts it by more than tol (a
+// seek, a Restart). Never for the same course played on, so nothing here
+// is a running correction. A new slide that plays starts with everyone's
+// and is left alone; one that arrives held is landed on. A slide that has
+// played to its end is left to run out on its own copy.
+export function slideChanged(a, aAt, b, bAt, tol) {
+  if (!b || slideEnded(b)) return false;
+  if (!a || a.f !== b.f) return !(b.r > 0);
+  if (!slideCourseSame(a, b)) return true;
+  if (!Number.isFinite(aAt) || !Number.isFinite(bAt)) return false;
+  return Math.abs(slideOffset(slidePosition(a, (bAt - aAt) / 1000), b.t, b.d, b.l)) > tol;
 }
 
 // A sample from the wire, or null: anything malformed is passed over.

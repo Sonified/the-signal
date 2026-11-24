@@ -25,6 +25,7 @@ import { setColorFromPicker } from './js/color.js';
 import { ensureAudioGraph, warmDevice, audioOn, heartNudge, heartRestInfo } from './js/audio.js';
 import { prefetchMusic } from './js/audio-prefetch.js';
 import { restoreLive } from './js/livesound.js';
+import { startCamera } from './platform/camera-panel.js';
 import { setMediaTransport } from './js/background.js';
 import { noteHandheld } from './js/handheld.js';
 import { guard, guardStep, guardSimulate, guardMessage, guardSummary, guardReset } from './js/panel-guard.js';
@@ -38,7 +39,9 @@ import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
 import { createSun, sunPictureIn } from './gpu/sun.js';
 import { showMediaFollowerGo } from './js/show-media.js';
-import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide, seekSlide, slidesProgress, slidesProgressInto } from './gpu/slides.js';
+import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide, seekSlide, slidesProgress, slidesProgressInto, setDuck, followSlidePlay, setSlideSpeedGlideFloor } from './gpu/slides.js';
+import { setHeartDuck } from './core/heartbeat.js';
+import { setHumDuck } from './core/sun-hum.js';
 import { createSunQr } from './gpu/sun-qr.js';
 import { createStars } from './gpu/stars.js';
 import { createHeartbeat } from './gpu/heartbeat.js';
@@ -682,9 +685,20 @@ async function boot() {
         // join where the room is (core/broadcast.js followSlideLand)
         slideNow: slidesProgress,
         slideInto: slidesProgressInto,
-        seekSlideTo: (f, file) => { const pr = slidesProgress(); if (pr && pr.f === file) seekSlide(f); }
+        seekSlideTo: (f, file) => { const pr = slidesProgress(); if (pr && pr.f === file) seekSlide(f); },
+        // a follower's: its slide played or held as the room's, the show
+        // remote's duck as the receiver applies it (platform/
+        // presentation-receiver.js), and the floor under its slide Speed's glide
+        slideFollow: followSlidePlay,
+        duck: (mul, sec) => { setDuck(mul, sec); setHeartDuck(mul, sec); setHumDuck(mul, sec); },
+        slideSpeedFloor: setSlideSpeedGlideFloor
       }
     );
+    // Live Video (platform/camera-panel.js): the camera's panel in the corner.
+    // A presenting page resizes it by hand and sends it to its livestream
+    // room; a follower shows the broadcaster's and opens no camera.
+    startCamera({ presenting: !!presentPage, sendRoom: presentPage ? livestreamRoomFor(presentPage.room) : '',
+                  sendKey: presentLogin || '', watchRoom: followTab ? bIntent.follow : '' });
     // The show remote (controller.html on the iPad): ?presentation makes this tab take
     // its cues, faders and duck over the mirror relays (platform/presentation-receiver.js).
     // Its title clears the screen: the drawer and every floating window

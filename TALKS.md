@@ -102,9 +102,23 @@ People on a call can watch and hear the show in their own browser. Send them thi
 
 **What a viewer sees.** First a screen that says "Tap to join the live stream". Their tap starts the sound. Then the show as the laptop plays it: the scene, the sound, the words and the slide videos. The volume sits at the top right and the full-screen button at the bottom right. Nothing else shows: no menu, no drawer, no windows, no play button. The only key is full screen (Enter or F). A tap on the picture does nothing, and neither do a lock screen's or a headset's play and pause: the viewer follows the laptop.
 
-A viewer who joins late lands on the slide where everyone else is, a moment after their tap, even minutes into a video. After that nothing moves them.
+A viewer who joins late lands on the slide where everyone else is, a moment after their tap, even minutes into a video.
+
+**What viewers follow from the iPad.** Everything it does to the room's picture and sound:
+
+- The cues, and the scene each one brings.
+- The slide's pause, play, speed, restart and seek. Each one moves every viewer once, to where the laptop's slide is: they pause where it paused, carry on where it carries on, start again at the top. Speed changes the pitch with it, as on the laptop. Between those moments nothing moves them.
+- The duck: their slide sound, heartbeat and hum dip and come back over the same times.
+- Volume, the lowpass and highpass with their resonance and glide, and every level and visual fader, the finale's included.
+- The screen gate: when the room goes dark, so do they.
+
+A viewer who joins during a duck, a paused slide or a dark gate joins in that state. Each change reaches viewers within about a quarter of a second. Faders that shape the sound, the filters and the slide's speed, glide there smoothly. Visual faders arrive in small steps, four a second.
+
+Not followed: the replay of the room's drawing at cue 24 plays on the laptop only.
 
 A viewer can set their own volume, but the next change on the laptop (a cue, any fader) puts it back to the laptop's master volume. The iPad's volume fader moves every viewer's too.
+
+When the broadcast ends, viewers keep the last scene, with the duck released and the gate open.
 
 **What Robert does.** Nothing. Once the password is in, the presentation page broadcasts to room `livestream` by itself, on every load. The drawer's Broadcast section shows it as Livestream, switched on, counting who watches. Other sessions in that browser are left as they are. The page's drawing room is `livestream` too, whatever else is switched on.
 

@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { slidePosition, slideOffset, slideCourseSame, slideSample } from '../core/slide-sync.js';
+import { slidePosition, slideOffset, slideCourseSame, slideSample, slideChanged, slideEnded } from '../core/slide-sync.js';
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, msg + ': ' + a + ' vs ' + b);
 const sp = o => Object.assign({ f: 'a.mp4', t: 10, d: 100, r: 1, l: false }, o);
@@ -83,4 +83,37 @@ test('from the wire: malformed is nothing', () => {
   for (const bad of [null, undefined, 5, 'x', {}, { f: '', t: 1, r: 1 }, { f: 'a', t: 'x', r: 1 }, { f: 'a', t: 1 }, { f: 'a', t: NaN, r: 1 }]) {
     assert.equal(slideSample(bad), null, JSON.stringify(bad));
   }
+});
+
+test('a watching follower is moved on a change of course, never on the same one', () => {
+  const T = 0.25, a = sp(), at = 1000;
+  // the same course, played on: a later state lands where a's course says
+  assert.ok(!slideChanged(a, at, sp({ t: 15 }), at + 5000, T), 'played on');
+  assert.ok(!slideChanged(a, at, sp({ t: 15.2 }), at + 5000, T), 'within the tolerance');
+  assert.ok(!slideChanged(a, at, sp({ t: 15 }), at + 5000, T) && !slideChanged(sp({ t: 15 }), at + 5000, sp({ t: 20 }), at + 10000, T), 'and again');
+  // the same slide, a new course
+  assert.ok(slideChanged(a, at, sp({ t: 15, r: 0 }), at + 5000, T), 'paused');
+  assert.ok(slideChanged(sp({ r: 0 }), at, sp({ t: 10, r: 1 }), at + 5000, T), 'resumed');
+  assert.ok(slideChanged(a, at, sp({ t: 15, r: 0.5 }), at + 5000, T), 'a new rate');
+  assert.ok(slideChanged(a, at, sp({ t: 0.3 }), at + 5000, T), 'restarted: a jump');
+  assert.ok(slideChanged(a, at, sp({ t: 70 }), at + 5000, T), 'sought: a jump');
+  assert.ok(slideChanged(sp({ r: 0 }), at, sp({ r: 0, t: 40 }), at + 5000, T), 'a held slide sought');
+  // a new slide that plays starts with everyone's; one held is landed on
+  assert.ok(!slideChanged(a, at, sp({ f: 'b.mp4', t: 1 }), at + 5000, T), 'a new slide playing');
+  assert.ok(!slideChanged(null, NaN, sp({ f: 'b.mp4', t: 1 }), at, T), 'the first sample of one');
+  assert.ok(slideChanged(a, at, sp({ f: 'b.mp4', t: 0, r: 0 }), at + 5000, T), 'a new slide held');
+  // nothing to land, or nothing to hold
+  assert.ok(!slideChanged(a, at, null, at + 5000, T), 'the slide gone');
+  assert.ok(!slideChanged(a, at, sp({ t: 100, r: 0 }), at + 5000, T), 'played to its end');
+  // no shared moment on either side: only a course change counts
+  assert.ok(!slideChanged(a, NaN, sp({ t: 70 }), at, T), 'no clock, no jump');
+  assert.ok(slideChanged(a, NaN, sp({ r: 0 }), at, T), 'no clock, still a pause');
+});
+
+test('ended is the end of a slide that does not loop', () => {
+  assert.ok(slideEnded(sp({ t: 100, r: 0 })));
+  assert.ok(!slideEnded(sp({ t: 99, r: 0 })), 'paused near it');
+  assert.ok(!slideEnded(sp({ t: 100, r: 0, l: true })), 'a loop never ends');
+  assert.ok(!slideEnded(sp({ t: 100, d: NaN })), 'no length');
+  assert.ok(!slideEnded(null));
 });

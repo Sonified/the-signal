@@ -72,7 +72,9 @@ import { onWordAppear, wordState, remoteWord, setWordsRemote,
 import { setRoomClockRoom, setRoomClockOffset } from './room-clock.js';
 import { heartReport, takeHeartBeacon, clearHeartBeacon } from './heart-sync.js';
 import { initLiveAudio, liveAudioCheck, liveFollowNotice, liveFollowChunk, liveFollowEnd } from './live-audio.js';
-import { slidePosition, slideOffset, slideCourseSame, slideSample } from './slide-sync.js';
+import { slidePosition, slideOffset, slideCourseSame, slideSample, slideChanged, slideEnded } from './slide-sync.js';
+import { setGlobalFilterGlideFloor } from './global-filter.js';
+import { camWire, takeCamWire, onCamChange } from './camera.js';
 
 const REC_KEY = 'signal.broadcast.v1';
 // Each session's left-off scene (see "where a stream was left" below), by
@@ -364,7 +366,13 @@ function stateBody(glide) {
   const msg = JSON.stringify({
     t: 'state', run: !!hooks.isRunning(), snap: wireSettings(),
     at: isNaN(clockOff) ? undefined : hooks.now() + clockOff, glide,
-    wk: sentRepeating ? 1 : 0, tw: fillGlides(), ns: nextSlide(), sp: sentSp || undefined
+    wk: sentRepeating ? 1 : 0, tw: fillGlides(), ns: nextSlide(), sp: sentSp || undefined,
+    // Live Video's switch and size, beside the snapshot (core/camera.js)
+    cv: camWire(),
+    // the show remote's duck and screen gate, which no snapshot carries
+    // (see "the show remote's live acts" below)
+    dk: duckUsed ? duckWire : undefined,
+    gt: S.screenGate < 1 ? Math.round(Math.max(0, +S.screenGate || 0) * 1000) / 1000 : undefined
   });
   return msg.slice(0, -1);
 }
@@ -447,6 +455,43 @@ function queueSend() {
 // Nudges the broadcaster to send, for a change save() never sees (the
 // run/stop toggle). A no-op unless a session is live.
 export function broadcastPoke() { if (available) queueSend(); }
+
+// ---------- the show remote's live acts ----------
+// Two of the iPad's moves are live only and saved nowhere, so no snapshot
+// carries them: the Duck (platform/presentation-receiver.js, a multiplier on
+// the slides', the heartbeat's and the hum's gains) and the screen gate
+// (S.screenGate, the room's picture's master brightness). Each rides the
+// state message beside the snapshot instead, so the relay's kept copy hands
+// a late joiner a duck that is down or a gate that is closed: dk, the
+// duck's [multiplier, seconds of its latest move], from the first duck on;
+// gt, the gate, only while it is below full (none reads as full). Their
+// arrival on a follower: see the follow branch in initBroadcast.
+let duckUsed = false;
+const duckWire = [1, 0];
+export function broadcastDuck(mul, sec) {
+  duckWire[0] = Number.isFinite(mul) ? Math.max(0, Math.min(1, mul)) : 1;
+  duckWire[1] = Number.isFinite(sec) && sec >= 0 ? sec : 0;
+  duckUsed = true;
+  if (available) queueSend();
+}
+// A follower's side: the duck it has taken (1 none), moved through
+// hooks.duck (main.js: the same three setters the receiver calls) only when
+// the room's multiplier differs, so the state's every other send leaves a
+// duck already on its way alone. null (none sent, the broadcast over) is 1.
+let followDuck = 1;
+function takeDuck(dk) {
+  const mul = dk && Number.isFinite(dk[0]) ? Math.max(0, Math.min(1, dk[0])) : 1;
+  if (mul === followDuck) return;
+  followDuck = mul;
+  if (hooks.duck) hooks.duck(mul, dk && Number.isFinite(dk[1]) ? dk[1] : undefined);
+}
+// The room gone (ended, or the link given up): nothing of the iPad's live
+// acts outlives it, so no viewer is left ducked, black or holding a slide.
+function releaseLiveActs() {
+  takeDuck(null);
+  S.screenGate = 1;
+  if (hooks.slideFollow) hooks.slideFollow('', true);
+}
 
 // ---------- dozing ----------
 // The relay's room bills by the time it is awake, and every message wakes
@@ -902,11 +947,22 @@ export function followJoin() {
 // together on its short crossfade). A seek reloads the voice, which plays
 // on from where it was put only once it has loaded, so the first landing
 // can come in that load's time behind: once it is playing, a second and
-// last seek goes as far ahead as the first fell behind. Then never again:
-// a viewer who has been watching is never moved (no running correction).
+// last seek goes as far ahead as the first fell behind.
+// After that a viewer is moved again only when the room's slide changes its
+// course: a state whose sample is the same slide paused, played, at a new
+// rate, or jumped (a seek, a Restart) from where the last one's course puts
+// it (core/slide-sync.js slideChanged). The same landing runs once more,
+// from the new sample, so the viewer pauses, resumes, restarts or seeks to
+// where the laptop's slide is, not where the message found it. A state on
+// the same course moves nothing, however far the viewer has drifted: no
+// running correction. Beside every sample the follower's slide plays or is
+// held as the room's is (hooks.slideFollow, gpu/slides.js followSlidePlay:
+// rate 0 is held, unless the slide has simply played to its end), so a
+// pause or hold the laptop keeps live, saved nowhere, holds here too; the
+// rate itself is the snapshot's Speed, played through the same code.
 // Nothing to land, and done at once, when the room shows no slide, or a
-// broadcaster that sends no place; a slide changed meanwhile starts with
-// everyone's and so lands within LAND_TOL_S, no seek needed.
+// broadcaster that sends no place; a new slide that plays starts with
+// everyone's and is not moved.
 // LAND_TOL_S: a seek crossfades over gpu/slides.js SEEK_XF (0.25 s), so no
 // seek can place a picture closer than that; nearer than it, none is made.
 const LAND_TOL_S = 0.25;
@@ -1116,9 +1172,22 @@ export function broadcastSetKey(k) {
   const clean = String(k || '').trim();
   if (clean === key) return;
   key = clean;
-  // a live session keeps its already-authorised socket; the new key is what
-  // the next connect uses
+  rekeyAll();
   persist();
+}
+
+// A new key reaches every connection. Each socket is opened with the key of
+// its moment and keeps retrying with that same key, so a key changed after
+// boot (the presentation's login, the drawer's Key row) left every session
+// switched on before it, and the echo room, knocking with the old key for
+// good: refused, and with the echo refused the phones on
+// meditatewiththesun.com never heard a drawing cue. So every session that is
+// on and holds a socket, the echo included, reconnects with the new key. A
+// dozing one holds none and wakes with the new key on its own (openSession
+// reads `key`).
+function rekeyAll() {
+  for (const s of sessions) if (s.active && s.sock) { closeSession(s, false); openSession(s); }
+  if (echo && echo.active && echo.sock) { closeSession(echo, false); openSession(echo); }
 }
 
 // Adds a named session (inactive). Returns its index, or -1 for an empty name.
@@ -1242,12 +1311,14 @@ export function broadcastGoLive(room, k) {
   ensureLoaded();
   const keyChanged = k !== key;
   key = k;
+  // every connection already open or retrying takes the new key, this
+  // room's own session too if it was on (see rekeyAll)
+  if (keyChanged) rekeyAll();
   let s = sessions.find(x => x.room === room);
   if (!s) { s = makeSession(room === LIVE_ROOM ? 'Livestream' : room, room, false); sessions.push(s); }
   if (asking === s) { asking = null; version++; }
   // its room is this page's room for the words, the swings and the drawing
   liveRoomPref = room;
-  if (s.active && keyChanged && s.sock) closeSession(s, false);
   if (!s.active || !s.sock) {
     // a dozing session wakes on its own at the next touch, with the new key
     if (!(s.active && s.status === 'doze' && !keyChanged)) { s.active = true; openSession(s); }
@@ -1355,7 +1426,10 @@ function parseUnlock(text) {
 // platform clipboard. The slide video's place: slideNow() its sample
 // (gpu/slides.js slidesProgress, the broadcaster's), slideInto(out) the same
 // into a kept object (a follower's, every frame while landing), and
-// seekSlideTo(f, file) its seek.
+// seekSlideTo(f, file) its seek. A follower's: slideFollow(file, play) its
+// slide played or held as the room's (gpu/slides.js followSlidePlay),
+// duck(mul, sec) the show remote's duck, and slideSpeedFloor(ms) the floor
+// under its slide Speed's glide (gpu/slides.js setSlideSpeedGlideFloor).
 export function initBroadcast(bits_, hooks_) {
   bits = bits_;
   hooks = hooks_ || {};
@@ -1375,6 +1449,14 @@ export function initBroadcast(bits_, hooks_) {
     // re-rendered on every sync, a burst cycle that could starve the
     // engine into its concealment loop.
     setFollowerTab(() => true);
+    // The faders that act on the sound outside a snapshot's glide (the
+    // global filters' corners and resonance, the slide's Speed and so its
+    // pitch) arrive here with each state, a send window apart, so each
+    // glides over at least that window's third, as a duck's time constant
+    // is its seconds' third: a sweep on the iPad comes out a curve here,
+    // not a staircase. The levels already glide on the snapshot's window.
+    setGlobalFilterGlideFloor(FOLLOW_MIN_GLIDE_S / 3);
+    if (hooks.slideSpeedFloor) hooks.slideSpeedFloor(FOLLOW_MIN_GLIDE_S / 3 * 1000);
     watchStrobeWrites();
     initLiveAudio(bits.media, hooks.notify, null);
     followSock = bits.open(room, 'follow', '', {
@@ -1410,10 +1492,20 @@ export function initBroadcast(bits_, hooks_) {
           joinSeen = true;
           // the slide video's place at `at`, for landing a late join there
           // (followSlideLand); none from a broadcaster without a slide up,
-          // or from before it was sent
-          lastSp = slideSample(msg.sp);
-          lastSpAt = Number.isFinite(msg.at) ? msg.at : NaN;
+          // or from before it was sent. A change of that slide's course
+          // since the last state lands this viewer again (see landing on
+          // the slide), and its play or hold is taken on here at once.
+          const sp = slideSample(msg.sp), spAt = Number.isFinite(msg.at) ? msg.at : NaN;
+          if (spSeen && slideChanged(lastSp, lastSpAt, sp, spAt, LAND_TOL_S)) landStep = 1;
+          lastSp = sp;
+          lastSpAt = spAt;
           spSeen = true;
+          if (hooks.slideFollow) hooks.slideFollow(sp ? sp.f : '', !sp || sp.r > 0 || slideEnded(sp));
+          // the iPad's duck and screen gate (see the show remote's live
+          // acts): a duck moves when its multiplier does, over its own
+          // seconds; the gate is the room's whenever it is below full
+          takeDuck(Array.isArray(msg.dk) ? msg.dk : null);
+          S.screenGate = Number.isFinite(msg.gt) ? Math.max(0, Math.min(1, msg.gt)) : 1;
           // Then the glides it names, over what the network left of each
           // (see takeGlides); kept, with when they were counted from, for
           // the sync chip. None named means none in flight.
@@ -1430,6 +1522,9 @@ export function initBroadcast(bits_, hooks_) {
           followEv = msg.ev === 1;
           followUn = followEv && Number.isFinite(msg.un) ? msg.un : NaN;
           if (typeof msg.run === 'boolean') takeRun(msg.run);
+          // the presenter's camera panel: shown, hidden and sized as theirs
+          // is, in memory only (core/camera.js); none sent reads as off
+          takeCamWire(msg.cv);
           // The shared walk runs here only while the broadcaster's own
           // scheduler is dealing (wk, see sendNow). A broadcaster from
           // before the walk sends no wk, and its followers keep showing only
@@ -1470,6 +1565,8 @@ export function initBroadcast(bits_, hooks_) {
           liveFollowNotice(msg.on === 1);
         } else if (msg.t === 'end') {
           liveFollowEnd();
+          takeCamWire(null);
+          releaseLiveActs();
           clearStrobeSync();
           clearBreathSync();
           clearHeartBeacon();
@@ -1491,7 +1588,7 @@ export function initBroadcast(bits_, hooks_) {
           setWordsRemote(true);
         }
         else if (st === 'lost') hooks.notify('Broadcast link lost, reconnecting…');
-        else if (st === 'dead') { liveFollowEnd(); clearStrobeSync(); clearBreathSync(); clearHeartBeacon(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
+        else if (st === 'dead') { liveFollowEnd(); releaseLiveActs(); clearStrobeSync(); clearBreathSync(); clearHeartBeacon(); releaseStrobe(); releaseEvent(); setWordsRemote(false); setWordWalk(''); setRoomClockRoom(false); hooks.notify('Broadcast failed: could not reach the relay'); }
       }
     });
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);
@@ -1520,6 +1617,9 @@ export function initBroadcast(bits_, hooks_) {
   }
 
   onSave(localSave);
+  // Live Video's switch and size keep a record of their own and never save
+  // the settings, so a change of either asks for its send here.
+  onCamChange(queueSend);
   // Both glide engines report here (see `tw` at sendNow): a glide starting
   // asks for its message, an engine running dry for the landing send.
   setPerfGlideHooks(queueSend, glideLanded);

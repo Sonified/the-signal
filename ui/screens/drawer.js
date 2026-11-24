@@ -39,8 +39,11 @@ import {
 import { JOURNEY_ACCENT } from './journey.js';
 import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, SPACE } from '../theme.js';
 import { BUILD } from '../../core/version.js';
+import { camInset } from '../../core/camera.js';
 
-const DRAWER_SECTIONS = ['layers', 'slides', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'brush', 'sun', 'sound', 'music', 'audio', 'heartbeat', 'atmosphere', 'live', 'reverb', 'render', 'settings'];
+// Live Video ('camera', core/schema-camera.js) sits after Live Sound and its
+// Reverb, the inputs together, ahead of this machine's Render and Settings.
+const DRAWER_SECTIONS = ['layers', 'slides', 'strobe', 'text', 'edge', 'corners', 'tunnel', 'flowers', 'kaleido', 'particles', 'fireworks', 'confetti', 'brush', 'sun', 'sound', 'music', 'audio', 'heartbeat', 'atmosphere', 'live', 'reverb', 'camera', 'render', 'settings'];
 
 // The control each section's header switch stands for: the layer's own on/off,
 // the same one the section holds as its first row, so the header and the row
@@ -1310,6 +1313,8 @@ export function stepDrawer(ui) {
   slideO = ui.spring('drawer.open', S.panelOpen ? 1 : 0, MOTION.panel);
   slideDx = -(W_DRAWER + BLEED) * (1 - slideO);
   S.edgeInset = Math.max(0, Math.min(W_DRAWER, slideDx + W_DRAWER));
+  // the Live Video panel steps aside as the scene does (one comparison at rest)
+  camInset(S.edgeInset);
 }
 // The pane's right edge this frame, css px (negative while it is tucked
 // away past the screen's left).

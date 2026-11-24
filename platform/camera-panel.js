@@ -1,8 +1,10 @@
-// Live Video's panel: the presenter's camera in the bottom left corner of the
-// screen, on the presenting page and on every page following it, at the size
-// the presenter set (core/camera.js). On a presenting page its inner corner
-// (the top right, pointing into the screen) drags to resize it, and the
-// drawer's Size slider follows; viewers cannot resize it.
+// Live Video's panel: the presenter's camera in the bottom right corner of
+// the screen, stacked above the full-screen button's row as a video player or
+// a call places its picture, on the presenting page and on every page
+// following it, at the size the presenter set (core/camera.js). On a
+// presenting page its inner corner (the top left, pointing into the screen)
+// drags to resize it, and the drawer's Size slider follows; viewers cannot
+// resize it.
 //
 // It is a DOM <video> laid over the canvas, the one standing exception to
 // "no DOM over the canvas" besides the join gate and the login card, and it
@@ -20,11 +22,15 @@
 // below each), and lets every press but its own corner's through to the
 // canvas, so a tap on a viewer's picture reaches the field as it always did.
 //
-// Its layout is ui/camera-fit.js's: anchored bottom left at the chrome's
-// inset, kept clear of the corner controls, stepped right while the drawer
-// is open. The step is one CSS transform that glides over the drawer's own
-// slide, set when the drawer opens or shuts, so the frame loop that slides
-// the drawer writes no style and builds no string here.
+// Its layout is ui/camera-fit.js's: its right edge on the full-screen
+// button's, its bottom a chip gap above the bottom row, kept clear of the top
+// row and of the open drawer. The drawer opens from the left, so it meets
+// the panel only where the screen is narrow (a phone, or the panel at its
+// largest on a small window): there the panel shrinks to stay clear of the
+// drawer's edge, or goes while the drawer fills the screen, and comes back as
+// it shuts. Nothing slides aside. The bound is the drawer's final
+// width, taken when it opens or shuts (not each frame of its slide), so the
+// frame loop that slides the drawer writes no style and builds no string here.
 //
 // Nothing is made until the panel first shows, and while it is hidden the
 // <video> holds no stream, so a switch left off costs nothing.
@@ -33,27 +39,22 @@ import {
   ROLE_PLAIN, ROLE_PRESENT, ROLE_FOLLOW, setCamRole, loadCam, applyCamOn, onCamChange, onCamInset, camInsetNow,
   camShownOn, camShownSize, camResizable, camSetSize
 } from '../core/camera.js';
-import { camFit, camSizeForHand } from '../ui/camera-fit.js';
-import { LAYOUT, HIT, RADIUS, GLASS, MOTION } from '../ui/theme.js';
+import { camFit, camSizeForHand, camRightOf, camBottomOf } from '../ui/camera-fit.js';
+import { LAYOUT, HIT, RADIUS, GLASS } from '../ui/theme.js';
 import { cameraOpen, cameraClose, cameraReopen, onCameraStream, watchCameras } from './camera-input.js';
 import { cameraSend, cameraStopSending, cameraWatch } from './camera-transport.js';
 
-const EDGE = LAYOUT.chromeInset;
-// Over the canvas and the join's still frame (main.js, 500 would cover it
-// while that fades, which is fine); under first light (900), the join gate
-// (1000) and the login card (1100).
+// Over the canvas; under the join's still frame (main.js, 500, which covers
+// it for the moment that fades), first light (900), the join gate (1000) and
+// the login card (1100).
 const Z = 400;
-// How long the step beside the drawer glides: about the drawer's own slide
-// on its panel spring (MOTION.panel, near critical, settled in a quarter
-// second or so).
-const SLIDE_MS = Math.round(1000 * 6 / Math.sqrt(MOTION.panel.stiffness));
 
 let started = false;
 let el = null, video = null, grip = null;
 let source = null;          // the MediaStream to show, or null
 let aspect = 0;             // the picture's width over its height, 0 unknown
 let shown = false;
-let lastW = -1, lastH = -1, lastShift = -1;
+let lastW = -1, lastH = -1, lastRight = -1, lastBottom = -1, lastLeft = 0;
 const rect = { x: 0, y: 0, w: 0, h: 0 };
 
 // The page's one call (main.js, page thread, once the store has loaded):
@@ -116,15 +117,14 @@ function build() {
   if (el) return;
   const style = document.createElement('style');
   style.textContent =
-    '#live-video{position:fixed;left:' + EDGE + 'px;bottom:' + EDGE + 'px;z-index:' + Z + ';display:none;' +
+    '#live-video{position:fixed;z-index:' + Z + ';display:none;' +
     'pointer-events:none;overflow:hidden;background:#000;border-radius:' + RADIUS.md + 'px;' +
-    'box-shadow:0 2px ' + GLASS.shadow + 'px rgba(0,0,0,' + GLASS.shadowAlpha + ');' +
-    'transition:transform ' + SLIDE_MS + 'ms cubic-bezier(.2,.8,.2,1);-webkit-user-select:none;user-select:none}' +
+    'box-shadow:0 2px ' + GLASS.shadow + 'px rgba(0,0,0,' + GLASS.shadowAlpha + ');-webkit-user-select:none;user-select:none}' +
     '#live-video video{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}' +
-    '#live-video .grip{position:absolute;top:0;right:0;pointer-events:auto;touch-action:none;cursor:nesw-resize}' +
-    '#live-video .grip::after{content:"";position:absolute;top:6px;right:6px;width:12px;height:12px;' +
-    'border-top:2px solid rgba(232,237,242,.85);border-right:2px solid rgba(232,237,242,.85);' +
-    'border-top-right-radius:4px;opacity:0;transition:opacity .2s ease}' +
+    '#live-video .grip{position:absolute;top:0;left:0;pointer-events:auto;touch-action:none;cursor:nwse-resize}' +
+    '#live-video .grip::after{content:"";position:absolute;top:6px;left:6px;width:12px;height:12px;' +
+    'border-top:2px solid rgba(232,237,242,.85);border-left:2px solid rgba(232,237,242,.85);' +
+    'border-top-left-radius:4px;opacity:0;transition:opacity .2s ease}' +
     '#live-video .grip:hover::after,#live-video .grip.held::after{opacity:1}' +
     '@media (pointer:coarse){#live-video .grip::after{opacity:.6}}';
   document.head.appendChild(style);
@@ -165,17 +165,21 @@ function update() {
   if (!camShownOn() || !source) { hide(); return; }
   build();
   // The drawer's final open width while it is opening or open, 0 while it
-  // shuts or is shut: the transform glides there over the slide.
-  const shift = S.panelOpen && camInsetNow() > 0 ? LAYOUT.drawerW : 0;
-  if (!camFit(rect, camShownSize(), aspect, window.innerWidth, window.innerHeight, shift)) { hide(); return; }
+  // shuts or is shut: the bound the panel keeps clear of.
+  const vw = window.innerWidth, vh = window.innerHeight;
+  lastLeft = S.panelOpen && camInsetNow() > 0 ? LAYOUT.drawerW : 0;
+  if (!camFit(rect, camShownSize(), aspect, vw, vh, lastLeft)) { hide(); return; }
   if (rect.w !== lastW || rect.h !== lastH) {
     lastW = rect.w; lastH = rect.h;
     el.style.width = rect.w + 'px';
     el.style.height = rect.h + 'px';
   }
-  if (shift !== lastShift) {
-    lastShift = shift;
-    el.style.transform = shift ? 'translateX(' + shift + 'px)' : 'none';
+  // pinned by its right edge and its bottom, so a resize grows it up and left
+  const right = vw - camRightOf(vw), bottom = vh - camBottomOf(vh);
+  if (right !== lastRight || bottom !== lastBottom) {
+    lastRight = right; lastBottom = bottom;
+    el.style.right = right + 'px';
+    el.style.bottom = bottom + 'px';
   }
   if (video.srcObject !== source) {
     video.srcObject = source;
@@ -198,17 +202,14 @@ function wireGrip(g) {
     id = e.pointerId;
     try { g.setPointerCapture(id); } catch (err) {}
     g.classList.add('held');
-    const left = EDGE + (lastShift > 0 ? lastShift : 0);
-    offX = (left + rect.w) - e.clientX;
-    offY = (window.innerHeight - EDGE - rect.h) - e.clientY;
+    // the panel's top left corner, as laid out, against the pointer
+    offX = rect.x - e.clientX;
+    offY = rect.y - e.clientY;
   });
   g.addEventListener('pointermove', e => {
     if (e.pointerId !== id) return;
     e.preventDefault();
-    const shift = lastShift > 0 ? lastShift : 0, vh = window.innerHeight;
-    const handW = e.clientX + offX - (EDGE + shift);
-    const handH = (vh - EDGE) - (e.clientY + offY);
-    camSetSize(camSizeForHand(handW, handH, aspect, window.innerWidth, vh, shift));
+    camSetSize(camSizeForHand(e.clientX + offX, e.clientY + offY, aspect, window.innerWidth, window.innerHeight, lastLeft));
   });
   const end = e => {
     if (e.pointerId !== id) return;

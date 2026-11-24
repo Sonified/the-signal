@@ -174,6 +174,27 @@ export function setDuck(mul, seconds) {
   if (duckHook) duckHook(tc);
 }
 
+// ---------- a follower's slide ----------
+// On a page following a broadcast (core/broadcast.js), the room's slide
+// says whether it plays or is held: followSlidePlay(file, play) makes this
+// page's copy of that file play or hold the same way, over everything else
+// that would say (Play, a live override), with the usual Fade in and Fade
+// out. It holds only that file: a new slide plays as its settings say until
+// the room's word on it arrives. file '' lets go. Never saved.
+let followFile = '', followOn = true;
+export function followSlidePlay(file, play) {
+  const f = typeof file === 'string' ? file : '';
+  const on = play !== false;
+  if (f === followFile && on === followOn) return;
+  followFile = f; followOn = on;
+  idleWake('the room\'s slide');
+}
+// A follower's floor under Speed's glide, ms: its Speed arrives with each
+// state, a quarter second apart, and on SPEED_TC_MS alone the pitch would
+// climb in steps. 0 (every other page) leaves SPEED_TC_MS as it is.
+let speedFloorMs = 0;
+export function setSlideSpeedGlideFloor(ms) { speedFloorMs = ms > 0 ? ms : 0; }
+
 // ---------- the Journey window's play button ----------
 // The SLIDE line's play/pause (ui/screens/journey.js) pauses or resumes the
 // slide on screen WITHOUT touching S.slidePlay: it sets a live override here
@@ -707,7 +728,7 @@ export function createSlides(device, format) {
       if (wantPlay !== playWas) { liveOverride = null; walkHeld = false; }
       // Play switched back on over a finished video starts it again.
       if (wantPlay && !playWas && cur.el.ended) { try { cur.el.currentTime = 0; } catch (e) {} }
-      const playOn = liveOverride !== null ? liveOverride : wantPlay;
+      const playOn = followFile && cur.file === followFile ? followOn : liveOverride !== null ? liveOverride : wantPlay;
       // the run factor glides toward 1 or 0; a first frame, a doze or a
       // finished video takes its target at once
       const target = playOn && !cur.el.ended ? 1 : 0;
@@ -732,7 +753,7 @@ export function createSlides(device, format) {
       // arrivals. A paused player's first wake counts one frame rather than
       // its entire idle interval; subsequent frames use elapsed time.
       const speedDt = cur.speedMoving || !cur.el.paused ? dtMs : Math.min(dtMs, 1000 / 60);
-      cur.speed += (targetRate - cur.speed) * -Math.expm1(-speedDt / SPEED_TC_MS);
+      cur.speed += (targetRate - cur.speed) * -Math.expm1(-speedDt / (speedFloorMs > SPEED_TC_MS ? speedFloorMs : SPEED_TC_MS));
       cur.speedMoving = Math.abs(targetRate - cur.speed) > .0001;
       // Exponential decay needs a finite landing so exact zero can still
       // reach the existing silent stop below the element's rate floor.
@@ -798,7 +819,7 @@ export function createSlides(device, format) {
       if (!(S.layers && S.layers.slides) || !slots.length) return 0;
       const cur = slots[act];
       if (!hasFile(cur)) return 0;
-      const playOn = liveOverride !== null ? liveOverride : S.slidePlay !== false;
+      const playOn = followFile && cur.file === followFile ? followOn : liveOverride !== null ? liveOverride : S.slidePlay !== false;
       return playOn && !cur.el.ended ? 1 : 2;
     },
     toggle() {
@@ -831,8 +852,10 @@ export function createSlides(device, format) {
       const el = slots[act].el;
       const d = el.duration;
       if (!(d > 0 && isFinite(d))) {
-        // a seek's voice still learning its length: where it is going
-        return seekTo && seekTo.file === slots[act].file ? { t: seekTo.at, d: seekTo.d, r: 0, f: slots[act].file, l: el.loop } : null;
+        // a seek's voice still learning its length: where it is going, at
+        // the rate it is going there (a playing slide's seek is not a pause:
+        // a broadcast's followers hold their slide on a rate of 0)
+        return seekTo && seekTo.file === slots[act].file ? { t: seekTo.at, d: seekTo.d, r: st === 1 ? el.playbackRate : 0, f: slots[act].file, l: el.loop } : null;
       }
       return { t: Math.max(0, Math.min(d, el.currentTime || 0)), d, r: st === 1 && !el.paused ? el.playbackRate : 0,
         f: slots[act].file, l: el.loop };

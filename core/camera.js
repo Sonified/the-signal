@@ -162,9 +162,9 @@ export const camShownOn = () => role === ROLE_FOLLOW ? followOn : !!S.camOn;
 export const camShownSize = () => role === ROLE_FOLLOW ? followSize : camSizeClamp(S.camSize);
 
 // The drawer's open width (ui/screens/drawer.js stepDrawer, S.edgeInset),
-// handed on to the panel only when it moves, so the panel steps aside from
-// the drawer as the scene does. Called every frame the drawer steps: one
-// comparison while it rests.
+// handed on to the panel only when it moves, so the panel keeps clear of the
+// drawer's edge where a narrow screen lets the two meet. Called every frame
+// the drawer steps: one comparison while it rests.
 let inset = 0, insetFn = null;
 export function camInset(px) {
   if (px === inset) return;

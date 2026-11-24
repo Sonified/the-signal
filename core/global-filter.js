@@ -60,9 +60,16 @@ export const globalHighpassHz = () => bypassed() ? GF_HZ_LO : clampHz(S.hpfHz, G
 const clampRes = v => typeof v === 'number' && v === v ? Math.max(0, Math.min(GF_RES_MAX, v)) : 0;
 export const globalLowpassRes = () => bypassed() ? 0 : clampRes(S.lpfRes);
 export const globalHighpassRes = () => bypassed() ? 0 : clampRes(S.hpfRes);
+// A page following a broadcast (core/broadcast.js) takes the corners with
+// each state, a quarter second apart, so it glides no faster than its floor
+// (seconds), or the iPad's sweep would come out a staircase there. 0, every
+// other page's, leaves Filter interpolation exactly as it is.
+let glideFloor = 0;
+export function setGlobalFilterGlideFloor(sec) { glideFloor = sec > 0 ? sec : 0; }
 const glideSec = () => {
   const ms = S.filterGlideMs;
-  return typeof ms === 'number' && ms === ms ? Math.max(0, Math.min(GF_GLIDE_MAX, ms)) / 1000 : 0.025;
+  const own = typeof ms === 'number' && ms === ms ? Math.max(0, Math.min(GF_GLIDE_MAX, ms)) / 1000 : 0.025;
+  return own > glideFloor ? own : glideFloor;
 };
 // A peak of res dB at the corner, as the Q in dB Web Audio takes (0 dB of
 // peak is -3.01 dB, Butterworth)

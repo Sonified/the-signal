@@ -97,7 +97,10 @@
 //                                                brightness, 0 black; NOT a
 //                                                schema control, it sets
 //                                                S.screenGate directly, live
-//                                                only, gpu/engine.js drawGate)
+//                                                only, gpu/engine.js drawGate;
+//                                                a broadcast's followers take
+//                                                it beside the snapshot,
+//                                                core/broadcast.js gt)
 //                         finaleDrone, 0..100   (the finale row's faders,
 //                         finalePiano,           see FINALE below: each lays
 //                         finaleChoir,           its 0..100% linearly onto
@@ -131,7 +134,8 @@
 //                       setHumDuck, the same multiplier): on, the slides',
 //                       the heartbeat's and the hum's gains fall to
 //                       (1 - amt) over dn seconds; off, back to full over
-//                       up seconds
+//                       up seconds; a broadcast's followers duck the same
+//                       (core/broadcast.js broadcastDuck, dk)
 // The journey moves regardless of the Journey window or ACTIVE (a remote is
 // opted into by its URL, so nothing else gates it).
 //
@@ -166,7 +170,7 @@ import { S } from '../js/state.js';
 import { byId } from '../core/schema.js';
 import { journeyJumpTo, journeyStepBy, journeyCount, journeyPlayIdx, journeyPlaying, journeyPerformanceControl, journeySetLiveAudio } from '../core/journey.js';
 import { idleWake } from '../core/idle.js';
-import { broadcastSeek, broadcastDrawing, broadcastDrawingOn } from '../core/broadcast.js';
+import { broadcastSeek, broadcastDrawing, broadcastDrawingOn, broadcastPoke, broadcastDuck } from '../core/broadcast.js';
 import { idleTouch } from '../js/idle-ahead.js';
 import { setDuck, slidesLiveState, toggleSlidePlayLive, slidesProgress, seekSlide } from '../gpu/slides.js';
 import { setHeartDuck } from '../core/heartbeat.js';
@@ -385,6 +389,9 @@ export function initPresentationReceiver(hooks = {}) {
         // not a schema control: live only, never saved (js/state.js)
         const v = +m.v;
         if (isFinite(v)) S.screenGate = Math.max(0, Math.min(1, v / 100));
+        // and so saves nothing to send it: the broadcast is asked, and its
+        // state carries the gate beside the snapshot (core/broadcast.js gt)
+        broadcastPoke();
         return;
       }
       if (FINALE[m.id]) {
@@ -403,7 +410,13 @@ export function initPresentationReceiver(hooks = {}) {
       if (!CTL_IDS.has(m.id)) return;
       const c = byId(m.id);
       if (!c) return;
-      if (c.kind === 'action') journeyPerformanceControl(c.id, () => { if (c.act) c.act(S); else c.set(S, 1); });
+      if (c.kind === 'action') {
+        journeyPerformanceControl(c.id, () => { if (c.act) c.act(S); else c.set(S, 1); });
+        // Restart saves nothing: the broadcast is asked, so its followers
+        // are moved to the new place in a quarter second, not at the next
+        // beacon's look (core/broadcast.js slideWatch)
+        broadcastPoke();
+      }
       else if (m.id === 'slidePlay') {
         // PLAY / PAUSE mean exactly that: Play on S, and a live hold on the
         // slide on screen (gpu/slides.js: 1 playing, 2 paused or ended)
@@ -454,6 +467,8 @@ export function initPresentationReceiver(hooks = {}) {
       setDuck(mul, dur);
       setHeartDuck(mul, dur);
       setHumDuck(mul, dur);
+      // the broadcast's followers duck with it (core/broadcast.js dk)
+      broadcastDuck(mul, dur);
     }
   }
   for (const b of bases) all.push(socket(b.base, b.name, CMD_ROOM, 'follow', take, null));
