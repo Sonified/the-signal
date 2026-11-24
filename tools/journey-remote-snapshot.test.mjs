@@ -56,7 +56,9 @@ const ctx = vm.createContext({ URLSearchParams, WebSocket: Socket, document: {},
 const source = fs.readFileSync(root + '/platform/presentation-receiver.js', 'utf8');
 const imports = new Map([...source.matchAll(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g)].map(m => [m[2], m[1].split(',').map(x => x.trim())]));
 const values = { S, byId, ...J, idleWake: noop, slidesLiveState: () => 0, slidesProgress: () => null,
-  ampToPos: (await import(root + '/js/util.js')).ampToPos };
+  ampToPos: (await import(root + '/js/util.js')).ampToPos,
+  // the receiver reads its flag and room through the page's login module
+  presentationRoom: (await import(root + '/platform/presentation-login.js')).presentationRoom };
 const remote = new vm.SourceTextModule(source, { context: ctx });
 await remote.link(spec => new vm.SyntheticModule(imports.get(spec), function () {
   for (const name of imports.get(spec)) this.setExport(name, name in values ? values[name] : noop);

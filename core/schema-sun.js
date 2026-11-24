@@ -48,7 +48,7 @@ const DEF_STARS = true;
 const DEF_QR_ON = false;
 // Which code it shows (gpu/sun-qr.js): meditatewiththesun.com's, or the one
 // that brings a phone into this show as a follower (presence.now.audio
-// ?follow=win). Both sit in the same place; a change crossfades. The field
+// ?follow=livestream). Both sit in the same place; a change crossfades. The field
 // is the sun's (it rides with the sun state); its row is the Slides
 // section's (schema-slides.js), beside the show's other picks.
 const QR_WHICH = ['mwts', 'follow'];

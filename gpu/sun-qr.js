@@ -2,7 +2,7 @@
 // sunQrSize): one of two QR PNGs drawn over the whole frame while the switch
 // is on, the code to meditatewiththesun.com/?event=live (which follows any
 // show this screen broadcasts: core/broadcast.js syncEcho) or the one that
-// brings a phone into the show as a follower (presence.now.audio/?follow=win), the
+// brings a phone into the show as a follower (presence.now.audio/?follow=livestream), the
 // pair made alike by tools/make-qr-overlay.py so either sits in one place.
 //
 // FADE: the switch never pops. Its drawn opacity eases (smoothstep) from

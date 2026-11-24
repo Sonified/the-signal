@@ -1,6 +1,10 @@
 // Presentation mode's gate and its TSC 2026 Journey install
-// (core/presentation.js): the password, the unlock kept on the device, the
-// install once per export revision, the slides checked against the manifest.
+// (core/presentation.js): the gate asks the relay through the login hook and
+// holds no password of its own, a browser holding the show's login is
+// unlocked, the install runs once per export revision, the slides are
+// checked against the manifest. Also the livestream room a presentation
+// page broadcasts to (core/broadcast.js livestreamRoomFor). The password
+// used here is a made-up stand-in; the real one is the relay's alone.
 //
 //   node --test tools/presentation-gate.test.mjs
 
@@ -23,10 +27,13 @@ globalThis.location ??= { search: '', hostname: 'localhost', href: 'http://local
 for (const k of ['AudioContext', 'Worker', 'BroadcastChannel', 'ResizeObserver', 'Image', 'Audio', 'OffscreenCanvas', 'MessageChannel', 'AudioWorkletNode', 'GainNode', 'OscillatorNode', 'MediaStream', 'IntersectionObserver', 'MutationObserver', 'PointerEvent', 'KeyboardEvent', 'CustomEvent', 'FontFace', 'screen', 'visualViewport']) globalThis[k] ??= any;
 await import('../core/schema.js');
 const { initStore } = await import('../core/store.js');
+const presentation = await import('../core/presentation.js');
 const {
-  presentPasswordOk, presentUnlocked, presentUnlock, presentInstall, presentRevision,
-  presentJourneyProblem, setPresentFetch, JOURNEY_TITLE, PRESENT_PASSWORD
-} = await import('../core/presentation.js');
+  presentUnlocked, presentTry, presentAsk, setPresentAuth, presentInstall, presentRevision,
+  presentJourneyProblem, setPresentFetch, JOURNEY_TITLE, PRESENT_WRONG, PRESENT_DOWN
+} = presentation;
+const { livestreamRoomFor, LIVE_ROOM } = await import('../core/broadcast.js');
+const { LIVESTREAM_ROOM } = await import('../platform/broadcast-socket.js');
 
 const mem = new Map();
 initStore({ get: k => (mem.has(k) ? mem.get(k) : null), set: (k, v) => mem.set(k, v) });
@@ -34,18 +41,74 @@ initStore({ get: k => (mem.has(k) ? mem.get(k) : null), set: (k, v) => mem.set(k
 const journeyText = fs.readFileSync(new URL('../documents/tsc-2026-journey.json', import.meta.url), 'utf8');
 const manifestText = fs.readFileSync(new URL('../documents/tsc-2026-media-manifest.json', import.meta.url), 'utf8');
 
-test('the password: solarmax, forgiving of case and spaces, nothing else', () => {
-  assert.equal(PRESENT_PASSWORD, 'solarmax');
-  for (const ok of ['solarmax', ' SolarMax ', 'SOLARMAX']) assert.ok(presentPasswordOk(ok), ok);
-  for (const bad of ['', 'solar max', 'solarmax1', 'presence', null, undefined, 5]) assert.ok(!presentPasswordOk(bad), String(bad));
+const FAKE = 'not-the-real-password';
+
+test('the gate holds no password of its own', () => {
+  for (const k of ['PRESENT_PASSWORD', 'presentPasswordOk', 'presentUnlock']) assert.equal(presentation[k], undefined, k);
+  for (const f of ['../core/presentation.js', '../platform/presentation-receiver.js', '../core/schema-visual.js']) {
+    assert.doesNotMatch(fs.readFileSync(new URL(f, import.meta.url), 'utf8'), /PRESENT_PASSWORD|presentPasswordOk/, f);
+  }
 });
 
-test('the unlock is kept on the device', async () => {
+test('no hook: nothing is logged in, and a try reads as no relay answering', async () => {
   assert.equal(presentUnlocked(), false);
-  presentUnlock();
-  assert.equal(presentUnlocked(), true, 'at once, in this tab');
-  await new Promise(r => setTimeout(r, 120));
-  assert.equal(mem.get('signal.v1.presentUnlock'), '"1"', 'and written to storage');
+  assert.equal(await presentTry(FAKE), 'down');
+  assert.equal(presentAsk.msg, PRESENT_DOWN);
+  assert.equal(presentUnlocked(), false);
+});
+
+test('a browser holding the show\'s login is unlocked with no question', () => {
+  let held = '';
+  setPresentAuth({ loggedIn: () => !!held, login: async () => 'no' });
+  assert.equal(presentUnlocked(), false);
+  held = FAKE;
+  assert.equal(presentUnlocked(), true);
+  setPresentAuth(null);
+  assert.equal(presentUnlocked(), false);
+});
+
+test('a typed password goes to the relay: no, down, then ok', async () => {
+  const sent = [];
+  let answer = 'no';
+  setPresentAuth({ loggedIn: () => false, login: async pw => { sent.push(pw); return answer; } });
+  assert.equal(await presentTry('wrong'), 'no');
+  assert.equal(presentAsk.msg, PRESENT_WRONG);
+  assert.ok(presentAsk.msgUntil > Date.now());
+  assert.equal(presentUnlocked(), false);
+  answer = 'down';
+  assert.equal(await presentTry(FAKE), 'down');
+  assert.equal(presentAsk.msg, PRESENT_DOWN);
+  // an empty one never reaches the relay
+  assert.equal(await presentTry('   '), 'no');
+  assert.deepEqual(sent, ['wrong', FAKE], 'sent exactly as typed');
+  // a hook that throws or rejects is no relay answering
+  setPresentAuth({ loggedIn: () => false, login: () => { throw new Error('x'); } });
+  assert.equal(await presentTry(FAKE), 'down');
+  setPresentAuth({ loggedIn: () => false, login: () => Promise.reject(new Error('x')) });
+  assert.equal(await presentTry(FAKE), 'down');
+  setPresentAuth({ loggedIn: () => false, login: async () => 'ok' });
+  assert.equal(await presentTry(FAKE), 'ok');
+  assert.equal(presentAsk.checking, false);
+  setPresentAuth(null);
+  assert.equal(presentUnlocked(), true, 'unlocked in this tab from then on');
+});
+
+test('the livestream room: the show streams to livestream, a rehearsal to its own', () => {
+  assert.equal(LIVE_ROOM, LIVESTREAM_ROOM, 'the broadcaster\'s room is the viewers\' default');
+  assert.equal(livestreamRoomFor('show'), 'livestream');
+  assert.equal(livestreamRoomFor(''), 'livestream');
+  assert.equal(livestreamRoomFor(undefined), 'livestream');
+  assert.equal(livestreamRoomFor('rehearsal'), 'livestream-rehearsal');
+  assert.equal(livestreamRoomFor('Rehearsal'), 'livestream-rehearsal');
+  assert.equal(livestreamRoomFor('a--b'), 'livestream-a-b');
+  // ROOM_MAX (24), no dash left hanging at the cut
+  assert.equal(livestreamRoomFor('a-very-long-rehearsal-room-name'), 'livestream-a-very-long-r');
+  assert.equal(livestreamRoomFor('abcdefghijkl-xyz'), 'livestream-abcdefghijkl');
+  for (const r of ['x', 'rehearsal', 'a-very-long-rehearsal-room-name', 'tsc-2026', 'Ünïcode room']) {
+    const out = livestreamRoomFor(r);
+    assert.match(out, /^livestream-[a-z0-9]+(-[a-z0-9]+)*$/, r);
+    assert.ok(out.length <= 24, r);
+  }
 });
 
 test('the revision is the standalone site\'s, from the same bytes', async () => {

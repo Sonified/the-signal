@@ -203,10 +203,13 @@ function drawStrobeScale(ui, x, y, frost) {
 
 // transport, top right, as v0 laid it out: play/pause, then the speaker,
 // then the volume track at the far right; the strobe dial left of them, or
-// under them where the row has no room
+// under them where the row has no room. The livestream screen (main.js
+// app.livestream) keeps the speaker and the track alone, where they always
+// sit: no play/pause, no dial, no sync chip.
 function drawTopRight(ui, app, width, frost) {
   const ts = TS, ty = EDGE;
   const trackX = width - EDGE - VOL_W, spkX = trackX - VOL_GAP - SPK;
+  if (app.livestream) { drawVolume(ui, spkX, trackX, ty + ts / 2); return; }
   const playX = spkX - 14 - ts;
   if (glassIcon(ui, 'chrome.play', S.running ? ICON.PAUSE : ICON.PLAY, playX, ty, ts, true, frost)) app.toggleRun();
   drawVolume(ui, spkX, trackX, ty + ts / 2);
@@ -249,7 +252,9 @@ export function drawChrome(ui, app, alpha, frost) {
   // sync chip) fades away while the drawer is open on a screen too narrow to
   // hold the transport beside it (a phone), and takes no presses meanwhile:
   // there it could only sit over the drawer's own rows.
-  const crowded = S.panelOpen && width - LAYOUT.drawerW < TOP_RIGHT_W + EDGE;
+  // (never on the livestream screen, which has no drawer, whatever the
+  // saved S.panelOpen says)
+  const crowded = !app.livestream && S.panelOpen && width - LAYOUT.drawerW < TOP_RIGHT_W + EDGE;
   const topA = ui.spring('chrome.topRight', crowded ? 0 : 1, MOTION.fade);
   if (topA > 0.01) {
     if (crowded) ui.pushInert();
@@ -260,11 +265,13 @@ export function drawChrome(ui, app, alpha, frost) {
   }
 
   // quick bar, bottom right, read right to left; none on a follower's
-  // screen while the Brush section hides it (main.js app.quickHidden)
-  if (app.quickHidden && app.quickHidden()) { dl.popAlpha(); return; }
+  // screen while the Brush section hides it (main.js app.quickHidden). The
+  // livestream screen keeps the full-screen button in its corner and no chip.
+  if (!app.livestream && app.quickHidden && app.quickHidden()) { dl.popAlpha(); return; }
   const y = height - EDGE - CHIP_H;
   let x = width - EDGE - CHIP_H;
   if (glassIcon(ui, 'chrome.fs', app.fullscreenActive() ? ICON.CONTRACT : ICON.EXPAND, x, y, CHIP_H, false, frost)) app.toggleFullscreen();
+  if (app.livestream) { dl.popAlpha(); return; }
   // Measure every chip, then leave out the least needed ones until the rest
   // fit between the full-screen button and the drawer's edge, so a narrow
   // window loses a lesser chip rather than the one that opens the mixer.

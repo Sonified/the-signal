@@ -22,6 +22,7 @@
 <link rel="modulepreload" href="core/brush-order.js">
 <link rel="modulepreload" href="core/brush-playback.js">
 <link rel="modulepreload" href="core/brush-replay.js">
+<link rel="modulepreload" href="core/brush-smooth.js">
 <link rel="modulepreload" href="core/brush-stamps.js">
 <link rel="modulepreload" href="core/brush.js">
 <link rel="modulepreload" href="core/chores.js">
@@ -59,11 +60,13 @@
 <link rel="modulepreload" href="core/schema-visual.js">
 <link rel="modulepreload" href="core/schema.js">
 <link rel="modulepreload" href="core/signal.js">
+<link rel="modulepreload" href="core/slide-sync.js">
 <link rel="modulepreload" href="core/store.js">
 <link rel="modulepreload" href="core/strobe.js">
 <link rel="modulepreload" href="core/sun-hum-vary.js">
 <link rel="modulepreload" href="core/sun-hum.js">
 <link rel="modulepreload" href="core/tap-drag.js">
+<link rel="modulepreload" href="core/tune.js">
 <link rel="modulepreload" href="core/variance-owners.js">
 <link rel="modulepreload" href="core/variance.js">
 <link rel="modulepreload" href="core/version.js">
@@ -151,6 +154,7 @@
 <link rel="modulepreload" href="platform/host.js">
 <link rel="modulepreload" href="platform/input-queue.js">
 <link rel="modulepreload" href="platform/live-media.js">
+<link rel="modulepreload" href="platform/presentation-login.js">
 <link rel="modulepreload" href="platform/presentation-receiver.js">
 <link rel="modulepreload" href="platform/profile-web.js">
 <link rel="modulepreload" href="platform/show-tape.js">
@@ -283,7 +287,12 @@
     // same gesture that reveals the session also wakes the audio, so there
     // is no separate audio toll booth and nothing plays before the tap.
     const gate = document.getElementById('follow-audio-gate');
-    const q = new URLSearchParams(location.search), follow = q.get('follow');
+    // The room followed: ?follow=, else ?livestream's (room "livestream"
+    // unless it names one). A copy of followIntent in
+    // platform/broadcast-socket.js, since this script is not a module; a
+    // change there is a change here.
+    const q = new URLSearchParams(location.search);
+    const follow = q.get('follow') || (q.has('livestream') ? q.get('livestream') || 'livestream' : '');
     // a drawing layer (?draw, inside meditatewiththesun.com) was joined by
     // the tap on the page around it, so it shows no gate (main.js drawOnly)
     if (follow && !q.has('draw')) gate.classList.add('show');

@@ -200,6 +200,11 @@ export function replayEndedSlide() { return liveHook ? liveHook.replay() : false
 // screen stands, {t, d, r, f, l} (seconds in, its length, the rate it is
 // advancing at, 0 paused or ended), or null with no video of known length.
 export function slidesProgress() { return liveHook ? liveHook.progress() : null; }
+// The same, read into a kept object rather than a new one (a follower
+// landing a late join, core/broadcast.js followSlideLand, asks every frame):
+// false where slidesProgress gives null. out.ready: the voice is showing its
+// picture and playing on from where it stands (not loading, not seeking).
+export function slidesProgressInto(out) { return liveHook ? liveHook.progressInto(out) : false; }
 // and its seek: a tap on the playing cue puts the video at that share of
 // its length, f 0..1, playing or held as it was
 export function seekSlide(f) { if (liveHook) liveHook.seek(f); }
@@ -831,6 +836,21 @@ export function createSlides(device, format) {
       }
       return { t: Math.max(0, Math.min(d, el.currentTime || 0)), d, r: st === 1 && !el.paused ? el.playbackRate : 0,
         f: slots[act].file, l: el.loop };
+    },
+    progressInto(out) {
+      const st = liveHook.state();
+      if (!st) return false;
+      const cur = slots[act], el = cur.el, d = el.duration;
+      if (!(d > 0 && isFinite(d))) {
+        if (!(seekTo && seekTo.file === cur.file)) return false;
+        out.t = seekTo.at; out.d = seekTo.d; out.r = 0;
+      } else {
+        out.t = Math.max(0, Math.min(d, el.currentTime || 0)); out.d = d;
+        out.r = st === 1 && !el.paused ? el.playbackRate : 0;
+      }
+      out.f = cur.file; out.l = el.loop;
+      out.ready = d > 0 && isFinite(d) && hasPicture(cur) && !el.seeking && !fade.pending;
+      return true;
     },
     seek(f) {
       if (!liveHook.state() || !isFinite(f)) return;

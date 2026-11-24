@@ -11,11 +11,13 @@
 // 'mirror-<room>'; this page follows it. Every command is a 'word' numbered
 // by its sender (src, n), so whichever path delivers a copy first acts and
 // the other copy is dropped. Mirror rooms need the password for both roles:
-// it is read from localStorage 'mirror.pw' (the same key remote.html and
-// controller.html keep), seeded once by opening the page with ?presentation&pw=<password>
-// (pw, not key: a bare ?key= is the demo broadcast's own passphrase seed,
-// platform/broadcast-socket.js, and would overwrite it). The pw parameter is
-// wiped from the address bar once stored.
+// the page's one login (platform/presentation-login.js) asks for it, checks
+// it with the relays and keeps it as localStorage 'mirror.pw' (the same key
+// remote.html and controller.html keep) before main.js starts this receiver
+// with it. ?presentation&pw=<password> still seeds it (pw, not key: a bare
+// ?key= is the demo broadcast's own passphrase seed,
+// platform/broadcast-socket.js, and would overwrite it); the login wipes it
+// from the address bar once stored.
 //
 // App health uses transient {t:'word', k:'health', src, probe} requests on
 // each route, answered at once on that route's status socket with
@@ -171,7 +173,7 @@ import { setHeartDuck } from '../core/heartbeat.js';
 import { setHumDuck } from '../core/sun-hum.js';
 import { brushShowPhase, brushConducting, brushPhase, brushRound, brushGroups, brushDealHold, brushReplay, brushReplaying } from '../core/brush.js';
 import { createShowTape } from './show-tape.js';
-import { PRESENT_PASSWORD } from '../core/presentation.js';
+import { presentationRoom } from './presentation-login.js';
 import { ampToPos } from '../js/util.js';
 
 const CLOUD = 'the-signal-broadcast.robertalexander-music.workers.dev';
@@ -249,38 +251,29 @@ export function initPresentationReceiver(hooks = {}) {
   const P = new URLSearchParams(location.search);
   // ?presentation makes this tab the controller's receiving end; ?remote,
   // the flag's first name, still opens the door for old links and docs.
-  const FLAG = P.has('presentation') ? 'presentation' : P.has('remote') ? 'remote' : '';
-  if (!FLAG) return;
+  // The flag and the room are read where the page's login reads them
+  // (platform/presentation-login.js presentationRoom).
+  const pr = presentationRoom(location.search);
+  if (!pr) return;
   document.title = '🌞 TSC 2026';
   // The hands wait in the wings: a presentation screen holds the brush deal
   // (its own hand and the room's) until the first drawing cue lifts it
   // (core/brush.js brushShowPhase), so nothing of the brushes shows before
   // cue 17, however Show brushes was left.
   brushDealHold(true);
-  let room = (P.get(FLAG) || 'show').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^mirror-/, '') || 'show';
-  room = room.slice(0, 40);
+  const room = pr.room;
   const CMD_ROOM = 'mirror-' + room, STATUS_ROOM = 'mirror-' + room + '-status';
   const relay = P.get('relay') || CLOUD;
   const local = P.get('relaylocal') || 'localhost:8800';
 
-  let KEY = '';
-  try { KEY = localStorage.getItem('mirror.pw') || ''; } catch (e) {}
-  const pw = P.get('pw');
-  if (pw) {
-    KEY = pw;
-    try { localStorage.setItem('mirror.pw', pw); } catch (e) {}
-    P.delete('pw');
-    const qs = P.toString().replace(new RegExp('(^|&)' + FLAG + '=(?=&|$)'), '$1' + FLAG);
-    try { history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash); } catch (e) {}
-  }
-  // No URL password needed: the presentation's own password (the drawer's
-  // gate, core/presentation.js) is the relay's too, so the receiver carries
-  // it itself. ?pw= stays as an override should the relay's ever differ.
-  if (!KEY) KEY = PRESENT_PASSWORD;
-  // A one-off check, for a clear console line; the sockets retry regardless.
-  fetch('https://' + relay + '/auth', { method: 'POST', body: KEY }).then(r => {
-    if (r.status === 403) console.warn('[presentation-receiver] the relay refused the password; reopen with ?presentation&pw=<password>');
-  }, () => {});
+  // The password is the page's login (platform/presentation-login.js), which
+  // main.js waits for before calling this, and hands in as hooks.key; the
+  // login has already checked it with the relays and wiped any ?pw= from the
+  // address bar. Without one, the browser's stored login is the only other
+  // source: there is no fallback in the code.
+  let KEY = hooks.key || '';
+  if (!KEY) { try { KEY = localStorage.getItem('mirror.pw') || ''; } catch (e) {} }
+  if (!KEY) console.warn('[presentation-receiver] no login; the relays will refuse every socket');
   console.log('[presentation-receiver] following ' + CMD_ROOM + ', status to ' + STATUS_ROOM + ' (cloud + local ' + local + ')');
 
   const bases = [{ name: 'cloud', base: 'wss://' + relay }, { name: 'local', base: 'ws://' + local }];

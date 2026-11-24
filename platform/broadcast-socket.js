@@ -9,6 +9,9 @@
 // URL still takes part on the follower's side, and seeds the broadcaster's:
 //
 //   ?follow=<room>                       this tab follows the room's settings
+//   ?livestream[=<room>]                 the same, room "livestream" unless
+//                                        named, on the stripped viewer screen
+//                                        (followIntent below, main.js)
 //   ?broadcast=<room>&key=<passphrase>   seeds a session named <room> and the
 //                                        stored key, then broadcasts to it
 //   &relay=<host>                        use this relay instead of RELAY_HOST
@@ -118,14 +121,33 @@ export function openBroadcastSocket(room, role, key, handlers) {
   };
 }
 
+// The room a page follows, and whether it is the livestream screen, from a
+// search string ('?follow=x&...'), with no other reads: the one place the
+// URL's follow is worked out, so ?livestream can never drift from ?follow.
+// main.js and broadcastUrlIntent below both ask it; index.html's inline join
+// gate script, which is not a module, carries a two-line copy.
+//   ?follow=<room>        follow is that room
+//   ?livestream           the livestream screen, following room "livestream"
+//   ?livestream=<room>    the livestream screen, following <room>
+// An explicit ?follow= wins the room over ?livestream; livestream is true
+// whenever the flag is there at all. follow is '' when nothing is followed.
+// The room is taken as it is written, exactly as ?follow= takes it.
+export const LIVESTREAM_ROOM = 'livestream';
+export function followIntent(search) {
+  const q = new URLSearchParams(search || '');
+  const livestream = q.has('livestream');
+  const follow = q.get('follow') || (livestream ? q.get('livestream') || LIVESTREAM_ROOM : '');
+  return { follow, livestream };
+}
+
 // What the page's URL asks of the broadcast, read once at boot:
-//   { follow: room }                the tab is a follower
+//   { follow: room }                the tab is a follower (?follow= or ?livestream)
 //   { seed: room, key: passphrase } seed a broadcaster session (legacy form)
 //   { key: passphrase }             just a key to store
 //   null                            the normal page load
 export function broadcastUrlIntent() {
   const q = new URLSearchParams(location.search);
-  const follow = q.get('follow');
+  const follow = followIntent(location.search).follow;
   if (follow) return { follow };
   const seed = q.get('broadcast'), key = q.get('key');
   if (seed) return { seed, key };

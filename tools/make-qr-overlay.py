@@ -13,7 +13,7 @@
 # x-height 28 against 27): Avenir Next Demi Bold at 56.5 px.
 #
 #   python3 -I tools/make-qr-overlay.py <url> <label> <out.png>
-#   python3 -I tools/make-qr-overlay.py https://presence.now.audio/?follow=win \
+#   python3 -I tools/make-qr-overlay.py https://presence.now.audio/?follow=livestream \
 #       presence.now.audio slides/qr_overlay_follow@2x.png
 #   python3 -I tools/make-qr-overlay.py --check   the original's label, redrawn
 #       beside the original's own (scratch file printed), to see the match

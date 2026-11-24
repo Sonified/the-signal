@@ -69,9 +69,13 @@ function write(key, value) {
   try { localStorage.setItem(key, value); } catch {}
 }
 
-export async function startWorkerShell(canvas) {
+// pageOnly: this page's work lives on the page thread alone (main.js
+// pageThreadOnly: ?presentation, ?livestream, ?follow=), so the engine stays
+// there for this load whatever is saved. The saved choice is left as it is,
+// and the Render row reads 'unavailable' here, which on this page it is.
+export async function startWorkerShell(canvas, pageOnly = false) {
   const wanted = read(ENGINE_THREAD_KEY) === '1' ? 'worker' : 'main';
-  const capable = typeof Worker === 'function' && typeof OffscreenCanvas === 'function' &&
+  const capable = !pageOnly && typeof Worker === 'function' && typeof OffscreenCanvas === 'function' &&
     !!canvas && typeof canvas.transferControlToOffscreen === 'function';
   initEngineThread('main', wanted, capable, v => write(ENGINE_THREAD_KEY, v));
   if (wanted !== 'worker' || !capable) return false;

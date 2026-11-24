@@ -72,6 +72,7 @@ import { onWordAppear, wordState, remoteWord, setWordsRemote,
 import { setRoomClockRoom, setRoomClockOffset } from './room-clock.js';
 import { heartReport, takeHeartBeacon, clearHeartBeacon } from './heart-sync.js';
 import { initLiveAudio, liveAudioCheck, liveFollowNotice, liveFollowChunk, liveFollowEnd } from './live-audio.js';
+import { slidePosition, slideOffset, slideCourseSame, slideSample } from './slide-sync.js';
 
 const REC_KEY = 'signal.broadcast.v1';
 // Each session's left-off scene (see "where a stream was left" below), by
@@ -170,6 +171,19 @@ function slugFor(name) {
   const taken = r => sessions.some(s => s.room === r);
   if (!taken(base)) return base;
   for (let n = 2; ; n++) if (!taken(base + '-' + n)) return base + '-' + n;
+}
+
+// The room a ?presentation page broadcasts its livestream to by itself
+// (broadcastGoLive below; viewers open ?livestream, platform/
+// broadcast-socket.js LIVESTREAM_ROOM, the same name). The show's own room
+// ('show', the default) streams to "livestream"; any other, a rehearsal,
+// streams to "livestream-<room>", made a room by slugFor's rules, so a
+// rehearsal never lands in the real room.
+export const LIVE_ROOM = 'livestream';
+export function livestreamRoomFor(presentRoom) {
+  const r = String(presentRoom || '').toLowerCase();
+  if (!r || r === 'show') return LIVE_ROOM;
+  return (LIVE_ROOM + '-' + r).replace(/[^a-z0-9]+/g, '-').slice(0, ROOM_MAX).replace(/^-+|-+$/g, '');
 }
 
 // ---------- broadcasting ----------
@@ -341,12 +355,41 @@ function sendNow() {
 // and nothing keeps the object.
 function stateBody(glide) {
   sentRepeating = wordsRepeating();
+  // the slide video's place (sp, core/slide-sync.js), taken at the same
+  // moment as `at`, so a joiner can play it on to now; remembered, with
+  // whether `at` went with it, for slideWatch
+  sentSp = slideSample(hooks.slideNow ? hooks.slideNow() : null);
+  sentSpClock = !isNaN(clockOff);
+  sentSpMs = hooks.now();
   const msg = JSON.stringify({
     t: 'state', run: !!hooks.isRunning(), snap: wireSettings(),
     at: isNaN(clockOff) ? undefined : hooks.now() + clockOff, glide,
-    wk: sentRepeating ? 1 : 0, tw: fillGlides(), ns: nextSlide()
+    wk: sentRepeating ? 1 : 0, tw: fillGlides(), ns: nextSlide(), sp: sentSp || undefined
   });
   return msg.slice(0, -1);
+}
+
+// ---------- the slide video's place ----------
+// A late joiner lands on the slide where the room is (core/slide-sync.js):
+// every state carries the video's place and rate at its own `at`, and the
+// relay keeps the last state for joiners. Extrapolated, that copy stays
+// true for as long as the video keeps the same course, so whenever the
+// course changes without a settings change to send a state (a new slide's
+// video coming in, an end, a pause or play held live, a rate the element
+// reaches), or the video is no longer where the last state says it should
+// be by more than a landing's tolerance (a Restart, which saves nothing; a
+// stall), the beacon's tick notices it here and sends one; a seek sends its
+// own at once (broadcastSeek). Sending wakes a dozing session, as any send
+// does.
+let sentSp = null, sentSpClock = false, sentSpMs = 0;
+function slideWatch() {
+  if (!hooks.slideNow) return;
+  let any = false;
+  for (const s of sessions) if (s.active) { any = true; break; }
+  if (!any) return;
+  const now = slideSample(hooks.slideNow());
+  if (!slideCourseSame(sentSp, now) || (now && !sentSpClock && !isNaN(clockOff))) { queueSend(); return; }
+  if (now && Math.abs(slideOffset(slidePosition(sentSp, (hooks.now() - sentSpMs) / 1000), now.t, now.d, now.l)) > LAND_TOL_S) queueSend();
 }
 
 // The slide the show plays next (ns in the state message): the first step
@@ -417,7 +460,8 @@ export function broadcastPoke() { if (available) queueSend(); }
 //
 // Ten minutes without a state send, a piece of live sound (every piece
 // core/live-audio.js sends counts) or a brush stroke hangs up every live
-// session. The session stays active (still on in the drawer, still saved
+// session nobody is watching (sessionDozes below); one with watchers stays
+// connected, however long the show rests on one slide. The session stays active (still on in the drawer, still saved
 // as active); it is simply not connected, and its status reads 'doze'. No
 // {t:'end'} goes out, since that would clear the room's snapshot, which is
 // exactly what should survive. The next touch (any save, or run/stop)
@@ -443,10 +487,17 @@ export function broadcastPoke() { if (available) queueSend(); }
 let lastActivityMs = 0;
 let dozeTimer = null;
 
+// On a ?presentation page the room is its livestream's (broadcastGoLive sets
+// liveRoomPref), wherever that session sits in the list and whatever else
+// is on, so the room's words, swings and drawing are the ones its viewers
+// and meditatewiththesun.com's phones are in. Elsewhere, or with that session
+// switched off, the first session that is on, as always.
+let liveRoomPref = '';
 function syncWalkRoom() {
   if (followSock) return;   // a follower's room is set by its own messages
   let room = '';
-  for (const s of sessions) if (s.active) { room = s.room; break; }
+  if (liveRoomPref) for (const s of sessions) if (s.active && s.room === liveRoomPref) { room = s.room; break; }
+  if (!room) for (const s of sessions) if (s.active) { room = s.room; break; }
   setWordWalk(room);
   setRoomClockRoom(room !== '');
   // the brush's room is the same one, this screen its broadcaster
@@ -481,13 +532,23 @@ function syncDrawRoom(room, k) {
 // copy, an Event set in an empty room among what it missed. So a session
 // that skipped a change (stale) sends the state once, just before it hangs
 // up: one message per doze, and the room sleeps on what is current.
+// A session someone is watching never dozes: its beacons keep their strobe,
+// breath and heartbeat on the room's, and a joiner is handed a state that is
+// current. Only an open, connected session nobody watches hangs up. The
+// count is the relay's own ({t:'count'} on every join and leave, and on
+// this socket's every connect, openSession), so it cannot outlive a
+// reconnect.
+export function sessionDozes(s) {
+  return !!s && s.status === 'live' && !!s.sock && !(s.watchers > 0);
+}
+
 function checkDoze() {
   // a send already armed is activity about to happen; let it land first
   if (sendTimer || Date.now() - lastActivityMs <= IDLE_DOZE_MS) return;
   let body = null, dozed = false;
   for (let i = 0; i <= sessions.length; i++) {
     const s = i < sessions.length ? sessions[i] : echo;
-    if (!s || s.status !== 'live' || !s.sock) continue;
+    if (!sessionDozes(s)) continue;
     if (s.stale) {
       if (body === null) body = stateBody(0);
       s.sock.send(stateFor(s, body));
@@ -598,6 +659,8 @@ function unlockPending() {
 }
 
 function sendBeacon() {
+  // the slide's course, whether or not the strobe runs (see slideWatch)
+  slideWatch();
   // A Journey step can start or end a one-shot sequence from the frame loop
   // without saving anything, which would leave followers walking (or not)
   // on a stale `wk` (see sendNow). The beacon's tick notices and sends.
@@ -633,6 +696,9 @@ export function broadcastSeek(f, file) {
   const msg = JSON.stringify({ t: 'phase', sk: { f, file } });
   for (const s of sessions) if (s.sock && s.status === 'live' && s.watchers) s.sock.send(msg);
   lastActivityMs = Date.now();
+  // and a state, so the copy the relay keeps for joiners has the new place
+  // (the phase message is relayed, never kept)
+  queueSend();
 }
 
 function takeBeacon(msg) {
@@ -824,6 +890,55 @@ export function followJoin() {
   gateWords(false);
   if (followRun === 1 && hooks.setRunning) hooks.setRunning(true);
   idleWake('joining the stream');
+}
+
+// ---------- landing on the slide ----------
+// A follower arriving mid-slide plays that video from its start, while the
+// room is minutes in. So once, after the join tap, when its own copy of the
+// room's slide knows its length, it is put where the room's is now: the last
+// state's sample (lastSp) played on from that state's `at` to this screen's
+// shared now (core/slide-sync.js slidePosition), through the same seek the
+// show remote's tap uses (gpu/slides.js seekSlide, picture and sound
+// together on its short crossfade). A seek reloads the voice, which plays
+// on from where it was put only once it has loaded, so the first landing
+// can come in that load's time behind: once it is playing, a second and
+// last seek goes as far ahead as the first fell behind. Then never again:
+// a viewer who has been watching is never moved (no running correction).
+// Nothing to land, and done at once, when the room shows no slide, or a
+// broadcaster that sends no place; a slide changed meanwhile starts with
+// everyone's and so lands within LAND_TOL_S, no seek needed.
+// LAND_TOL_S: a seek crossfades over gpu/slides.js SEEK_XF (0.25 s), so no
+// seek can place a picture closer than that; nearer than it, none is made.
+const LAND_TOL_S = 0.25;
+let lastSp = null, lastSpAt = NaN, spSeen = false;
+let landStep = 0;   // 0 nothing to do, 1 waiting to land, 2 landed once and checking
+const landOwn = { t: 0, d: 0, r: 0, f: '', l: false, ready: false };
+// Called by main.js each frame on a follower tab; allocation-free, and a
+// single test once landed.
+export function followSlideLand() {
+  if (!landStep || joinHold || !spSeen || !hooks || !hooks.slideInto) return;
+  const sp = lastSp;
+  if (!sp) { landStep = 0; return; }
+  // the shared clock, to place `at` on this screen's time
+  if (isNaN(clockOff) || isNaN(lastSpAt)) return;
+  if (!hooks.slideInto(landOwn) || landOwn.f !== sp.f || !(landOwn.d > 0)) return;
+  // a second look waits for the first seek's voice to be playing
+  if (landStep === 2 && !landOwn.ready) return;
+  const target = slidePosition(sp, (hooks.now() + clockOff - lastSpAt) / 1000);
+  const off = slideOffset(target, landOwn.t, landOwn.d, sp.l);
+  if (Math.abs(off) <= LAND_TOL_S) { landStep = 0; return; }
+  let to = target;
+  if (landStep === 2) {
+    // as far ahead as the first landing fell behind, once; a paused room's
+    // place needs no lead
+    if (sp.r > 0) {
+      const d = landOwn.d;
+      to = target + off;
+      to = sp.l ? ((to % d) + d) % d : Math.min(to, d);
+    }
+    landStep = 0;
+  } else landStep = sp.r > 0 ? 2 : 0;
+  hooks.seekSlideTo(Math.max(0, Math.min(1, to / landOwn.d)), sp.f);
 }
 
 // ---------- Open and Event ----------
@@ -1114,6 +1229,33 @@ export function broadcastAnswer(choice) {
   persist();
 }
 
+// The presentation page's own broadcast (main.js, once its login has passed):
+// the session for room, made if this browser has none (named "Livestream"
+// for the show's room, else after its room), switched on with k as the
+// broadcast key, never asking the left-off scene's question (as the URL's
+// seed never does). A session already on under another key is reconnected
+// with this one; one already on under this key is left as it is. Every other
+// session is left exactly as it stands. False where no broadcast can start
+// (a follower tab, or before initBroadcast).
+export function broadcastGoLive(room, k) {
+  if (!available || typeof room !== 'string' || !/^[\w-]{1,64}$/.test(room) || !k) return false;
+  ensureLoaded();
+  const keyChanged = k !== key;
+  key = k;
+  let s = sessions.find(x => x.room === room);
+  if (!s) { s = makeSession(room === LIVE_ROOM ? 'Livestream' : room, room, false); sessions.push(s); }
+  if (asking === s) { asking = null; version++; }
+  // its room is this page's room for the words, the swings and the drawing
+  liveRoomPref = room;
+  if (s.active && keyChanged && s.sock) closeSession(s, false);
+  if (!s.active || !s.sock) {
+    // a dozing session wakes on its own at the next touch, with the new key
+    if (!(s.active && s.status === 'doze' && !keyChanged)) { s.active = true; openSession(s); }
+  }
+  persist();
+  return true;
+}
+
 // The viewer's link for row i, built on the click that asks for it.
 export function broadcastLink(i) {
   const s = sessions[i];
@@ -1210,13 +1352,17 @@ function parseUnlock(text) {
 //   followUrl   makeFollowUrl
 // hooks_: notify(str) flashes the overlay notice; isRunning() and
 // setRunning(on) are main.js's view of the transport; copy(str) is the
-// platform clipboard.
+// platform clipboard. The slide video's place: slideNow() its sample
+// (gpu/slides.js slidesProgress, the broadcaster's), slideInto(out) the same
+// into a kept object (a follower's, every frame while landing), and
+// seekSlideTo(f, file) its seek.
 export function initBroadcast(bits_, hooks_) {
   bits = bits_;
   hooks = hooks_ || {};
   hooks.notify = hooks.notify || noop;
   hooks.copy = hooks.copy || noop;
   hooks.seekSlide = hooks.seekSlide || noop;
+  hooks.seekSlideTo = hooks.seekSlideTo || noop;
   const intent = bits.intent;
 
   // A follower tab is only a follower: no sessions, no drawer section. Its
@@ -1262,6 +1408,12 @@ export function initBroadcast(bits_, hooks_) {
           lastSnap = msg.snap;
           applyFollowed(msg.snap, sec);
           joinSeen = true;
+          // the slide video's place at `at`, for landing a late join there
+          // (followSlideLand); none from a broadcaster without a slide up,
+          // or from before it was sent
+          lastSp = slideSample(msg.sp);
+          lastSpAt = Number.isFinite(msg.at) ? msg.at : NaN;
+          spSeen = true;
           // Then the glides it names, over what the network left of each
           // (see takeGlides); kept, with when they were counted from, for
           // the sync chip. None named means none in flight.
@@ -1345,6 +1497,8 @@ export function initBroadcast(bits_, hooks_) {
     probeTimer = setInterval(sendProbe, PROBE_EVERY_MS);
     // the follower draws in the room it follows, as one of the drawers
     syncDrawRoom(room, '');
+    // and lands on the slide where the room is, once (followSlideLand)
+    landStep = 1;
     return;
   }
 

@@ -38,7 +38,7 @@ import { createScene } from './gpu/scene.js';
 import { createFlowers } from './gpu/flowers.js';
 import { createSun, sunPictureIn } from './gpu/sun.js';
 import { showMediaFollowerGo } from './js/show-media.js';
-import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide, seekSlide, slidesProgress } from './gpu/slides.js';
+import { createSlides, pauseSlideForWalk, resumeSlideForWalk, replayEndedSlide, seekSlide, slidesProgress, slidesProgressInto } from './gpu/slides.js';
 import { createSunQr } from './gpu/sun-qr.js';
 import { createStars } from './gpu/stars.js';
 import { createHeartbeat } from './gpu/heartbeat.js';
@@ -69,8 +69,8 @@ import { initStore, load, save, flush, setHidden, syncFromStorage, writeDueAfter
 import { idleTouch } from './js/idle-ahead.js';
 import { replayLive, syncPresetsFromStorage, applyActivePresetState, transitionRemaining } from './core/presets.js';
 import { seedFactoryPresets } from './platform/factory-presets.js';
-import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin } from './core/broadcast.js';
-import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent, relayHost } from './platform/broadcast-socket.js';
+import { initBroadcast, broadcastPoke, followMayStart, broadcastAsking, broadcastAnswer, holdFollowJoin, followHeld, followStill, followJoin, followSlideLand, broadcastGoLive, livestreamRoomFor, broadcastAvailable, broadcastSetKey } from './core/broadcast.js';
+import { openBroadcastSocket, makeFollowUrl, broadcastUrlIntent, relayHost, followIntent } from './platform/broadcast-socket.js';
 import { openBrushHall } from './platform/brush-hall.js';
 import { brushField, brushPressing, brushExtra, brushExtraHas, setBrushHall, brushHallState, brushHallGroup, brushHallHand, brushTake, brushMember, setBrushBell, setBrushStarted, brushReplayHold } from './core/brush.js';
 import { CONTINUITY_MAX } from './core/brush-stamps.js';
@@ -82,9 +82,10 @@ import { drawMorph } from './ui/screens/morph.js';
 import { drawReplayBar } from './ui/screens/replay-bar.js';
 import { stepBrushMorph } from './core/brush-morph.js';
 import { initPresentationReceiver } from './platform/presentation-receiver.js';
+import { presentationRoom, presentationLogin, checkPassword, authUrls, PW_KEY } from './platform/presentation-login.js';
 import { tapePath, startTapeReplay, eventSlug, eventTape, eventScene } from './platform/tape-replay.js';
 import { recordLiveAudio, canRecordLiveAudio, livePlayer, unlockLiveAudio } from './platform/live-media.js';
-import { journeyImport } from './core/journey.js';
+import { journeyInstall } from './core/journey.js';
 import { stepJourney, journeyHoldWrites, syncJourneyFromStorage, setJourneyRunning, setJourneyPauseHook, journeyTogglePlay, journeyStepBy, journeyCount, journeyResume, journeyBusy, journeyMode, journeyJumpTo } from './core/journey.js';
 import { initAtmosphere, stepAtmosphere } from './core/atmosphere.js';
 import { setToggleRun, setMixerOpen, setSeqOpen, setCopyHandler, audioToggleEffects } from './core/schema-audio.js';
@@ -106,7 +107,7 @@ import { runAction } from './ui/widgets.js';
 import * as anim from './ui/anim.js';
 import { LAYOUT, MOTION, COLOR, TYPE, W, TRACK } from './ui/theme.js';
 import { BUILD } from './core/version.js';
-import { setPresentFetch } from './core/presentation.js';
+import { setPresentFetch, setPresentAuth, presentInstall } from './core/presentation.js';
 import { drawOverlay, overlayState, flashNotice, setOverlayTouch, setOverlayFollow, liftVeil } from './ui/screens/overlay.js';
 import { drawChrome, drawBurger, drawGuardNotice, openGuardNotice, streamAskHits, drawStreamAsk, drawEnergyChip, freshAsk, drawFreshAsk } from './ui/screens/chrome.js';
 import { drawDrawer, stepDrawer, drawProfileBadge, drawerEdge } from './ui/screens/drawer.js';
@@ -170,11 +171,37 @@ function fadeStillFrame(c) {
 // needed. The manifest is fetched in boot, so replayTape is a let: empty
 // until the event resolves, while replayMode says from the URL alone that
 // this page is the playback.
+//
+// ?livestream (presence.now.audio/?livestream) is a follower of the room
+// "livestream" (?livestream=<room> names another; an explicit ?follow= wins
+// the room), joined, synced and sounding exactly as ?follow= is, on a
+// stripped screen: no burger and no drawer, no windows, the volume alone at
+// the top right and the full-screen button alone at the bottom right, and
+// no keys but full screen (app.livestream, globalKey, ui/screens/chrome.js).
+// The room comes from followIntent (platform/broadcast-socket.js), the one
+// reading of the URL's follow, so the two can never disagree.
 const pageQuery = !host.worker && typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
-let replayTape = pageQuery && pageQuery.has('draw') && !pageQuery.get('follow') ? tapePath(pageQuery.get('replay')) : '';
-const replayEvent = pageQuery && !pageQuery.get('follow') && !replayTape ? eventSlug(pageQuery.get('event')) : '';
+const pageFollow = pageQuery ? followIntent(location.search) : null;
+const followRoom = pageFollow ? pageFollow.follow : '';
+const livestream = !!pageFollow && pageFollow.livestream;
+let replayTape = pageQuery && pageQuery.has('draw') && !followRoom ? tapePath(pageQuery.get('replay')) : '';
+const replayEvent = pageQuery && !followRoom && !replayTape ? eventSlug(pageQuery.get('event')) : '';
 const replayMode = !!replayTape || !!replayEvent;
-const drawOnly = !!pageQuery && (pageQuery.has('draw') && !!pageQuery.get('follow')) || replayMode;
+const drawOnly = !!pageQuery && (pageQuery.has('draw') && !!followRoom) || replayMode;
+// ?presentation (or ?remote): the page's one login (platform/
+// presentation-login.js) starts at once, before anything else, and covers
+// the page with its card if it has to ask. The show remote's receiver and
+// the page's own livestream broadcast wait for it (boot, below). Never on a
+// follower (?follow=, ?livestream) or the standing playback, which ask for
+// no password.
+const presentPage = pageQuery && !followRoom && !replayMode ? presentationRoom(location.search) : null;
+const presentLogin = presentPage && typeof document !== 'undefined' ? presentationLogin() : null;
+// The pages whose work lives on the page thread alone (the show remote's
+// receiver, the broadcast, a follow and its join gate, all below in boot's
+// !inWorker branch) run the engine there too, whatever Render > Engine
+// thread has saved: for this load only, the saved choice untouched
+// (platform/worker-bridge.js startWorkerShell).
+const pageThreadOnly = !!followRoom || !!(pageQuery && presentationRoom(location.search));
 
 if (!host.worker && typeof document !== 'undefined') {
   const followAudioGate = document.getElementById('follow-audio-gate');
@@ -233,7 +260,7 @@ async function boot() {
   // beside it and applied once the store has loaded, below.
   const sceneWait = !inWorker && replayEvent ? eventScene(replayEvent) : null;
   if (!inWorker) await seedFactoryPresets();
-  if (!inWorker && await startWorkerShell(canvas)) { firstLight(); return; }
+  if (!inWorker && await startWorkerShell(canvas, pageThreadOnly)) { firstLight(); return; }
   console.log('[boot] engine stays on this thread +' + Math.round(performance.now()) + 'ms');
   const platform = inWorker ? await host.platform : createPlatform(canvas);
   console.log('[boot] platform ready +' + Math.round(performance.now()) + 'ms');
@@ -345,7 +372,22 @@ async function boot() {
   engine.registerUI(uiRenderer, createBlur(device, format));
   // Presentation mode's Journey install fetches the tracked export and the
   // slide manifest from the site itself (core/presentation.js).
-  setPresentFetch(url => fetch(url, { cache: 'no-cache' }).then(r => r.ok ? r.text() : Promise.reject(new Error(r.status + ' ' + url))), journeyImport);
+  setPresentFetch(url => fetch(url, { cache: 'no-cache' }).then(r => r.ok ? r.text() : Promise.reject(new Error(r.status + ' ' + url))), journeyInstall);
+  // And its gate asks the relay, never a string in the code: a browser
+  // holding the show's login (mirror.pw) is unlocked, and a typed password
+  // goes to the relays as the page's login sends it. Accepted, it becomes
+  // this browser's login and its broadcast key alike, the one password.
+  const authSearch = !inWorker && typeof location !== 'undefined' ? location.search : '';
+  setPresentAuth({
+    loggedIn: () => !!platform.storage.get(PW_KEY),
+    login: pw => checkPassword(pw, authUrls(authSearch)).then(v => {
+      if (v === 'ok') {
+        platform.storage.set(PW_KEY, pw);
+        if (broadcastAvailable()) broadcastSetKey(pw);
+      }
+      return v;
+    })
+  });
   // The broadcast room is where the brush draws with everyone
   // (core/broadcast.js syncDrawRoom): broadcasting a session joins its room
   // as the one who moves the phases and deals, following one joins it as a
@@ -434,11 +476,16 @@ async function boot() {
     // broadcast, or a hall member who is not its conductor) while the
     // Brush section's Hide bottom buttons for followers is on.
     quickHidden: () => S.brushHideFollow !== false && (followTab || drawOnly || brushMember()),
+    // The livestream screen (?livestream, above): the chrome reads it to draw
+    // the volume and the full-screen button and nothing else.
+    livestream,
     // The open state is part of the saved settings (core/store.js), so every
     // toggle saves like any control: without this, a close only reached disk
     // when some later control change happened to save, and a reload brought
     // the drawer back open from the last save made while it was up.
-    toggleDrawer: () => { S.panelOpen = !S.panelOpen; save(); },
+    // The livestream screen has no drawer: the toggle does nothing there, and
+    // the saved flag is left as this browser had it.
+    toggleDrawer: () => { if (livestream) return; S.panelOpen = !S.panelOpen; save(); },
     windowOpen: i => !!winByButton[i].open,
     toggleWindow: i => { const w = winByButton[i]; w.open = !w.open; },
     toggleFullscreen: () => platform.fullscreen.toggle(),
@@ -506,7 +553,9 @@ async function boot() {
   // reach this thread from the page through host.run, and the audio link is
   // flushed straight away, since a locked screen draws no frame to carry the
   // run call back to the sound.
-  const mediaRun = on => { if (on !== !!S.running) toggleRun(); };
+  // The livestream screen has no play or pause (its viewer follows the
+  // broadcaster's run), so a lock screen's or a headset's does nothing there.
+  const mediaRun = on => { if (livestream) return; if (on !== !!S.running) toggleRun(); };
   if (inWorker) host.run = on => { mediaRun(on); host.link.flush(); };
   else setMediaTransport(mediaRun);
   setMixerOpen(open => { mixer.open = !!open; });
@@ -627,7 +676,13 @@ async function boot() {
         // the broadcaster's seek of its slide video: this screen's same
         // video goes to the same share of its length (a different slide is
         // left alone)
-        seekSlide: (f, file) => { const pr = slidesProgress(); if (pr && pr.f === file) seekSlide(f); }
+        seekSlide: (f, file) => { const pr = slidesProgress(); if (pr && pr.f === file) seekSlide(f); },
+        // the slide's place: the broadcaster's sample for each state, a
+        // follower's own read (allocation-free) and seek for landing a late
+        // join where the room is (core/broadcast.js followSlideLand)
+        slideNow: slidesProgress,
+        slideInto: slidesProgressInto,
+        seekSlideTo: (f, file) => { const pr = slidesProgress(); if (pr && pr.f === file) seekSlide(f); }
       }
     );
     // The show remote (controller.html on the iPad): ?presentation makes this tab take
@@ -635,15 +690,30 @@ async function boot() {
     // Its title clears the screen: the drawer and every floating window
     // shut, leaving only the playback (the Levels window through its own
     // close action, as its close button does).
-    finishRemoteFrame = initPresentationReceiver({
-      clearScreen: () => {
-        const mixClose = byId('ambMixerClose');
-        if (mixer.open) { if (mixClose) mixClose.act(S); else mixer.open = false; }
-        for (const w of [sequencer, journey, performer, music, textbank]) w.open = false;
-        S.panelOpen = false;
-        save();
-      }
-    });
+    const clearScreen = () => {
+      const mixClose = byId('ambMixerClose');
+      if (mixer.open) { if (mixClose) mixClose.act(S); else mixer.open = false; }
+      for (const w of [sequencer, journey, performer, music, textbank]) w.open = false;
+      S.panelOpen = false;
+      save();
+    };
+    if (presentLogin) {
+      // Once the login has passed: the receiver joins with its password, and
+      // the page broadcasts to its livestream room by itself (core/
+      // broadcast.js broadcastGoLive), the login as the broadcast key, so
+      // ?livestream viewers have the show with nothing set up in the drawer.
+      // The show's room ('show') streams to "livestream", a rehearsal's
+      // (?presentation=<room>) to "livestream-<room>".
+      presentLogin.then(pw => {
+        finishRemoteFrame = initPresentationReceiver({ clearScreen, key: pw });
+        // The talk's Journey, at every load of this page: a deck published
+        // since (tools/deck.mjs) is in and current after one reload, with
+        // nothing to switch in the drawer. Unchanged, it is left as it is.
+        presentInstall().then(r => { if (r !== 'present' && r !== 'installed') console.warn('[presentation] the Journey was not installed at load: ' + r); });
+        const liveRoom = livestreamRoomFor(presentPage.room);
+        if (broadcastGoLive(liveRoom, pw)) console.log('[broadcast] the presentation streams to room "' + liveRoom + '" (viewers: ?livestream' + (liveRoom === 'livestream' ? '' : '=' + liveRoom) + ')');
+      });
+    } else finishRemoteFrame = initPresentationReceiver({ clearScreen });
   }
 
   // ---- per-frame state, allocated once ----
@@ -803,6 +873,16 @@ async function boot() {
     if (e.code === 'Paste') return false;
     const k = e.key, lk = k.length === 1 ? k.toLowerCase() : k;
     if (e.meta || e.ctrl) return false;
+    // The livestream screen keeps one shortcut, full screen (Enter or F, as
+    // below). Escape still puts the panel guard's notice away, as its card
+    // says. Every other key is spent here and does nothing: nothing opens or
+    // shows, Space neither starts nor stops (the viewer follows the
+    // broadcaster's run), and the toolkit never sees a key to traverse with.
+    if (livestream) {
+      if (k === 'Enter' || lk === 'f') platform.fullscreen.toggle();
+      else if (k === 'Escape' && guard.noticeOpen) guard.noticeOpen = false;
+      return true;
+    }
     // Key mode's overlay key (Settings > Control overlays) toggles the
     // floating controls, ahead of every other key; a hide is at once, not
     // a fade. Held, it toggles once, as M does.
@@ -1101,23 +1181,29 @@ async function boot() {
     // Key mode (see overlaysShown): the floating controls answer to the key
     // alone, though the guard's notice and the stream's question still
     // bring them up, as they hold the chrome up today.
-    const keyMode = S.overlayMode === 'key';
+    // The livestream screen has no overlay key (globalKey), so it keeps the
+    // idle rule whatever this browser's Settings say.
+    const keyMode = S.overlayMode === 'key' && !livestream;
     if (!keyMode) overlaysShown = false;
     const overlayAwake = keyMode ? (overlaysShown || guard.noticeOpen || broadcastAsking() || freshAsk.open) : chromeAwake;
     // A drawer shut while the build slept (another tab, the show remote) is
     // still out on screen, and S.edgeInset with it, until stepDrawer slides
     // it home; so a pane still showing keeps the build awake too, or the
     // scene would stay shifted aside under a drawer that is not drawn.
-    const awake = chromeAwake || overlayAwake || S.panelOpen || drawerEdge() > 0 || mixer.open || sequencer.open || journey.open || performer.open || music.open || textbank.open;
+    // The drawer as this frame has it: never open on the livestream screen,
+    // whatever this browser's saved settings say (S.panelOpen is left as it
+    // was saved; only its reading here is shut).
+    const panelOpen = S.panelOpen && !livestream;
+    const awake = chromeAwake || overlayAwake || panelOpen || drawerEdge() > 0 || mixer.open || sequencer.open || journey.open || performer.open || music.open || textbank.open;
     const idle = !awake && events.length === 0 && !uiUnsettled && ui.activeId === -1 && lastChromeA < 0.01 && lastOverlayA < 0.01;
     if (idle) {
       // ui.begin normally hands the springs this frame's dt; the overlay's
       // own springs still run, so they get it here instead.
       anim.setDt(dt);
       // the energy profile chip stays up, painted only (a touch brings the build back)
-      if (S.energyButton && !S.panelOpen) drawEnergyChip(ui, uiList, text, width, height, false);
+      if (S.energyButton && !panelOpen && !livestream) drawEnergyChip(ui, uiList, text, width, height, false);
       // the dealt hand stays up, painted only (a touch brings the build back)
-      drawHand(ui, uiList, width, height, false);
+      if (!livestream) drawHand(ui, uiList, width, height, false);
     } else {
       // UI, top layer first so it wins the pointer
       ui.copyHeld = false;
@@ -1125,13 +1211,15 @@ async function boot() {
 
       const chromeA = ui.spring('chrome.alpha', chromeAwake ? 1 : 0, MOTION.fade);
       // the chrome chips frost only while a window that needs the capture is up
-      const frost = ui.spring('chrome.frost', S.panelOpen || mixer.open ? 1 : 0, MOTION.fade);
+      const frost = ui.spring('chrome.frost', panelOpen || mixer.open ? 1 : 0, MOTION.fade);
       lastChromeA = chromeA;
       // the floating controls' own fade: in Auto the same target as the
       // burger's, so the two move as one; in Key mode the key's
       const overlayA = ui.spring('chrome.overlay', overlayAwake ? 1 : 0, MOTION.fade);
       lastOverlayA = overlayA;
-      stepDrawer(ui);   // the slide everything below reads this frame
+      // the slide everything below reads this frame; never stepped on the
+      // livestream screen, so the drawer stays tucked away and S.edgeInset 0
+      if (!livestream) stepDrawer(ui);
 
       // the stream's recall question takes the pointer before anything
       // else and is painted last on this layer (see chrome.js)
@@ -1143,34 +1231,39 @@ async function boot() {
       // They are built back to front, each with the rects of every window in
       // front of it occluded (as last drawn), so none can show under or take
       // a press from one above it, and the front one is drawn last, on top.
-      for (let j = 0; j < WIN_N; j++) {
-        const w = zWin[j];
-        if (w.open && !zWasOpen[j]) { zWasOpen[j] = true; toFront(j); j--; continue; }
-        zWasOpen[j] = w.open;
-      }
-      if (ui._downEvent) {
-        for (let j = WIN_N - 1; j >= 0; j--) {
-          if (inWin(zWin[j], ui._downX, ui._downY)) { toFront(j); break; }
+      // None of them on the livestream screen: never built, so none restores
+      // its saved open state (each does that on its first draw), none shows,
+      // and every open flag stays false.
+      if (!livestream) {
+        for (let j = 0; j < WIN_N; j++) {
+          const w = zWin[j];
+          if (w.open && !zWasOpen[j]) { zWasOpen[j] = true; toFront(j); j--; continue; }
+          zWasOpen[j] = w.open;
         }
-      }
-      for (let j = 0; j < WIN_N; j++) {
+        if (ui._downEvent) {
+          for (let j = WIN_N - 1; j >= 0; j--) {
+            if (inWin(zWin[j], ui._downX, ui._downY)) { toFront(j); break; }
+          }
+        }
+        for (let j = 0; j < WIN_N; j++) {
+          ui.clearOcclusion();
+          for (let f = j + 1; f < WIN_N; f++) { const w = zWin[f]; ui.addOcclusion(w.rx, w.ry, w.rw, w.rh); }
+          zDraw[j](ui, app, 1);
+        }
         ui.clearOcclusion();
-        for (let f = j + 1; f < WIN_N; f++) { const w = zWin[f]; ui.addOcclusion(w.rx, w.ry, w.rw, w.rh); }
-        zDraw[j](ui, app, 1);
+        drawBurger(ui, app, chromeA, frost);
       }
-      ui.clearOcclusion();
-      drawBurger(ui, app, chromeA, frost);
       drawStreamAsk(ui);
       drawFreshAsk(ui, app);
 
       ui.dl = uiList;
-      drawDrawer(ui, app);
+      if (!livestream) drawDrawer(ui, app);
       drawChrome(ui, app, overlayA, frost);
       // Render > Energy profile button: the copy chip, bottom right, drawer shut
-      if (S.energyButton && !S.panelOpen) drawEnergyChip(ui, uiList, text, width, height, true);
+      if (S.energyButton && !panelOpen && !livestream) drawEnergyChip(ui, uiList, text, width, height, true);
       // the dealt hand (ui/screens/hand.js), ahead of the field, which a tap
-      // on one of its buttons never reaches
-      drawHand(ui, uiList, width, height, true);
+      // on one of its buttons never reaches; not on the livestream screen
+      if (!livestream) drawHand(ui, uiList, width, height, true);
       // the standing playback's shapes-to-particles slider (ui/screens/
       // morph.js), with the chrome's fade, ahead of the field too
       if (replayMode) drawMorph(ui, uiList, width, height, chromeA);
@@ -1188,7 +1281,7 @@ async function boot() {
         const px = ui.pointerX, py = ui.pointerY;
         overWin = px >= 0 && (inWin(mixer, px, py) || inWin(sequencer, px, py) || inWin(journey, px, py) || inWin(performer, px, py) || inWin(music, px, py) || inWin(textbank, px, py));
         overUI = px >= 0 && !overWin && (ui.hotId !== -1 ||
-                             (S.panelOpen && px < drawerEdge()));
+                             (panelOpen && px < drawerEdge()));
       }
 
       // the field: any press nothing above claimed. A press that travels is a
@@ -1200,8 +1293,10 @@ async function boot() {
       ui.interact(ui.id('field'), 0, 0, width, height, false);
       const fieldTap = brushField(ui.pressed, ui.released, ui.released && !ui.clicked,
                                   ui.pointerX, ui.pointerY, width, height, S.edgeInset, t);
-      if (fieldTap && ui.clicked) {
-        if (S.panelOpen) { S.panelOpen = false; save(); }
+      // (none on the livestream screen: its viewer follows the broadcaster's
+      // run, and a press that travels still draws as above)
+      if (fieldTap && ui.clicked && !livestream) {
+        if (panelOpen) { S.panelOpen = false; save(); }
         else if (!(wakeTap && S.running)) toggleRun();
       }
 
@@ -1231,13 +1326,16 @@ async function boot() {
     }
     // The build stamp (core/version.js), tiny and dim in the lower right,
     // every frame whether the UI was built or not; never in Presentation
-    // mode, where the screen is the audience's.
-    if (S.presentationMode !== true) text.draw(uiList, BUILD, width - 6, height - 6, TYPE.micro, W.regular, COLOR.inkFaint, 2, TRACK.ui, 0.55);
+    // mode, where the screen is the audience's, nor on the livestream screen,
+    // which is the audience's too.
+    if (S.presentationMode !== true && !livestream) text.draw(uiList, BUILD, width - 6, height - 6, TYPE.micro, W.regular, COLOR.inkFaint, 2, TRACK.ui, 0.55);
     if (followStill()) liftVeil();   // the stream's scene shows, still, before the tap
+    // a late joiner's slide goes to where the room's is, once (core/broadcast.js)
+    if (followTab) followSlideLand();
     drawOverlay(overlayList, text, t, width, height);
     // While recording with the drawer shut, a small steady badge in the
     // lower left counts the drops (the drawer's own footer shows it when open).
-    if (profOn && !S.panelOpen) drawProfileBadge(uiList, text, height);
+    if (profOn && !panelOpen) drawProfileBadge(uiList, text, height);
     if (perfOn) t3 = platform.now();
 
     // render; before anything has run the scene is steady, so any frame is a
@@ -1288,7 +1386,7 @@ async function boot() {
         let pf = 0;
         if (r.lit) pf |= PF_LIT;
         if (S.running) pf |= PF_RUNNING;
-        if (S.panelOpen) pf |= PF_DRAWER;
+        if (panelOpen) pf |= PF_DRAWER;
         if (mixer.open) pf |= PF_MIXER;
         if (engine.lastDirect) pf |= PF_DIRECT;
         if (engine.lastCapture) pf |= PF_CAPTURE;
