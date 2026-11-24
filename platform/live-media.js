@@ -42,6 +42,7 @@
 // waits; unlock() (from the follow gate's tap, in main.js) blesses the
 // element inside the gesture and playback begins half a second behind live.
 
+import { followMuted, onFollowMute } from '../core/follow-mute.js';
 const MIME = 'audio/webm;codecs=opus';
 const REC_BPS = 96000;
 const TIMESLICE_MS = 200;
@@ -116,6 +117,9 @@ function makePlayer() {
   if (!MS || !MS.isTypeSupported(MIME) || typeof Audio === 'undefined') return null;
   const el = new Audio();
   el.preload = 'auto';
+  // silent while the room's broadcaster mutes its followers (core/follow-mute.js)
+  el.muted = followMuted();
+  onFollowMute(on => { el.muted = on; });
   el.disableRemotePlayback = true;
 
   let ms = null, sb = null;

@@ -42,6 +42,7 @@
 // through liveFromPage, and how hard the compressor is working through
 // liveGrFromPage, by way of platform/worker-bridge.js and worker-entry.js.
 import { S } from './state.js';
+import { followGain } from '../core/follow-mute.js';
 import { createRoom, swapRoom, loadWorkletInto } from './audio.js';
 import { strobeAm, forgetStrobeContext } from './strobe-am.js';
 import { setLiveCapturing, idleRefresh } from './idle-ahead.js';
@@ -162,7 +163,7 @@ const listeners = [];
 // (S.musLive, 0 to 1, where 1 plays exactly the level), as the ambience's is.
 const perfTrim = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
 const monitorLevel = () => Math.max(0, S.liveLevel || 0) * perfTrim(S.musLive ?? 1);
-const monitorGate = () => (S.running && S.audioEnabled) ? Math.max(0, S.volume || 0) : 0;
+const monitorGate = () => (S.running && S.audioEnabled) ? Math.max(0, S.volume || 0) * followGain() : 0;
 const mixOf = () => Math.max(0, Math.min(1, S.liveReverb || 0));
 const latencyMs = () => Math.max(0, Math.min(LATENCY_MAX_MS, Math.round(S.liveLatency || 0)));
 // The drawer's settings as the nodes want them, each held to its slider's

@@ -58,6 +58,7 @@ import { S } from '../js/state.js';
 import { setBrushBroadcast, brushTake } from './brush.js';
 import { idleWake, idleMute } from './idle.js';
 import { onSave, wireSettings, readKey, saveKey } from './store.js';
+import { muteFollowersOn, setFollowMuted, followGain } from './follow-mute.js';
 import { replayHolding, presetTransitionCount, lastTransitionSec, machineControl, recallStreamScene } from './presets.js';
 import { idleTouch, setFollowerTab } from '../js/idle-ahead.js';
 import { setPerfGlideHooks, perfGlideWriting, perfEachGlide, perfFollowGlide, perfFollowDrop } from './perform.js';
@@ -372,7 +373,9 @@ function stateBody(glide) {
     // the show remote's duck and screen gate, which no snapshot carries
     // (see "the show remote's live acts" below)
     dk: duckUsed ? duckWire : undefined,
-    gt: S.screenGate < 1 ? Math.round(Math.max(0, +S.screenGate || 0) * 1000) / 1000 : undefined
+    gt: S.screenGate < 1 ? Math.round(Math.max(0, +S.screenGate || 0) * 1000) / 1000 : undefined,
+    // Mute followers (core/follow-mute.js): every follower silent, no volume shown
+    fm: muteFollowersOn() ? 1 : undefined
   });
   return msg.slice(0, -1);
 }
@@ -480,7 +483,9 @@ export function broadcastDuck(mul, sec) {
 // duck already on its way alone. null (none sent, the broadcast over) is 1.
 let followDuck = 1;
 function takeDuck(dk) {
-  const mul = dk && Number.isFinite(dk[0]) ? Math.max(0, Math.min(1, dk[0])) : 1;
+  // a muted room (fm, core/follow-mute.js) holds the duck at nothing: the
+  // slides, the heartbeat and the hum go silent with the master
+  const mul = (dk && Number.isFinite(dk[0]) ? Math.max(0, Math.min(1, dk[0])) : 1) * followGain();
   if (mul === followDuck) return;
   followDuck = mul;
   if (hooks.duck) hooks.duck(mul, dk && Number.isFinite(dk[1]) ? dk[1] : undefined);
@@ -488,6 +493,7 @@ function takeDuck(dk) {
 // The room gone (ended, or the link given up): nothing of the iPad's live
 // acts outlives it, so no viewer is left ducked, black or holding a slide.
 function releaseLiveActs() {
+  setFollowMuted(false);
   takeDuck(null);
   S.screenGate = 1;
   if (hooks.slideFollow) hooks.slideFollow('', true);
@@ -1504,6 +1510,8 @@ export function initBroadcast(bits_, hooks_) {
           // the iPad's duck and screen gate (see the show remote's live
           // acts): a duck moves when its multiplier does, over its own
           // seconds; the gate is the room's whenever it is below full
+          // the broadcaster's Mute followers first, so the duck below is taken muted
+          setFollowMuted(msg.fm === 1);
           takeDuck(Array.isArray(msg.dk) ? msg.dk : null);
           S.screenGate = Number.isFinite(msg.gt) ? Math.max(0, Math.min(1, msg.gt)) : 1;
           // Then the glides it names, over what the network left of each

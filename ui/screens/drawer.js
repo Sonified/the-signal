@@ -32,6 +32,8 @@ import {
   broadcastEvent, broadcastSetEvent, broadcastHasUnlock, broadcastUnlockLabel, broadcastSetUnlock
 } from '../../core/broadcast.js';
 import { liveOnAir, liveSetOnAir, liveAirLabel, liveAirSending } from '../../core/live-audio.js';
+import { muteFollowersOn, setMuteFollowers } from '../../core/follow-mute.js';
+import { broadcastPoke } from '../../core/broadcast.js';
 import {
   journeyRampGlow, journeyRampingControl, journeyRampingSection, journeyRampingSub,
   journeyManualOverride, journeyModeOn, journeyRampS
@@ -1044,6 +1046,11 @@ function statusColor(st) {
 
 function drawBroadcast(ui) {
   measureBroadcast(ui);
+  // Mute followers (core/follow-mute.js): every viewer silent, no volume
+  // shown, for a talk whose sound goes out another way (a Zoom call)
+  const fm = muteFollowersOn();
+  if (ui.toggle('drawer.bcMuteFollowers', 'Mute followers', fm, false) !== fm) { setMuteFollowers(!fm); broadcastPoke(); }
+  ui.spacer(SPACE.sm);
   const target = broadcastLinkTarget() === 'local' ? 1 : 0;
   const nextTarget = ui.select('drawer.bcLinkTarget', 'Link target', BC_LINK_TARGETS, target, '', false);
   if (nextTarget !== target) broadcastSetLinkTarget(nextTarget === 1 ? 'local' : 'live');

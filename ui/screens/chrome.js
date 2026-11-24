@@ -37,6 +37,7 @@ import { COLOR, TYPE, TRACK, W, RADIUS, LAYOUT, MOTION, GLASS } from '../theme.j
 import { mixColor } from '../anim.js';
 import { strobeLum } from '../../core/strobe.js';
 import { followStrobeOwned, followStrobeSync, broadcastAsking, broadcastAskText, broadcastAnswer } from '../../core/broadcast.js';
+import { followMuted } from '../../core/follow-mute.js';
 
 const QUICK = [   // right to left after the full-screen button, with v0's min widths
   // Colour, Click and Visual are off the bar for now (Robert, 2026-10-15):
@@ -209,10 +210,12 @@ function drawStrobeScale(ui, x, y, frost) {
 function drawTopRight(ui, app, width, frost) {
   const ts = TS, ty = EDGE;
   const trackX = width - EDGE - VOL_W, spkX = trackX - VOL_GAP - SPK;
-  if (app.livestream) { drawVolume(ui, spkX, trackX, ty + ts / 2); return; }
+  // a room whose broadcaster mutes its followers (core/follow-mute.js) shows
+  // its viewers no volume: there is nothing here to hear
+  if (app.livestream) { if (!followMuted()) drawVolume(ui, spkX, trackX, ty + ts / 2); return; }
   const playX = spkX - 14 - ts;
   if (glassIcon(ui, 'chrome.play', S.running ? ICON.PAUSE : ICON.PLAY, playX, ty, ts, true, frost)) app.toggleRun();
-  drawVolume(ui, spkX, trackX, ty + ts / 2);
+  if (!followMuted()) drawVolume(ui, spkX, trackX, ty + ts / 2);
   let scaleX = playX - 24 - SCALE_W, scaleY = ty;
   if (scaleX < (S.edgeInset || 0) + EDGE) {
     scaleX = width - EDGE - SCALE_W - 12;
