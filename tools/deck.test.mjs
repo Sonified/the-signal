@@ -27,7 +27,11 @@ function copy() {
   return dir;
 }
 const read = (dir, f) => fs.readFileSync(path.join(dir, f), 'utf8');
-const head = f => execFileSync('git', ['show', 'HEAD:' + f], { cwd: repo, maxBuffer: 64 << 20 }).toString();
+// the short talk as it stood before the deck existed (the last commit with
+// the 16-cue Journey and controller), not HEAD, which now holds whatever the
+// deck last published
+const SHORT_AT = 'd0eeb1e';
+const head = f => execFileSync('git', ['show', SHORT_AT + ':' + f], { cwd: repo, maxBuffer: 64 << 20 }).toString();
 const quiet = (argv, dir) => run(argv.concat('--force'), dir);
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log('ok', name); };
@@ -38,7 +42,7 @@ const LONG = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained',
   'E13 HCS Crossing', 'ANOM Solar 2', 'WISPR CME', 'Touching the Sun', 'SDO/AIA Audification', 'JVKE Golden Hour',
   'Ed Mitchell VR', 'QR + Sun 🌞', 'Guided Meditation 🎵🌞🎵'];
 
-test('short reproduces HEAD exactly (Journey, CUES, prefixes)', () => {
+test('short reproduces the original 16-cue talk exactly (Journey, CUES, prefixes)', () => {
   const dir = copy();
   quiet(['long'], dir);
   quiet(['short'], dir);
