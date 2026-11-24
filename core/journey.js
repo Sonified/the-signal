@@ -2249,8 +2249,23 @@ export function journeyImport(title, raw) {
 // imported or renamed by hand is never touched. Returns the new journey's
 // index, or -1 when the library is full.
 const INSTALL_KEY = 'signal.journeyInstalled.';
+// -2 when this page's code is older than the export: a step names a slide
+// video this page's list (core/schema-slides.js SLIDE_FILES) has never heard
+// of, which the read below would drop, leaving that cue on the video before
+// it. Nothing is imported then; the caller reloads for the new code.
+export const JOURNEY_STALE = -2;
 export function journeyInstall(title, raw) {
   ensureLoaded();
+  const SLIDE = byId('slideFile');
+  if (SLIDE && raw && Array.isArray(raw.steps)) {
+    for (const st of raw.steps) {
+      const f = st && st.overrides && st.overrides.slideFile;
+      if (typeof f === 'string' && f !== 'none' && validValue(SLIDE, f) === undefined) {
+        console.warn('[journey] this page does not know the slide ' + f + ': its code is older than the Journey');
+        return JOURNEY_STALE;
+      }
+    }
+  }
   const key = INSTALL_KEY + cleanTitle(title);
   let was = null;
   try { was = JSON.parse(readKey(key) || 'null'); } catch (e) { was = null; }

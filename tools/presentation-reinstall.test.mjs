@@ -92,3 +92,48 @@ test('a copy renamed by hand is the viewer\'s now: the next install leaves it', 
   assert.equal(lib.items.length, lib0.items.length + 1, 'added beside it');
   assert.ok(lib.items.some(it => it.title === 'Kept by hand'));
 });
+
+test('a deck marked only by older code installs once more (it mends a cue left on the wrong video)', async () => {
+  // what a browser holds after older code installed this revision: the
+  // per-revision marker and no last-revision key
+  const { presentRevision } = await import('../core/presentation.js');
+  const rev = await presentRevision(shortText);
+  const fresh = await import('../core/presentation.js?older');
+  mem.set('signal.presentationJourney.' + rev, JSON.stringify('1'));
+  mem.delete('signal.presentationJourney.last');
+  fresh.setPresentFetch(async url => (url.endsWith('journey.json') ? shortText : manifestText), journeyInstall);
+  assert.equal(await fresh.presentInstall(), 'installed');
+  await settle();
+  assert.equal(JSON.parse(mem.get('signal.presentationJourney.last')), rev, 'and now this code has marked it');
+  assert.equal(await fresh.presentInstall(), 'present');
+});
+
+test('a page older than the deck imports nothing, marks nothing, and reloads once', async () => {
+  const { JOURNEY_STALE } = await import('../core/journey.js');
+  const unknown = JSON.parse(longText);
+  unknown.steps[1].overrides.slideFile = '999_A_Video_This_Page_Never_Heard_Of.mp4';
+  const before = library().items.length;
+  assert.equal(journeyInstall(JOURNEY_TITLE, unknown), JOURNEY_STALE);
+  await settle();
+  assert.equal(library().items.length, before, 'nothing imported');
+
+  const stale = await import('../core/presentation.js?stale');
+  const text = JSON.stringify(unknown, null, 1);
+  // the manifest lists it (the site is current; only this page is old)
+  const m = JSON.parse(manifestText);
+  m.videos.push({ file: unknown.steps[1].overrides.slideFile, bytes: 1, sha256: '0' });
+  const ss = new Map();
+  globalThis.sessionStorage = { getItem: k => ss.get(k) ?? null, setItem: (k, v) => ss.set(k, String(v)) };
+  let reloads = 0;
+  const loc = globalThis.location;
+  globalThis.location = { ...loc, reload: () => { reloads++; } };
+  try {
+    stale.setPresentFetch(async url => (url.endsWith('journey.json') ? text : JSON.stringify(m)), journeyInstall);
+    assert.equal(await stale.presentInstall(), 'stale');
+    assert.equal(reloads, 1, 'reloaded for the new code');
+    assert.equal(await stale.presentInstall(), 'stale');
+    assert.equal(reloads, 1, 'and only once: no loop if the site itself is behind');
+    const rev = await stale.presentRevision(text);
+    assert.equal(mem.get('signal.presentationJourney.' + rev), undefined, 'not marked installed');
+  } finally { globalThis.location = loc; }
+});

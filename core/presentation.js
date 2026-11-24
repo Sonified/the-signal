@@ -114,17 +114,34 @@ export function presentInstall() {
     try {
       const [text, mtext] = await Promise.all([fetchText(JOURNEY_URL), fetchText(MANIFEST_URL)]);
       const rev = await presentRevision(text);
-      // Present when this is the revision installed LAST, not one installed
-      // ever: a deck put back to an earlier order is a change, and installs
-      // again. A browser from before the last-revision key (and the
-      // standalone site's seed) has only the per-revision marker.
+      // Present only when this is the revision installed LAST by this code:
+      // a deck put back to an earlier order is a change, and installs again.
+      // A browser holding only the per-revision marker had it installed by
+      // older code, which may have dropped slides it did not know: it
+      // installs once more, and so mends itself on its next load.
       let last = lastHere;
       if (!last) { try { last = JSON.parse(readKey(MARKER + 'last') || 'null') || ''; } catch (e) { last = ''; } }
-      if (last ? last === rev : !!readKey(MARKER + rev)) return 'present';
+      if (last === rev) return 'present';
       const journey = JSON.parse(text), manifest = JSON.parse(mtext);
       const problem = presentJourneyProblem(journey, manifest);
       if (problem) { console.warn('[presentation] ' + problem); return problem; }
-      if (importJourney(JOURNEY_TITLE, journey) < 0) return 'the library is full';
+      const at = importJourney(JOURNEY_TITLE, journey);
+      // This page's code is older than the deck (it was open across a
+      // publish): nothing imported, nothing marked, and the page reloads
+      // once for the new code, which installs the deck as it loads. The
+      // guard (per revision, this tab only) stops a loop if the site itself
+      // is behind.
+      if (at === -2) {
+        const guard = 'signal.presentationReloaded.' + rev;
+        let again = false;
+        try { again = sessionStorage.getItem(guard) === '1'; sessionStorage.setItem(guard, '1'); } catch (e) { again = true; }
+        if (!again && typeof location !== 'undefined' && location.reload) {
+          console.warn('[presentation] this page is older than the deck: reloading for the new code');
+          location.reload();
+        } else console.warn('[presentation] this page is older than the deck and a reload did not help: is the site behind?');
+        return 'stale';
+      }
+      if (at < 0) return 'the library is full';
       lastHere = rev;
       saveKey(MARKER + rev, '1');
       saveKey(MARKER + 'last', rev);
