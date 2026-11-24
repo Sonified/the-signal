@@ -381,7 +381,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   // this page's version, shown in the settings and at the right of the
   // Presence line: up by .01 with every change (3.01, 3.02, ... a string,
   // so it always shows two places)
-  const VERSION = '3.13';
+  const VERSION = '3.14';
   $('version').textContent = $('infoVersion').textContent = 'v' + VERSION;
 
   const CUES = ['Intro Slide', 'Harmonica', 'Heartbeat', 'Audification Explained', 'Nightingale', 'Shepard Tone',
@@ -423,14 +423,15 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       return r.status === 200 ? 'ok' : r.status === 403 ? 'no' : 'down';
     } catch (e) { return 'down'; }
   }
+  // The lock card is hidden, never removed, so a password found wrong later
+  // can bring it back.
+  function admit() {
+    $('lock').style.display = 'none';
+    open(); startCuePreviews();
+    if (openDebug) openDebug();
+  }
   async function unlock() {
     const lockMsg = $('lockMsg');
-    if (KEY) {
-      const v = await check(KEY);
-      if (v !== 'no') { $('lock').remove(); open(); startCuePreviews(); return; }
-      try { localStorage.removeItem('mirror.pw'); } catch (e) {}
-      KEY = ''; lockMsg.textContent = 'That password no longer works.';
-    }
     $('lockForm').onsubmit = async e => {
       e.preventDefault();
       const pw = $('pw').value;
@@ -441,9 +442,51 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       if (v === 'ok') {
         KEY = pw;
         try { localStorage.setItem('mirror.pw', pw); } catch (e) {}
-        $('lock').remove(); open(); startCuePreviews();
+        lockMsg.textContent = '';
+        admit();
       } else lockMsg.textContent = v === 'no' ? 'Wrong password.' : 'Can\'t reach the relay. Check the internet.';
     };
+    if (KEY) {
+      const v = await check(KEY);
+      if (v !== 'no') { admit(); return; }
+      try { localStorage.removeItem('mirror.pw'); } catch (e) {}
+      KEY = ''; lockMsg.textContent = 'That password no longer works.';
+    }
+  }
+  // A relay refuses a bad key with a plain 403 on the socket's upgrade, which
+  // the page cannot tell from a dropped network: the socket closes without
+  // ever opening. So such a close asks /auth, one question at a time and at
+  // most once in 10 s, and only its 403 ('no') locks the page again; 'down'
+  // never does.
+  let keyCheck = null, keyCheckAt = -Infinity;
+  function suspectKey() {
+    if (!KEY || keyCheck || performance.now() - keyCheckAt < 10000) return;
+    const k = KEY;
+    keyCheck = check(k).then(v => {
+      keyCheck = null; keyCheckAt = performance.now();
+      if (v === 'no' && KEY === k) relock();
+    });
+  }
+  // The password no longer works: every socket and its retry stops, the
+  // stored password is forgotten, and the lock card asks for a new one.
+  function relock() {
+    for (const p of paths) {
+      for (const s of [p.cmd, p.st]) {
+        clearTimeout(s.timer); s.timer = 0; s.retry = 2000; s.reopen = null;
+        const ws = s.ws; s.ws = null;
+        if (ws) { try { ws.close(); } catch (e) {} }
+      }
+      p.rtt = NaN; p.peers = 0; resetHealth(p);
+    }
+    if (closeDebug) closeDebug();
+    try { localStorage.removeItem('mirror.pw'); } catch (e) {}
+    KEY = '';
+    render();
+    const lockMsg = $('lockMsg');
+    lockMsg.style.color = ''; lockMsg.textContent = 'That password no longer works.';
+    $('pw').value = '';
+    $('lock').style.display = '';
+    $('pw').focus();
   }
 
   {
@@ -623,7 +666,7 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
     const saved = localStorage.getItem('show.previewDelayMs');
     if (saved !== null && Number.isFinite(+saved)) previewDelayMs = Math.round(Math.max(0, Math.min(PREVIEW_DELAY_MAX, +saved)) / 5) * 5;
   } catch (e) {}
-  let cuePreviews = null, cuePreviewsStarted = false;
+  let cuePreviews = null, cuePreviewsStarted = false, openDebug = null, closeDebug = null;
   async function startCuePreviews() {
     if (cuePreviewsStarted) return;
     cuePreviewsStarted = true;
@@ -643,14 +686,22 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
       // Temporary passive diagnostics stay on this Mac's local relay.
       // No show commands or changes to playback are sent on this room.
       if (SERVED_LOCAL) {
-        const debug = new WebSocket('ws://' + LOCAL_HOST + '/room/' + ROOM + '-preview-debug?role=broadcast&key=' + encodeURIComponent(KEY));
+        // opened with the current KEY, closed on a relock, opened again with
+        // the new one (admit)
+        let debug = null;
+        closeDebug = () => { if (debug) { try { debug.close(); } catch (e) {} debug = null; } };
+        openDebug = () => {
+          closeDebug();
+          if (KEY) debug = new WebSocket('ws://' + LOCAL_HOST + '/room/' + ROOM + '-preview-debug?role=broadcast&key=' + encodeURIComponent(KEY));
+        };
+        openDebug();
         const timer = setInterval(() => {
-          if (debug.readyState === 1 && !document.hidden) debug.send(JSON.stringify({
+          if (debug && debug.readyState === 1 && !document.hidden) debug.send(JSON.stringify({
             t: 'state', k: 'preview-debug', src: SID, ua: navigator.userAgent,
             vp, reportAgeMs: Math.round(performance.now() - vpAt), ...cuePreviews.diagnostics()
           }));
         }, 1000);
-        window.addEventListener('pagehide', () => { clearInterval(timer); debug.close(); }, { once: true });
+        window.addEventListener('pagehide', () => { clearInterval(timer); closeDebug(); }, { once: true });
       }
     } catch (error) { console.warn('Cue previews unavailable:', error); }
   }
@@ -1014,16 +1065,21 @@ input[type=password] { height: 40px; border-radius: 8px; border: 1px solid var(-
   }
   function openSock(p, s, roomName, role) {
     clearTimeout(s.timer); s.timer = 0;
+    // a second open() replaces a live socket instead of doubling it
+    if (s.ws && s.ws.readyState < 2) { const old = s.ws; s.ws = null; try { old.close(); } catch (e) {} }
     try { s.ws = new WebSocket(p.base + '/room/' + roomName + '?role=' + role + '&key=' + encodeURIComponent(KEY)); }
     catch (e) { s.timer = setTimeout(() => openSock(p, s, roomName, role), s.retry); return; }
     const ws = s.ws;
-    ws.onopen = () => { s.retry = 2000; if (role === 'broadcast') probe(p); probeHealth(p); render(); };
+    let opened = false;
+    ws.onopen = () => { opened = true; s.retry = 2000; if (role === 'broadcast') probe(p); probeHealth(p); render(); };
     ws.onclose = () => {
       if (s.ws !== ws) return;
       if (role === 'broadcast') p.rtt = NaN;
       resetHealth(p);
       render();
       s.timer = setTimeout(() => openSock(p, s, roomName, role), s.retry); s.retry = Math.min(s.retry * 2, 15000);
+      // closed before it ever opened: a refused key looks just like this
+      if (!opened) suspectKey();
     };
     ws.onmessage = e => { if (typeof e.data === 'string' && e.data !== 'pong') { try { take(JSON.parse(e.data), p, role); } catch (err) {} } };
     s.reopen = () => openSock(p, s, roomName, role);
