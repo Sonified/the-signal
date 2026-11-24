@@ -56,6 +56,7 @@
 // way. The phone keeps the last few it fetched (FOLLOW_KEEP), never the
 // one on screen given up.
 import { SLIDE_DIR, SLIDE_FILES } from '../core/schema-slides.js';
+import { SLIDE_ORDER } from '../core/slide-order.js';
 import { TURN, inTurn } from './load-order.js';
 import { mediaCache, mediaFetch, absUrl } from './media-cache.js';
 import { S } from './state.js';
@@ -65,6 +66,16 @@ const FIRST = ['audio/heartbeat.m4a'];
 const urls = new Map();   // absolute URL -> blob URL of the copy this page plays
 let sunFile = null;       // { url, name } from gpu/sun.js
 let started = false, diskDone = false;
+
+// The slides in the talk's running order: core/slide-order.js, which
+// tools/deck.mjs writes from the deck (the cues that are on, then the ones
+// off), so the first video of the talk is the first one looked for on disk
+// and the first one downloaded. A slide the deck does not name comes after
+// those, in SLIDE_FILES' own order.
+const ORDER_RANK = new Map(SLIDE_ORDER.map((f, i) => [f, i]));
+const slidesInOrder = () => SLIDE_FILES
+  .map((f, i) => ({ f, k: ORDER_RANK.has(f[0]) ? ORDER_RANK.get(f[0]) : SLIDE_ORDER.length + i }))
+  .sort((a, b) => a.k - b.k).map(x => x.f);
 
 const log = (...a) => console.log('[show-media]', ...a);
 const mb = n => (n / 1048576).toFixed(1) + ' MB';
@@ -176,7 +187,7 @@ async function download(r, tag, type) {
 // The audio lists come from their modules, imported only here, on the page
 // in Presentation mode (js/ambience.js reaches for document as it loads).
 async function showItems() {
-  const items = SLIDE_FILES.map(f => ({ url: absUrl(SLIDE_DIR + encodeURIComponent(f[0])), name: f[0], kind: 'slide', type: 'video/mp4' }));
+  const items = slidesInOrder().map(f => ({ url: absUrl(SLIDE_DIR + encodeURIComponent(f[0])), name: f[0], kind: 'slide', type: 'video/mp4' }));
   if (sunFile) items.push({ url: sunFile.url, name: sunFile.name, kind: 'sun', type: 'video/mp4', byName: true });
   try {
     const [amb, choir, piano] = await Promise.all([import('./ambience.js'), import('./choir.js'), import('./piano.js')]);
@@ -252,7 +263,7 @@ async function run() {
   }
 
   // The disk, at once: every slide and the Sun already here play from it.
-  const playable = SLIDE_FILES.map(f => absUrl(SLIDE_DIR + encodeURIComponent(f[0])));
+  const playable = slidesInOrder().map(f => absUrl(SLIDE_DIR + encodeURIComponent(f[0])));
   if (sunFile) playable.push(sunFile.url);
   const onDisk = new Map();
   if (cache) {

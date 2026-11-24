@@ -25,6 +25,7 @@ export const SLIDE_DIR = 'slides/';
 export const SLIDE_NONE = 'none';
 export const SLIDE_FILES = [
   ['010_Alexander_TSC_2026_Intro_Slide.mp4', 'Intro Slide'],
+  ['010_Alexander_RCMUSIC_Intro_Slide.mp4', 'Intro Slide (RC Music)'],
   ['015_Heartbeat_Pulse.mp4', 'Heartbeat'],
   ['020_harmonica_Car_Seat.jpeg.mp4', 'Harmonica Car Seat'],
   ['030_Audification_Explained.mp4', 'Audification Explained'],
@@ -34,10 +35,25 @@ export const SLIDE_FILES = [
   ['050_Earthquake_Sonification.mp4', 'Earthquake'],
   ['060_Rotating_Sun_Solar Wind Audification.mp4', 'Rotating Sun'],
   ['070_Solar_Spherical_Harmonics.mp4', 'Spherical Harmonics'],
+  ['080_UofM_Solar_Storm_Sonification_2.mp4', 'UM X Class'],
   ['090_Harp_Trailer_Voice.mp4', 'HARP Trailer'],
+  ['100_HARP_Interface.mp4', 'HARP Interface'],
+  ['110_ANOMALY_Solar_LONGEST.mp4', 'ANOM Solar'],
+  ["120_Mother's_Day_CME_Final_v2.2_Slower_ANOMALY_B4.mp4", "Mother's Day CME"],
+  ['130_ICAD_2024_MMS_Binaural_Audification.mp4', 'MMS Reconnection'],
+  ['140_Anomaly_Jupiter.mp4', 'ANOM Jupiter'],
+  ['150_Voyager_1_Jupiter_on_Jupiter_ANOMALY.mp4', 'Voyager Jupiter Bow Shock'],
+  ['160_E13_PSP_Scholars_Video.mp4', 'E13 HCS Crossing'],
+  ['170_Anomaly_5_Solar_2.mp4', 'ANOM Solar 2'],
   ['180_WISPR PSP CME Sonification dfb dbm vac trim_ANOMALY_B4.mp4', 'WISPR CME'],
   ['190_Touching_The_Sun.mp4', 'Touching the Sun'],
-  ['220_Ed_Mitchell_VR_Combined_Audio_Video.mp4', 'Ed Mitchell VR']
+  ['200_AIA_Multilayered_Audification.mp4', 'SDO/AIA Audification'],
+  ['210_JVKE - Golden Hour (ft. The Sun) Lyric Video Magnum.mp4', 'JVKE Golden Hour'],
+  ['220_Ed_Mitchell_VR_Combined_Audio_Video.mp4', 'Ed Mitchell VR'],
+  ['999_EXTRA_1_Launch_silent.mp4', 'Launch (silent)'],
+  ['Anomaly_1.mp4', 'Anomaly 1'],
+  ['Anomaly_2_Magnetic.mp4', 'Anomaly 2 Magnetic'],
+  ['ANOMALY_Solar_110_Original.mp4', 'ANOM Solar (original)']
 ];
 // The dropdown's options, None first. Shared with the Journey window's own
 // SLIDE menu (ui/screens/journey.js), so the two always list the same.

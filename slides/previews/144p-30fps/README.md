@@ -10,7 +10,7 @@ subtitle, or data streams are included.
 durations, source filenames, and total. Every output was checked with
 ffprobe and decoded completely with ffmpeg.
 
-Files encoded: **14**. Combined video size: **11.07 MB** (11070272 bytes).
+Files encoded: **30**. Combined video size: **18.50 MB** (18499358 bytes).
 
 These are local generated assets in the git-ignored `slides/` directory.
 The local iPad controller (`show.html`, `platform/cue-previews.js`) uses them
@@ -29,7 +29,9 @@ fallback when browser storage is unavailable. Failed downloads retry every
 Blob URLs, never partial network streams. Cached assets are keyed by
 the preview video's SHA-256 from `manifest.json`.
 
-The 14 JPEG posters add 90,319 bytes. Reload the laptop and iPad once to
+The 30 JPEG posters add 200,736 bytes. Each poster is the preview's frame
+at 10 seconds (`ffmpeg -ss 10 -i <preview> -frames:v 1 <poster>.jpg`), or
+its midpoint for clips shorter than that. Reload the laptop and iPad once to
 enable the video-file and loop fields in the laptop's progress reports.
 
 Equivalent command from the repository root, substituting each filename:

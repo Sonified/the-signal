@@ -4,6 +4,11 @@
   "release": "32e9063c8f301554",
   "videos": [
     {
+      "file": "010_Alexander_RCMUSIC_Intro_Slide.mp4",
+      "bytes": 84057,
+      "sha256": "f27840b4e5ff6ed0fa94eba5c9e9efda401e50ef4b212528c62c94eaacc31a70"
+    },
+    {
       "file": "010_Alexander_TSC_2026_Intro_Slide.mp4",
       "bytes": 102723,
       "sha256": "c813d4a1f9af002ad9461bf7d06b2df446861ee1378a4460edb60a0338d1449c"
@@ -54,9 +59,54 @@
       "sha256": "a5fcb717fe8e4673195f69eec61856b2a57b55eef7f60bb9f6802b87e31a9fa0"
     },
     {
+      "file": "080_UofM_Solar_Storm_Sonification_2.mp4",
+      "bytes": 21704291,
+      "sha256": "b13fc6b9b7a7625d70f91a3f9328397b3b500b1b0f041ec61d18b367a7db6fac"
+    },
+    {
       "file": "090_Harp_Trailer_Voice.mp4",
       "bytes": 94615927,
       "sha256": "98b64ff1b9b8935a62ffd5b6fe4a0ca378eeb53f5af857ed4fb7aafa23d07199"
+    },
+    {
+      "file": "100_HARP_Interface.mp4",
+      "bytes": 6826699,
+      "sha256": "7ed962b56df96ea582d9790bf0b13cbcda340b9c6ba5e40079f00b4195a4a951"
+    },
+    {
+      "file": "110_ANOMALY_Solar_LONGEST.mp4",
+      "bytes": 15795806,
+      "sha256": "310f369ea3661d5033f87576ec053330de1265c1f968ee2c3df5e2a52c9525ec"
+    },
+    {
+      "file": "120_Mother's_Day_CME_Final_v2.2_Slower_ANOMALY_B4.mp4",
+      "bytes": 4209613,
+      "sha256": "7af8b67f98e108fecf2522f044deadcd42bdc54e9169b856638670198d02f297"
+    },
+    {
+      "file": "130_ICAD_2024_MMS_Binaural_Audification.mp4",
+      "bytes": 41573953,
+      "sha256": "662cb5daa6274b732fb93b730476f873590eddff9eb847ed9bec795052e76108"
+    },
+    {
+      "file": "140_Anomaly_Jupiter.mp4",
+      "bytes": 6990094,
+      "sha256": "afd35e30961b71739415d3cf8e9a447d5e5148e908e0f1626e76e28f25a0d5fb"
+    },
+    {
+      "file": "150_Voyager_1_Jupiter_on_Jupiter_ANOMALY.mp4",
+      "bytes": 17612924,
+      "sha256": "e74f6f87a52ae5f9bee7ef5b8bdfce4a3fd204ab20418ca50a19c40398b7b799"
+    },
+    {
+      "file": "160_E13_PSP_Scholars_Video.mp4",
+      "bytes": 20600601,
+      "sha256": "bc57f42a35bd38d4f237404f1dbc8e8793f16f6caaa27d7c4e2697e55e2f33cb"
+    },
+    {
+      "file": "170_Anomaly_5_Solar_2.mp4",
+      "bytes": 3642382,
+      "sha256": "a6d7007cb9483fbee874b6cf8c1f4695e2482105f6ee9e426c334bd8dca29d04"
     },
     {
       "file": "180_WISPR PSP CME Sonification dfb dbm vac trim_ANOMALY_B4.mp4",
@@ -69,9 +119,39 @@
       "sha256": "19963c82d245fcdf0df22c7f05bc0de0f5b48f97c85af07e3d7112a1ba99f5f7"
     },
     {
+      "file": "200_AIA_Multilayered_Audification.mp4",
+      "bytes": 23686035,
+      "sha256": "8fc52b455b48e3ade4ff3a87c3f688898b9cf9041e2aa2e314809c2bf4c27398"
+    },
+    {
+      "file": "210_JVKE - Golden Hour (ft. The Sun) Lyric Video Magnum.mp4",
+      "bytes": 120705632,
+      "sha256": "6431ca982aba6a588e3944434dfef91912d5eef932d8ef3b75ed3c760925777b"
+    },
+    {
       "file": "220_Ed_Mitchell_VR_Combined_Audio_Video.mp4",
       "bytes": 54573060,
       "sha256": "892adae43a1cc232a59dd0d591b21be49a42de9deeaf367b8cd52185d6655529"
+    },
+    {
+      "file": "999_EXTRA_1_Launch_silent.mp4",
+      "bytes": 40821795,
+      "sha256": "99c3de5b6163659787a3594868fb5ce80fd7c705f4f5d940517acd2ac63bd5ff"
+    },
+    {
+      "file": "Anomaly_1.mp4",
+      "bytes": 15630867,
+      "sha256": "a6f55287cd7bf5e088764a6e8f73e5b61d3b0de48c222d21ca9cc485f5a1daa0"
+    },
+    {
+      "file": "Anomaly_2_Magnetic.mp4",
+      "bytes": 15617748,
+      "sha256": "36092b7505a2577e4475e018d86a8825eb8426eb137121f6fd1177900cfb30f8"
+    },
+    {
+      "file": "ANOMALY_Solar_110_Original.mp4",
+      "bytes": 3770205,
+      "sha256": "24fad7a75f393d7ced54ffaa672d467af768b23bc58662dcea8f08108f2f77e3"
     }
   ]
 }

@@ -1,0 +1,47 @@
+{
+ "about": [
+  "The talk's running order: one cue per line, top to bottom. on false pulls a cue out; move a line to reorder.",
+  "Then run: node tools/deck.mjs build  (also: list, off <id or file number>, on <...>, short, long, absorb).",
+  "Each cue's scene lives in documents/talk-deck-steps.json under its id. The journey file and the",
+  "controller's CUES and previews lists are written by the tool: do not edit them by hand."
+ ],
+ "sets": {
+  "short": ["intro", "harmonica", "heartbeat", "audification", "nightingale", "shepard-tone", "shepards-rise", "earthquake", "rotating-sun", "harmonics", "harp-trailer", "wispr-cme", "touching-sun", "ed-mitchell", "qr-sun", "meditation"],
+  "long": ["intro", "harmonica", "heartbeat", "audification", "nightingale", "shepard-tone", "shepards-rise", "earthquake", "rotating-sun", "harmonics", "um-x-class", "harp-trailer", "harp-interface", "anom-solar", "mothers-day-cme", "mms-reconnection", "anom-jupiter", "voyager-jupiter", "e13-hcs", "anom-solar-2", "wispr-cme", "touching-sun", "aia", "jvke", "ed-mitchell", "qr-sun", "meditation"]
+ },
+ "built": "9056895d4c6d0707",
+ "cues": [
+  {"id": "intro", "label": "Intro Slide", "file": "010_Alexander_TSC_2026_Intro_Slide.mp4", "on": true},
+  {"id": "harmonica", "label": "Harmonica", "file": "020_harmonica_Car_Seat.jpeg.mp4", "on": true},
+  {"id": "heartbeat", "label": "Heartbeat", "file": null, "preview": "015", "on": true},
+  {"id": "audification", "label": "Audification Explained", "file": "030_Audification_Explained.mp4", "on": true},
+  {"id": "nightingale", "label": "Nightingale", "file": "040_Nightingale.mp4", "on": true},
+  {"id": "shepard-tone", "label": "Shepard Tone", "file": "031_Shepard_Tone_Rising_Trim.mp4", "on": true},
+  {"id": "shepards-rise", "label": "Shepard's Rise", "file": "032_Sheprise-Trim.mp4", "on": true},
+  {"id": "earthquake", "label": "Earthquake", "file": "050_Earthquake_Sonification.mp4", "on": true},
+  {"id": "rotating-sun", "label": "Rotating Sun", "file": "060_Rotating_Sun_Solar Wind Audification.mp4", "on": true},
+  {"id": "harmonics", "label": "Spherical Harmonics — hum along!", "file": "070_Solar_Spherical_Harmonics.mp4", "on": true},
+  {"id": "um-x-class", "label": "UM X Class", "file": "080_UofM_Solar_Storm_Sonification_2.mp4", "on": true},
+  {"id": "harp-trailer", "label": "HARP Trailer", "file": "090_Harp_Trailer_Voice.mp4", "on": true},
+  {"id": "harp-interface", "label": "HARP Interface", "file": "100_HARP_Interface.mp4", "on": true},
+  {"id": "anom-solar", "label": "ANOM Solar", "file": "110_ANOMALY_Solar_LONGEST.mp4", "on": true},
+  {"id": "mothers-day-cme", "label": "Mother's Day CME", "file": "120_Mother's_Day_CME_Final_v2.2_Slower_ANOMALY_B4.mp4", "on": true},
+  {"id": "mms-reconnection", "label": "MMS Reconnection", "file": "130_ICAD_2024_MMS_Binaural_Audification.mp4", "on": true},
+  {"id": "anom-jupiter", "label": "ANOM Jupiter", "file": "140_Anomaly_Jupiter.mp4", "on": true},
+  {"id": "voyager-jupiter", "label": "Voyager Jupiter Bow Shock", "file": "150_Voyager_1_Jupiter_on_Jupiter_ANOMALY.mp4", "on": true},
+  {"id": "e13-hcs", "label": "E13 HCS Crossing", "file": "160_E13_PSP_Scholars_Video.mp4", "on": true},
+  {"id": "anom-solar-2", "label": "ANOM Solar 2", "file": "170_Anomaly_5_Solar_2.mp4", "on": true},
+  {"id": "wispr-cme", "label": "WISPR CME", "file": "180_WISPR PSP CME Sonification dfb dbm vac trim_ANOMALY_B4.mp4", "on": true},
+  {"id": "touching-sun", "label": "Touching the Sun", "file": "190_Touching_The_Sun.mp4", "on": true},
+  {"id": "aia", "label": "SDO/AIA Audification", "file": "200_AIA_Multilayered_Audification.mp4", "on": true},
+  {"id": "jvke", "label": "JVKE Golden Hour", "file": "210_JVKE - Golden Hour (ft. The Sun) Lyric Video Magnum.mp4", "on": true},
+  {"id": "ed-mitchell", "label": "Ed Mitchell VR", "file": "220_Ed_Mitchell_VR_Combined_Audio_Video.mp4", "on": true},
+  {"id": "qr-sun", "label": "QR + Sun 🌞", "file": null, "on": true},
+  {"id": "meditation", "label": "Guided Meditation 🎵🌞🎵", "file": null, "on": true},
+  {"id": "intro-rcmusic", "label": "Intro Slide (RC Music)", "file": "010_Alexander_RCMUSIC_Intro_Slide.mp4", "on": false},
+  {"id": "launch", "label": "Launch (silent)", "file": "999_EXTRA_1_Launch_silent.mp4", "on": false},
+  {"id": "anomaly-1", "label": "Anomaly 1", "file": "Anomaly_1.mp4", "on": false},
+  {"id": "anomaly-2-magnetic", "label": "Anomaly 2 Magnetic", "file": "Anomaly_2_Magnetic.mp4", "on": false},
+  {"id": "anom-solar-original", "label": "ANOM Solar (original)", "file": "ANOMALY_Solar_110_Original.mp4", "on": false}
+ ]
+}

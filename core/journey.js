@@ -2239,6 +2239,28 @@ export function journeyImport(title, raw) {
   return lib.items.length - 1;
 }
 
+// The Presentation mode's install (core/presentation.js): the export
+// imported as journeyImport does, in place of the copy the install before
+// it left, so a deck published several times in a day leaves one journey in
+// the library and not a row of them (each a few hundred KB of the browser's
+// few MB of storage, where a write that does not fit fails silently). Only a
+// copy this function made is ever replaced: it keeps that journey's id and
+// title, and replaces it only while both still match, so a journey made,
+// imported or renamed by hand is never touched. Returns the new journey's
+// index, or -1 when the library is full.
+const INSTALL_KEY = 'signal.journeyInstalled.';
+export function journeyInstall(title, raw) {
+  ensureLoaded();
+  const key = INSTALL_KEY + cleanTitle(title);
+  let was = null;
+  try { was = JSON.parse(readKey(key) || 'null'); } catch (e) { was = null; }
+  const old = was && typeof was === 'object' ? lib.items.findIndex(it => it.id === was.id && it.title === was.title) : -1;
+  if (old >= 0 && lib.items.length > 1) journeyDeleteAt(old);
+  const i = journeyImport(title, raw);
+  if (i >= 0) saveKey(key, { id: lib.items[i].id, title: lib.items[i].title });
+  return i;
+}
+
 // A copy of the open journey, exact settings and steps, placed on the chip
 // just right of it and opened. The copy is named with the next free letter:
 // "Dawn" begets "Dawn A", then "Dawn B", and a title already lettered counts
